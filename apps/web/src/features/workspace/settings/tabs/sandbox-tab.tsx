@@ -174,15 +174,9 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import type { UiTranslator } from '@/i18n/translator';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { relativeTime } from '@/lib/relative-time';
 import { useProjectCans } from '@/lib/use-project-can';
-
-/** One batched probe for the two leaves this tab gates on. */
-const SANDBOX_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  PROJECT_ACTIONS.PROJECT_WRITE,
-] as const;
 import { cn } from '@/lib/utils';
 import {
   type KortixProject,
@@ -216,6 +210,7 @@ import {
   XCircleIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   type SandboxProvider,
   SandboxProviderBadge,
@@ -229,6 +224,12 @@ import {
   pollSandboxProviderTransition,
 } from '../../customize/sections/view/sandbox-provider-result';
 import { SettingsTabHeader } from '../settings-tab-header';
+
+/** One batched probe for the two leaves this tab gates on. */
+const SANDBOX_TAB_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+] as const;
 
 /** Three, not five: each skeleton is now a full card, so five of them
  *  overflowed the panel and read as a wall of grey. */
@@ -260,8 +261,15 @@ const TEMPLATE_TONE_TEXT: Record<TemplateTone, string> = {
 /** Exported for test only — `TemplateCard` itself owns mutations and cannot
  *  render under `renderToStaticMarkup`, so the presentation decisions are
  *  pulled out as pure functions that can be asserted directly. */
-export function describeState(state: string): { label: string; tone: TemplateTone } {
-  return TEMPLATE_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
+export function describeState(
+  state: string,
+  labels: Partial<Record<string, string>> = {},
+): { label: string; tone: TemplateTone } {
+  const fallback = TEMPLATE_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
+  return {
+    ...fallback,
+    label: labels[state] ?? (state ? fallback.label : (labels.unknown ?? 'Unknown')),
+  };
 }
 
 /** Where the template is declared, in words a reader who has never opened the
@@ -270,11 +278,16 @@ export function describeState(state: string): { label: string; tone: TemplateTon
 export function describeSource(
   template: SandboxTemplate,
   manifestVersion: number | null,
+  labels: { platform?: string; dashboard?: string } = {},
 ): { label: string; icon: PhosphorIcon; mono: boolean } {
   if (template.source === 'platform')
-    return { label: 'Kortix platform', icon: ShippingContainerIcon, mono: false };
+    return {
+      label: labels.platform ?? 'Kortix platform',
+      icon: ShippingContainerIcon,
+      mono: false,
+    };
   if (template.source === 'ui')
-    return { label: 'This dashboard', icon: SquaresFourIcon, mono: false };
+    return { label: labels.dashboard ?? 'This dashboard', icon: SquaresFourIcon, mono: false };
   return {
     label: manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml',
     icon: FileCodeIcon,
@@ -286,22 +299,35 @@ export function describeSource(
  *  whose `is_default` branch hid the image entirely; the default's "shared by
  *  every project" note is now a `Default` badge in the card header instead, so
  *  this cell can always state the real base. */
-export function describeBase(template: SandboxTemplate): {
+export function describeBase(
+  template: SandboxTemplate,
+  labels: { baseImage?: string; builtFrom?: string; kortixDefault?: string } = {},
+): {
   label: string;
   value: string;
   icon: PhosphorIcon;
   mono: boolean;
 } {
   if (template.has_image && template.image)
-    return { label: 'Base image', value: template.image, icon: PackageIcon, mono: true };
+    return {
+      label: labels.baseImage ?? 'Base image',
+      value: template.image,
+      icon: PackageIcon,
+      mono: true,
+    };
   if (template.has_dockerfile && template.dockerfile_path)
     return {
-      label: 'Built from',
+      label: labels.builtFrom ?? 'Built from',
       value: template.dockerfile_path,
       icon: FileCodeIcon,
       mono: true,
     };
-  return { label: 'Base image', value: 'Kortix default', icon: CubeIcon, mono: false };
+  return {
+    label: labels.baseImage ?? 'Base image',
+    value: labels.kortixDefault ?? 'Kortix default',
+    icon: CubeIcon,
+    mono: false,
+  };
 }
 
 /** Where sessions built from this template actually run. Static configuration,
@@ -311,21 +337,37 @@ export function describeBase(template: SandboxTemplate): {
 export function describeRouting(
   providerMode: SandboxProviderMode,
   selectedProvider: SandboxProvider | null,
+  tI18nComplete: UiTranslator,
+  labels: {
+    automatic?: string;
+    pinned?: string;
+    pinnedWithProvider?: (provider: string) => string;
+  } = {},
 ): { label: string; icon: PhosphorIcon } {
-  const mode = describeProviderMode(providerMode, selectedProvider);
-  if (providerMode === 'automatic') return { label: 'Automatic', icon: ShuffleIcon };
+  const mode = describeProviderMode(providerMode, selectedProvider, tI18nComplete);
+  if (providerMode === 'automatic')
+    return { label: labels.automatic ?? 'Automatic', icon: ShuffleIcon };
   return {
-    label: mode.selectedProvider ? `Pinned · ${mode.selectedProvider}` : 'Pinned',
+    label: mode.selectedProvider
+      ? (labels.pinnedWithProvider?.(mode.selectedProvider) ?? `Pinned · ${mode.selectedProvider}`)
+      : (labels.pinned ?? 'Pinned'),
     icon: PushPinIcon,
   };
 }
 
-/** Matches `snapshots-tab.tsx`'s own `formatRelative` (both wrap
- *  `relativeTime`) — needed here for the runtime footer's "Checked …" stamp,
- *  which this tab uses independently of anything build- or snapshot-log
- *  related. */
-function formatRelative(input: string | null | undefined): string {
-  return relativeTime(input) || '—';
+/** Locale-aware age for the runtime footer's "Checked …" stamp. */
+function formatRelative(input: string | null | undefined, locale = 'en'): string {
+  if (!input) return '—';
+  const then = new Date(input).getTime();
+  if (!Number.isFinite(then)) return '—';
+  const minutes = Math.trunc((Date.now() - then) / 60_000);
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (minutes < 60) return formatter.format(-Math.max(minutes, 0), 'minute');
+  const hours = Math.trunc(minutes / 60);
+  if (hours < 24) return formatter.format(-hours, 'hour');
+  const days = Math.trunc(hours / 24);
+  if (days < 30) return formatter.format(-days, 'day');
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(then);
 }
 
 /**
@@ -415,11 +457,17 @@ export function TemplateRuntimeFooter({
   providerMode,
   selectedProvider,
   formatObservedAt = formatRelative,
+  runtimeLabel = 'Session runtime',
+  checkedLabel = (value) => `Checked ${value}`,
+  badgeCopy,
 }: {
   coverage: SandboxTemplate['provider_coverage'] | null | undefined;
   providerMode: SandboxProviderMode;
   selectedProvider: SandboxProvider | null;
   formatObservedAt?: (observedAt: string) => string;
+  runtimeLabel?: string;
+  checkedLabel?: (value: string) => string;
+  badgeCopy?: import('../../customize/sections/view/sandbox-provider-coverage').SandboxProviderBadgeCopy;
 }) {
   const available = availableProviderCoverage(coverage);
   if (available.length === 0) return null;
@@ -428,19 +476,20 @@ export function TemplateRuntimeFooter({
 
   return (
     <div className="border-border/60 bg-muted/25 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t px-4 py-2.5">
-      <span className="text-muted-foreground shrink-0 text-xs">Session runtime</span>
+      <span className="text-muted-foreground shrink-0 text-xs">{runtimeLabel}</span>
       <div className="flex flex-wrap items-center gap-1.5">
         {available.map((item) => (
           <SandboxProviderBadge
             key={item.provider}
             item={item}
             selected={providerMode === 'pinned' && item.provider === selectedProvider}
+            copy={badgeCopy}
           />
         ))}
       </div>
       {observedAt ? (
         <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
-          Checked {formatObservedAt(observedAt)}
+          {checkedLabel(formatObservedAt(observedAt))}
         </span>
       ) : null}
     </div>
@@ -462,6 +511,9 @@ function TemplateCard({
   providerMode: SandboxProviderMode;
   selectedProvider: SandboxProvider | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.sandbox');
+  const locale = useLocale();
   const queryClient = useQueryClient();
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -473,26 +525,46 @@ function TemplateCard({
   const buildMut = useMutation({
     mutationFn: () => buildSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
-      successToast(`Rebuild started for "${template.name}"`);
+      successToast(tI18nComplete('texte3f97a8573b6', { name: template.name }));
       queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete('text527ee9c936d3')),
   });
   const deleteMut = useMutation({
     mutationFn: () => deleteSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
-      successToast(`Deleted "${template.name}"`);
+      successToast(tI18nComplete('texta963ed79b37d', { name: template.name }));
       queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
       queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       setConfirmDelete(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete('texta422c2e168e4')),
   });
 
-  const stateInfo = describeState(template.provider_state || template.daytona_state);
-  const source = describeSource(template, manifestVersion);
-  const base = describeBase(template);
-  const routing = describeRouting(providerMode, selectedProvider);
+  const stateInfo = describeState(template.provider_state || template.daytona_state, {
+    active: t('states.ready'),
+    pulling: t('states.pulling'),
+    building: t('states.building'),
+    removing: t('states.removing'),
+    error: t('states.error'),
+    build_failed: t('states.buildFailed'),
+    missing: t('states.notBuilt'),
+    unknown: t('states.unknown'),
+  });
+  const source = describeSource(template, manifestVersion, {
+    platform: t('sources.platform'),
+    dashboard: t('sources.dashboard'),
+  });
+  const base = describeBase(template, {
+    baseImage: t('facts.baseImage'),
+    builtFrom: t('facts.builtFrom'),
+    kortixDefault: t('facts.kortixDefault'),
+  });
+  const routing = describeRouting(providerMode, selectedProvider, tI18nComplete, {
+    automatic: t('routing.automatic'),
+    pinned: t('routing.pinned'),
+    pinnedWithProvider: (provider) => t('routing.pinnedWithProvider', { provider }),
+  });
 
   return (
     <>
@@ -513,7 +585,7 @@ function TemplateCard({
               </Badge>
               {template.is_default ? (
                 <Badge variant="muted" size="sm">
-                  Default
+                  {t('defaultBadge')}
                 </Badge>
               ) : null}
             </div>
@@ -523,25 +595,25 @@ function TemplateCard({
             <div className="flex items-center gap-1">
               {templateId && !template.is_default && (
                 <>
-                  <Hint label="Edit template" side="top">
+                  <Hint label={t('actions.edit')} side="top">
                     <Button
                       size="icon-base"
                       variant="ghost"
                       className="transition-transform active:scale-[0.96]"
                       onClick={() => onEdit(template)}
-                      aria-label="Edit template"
+                      aria-label={t('actions.edit')}
                     >
                       <PencilSimpleIcon className="size-3.5 shrink-0" />
                     </Button>
                   </Hint>
-                  <Hint label="Delete template" side="top">
+                  <Hint label={t('actions.delete')} side="top">
                     <Button
                       size="icon-base"
                       variant="ghost"
                       className="text-destructive hover:text-destructive transition-transform active:scale-[0.96]"
                       disabled={deleteMut.isPending}
                       onClick={() => setConfirmDelete(true)}
-                      aria-label="Delete template"
+                      aria-label={t('actions.delete')}
                     >
                       {deleteMut.isPending ? (
                         <Loading className="size-3.5 shrink-0" />
@@ -565,7 +637,7 @@ function TemplateCard({
                   ) : (
                     <ArrowClockwiseIcon className="size-3.5 shrink-0" />
                   )}
-                  Rebuild
+                  {t('actions.rebuild')}
                 </Button>
               )}
             </div>
@@ -585,31 +657,58 @@ function TemplateCard({
             the columns wander between cards. Matches `snapshots-tab.tsx`, the
             other half of this split, which pins its timestamps the same way. */}
         <dl className="border-border/60 grid grid-cols-2 gap-x-4 gap-y-4 border-t px-4 py-4 tabular-nums sm:grid-cols-3">
-          <TemplateFact icon={CpuIcon} label="Processor" value={`${template.cpu} vCPU`} />
-          <TemplateFact icon={MemoryIcon} label="Memory" value={`${template.memory_gb} GiB`} />
-          <TemplateFact icon={HardDrivesIcon} label="Storage" value={`${template.disk_gb} GiB`} />
+          <TemplateFact
+            icon={CpuIcon}
+            label={t('facts.processor')}
+            value={`${template.cpu} vCPU`}
+          />
+          <TemplateFact
+            icon={MemoryIcon}
+            label={t('facts.memory')}
+            value={`${template.memory_gb} GiB`}
+          />
+          <TemplateFact
+            icon={HardDrivesIcon}
+            label={t('facts.storage')}
+            value={`${template.disk_gb} GiB`}
+          />
           <TemplateFact icon={base.icon} label={base.label} value={base.value} mono={base.mono} />
           <TemplateFact
             icon={source.icon}
-            label="Defined in"
+            label={t('facts.definedIn')}
             value={source.label}
             mono={source.mono}
           />
-          <TemplateFact icon={routing.icon} label="Routing" value={routing.label} />
+          <TemplateFact icon={routing.icon} label={t('routing.title')} value={routing.label} />
         </dl>
 
         <TemplateRuntimeFooter
           coverage={template.provider_coverage}
           providerMode={providerMode}
           selectedProvider={selectedProvider}
+          runtimeLabel={t('runtime')}
+          checkedLabel={(value) => t('checked', { value })}
+          formatObservedAt={(observedAt) => formatRelative(observedAt, locale)}
+          badgeCopy={{
+            states: {
+              ready: t('coverage.ready'),
+              building: t('coverage.building'),
+              failed: t('coverage.failed'),
+              not_built: t('coverage.notReady'),
+              unavailable: t('coverage.unavailable'),
+              unknown: t('states.unknown'),
+            },
+            selected: t('coverage.selected'),
+            selectedAria: t('coverage.selectedAria'),
+          }}
         />
       </li>
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Delete sandbox template "${template.name}"?`}
-        description="This removes the template from the project. Sessions already using it are unaffected."
-        confirmLabel="Delete"
+        title={t('deleteDialog.title', { name: template.name })}
+        description={t('deleteDialog.description')}
+        confirmLabel={t('deleteDialog.confirm')}
         confirmVariant="destructive"
         isPending={deleteMut.isPending}
         onConfirm={() => deleteMut.mutate()}
@@ -660,6 +759,8 @@ function SandboxProviderRow({
   project: KortixProject;
   canManage: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.sandbox');
   const queryClient = useQueryClient();
   const available = project.available_sandbox_providers ?? [];
   const current = project.default_sandbox_provider ?? null;
@@ -677,7 +778,9 @@ function SandboxProviderRow({
       const kind = applySandboxProviderResult(queryClient, project.project_id, result);
       if (kind === 'preparation') {
         successToast(
-          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
+          tI18nComplete('text32f14aa9ea33', {
+            provider: next ? label(next) : tI18nComplete('text22412aa281cb'),
+          }),
         );
         // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
         // and refresh the project once it settles so the now-active provider shows.
@@ -695,33 +798,38 @@ function SandboxProviderRow({
             queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
             const status = state?.latest?.status;
             if (status === 'activated') {
-              successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
+              successToast(
+                tI18nComplete('text1c145081eddd', {
+                  provider: label(state?.latest?.target_provider ?? ''),
+                }),
+              );
             } else if (status === 'failed') {
-              errorToast(state?.latest?.label || 'Sandbox provider switch failed');
+              errorToast(state?.latest?.label || tI18nComplete('texte9ca8360a34d'));
             }
           },
         });
       }
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
+    onError: (error: Error) =>
+      errorToast(error.message || tI18nComplete('text914be6d9bb89')),
   });
 
   if (available.length === 0) return null;
 
   return (
     <section className="space-y-3">
-      <SettingsSubsectionHeader title="Routing" />
+      <SettingsSubsectionHeader title={t('routing.title')} />
       <SettingsRowGroup>
         <SettingsRow
           label={
             <>
-              Sandbox provider
+              {t('provider.label')}
               <Badge variant="highlight" size="sm">
-                Experimental
+                {t('provider.experimental')}
               </Badge>
             </>
           }
-          description="Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default."
+          description={t('provider.description')}
         >
           <Select
             value={current ?? AUTO_PROVIDER}
@@ -732,11 +840,11 @@ function SandboxProviderRow({
             }
             disabled={!canManage || mutation.isPending}
           >
-            <SelectTrigger aria-label="Sandbox provider" className="h-8 w-40 shrink-0">
+            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-40 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
-              <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
+              <SelectItem value={AUTO_PROVIDER}>{t('routing.automatic')}</SelectItem>
               {available.map((p) => (
                 <SelectItem key={p} value={p}>
                   {label(p)}
@@ -784,7 +892,30 @@ export interface SandboxTabViewProps {
   /** The `<ul>` of `TemplateCard`s, built by the container — see this file's
    *  header comment for why it's a slot. */
   templatesSlot?: ReactNode;
+  copy?: SandboxTabViewCopy;
 }
+
+export interface SandboxTabViewCopy {
+  loadFailed: string;
+  retry: string;
+  descriptionStart: string;
+  descriptionEnd: string;
+  configReadFailed: string;
+  emptyTitle: string;
+  emptyDescription: string;
+}
+
+const DEFAULT_SANDBOX_VIEW_COPY: SandboxTabViewCopy = {
+  loadFailed: 'Failed to load sandbox templates:',
+  retry: 'Retry',
+  descriptionStart:
+    'Every session starts from a sandbox template — a prepared machine with your repository already checked out at',
+  descriptionEnd:
+    'The Kortix default works for most projects. Add your own below, or declare them as',
+  configReadFailed: 'Couldn’t read project sandbox config:',
+  emptyTitle: 'No templates resolved yet.',
+  emptyDescription: "Create one, or add it to your project's manifest.",
+};
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `SandboxTab` so this renders under
@@ -802,7 +933,9 @@ export function SandboxTabView({
   isEmpty = true,
   emptyAction,
   templatesSlot,
+  copy = DEFAULT_SANDBOX_VIEW_COPY,
 }: SandboxTabViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <div className="space-y-8">
@@ -817,28 +950,29 @@ export function SandboxTabView({
         ) : isError ? (
           <ErrorState
             size="sm"
-            title="Failed to load sandbox templates:"
+            title={copy.loadFailed}
             description={errorMessage}
             action={
               <Button variant="outline" size="sm" onClick={onRetry}>
-                Retry
+                {copy.retry}
               </Button>
             }
           />
         ) : (
           <div className="space-y-4">
             <p className="text-muted-foreground text-sm text-pretty">
-              Every session starts from a sandbox template — a prepared machine with your repository
-              already checked out at <code className="font-mono">/workspace</code>. The Kortix
-              default works for most projects. Add your own below, or declare them as{' '}
+              {copy.descriptionStart} <code className="font-mono">/workspace</code>.{' '}
+              {copy.descriptionEnd}{' '}
               {manifestVersion === 2 ? (
                 <>
-                  <code className="font-mono">sandbox.templates</code> in{' '}
+                  <code className="font-mono">sandbox.templates</code>{' '}
+                  {tI18nComplete.raw('text582967534d0f')}{' '}
                   <code className="font-mono">kortix.yaml</code>
                 </>
               ) : (
                 <>
-                  <code className="font-mono">[[sandbox.templates]]</code> in{' '}
+                  <code className="font-mono">[[sandbox.templates]]</code>{' '}
+                  {tI18nComplete.raw('text582967534d0f')}{' '}
                   <code className="font-mono">kortix.toml</code>
                 </>
               )}
@@ -847,7 +981,7 @@ export function SandboxTabView({
 
             {templatesError ? (
               <InfoBanner tone="warning">
-                Couldn’t read project sandbox config: {templatesError}
+                {copy.configReadFailed} {templatesError}
               </InfoBanner>
             ) : null}
 
@@ -855,8 +989,8 @@ export function SandboxTabView({
               <EmptyState
                 icon={ShippingContainerIcon}
                 size="sm"
-                title="No templates resolved yet."
-                description="Create one, or add it to your project's manifest."
+                title={copy.emptyTitle}
+                description={copy.emptyDescription}
                 action={emptyAction}
               />
             ) : (
@@ -876,6 +1010,7 @@ export function SandboxTabView({
  *  this tab is active (`SettingsTabPane` in `settings-panel.tsx` returns
  *  `null` otherwise), so nothing here fetches on panel open. */
 export function SandboxTab({ projectId }: { projectId: string }) {
+  const t = useTranslations('settings.sandbox');
   const projectQuery = useQuery({
     queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
@@ -955,7 +1090,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
       onClick={() => setFormOpen(true)}
     >
       <PlusIcon className="size-3.5 shrink-0" />
-      New template
+      {t('actions.new')}
     </Button>
   ) : undefined;
 
@@ -975,7 +1110,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
               onClick={openNewForm}
             >
               <PlusIcon className="size-4 shrink-0" />
-              New template
+              {t('actions.new')}
             </Button>
           ) : undefined
         }
@@ -1005,6 +1140,15 @@ export function SandboxTab({ projectId }: { projectId: string }) {
             </ul>
           )
         }
+        copy={{
+          loadFailed: t('loadFailed'),
+          retry: t('retry'),
+          descriptionStart: t('descriptionStart'),
+          descriptionEnd: t('descriptionEnd'),
+          configReadFailed: t('configReadFailed'),
+          emptyTitle: t('emptyTitle'),
+          emptyDescription: t('emptyDescription'),
+        }}
       />
       <SandboxTemplateForm
         projectId={projectId}

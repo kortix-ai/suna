@@ -78,13 +78,13 @@ describe('AdvancedFields: repository source', () => {
   });
 
   test('every source description renders — the picked source explains itself', () => {
-    expect(code).toContain('{SOURCE_DESCRIPTIONS[state.source]}');
+    expect(code).toContain('`repository.sources.${SOURCE_KEYS[state.source]}.description`');
   });
 
-  test('explains each source with the exact wording the old create modal uses, so the two never diverge', () => {
-    expect(code).toContain('Kortix creates and manages a private repository for this workspace.');
-    expect(code).toContain('Kortix creates a private repository in your GitHub account.');
-    expect(code).toContain('Select an existing repository from your GitHub account.');
+  test('uses one translation key for each repository source', () => {
+    expect(code).toContain("managed: 'managed'");
+    expect(code).toContain("'github-create': 'githubCreate'");
+    expect(code).toContain("'github-import': 'githubImport'");
   });
 
   test('changing the source clears what the previous source owned', () => {

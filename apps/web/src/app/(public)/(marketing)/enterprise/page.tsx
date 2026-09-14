@@ -3,8 +3,8 @@
 import { Reveal } from '@/components/home/reveal';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
-import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
 import { cn } from '@/lib/utils';
 import {
   PackageIcon as Box,
@@ -15,7 +15,7 @@ import {
   ShieldIcon as MdShield,
   HardDrivesIcon as Server,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 const DIFFERENTIATORS = [

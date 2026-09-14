@@ -4,14 +4,13 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import type { PolicyChoice } from './tool-policy';
 import { POLICY_SEGMENTS } from './tool-policy-labels';
 
 // Segment definitions + labels live in `./tool-policy-labels` so this module
 // exports only components (React Fast Refresh).
-
-
 
 export interface ToolPolicyControlProps {
   value: PolicyChoice;
@@ -50,11 +49,12 @@ export function ToolPolicyControl({
   lockedReason,
   defaultHint,
 }: ToolPolicyControlProps) {
+  const policySegments = useLocalizedUiCatalog(POLICY_SEGMENTS);
   const locked = Boolean(lockedReason);
 
   const group = (
     <ButtonGroup aria-label={label} className="shrink-0">
-      {POLICY_SEGMENTS.map((segment) => {
+      {policySegments.map((segment) => {
         const selected = value === segment.choice;
         return (
           <Button

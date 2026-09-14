@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildCreateRepoPayload,
@@ -12,11 +13,12 @@ import {
 import {
   buildProvisionPayload,
   filterCreatableAccounts,
+  isForeignAccountList,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
@@ -25,10 +27,9 @@ import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
   linkRepository,
-  listAccounts,
+  PROVISION_IN_FLIGHT_CODE,
   provisionProject,
   provisionProjectStream,
-  PROVISION_IN_FLIGHT_CODE,
   type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
@@ -64,9 +65,12 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [
+    state.accountId ?? 'default',
+    state.name.trim(),
+    state.templateId ?? '',
+    state.source,
+  ].join(':');
 }
 
 /**
@@ -93,23 +97,62 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  * the server and 403 "Owner or admin role required" — precisely the failure
  * the picker's owner/admin filter (Task 12) exists to prevent, reopened
  * through the server's default path. So the fallback is
- * `resolveDefaultCreatableAccountId` (email match → primary owner → first
+ * `resolveDefaultCreatableAccountId` (identity match → primary owner → first
  * creatable) against the SAME filtered list the picker itself renders from —
  * never the raw, unfiltered account list.
  *
+ * Two independent fail-closed checks (Task 2 item 3, G2), both of which
+ * throw rather than let a create proceed:
+ *
+ * 1. `creatableAccounts` itself must not be FOREIGN
+ *    (`isForeignAccountList` — two or more accounts, none of them
+ *    `userId`'s own). Checked BEFORE looking at `state.accountId` at all: a
+ *    poisoned list taints every id it could produce, including one an
+ *    explicit (but stale) pick already carried, not only the default tier.
+ *    `new-workspace-page.tsx` already disables submit and hides the account
+ *    name for this case (item 2) — this is the second, independent layer
+ *    for any caller that resolves a target id without going through that
+ *    page-level gate, e.g. a future host of `useCreateWorkspace`.
+ * 2. The resolved id — from an explicit `state.accountId` or from the
+ *    default below — must actually be one of `creatableAccounts`.
+ *    `state.accountId` is normally only ever set from an `AccountPicker`
+ *    selection, itself built from this exact list, so this should never fire
+ *    in ordinary use; it is the last line of defense against a resolved id
+ *    that is stale, or a caller that skipped the page's own gating, ever
+ *    reaching the network with the signed-in user's JWT.
+ *
  * Extracted out of `buildCreatePayload` (below) as its own function so the
  * account a create actually targets is resolved in exactly one place.
+ *
+ * `userId` is required, not optional (G4): an omitted argument used to
+ * compile clean and silently degrade to `undefined`, which made
+ * `isForeignAccountList` treat ANY 2+-account list as foreign and throw —
+ * a functional break for real multi-account users that every single-
+ * account test passed straight through. The type is `string | null`, not
+ * `| undefined`: a caller that genuinely cannot establish identity yet must
+ * say so explicitly with `null`, which already fails closed correctly (see
+ * `isForeignAccountList`'s doc comment) rather than by accidental omission.
  */
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  email?: string | null,
+  userId: string | null,
 ): string | undefined {
-  return (
-    state.accountId ??
-    resolveDefaultCreatableAccountId(creatableAccounts, email) ??
-    undefined
-  );
+  if (isForeignAccountList(creatableAccounts, userId)) {
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
+  }
+  const resolved =
+    state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
+  if (resolved === undefined) return undefined;
+  const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
+  if (!isCreatable) {
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
+  }
+  return resolved;
 }
 
 /** The exact `POST /projects/provision` request body for one create attempt. */
@@ -117,10 +160,11 @@ export function buildCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string,
+  userId: string | null,
 ): Record<string, unknown> {
   return {
     ...buildProvisionPayload(state),
-    account_id: resolveTargetAccountId(state, creatableAccounts),
+    account_id: resolveTargetAccountId(state, creatableAccounts, userId),
     idempotency_key: idempotencyKey,
   };
 }
@@ -139,16 +183,21 @@ export function buildCreatePayload(
 export function buildGitHubCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
+  userId: string | null,
 ): CreateProjectRepoInput {
-  return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts));
+  return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /** The `POST /projects/link-repository` body. Same account resolution. */
 export function buildGitHubImportPayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
+  userId: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts));
+  return buildLinkRepositoryPayload(
+    state,
+    resolveTargetAccountId(state, creatableAccounts, userId),
+  );
 }
 
 /**
@@ -198,7 +247,9 @@ export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
   if (isProjectLimitError(error)) {
-    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+    return (
+      message || "This account has reached its plan's workspace limit. Upgrade to create another."
+    );
   }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
@@ -247,7 +298,7 @@ export function messageFor(error: unknown): string {
  * - `403` (wrong account / insufficient role) — retryable. Role and account
  *   membership are external state that CAN genuinely change between the
  *   failure and a later click, and `retry` re-closes over `creatableAccounts`
- *   (`useCreateWorkspace`'s own `['accounts']` query), which is refetched —
+ *   (`useCreateWorkspace`'s own `useAccountsList()` query), which is refetched —
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
@@ -512,19 +563,32 @@ async function runSourceAttempt(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string | null,
+  // `string | null`, not `| undefined`: normalized once at the `runCreate`
+  // call site below so every `build*Payload` this function calls receives
+  // the same required, non-omittable identity argument they now require.
+  userId: string | null,
   client: CreateOrchestrationClient,
 ): Promise<KortixProject> {
   if (state.source === 'github-create') {
-    return client.createGitHubRepoProject(buildGitHubCreatePayload(state, creatableAccounts));
+    return client.createGitHubRepoProject(
+      buildGitHubCreatePayload(state, creatableAccounts, userId),
+    );
   }
   if (state.source === 'github-import') {
-    return client.importGitHubRepoProject(buildGitHubImportPayload(state, creatableAccounts));
+    return client.importGitHubRepoProject(
+      buildGitHubImportPayload(state, creatableAccounts, userId),
+    );
   }
   if (!idempotencyKey) {
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
   return client.runCreateAttempt(
-    buildCreatePayload(state, creatableAccounts, idempotencyKey) as unknown as ProvisionProjectInput,
+    buildCreatePayload(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId,
+    ) as unknown as ProvisionProjectInput,
   );
 }
 
@@ -578,7 +642,13 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, client);
+    const project = await runSourceAttempt(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId ?? null,
+      client,
+    );
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
@@ -598,7 +668,8 @@ export async function runCreate(
  * only wires it to the live `queryClient`/`router`/`user` and to component
  * state.
  *
- * Fetches `['accounts']` itself — the same cache entry `new-workspace-page.tsx`,
+ * Reads the account list itself — the same user-scoped cache entry
+ * `new-workspace-page.tsx`,
  * `WorkspaceSwitcher` and `AccountSwitcher` already read — rather than taking
  * `creatableAccounts` as a parameter, so this hook can resolve the create's
  * target account (`resolveTargetAccountId`) without a second, page-specific
@@ -623,7 +694,7 @@ export function useCreateWorkspace(): {
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
-  const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: listAccounts, staleTime: 60_000 });
+  const accountsQuery = useAccountsList();
   const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 const nextConfig = readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
 

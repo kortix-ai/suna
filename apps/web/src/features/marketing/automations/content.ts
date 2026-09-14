@@ -1,3 +1,7 @@
+import { AGENT_AUTOMATION_TRANSLATION_KEYS } from '@/i18n/agent-automation-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/automations` copy.
  *
@@ -275,3 +279,11 @@ export const closing = {
   ctaSecondary: 'Read the trigger docs',
   ctaSecondaryHref: '/docs/connect/triggers',
 } as const;
+
+export function getLocalizedAutomationsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, types, schedule, declared, webhook, session, review, closing },
+    tI18nComplete,
+    AGENT_AUTOMATION_TRANSLATION_KEYS,
+  );
+}

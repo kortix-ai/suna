@@ -30,19 +30,13 @@ const SPACING: Record<NonNullable<SectionProps['spacing']>, string> = {
   loose: 'mt-14',
 };
 
-export function Section({
-  label,
-  action,
-  spacing = 'default',
-  className,
-  children,
-}: SectionProps) {
+export function Section({ label, action, spacing = 'default', className, children }: SectionProps) {
   return (
     <section className={cn(SPACING[spacing], 'first:mt-0', className)}>
       {(label || action) && (
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex items-center justify-between">
           {label && (
-            <h3 className="text-xs uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold">
+            <h3 className="text-muted-foreground/60 text-xs font-semibold tracking-[0.08em] uppercase">
               {label}
             </h3>
           )}

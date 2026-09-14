@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `HtmlPreview` — an HTML file, shown the only way an HTML file can be shown.
  *
@@ -61,6 +62,7 @@ export function HtmlPreview({
    *  session panel would show anyway. */
   pendingLabel?: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { url, status, retry } = useStaticFilePreview(path);
 
   // Never a dead end: the server may simply be slower than the bound, and the
@@ -81,12 +83,10 @@ export function HtmlPreview({
         )}
       >
         <FileWarning className="h-5 w-5 opacity-40" />
-        <p className="max-w-xs text-xs opacity-60">
-          {"Couldn't reach the preview server. The sandbox may still be starting up."}
-        </p>
+        <p className="max-w-xs text-xs opacity-60">{tI18nComplete.raw('texte65afdeb4024')}</p>
         <Button variant="outline" size="sm" onClick={retry}>
           <RotateCcw className="h-3.5 w-3.5" />
-          Retry
+          {tI18nComplete.raw('text942087cc2d41')}
         </Button>
       </div>
     );

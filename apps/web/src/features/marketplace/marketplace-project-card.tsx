@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowRightIcon as ArrowRight, CubeIcon as Boxes } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import type { MarketplaceItem } from '@/lib/marketplace-client';
@@ -27,6 +28,7 @@ export function MarketplaceProjectCard({
   item: MarketplaceItem;
   size?: 'default' | 'featured';
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
   const featured = size === 'featured';
   const banner = projectBannerClass(item.name || item.id);
@@ -78,7 +80,7 @@ export function MarketplaceProjectCard({
             </span>
           </span>
           <span className="text-foreground group-hover:text-kortix-blue inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors">
-            Install
+            {tI18nComplete.raw('text569ca49f4aaf')}
             <ArrowRight className="size-3.5 transition-transform duration-150 group-hover:translate-x-0.5" />
           </span>
         </div>

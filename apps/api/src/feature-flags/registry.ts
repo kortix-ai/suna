@@ -40,7 +40,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "review_center"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_worker"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -188,19 +188,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'propagateLlmGatewayModeToActiveSandboxes.',
   },
   {
-    key: 'review_center',
-    name: 'Review Center',
-    description:
-      'A friendly inbox for change requests, approvals, and agent outputs — review and act (approve, reject, ask for changes) from one place, on the web or from Slack. The surface and what feeds it are still expanding.',
-    stability: 'experimental',
-    // Pure web/DB surface — the routes + table ship with the app, so no operator
-    // env gates it. Always available; a project opts in per Settings.
-    available: () => true,
-    // Explicit opt-in: hidden unless a project enables it in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'meta_agent',
     name: 'Meta Agent',
     description:
@@ -264,14 +251,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'secrets_egress',
     name: 'Network-Enforced Secrets',
     description:
-      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment. Still in testing — enable it to try handle substitution across providers.',
+      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment and the "Enforce at the network" option is hidden.',
     stability: 'experimental',
     available: () => true,
-    // Off by default. Until a project opts in, a new secret can only be an
-    // environment variable (the value loads into the sandbox) or disabled — the
-    // "Enforce at the network" option is hidden and the write routes refuse to
-    // move a secret into egress delivery.
-    platformDefault: () => false,
+    // On by default (Marko, 2026-09-03). The OPTION is available; a new secret
+    // still defaults to an environment variable — enforcing at the network is
+    // a per-secret choice. A project that turns the flag off hides the option
+    // and the write routes refuse to move a secret into egress delivery.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'No dedicated routes. The secret write paths (POST /secrets and PUT ' +

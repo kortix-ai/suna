@@ -69,13 +69,22 @@ describe.skipIf(!dockerAvailable)('local warm-session index repair — real Post
     if (!port) throw new Error('Disposable PostgreSQL did not publish a port');
     databaseUrl = `postgresql://postgres:test@127.0.0.1:${port}/testdb`;
 
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
       const probe = Bun.spawnSync(
+        // OVER TCP (-h), never the default unix socket. The postgres image runs
+        // a TEMPORARY server during initdb that listens on the SOCKET ONLY, so
+        // a socket probe goes green while that one is up — and the real
+        // server's restart then fails the very next statement with
+        // "connection to server on socket ... No such file or directory".
+        // A TCP probe cannot see the temporary server at all, so passing it
+        // means the real one is up.
         [
           'docker',
           'exec',
           container,
           'psql',
+          '-h',
+          '127.0.0.1',
           '-U',
           'postgres',
           '-d',

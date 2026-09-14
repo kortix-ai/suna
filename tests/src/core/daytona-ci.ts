@@ -12,7 +12,7 @@ import {
 } from './platinum-ci';
 
 export const DAYTONA_CI_SNAPSHOT_VERSION = 'v4';
-const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v3';
+const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v4';
 
 const POLL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 45 * 60_000;

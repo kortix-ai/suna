@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
@@ -18,6 +19,7 @@ export function usePipedreamConnectProject(
   slug: string,
   onConnected: () => void,
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
       let connectionId: string | null = null;
@@ -39,7 +41,7 @@ export function usePipedreamConnectProject(
     },
     onSuccess: (result) => {
       if (!result.connected) return;
-      successToast('Project connection created');
+      successToast(tI18nComplete.raw('textf04f9fcae903'));
       onConnected();
     },
     onError: (error: Error) => errorToast(error.message),

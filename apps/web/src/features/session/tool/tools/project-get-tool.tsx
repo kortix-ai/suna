@@ -1,4 +1,5 @@
 'use client';
+
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -11,9 +12,11 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { FolderIcon as Folder } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const name = (input.name as string) || '';
@@ -25,7 +28,7 @@ export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Folder className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Workspace Details',
+        title: tI18nComplete.raw('textfb0b45908d60'),
         subtitle: name || 'Fetching...',
       }}
       defaultOpen={defaultOpen}
@@ -38,7 +41,7 @@ export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
           <OutputBlock text={output} />
         ) : (
           <div className="p-3">
-            <TextShimmer>Loading...</TextShimmer>
+            <TextShimmer>{tI18nComplete.raw('text47d2a515ef2f')}</TextShimmer>
           </div>
         )}
       </div>

@@ -1,17 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
-import { ActionNavigator } from '../shared/action-navigator';
-import {
-  CaretLeftIcon as ChevronLeft,
-  CaretRightIcon as ChevronRight,
-} from '@phosphor-icons/react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
+import { ActionNavigator } from '../shared/action-navigator';
 import { collectToolParts } from '../shared/collect-tool-parts';
 
 /**

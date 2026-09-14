@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The fallback destination for a file-path click on a surface with NO session
  * side panel — the dashboard, project pages, anywhere outside a session.
@@ -38,14 +39,16 @@ const NO_OP = () => {};
  * explorer surfaces, not to this panel-less fallback.
  */
 function HistoryContent(_props: { filePath: string; onClose: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-2 p-6 text-center">
-      <p className="text-muted-foreground text-xs">Version history isn&apos;t available here.</p>
+      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texte5789ce1b021')}</p>
     </div>
   );
 }
 
 export function AppFilePreviewHost() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isOpen = useFilePreviewStore((s) => s.isOpen);
   const filePath = useFilePreviewStore((s) => s.filePath);
   const closePreview = useFilePreviewStore((s) => s.closePreview);
@@ -67,7 +70,7 @@ export function AppFilePreviewHost() {
       HistoryContent={HistoryContent}
       renderFileIcon={(name) =>
         getFileIcon(name, {
-          className: 'h-4 w-4 shrink-0 text-muted-foreground',
+          className: tI18nComplete.raw('text8db7e9afa45d'),
           variant: 'monochrome',
         })
       }

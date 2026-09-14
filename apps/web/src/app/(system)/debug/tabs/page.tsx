@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 /**
@@ -40,18 +41,21 @@ function Strip({ testId }: { testId: string }) {
 }
 
 export default function DebugTabsPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   return (
     <div className="bg-background min-h-screen space-y-6 p-8">
       <div>
-        <p className="text-muted-foreground mb-2 text-xs">Inline (never scaled) — the reference</p>
+        <p className="text-muted-foreground mb-2 text-xs">
+          {tI18nComplete.raw('text69020faeaf20')}
+        </p>
         <Strip testId="inline-strip" />
       </div>
-      <Button onClick={() => setOpen(true)}>Open dialog</Button>
+      <Button onClick={() => setOpen(true)}>{tI18nComplete.raw('textda906414ef1b')}</Button>
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent>
           <ModalHeader>
-            <ModalTitle>Models</ModalTitle>
+            <ModalTitle>{tI18nComplete.raw('textd17d2d78d76e')}</ModalTitle>
           </ModalHeader>
           <Strip testId="modal-strip" />
         </ModalContent>

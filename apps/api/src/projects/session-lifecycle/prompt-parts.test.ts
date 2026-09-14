@@ -67,6 +67,97 @@ describe('sanitizeInboxPromptParts', () => {
     expect('error' in result).toBe(false);
   });
 
+  test('accepts a staged ZIP data URL for runtime materialization', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    });
+  });
+
+  test('rejects a remote ZIP before it can poison model history', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'https://files.example.test/bundle.zip',
+        },
+      ]),
+    ).toEqual({
+      error: 'file "bundle.zip" must be uploaded before it can be sent',
+    });
+  });
+
+  test('rejects a MIME mismatch inside a staged data URL', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:text/plain;base64,SGVsbG8=',
+        },
+      ]),
+    ).toEqual({ error: 'file "bundle.zip" has inconsistent MIME metadata' });
+  });
+
+  test('rejects malformed base64 before admitting a staged non-native file', () => {
+    for (const url of [
+      'data:application/zip;base64,%%%= ',
+      'data:application/zip;base64,UEs=DBA=',
+      'data:application/zip;base64,UEsDBA==junk',
+    ]) {
+      expect(
+        sanitizeInboxPromptParts([
+          {
+            type: 'file',
+            mime: 'application/zip',
+            filename: 'bundle.zip',
+            url,
+          },
+        ]),
+      ).toEqual({ error: 'file "bundle.zip" has malformed staged data' });
+    }
+  });
+
+  test('stores canonical MIME and data URL values after accepting surrounding whitespace', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: '  application/zip  ',
+          filename: 'bundle.zip',
+          url: '  data:application/zip;base64,UEsDBA==  ',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    });
+  });
+
   test('caps the serialized payload — a durable row is a Postgres row, not a blob store', () => {
     // One oversized data-URL part. The cap exists so a first-prompt attachment
     // can ride the inbox as a data URL while an unbounded upload cannot wedge
@@ -89,4 +180,23 @@ describe('flattenPromptText', () => {
       ]),
     ).toBe('a\nb');
   });
+});
+
+// A native file staged as a data: URL is parsed at the door. Over the inline
+// budget the drain materializes it, and a malformed one that slipped past the
+// sanitizer failed at every drain instead of as a 400 here (review, 2026-09-05).
+test('a malformed staged native image is refused at the door', () => {
+  const out = sanitizeInboxPromptParts([
+    { type: 'text', text: 'hi' },
+    { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'data:image/jpeg;base64,not*base64' },
+  ]);
+  expect('error' in out).toBe(true);
+});
+
+test('a native image that is a remote URL is still admitted', () => {
+  const out = sanitizeInboxPromptParts([
+    { type: 'text', text: 'hi' },
+    { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'https://box.test/p.jpg' },
+  ]);
+  expect('error' in out).toBe(false);
 });

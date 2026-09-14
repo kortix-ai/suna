@@ -1,6 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ interface FilesystemScopeEditorProps {
 
 export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const maxFileSizeOptions = useLocalizedUiCatalog(MAX_FILE_SIZE_OPTIONS);
   const [pathInput, setPathInput] = useState('');
   const [excludeInput, setExcludeInput] = useState('');
   const [excludesOpen, setExcludesOpen] = useState((scope.excludePatterns?.length ?? 0) > 0);
@@ -77,7 +79,9 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
     <div className="space-y-4">
       {/* Operations */}
       <div className="space-y-2">
-        <Label className="text-muted-foreground text-xs font-medium">Operations</Label>
+        <Label className="text-muted-foreground text-xs font-medium">
+          {tHardcodedUi.raw('i18nComplete.text358cc201f87d')}
+        </Label>
         <div className="flex flex-wrap gap-3">
           {ALL_OPERATIONS.map((op) => (
             <label key={op} className="flex cursor-pointer items-center gap-1.5">
@@ -121,8 +125,8 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPath())}
-            placeholder="/home/user/projects"
-            aria-label="Allowed path"
+            placeholder={tHardcodedUi.raw('i18nComplete.textf4d2550a2cc7')}
+            aria-label={tHardcodedUi.raw('i18nComplete.text20f1619cdd29')}
             className="bg-background placeholder:text-muted-foreground focus:ring-primary/20 flex-1 rounded-2xl border px-2.5 py-1.5 text-sm focus:ring-2 focus:outline-none"
           />
           <Button variant="outline" size="sm" onClick={addPath} disabled={!pathInput.trim()}>
@@ -207,7 +211,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {MAX_FILE_SIZE_OPTIONS.map((opt) => (
+            {maxFileSizeOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>

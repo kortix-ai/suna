@@ -8,7 +8,7 @@
  *
  * | Bound   | Value          | Why                                              |
  * |---------|----------------|--------------------------------------------------|
- * | default | 16rem / 256px  | ~20% of a 1280px viewport — one session title fits on one line |
+ * | default | 20rem / 320px  | 25% of a 1280px viewport — one session title fits on one line |
  * | min     | 13rem / 208px  | below this the session rows truncate to nothing   |
  * | max     | 26rem / 416px  | above this the panel stops reading as a rail      |
  * | cap     | 32% of the viewport | the panel may never own a third of the screen |
@@ -19,8 +19,8 @@
  * inverted range.
  */
 
-/** Default docked width. Keep in sync with `SIDEBAR_WIDTH` (`16rem`). */
-export const SIDEBAR_WIDTH_PX = 256;
+/** Default docked width. Keep in sync with `SIDEBAR_WIDTH` (`20rem`). */
+export const SIDEBAR_WIDTH_PX = 320;
 export const SIDEBAR_MIN_WIDTH_PX = 208;
 export const SIDEBAR_MAX_WIDTH_PX = 416;
 /** The panel may never own more than this fraction of the viewport. */

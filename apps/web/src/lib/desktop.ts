@@ -17,8 +17,7 @@ export const DESKTOP_UA_TOKEN = 'KortixDesktop';
  * same pattern as the CLI's `/install`. Override with
  * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
  */
-export const DESKTOP_DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
+export const DESKTOP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
 
 /**
  * Build a per-platform download URL, e.g. desktopDownloadUrl('macos') →
@@ -218,7 +217,11 @@ export function getDesktopZoom(): number {
 }
 
 async function invokeSetZoom(scale: number): Promise<void> {
-  const t = (window as unknown as { __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } } }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
     await t.core.invoke('set_zoom', { scale });
@@ -231,10 +234,7 @@ export async function setDesktopZoom(scale: number): Promise<number> {
   const next = clampZoom(scale);
   try {
     // Stamped with the base it was chosen against — see readStoredZoom.
-    window.localStorage.setItem(
-      ZOOM_KEY,
-      JSON.stringify({ scale: next, base: DESKTOP_BASE_ZOOM }),
-    );
+    window.localStorage.setItem(ZOOM_KEY, JSON.stringify({ scale: next, base: DESKTOP_BASE_ZOOM }));
   } catch {
     /* private mode */
   }
@@ -265,9 +265,11 @@ export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
 function tauriInvoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> | null {
   if (typeof window === 'undefined') return null;
-  const t = (window as unknown as {
-    __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
-  }).__TAURI__;
+  const t = (
+    window as unknown as {
+      __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
+    }
+  ).__TAURI__;
   if (!t?.core?.invoke) return null;
   return t.core.invoke(cmd, args) as Promise<T>;
 }

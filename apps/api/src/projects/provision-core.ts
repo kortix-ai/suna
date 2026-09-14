@@ -38,6 +38,7 @@ import {
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
 import { config } from '../config';
+import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -326,26 +327,54 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       isPrivate: true,
     });
   } catch (error) {
-    return { status: 502, body: { error: (error as Error).message || 'Failed to provision managed repo' } };
+    // Loud, structured, and BEFORE the 502: this was silent from 2026-08-30 to
+    // 2026-09-07 while every prod provision died here (a rotated managed-git
+    // PAT without Administration:write → GitHub 403). Only the response body
+    // carried the reason, and the edge worker of the day replaced that body
+    // with a maintenance page. The log line is what Better Stack alerts on.
+    const message = (error as Error).message || 'Failed to provision managed repo';
+    appLogger.error('[projects] provision create_repo failed', {
+      stage: 'create_repo',
+      provider,
+      projectId,
+      accountId: scope.accountId,
+      slug: repoSlug,
+      message,
+    });
+    return { status: 502, body: { error: message } };
   }
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';
   const now = new Date();
 
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). `kortix ship` leaves this false and
-  // pushes its own files instead (apps/cli/src/commands/ship.ts) — a plain,
-  // non-force push, so seeding that repo would reject it. Resolved BEFORE the
-  // insert so the row records the INTENT: a crash between the insert and a
-  // verified seed then leaves `{ expected: true, seeded: false }`, which
-  // `shouldSelfHealManagedRepoSeed` repairs on next access instead of leaving a
-  // permanently dead project that reports itself active.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
+  // A PROJECT ALWAYS HAS A MANIFEST. Seeding is the DEFAULT, not an opt-in.
+  //
+  // `seed_starter` chooses WHO supplies the scaffold — the server here, or a
+  // client that is about to push its own `kortix init` output — never WHETHER
+  // the project gets one. It used to default to false, so a caller who said
+  // nothing (a bare `POST /v1/projects/provision`, an agent, any integration)
+  // got a repo with no kortix.yaml, no agents and no skills, recorded as
+  // `caller_opted_out` so the self-heal skipped it permanently. See
+  // ./managed-repo-seed.ts for the full rule.
+  //
+  // The one opt-out is an EXPLICIT `seed_starter: false` (`kortix ship`, which
+  // pushes its own history with a plain non-force push that a seeded repo would
+  // reject). Even that records `expected: true` with `client_owns_first_commit`,
+  // so a client that never pushes is repaired on next access by
+  // `shouldSelfHealManagedRepoSeed` instead of being left permanently blank —
+  // and the repair re-checks `remoteBranchExists`, so it is a no-op once the
+  // client HAS pushed.
+  //
+  // Resolved BEFORE the insert so the row records the INTENT: a crash between
+  // the insert and a verified seed leaves `{ expected: true, seeded: false }`,
+  // which the same repair path fixes.
+  const clientOwnsFirstCommit = body.seed_starter === false || body.seedStarter === false;
+  const seedStarter = !clientOwnsFirstCommit || !!sourceItemId;
   const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   const initialSeedState = buildManagedRepoSeedState(
     seedStarter
       ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
-      : { seeded: false, expected: false, reason: 'caller_opted_out', at: now.toISOString() },
+      : { seeded: false, expected: true, reason: 'client_owns_first_commit', at: now.toISOString(), template: starterTemplate },
   );
 
   const insertProjectRow = () => db

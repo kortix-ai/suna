@@ -10,6 +10,7 @@ type Config = {
 let databaseConfig: Config;
 let edgeConfig: Config | null;
 let databaseReadFails = false;
+let edgeReadFails = false;
 let events: string[] = [];
 
 mock.module('@kortix/sdk', () => ({
@@ -29,6 +30,7 @@ mock.module('@vercel/edge-config', () => ({
   createClient: () => ({
     get: async (_key: string, options?: { consistentRead?: boolean }) => {
       events.push(options?.consistentRead ? 'edge-read-consistent' : 'edge-read');
+      if (edgeReadFails) throw new Error('Edge Config unavailable');
       return edgeConfig;
     },
   }),
@@ -39,11 +41,17 @@ process.env.EDGE_CONFIG = 'https://edge-config.example.test?token=redacted';
 process.env.EDGE_CONFIG_ID = 'ecfg_test';
 process.env.VERCEL_API_TOKEN = 'vercel-test-token';
 
-const { getMaintenanceConfig, setMaintenanceConfig, __resetMaintenanceCacheForTests } =
-  await import('./maintenance-store');
+const {
+  getEdgeMaintenanceConfig,
+  getMaintenanceConfig,
+  setMaintenanceConfig,
+  __resetEdgeMaintenanceMemoryForTests,
+  __resetMaintenanceCacheForTests,
+} = await import('./maintenance-store');
 
 beforeEach(() => {
   __resetMaintenanceCacheForTests();
+  __resetEdgeMaintenanceMemoryForTests();
   databaseConfig = {
     level: 'none',
     title: '',
@@ -57,6 +65,7 @@ beforeEach(() => {
     updatedAt: 'edge-old',
   };
   databaseReadFails = false;
+  edgeReadFails = false;
   events = [];
   globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     events.push('edge-write');
@@ -145,6 +154,52 @@ describe('maintenance store', () => {
     expect(b).toEqual(databaseConfig);
     expect(c).toEqual(databaseConfig);
     expect(events.filter((event) => event === 'database-read')).toHaveLength(1);
+  });
+
+  // ── Independent edge write gate (`GET /api/maintenance/edge`) ──────────
+  //
+  // The api-router worker reads this route as `MAINTENANCE_STATE_URL` and, on
+  // `level: 'blocking'`, answers every non-read-only request to api.kortix.com
+  // with a 503 carrying `config.message`. These tests pin that only a REAL
+  // admin state can produce that lockdown.
+
+  test('edge gate reports the stored Edge Config state', async () => {
+    const config = await getEdgeMaintenanceConfig();
+
+    expect(config).toEqual(edgeConfig);
+  });
+
+  test('edge gate stays open when the Edge Config key is absent', async () => {
+    edgeConfig = null;
+
+    const config = await getEdgeMaintenanceConfig();
+
+    // No admin has ever written the key. That is normal operation, not a
+    // lockdown — returning `blocking` here 503'd every production write.
+    expect(config.level).toBe('none');
+  });
+
+  test('edge gate stays open when the Edge Config read throws with nothing cached', async () => {
+    edgeReadFails = true;
+
+    const config = await getEdgeMaintenanceConfig();
+
+    // Better Stack, Kortix Frontend prod: this path produced 1,000+
+    // `ApiError: Kortix is temporarily unavailable. Service will resume
+    // automatically.` with no admin action behind it.
+    expect(config.level).toBe('none');
+    expect(config.message).toBe('');
+  });
+
+  test('edge gate keeps a real admin lockdown across a transient read failure', async () => {
+    const locked = await getEdgeMaintenanceConfig();
+    expect(locked.level).toBe('blocking');
+
+    edgeReadFails = true;
+    const duringBlip = await getEdgeMaintenanceConfig();
+
+    // An admin really did set `blocking`; a failed read must not undo it.
+    expect(duringBlip).toEqual(locked);
   });
 
   test('setMaintenanceConfig invalidates the cache immediately', async () => {

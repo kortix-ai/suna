@@ -124,8 +124,7 @@ export function draftFromOverrides(
 }
 
 export type OverridesPatchResult =
-  | { ok: true; patch: AdminEntitlementOverridePatch }
-  | { ok: false; error: string };
+  { ok: true; patch: AdminEntitlementOverridePatch } | { ok: false; error: string };
 
 const NUMERIC_LABEL: Record<NumericOverrideKey, string> = {
   maxConcurrentSessions: 'Max concurrent sessions',

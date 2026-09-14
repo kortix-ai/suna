@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { identity } from './content';
+import { getLocalizedSecurityContent } from './content';
 
 /**
  * The permission model in one picture: a principal, an action, a resource type.
@@ -47,10 +48,12 @@ function Chip({ children, strong }: { children: ReactNode; strong?: boolean }): 
 }
 
 export function PermissionMatrix(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { identity } = getLocalizedSecurityContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       <div className="grid lg:grid-cols-[1fr_auto_1fr]">
-        <Cell label="principal">
+        <Cell label={tI18nComplete.raw('text69e03750027e')}>
           {identity.matrix.principals.map((p) => (
             <Chip key={p} strong>
               {p}
@@ -61,11 +64,11 @@ export function PermissionMatrix(): ReactNode {
         {/* the joint: what a policy actually is */}
         <div className="border-border relative flex items-center justify-center border-t px-5 py-4 lg:border-x lg:border-t-0 lg:px-8">
           <span className="text-muted-foreground/60 font-mono text-[11px] tracking-widest uppercase">
-            may
+            {tI18nComplete.raw('textee4d988c65de')}
           </span>
         </div>
 
-        <Cell label="resource type" className="border-t lg:border-t-0">
+        <Cell label={tI18nComplete.raw('text35e1c63be11a')} className="border-t lg:border-t-0">
           {identity.matrix.resources.map((r) => (
             <Chip key={r}>{r}</Chip>
           ))}

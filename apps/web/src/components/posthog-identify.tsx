@@ -1,8 +1,8 @@
 'use client';
 
+import { createClient } from '@/lib/supabase/client';
 import posthog from 'posthog-js';
 import { useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 
 export const PostHogIdentify = () => {
   useEffect(() => {

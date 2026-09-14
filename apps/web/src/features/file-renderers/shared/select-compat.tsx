@@ -9,14 +9,14 @@
 // Radix version, so this shim just accepts (and drops) those two props for
 // API parity instead of widening the app-wide select component or pulling
 // in `@base-ui/react`.
-import * as React from 'react';
 import {
-  Select as SelectPrimitive,
   SelectContent as SelectContentPrimitive,
   SelectItem,
+  Select as SelectPrimitive,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import * as React from 'react';
 
 export { SelectItem, SelectTrigger, SelectValue };
 
@@ -32,6 +32,9 @@ type SelectContentCompatProps = React.ComponentProps<typeof SelectContentPrimiti
   alignItemWithTrigger?: boolean;
 };
 
-export function SelectContent({ alignItemWithTrigger: _alignItemWithTrigger, ...props }: SelectContentCompatProps) {
+export function SelectContent({
+  alignItemWithTrigger: _alignItemWithTrigger,
+  ...props
+}: SelectContentCompatProps) {
   return <SelectContentPrimitive {...props} />;
 }

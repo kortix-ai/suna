@@ -6,12 +6,8 @@ import { classifyLandingTerminal, ProjectStartEmpty } from './landing-terminal';
 
 describe('classifyLandingTerminal', () => {
   test('a member without PROJECT_CREATE is no-permission, suppression or not', () => {
-    expect(classifyLandingTerminal({ canCreate: false, suppressed: false })).toBe(
-      'no-permission',
-    );
-    expect(classifyLandingTerminal({ canCreate: false, suppressed: true })).toBe(
-      'no-permission',
-    );
+    expect(classifyLandingTerminal({ canCreate: false, suppressed: false })).toBe('no-permission');
+    expect(classifyLandingTerminal({ canCreate: false, suppressed: true })).toBe('no-permission');
   });
 
   test('an owner/admin who just archived their last workspace is suppressed', () => {

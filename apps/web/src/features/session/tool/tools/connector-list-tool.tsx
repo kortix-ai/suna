@@ -1,4 +1,5 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
 import {
   BasicTool,
@@ -12,11 +13,13 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { type ConnectorEntry, parseConnectorListOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const filter = (input.filter as string) || '';
@@ -29,7 +32,7 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Connected apps',
+        title: tI18nComplete.raw('textc023d120dd17'),
         subtitle: filter
           ? `Filter: ${filter}`
           : `${connectors.length} connector${connectors.length !== 1 ? 's' : ''}`,
@@ -61,11 +64,11 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
         <ToolOutputFallback output={output} toolName="connector_list" />
       ) : output ? (
         <ToolResultCard>
-          <ToolEmptyState message="No connectors found." />
+          <ToolEmptyState message={tI18nComplete.raw('textd4f603db3f57')} />
         </ToolResultCard>
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message="Loading connectors…" />
+          <ToolEmptyState message={tI18nComplete.raw('text47c3d9d2f5c7')} />
         </ToolResultCard>
       )}
     </BasicTool>

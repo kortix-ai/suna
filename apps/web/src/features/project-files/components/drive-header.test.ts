@@ -50,9 +50,7 @@ function bandVarPx(name: string, scope: 'macos' | 'other'): number {
 }
 
 const headerSource = readFileSync(join(import.meta.dir, 'drive-header.tsx'), 'utf8');
-const headerCode = headerSource
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/^[ \t]*\/\/.*$/gm, '');
+const headerCode = headerSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const capabilityTabsSource = readFileSync(
   join(repoRoot, 'apps/web/src/features/workspace/capabilities/shared/capability-tabs.tsx'),

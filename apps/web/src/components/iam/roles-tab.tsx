@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // Roles tab on the account page. ONE list: every role the account has,
 // built-in and custom, in the shared `AccessList`/`AccessRow` dialect — plus
 // the capability-matrix create/edit dialog (custom roles deactivate
@@ -19,6 +20,7 @@
 // under an "Advanced" disclosure. The wire format is unchanged — it still sends
 // the same leaf strings.
 
+import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   CopyIcon as Copy,
   EyeIcon as Eye,
@@ -28,7 +30,6 @@ import {
   ShieldIcon as Shield,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
-import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -73,8 +74,6 @@ import {
   builtinRoleDescriptor,
   pluralize,
 } from '@/features/workspace/shared/access';
-import type { AccountRole, ProjectRole } from '@kortix/sdk';
-import { RoleCapabilityMatrix } from './role-capability-matrix';
 import {
   type IamRole,
   type ResourceType,
@@ -87,6 +86,8 @@ import {
   updateRole,
   updateRolePermissions,
 } from '@/lib/iam-client';
+import type { AccountRole, ProjectRole } from '@kortix/sdk';
+import { RoleCapabilityMatrix } from './role-capability-matrix';
 
 interface RolesTabProps {
   accountId: string;
@@ -106,20 +107,21 @@ interface RolePrefill {
 }
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openDemo = useRequestDemo();
   return (
     <div className="space-y-6">
       {canManage && !rbacEnabled && (
         <InfoBanner
           tone="info"
-          title="Enterprise feature"
+          title={tI18nComplete.raw('text9d48410d14d3')}
           action={
             <Button
               variant="outline"
               size="sm"
               onClick={() => openDemo({ source: 'accounts-roles' })}
             >
-              Contact sales
+              {tI18nComplete.raw('text604abea32b49')}
             </Button>
           }
         >
@@ -129,10 +131,7 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
       {/* Where the "Custom-role assignments" table used to be. A role is
           defined here and handed out from Members or Projects — say so, so
           nobody hunts for a launcher this tab deliberately no longer has. */}
-      <p className="text-muted-foreground text-xs">
-        Assign roles from Members (account) or Projects (per project). Custom roles appear in the
-        same role picker as built-in ones.
-      </p>
+      <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text019929eebb12')}</p>
       <RolesSection accountId={accountId} canManage={canManage} rbacEnabled={rbacEnabled} />
     </div>
   );
@@ -141,6 +140,7 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
 // ─── Roles list ────────────────────────────────────────────────────────────
 
 function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
   const [editTarget, setEditTarget] = useState<IamRole | null>(null);
@@ -167,17 +167,17 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
     (rbacEnabled ? (
       <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
         <Plus className="size-4" />
-        New role
+        {tI18nComplete.raw('text500f2f9d3956')}
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
           <Button size="sm" variant="secondary" className="gap-1.5" disabled>
             <Plus className="size-4" />
-            New role
+            {tI18nComplete.raw('text500f2f9d3956')}
           </Button>
           <Badge variant="outline" size="sm">
-            Enterprise
+            {tI18nComplete.raw('text3fbe5ed156f1')}
           </Badge>
         </span>
       </Hint>
@@ -193,7 +193,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
     <div className="space-y-4">
       <AccessList
         header={{
-          title: 'Roles',
+          title: tI18nComplete.raw('textc25337055464'),
           count: settled ? roles.length : undefined,
           actions: newRoleButton || undefined,
         }}
@@ -202,11 +202,11 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           <li>
             <ErrorState
               size="sm"
-              title="Failed to load roles"
+              title={tI18nComplete.raw('text9813c7409f4b')}
               description={(rolesQuery.error as Error)?.message}
               action={
                 <Button variant="outline" size="sm" onClick={() => rolesQuery.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -222,8 +222,8 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
             <EmptyState
               icon={Shield}
               size="sm"
-              title="No custom roles yet"
-              description="Create one, then assign it from Members or Projects."
+              title={tI18nComplete.raw('text7ff860eb111a')}
+              description={tI18nComplete.raw('text8ae419f2b5b1')}
               action={newRoleButton}
             />
           </li>
@@ -311,6 +311,7 @@ function RoleRow({
   onDelete: () => void;
   onDuplicate: (prefill: RolePrefill) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isCustom = !role.is_system;
   const queryClient = useQueryClient();
   const [duplicating, setDuplicating] = useState(false);
@@ -347,7 +348,7 @@ function RoleRow({
         actions: perms.actions,
       });
     } catch (err) {
-      errorToast((err as Error)?.message || 'Failed to load role permissions');
+      errorToast((err as Error)?.message || tI18nComplete.raw('textb641eac15b51'));
     } finally {
       setDuplicating(false);
     }
@@ -359,18 +360,22 @@ function RoleRow({
   // backend would 402 (delete is never entitlement-gated — cleanup is always
   // allowed).
   const kebab: KebabItem[] = [
-    { label: 'View capabilities', icon: <Eye className="size-3.5" />, onSelect: onView },
+    {
+      label: tI18nComplete.raw('text08138c207246'),
+      icon: <Eye className="size-3.5" />,
+      onSelect: onView,
+    },
   ];
   if (canManage && isCustom) {
     kebab.push({
-      label: 'Edit',
+      label: tI18nComplete.raw('text464c4ffd019e'),
       icon: <PencilSimpleIcon className="size-3.5" />,
       onSelect: onEdit,
       disabled: !rbacEnabled,
       hint: rbacEnabled ? undefined : RBAC_UPSELL_MESSAGE,
     });
     kebab.push({
-      label: 'Delete role',
+      label: tI18nComplete.raw('textac18d11a2f26'),
       icon: <Trash2 className="size-3.5" />,
       onSelect: onDelete,
       variant: 'destructive',
@@ -380,7 +385,7 @@ function RoleRow({
   if (canManage && !isCustom) {
     // "Duplicate" is the documented path to "manager minus X".
     kebab.push({
-      label: 'Duplicate',
+      label: tI18nComplete.raw('text02cdaabfca80'),
       icon: <Copy className="size-3.5" />,
       onSelect: handleDuplicate,
       disabled: !rbacEnabled,
@@ -403,6 +408,7 @@ function RoleRow({
     : builtinRoleDescriptor(
         role.resource_type === 'account' ? 'account' : 'project',
         (role.key === 'user' ? 'member' : role.key) as AccountRole | ProjectRole,
+        tI18nComplete,
       );
   // Same rule for the NAME: the API calls the project floor role
   // "Member (read + run)", the select and the Help page call it "Member".
@@ -424,20 +430,17 @@ function RoleRow({
       title={title}
       badges={
         role.is_system ? (
-          <Hint
-            label="Built-in roles are managed by Kortix and can't be edited or deleted. Duplicate one to start a custom role."
-            side="top"
-          >
+          <Hint label={tI18nComplete.raw('textc333cb48148a')} side="top">
             <span className="inline-flex">
               <Badge variant="muted" size="sm" className="gap-1 font-normal">
                 <Lock className="size-3" />
-                Built-in
+                {tI18nComplete.raw('text1f43948106d1')}
               </Badge>
             </span>
           </Hint>
         ) : (
           <Badge variant="outline" size="sm" className="font-normal">
-            Custom
+            {tI18nComplete.raw('text494ca78f7374')}
           </Badge>
         )
       }
@@ -455,7 +458,7 @@ function RoleRow({
         </div>
       }
       kebab={kebab}
-      kebabLabel={`Actions for ${title}`}
+      kebabLabel={tI18nComplete('text33da220b1a34', { value0: title })}
       pending={duplicating}
     />
   );
@@ -491,6 +494,7 @@ function RoleDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const isView = mode === 'view';
   const isEdit = mode === 'edit' && !!role;
@@ -553,11 +557,11 @@ function RoleDialog({
         actions: [...selected],
       }),
     onSuccess: () => {
-      successToast('Role created');
+      successToast(tI18nComplete.raw('text4b36ce9864db'));
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to create role'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc49c15ddba4b')),
   });
 
   const updateMutation = useMutation({
@@ -573,7 +577,7 @@ function RoleDialog({
       await updateRolePermissions(accountId, role!.role_id, [...selected]);
     },
     onSuccess: () => {
-      successToast('Role updated');
+      successToast(tI18nComplete.raw('texta172f7fb3563'));
       // A role's PERMISSION SET changed, so every verdict for every principal
       // holding it moved. Nothing here can enumerate them — bust the account.
       void invalidatePermissionProbes(queryClient, { accountId });
@@ -583,7 +587,7 @@ function RoleDialog({
       });
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texte4143613f121')),
   });
 
   const mutation = isEdit ? updateMutation : createMutation;
@@ -601,29 +605,37 @@ function RoleDialog({
     <Modal open={open} onOpenChange={(o) => !isPending && onOpenChange(o)}>
       <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-2xl">
         <ModalHeader>
-          <ModalTitle>{isView ? 'View role' : isEdit ? 'Edit role' : 'New role'}</ModalTitle>
+          <ModalTitle>
+            {isView
+              ? tI18nComplete.raw('text3dc32dfa31f9')
+              : isEdit
+                ? tI18nComplete.raw('texte2afdd4eef04')
+                : tI18nComplete.raw('text500f2f9d3956')}
+          </ModalTitle>
           <ModalDescription>
             {isView
-              ? `What ${role?.name ?? 'this role'} can do — checked capabilities are granted, everything else is deactivated for anyone assigned it.`
-              : 'Pick the capabilities this role grants. Anything left unchecked is deactivated for principals assigned this role.'}
+              ? tI18nComplete('text749f923c962d', {
+                  value0: role?.name ?? tI18nComplete.raw('texte73679634b64'),
+                })
+              : tI18nComplete.raw('text7c30649a46d8')}
           </ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[65vh] space-y-4 overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="role-name">Name</Label>
+              <Label htmlFor="role-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
               <Input
                 id="role-name"
                 value={name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Deploy operator"
+                placeholder={tI18nComplete.raw('text5cb975ae5c6b')}
                 disabled={isPending || isView}
                 autoFocus={!isView}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="role-key">Key</Label>
+              <Label htmlFor="role-key">{tI18nComplete.raw('text99a52df3ff3d')}</Label>
               <Input
                 id="role-key"
                 value={keyValue}
@@ -631,31 +643,29 @@ function RoleDialog({
                   setKeyTouched(true);
                   setKeyValue(e.target.value);
                 }}
-                placeholder="deploy_operator"
+                placeholder={tI18nComplete.raw('textb96d63115850')}
                 disabled={isPending || isEdit || isView}
                 className="font-mono"
               />
               {!isEdit && keyValue.length > 0 && !keyValid && (
-                <p className="text-destructive text-xs">
-                  Lowercase letters, digits and underscores, 2–64 chars.
-                </p>
+                <p className="text-destructive text-xs">{tI18nComplete.raw('textc949fc224fb5')}</p>
               )}
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="role-description">Description (optional)</Label>
+            <Label htmlFor="role-description">{tI18nComplete.raw('textf6cbe2f0c1f8')}</Label>
             <Textarea
               id="role-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What this role is for"
+              placeholder={tI18nComplete.raw('text979f4dd1cea4')}
               disabled={isPending || isView}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="role-resource-type">Applies to</Label>
+            <Label htmlFor="role-resource-type">{tI18nComplete.raw('text6687458beee5')}</Label>
             <Select
               value={resourceType}
               onValueChange={(v) => {
@@ -668,19 +678,19 @@ function RoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="project">Project</SelectItem>
-                <SelectItem value="account">Account</SelectItem>
+                <SelectItem value="project">{tI18nComplete.raw('text985959785319')}</SelectItem>
+                <SelectItem value="account">{tI18nComplete.raw('text7e1b0d5641f2')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {matrixError ? (
             <div className="space-y-2">
-              <Label>Capabilities</Label>
+              <Label>{tI18nComplete.raw('text9460f16ac9b5')}</Label>
               <div className="bg-popover rounded-md border px-4 py-3">
                 <ErrorState
                   size="sm"
-                  title="Failed to load capabilities"
+                  title={tI18nComplete.raw('text72934bcb9486')}
                   description={((actionsQuery.error || permsQuery.error) as Error)?.message}
                   action={
                     <Button
@@ -691,7 +701,7 @@ function RoleDialog({
                         if (hasExistingRole) permsQuery.refetch();
                       }}
                     >
-                      Retry
+                      {tI18nComplete.raw('text942087cc2d41')}
                     </Button>
                   }
                 />
@@ -699,7 +709,7 @@ function RoleDialog({
             </div>
           ) : matrixLoading ? (
             <div className="space-y-2">
-              <Label>Capabilities</Label>
+              <Label>{tI18nComplete.raw('text9460f16ac9b5')}</Label>
               <Skeleton className="h-64 w-full rounded-md" />
             </div>
           ) : (
@@ -723,13 +733,11 @@ function RoleDialog({
             {isView ? 'Close' : 'Cancel'}
           </Button>
           {!isView && (
-            <Button
-              onClick={() => mutation.mutate()}
-              disabled={submitDisabled}
-              className="gap-1.5"
-            >
+            <Button onClick={() => mutation.mutate()} disabled={submitDisabled} className="gap-1.5">
               {isPending && <Loading className="size-4 shrink-0" />}
-              {isEdit ? 'Save changes' : 'Create role'}
+              {isEdit
+                ? tI18nComplete.raw('textdd0ae7a5cbcf')
+                : tI18nComplete.raw('text221163d6e73f')}
             </Button>
           )}
         </ModalFooter>
@@ -749,6 +757,7 @@ function DeleteRoleConfirm({
   role: IamRole;
   onClose: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   const usageQuery = useQuery({
@@ -760,12 +769,12 @@ function DeleteRoleConfirm({
   const deleteMutation = useMutation({
     mutationFn: () => deleteRole(accountId, role.role_id),
     onSuccess: () => {
-      successToast('Role deleted');
+      successToast(tI18nComplete.raw('textccc3a7846d02'));
       void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       onClose();
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to delete role'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texta96e1f43f497')),
   });
 
   const count = usageQuery.data?.policy_count ?? 0;
@@ -777,9 +786,9 @@ function DeleteRoleConfirm({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title="Delete role"
-      description={`This role is used by ${count} ${policies}. Deleting it removes those assignments.`}
-      confirmLabel="Delete"
+      title={tI18nComplete.raw('textac18d11a2f26')}
+      description={tI18nComplete('text8295f8601ed8', { value0: count, value1: policies })}
+      confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
       confirmVariant="destructive"
       isPending={deleteMutation.isPending}
       onConfirm={() => deleteMutation.mutate()}

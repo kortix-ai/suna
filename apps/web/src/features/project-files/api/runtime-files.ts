@@ -11,7 +11,6 @@
  * immutable from this view; users mutate via a session sandbox + commit.
  */
 
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk';
 import type {
   FileContent,
   FileNode,
@@ -20,6 +19,7 @@ import type {
   RuntimeProjectInfo,
   ServerHealth,
 } from '@/features/file-browser/types';
+import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 
@@ -220,10 +220,7 @@ export async function createFile(_filePath: string): Promise<UploadResult[]> {
   throw new Error(READ_ONLY);
 }
 
-export async function copyFile(
-  _sourcePath: string,
-  _destPath: string,
-): Promise<UploadResult[]> {
+export async function copyFile(_sourcePath: string, _destPath: string): Promise<UploadResult[]> {
   throw new Error(READ_ONLY);
 }
 

@@ -3,7 +3,7 @@
 import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
 import { truncate as sharedTruncate } from '@/lib/utils/string';
 import * as Sentry from '@sentry/nextjs';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 type Diag = {
@@ -128,36 +128,46 @@ export function SystemFaultView({
           </p>
         </header>
 
-        <section className="fault-card" aria-label="Error">
+        <section
+          className="fault-card"
+          aria-label={tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
+        >
           <div className="fault-card-head">
-            <span className="fault-eyebrow">Error</span>
+            <span className="fault-eyebrow">
+              {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
+            </span>
             <span className="fault-error-name">{diag?.errorName || 'Error'}</span>
           </div>
           <div className="fault-error-msg">{errorMessage}</div>
           {diag?.errorStack && diag.errorStack !== EMPTY && (
             <details className="fault-stack">
-              <summary>Stack</summary>
+              <summary>{tI18nHardcoded.raw('i18nComplete.texte551641242ce')}</summary>
               <pre>{diag.errorStack}</pre>
             </details>
           )}
         </section>
 
-        <section className="fault-card" aria-label="Diagnostics">
+        <section
+          className="fault-card"
+          aria-label={tI18nHardcoded.raw('i18nComplete.text268f14bbfe11')}
+        >
           <div className="fault-card-head">
-            <span className="fault-eyebrow">Diagnostics</span>
+            <span className="fault-eyebrow">
+              {tI18nHardcoded.raw('i18nComplete.text268f14bbfe11')}
+            </span>
           </div>
           <dl className="fault-diag">
-            <dt>url</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.text28e5ebabd9d8')}</dt>
             <dd className="mono">{diag?.url || EMPTY}</dd>
-            <dt>digest</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.text0bf474896363')}</dt>
             <dd className="mono">{diag?.errorDigest || EMPTY}</dd>
-            <dt>event</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.textb8e1f80bd70a')}</dt>
             <dd className="mono">{diag?.sentryEventId || EMPTY}</dd>
-            <dt>env</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.textb77349bf1fa9')}</dt>
             <dd>{envLine}</dd>
-            <dt>time</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.text336074805fc8')}</dt>
             <dd className="mono">{diag ? `${diag.timestampUtc} (${diag.timezone})` : EMPTY}</dd>
-            <dt>agent</dt>
+            <dt>{tI18nHardcoded.raw('i18nComplete.textd4f0bc5a29de')}</dt>
             <dd className="mono">{diag ? truncate(diag.userAgent, 180) : EMPTY}</dd>
           </dl>
         </section>
@@ -180,7 +190,7 @@ export function SystemFaultView({
               if (typeof window !== 'undefined') window.location.reload();
             }}
           >
-            Reload
+            {tI18nHardcoded.raw('i18nComplete.textbdc090ec61e3')}
           </button>
         </div>
 

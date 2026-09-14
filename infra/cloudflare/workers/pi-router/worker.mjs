@@ -30,7 +30,16 @@ export default {
     }
 
     const url = new URL(request.url);
-    const upstream = new URL(`${url.pathname}${url.search}`, target);
+    // The origin is ALWAYS the configured target: copy the path and query onto
+    // it, never resolve the incoming path against it. `//host/x` is a
+    // scheme-relative reference — `new URL('//evil/x', target)` would have sent
+    // the request to evil (found by the Strix review of #7125, CWE-918).
+    if (/^\/[\/\\]/.test(url.pathname)) {
+      return Response.json({ error: 'invalid path' }, { status: 400 });
+    }
+    const upstream = new URL(target);
+    upstream.pathname = url.pathname;
+    upstream.search = url.search;
 
     const headers = new Headers(request.headers);
     for (const name of STRIPPED) headers.delete(name);

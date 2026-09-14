@@ -1,8 +1,8 @@
 'use client';
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
+import { useTranslations } from '@/i18n/use-translations';
 import { m, useReducedMotion } from 'motion/react';
-import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 
 /**
@@ -45,12 +45,16 @@ const FOCUS = 2;
 export function EnterpriseHeroVisual(): ReactNode {
   const reduceMotion = useReducedMotion() ?? false;
   const t = useTranslations('hardcodedUi.appHomeEnterprisePage');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label={`${t('identityAccessEyebrow')}: the controls this platform ships, with ${t('checklistRbacTitle')} shown in full.`}
+      aria-label={tI18nComplete('text519c081464b5', {
+        value0: t('identityAccessEyebrow'),
+        value1: t('checklistRbacTitle'),
+      })}
     >
       <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── the roster, running off the right edge ──────────────────── */}

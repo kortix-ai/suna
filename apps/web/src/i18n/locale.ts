@@ -24,6 +24,13 @@ export function getUserLocale(user: UserWithLocale): Locale | null {
   return normalizeLocale(user?.user_metadata?.locale);
 }
 
+export function getRouteLocale(
+  requestLocale: unknown,
+  headerLocale: unknown,
+): Locale | null {
+  return normalizeLocale(headerLocale) ?? normalizeLocale(requestLocale);
+}
+
 export function getExplicitLocale(user: UserWithLocale): Locale {
   return getUserLocale(user) ?? defaultLocale;
 }

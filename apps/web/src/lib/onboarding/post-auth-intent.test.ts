@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { POST_AUTH_INTENT_COOKIE } from './landing-destination';
 import { navigationMayCreateProject } from './ensure-first-project';
+import { POST_AUTH_INTENT_COOKIE } from './landing-destination';
 import { hasPostAuthIntent, markPostAuthIntent } from './post-auth-intent';
 
 /**

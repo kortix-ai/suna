@@ -1,13 +1,16 @@
 'use client';
 
-import * as React from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useAnnouncementStore } from '@/stores/announcement-store';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { useTranslations } from '@/i18n/use-translations';
+import * as React from 'react';
 import { announcementRegistry } from './registry';
 
 export function AnnouncementDialog() {
-  const { isOpen, currentAnnouncement, closeAnnouncement, showPendingAnnouncement } = useAnnouncementStore();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { isOpen, currentAnnouncement, closeAnnouncement, showPendingAnnouncement } =
+    useAnnouncementStore();
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -28,17 +31,14 @@ export function AnnouncementDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeAnnouncement()}>
       <DialogContent
-        className="sm:max-w-lg p-0 gap-0 overflow-hidden border-border/50"
+        className="border-border/50 gap-0 overflow-hidden p-0 sm:max-w-lg"
         hideCloseButton
         aria-describedby={undefined}
       >
         <VisuallyHidden>
-          <DialogTitle>Announcement</DialogTitle>
+          <DialogTitle>{tI18nComplete.raw('text028cd1c88345')}</DialogTitle>
         </VisuallyHidden>
-        <Component
-          onClose={closeAnnouncement}
-          {...(currentAnnouncement.props || {})}
-        />
+        <Component onClose={closeAnnouncement} {...(currentAnnouncement.props || {})} />
       </DialogContent>
     </Dialog>
   );

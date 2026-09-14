@@ -111,6 +111,10 @@ Edge Runtime, Kong, Studio, Supavisor, Logflare, and Vector. Published ports
 bind to loopback by default, and all generated secret material is stored in the
 owner-only instance `.env`.
 
+Set `KORTIX_FRONTEND_MEMORY_LIMIT=1024m` through `self-host env set` to raise
+only the frontend container's memory limit. The default is `512m` per replica.
+The setting persists through later updates.
+
 ### Enterprise AWS EC2
 
 ```sh

@@ -1,7 +1,10 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { deadLetterCause } from './dead-letter-cause';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
+import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -276,6 +279,51 @@ export async function enqueueContinueSessionCommand(
   return { row: existing, deduped: true };
 }
 
+/** Load the durable first prompt and every exact runtime message id it used. */
+export async function loadLegacyPendingFirstPrompt(sessionId: string): Promise<{
+  commandId: string;
+  deliveredMessageIds: string[];
+  parts: PromptPartWire[];
+} | null> {
+  const [row] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      payload: sessionLifecycleCommands.payload,
+      result: sessionLifecycleCommands.result,
+    })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`))
+    .limit(1);
+  if (!row) return null;
+
+  const payload = row.payload as unknown as QueuedContinueSessionPayload;
+  const result = row.result as { forwarded_message_id?: unknown };
+  const deliveredMessageIds = [
+    result.forwarded_message_id,
+    payload.redeliveredMessageId,
+    ...(payload.redeliveredMessageIds ?? []).slice().reverse(),
+    payload.wireMessageId,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return {
+    commandId: row.commandId,
+    deliveredMessageIds: [...new Set(deliveredMessageIds)],
+    parts: Array.isArray(payload.parts) ? payload.parts : [],
+  };
+}
+
+/** Record completion without replacing unrelated session metadata. */
+export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        legacy_inline_attachments_repaired_at: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
+}
+
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
  *
@@ -301,6 +349,53 @@ export async function enqueueContinueSessionCommand(
  * sent stale; the payload merge (`||`) is the durable half.
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
+/** How many times a prompt the runtime accepted-but-never-wrote is re-sent
+ *  under a fresh key before it is dead-lettered for the user to retry. */
+export const MAX_LANDING_RETRIES = 2;
+
+/**
+ * Put a prompt whose landing proof FAILED back on the queue — with a fresh
+ * attempt number, which is what gives the next POST a fresh
+ * `Idempotency-Key` (`${commandId}:r${attempt}`) and, via `remintOnDelivery`,
+ * a fresh wire id. Re-POSTing under the SAME key is answered
+ * `200 {"deduplicated": true}` by the proxy's 10-minute claim, which
+ * `postPrompt` reads as delivered: the exact silent loss the proof exists to
+ * stop, arriving 3.6 s later than before (review finding, 2026-09-05).
+ *
+ * Returns false when the retry budget is spent; the caller dead-letters.
+ */
+export async function requeueUnlandedPrompt(
+  commandId: string,
+  reason: string,
+  availableAt: Date,
+): Promise<{ requeued: boolean; refusals: number }> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      lastError: reason,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || jsonb_build_object('landing_refusals',
+             COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) + 1)`,
+      payload: withNextDeliveryAttempt(
+        sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
+      ),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, commandId),
+        sql`COALESCE((${sessionLifecycleCommands.result}->>'landing_refusals')::int, 0) < ${MAX_LANDING_RETRIES}`,
+      ),
+    )
+    .returning({ result: sessionLifecycleCommands.result });
+  const refusals = Number(((rows[0]?.result ?? {}) as { landing_refusals?: unknown }).landing_refusals ?? 0);
+  return { requeued: rows.length > 0, refusals };
+}
 
 export async function requeueForAdmission(
   commandId: string,
@@ -328,10 +423,10 @@ export async function requeueForAdmission(
 /**
  * Make the session's NEXT queued inbox row due now.
  *
- * Called the instant a delivery lands (forwarded or delivered). Without it the
- * next row waited out whatever `requeueForAdmission` backoff it had accrued
- * while its sibling was in flight — visible dead air between two messages the
- * user typed one after the other. Only rows the admission gate put back
+ * Called after the terminal relay or reaper proves the current turn ended.
+ * Without it the next row waits out whatever `requeueForAdmission` backoff it
+ * accrued while its sibling was active — visible dead air between two messages
+ * the user typed one after the other. Only rows the admission gate put back
  * (`admission_reason` set) or plain queued rows; never a HELD row (Stop parked
  * it) and never a row whose `available_at` is a deliberate future schedule
  * without a refusal marker. Returns the promoted row's idempotency key so the
@@ -353,7 +448,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
         sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(1);
   if (!next) return null;
   await db
@@ -603,7 +698,16 @@ export async function markCommandFailed(
   // console.warn deep in the drain — invisible to alerting while the user's
   // session sat "queued — agent picking up" forever. Make it a real error.
   const payload = (row.payload ?? {}) as Record<string, unknown>;
-  logger.error('[session-lifecycle] command dead-lettered — giving up after retries', {
+  // Severity follows the CAUSE — see `deadLetterCause`. A terminal
+  // customer-state refusal (out of credits, a model the account is not
+  // entitled to, a workspace mode its manifest forbids) is not a platform
+  // fault and must not page; 96% of prod's dead letters are that, dominated by
+  // cron triggers firing into accounts that cannot pay. Everything else keeps
+  // the error level it was deliberately given.
+  const cause = deadLetterCause(error);
+  const log = cause === 'customer_state' ? logger.warn : logger.error;
+  log('[session-lifecycle] command dead-lettered — giving up after retries', {
+    cause,
     command_id: row.commandId,
     command_type: row.commandType,
     source: row.source,
@@ -647,6 +751,20 @@ export async function markCommandFailed(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Surface the failure on the trigger runtime row too. markCommandFailed parks
+  // the session (above) so the next reuse fire self-heals, but until now it left
+  // `projectTriggerRuntime.last_status` frozen at "queued" — the triggers API/UI
+  // never showed the dead-letter, so the operator's queue-age alarm was the only
+  // (and a misleading) signal. Flip it to "failed" with the error.
+  if (typeof payload.triggerSlug === 'string') {
+    await markTriggerRuntimeDeliveryFailed({
+      projectId: row.projectId,
+      slug: payload.triggerSlug,
+      when: new Date(),
+      error,
+    }).catch(() => {});
   }
 }
 
@@ -867,7 +985,12 @@ export async function claimDueLifecycleCommands(input: {
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.availableAt), asc(sessionLifecycleCommands.createdAt))
+    .orderBy(
+      asc(sessionLifecycleCommands.availableAt),
+      asc(inboxSentAtSql),
+      asc(inboxWireIdSql),
+      asc(sessionLifecycleCommands.commandId),
+    )
     .limit(input.limit);
 
   const claimed: SessionLifecycleCommandRow[] = [];

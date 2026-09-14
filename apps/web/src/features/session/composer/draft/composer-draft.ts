@@ -10,8 +10,7 @@ import type { AttachedFile } from '../types';
  * Both ids are UUIDs, so the two families can never collide.
  */
 export type DraftScope =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'session'; sessionId: string };
+  { kind: 'project'; projectId: string } | { kind: 'session'; sessionId: string };
 
 /**
  * The only attachment shape that can cross a reload. A `local` AttachedFile
@@ -38,14 +37,12 @@ export interface StoredDraft {
   /**
    * Supabase user id of the author.
    *
-   * Sign-out is called from three places and two of them
-   * (`features/layout/user-menu-shared.tsx`, `features/workspace/command-palette.tsx`)
-   * call `supabase.auth.signOut()` directly rather than through
-   * `features/providers/auth-provider.tsx`. A "clear drafts on sign-out" hook
-   * wired to one would silently miss the others, and would miss token expiry
-   * entirely. Checking the author on every READ covers all of them with no
-   * sign-out wiring at all. This matters because project access is shared: two
-   * teammates on one machine can both legitimately open the same project route.
+   * Sign-out is one call now (`lib/auth/perform-sign-out.ts`), but a "clear
+   * drafts on sign-out" hook wired to it would still miss token expiry, which
+   * ends a session without any logout control being pressed. Checking the
+   * author on every READ covers both with no sign-out wiring at all. This
+   * matters because project access is shared: two teammates on one machine can
+   * both legitimately open the same project route.
    */
   u: string;
   /**

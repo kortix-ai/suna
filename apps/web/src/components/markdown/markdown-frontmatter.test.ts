@@ -40,9 +40,7 @@ describe('parseFrontmatter', () => {
     const { frontmatter } = parseFrontmatter(AGENT_FILE);
 
     expect(frontmatter?.mode).toBe('primary');
-    expect(frontmatter?.description).toBe(
-      'Veyris internal admin & build agent. Full access.',
-    );
+    expect(frontmatter?.description).toBe('Veyris internal admin & build agent. Full access.');
   });
 
   test('keeps a QUOTED nested key — `"*": allow` is the opencode permission idiom', () => {

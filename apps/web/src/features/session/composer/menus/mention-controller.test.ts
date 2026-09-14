@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
+import { describe, expect, test } from 'bun:test';
 
 import { createMentionSuggestion } from './mention-controller';
 import type { MenuRow } from './menu-items';

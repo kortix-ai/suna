@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Pure logic for the unified email-first auth flow ("one system"): the visitor
  * types an email, Continue resolves whether that address already has an
@@ -68,11 +69,14 @@ export interface CredentialsCopy {
   submitsAs: 'signin' | 'signup';
 }
 
-export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
+export function credentialsCopy(
+  mode: CredentialsMode,
+  tI18nComplete: UiTranslator,
+): CredentialsCopy {
   if (mode === 'signin') {
     return {
-      title: 'Welcome back',
-      description: 'Enter your password to continue.',
+      title: tI18nComplete.raw('text6621249514b7'),
+      description: tI18nComplete.raw('text5c0cb6434704'),
       passwordPlaceholder: 'Your password',
       passwordAutoComplete: 'current-password',
       showForgotPassword: true,
@@ -81,8 +85,8 @@ export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
   }
   if (mode === 'signup') {
     return {
-      title: 'Create your account',
-      description: 'Choose a password to get started.',
+      title: tI18nComplete.raw('text9e709348f582'),
+      description: tI18nComplete.raw('text04ff975e82db'),
       passwordPlaceholder: 'Create a password',
       passwordAutoComplete: 'new-password',
       showForgotPassword: false,
@@ -90,7 +94,7 @@ export function credentialsCopy(mode: CredentialsMode): CredentialsCopy {
     };
   }
   return {
-    title: 'Enter your password',
+    title: tI18nComplete.raw('textc06bf9670174'),
     description: null,
     passwordPlaceholder: 'Your password',
     passwordAutoComplete: 'current-password',
@@ -113,22 +117,25 @@ export interface PasswordFailure {
  * adaptive signup path likewise proves existence, so the step flips to
  * sign-in and the copy explains what happened.
  */
-export function passwordFailureCopy({
-  mode,
-  code,
-  fallback,
-}: {
-  mode: CredentialsMode;
-  code?: string | null;
-  fallback?: string | null;
-}): PasswordFailure {
+export function passwordFailureCopy(
+  {
+    mode,
+    code,
+    fallback,
+  }: {
+    mode: CredentialsMode;
+    code?: string | null;
+    fallback?: string | null;
+  },
+  tI18nComplete: UiTranslator,
+): PasswordFailure {
   if (code === 'invalid_credentials' && mode === 'signin') {
     return { message: WRONG_PASSWORD_MESSAGE };
   }
   if (code === 'existing_account_wrong_password') {
     if (mode === 'signup') {
       return {
-        message: 'You already have an account — enter your existing password to sign in.',
+        message: tI18nComplete.raw('textfdb7b2463da5'),
         switchToSignin: true,
       };
     }

@@ -1,8 +1,9 @@
 'use client';
 
 import { FilePreviewModal, type FileSource } from '@/features/file-viewer';
-import { FileExplorerSourceProvider } from '@/features/project-files/explorer-source';
 import { FileThumbnail } from '@/features/project-files/components/file-thumbnail';
+import { FileExplorerSourceProvider } from '@/features/project-files/explorer-source';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 /**
@@ -41,12 +42,14 @@ const stubSource = {
 } as unknown as FileSource;
 
 export function DebugFilePreviewHarness() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [index, setIndex] = useState(0);
 
   return (
     <div className="bg-background min-h-screen p-6">
       <p className="text-muted-foreground mb-4 text-xs">
-        Stub file source. Click the <code>&lt;/&gt;</code> toggle in the toolbar.
+        {tI18nComplete.raw('text50d5fd0a05d4')} <code>&lt;/&gt;</code>{' '}
+        {tI18nComplete.raw('textdfd7d37e2b63')}
       </p>
       <FileExplorerSourceProvider value={{ useFileViewerSource: () => stubSource } as never}>
         <div data-testid="thumbs" className="mb-6 flex gap-3">
@@ -59,7 +62,10 @@ export function DebugFilePreviewHarness() {
         </div>
       </FileExplorerSourceProvider>
 
-      <div data-testid="preview-host" className="relative h-[70vh] w-full overflow-hidden rounded-md border">
+      <div
+        data-testid="preview-host"
+        className="relative h-[70vh] w-full overflow-hidden rounded-md border"
+      >
         <FilePreviewModal
           selectedFilePath={PATHS[index]}
           panelMode="viewer"

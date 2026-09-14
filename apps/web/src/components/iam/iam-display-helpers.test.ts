@@ -30,19 +30,12 @@ describe('isOverridingAccountRole', () => {
   test('super_admin override beats accountRole=member', () => {
     // Important corner: someone can be a plain "member" by accountRole but
     // still hold the super-admin flag. They should still override.
-    expect(
-      isOverridingAccountRole(meta({ accountRole: 'member', isSuperAdmin: true })),
-    ).toBe(true);
+    expect(isOverridingAccountRole(meta({ accountRole: 'member', isSuperAdmin: true }))).toBe(true);
   });
 });
 
 describe('countOverridingMembers', () => {
-  const members = [
-    { user_id: 'u1' },
-    { user_id: 'u2' },
-    { user_id: 'u3' },
-    { user_id: 'u4' },
-  ];
+  const members = [{ user_id: 'u1' }, { user_id: 'u2' }, { user_id: 'u3' }, { user_id: 'u4' }];
   const byId = new Map<string, AccountMeta>([
     ['u1', meta({ accountRole: 'owner' })],
     ['u2', meta({ accountRole: 'admin' })],
@@ -113,20 +106,10 @@ describe('sortGroupMembersByOverride', () => {
 });
 
 describe('floatCurrentUserFirst', () => {
-  const list = [
-    { user_id: 'a' },
-    { user_id: 'b' },
-    { user_id: 'me' },
-    { user_id: 'c' },
-  ];
+  const list = [{ user_id: 'a' }, { user_id: 'b' }, { user_id: 'me' }, { user_id: 'c' }];
 
   test('moves the current user to position 0', () => {
-    expect(floatCurrentUserFirst(list, 'me').map((m) => m.user_id)).toEqual([
-      'me',
-      'a',
-      'b',
-      'c',
-    ]);
+    expect(floatCurrentUserFirst(list, 'me').map((m) => m.user_id)).toEqual(['me', 'a', 'b', 'c']);
   });
 
   test('no-op when current user already first', () => {
@@ -145,12 +128,7 @@ describe('floatCurrentUserFirst', () => {
   });
 
   test('no-op when currentUserId is null', () => {
-    expect(floatCurrentUserFirst(list, null).map((m) => m.user_id)).toEqual([
-      'a',
-      'b',
-      'me',
-      'c',
-    ]);
+    expect(floatCurrentUserFirst(list, null).map((m) => m.user_id)).toEqual(['a', 'b', 'me', 'c']);
   });
 
   test('does not mutate the input', () => {
@@ -217,7 +195,7 @@ describe('isInheritedFromGroupOnly', () => {
 });
 
 describe('inheritedFromGroupSummary', () => {
-  test('single group: "Inherited Member via Users"', () => {
+  test('single group: "Inherited Project member via Users"', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
@@ -225,7 +203,7 @@ describe('inheritedFromGroupSummary', () => {
         effective_project_role: 'member',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
-    ).toBe('Inherited Member via Users');
+    ).toBe('Inherited Project member via Users');
   });
 
   test('multiple groups: head + "+ N more"', () => {
@@ -239,7 +217,7 @@ describe('inheritedFromGroupSummary', () => {
           { group_name: 'Users', role: 'member' },
         ],
       }),
-    ).toBe('Inherited Manager via Engineering + 1 more');
+    ).toBe('Inherited Project admin via Engineering + 1 more');
   });
 
   test('three groups: "+ 2 more"', () => {
@@ -254,7 +232,7 @@ describe('inheritedFromGroupSummary', () => {
           { group_name: 'C', role: 'member' },
         ],
       }),
-    ).toBe('Inherited Manager via A + 2 more');
+    ).toBe('Inherited Project admin via A + 2 more');
   });
 
   test('null when the row is not group-inherited', () => {

@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/self-hosted` copy.
  *
@@ -351,3 +355,11 @@ export const closing = {
   tertiaryLabel: 'Talk to us',
   tertiaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedSelfHostedContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, yours, commands, firstRun, stack, parity, models, targets, closing },
+    tI18nComplete,
+    SECURITY_SELFHOST_TRANSLATION_KEYS,
+  );
+}

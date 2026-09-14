@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CopyButton } from '@/components/markdown/copy-button';
@@ -134,23 +134,37 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
       <div className="bg-muted/40 border-border/30 flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Globe className="text-muted-foreground/50 h-3 w-3 shrink-0" />
-          <span className="text-muted-foreground truncate font-mono text-xs">localhost:{port}</span>
+          <span className="text-muted-foreground truncate font-mono text-xs">
+            {tHardcodedUi.raw('i18nComplete.text91901080526c')}
+            {port}
+          </span>
         </div>
-        <Hint side="top" label="Refresh preview">
+        <Hint side="top" label={tHardcodedUi.raw('i18nComplete.text5b529abadacc')}>
           <button
             type="button"
             onClick={handleRefresh}
-            aria-label="Refresh preview"
+            aria-label={tHardcodedUi.raw('i18nComplete.text5b529abadacc')}
             className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
           >
             <RefreshCw className={cn('size-3', isLoading && 'animate-spinner-spin')} />
           </button>
         </Hint>
-        <Hint side="top" label={expanded ? 'Collapse preview' : 'Expand preview'}>
+        <Hint
+          side="top"
+          label={
+            expanded
+              ? tHardcodedUi.raw('i18nComplete.text90e8d06c0309')
+              : tHardcodedUi.raw('i18nComplete.text59edd3fe9cc5')
+          }
+        >
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Collapse preview' : 'Expand preview'}
+            aria-label={
+              expanded
+                ? tHardcodedUi.raw('i18nComplete.text90e8d06c0309')
+                : tHardcodedUi.raw('i18nComplete.text59edd3fe9cc5')
+            }
             className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
           >
             {expanded ? <Minimize2 className="size-3" /> : <Maximize2 className="size-3" />}
@@ -177,7 +191,7 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
                 )}
               </p>
               <button onClick={handleRefresh} className="text-primary mt-1 text-xs hover:underline">
-                Retry
+                {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
               </button>
             </div>
           </div>
@@ -187,7 +201,7 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
             key={refreshKey}
             ref={iframeRef}
             src={authenticatedUrl}
-            title={`Preview :${port}`}
+            title={tHardcodedUi('i18nComplete.text8d0218f233bb', { value0: port })}
             className="h-full w-full border-0 bg-white"
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={handleLoad}
@@ -216,7 +230,7 @@ function SandboxUrlChip({
   const navigateToPreviewTab = useCallback(() => {
     openTabAndNavigate({
       id: tabId,
-      title: `localhost:${detected.port}`,
+      title: tHardcodedUi('i18nComplete.textb1d5e8ac8bb4', { value0: detected.port }),
       type: 'preview',
       href: tabHref,
       metadata: enrichPreviewMetadata({
@@ -225,7 +239,7 @@ function SandboxUrlChip({
         originalUrl: internalUrl,
       }),
     });
-  }, [detected, proxyUrl, internalUrl, tabId, tabHref]);
+  }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl]);
 
   const handleCopyUrl = useCallback(() => {
     navigator.clipboard.writeText(proxyUrl).then(() => {
@@ -249,7 +263,8 @@ function SandboxUrlChip({
         className="group/link flex min-w-0 items-baseline gap-1 text-left"
       >
         <span className="text-foreground/80 group-hover/link:text-primary text-xs font-medium whitespace-nowrap tabular-nums transition-colors">
-          localhost:{detected.port}
+          {tHardcodedUi.raw('i18nComplete.text91901080526c')}
+          {detected.port}
         </span>
         {displayPath && (
           <span className="text-muted-foreground/60 group-hover/link:text-primary/70 truncate font-mono text-xs transition-colors">

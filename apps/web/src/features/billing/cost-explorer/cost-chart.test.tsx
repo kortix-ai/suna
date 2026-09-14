@@ -37,9 +37,7 @@ describe('CostChart', () => {
   });
 
   test('renders nothing for a single data point', () => {
-    const html = renderToStaticMarkup(
-      <CostChart series={[twoPoints[0]!]} isLoading={false} />,
-    );
+    const html = renderToStaticMarkup(<CostChart series={[twoPoints[0]!]} isLoading={false} />);
     expect(html).toBe('');
   });
 

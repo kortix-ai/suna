@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 

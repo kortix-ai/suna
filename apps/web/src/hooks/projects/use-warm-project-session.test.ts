@@ -146,7 +146,10 @@ describe('createWarmSession', () => {
 
   test('projects are independent', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-a' }) }));
-    await createWarmSession('proj-2', client({ create: async () => warm({ sessionId: 'warm-b' }) }));
+    await createWarmSession(
+      'proj-2',
+      client({ create: async () => warm({ sessionId: 'warm-b' }) }),
+    );
     expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
   });
@@ -203,9 +206,9 @@ describe('takeWarmSession', () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
     const create = mock(async () => warm({ sessionId: 'warm-2' }));
 
-    expect(
-      takeWarmSession(P, { replenish: false, isPresent: PRESENT, client: { create } }),
-    ).toBe('warm-1');
+    expect(takeWarmSession(P, { replenish: false, isPresent: PRESENT, client: { create } })).toBe(
+      'warm-1',
+    );
     await Promise.resolve();
 
     expect(create).not.toHaveBeenCalled();
@@ -213,7 +216,10 @@ describe('takeWarmSession', () => {
 
   test('projects are independent', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-a' }) }));
-    await createWarmSession('proj-2', client({ create: async () => warm({ sessionId: 'warm-b' }) }));
+    await createWarmSession(
+      'proj-2',
+      client({ create: async () => warm({ sessionId: 'warm-b' }) }),
+    );
     expect(takeWarmSession(P, { replenish: false })).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
   });
@@ -583,7 +589,6 @@ describe('takeWarmSessionEntry', () => {
   });
 });
 
-
 describe('primeTakenWarmSession — the first prompt lands as a durable row on the warm session', () => {
   const warmEntry = (): WarmSession => ({
     sessionId: WARM,
@@ -614,7 +619,12 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
     const claim = mock(async () => {
       throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
     });
-    const ok = await primeTakenWarmSession(P, warmEntry(), { pending_prompt: { text: 'hi' } }, claim as never);
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'hi' } },
+      claim as never,
+    );
     expect(ok).toBe(false);
   });
 });

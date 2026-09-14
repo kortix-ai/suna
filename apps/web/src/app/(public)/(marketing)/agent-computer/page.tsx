@@ -2,20 +2,13 @@ import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
 import { BranchGraph } from '@/features/marketing/agent-computer/branch-graph';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import {
-  boot,
-  control,
-  declared,
-  files,
-  hero,
-  isolation,
-  parallel,
-} from '@/features/marketing/agent-computer/content';
+import { getLocalizedAgentComputerContent } from '@/features/marketing/agent-computer/content';
 import { FileTree } from '@/features/marketing/agent-computer/file-tree';
 import { AgentComputerHeroVisual } from '@/features/marketing/agent-computer/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -49,7 +42,10 @@ function SectionDivider(): ReactNode {
  * "microVM isolation" or a secret "the model never sees" — see the accuracy
  * gate at the top of `content.ts`.
  */
-export default function AgentComputerPage(): ReactNode {
+export default async function AgentComputerPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { boot, control, declared, files, hero, isolation, parallel } =
+    getLocalizedAgentComputerContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

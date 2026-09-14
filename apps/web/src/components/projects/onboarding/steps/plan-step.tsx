@@ -14,6 +14,7 @@
  */
 
 import { ClockIcon as Clock, KeyIcon as Key } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { RadioGroup } from '@/components/ui/radio-group';
@@ -53,6 +54,7 @@ export function PlanStep({
   projectId: string;
   onContinue: () => void;
 }) {
+  const t = useTranslations('projectOnboarding.plan');
   const { data: providers } = useRuntimeProviders();
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels, showUpgradeOption } =
     useModelConnectionGate(flattenModels(providers), { projectId });
@@ -69,16 +71,12 @@ export function PlanStep({
     <>
       {modal}
       <StepShell
-        title="How do you want to power your agent?"
-        description={
-          hasSelectableModels
-            ? 'A model is already connected, so you’re good to go. Add another provider or upgrade if you want more.'
-            : 'Your agent needs a model to think with. Nothing happens until you continue.'
-        }
+        title={t('title')}
+        description={hasSelectableModels ? t('descriptionConnected') : t('descriptionDisconnected')}
         // The label names what the button will actually do, so the modal that
         // opens is never a surprise.
         primaryLabel={
-          choice === 'kortix' ? 'See plans' : choice === 'byok' ? 'Add a key' : 'Continue'
+          choice === 'kortix' ? t('seePlans') : choice === 'byok' ? t('addKey') : t('continue')
         }
         onPrimary={handleContinue}
       >
@@ -87,30 +85,28 @@ export function PlanStep({
         <RadioGroup
           value={choice ?? ''}
           onValueChange={(nextChoice) => setChoice(nextChoice as PlanChoice)}
-          aria-label="Model access"
+          aria-label={t('modelAccess')}
           className="gap-2"
         >
           {showUpgradeOption && (
             <SelectionRow
               value="kortix"
-              label="Use Kortix models"
-              description="Instant access, higher limits, nothing to configure"
+              label={t('useKortix')}
+              description={t('useKortixDescription')}
               leading={<Kortix className="size-5 shrink-0" />}
             />
           )}
           <SelectionRow
             value="byok"
-            label={hasSelectableModels ? 'Connect another provider' : 'Bring your own API key'}
-            description="Anthropic, OpenAI, or any other provider"
+            label={hasSelectableModels ? t('connectAnother') : t('bringKey')}
+            description={t('providerDescription')}
             leading={<Key className="text-muted-foreground size-5 shrink-0" weight="duotone" />}
           />
           <SelectionRow
             value="later"
-            label={hasSelectableModels ? 'Keep what I have' : 'Decide later'}
+            label={hasSelectableModels ? t('keepCurrent') : t('decideLater')}
             description={
-              hasSelectableModels
-                ? 'Carry on with the model that’s already connected'
-                : 'The composer will ask the first time you send a task'
+              hasSelectableModels ? t('keepCurrentDescription') : t('decideLaterDescription')
             }
             leading={<Clock className="text-muted-foreground size-5 shrink-0" weight="duotone" />}
           />

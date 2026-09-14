@@ -5,7 +5,7 @@ import {
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
@@ -144,6 +144,7 @@ export function useChatGptConnectFlow({
   autoStart?: boolean;
   onConnected?: () => void;
 }): ChatGptConnectFlow {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +196,7 @@ export function useChatGptConnectFlow({
         if (cancelledRef.current) return;
         if (res.status === 'success') {
           setPhase('done');
-          successToast('ChatGPT subscription connected to this project');
+          successToast(tI18nComplete.raw('text5630381eeca0'));
           queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
@@ -225,7 +226,7 @@ export function useChatGptConnectFlow({
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, sharing, queryClient, onConnected]);
+  }, [projectId, sharing, queryClient, onConnected, tI18nComplete]);
 
   useEffect(() => {
     if (!autoStart || autoStartedRef.current || phase !== 'idle') return;
@@ -264,6 +265,7 @@ export function ChatGptConnectButton({
   /** Overrides the default label; useful where the surrounding row already says "ChatGPT". */
   label?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (flow.isWaiting) return null;
   const fallback = flow.error || flow.isDone ? 'Reconnect ChatGPT' : 'Connect ChatGPT';
   return (
@@ -291,10 +293,11 @@ export function ChatGptCancelButton({
   variant?: 'outline' | 'secondary' | 'default';
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!flow.isWaiting) return null;
   return (
     <Button type="button" size={size} variant={variant} className={className} onClick={flow.cancel}>
-      Cancel
+      {tI18nComplete.raw('text19766ed6ccb2')}
     </Button>
   );
 }
@@ -317,6 +320,7 @@ export function ChatGptAuthChallenge({
   bare?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!flow.isWaiting) return null;
   return (
     <div
@@ -328,11 +332,15 @@ export function ChatGptAuthChallenge({
       {flow.challenge ? (
         <ChatGptDeviceChallenge url={flow.challenge.url} code={flow.challenge.code} />
       ) : (
-        <div className="text-foreground text-xs font-medium">Starting authorization…</div>
+        <div className="text-foreground text-xs font-medium">
+          {tI18nComplete.raw('texta467f30ca4f9')}
+        </div>
       )}
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         <Loading className="size-3.5 shrink-0" />
-        {flow.challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
+        {flow.challenge
+          ? tI18nComplete.raw('text2f938f9b118b')
+          : tI18nComplete.raw('textf29674479db4')}
       </div>
     </div>
   );
@@ -414,7 +422,7 @@ export function ChatGptSubscriptionConnect({
 
       {showSharingPicker ? null : (
         <p className="text-muted-foreground mt-3 text-xs">
-          Saved for everyone on this project. Restart a running session sandbox to pick it up.
+          {tI18nHardcoded.raw('i18nComplete.textee4ae993730d')}
         </p>
       )}
     </div>
@@ -430,6 +438,7 @@ export function ChatGptSubscriptionConnectDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const handleConnected = useCallback(() => {
     onOpenChange(false);
   }, [onOpenChange]);
@@ -438,9 +447,9 @@ export function ChatGptSubscriptionConnectDialog({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-md">
         <ModalHeader className="space-y-1 pb-3">
-          <ModalTitle>Connect GPT subscription</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('textd037eecb4dc8')}</ModalTitle>
           <ModalDescription className="text-xs">
-            Use your ChatGPT Plus or Pro subscription for premium models on the free plan.
+            {tI18nComplete.raw('text33a97dd943f4')}
           </ModalDescription>
         </ModalHeader>
         <div className="px-5 pb-5">

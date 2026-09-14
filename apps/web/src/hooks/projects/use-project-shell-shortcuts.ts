@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import {
-  useProjectSessionTabsStore,
-  CUSTOMIZE_TAB_ID,
-} from '@/stores/project-session-tabs-store';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { isDesktop } from '@/lib/desktop';
+import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 /**
  * The route a tab id maps to. Shared by the keystroke handler and the prefetch
@@ -58,9 +55,7 @@ export function useProjectShellShortcuts({
   const reopenLastClosed = useProjectSessionTabsStore((s) => s.reopenLastClosed);
   const closeProjectTab = useCloseProjectTab(projectId);
   const openTabs = useProjectSessionTabsStore((s) => s.tabsByProject[projectId]);
-  const recentlyClosed = useProjectSessionTabsStore(
-    (s) => s.recentlyClosedByProject[projectId],
-  );
+  const recentlyClosed = useProjectSessionTabsStore((s) => s.recentlyClosedByProject[projectId]);
 
   // Warm every tab a shortcut can reach. A keystroke can never be an anchor,
   // so `goToTab` below runs the RSC fetch itself — and a cold one degrades
@@ -87,8 +82,7 @@ export function useProjectShellShortcuts({
       const custMatch = pathname?.match(/^\/projects\/([^/]+)\/customize/);
       const urlProject = sessMatch?.[1] ?? custMatch?.[1] ?? null;
       const activeTabId = sessMatch?.[2] ?? (custMatch ? CUSTOMIZE_TAB_ID : null);
-      const tabs =
-        useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
+      const tabs = useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
 
       // nav-contract: prefetch-only — the destination is chosen by a keystroke,
       // which has no anchor. The effect above keeps every tab warm.
@@ -190,5 +184,13 @@ export function useProjectShellShortcuts({
     // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [projectId, pathname, router, tabSwitchModifier, onNewSession, closeProjectTab, reopenLastClosed]);
+  }, [
+    projectId,
+    pathname,
+    router,
+    tabSwitchModifier,
+    onNewSession,
+    closeProjectTab,
+    reopenLastClosed,
+  ]);
 }

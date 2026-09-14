@@ -13,10 +13,7 @@ export const Monitor = ({ className }: { className?: string }) => {
       xmlns="http://www.w3.org/2000/svg"
       className={cn('size-4', className)}
     >
-      <path
-        d="M6 3C3.79 3 2 4.79 2 7V12H22V7C22 4.79 20.21 3 18 3H6Z"
-        fill="currentColor"
-      ></path>
+      <path d="M6 3C3.79 3 2 4.79 2 7V12H22V7C22 4.79 20.21 3 18 3H6Z" fill="currentColor"></path>
       <path
         fillRule="evenodd"
         clipRule="evenodd"

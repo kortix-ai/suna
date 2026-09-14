@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -33,11 +33,19 @@ import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
 import { PROVIDER_LABELS } from '@kortix/llm-catalog';
-import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk';
+import {
+  allDescendantIds,
+  type AssistantMessage,
+  childMapByParent,
+  formatCost,
+  getSessionCost,
+  type Message,
+  type ModelPricingLookup,
+  type Part,
+  type Session,
+} from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useSessionStateStore } from '@kortix/sdk/react';
-import type { ModelPricingLookup } from '@kortix/sdk/turns';
-import { allDescendantIds, childMapByParent, formatCost, getSessionCost } from '@kortix/sdk/turns';
 import {
   CaretDownIcon,
   CaretRightIcon,
@@ -612,6 +620,7 @@ function SessionContextModalBody({
   providers,
   allSessions,
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
   const [rawOpen, setRawOpen] = useState(false);
@@ -745,7 +754,7 @@ function SessionContextModalBody({
             <ModalClose asChild>
               <Button variant="ghost" className="size-8 p-0">
                 <Close className="text-primary size-4 stroke-1" />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{tI18nComplete.raw('text7d9eb7acb13e')}</span>
               </Button>
             </ModalClose>
           </div>

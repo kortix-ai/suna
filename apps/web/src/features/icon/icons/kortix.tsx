@@ -27,7 +27,11 @@ export const Kortix = ({ className }: { className?: string }) => {
           alt=""
           aria-hidden
           draggable={false}
-          className={cn('size-4 shrink-0 select-none object-contain', dark && 'dark:hidden', className)}
+          className={cn(
+            'size-4 shrink-0 object-contain select-none',
+            dark && 'dark:hidden',
+            className,
+          )}
         />
         {dark ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -36,7 +40,10 @@ export const Kortix = ({ className }: { className?: string }) => {
             alt=""
             aria-hidden
             draggable={false}
-            className={cn('hidden size-4 shrink-0 select-none object-contain dark:block', className)}
+            className={cn(
+              'hidden size-4 shrink-0 object-contain select-none dark:block',
+              className,
+            )}
           />
         ) : null}
       </>

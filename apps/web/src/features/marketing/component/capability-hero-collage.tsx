@@ -5,6 +5,7 @@ import { ShaderSafe } from '@/components/ui/shader-safe';
 import { cn } from '@/lib/utils';
 import { MeshGradient } from '@paper-design/shaders-react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   CAPABILITY_ARTIFACTS,
@@ -97,6 +98,7 @@ export function CapabilityHeroCollage({
 }: {
   specs: readonly CapabilityHeroSpec[];
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion() ?? false;
   const total = specs.length;
   const [active, setActive] = useState(0);
@@ -121,7 +123,7 @@ export function CapabilityHeroCollage({
     <div
       className="relative isolate flex w-full flex-col items-center justify-center lg:h-full lg:min-h-[34rem]"
       role="group"
-      aria-label="Capability highlights"
+      aria-label={tI18nComplete.raw('texta8823f1e4fea')}
     >
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
         <ShaderSafe>

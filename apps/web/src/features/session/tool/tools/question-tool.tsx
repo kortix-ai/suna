@@ -17,7 +17,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 // One shared identity for "this question has no answer yet", so the row prop
@@ -139,7 +139,7 @@ export function QuestionTool({
         {single ? 'Question' : 'Questions'}
       </span>
       <TextShimmer duration={1} spread={2} className="text-xs italic">
-        Waiting for your answer
+        {tI18nHardcoded.raw('i18nComplete.text8e4b72ca2511')}
       </TextShimmer>
     </div>
   ) : (

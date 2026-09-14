@@ -5,6 +5,7 @@ import {
   CaretDownIcon as ChevronDown,
   ClockIcon as Clock,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, warningToast } from '@/components/ui/toast';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 
 type Frequency = 'minutes' | 'hourly' | 'daily' | 'weekly' | 'monthly';
@@ -202,9 +205,9 @@ function defaultRunAtIso(): string {
   return date.toISOString();
 }
 
-function describeRunAt(iso: string): string {
+function describeRunAt(iso: string, tI18nComplete: ReturnType<typeof useTranslations>): string {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'Pick a date and time';
+  if (Number.isNaN(date.getTime())) return tI18nComplete.raw('text3b4153c0d3c8');
   const formatted = date.toLocaleString(undefined, {
     weekday: 'short',
     month: 'short',
@@ -232,6 +235,7 @@ export function ScheduleBuilder({
   runAt,
   onRunAtChange,
 }: ScheduleBuilderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [state, setState] = useState<ScheduleState>(() => cronToState(value) ?? DEFAULT_STATE);
   const [showCron, setShowCron] = useState(() => cronToState(value) === null);
   const [rawCron, setRawCron] = useState(value);
@@ -281,7 +285,7 @@ export function ScheduleBuilder({
       ? state.weekdays.filter((value) => value !== day)
       : [...state.weekdays, day];
     if (weekdays.length === 0) {
-      warningToast('Select at least one day');
+      warningToast(tI18nComplete.raw('text82457b59d590'));
       return;
     }
     update({ weekdays });
@@ -304,7 +308,7 @@ export function ScheduleBuilder({
     }
     const message = 'Use a supported six-field cron expression.';
     setCronError(message);
-    errorToast('Check the cron expression', { description: message });
+    errorToast(tI18nComplete.raw('text641c87998713'), { description: message });
   };
 
   const needsTime = state.frequency !== 'minutes';
@@ -325,10 +329,10 @@ export function ScheduleBuilder({
         >
           <TabsList size="sm" className="w-full sm:w-fit">
             <TabsTrigger value="recurring" className="min-w-24">
-              Repeats
+              {tI18nComplete.raw('text92ee0233f013')}
             </TabsTrigger>
             <TabsTrigger value="once" className="min-w-24">
-              Once
+              {tI18nComplete.raw('textd88f6d8372f4')}
             </TabsTrigger>
           </TabsList>
 
@@ -336,7 +340,7 @@ export function ScheduleBuilder({
             <label className="text-foreground flex flex-col gap-2 text-sm font-medium sm:flex-row sm:items-center">
               <span className="text-muted-foreground flex items-center gap-2">
                 <CalendarClock className="size-4" />
-                Run at
+                {tI18nComplete.raw('text4b4c31294fb5')}
               </span>
               <Input
                 type="datetime-local"
@@ -344,7 +348,7 @@ export function ScheduleBuilder({
                 min={isoToLocalInput(new Date().toISOString())}
                 onChange={(event) => onRunAtChange(localInputToIso(event.target.value))}
                 onBlur={() => {
-                  if (hasPastRunAt) warningToast('Choose a future time');
+                  if (hasPastRunAt) warningToast(tI18nComplete.raw('textabf586cc6ecb'));
                 }}
                 aria-invalid={hasPastRunAt}
                 className="h-9 w-full sm:w-auto"
@@ -352,7 +356,9 @@ export function ScheduleBuilder({
               />
             </label>
             <SchedulePreview
-              text={runAt ? describeRunAt(runAt) : 'Pick a date and time'}
+              text={
+                runAt ? describeRunAt(runAt, tI18nComplete) : tI18nComplete.raw('text3b4153c0d3c8')
+              }
               error={hasPastRunAt}
             />
           </TabsContent>
@@ -364,7 +370,7 @@ export function ScheduleBuilder({
               compact={compact}
               disabled={disabled}
               needsTime={needsTime}
-              previewText={isCustom ? 'Custom cron expression' : undefined}
+              previewText={isCustom ? tI18nComplete.raw('text7afd348d0d4b') : undefined}
               onCadenceChange={selectCadence}
               onUpdate={update}
               onToggleWeekday={toggleWeekday}
@@ -378,7 +384,7 @@ export function ScheduleBuilder({
           compact={compact}
           disabled={disabled}
           needsTime={needsTime}
-          previewText={isCustom ? 'Custom cron expression' : undefined}
+          previewText={isCustom ? tI18nComplete.raw('text7afd348d0d4b') : undefined}
           onCadenceChange={selectCadence}
           onUpdate={update}
           onToggleWeekday={toggleWeekday}
@@ -398,7 +404,9 @@ export function ScheduleBuilder({
             <ChevronDown
               className={cn('size-3 transition-transform duration-150', showCron && 'rotate-180')}
             />
-            {showCron ? 'Hide cron expression' : 'Use cron expression'}
+            {showCron
+              ? tI18nComplete.raw('text6c848b936d1d')
+              : tI18nComplete.raw('text1fa1b04791a4')}
           </Button>
 
           {showCron && (
@@ -407,7 +415,7 @@ export function ScheduleBuilder({
                 className="text-foreground text-sm font-medium"
                 htmlFor="schedule-cron-expression"
               >
-                Advanced cron expression
+                {tI18nComplete.raw('text4ab444f5a66a')}
               </label>
               <Input
                 id="schedule-cron-expression"
@@ -423,8 +431,8 @@ export function ScheduleBuilder({
               <p className={cn('text-muted-foreground text-xs', cronError && 'text-destructive')}>
                 {cronError ??
                   (isCustom
-                    ? 'The visual editor will stay available for supported schedules.'
-                    : 'Six fields: second, minute, hour, day, month, weekday.')}
+                    ? tI18nComplete.raw('textef7f45ff7f0a')
+                    : tI18nComplete.raw('textcc0c25063f43'))}
               </p>
             </div>
           )}
@@ -457,10 +465,17 @@ function RecurringControls({
   onUpdate,
   onToggleWeekday,
 }: RecurringControlsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const cadences = localizeUiCatalog(CADENCES, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS);
+  const weekdayButtons = localizeUiCatalog(
+    WEEKDAY_BUTTONS,
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  );
   return (
     <div className={cn('space-y-3', compact && 'space-y-2')}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted-foreground">Repeat</span>
+        <span className="text-muted-foreground">{tI18nComplete.raw('textb6b7a0065808')}</span>
         <Select
           value={cadence}
           onValueChange={(value) => onCadenceChange(value as Cadence)}
@@ -470,7 +485,7 @@ function RecurringControls({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {CADENCES.map((option) => (
+            {cadences.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -507,7 +522,7 @@ function RecurringControls({
 
         {state.frequency === 'monthly' && (
           <>
-            <span className="text-muted-foreground">on day</span>
+            <span className="text-muted-foreground">{tI18nComplete.raw('textada1fca3e7ad')}</span>
             <Select
               value={String(state.monthDay)}
               onValueChange={(value) => onUpdate({ monthDay: Number(value) })}
@@ -529,8 +544,8 @@ function RecurringControls({
       </div>
 
       {cadence === 'weekly' && (
-        <div className="flex flex-wrap gap-1.5" aria-label="Days to run">
-          {WEEKDAY_BUTTONS.map(({ value, label }) => {
+        <div className="flex flex-wrap gap-1.5" aria-label={tI18nComplete.raw('text2069f4549744')}>
+          {weekdayButtons.map(({ value, label }) => {
             const selected = state.weekdays.includes(value);
             return (
               <Button
@@ -554,7 +569,7 @@ function RecurringControls({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Clock className="text-muted-foreground size-4" />
           <span className="text-muted-foreground">
-            {state.frequency === 'hourly' ? 'at minute' : 'at'}
+            {state.frequency === 'hourly' ? tI18nComplete.raw('text5f2ed72dfcbc') : 'at'}
           </span>
           {state.frequency !== 'hourly' && (
             <Select

@@ -150,10 +150,7 @@ describe('the five /start producer shapes, bound to their real call site', () =>
  */
 const pageSource = readFileSync(
   fileURLToPath(
-    new URL(
-      '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
-      import.meta.url,
-    ),
+    new URL('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx', import.meta.url),
   ),
   'utf8',
 );
@@ -168,11 +165,7 @@ function between(source: string, start: string, end: string): string {
 
 describe('page.tsx actually calls the gates above', () => {
   test('`fatal` calls shouldPaintFatalCard({ stage: session.stage })', () => {
-    const fatalBlock = between(
-      pageSource,
-      'const fatal =',
-      'const runtimeIdentityUnavailable',
-    );
+    const fatalBlock = between(pageSource, 'const fatal =', 'const runtimeIdentityUnavailable');
     expect(fatalBlock).toContain('shouldPaintFatalCard({ stage: session.stage });');
   });
 

@@ -35,9 +35,9 @@ describe('SettingsSectionHeader', () => {
   });
 
   test('caps the description measure at the specified width', () => {
-    expect(
-      renderToStaticMarkup(<SettingsSectionHeader title="N" description="D" />),
-    ).toContain('max-w-[410px]');
+    expect(renderToStaticMarkup(<SettingsSectionHeader title="N" description="D" />)).toContain(
+      'max-w-[410px]',
+    );
   });
 
   test('keeps the specified responsive layout on the outer row', () => {

@@ -14,7 +14,7 @@ import { parseTodos, TodoStatusIcon } from '@/features/session/tool/shared/todo-
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -55,7 +55,7 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   return (
     <BasicTool
       icon={<ListTodo className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Todos', subtitle }}
+      trigger={{ title: tI18nHardcoded.raw('i18nComplete.textbd02b9a7d71d'), subtitle }}
       badge={
         total ? (
           <span className="tabular-nums">

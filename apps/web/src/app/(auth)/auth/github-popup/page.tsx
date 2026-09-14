@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { useEffect, useState } from 'react';
 
@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { ErrorStrip } from '@/features/auth/auth-primitives';
-import { createClient } from '@/lib/supabase/client';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { createClient } from '@/lib/supabase/client';
 
 interface AuthMessage {
   type: 'github-auth-success' | 'github-auth-error';
@@ -131,7 +131,7 @@ export default function GitHubOAuthPopup() {
             }, 10000); // 10 second timeout
           } catch (authError: any) {
             console.error('Auth processing error:', authError);
-            handleError(authError.message || 'Authentication failed');
+            handleError(authError.message || tHardcodedUi.raw('i18nComplete.text93821eb7ce8c'));
           }
         } else {
           // Start the OAuth flow
@@ -143,7 +143,7 @@ export default function GitHubOAuthPopup() {
               redirectTo: `${window.location.origin}/auth/github-popup`,
               queryParams: {
                 access_type: 'online',
-                prompt: 'select_account',
+                prompt: tHardcodedUi.raw('i18nComplete.text28a800e4720b'),
               },
             },
           });
@@ -176,7 +176,7 @@ export default function GitHubOAuthPopup() {
       if (closeTimerId) clearTimeout(closeTimerId);
       if (sessionDelayId) clearTimeout(sessionDelayId);
     };
-  }, []);
+  }, [appHome, tHardcodedUi]);
 
   return (
     <main className="bg-background flex min-h-svh flex-col items-center justify-center px-6">
@@ -189,7 +189,9 @@ export default function GitHubOAuthPopup() {
         <div className="mt-6">
           {status === 'error' ? (
             <>
-              <ErrorStrip message={errorMessage || 'Authentication failed'} />
+              <ErrorStrip
+                message={errorMessage || tHardcodedUi.raw('i18nComplete.text93821eb7ce8c')}
+              />
               <Button
                 type="button"
                 variant="secondary"
@@ -197,14 +199,16 @@ export default function GitHubOAuthPopup() {
                 className="w-full"
                 onClick={() => window.close()}
               >
-                Close
+                {tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
               </Button>
             </>
           ) : (
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loading className="text-muted-foreground size-4 shrink-0" />
               <span>
-                {status === 'processing' ? 'Completing sign-in…' : 'Redirecting to GitHub…'}
+                {status === 'processing'
+                  ? tHardcodedUi.raw('i18nComplete.textfc379aff8002')
+                  : tHardcodedUi.raw('i18nComplete.text502698660877')}
               </span>
             </div>
           )}

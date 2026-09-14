@@ -95,7 +95,9 @@ describe('modalDismissesOnOutsideInteraction', () => {
 
   for (const [label, attrs] of floatingPanels) {
     test(`a click on a portaled ${label} does NOT dismiss`, () => {
-      expect(modalDismissesOnOutsideInteraction(asTarget(new StubElement(attrs)), true)).toBe(false);
+      expect(modalDismissesOnOutsideInteraction(asTarget(new StubElement(attrs)), true)).toBe(
+        false,
+      );
     });
 
     test(`a click on a descendant of a portaled ${label} does NOT dismiss`, () => {

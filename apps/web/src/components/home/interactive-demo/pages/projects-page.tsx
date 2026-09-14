@@ -11,7 +11,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { PageHead } from '../primitives';
 import type { ProjectCard } from '../types';
 
@@ -20,28 +20,31 @@ import type { ProjectCard } from '../types';
  * the modular demo (where it renders its empty state). */
 
 function ProjectStatusBadge({ status }: { status: ProjectCard['status'] }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (status === 'draft') {
     return (
       <Badge size="sm" variant="muted">
-        draft
+        {tI18nComplete.raw('text7743ce348d92')}
       </Badge>
     );
   }
   if (status === 'shipping') {
     return (
       <Badge size="sm" variant="outline" className="gap-1 text-amber-600 dark:text-amber-500">
-        <Loading className="size-3" /> shipping
+        <Loading className="size-3" /> {tI18nComplete.raw('text740062676a31')}
       </Badge>
     );
   }
   return (
     <Badge size="sm" variant="success" className="gap-1">
-      <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> live
+      <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />{' '}
+      {tI18nComplete.raw('text247610f4dedd')}
     </Badge>
   );
 }
 
 function ProjectRow({ project }: { project: ProjectCard }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { name, status, files, branch, repo, url } = project;
   const live = status === 'live';
   return (
@@ -71,7 +74,9 @@ function ProjectRow({ project }: { project: ProjectCard }) {
           {live && repo ? (
             <span className="font-mono">{repo}</span>
           ) : (
-            <span>{files ?? 0} files</span>
+            <span>
+              {files ?? 0} {tI18nComplete.raw('text3d7db37d08f9')}
+            </span>
           )}
           <span className="inline-flex items-center gap-1">
             <GitBranch className="size-3" />
@@ -89,7 +94,7 @@ export function ProjectsPage({ projects }: { projects: ProjectCard[] }) {
   return (
     <div>
       <PageHead
-        title="Projects"
+        title={tI18nHardcoded.raw('i18nComplete.text04e2a9728af7')}
         sub={tI18nHardcoded.raw(
           'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxAttrSub90e41adc',
         )}
@@ -115,7 +120,7 @@ export function ProjectsPage({ projects }: { projects: ProjectCard[] }) {
               )}
             </div>
             <div className="text-muted-foreground text-xs">
-              Run{' '}
+              {tI18nHardcoded.raw('i18nComplete.text00d60e31a4e6')}{' '}
               <span className="text-foreground font-mono">
                 {tI18nHardcoded.raw(
                   'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextKortixa20df451',

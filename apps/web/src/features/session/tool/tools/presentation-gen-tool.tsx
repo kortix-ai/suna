@@ -19,7 +19,7 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   PresentationIcon as Presentation,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useContext, useMemo } from 'react';
 
 import { parsePresentationOutput } from '@/features/session/tool/shared/presentation-helpers';
@@ -140,7 +140,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
               </span>
               {parsed.total_slides && (
                 <span className="text-muted-foreground/50 ml-auto text-xs">
-                  ({parsed.total_slides} total)
+                  ({parsed.total_slides} {tHardcodedUi.raw('i18nComplete.text665c0285727d')}
                 </span>
               )}
             </div>
@@ -150,7 +150,9 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
             <div className="flex items-center gap-2 text-xs">
               <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
-                Slide {parsed.slide_number || slideNumber || '?'} validated
+                {tHardcodedUi.raw('i18nComplete.text6bb4c1177681')}{' '}
+                {parsed.slide_number || slideNumber || '?'}{' '}
+                {tHardcodedUi.raw('i18nComplete.texte3e4aec37372')}
               </span>
               {parsed.message && parsed.message !== `Slide ${parsed.slide_number} validated` && (
                 <span className="text-muted-foreground/60 truncate">{parsed.message}</span>
@@ -169,7 +171,9 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
             <div className="flex items-center gap-2 text-xs">
               <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
-                Exported {parsed.presentation_name || presentationName} to{' '}
+                {tHardcodedUi.raw('i18nComplete.text391065e4dc23')}{' '}
+                {parsed.presentation_name || presentationName}{' '}
+                {tHardcodedUi.raw('i18nComplete.text663ea1bfffe5')}{' '}
                 {action === 'export_pdf' ? 'PDF' : 'PPTX'}
               </span>
             </div>

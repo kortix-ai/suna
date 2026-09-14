@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { CubeIcon as Boxes } from '@phosphor-icons/react';
@@ -34,6 +35,7 @@ export function MarketplaceProjectsGrid({
   query?: string;
   size?: 'default' | 'featured';
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const q = (query ?? '').trim().toLowerCase();
   const visible = useMemo(() => (q ? items.filter((item) => matches(item, q)) : items), [items, q]);
 
@@ -41,15 +43,19 @@ export function MarketplaceProjectsGrid({
     return (
       <EmptyState
         icon={Boxes}
-        title="No projects yet"
-        description="Ready-to-clone Kortix projects will show up here."
+        title={tI18nComplete.raw('textf83c80652286')}
+        description={tI18nComplete.raw('texte42e30cead8d')}
       />
     );
   }
 
   if (visible.length === 0) {
     return (
-      <EmptyState icon={Boxes} title="No matches" description={`No projects match "${query}".`} />
+      <EmptyState
+        icon={Boxes}
+        title={tI18nComplete.raw('text2df01a03ff43')}
+        description={tI18nComplete('text7591d1f3fb17', { value0: query ?? '' })}
+      />
     );
   }
 

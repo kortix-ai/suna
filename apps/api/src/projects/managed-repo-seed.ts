@@ -25,12 +25,34 @@
  *     empty repo" is distinguishable from "empty because the seed never
  *     landed", and the second case can be repaired on next access.
  *
- * `expected: false` is a first-class, permanently-respected state: `kortix ship`
- * (apps/cli/src/commands/ship.ts) provisions with no `seed_starter` and then
- * pushes its own local history to the default branch with a plain (non-force)
- * push. Seeding that repo — at provision time or later — would turn that push
- * into a non-fast-forward rejection. So the fix is never "always seed"; it is
- * "always know, and repair only what was supposed to be seeded".
+ * ## The invariant: a project ALWAYS has a manifest
+ *
+ * This module used to end with "the fix is never 'always seed'; it is 'always
+ * know, and repair only what was supposed to be seeded'". That was half right
+ * and it left a hole big enough to drive a product bug through.
+ *
+ * `seed_starter` answers **who supplies the manifest** — the server now, or a
+ * client that is about to push its own `kortix init` scaffold. It does NOT
+ * answer *whether the project gets one*. Both designed paths end with a
+ * `kortix.yaml` (see provision-core.ts: `kortix ship` scaffolds via
+ * `kortix init` — same `@kortix/starter`, same file). Reading the flag as
+ * "should this project have files at all" is what allowed a caller who said
+ * nothing — a bare `POST /v1/projects/provision`, an agent, any integration —
+ * to get a repo with no manifest, no agents and no skills, recorded as
+ * `caller_opted_out` so the repair below would skip it *forever*, in exactly
+ * the case where nobody owns the first commit.
+ *
+ * So: **seeding is the default, and `expected` is now always true.** An
+ * explicit `seed_starter: false` still suppresses the provision-time push —
+ * `kortix ship` pushes its own history with a plain (non-force) push, and
+ * seeding first would turn that into a non-fast-forward rejection — but it
+ * records `client_owns_first_commit`, not "leave this empty". If that client
+ * never pushes, `shouldSelfHealManagedRepoSeed` repairs the repo on next
+ * access. The repair is safe against ship either way because it re-checks
+ * `remoteBranchExists` and skips a repo the client already populated.
+ *
+ * Net: no caller, and no abandoned client, can leave a project without a
+ * manifest.
  */
 
 import type { GitConnectionRef, GitHostBackend, SeedFile } from './git-backends/types';
@@ -52,6 +74,14 @@ export interface ManagedRepoSeedState {
 export type ManagedRepoSeedReason =
   | 'seeded'
   | 'pending'
+  /**
+   * The caller sent `seed_starter: false` because it is about to push its own
+   * `kortix init` scaffold (`kortix ship`). NOT "this project may be empty" —
+   * the state still carries `expected: true`, so a client that never pushes is
+   * repaired instead of left permanently blank. Replaces `caller_opted_out`.
+   */
+  | 'client_owns_first_commit'
+  /** @deprecated Pre-invariant rows only. Read, never written — see the header. */
   | 'caller_opted_out'
   | 'push_failed'
   | 'verify_failed'

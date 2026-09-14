@@ -9,6 +9,8 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useMemo, useState } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
@@ -78,6 +80,8 @@ export function GatewayOverview({
   /** Gates the budget controls. Read-only members still see the cap. */
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const metrics = useLocalizedUiCatalog(METRICS);
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
@@ -129,7 +133,7 @@ export function GatewayOverview({
   const errorTypes = errorData?.errors ?? [];
   const maxErrorCount = Math.max(1, ...errorTypes.map((e) => e.count));
 
-  const activeMetric = METRICS.find((m) => m.key === metric) ?? METRICS[0];
+  const activeMetric = metrics.find((m) => m.key === metric) ?? metrics[0];
 
   return (
     // No scroller and no padding of its own: this is a tab of
@@ -139,14 +143,16 @@ export function GatewayOverview({
     <div className="flex flex-col">
       <div className="w-full space-y-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-foreground text-sm font-medium">Last {days} days</h2>
+          <h2 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('texteb970eb0951c')} {days} {tI18nComplete.raw('textab51004e9d71')}
+          </h2>
           <RangeSelector days={days} setDays={setDays} />
         </div>
 
         {/* Headline stats */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard
-            label="Total spend"
+            label={tI18nComplete.raw('text0a5d5c335cd8')}
             value={fmtUsd(cost)}
             sub={<SpendSplit kortixCost={kortixCost} providerCost={providerCost} days={days} />}
             icon={DollarSign}
@@ -156,7 +162,7 @@ export function GatewayOverview({
             index={0}
           />
           <StatCard
-            label="Requests"
+            label={tI18nComplete.raw('textada27592c957')}
             value={requests.toLocaleString()}
             sub={`${(requests / Math.max(1, days)).toFixed(0)}/day avg`}
             icon={Zap}
@@ -166,10 +172,12 @@ export function GatewayOverview({
             index={1}
           />
           <StatCard
-            label="Errors"
+            label={tI18nComplete.raw('textcb702378f315')}
             value={errors.toLocaleString()}
             sub={
-              requests ? `${((errors / requests) * 100).toFixed(1)}% error rate` : 'no requests yet'
+              requests
+                ? `${((errors / requests) * 100).toFixed(1)}% error rate`
+                : tI18nComplete.raw('texte191ab529417')
             }
             icon={AlertTriangle}
             accent="var(--destructive)"
@@ -178,7 +186,7 @@ export function GatewayOverview({
             index={2}
           />
           <StatCard
-            label="Tokens"
+            label={tI18nComplete.raw('texta039dfb9628b')}
             value={fmtCompact(inTokens + outTokens)}
             sub={`${fmtCompact(inTokens)} in · ${fmtCompact(outTokens)} out`}
             icon={Coins}
@@ -195,11 +203,11 @@ export function GatewayOverview({
 
         {/* One chart, pivoted across metrics */}
         <Panel
-          title="Trend"
-          description="Daily gateway traffic across the window"
+          title={tI18nComplete.raw('text9e217716c4e0')}
+          description={tI18nComplete.raw('text7c1885c365d9')}
           action={
             <FilterBar className="h-8">
-              {METRICS.map((m) => (
+              {metrics.map((m) => (
                 <FilterBarItem
                   key={m.key}
                   onClick={() => setMetric(m.key)}
@@ -217,9 +225,15 @@ export function GatewayOverview({
 
         {/* Breakdowns */}
         <div className="grid gap-4 lg:grid-cols-2">
-          <Panel title="Top models" count={models.length} description="Spend by model">
+          <Panel
+            title={tI18nComplete.raw('text79489561d9ef')}
+            count={models.length}
+            description={tI18nComplete.raw('text9cb4d9cdbd81')}
+          >
             {models.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">No requests yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">
+                {tI18nComplete.raw('textea923f45a415')}
+              </p>
             ) : (
               <div className="space-y-0.5">
                 {models.map((m, i) => {
@@ -240,12 +254,14 @@ export function GatewayOverview({
           </Panel>
 
           <Panel
-            title="Top sessions"
+            title={tI18nComplete.raw('textfec78985c8f3')}
             count={sessions.length}
-            description="Total cost — LLM + sandbox compute"
+            description={tI18nComplete.raw('textd321c227d1d9')}
           >
             {sessions.length === 0 ? (
-              <p className="text-muted-foreground py-6 text-center text-sm">No sessions yet.</p>
+              <p className="text-muted-foreground py-6 text-center text-sm">
+                {tI18nComplete.raw('text0e25da739ad6')}
+              </p>
             ) : (
               <div className="space-y-0.5">
                 {sessions.slice(0, 6).map((s, i) => {
@@ -279,7 +295,7 @@ export function GatewayOverview({
                             {fmtUsd(s.compute_cost)}
                           </span>
                           <span className="text-muted-foreground/50">
-                            {s.requests.toLocaleString()} req
+                            {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
                           </span>
                         </>
                       }
@@ -300,9 +316,9 @@ export function GatewayOverview({
 
         {errorTypes.length > 0 && (
           <Panel
-            title="Errors by type"
+            title={tI18nComplete.raw('text431a387a9976')}
             count={errorTypes.length}
-            description="What's failing across this window"
+            description={tI18nComplete.raw('text7aec2ce05cb8')}
           >
             <div className="space-y-0.5">
               {errorTypes.map((e, i) => (
@@ -342,18 +358,31 @@ function SpendSplit({
   providerCost: number;
   days: number;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (kortixCost > 0 && providerCost > 0) {
     return (
       <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        <Payee color="var(--kortix-blue)" label="Kortix" amount={kortixCost} />
+        <Payee
+          color="var(--kortix-blue)"
+          label={tI18nComplete.raw('textab54cf5e1d9d')}
+          amount={kortixCost}
+        />
         <span className="text-muted-foreground/40">·</span>
-        <Payee color="var(--muted-foreground)" label="providers" amount={providerCost} />
+        <Payee
+          color="var(--muted-foreground)"
+          label={tI18nComplete.raw('text1e19bab29bc6')}
+          amount={providerCost}
+        />
       </span>
     );
   }
-  if (providerCost > 0) return <>billed to your own provider keys</>;
-  if (kortixCost > 0) return <>billed as Kortix credits</>;
-  return <>over {days} days</>;
+  if (providerCost > 0) return <>{tI18nComplete.raw('text192173c3beda')}</>;
+  if (kortixCost > 0) return <>{tI18nComplete.raw('textea13cd34d9e0')}</>;
+  return (
+    <>
+      {tI18nComplete.raw('text5fb6a47e368e')} {days} {tI18nComplete.raw('textab51004e9d71')}
+    </>
+  );
 }
 
 function Payee({ color, label, amount }: { color: string; label: string; amount: number }) {

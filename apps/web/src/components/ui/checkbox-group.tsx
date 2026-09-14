@@ -115,4 +115,4 @@ function CheckboxGroupItem({
 }
 
 export { CheckboxGroup, CheckboxGroupItem };
-export type { CheckboxGroupProps, CheckboxGroupItemProps };
+export type { CheckboxGroupItemProps, CheckboxGroupProps };

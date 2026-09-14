@@ -46,7 +46,7 @@ import {
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -225,7 +225,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Hint label="Refresh" side="top">
+      <Hint label={tHardcodedUi.raw('i18nComplete.text0e9161011702')} side="top">
         <Button variant="ghost" size="icon-sm" type="button" onClick={handleRefresh}>
           <ArrowClockwiseIcon className={cn('size-4', isLoading && 'animate-spinner-spin')} />
         </Button>
@@ -257,7 +257,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
           size="xs"
           disabled={!navigationEnabled || !proxy}
         >
-          Preview
+          {tHardcodedUi.raw('i18nComplete.text324b134f57c7')}
         </Button>
       </Hint>
     </div>
@@ -297,7 +297,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             <span className="break-all">{label}</span>
           </Button>
         </Hint>
-        <Hint label="Refresh" side="top">
+        <Hint label={tI18nHardcoded.raw('i18nComplete.text0e9161011702')} side="top">
           <Button
             variant="ghost"
             size="xs"
@@ -306,7 +306,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             className="text-muted-foreground gap-1.5"
           >
             <ArrowClockwiseIcon className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
-            Retry preview
+            {tI18nHardcoded.raw('i18nComplete.textceba35272869')}
           </Button>
         </Hint>
       </div>
@@ -783,6 +783,7 @@ function ToolOutputCard({ copyText, children }: { copyText?: string; children: R
  * hid, so handing back the visible slice would defeat it.
  */
 export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { text, truncatedChars } = useMemo(
     () => formatRawOutput(output, maxChars),
     [output, maxChars],
@@ -802,7 +803,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
       )}
       {truncatedChars > 0 && (
         <div className="text-muted-foreground/40 mt-2 text-xs">
-          +{truncatedChars.toLocaleString()} more characters — copy for the full output
+          +{truncatedChars.toLocaleString()} {tI18nComplete.raw('text6d0123a90793')}
         </div>
       )}
     </ToolOutputCard>
@@ -846,6 +847,35 @@ export function useToolOpen(): boolean {
 export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 
 export const StalePendingContext = createContext(false);
+
+/**
+ * Whether the turn that owns this part is STILL RUNNING.
+ *
+ * `ToolRunningContext` cannot answer this, and that is the bug this exists to
+ * close. A tool call is created `pending` with an empty `input`, and its
+ * arguments arrive afterwards as streamed JSON in `state.raw`. For the frames
+ * between those two events, a live call is byte-for-byte identical to a
+ * leftover `pending` part from a run that died — same status, same empty input,
+ * same absent `raw` — so `tool-part-renderer`'s stale test matched both and
+ * `ToolRunningContext` reported `false` for a call that had only just started.
+ *
+ * The visible cost was a row contradicting the line directly beneath it: the
+ * transcript rendered "No content received" over a `write` while the SDK's own
+ * status line, reading THAT SAME PART, rendered "Making changes..."
+ * (`packages/sdk/src/core/turns/state.ts`). One part, two views, opposite
+ * verdicts — which is what made a working session look frozen.
+ *
+ * The part alone cannot settle it, so the answer comes from one level up. The
+ * turn already knows whether it is working (`session-chat.tsx`'s `working`), and
+ * that single boolean is the whole discriminator: while the turn is live, an
+ * input-less pending part is a call that has not spoken YET; once the turn is
+ * over, the same part is a call that never will.
+ *
+ * Defaults to `false` so a surface that renders parts outside a live turn — the
+ * Advanced panel, `/debug/tools`, a restored transcript — keeps the settled
+ * reading without opting in.
+ */
+export const TurnLiveContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
@@ -931,11 +961,16 @@ const TOOL_ROW_CLASS = cn(
  * `activity-file-chips.tsx`); this one was the exception.
  */
 function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <AlertTriangle
       weight="fill"
       data-tone={outcome}
-      aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
+      aria-label={
+        outcome === 'failed'
+          ? tI18nComplete.raw('textf0103f528539')
+          : tI18nComplete.raw('text2c9f21686e34')
+      }
       className={cn('size-4 shrink-0', STATUS_TEXT.neutral)}
     />
   );

@@ -68,7 +68,7 @@ let dbWrites: Array<{ op: string; payload?: unknown }> = [];
 
 function makeChain(op: string): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'onConflictDoUpdate', 'returning']) {
+  for (const m of ['from', 'where', 'limit', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) {
     chain[m] = () => chain;
   }
   chain.values = (payload: unknown) => {
@@ -262,23 +262,81 @@ describe('relayTurnStep (chat.update model)', () => {
   });
 });
 
-describe('expired turn rows', () => {
-  test('drops a late answer relay without posting — but clears the stranded ⏳', async () => {
+// Regression cover for the 2026-09-04/05 Slack incident threads: a run whose
+// quiet stretches outlived STREAM_TTL_MS lost its stream, and every later step
+// plus the final answer was dropped on the floor. `expires_at` is no longer a
+// reaper in loadTurn, and an answer with no row left is still delivered.
+describe('a turn row past expires_at is still live', () => {
+  test('delivers a late answer instead of dropping it', async () => {
     dbResults = [
-      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn (expired)
-      [], // delete expired turn
+      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn (past expiry)
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
     ];
 
     const ok = await relayTurnAnswer('sess-1', 'Late answer.');
-    expect(ok).toBe(false);
-    expect(dbWrites.map((w) => w.op)).toEqual(['delete']);
-    expect(calls('postMessage').length).toBe(0);
+    expect(ok).toBe(true);
+    const [update] = calls('updateBlocks');
+    expect(update?.args[3]).toBe('Task complete');
+    expect(calls('addReaction').length).toBe(1); // ✅ on a real answer
+    expect(calls('removeReaction').length).toBe(1); // ⏳ cleared
+  });
+
+  test('keeps streaming steps instead of reaping the row mid-run', async () => {
+    dbResults = [
+      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn (past expiry)
+      [], // saveTurn upsert
+    ];
+
+    const ok = await relayTurnStep('sess-1', 'Still working');
+    expect(ok).toBe(true);
+    expect(calls('updateBlocks').length).toBe(1); // plan repainted, not dropped
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+    // The step re-arms the row's own bound, so a live run cannot age out.
+    const saved = dbWrites.find((w) => w.op === 'insert.values')?.payload as { expiresAt: Date };
+    expect(saved.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe('answer rescue when the GC already deleted the row', () => {
+  const sessionRow = (metadata: unknown) => [{ projectId: 'proj-1', metadata }];
+
+  test('posts the answer into the Slack thread from session metadata', async () => {
+    dbResults = [
+      [], // loadTurn — row gone (GC closed and deleted it)
+      sessionRow({ slack: { channel: 'C1', thread_ts: '10.10' } }),
+      [{ eventId: 'slack:answerrescue:sess-1' }], // claimAnswerRescue wins
+    ];
+
+    const ok = await relayTurnAnswer('sess-1', 'The fix is deployed.');
+    expect(ok).toBe(true);
+    const [post] = calls('postBlocks');
+    expect(post?.args[1]).toBe('C1'); // channel
+    expect(post?.args[4]).toBe('10.10'); // posted in-thread, not top-level
+    const blocks = post?.args[3] as Array<{ type: string }>;
+    expect(blocks.map((b) => b.type)).toEqual(['section', 'context']);
+  });
+
+  test('stays silent for a session that did not come from Slack', async () => {
+    dbResults = [
+      [], // loadTurn — no row
+      sessionRow({ source: 'ui' }), // no metadata.slack
+    ];
+
+    expect(await relayTurnAnswer('sess-1', 'x')).toBe(false);
     expect(calls('postBlocks').length).toBe(0);
-    expect(calls('updateBlocks').length).toBe(0);
-    expect(calls('addReaction').length).toBe(0);
-    // The expired un-finalized row had a ⏳ on the user's message — reaping it now
-    // clears that reaction so it doesn't linger forever.
-    expect(calls('removeReaction').length).toBe(1);
+    expect(calls('postMessage').length).toBe(0);
+  });
+
+  test('a duplicate slack send cannot post the answer twice', async () => {
+    dbResults = [
+      [], // loadTurn — no row
+      sessionRow({ slack: { channel: 'C1', thread_ts: '10.10' } }),
+      [], // claimAnswerRescue loses — a rescue already posted
+    ];
+
+    expect(await relayTurnAnswer('sess-1', 'again')).toBe(false);
+    expect(calls('postBlocks').length).toBe(0);
   });
 });
 

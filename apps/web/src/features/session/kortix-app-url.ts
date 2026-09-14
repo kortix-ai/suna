@@ -9,9 +9,11 @@ export function isKortixAppUrl(candidate: string): boolean {
     const url = new URL(candidate);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
     const host = url.hostname.toLowerCase().replace(/\.$/, '');
-    return host === 'apps.kortix.com' ||
+    return (
+      host === 'apps.kortix.com' ||
       host.endsWith('.apps.kortix.com') ||
-      host.endsWith('.apps.localhost');
+      host.endsWith('.apps.localhost')
+    );
   } catch {
     return false;
   }

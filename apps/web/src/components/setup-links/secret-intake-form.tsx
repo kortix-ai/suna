@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { getSecretSetupLink, submitSecretSetupLink, type SecretSetupLinkInfo } from '@kortix/sdk';
 import {
   CheckIcon,
   ClockCountdownIcon,
@@ -12,14 +14,8 @@ import {
   LinkBreakIcon,
   ShieldCheckIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { classifySetupLinkError, describeLinkExpiry, setupLinkApiBase } from './util';
-import {
-  getSecretSetupLink,
-  submitSecretSetupLink,
-  type SecretSetupLinkInfo,
-} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
 
@@ -65,7 +61,7 @@ export function SecretIntakeForm({
           setError(
             cause instanceof Error
               ? cause.message
-              : 'Could not reach Kortix. Check your connection and try again.',
+              : tI18nHardcoded.raw('i18nComplete.texta8234500531a'),
           );
           setPhase('error');
         }
@@ -74,7 +70,7 @@ export function SecretIntakeForm({
     return () => {
       cancelled = true;
     };
-  }, [base, token]);
+  }, [base, token, tI18nHardcoded]);
 
   async function submit() {
     if (!info) return;
@@ -98,7 +94,11 @@ export function SecretIntakeForm({
         setPhase('expired');
         return;
       }
-      setError(cause instanceof Error ? cause.message : 'Could not save. Check your connection and try again.');
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not save. Check your connection and try again.',
+      );
       setPhase('ready');
     }
   }
@@ -118,11 +118,11 @@ export function SecretIntakeForm({
         <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
           <ClockCountdownIcon weight="fill" className="text-kortix-orange size-5" />
         </span>
-        <p className="text-foreground text-sm font-medium">This link has expired</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text7cb87dcb8d50')}
+        </p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          Secret links stop working after a set time so an old link cannot be misused. Ask the
-          agent that sent it for a fresh link — it can mint one in seconds — or reply in the
-          thread where you received this one.
+          {tI18nHardcoded.raw('i18nComplete.texte7119681d233')}
         </p>
       </div>
     );
@@ -134,10 +134,11 @@ export function SecretIntakeForm({
         <span className="bg-kortix-red/15 flex size-9 items-center justify-center rounded-sm">
           <LinkBreakIcon weight="fill" className="text-kortix-red size-5" />
         </span>
-        <p className="text-foreground text-sm font-medium">This link is not valid</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text72c9ce898bf3')}
+        </p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          The link may have been cut off when it was copied. Open the complete URL, or ask the
-          agent that sent it for a new link.
+          {tI18nHardcoded.raw('i18nComplete.text8d669b2101c9')}
         </p>
       </div>
     );
@@ -146,7 +147,7 @@ export function SecretIntakeForm({
   if (phase === 'error') {
     return (
       <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'Could not reach Kortix. Check your connection and try again.'}
+        {error || tI18nHardcoded.raw('i18nComplete.texta8234500531a')}
       </div>
     );
   }
@@ -204,13 +205,17 @@ export function SecretIntakeForm({
         ) : (
           <KeyIcon className="mr-2 size-4 shrink-0" />
         )}
-        {submitting ? 'Saving…' : 'Save securely'}
+        {submitting
+          ? tI18nHardcoded.raw('i18nComplete.text23e39291d613')
+          : tI18nHardcoded.raw('i18nComplete.textad3d9699142e')}
       </Button>
 
       <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-[11px]">
         <ShieldCheckIcon className="size-3" />
         {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88')}
-        {expiresIn ? ` Link expires in ${expiresIn}.` : ''}
+        {expiresIn
+          ? tI18nHardcoded('i18nComplete.textefb48f76e65a', { value0: expiresIn })
+          : ''}
       </p>
     </div>
   );

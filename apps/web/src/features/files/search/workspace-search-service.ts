@@ -1,6 +1,3 @@
-import { getRuntimeCacheKey } from '@kortix/sdk/react';
-import { findFiles, listFiles } from '../api/runtime-files';
-import type { FileNode } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   type WorkspaceSearchOptions,
@@ -13,6 +10,9 @@ import {
   toWorkspaceSearchEntry,
   workspaceQueryLooksPathLike,
 } from '@/features/file-browser/search/workspace-search-core';
+import type { FileNode } from '@/features/file-browser/types';
+import { getRuntimeCacheKey } from '@kortix/sdk/react';
+import { findFiles, listFiles } from '../api/runtime-files';
 
 interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;
@@ -154,18 +154,19 @@ async function searchByPathTraversal(
       candidateDirs.slice(0, INDEX_CONCURRENCY).map((dir) => readDirectoryEntries(dir.path)),
     );
 
-    const matches = dedupeWorkspaceSearchEntries(
-      childLists
-        .flat()
-        .filter((entry) => entry.isDir),
-    );
+    const matches = dedupeWorkspaceSearchEntries(childLists.flat().filter((entry) => entry.isDir));
 
-    candidateDirs = filterSegmentEntries(matches, segment, { type: 'directory' }).slice(0, INDEX_CONCURRENCY);
+    candidateDirs = filterSegmentEntries(matches, segment, { type: 'directory' }).slice(
+      0,
+      INDEX_CONCURRENCY,
+    );
     if (candidateDirs.length === 0) return [];
   }
 
   const leafLists = await Promise.all(
-    candidateDirs.slice(0, INDEX_CONCURRENCY).map((dir) => readDirectoryEntries(toDirectoryPath(dir.path))),
+    candidateDirs
+      .slice(0, INDEX_CONCURRENCY)
+      .map((dir) => readDirectoryEntries(toDirectoryPath(dir.path))),
   );
 
   const leafMatches = filterSegmentEntries(
@@ -199,10 +200,10 @@ async function buildWorkspaceIndex(): Promise<WorkspaceSearchEntry[]> {
         if (!indexed.has(key)) indexed.set(key, entry);
 
         if (
-          entry.isDir
-          && !seenDirs.has(entry.path)
-          && !INDEX_SKIP_DIR_NAMES.has(entry.name)
-          && indexed.size < INDEX_MAX_ENTRIES
+          entry.isDir &&
+          !seenDirs.has(entry.path) &&
+          !INDEX_SKIP_DIR_NAMES.has(entry.name) &&
+          indexed.size < INDEX_MAX_ENTRIES
         ) {
           seenDirs.add(entry.path);
           queue.push(entry.path);
@@ -253,11 +254,7 @@ async function getWorkspaceIndexEntries(): Promise<WorkspaceSearchEntry[]> {
   return inFlight;
 }
 
-function shouldLoadIndex(
-  query: string,
-  results: WorkspaceSearchEntry[],
-  limit: number,
-): boolean {
+function shouldLoadIndex(query: string, results: WorkspaceSearchEntry[], limit: number): boolean {
   if (workspaceQueryLooksPathLike(query)) {
     if (results.length === 0) return true;
     const bestRank = rankWorkspaceSearchEntry(results[0], query);
@@ -296,21 +293,12 @@ export async function searchWorkspaceFileEntries(
   }
 
   const indexEntries = await getWorkspaceIndexEntries();
-  const indexedMatches = searchIndexedWorkspaceEntries(
-    indexEntries,
-    normalizedQuery,
-    {
-      limit: Math.max((resolvedOptions.limit ?? 50) * 4, 200),
-      type: resolvedOptions.type,
-    },
-  );
+  const indexedMatches = searchIndexedWorkspaceEntries(indexEntries, normalizedQuery, {
+    limit: Math.max((resolvedOptions.limit ?? 50) * 4, 200),
+    type: resolvedOptions.type,
+  });
 
-  merged = mergeWorkspaceSearchEntries(
-    merged,
-    indexedMatches,
-    normalizedQuery,
-    resolvedOptions,
-  );
+  merged = mergeWorkspaceSearchEntries(merged, indexedMatches, normalizedQuery, resolvedOptions);
 
   return merged;
 }
@@ -328,9 +316,6 @@ export async function searchWorkspaceFilePaths(
  * Returns plain `string[]` paths (dirs have trailing `/`).
  * Drop-in replacement for `findOpenCodeFiles`.
  */
-export async function searchWorkspaceFiles(
-  query: string,
-  limit = 50,
-): Promise<string[]> {
+export async function searchWorkspaceFiles(query: string, limit = 50): Promise<string[]> {
   return searchWorkspaceFilePaths(query, { limit, apiLimit: Math.max(limit, 100) });
 }

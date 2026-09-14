@@ -146,7 +146,12 @@ describe('burstSummaryLabel', () => {
   });
 
   test('a running burst reports size, not outcome', () => {
-    const parts = [tool('1', 'read'), tool('2', 'read'), tool('3', 'bash'), failedTool('4', 'read')];
+    const parts = [
+      tool('1', 'read'),
+      tool('2', 'read'),
+      tool('3', 'bash'),
+      failedTool('4', 'read'),
+    ];
     expect(burstSummaryLabel(burstSummary(parts), true)).toBe('Working · 4 steps');
   });
 

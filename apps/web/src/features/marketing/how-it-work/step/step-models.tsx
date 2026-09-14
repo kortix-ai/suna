@@ -8,6 +8,8 @@ import { OpenAI } from '@/features/icon/icons/open-ai';
 import { cn } from '@/lib/utils';
 import { GlobeIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
@@ -144,20 +146,23 @@ function usePanelActivity() {
   return { ref, visible, drawn };
 }
 
-const ROUTABLE = PROVIDERS.filter((provider) => provider.connected);
-
 export function StepModels(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const billing = useLocalizedUiCatalog(BILLING);
+  const providers = useLocalizedUiCatalog(PROVIDERS);
+  const scopes = useLocalizedUiCatalog(SCOPES);
+  const routable = providers.filter((provider) => provider.connected);
   const reduced = useReducedMotion();
   const { ref, visible, drawn } = usePanelActivity();
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     if (!visible || reduced) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % ROUTABLE.length), DWELL_MS);
+    const id = setInterval(() => setIndex((i) => (i + 1) % routable.length), DWELL_MS);
     return () => clearInterval(id);
-  }, [visible, reduced]);
+  }, [visible, reduced, routable.length]);
 
-  const active = ROUTABLE[index] ?? ROUTABLE[0];
+  const active = routable[index] ?? routable[0];
   const Glyph = active.glyph;
 
   /** The panel's own entrance. Three bands, 70ms apart, opacity-only under
@@ -180,10 +185,12 @@ export function StepModels(): ReactNode {
             because that is how a form labels a field — and reading this panel
             as a form is the entire point. */}
         <m.div {...band(0)} className="flex items-center gap-3">
-          <span className="text-muted-foreground font-mono text-[11px] tracking-wide">model</span>
+          <span className="text-muted-foreground font-mono text-[11px] tracking-wide">
+            {tI18nComplete.raw('text9372c470eead')}
+          </span>
           <span className="bg-border h-px flex-1" />
           <span className="text-muted-foreground/60 font-mono text-[11px] tracking-wide">
-            {SCOPES.join(' · ')}
+            {scopes.join(' · ')}
           </span>
         </m.div>
 
@@ -246,7 +253,7 @@ export function StepModels(): ReactNode {
             reason the row reads as one control with a position instead of four
             independent chips taking turns lighting up. */}
         <m.div {...band(2)} className="grid grid-cols-4 gap-1.5">
-          {PROVIDERS.map((provider) => {
+          {providers.map((provider) => {
             const isActive = provider.id === active.id;
             return (
               <div
@@ -282,7 +289,9 @@ export function StepModels(): ReactNode {
                       row is three pieces of decoration; the one row that says
                       something different is the one worth reading. */}
                   <span className="text-muted-foreground/60 block truncate text-[10.5px] leading-tight">
-                    {provider.connected ? 'connected' : 'add yours'}
+                    {provider.connected
+                      ? tI18nComplete.raw('text12a7bd86e0a4')
+                      : tI18nComplete.raw('text620de3c1ab89')}
                   </span>
                 </span>
               </div>
@@ -295,10 +304,10 @@ export function StepModels(): ReactNode {
             for three short phrases is a panel arguing with itself. */}
         <m.div {...band(3)} className="border-border flex items-center gap-3 border-t pt-4">
           <span className="text-muted-foreground/60 shrink-0 font-mono text-[11px] tracking-wide">
-            billed through
+            {tI18nComplete.raw('text635d73b7566b')}
           </span>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            {BILLING.map((option, i) => (
+            {billing.map((option, i) => (
               <span key={option.id} className="flex items-center gap-2">
                 {i > 0 && <span className="text-muted-foreground/30">·</span>}
                 <span className="text-muted-foreground flex items-center gap-1.5 text-[12.5px]">
@@ -320,15 +329,15 @@ export function StepModels(): ReactNode {
           </span>
           <span className="min-w-0">
             <span className="text-foreground block font-mono text-[13px] leading-tight font-medium">
-              model: auto
+              {tI18nComplete.raw('text6051259b6539')}
             </span>
             <span className="text-muted-foreground block text-[11px] leading-tight">
-              {SCOPES.join(' · ')}
+              {scopes.join(' · ')}
             </span>
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {PROVIDERS.map((provider) => (
+          {providers.map((provider) => (
             <div
               key={provider.id}
               className="border-border bg-background flex items-center gap-2.5 rounded-md border px-3 py-2"

@@ -1,4 +1,4 @@
-import type { FilePart } from '@/ui';
+import type { FilePart, Part } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 
 import { normalizeAttachments } from './user-message';
@@ -14,6 +14,10 @@ function part(id: string, filename: string, mime: string, url?: string): FilePar
 }
 
 const upload = (path: string, mime: string, filename: string) => ({ path, mime, filename });
+
+function textPart(id: string, text: string): Part {
+  return { id, type: 'text', text } as unknown as Part;
+}
 
 describe('normalizeAttachments', () => {
   test('an upload survives normalization — it used to be dropped entirely', () => {
@@ -55,6 +59,40 @@ describe('normalizeAttachments', () => {
     );
 
     expect(result.map((f) => f.filename)).toEqual(['chart.png', 'notes.md']);
+  });
+
+  test('keeps one native part followed by workspace references in source order', () => {
+    const result = normalizeAttachments(
+      [part('p1', 'bundle.zip', 'application/zip', 'data:application/zip;base64,UEsDBA==')],
+      [
+        upload('/workspace/README.md', 'text/markdown', 'README.md'),
+        upload('/workspace/shot.png', 'image/png', 'shot.png'),
+      ],
+    );
+
+    expect(result.map((file) => file.filename)).toEqual(['bundle.zip', 'README.md', 'shot.png']);
+  });
+
+  test('merges references and native files by their original part positions', () => {
+    const result = normalizeAttachments(
+      [
+        textPart('t1', 'two workspace references'),
+        part('p1', 'shot.png', 'image/png', 'data:image/png;base64,iVBORw0KGgo='),
+        textPart('t2', 'one later workspace reference'),
+      ],
+      [
+        { ...upload('/workspace/README.md', 'text/markdown', 'README.md'), sourcePartIndex: 0 },
+        { ...upload('/workspace/report.pdf', 'application/pdf', 'report.pdf'), sourcePartIndex: 0 },
+        { ...upload('/workspace/data.csv', 'text/csv', 'data.csv'), sourcePartIndex: 2 },
+      ],
+    );
+
+    expect(result.map((file) => file.filename)).toEqual([
+      'README.md',
+      'report.pdf',
+      'shot.png',
+      'data.csv',
+    ]);
   });
 
   test('keys stay unique across routes so React does not collide them', () => {

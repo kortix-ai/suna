@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 
+import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 
@@ -14,6 +15,12 @@ import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watche
  * starts one closes immediately, and the route it navigates to is a different
  * one on either side, so only a shell above both can watch it land.
  *
+ * The account hub overlay is the third such case. It opens over whatever app
+ * route you are on — a project, a session, the projects list — so only a
+ * shell above all of them can mount it. It renders nothing until something
+ * opens it, and it stands down entirely while an `/accounts/**` route is
+ * showing the same surface. See `features/accounts/hub/account-hub-panel.tsx`.
+ *
  * Keep this thin. Route-specific work belongs in the route.
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +32,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <BillingReturnWatcher />
       </Suspense>
       <ProjectSwitchWatcher />
+      {/* Closed, this is one store subscription and a `popstate` listener. The
+          hub's own chunk is not fetched until the first open — or until
+          `preloadAccountHub()` warms it on pointer intent. */}
+      <Suspense fallback={null}>
+        <AccountHubPanel />
+      </Suspense>
       {children}
     </>
   );

@@ -1,3 +1,7 @@
+import { AGENT_AUTOMATION_TRANSLATION_KEYS } from '@/i18n/agent-automation-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/agent-computer` copy.
  *
@@ -238,3 +242,11 @@ export const closing = {
   ctaSecondary: 'Talk to us about enterprise',
   ctaSecondaryHref: '/enterprise',
 } as const;
+
+export function getLocalizedAgentComputerContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, boot, control, parallel, declared, files, isolation, closing },
+    tI18nComplete,
+    AGENT_AUTOMATION_TRANSLATION_KEYS,
+  );
+}

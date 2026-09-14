@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
@@ -11,6 +12,7 @@ import { bindTeamsIdentity } from '@kortix/sdk';
  * Teams user to the signed-in Kortix account so the agent runs as them.
  */
 export default function TeamsLoginPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const params = useParams<{ token: string }>();
   const token = params?.token ?? '';
 
@@ -20,11 +22,12 @@ export default function TeamsLoginPage() {
       token={token}
       loginPath={`/teams/login/${token}`}
       bind={bindTeamsIdentity}
-      missingLinkMessage="This page is opened from a Kortix message in Teams. Start the login from Teams to get a fresh link."
+      missingLinkMessage={tI18nComplete.raw('text7390830dc0eb')}
       disconnectNote={
         <>
-          Disconnect anytime with the <span className="text-foreground font-mono">logout</span>{' '}
-          command in Teams.
+          {tI18nComplete.raw('textbf7e9458c251')}{' '}
+          <span className="text-foreground font-mono">{tI18nComplete.raw('text00270cf63f93')}</span>{' '}
+          {tI18nComplete.raw('text55706ffa93eb')}
         </>
       }
     />

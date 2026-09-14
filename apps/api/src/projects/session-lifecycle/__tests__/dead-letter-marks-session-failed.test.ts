@@ -15,10 +15,11 @@
 // process-global in bun:test, so run this file in its own `bun test <file>`
 // invocation (as CI does), same caveat as ../../sandbox-reaper.test.ts.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, projectTriggerRuntime, sessionLifecycleCommands } from '@kortix/db';
 
 let commandRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let insertCalls: Array<{ table: unknown; values: Record<string, unknown> }> = [];
 let errorLogs: Array<{ message: string; context?: Record<string, unknown> }> = [];
 
 mock.module('../../../lib/logger', () => ({
@@ -53,6 +54,18 @@ mock.module('../../../shared/db', () => ({
         },
       }),
     }),
+    // Awaitable insert + `.onConflictDoUpdate()` — used by
+    // markTriggerRuntimeDeliveryFailed to flip projectTriggerRuntime to 'failed'.
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => ({
+        onConflictDoUpdate: () => ({
+          then: (resolve: (v: unknown) => void) => {
+            insertCalls.push({ table, values });
+            resolve(undefined);
+          },
+        }),
+      }),
+    }),
   },
 }));
 
@@ -75,6 +88,7 @@ const baseCommandRow = (overrides: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   commandRow = null;
   updateCalls = [];
+  insertCalls = [];
   errorLogs = [];
 });
 
@@ -104,6 +118,30 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
     expect(sessionUpdates).toHaveLength(1);
     expect(sessionUpdates[0].updates.status).toBe('failed');
     expect(String(sessionUpdates[0].updates.error)).toContain('dead-lettered');
+
+    // The dead-letter now also surfaces on the trigger runtime row (last_status
+    // 'failed' + error) so the triggers API/UI stops showing a frozen 'queued'.
+    const runtimeInserts = insertCalls.filter((c) => c.table === projectTriggerRuntime);
+    expect(runtimeInserts).toHaveLength(1);
+    expect(runtimeInserts[0].values).toMatchObject({
+      projectId: 'proj-1',
+      slug: 'daily',
+      lastStatus: 'failed',
+    });
+    expect(String(runtimeInserts[0].values.lastError)).toContain('delivery outcome: pending');
+  });
+
+  test('a dead-letter without a trigger slug parks the session but does not touch the runtime row', async () => {
+    commandRow = baseCommandRow({ payload: { text: 'run the report' } });
+
+    await markCommandFailed('cmd-1', 'delivery outcome: no-session', {
+      retryable: false,
+      attempts: 1,
+      sessionId: 'sess-1',
+    });
+
+    expect(updateCalls.filter((u) => u.table === projectSessions)).toHaveLength(1);
+    expect(insertCalls.filter((c) => c.table === projectTriggerRuntime)).toHaveLength(0);
   });
 
   test('non-retryable failure dead-letters on the first attempt', async () => {

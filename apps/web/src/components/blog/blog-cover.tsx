@@ -6,6 +6,7 @@ import { OpenAI } from '@/features/icon/icons/open-ai';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
 import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType, ReactNode } from 'react';
 
 export type CoverLogo = { domain: string; name: string };
@@ -20,6 +21,7 @@ export type CoverLogo = { domain: string; name: string };
 // `currentColor` — a flat <img> of a currentColor SVG can't theme and renders
 // blurry as a scaled favicon.
 function GrokMark({ className }: { className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <svg
       viewBox="0 0 40 40"
@@ -27,7 +29,7 @@ function GrokMark({ className }: { className?: string }) {
       className={className}
       fill="currentColor"
     >
-      <title>Grok</title>
+      <title>{tI18nComplete.raw('textdca61d32363b')}</title>
       <path d="M12.46 15.6L26.15 35H20.07L6.37 15.6H12.46ZM12.45 26.38L15.5 30.69L12.46 35H6.36L12.45 26.38ZM33.64 7.16V35H28.65V14.22L33.64 7.16ZM33.64 5L20.07 24.22L17.02 19.91L27.55 5H33.64Z" />
     </svg>
   );

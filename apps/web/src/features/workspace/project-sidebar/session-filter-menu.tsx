@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
 
 import {
@@ -24,6 +25,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import {
   selectGroupMode,
   selectHiddenSections,
@@ -44,8 +48,8 @@ import {
 
 import {
   groupSessions,
-  SESSION_GROUP_MODES,
-  SESSION_ORDER_MODES,
+  localizedSessionGroupModes,
+  localizedSessionOrderModes,
   type SessionGroupMode,
   type SessionOrderMode,
 } from './session-grouping';
@@ -90,13 +94,18 @@ export interface SessionFilterShowOption {
 export function resolveShowOptions(
   sessions: ProjectSession[],
   mode: SessionGroupMode,
+  tI18nComplete: UiTranslator,
   reviewCountBySession: Record<string, number> = {},
 ): SessionFilterShowOption[] {
-  return groupSessions(sessions, {
-    mode,
-    order: 'activity',
-    reviewCountBySession,
-  }).sections.map((section) => ({ id: section.id, label: section.label }));
+  return groupSessions(
+    sessions,
+    {
+      mode,
+      order: 'activity',
+      reviewCountBySession,
+    },
+    tI18nComplete,
+  ).sections.map((section) => ({ id: section.id, label: section.label }));
 }
 
 /** The section ids that would actually render right now — mode, order, review
@@ -108,14 +117,19 @@ export function resolveRenderedSectionIds(
   mode: SessionGroupMode,
   order: SessionOrderMode,
   hiddenSections: readonly string[],
+  tI18nComplete: UiTranslator,
   reviewCountBySession: Record<string, number> = {},
 ): string[] {
-  return groupSessions(sessions, {
-    mode,
-    order,
-    reviewCountBySession,
-    hiddenSections,
-  }).sections.map((section) => section.id);
+  return groupSessions(
+    sessions,
+    {
+      mode,
+      order,
+      reviewCountBySession,
+      hiddenSections,
+    },
+    tI18nComplete,
+  ).sections.map((section) => section.id);
 }
 
 /**
@@ -153,10 +167,13 @@ export function resolveStatusFacetOptions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
+  tI18nComplete: UiTranslator,
 ): SessionFilterFacetOption<SessionStatusFilter>[] {
-  const passingSource = sessions.filter((session) => matchesSourceFilters(session, sourceFilters));
+  const passingSource = sessions.filter((session) =>
+    matchesSourceFilters(session, sourceFilters, tI18nComplete),
+  );
   return buildFacetOptions(
-    SESSION_STATUS_FILTERS,
+    localizeUiCatalog(SESSION_STATUS_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingSource,
     (session, value) => matchesStatusFilters(session, [value]),
     statusFilters,
@@ -167,12 +184,13 @@ export function resolveSourceFacetOptions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
+  tI18nComplete: UiTranslator,
 ): SessionFilterFacetOption<SessionSourceFilter>[] {
   const passingStatus = sessions.filter((session) => matchesStatusFilters(session, statusFilters));
   return buildFacetOptions(
-    SESSION_SOURCE_FILTERS,
+    localizeUiCatalog(SESSION_SOURCE_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingStatus,
-    (session, value) => matchesSourceFilters(session, [value]),
+    (session, value) => matchesSourceFilters(session, [value], tI18nComplete),
     sourceFilters,
   );
 }
@@ -222,6 +240,10 @@ export function SessionFilterMenu({
   surface = 'sidebar',
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
+  const t = useTranslations('sidebar.filter');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
+  const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
   const groupMode = useSessionFilterStore(selectGroupMode(projectId, surface));
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, surface));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, surface));
@@ -235,12 +257,65 @@ export function SessionFilterMenu({
   const toggleSectionHidden = useSessionFilterStore((s) => s.toggleSectionHidden);
   const collapseAllSections = useSessionFilterStore((s) => s.collapseAllSections);
 
-  const groupLabel = SESSION_GROUP_MODES.find((mode) => mode.value === groupMode)?.label ?? '';
-  const orderLabel = SESSION_ORDER_MODES.find((mode) => mode.value === orderMode)?.label ?? '';
+  const groupLabels: Record<SessionGroupMode, string> = {
+    status: t('group.status'),
+    activity: t('group.activity'),
+    source: t('group.source'),
+    none: t('group.none'),
+  };
+  const orderLabels: Record<SessionOrderMode, string> = {
+    activity: t('order.activity'),
+    created: t('order.created'),
+    name: t('order.name'),
+  };
+  const sectionLabels: Record<string, string> = {
+    'needs-you': t('section.needsYou'),
+    running: t('section.running'),
+    recent: t('section.recent'),
+    today: t('section.today'),
+    yesterday: t('section.yesterday'),
+    week: t('section.week'),
+    older: t('section.older'),
+    chat: t('section.chat'),
+    slack: t('section.slack'),
+    telegram: t('section.telegram'),
+    email: t('section.email'),
+    schedule: t('section.scheduled'),
+    webhook: t('section.webhook'),
+    all: t('section.all'),
+  };
+  const statusLabels: Record<SessionStatusFilter, string> = {
+    running: t('statusValue.running'),
+    done: t('statusValue.done'),
+    stopped: t('statusValue.stopped'),
+    failed: t('statusValue.failed'),
+    legacy: t('statusValue.legacy'),
+  };
+  const sourceLabels: Record<SessionSourceFilter, string> = {
+    mine: t('sourceValue.mine'),
+    shared: t('sourceValue.shared'),
+    slack: t('section.slack'),
+    telegram: t('section.telegram'),
+    email: t('section.email'),
+    schedule: t('section.scheduled'),
+    webhook: t('section.webhook'),
+  };
+  const groupLabel = groupLabels[groupMode];
+  const orderLabel = orderLabels[orderMode];
 
-  const showOptions = resolveShowOptions(sessions, groupMode, reviewCountBySession);
-  const statusOptions = resolveStatusFacetOptions(sessions, statusFilters, sourceFilters);
-  const sourceOptions = resolveSourceFacetOptions(sessions, statusFilters, sourceFilters);
+  const showOptions = resolveShowOptions(sessions, groupMode, tI18nComplete, reviewCountBySession);
+  const statusOptions = resolveStatusFacetOptions(
+    sessions,
+    statusFilters,
+    sourceFilters,
+    tI18nComplete,
+  );
+  const sourceOptions = resolveSourceFacetOptions(
+    sessions,
+    statusFilters,
+    sourceFilters,
+    tI18nComplete,
+  );
   const showFiltersSection = statusOptions.length > 0 || sourceOptions.length > 0;
   const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
   const hiddenSectionSet = new Set(hiddenSections);
@@ -251,7 +326,7 @@ export function SessionFilterMenu({
     <DropdownMenuContent align={align} side={side} className="w-56 p-1">
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">Grouping</span>
+          <span className="min-w-0 flex-1 truncate">{t('grouping')}</span>
           <span className="text-muted-foreground truncate text-xs">{groupLabel}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-40 p-1">
@@ -259,13 +334,13 @@ export function SessionFilterMenu({
             value={groupMode}
             onValueChange={(value) => setGroupMode(projectId, value as SessionGroupMode, surface)}
           >
-            {SESSION_GROUP_MODES.map((mode) => (
+            {localizedGroupModes.map((mode) => (
               <DropdownMenuRadioItem
                 key={mode.value}
                 value={mode.value}
                 onSelect={(event) => event.preventDefault()}
               >
-                {mode.label}
+                {groupLabels[mode.value]}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -274,7 +349,7 @@ export function SessionFilterMenu({
 
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">Ordering</span>
+          <span className="min-w-0 flex-1 truncate">{t('ordering')}</span>
           <span className="text-muted-foreground truncate text-xs">{orderLabel}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-40 p-1">
@@ -282,13 +357,13 @@ export function SessionFilterMenu({
             value={orderMode}
             onValueChange={(value) => setOrderMode(projectId, value as SessionOrderMode, surface)}
           >
-            {SESSION_ORDER_MODES.map((mode) => (
+            {localizedOrderModes.map((mode) => (
               <DropdownMenuRadioItem
                 key={mode.value}
                 value={mode.value}
                 onSelect={(event) => event.preventDefault()}
               >
-                {mode.label}
+                {orderLabels[mode.value]}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -298,7 +373,7 @@ export function SessionFilterMenu({
       {showOptions.length > 0 && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1 truncate">Show</span>
+            <span className="min-w-0 flex-1 truncate">{t('show')}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-48 p-1">
             {showOptions.map((option) => (
@@ -308,7 +383,7 @@ export function SessionFilterMenu({
                 onCheckedChange={() => toggleSectionHidden(projectId, option.id, surface)}
                 onSelect={(event) => event.preventDefault()}
               >
-                {option.label}
+                {sectionLabels[option.id] ?? option.label}
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuSubContent>
@@ -319,7 +394,7 @@ export function SessionFilterMenu({
         <>
           <DropdownMenuSeparator />
           <div className="flex items-center justify-between gap-2 pr-1">
-            <DropdownMenuLabel className="flex-1">Filters</DropdownMenuLabel>
+            <DropdownMenuLabel className="flex-1">{t('filters')}</DropdownMenuLabel>
             <DropdownMenuItem
               disabled={!hasActiveFacets}
               className="text-muted-foreground w-auto shrink-0 cursor-pointer justify-end px-2 text-xs font-medium"
@@ -331,14 +406,14 @@ export function SessionFilterMenu({
                 resetFilters(projectId, surface);
               }}
             >
-              Reset
+              {t('reset')}
             </DropdownMenuItem>
           </div>
 
           {statusOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">Status</span>
+                <span className="min-w-0 flex-1 truncate">{t('status')}</span>
                 {statusFilters.length > 0 && <FacetActiveDot />}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48 p-1">
@@ -349,7 +424,7 @@ export function SessionFilterMenu({
                     onCheckedChange={() => toggleStatusFilter(projectId, option.value, surface)}
                     onSelect={(event) => event.preventDefault()}
                   >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
                     <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                       {option.count}
                     </span>
@@ -362,7 +437,7 @@ export function SessionFilterMenu({
           {sourceOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">Source</span>
+                <span className="min-w-0 flex-1 truncate">{t('source')}</span>
                 {sourceFilters.length > 0 && <FacetActiveDot />}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48 p-1">
@@ -376,7 +451,7 @@ export function SessionFilterMenu({
                       onSelect={(event) => event.preventDefault()}
                     >
                       <OptionIcon className="size-4" />
-                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
                       <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                         {option.count}
                       </span>
@@ -401,13 +476,14 @@ export function SessionFilterMenu({
               groupMode,
               orderMode,
               hiddenSections,
+              tI18nComplete,
               reviewCountBySession,
             ),
             surface,
           )
         }
       >
-        Collapse all
+        {t('collapseAll')}
       </DropdownMenuItem>
     </DropdownMenuContent>
   );

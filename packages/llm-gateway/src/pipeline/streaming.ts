@@ -3,7 +3,13 @@ import { type ExtractedUsage, IncrementalSseScanner, type SseErrorFrame } from '
 export interface StreamRelayOptions {
   upstreamBody: ReadableStream<Uint8Array>;
   requestId: string;
-  logger: { warn: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
+  logger: {
+    warn: (...args: unknown[]) => void;
+    // Required: a failed usage settlement is unrecorded revenue and must be
+    // alertable, not a warn line (see `settle` below).
+    error: (...args: unknown[]) => void;
+    debug?: (...args: unknown[]) => void;
+  };
   settle: (usage: ExtractedUsage | null, streamError?: SseErrorFrame | null) => Promise<void>;
   signal?: AbortSignal;
   heartbeatMs?: number;
@@ -36,7 +42,25 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     try {
       await options.settle(scanner.usage, error ?? scanner.error);
     } catch (settlementError) {
-      options.logger.warn('[gateway] usage settlement failed', settlementError);
+      // A settlement failure means REVENUE WAS NOT RECORDED for a turn that
+      // has already been served. It cannot be thrown (the response bytes are
+      // long gone) and it must not be whispered.
+      //
+      // This used to be a plain `logger.warn`, and that is how a drained
+      // account's spend disappeared for an entire billing period without a
+      // single alert: the wallet floor let the turn run, `atomic_use_credits`
+      // then refused the debit, and the only trace was one warn line nobody
+      // was aggregating. `error` level so it is alertable, and the account is
+      // named so the lost amount is chaseable.
+      //
+      // The durable half of this fix lives in the API hook
+      // (recordGatewayUsage): an unsettled usage_events row is left with
+      // `settled_at IS NULL` and retried by the settlement sweeper, so the
+      // debt survives this catch rather than depending on it.
+      options.logger.error('[gateway] usage settlement failed — spend not recorded', {
+        error: settlementError instanceof Error ? settlementError.message : String(settlementError),
+        requestId: options.requestId,
+      });
     }
   };
 

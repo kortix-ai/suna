@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,12 +40,19 @@ import { getScopeEditorCapability } from './scope-editors';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
 import { ShellScopeEditor } from './scope-editors/shell-scope-editor';
 import type { FilesystemScope, PermissionScope, ShellScope } from './types';
-import { EXPIRY_OPTIONS, getCapabilityInfo, getDefaultScope, getExpiresAt } from './types';
+import {
+  EXPIRY_OPTIONS,
+  getDefaultScope,
+  getExpiresAt,
+  localizedCapabilityRegistry,
+  localizedExpiryOptions,
+} from './types';
 
 type Mode = 'once' | 'scoped' | 'all';
 
 export function TunnelPermissionRequestDialog() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pendingRequests = useTunnelStore((s) => s.pendingRequests);
   const removePendingRequest = useTunnelStore((s) => s.removePendingRequest);
 
@@ -77,7 +84,10 @@ export function TunnelPermissionRequestDialog() {
 
   if (!currentRequest) return null;
 
-  const capInfo = getCapabilityInfo(currentRequest.capability);
+  const capInfo = localizedCapabilityRegistry(tI18nComplete).find(
+    (capability) => capability.key === currentRequest.capability,
+  );
+  const expiryOptions = localizedExpiryOptions(tI18nComplete);
   const scopeEditorType = getScopeEditorCapability(currentRequest.capability);
   const isPending = approveMutation.isPending || denyMutation.isPending;
 
@@ -105,10 +115,12 @@ export function TunnelPermissionRequestDialog() {
         expiresAt,
       });
       removePendingRequest(currentRequest.requestId);
-      successToast(`Granted ${currentRequest.capability} access`);
+      successToast(
+        tHardcodedUi('i18nComplete.text15f59796bc7d', { value0: currentRequest.capability }),
+      );
     } catch (err) {
       console.error('Failed to approve:', err);
-      errorToast('Failed to grant access', {
+      errorToast(tHardcodedUi.raw('i18nComplete.text28c39aaf0edc'), {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -118,10 +130,10 @@ export function TunnelPermissionRequestDialog() {
     try {
       await denyMutation.mutateAsync(currentRequest.requestId);
       removePendingRequest(currentRequest.requestId);
-      successToast('Request denied');
+      successToast(tHardcodedUi.raw('i18nComplete.textf44bf9c0530c'));
     } catch (err) {
       console.error('Failed to deny:', err);
-      errorToast('Failed to deny request', {
+      errorToast(tHardcodedUi.raw('i18nComplete.text25950c20dae9'), {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -141,7 +153,8 @@ export function TunnelPermissionRequestDialog() {
             {tHardcodedUi.raw(
               'componentsTunnelTunnelPermissionRequestDialog.line112JsxTextYourAiAgentIsRequesting',
             )}
-            <span className="text-foreground font-medium">{currentRequest.capability}</span> access.
+            <span className="text-foreground font-medium">{currentRequest.capability}</span>{' '}
+            {tHardcodedUi.raw('i18nComplete.text0cc7557652be')}
           </DialogDescription>
         </DialogHeader>
 
@@ -183,7 +196,9 @@ export function TunnelPermissionRequestDialog() {
             <ModeOption
               active={mode === 'all'}
               onClick={() => setMode('all')}
-              label={`Allow all ${capInfo?.label || currentRequest.capability}`}
+              label={tI18nComplete('textd566a2226f90', {
+                value0: capInfo?.label || currentRequest.capability,
+              })}
               description={tHardcodedUi.raw(
                 'componentsTunnelTunnelPermissionRequestDialog.line149JsxAttrDescriptionUnrestrictedAccessToThisCapability',
               )}
@@ -225,13 +240,15 @@ export function TunnelPermissionRequestDialog() {
           {mode !== 'once' && (
             <div className="flex items-center gap-2">
               <Clock className="text-muted-foreground h-3.5 w-3.5" />
-              <span className="text-muted-foreground text-xs">Expires:</span>
+              <span className="text-muted-foreground text-xs">
+                {tHardcodedUi.raw('i18nComplete.text8353d67bd934')}
+              </span>
               <Select value={expiryValue} onValueChange={setExpiryValue}>
                 <SelectTrigger size="sm" className="w-[120px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXPIRY_OPTIONS.map((opt) => (
+                  {expiryOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
@@ -247,7 +264,8 @@ export function TunnelPermissionRequestDialog() {
               {tHardcodedUi.raw(
                 'componentsTunnelTunnelPermissionRequestDialog.line203JsxTextMoreRequest',
               )}{' '}
-              {pendingRequests.length > 2 ? 's' : ''} pending
+              {pendingRequests.length > 2 ? 's' : ''}{' '}
+              {tHardcodedUi.raw('i18nComplete.text62a2fed3d6e0')}
             </p>
           )}
         </div>
@@ -255,14 +273,14 @@ export function TunnelPermissionRequestDialog() {
         <DialogFooter className="flex gap-2 sm:gap-2">
           <Button variant="outline" onClick={handleDeny} disabled={isPending} className="flex-1">
             <X className="mr-1 h-4 w-4" />
-            Deny
+            {tHardcodedUi.raw('i18nComplete.text05a2d7332eb9')}
           </Button>
           <Button onClick={handleApprove} disabled={isPending} className="flex-1">
             {mode === 'once'
-              ? 'Allow Once'
+              ? tHardcodedUi.raw('i18nComplete.text18e34d7ead18')
               : mode === 'scoped'
-                ? 'Grant Permission'
-                : `Allow All ${capInfo?.label || ''}`}
+                ? tHardcodedUi.raw('i18nComplete.texte402e05f0e4c')
+                : tI18nComplete('text3b86445861ee', { value0: capInfo?.label || '' })}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -283,6 +301,7 @@ function ModeOption({
   description: string;
   isDefault?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <button
       onClick={onClick}
@@ -303,7 +322,7 @@ function ModeOption({
         <span className="text-sm font-medium">{label}</span>
         {isDefault && (
           <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-            Default
+            {tI18nComplete.raw('text21b111cbfe6e')}
           </Badge>
         )}
       </div>

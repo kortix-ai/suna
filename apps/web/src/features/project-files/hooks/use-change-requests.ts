@@ -1,5 +1,7 @@
 'use client';
 
+import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   commitSessionChangesRequest,
@@ -23,10 +25,8 @@ import {
   type VersionDiffPreview,
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
-import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
 import { branchKeys } from './use-branches';
 import { commitKeys } from './use-commits';
-import { qk } from '@kortix/sdk/react';
 
 export const changeRequestKeys = {
   all: ['project-files', 'change-requests'] as const,
@@ -295,7 +295,13 @@ export function useOpenChangeRequest(options?: { projectId?: string }) {
   return useMutation<
     ChangeRequest,
     Error,
-    { title: string; description?: string; head_ref: string; base_ref?: string; session_id?: string }
+    {
+      title: string;
+      description?: string;
+      head_ref: string;
+      base_ref?: string;
+      session_id?: string;
+    }
   >({
     mutationFn: (input) => createChangeRequest(projectId, input),
     onSuccess: invalidate,

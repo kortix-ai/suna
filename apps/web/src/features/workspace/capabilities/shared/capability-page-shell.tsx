@@ -2,10 +2,7 @@
 
 import type { ReactNode } from 'react';
 
-import {
-  CapabilityScrollRootProvider,
-  useCapabilityScrollRootRef,
-} from './capability-scroll-root';
+import { CapabilityScrollRootProvider, useCapabilityScrollRootRef } from './capability-scroll-root';
 
 interface CapabilityPageShellProps {
   title: string;
@@ -66,7 +63,9 @@ export function CapabilityPageShell({
         {filters ? (
           <div className="flex flex-wrap items-center justify-between gap-2">{filters}</div>
         ) : null}
-        <CapabilityScrollRootProvider scrollRef={scrollRef}>{children}</CapabilityScrollRootProvider>
+        <CapabilityScrollRootProvider scrollRef={scrollRef}>
+          {children}
+        </CapabilityScrollRootProvider>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { approvalReviewable } from '@/components/approvals/approval-request';
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
@@ -174,21 +175,24 @@ describe('approvalNoticeRows', () => {
 
 describe('approvalNoticeHeadline', () => {
   test('names the single decision', () => {
-    expect(approvalNoticeHeadline(1)).toEqual({
+    expect(approvalNoticeHeadline(1, testUiTranslator)).toEqual({
       title: 'The agent needs your approval',
       hint: 'waiting for one decision',
     });
   });
 
   test('counts multiple decisions', () => {
-    expect(approvalNoticeHeadline(3)).toEqual({
+    expect(approvalNoticeHeadline(3, testUiTranslator)).toEqual({
       title: '3 actions need your approval',
       hint: 'waiting for 3 decisions',
     });
   });
 
   test('drops the waiting hint once nothing is pending', () => {
-    expect(approvalNoticeHeadline(0)).toEqual({ title: 'Decision recorded', hint: null });
+    expect(approvalNoticeHeadline(0, testUiTranslator)).toEqual({
+      title: 'Decision recorded',
+      hint: null,
+    });
   });
 });
 

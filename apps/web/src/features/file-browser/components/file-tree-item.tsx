@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   ContextMenu,
@@ -340,7 +340,9 @@ export function FileTreeItem({
       <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={onClick}>
           <ChevronRight className="mr-2 h-4 w-4" />
-          {node.type === 'directory' ? 'Open folder' : 'Open file'}
+          {node.type === 'directory'
+            ? tHardcodedUi.raw('i18nComplete.text6a9084025c4b')
+            : tHardcodedUi.raw('i18nComplete.text4190c0c7ec72')}
         </ContextMenuItem>
 
         {onDownload && (
@@ -351,9 +353,9 @@ export function FileTreeItem({
               <Download className="mr-2 h-4 w-4" />
             )}
             {isDownloadingItem
-              ? 'Zipping…'
+              ? tHardcodedUi.raw('i18nComplete.textf849c02f8075')
               : node.type === 'directory'
-                ? 'Download as zip'
+                ? tHardcodedUi.raw('i18nComplete.textdda839b13617')
                 : 'Download'}
           </ContextMenuItem>
         )}
@@ -372,14 +374,14 @@ export function FileTreeItem({
         {onCopy && (
           <ContextMenuItem onClick={() => onCopy(node)}>
             <ClipboardCopy className="mr-2 h-4 w-4" />
-            Copy
+            {tHardcodedUi.raw('i18nComplete.texte21f935f11d7')}
           </ContextMenuItem>
         )}
 
         {onCut && (
           <ContextMenuItem onClick={() => onCut(node)}>
             <Scissors className="mr-2 h-4 w-4" />
-            Cut
+            {tHardcodedUi.raw('i18nComplete.text1f45f02561f4')}
           </ContextMenuItem>
         )}
 
@@ -401,7 +403,7 @@ export function FileTreeItem({
               }}
             >
               <PencilSimpleIcon className="mr-2 h-4 w-4" />
-              Rename
+              {tHardcodedUi.raw('i18nComplete.text3064d79a295c')}
             </ContextMenuItem>
           </>
         )}
@@ -414,7 +416,7 @@ export function FileTreeItem({
               className="text-muted-foreground focus:text-foreground"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}
             </ContextMenuItem>
           </>
         )}

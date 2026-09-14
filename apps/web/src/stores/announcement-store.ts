@@ -1,6 +1,7 @@
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 export interface AnnouncementData {
   component: string;
@@ -39,7 +40,10 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
 
       closeAnnouncement: () => {
         const { currentAnnouncement, dismissedAnnouncements } = get();
-        if (currentAnnouncement && !dismissedAnnouncements.includes(currentAnnouncement.component)) {
+        if (
+          currentAnnouncement &&
+          !dismissedAnnouncements.includes(currentAnnouncement.component)
+        ) {
           set({
             isOpen: false,
             currentAnnouncement: null,
@@ -59,7 +63,7 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
         if (isOpen) return;
 
         const pending = PENDING_ANNOUNCEMENTS.find(
-          (a) => !dismissedAnnouncements.includes(a.component)
+          (a) => !dismissedAnnouncements.includes(a.component),
         );
 
         if (pending) {
@@ -68,9 +72,18 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
       },
     }),
     {
-      name: 'announcement-store-v2',
+      // `kortix.` prefixed (not the historical `announcement-store-v2`) so the
+      // sign-out sweep's prefix match covers it structurally — see
+      // `APP_STORAGE_PREFIXES` in `lib/utils/clear-local-storage.ts`. Which
+      // announcements a browser has dismissed is per-account state; the old
+      // unprefixed name meant it silently outlived a sign-out.
+      name: 'kortix.announcements-v2',
       storage: createSafeJSONStorage(),
       partialize: (state) => ({ dismissedAnnouncements: state.dismissedAnnouncements }),
-    }
-  )
+    },
+  ),
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore('kortix.announcements-v2', () => resetPersistedStore(useAnnouncementStore));

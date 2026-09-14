@@ -214,7 +214,11 @@ export function sessionComposerReadiness(input: {
   // reached us. Neither is the state this notice describes, and asserting it
   // from them is what put "Waking this session up…" over a live, streaming
   // session on every reload.
-  if (input.connection === 'unknown' || input.connection === 'connecting' || input.connection === 'live') {
+  if (
+    input.connection === 'unknown' ||
+    input.connection === 'connecting' ||
+    input.connection === 'live'
+  ) {
     return { ready: false, notice: null, retryable: false };
   }
   if (input.settling) {

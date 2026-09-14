@@ -5,6 +5,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
 import { ArrowSquareOutIcon, WarningIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import {
@@ -38,8 +39,9 @@ export function SessionDetail({
   session: ProjectSession;
   formatted: { created: string; updated: string; deleted: string | null };
 }) {
-  const access = sessionAccessMeta(session);
-  const fields = sessionDetailFields(session, formatted);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const access = sessionAccessMeta(session, tI18nComplete);
+  const fields = sessionDetailFields(session, formatted, tI18nComplete);
   const href = `/projects/${projectId}/sessions/${session.session_id}`;
 
   return (
@@ -51,22 +53,27 @@ export function SessionDetail({
       </dl>
 
       {session.error ? (
-        <InfoBanner tone="destructive" icon={WarningIcon} title="Session error">
+        <InfoBanner
+          tone="destructive"
+          icon={WarningIcon}
+          title={tI18nComplete.raw('text650e4f3bbda1')}
+        >
           <span className="wrap-break-word">{session.error}</span>
         </InfoBanner>
       ) : null}
 
       {session.deleted_at ? (
-        <InfoBanner tone="neutral" title="Soft-deleted session">
+        <InfoBanner tone="neutral" title={tI18nComplete.raw('textfdb73b4a48f2')}>
           <span>
-            Deleted {formatted.deleted ?? 'at an unknown time'}
-            {session.deleted_by ? ` by ${session.deleted_by}` : ''}. The durable record stays here
-            for investigation.
+            {tI18nComplete.raw('textb48ff39c2e0f')}{' '}
+            {formatted.deleted ?? tI18nComplete.raw('texted8aa125a36b')}
+            {session.deleted_by ? ` by ${session.deleted_by}` : ''}
+            {tI18nComplete.raw('text78a10fea0bef')}
           </span>
         </InfoBanner>
       ) : session.can_access === false ? (
-        <InfoBanner tone="neutral" title="Metadata-only access">
-          You can inspect this record, but the owner has not shared the session content with you.
+        <InfoBanner tone="neutral" title={tI18nComplete.raw('text4acf3c9c6c5e')}>
+          {tI18nComplete.raw('text1f5bdc1c9cf0')}
         </InfoBanner>
       ) : null}
 
@@ -74,7 +81,7 @@ export function SessionDetail({
         <div className="flex justify-end border-t pt-4">
           <Button variant="outline" size="sm" asChild>
             <Link href={href}>
-              Open session
+              {tI18nComplete.raw('textb205bb47f81a')}
               <ArrowSquareOutIcon className="size-3.5 shrink-0" />
             </Link>
           </Button>

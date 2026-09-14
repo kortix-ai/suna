@@ -222,64 +222,6 @@ export const CONNECTORS: [string, string, boolean][] = [
 
 export const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
-export type Provider = {
-  domain: string | null;
-  name: string;
-  hint: string;
-  state: 'managed' | 'connected' | 'connect';
-};
-
-export const PROVIDERS: Provider[] = [
-  {
-    domain: null,
-    name: 'Kortix Gateway',
-    hint: 'Managed routing — injected into every sandbox',
-    state: 'managed',
-  },
-  {
-    domain: 'anthropic.com',
-    name: 'Anthropic',
-    hint: 'Claude — Opus, Sonnet, Haiku',
-    state: 'connected',
-  },
-  { domain: 'openai.com', name: 'OpenAI', hint: 'GPT-5, GPT-4o, o-series', state: 'connect' },
-  { domain: 'ai.google.dev', name: 'Google', hint: 'Gemini 2.5 Pro, Flash', state: 'connect' },
-  {
-    domain: 'groq.com',
-    name: 'Groq',
-    hint: 'Fast inference — Llama, Mixtral, Kimi',
-    state: 'connect',
-  },
-  { domain: 'x.ai', name: 'xAI', hint: 'Grok', state: 'connect' },
-  { domain: 'deepseek.com', name: 'DeepSeek', hint: 'DeepSeek V3, R1', state: 'connect' },
-  { domain: 'mistral.ai', name: 'Mistral', hint: 'Mistral Large, Codestral', state: 'connect' },
-  {
-    domain: 'openrouter.ai',
-    name: 'OpenRouter',
-    hint: 'Routes across many providers',
-    state: 'connect',
-  },
-  { domain: 'cerebras.ai', name: 'Cerebras', hint: 'Very fast — Llama, Qwen', state: 'connect' },
-  { domain: 'together.ai', name: 'Together', hint: 'Open models hosted', state: 'connect' },
-  { domain: 'fireworks.ai', name: 'Fireworks', hint: 'Open models hosted', state: 'connect' },
-  { domain: 'perplexity.ai', name: 'Perplexity', hint: 'Web-grounded models', state: 'connect' },
-  {
-    domain: 'aws.amazon.com',
-    name: 'Amazon Bedrock',
-    hint: 'Claude, Llama, Titan',
-    state: 'connect',
-  },
-  {
-    domain: 'azure.microsoft.com',
-    name: 'Azure OpenAI',
-    hint: 'Azure-hosted OpenAI',
-    state: 'connect',
-  },
-  { domain: 'cohere.com', name: 'Cohere', hint: 'Command R', state: 'connect' },
-  { domain: 'huggingface.co', name: 'Hugging Face', hint: 'Inference endpoints', state: 'connect' },
-  { domain: 'nvidia.com', name: 'NVIDIA NIM', hint: 'NIM microservices', state: 'connect' },
-];
-
 export type ScheduleJob = { name: string; cron: string; when: string; next: string; on: boolean };
 
 export const INITIAL_JOBS: ScheduleJob[] = [

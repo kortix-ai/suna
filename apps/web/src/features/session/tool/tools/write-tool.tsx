@@ -1,5 +1,6 @@
 'use client';
 
+import { filePhase, fileVerb } from '@/features/session/tool/shared/file-verb';
 import {
   BasicTool,
   DiagnosticsDisplay,
@@ -16,6 +17,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
@@ -47,6 +49,7 @@ export function writeStat(content: string): { additions: number; deletions: numb
 }
 
 export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const status = partStatus(part);
@@ -60,10 +63,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it.
   // A written file's output is not small, and this ran on every render of the row.
-  const isError = useMemo(
-    () => status === 'completed' && isErrorOutput(output),
-    [status, output],
-  );
+  const isError = useMemo(() => status === 'completed' && isErrorOutput(output), [status, output]);
   const stat = useMemo(() => writeStat(content), [content]);
   // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
   // full-string `includes`, and — when the output carries `<file_diagnostics>` —
@@ -71,6 +71,19 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
+
+  /**
+   * `Write` was the registry key, not a word anyone says. Every other surface in
+   * this feature already reports this call as `Writing app.py` / `Wrote app.py`
+   * — `step-label.ts`, `activity-file-chips.tsx`, the panel's `narration.ts` —
+   * and the trigger was the last one still printing the machine name, frozen in
+   * a tense that matched neither a running call nor a finished one.
+   *
+   * Past tense once the turn is over is the load-bearing half: a restored
+   * transcript is entirely settled calls, and a row reading `Write` there says
+   * nothing about whether it ever did.
+   */
+  const title = fileVerb('write', filePhase(running, isError));
 
   // Field selector, not the whole store: destructuring the store subscribes this
   // row to every field in it, so opening one file preview re-rendered every write
@@ -84,7 +97,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Write',
+        title,
         subtitle: filename || undefined,
         // No stat on a failed call: the numbers would describe a file that
         // did not land.
@@ -105,7 +118,9 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // shimmer this used to draw promised content that could never arrive,
         // on every restored session, forever.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <span className="text-muted-foreground/60 text-xs">No content received</span>
+          <span className="text-muted-foreground/60 text-xs">
+            {tI18nComplete.raw('text93168435f3ae')}
+          </span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />

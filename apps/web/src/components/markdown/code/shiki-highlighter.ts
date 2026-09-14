@@ -236,7 +236,11 @@ export function highlightAsync(
     // Both palette halves are bundled theme names, so the one-off highlighter
     // this falls back to resolves them by name with nothing pre-registered.
     .catch(() =>
-      codeToHtml(clampCode(code, opts?.unbounded), { lang, theme, transformers: shikiTransformers }),
+      codeToHtml(clampCode(code, opts?.unbounded), {
+        lang,
+        theme,
+        transformers: shikiTransformers,
+      }),
     )
     .then((html) => {
       // null = the highlighter isn't available (yet) — don't negative-cache

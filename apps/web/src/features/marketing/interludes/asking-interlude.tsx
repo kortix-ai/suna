@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
 import { asking } from './content';
 import { Interlude, Panel } from './interlude';
@@ -28,15 +29,12 @@ import { Interlude, Panel } from './interlude';
  * Copy, and the accuracy gate every line of it had to pass, live in
  * `content.ts`. Read that file before editing a word here.
  */
-function AskPanel(): ReactNode {
+function AskPanel({ content }: { content: typeof asking }): ReactNode {
   return (
-    <Panel title={asking.panel.title} label={asking.panel.label} footer={asking.panel.footer}>
+    <Panel title={content.panel.title} label={content.panel.label} footer={content.panel.footer}>
       <ul>
-        {asking.modes.map((mode) => (
-          <li
-            key={mode.id}
-            className="border-border/50 border-b px-4 py-5 last:border-b-0 sm:px-5"
-          >
+        {content.modes.map((mode) => (
+          <li key={mode.id} className="border-border/50 border-b px-4 py-5 last:border-b-0 sm:px-5">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-foreground font-mono text-[10px] tracking-widest uppercase">
                 {mode.name}
@@ -63,13 +61,14 @@ function AskPanel(): ReactNode {
 }
 
 export function AskingInterlude(): ReactNode {
+  const content = useLocalizedUiCatalog(asking);
   return (
     <Interlude
       id="asking"
-      eyebrow={asking.eyebrow}
-      title={asking.title}
-      paragraphs={asking.paragraphs}
-      panel={<AskPanel />}
+      eyebrow={content.eyebrow}
+      title={content.title}
+      paragraphs={content.paragraphs}
+      panel={<AskPanel content={content} />}
     />
   );
 }

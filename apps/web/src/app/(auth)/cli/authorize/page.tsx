@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -45,6 +46,7 @@ export default function CliAuthorizePage() {
 type Phase = 'idle' | 'authorizing' | 'success' | 'error';
 
 function CliAuthorizeInner() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -73,15 +75,20 @@ function CliAuthorizeInner() {
   if (!callback || !state) {
     return (
       <AuthStatusScreen
-        title="Open this page from the CLI"
-        description="Run this command in your terminal to get a fresh sign-in link."
-        action={<CopyCommand command="kortix login" />}
+        title={tI18nComplete.raw('text78ba0d8d5880')}
+        description={tI18nComplete.raw('text5c705d15f3ef')}
+        action={<CopyCommand command={tI18nComplete.raw('text69fcb4fde341')} />}
       />
     );
   }
 
   if (!validation.ok) {
-    return <AuthStatusScreen title="Invalid callback" description={validation.reason} />;
+    return (
+      <AuthStatusScreen
+        title={tI18nComplete.raw('text7544354edd29')}
+        description={validation.reason}
+      />
+    );
   }
 
   async function authorize() {
@@ -152,8 +159,8 @@ function CliAuthorizeInner() {
   if (phase === 'success') {
     return (
       <AuthStatusScreen
-        title="CLI connected"
-        description="You're signed in. Return to your terminal — you can close this tab."
+        title={tI18nComplete.raw('text33a41fd14a13')}
+        description={tI18nComplete.raw('texte6284f383569')}
       />
     );
   }
@@ -164,11 +171,13 @@ function CliAuthorizeInner() {
     <AuthFrame>
       <Rise>
         <StepHeader
-          title="Sign in to the Kortix CLI"
+          title={tI18nComplete.raw('textdc76dd6b1aff')}
           description={
             <>
-              <span className="text-foreground font-mono">kortix login</span> in your terminal is
-              waiting for you to approve this sign-in.
+              <span className="text-foreground font-mono">
+                {tI18nComplete.raw('text69fcb4fde341')}
+              </span>{' '}
+              {tI18nComplete.raw('textc19c3fc65916')}
             </>
           }
         />
@@ -178,27 +187,31 @@ function CliAuthorizeInner() {
         {phase === 'error' && error ? <ErrorStrip message={error} /> : null}
 
         <DetailPanel>
-          <DetailRow label="Account" value={user.email ?? 'You'} />
-          <DetailRow label="Sends to" value={validation.display} mono />
-          {label ? <DetailRow label="Device" value={label} /> : null}
+          <DetailRow label={tI18nComplete.raw('text7e1b0d5641f2')} value={user.email ?? 'You'} />
+          <DetailRow
+            label={tI18nComplete.raw('text03fe47e17852')}
+            value={validation.display}
+            mono
+          />
+          {label ? <DetailRow label={tI18nComplete.raw('text6ba0bdeccb42')} value={label} /> : null}
         </DetailPanel>
 
         <Button size="lg" className="mt-5 w-full" onClick={authorize} disabled={busy}>
           {busy ? <Loading className="size-4 shrink-0" /> : null}
-          Authorize
+          {tI18nComplete.raw('textb6741b4ccf6d')}
         </Button>
 
         <div className="text-muted-foreground mt-8 space-y-2 text-sm">
           <p>
-            This creates a personal access token. Revoke it anytime in{' '}
-            <span className="text-foreground">Settings → CLI tokens</span>.
+            {tI18nComplete.raw('text702391f5d071')}{' '}
+            <span className="text-foreground">{tI18nComplete.raw('text7955091baf3b')}</span>.
           </p>
           <p>
             <Link
               href="/"
               className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>
           </p>
         </div>

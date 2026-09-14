@@ -5,6 +5,7 @@ import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback } from 'react';
 
 interface SidebarUpgradeButtonProps {
@@ -58,6 +59,7 @@ function useSidebarUpgrade(accountId?: string) {
 }
 
 export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeButtonProps) {
+  const t = useTranslations('sidebar');
   const { show, handleClick } = useSidebarUpgrade(accountId);
 
   if (!show) return null;
@@ -66,12 +68,11 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
     <SidebarMenuItem>
       <SidebarMenuButton
         type="button"
-        size="md"
         variant="primary"
         className={cn(className)}
         onClick={handleClick}
       >
-        Upgrade plan
+        {t('upgradePlan')}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

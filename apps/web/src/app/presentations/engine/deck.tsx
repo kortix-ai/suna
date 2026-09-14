@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Shared presentation engine — a keyboard-driven deck, styled 1:1 with the
  * marketing site. Each slide is a responsive full-viewport homepage-style
@@ -193,7 +193,9 @@ export function Deck({
   const stageNode = typeof slide.node === 'function' ? slide.node(step) : slide.node;
 
   const noteFor = (s: SlideDef, at: number) =>
-    Array.isArray(s.notes) ? (s.notes[Math.min(at, s.notes.length - 1)] ?? '') : (s.notes as string);
+    Array.isArray(s.notes)
+      ? (s.notes[Math.min(at, s.notes.length - 1)] ?? '')
+      : (s.notes as string);
 
   /** Progress counts build steps, not slides, so the bar tracks the talk. */
   const buildsBefore = slides.slice(0, index).reduce((n, s) => n + (s.steps ?? 0) + 1, 0);
@@ -240,7 +242,7 @@ export function Deck({
               href={altDeck?.href ?? '/presentations'}
               className="text-muted-foreground hover:text-foreground hidden font-mono text-xs tracking-wider transition-colors sm:inline"
             >
-              {altDeck?.label ?? 'All decks'} ↗
+              {altDeck?.label ?? tI18nHardcoded.raw('i18nComplete.text8195b47b3fd3')} ↗
             </Link>
             <span className="text-muted-foreground hidden font-mono text-xs tracking-wider tabular-nums sm:inline">
               {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
@@ -265,7 +267,11 @@ export function Deck({
 
       {/* ── Floating controls ──────────────────────────────────────────── */}
       <div className="border-border bg-card/90 absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-sm border p-1.5 shadow-sm backdrop-blur-md">
-        <Ctrl onClick={prev} disabled={index === 0 && step === 0} label="Previous">
+        <Ctrl
+          onClick={prev}
+          disabled={index === 0 && step === 0}
+          label={tI18nHardcoded.raw('i18nComplete.texta57b08a480b8')}
+        >
           <ChevronLeft className="size-4" />
         </Ctrl>
         <span className="text-muted-foreground px-2 font-mono text-xs tabular-nums">
@@ -286,7 +292,11 @@ export function Deck({
             ))}
           </span>
         ) : null}
-        <Ctrl onClick={next} disabled={index === total - 1 && step === slideSteps} label="Next">
+        <Ctrl
+          onClick={next}
+          disabled={index === total - 1 && step === slideSteps}
+          label={tI18nHardcoded.raw('i18nComplete.text1ff57a29d7c9')}
+        >
           <ChevronRight className="size-4" />
         </Ctrl>
         <span className="bg-border mx-0.5 h-4 w-px" />
@@ -303,7 +313,10 @@ export function Deck({
           <Maximize className="size-3.5" />
         </Ctrl>
         {hasNotes ? (
-          <Ctrl onClick={() => setNotesOpen((o) => !o)} label="Presenter notes (N)">
+          <Ctrl
+            onClick={() => setNotesOpen((o) => !o)}
+            label={tI18nHardcoded.raw('i18nComplete.text36a27da6cdf2')}
+          >
             <Notepad className={cn('size-3.5', notesOpen && 'text-foreground')} />
           </Ctrl>
         ) : null}
@@ -325,19 +338,24 @@ export function Deck({
               <div className="mb-4 flex items-center justify-between gap-4">
                 <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
                   {notesAll
-                    ? 'Full script'
-                    : `Script · ${slide.label}${slideSteps > 0 ? ` · ${step + 1}/${slideSteps + 1}` : ''}`}
+                    ? tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')
+                    : tI18nHardcoded('i18nComplete.text390287e30d47', {
+                        value0: slide.label,
+                        value1: slideSteps > 0 ? ` · ${step + 1}/${slideSteps + 1}` : '',
+                      })}
                 </span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setNotesAll((a) => !a)}
                     className="text-muted-foreground hover:text-foreground border-border rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors"
                   >
-                    {notesAll ? 'This slide' : 'Full script'}
+                    {notesAll
+                      ? tI18nHardcoded.raw('i18nComplete.textfd792ae48d11')
+                      : tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')}
                   </button>
                   <button
                     onClick={() => setNotesOpen(false)}
-                    aria-label="Close presenter notes"
+                    aria-label={tI18nHardcoded.raw('i18nComplete.textb0fb3804b44c')}
                     className="text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded-sm transition-colors"
                   >
                     <X className="size-4" />
@@ -380,7 +398,7 @@ export function Deck({
                 </ol>
               ) : (
                 <p className="text-foreground text-base leading-relaxed whitespace-pre-line">
-                  {noteFor(slide, step) || 'No script for this slide.'}
+                  {noteFor(slide, step) || tI18nHardcoded.raw('i18nComplete.text1b84926d58a9')}
                 </p>
               )}
             </div>
@@ -401,7 +419,7 @@ export function Deck({
             <div className="flex items-center justify-between px-8 py-6">
               <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
                 {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextKortix28fe100d')}
-                {total} slides
+                {total} {tI18nHardcoded.raw('i18nComplete.textfd2c8f1dc03c')}
               </span>
               <button
                 onClick={() => setOverview(false)}

@@ -9,10 +9,9 @@
  * so the expansion groups the work the same way the summary line counts it.
  *
  * A burst holding exactly ONE call has no summary line at all. It renders as
- * that call and nothing else: no title, no chain rail, no closing step.
- * "Completed 1 step" over a single row is a door in front of a door. The row
- * keeps its leading glyph either way — the icon names which tool ran, and a
- * lone row is where the reader has the least other context (see `ActivityStep`).
+ * that call and nothing else: no title, no chain rail, no closing step, and no
+ * leading glyph on the row (see `bare` below). "Completed 1 step" over a single
+ * row is a door in front of a door.
  *
  * The trailing burst stays open for the whole working turn (so SSE gaps between
  * tool calls do not blink it shut); earlier bursts auto-collapse once later
@@ -172,18 +171,27 @@ function useLiveElapsedMs(running: boolean): number {
  * Sub-second thoughts stay plain `Thinking`: `formatDuration` returns '' under
  * 1000ms on purpose, and a row that says "0s" is worse than one that says
  * nothing. Same fallback covers a provider that sends no timing at all.
+ *
+ * `bare` — this thought IS the whole burst — drops the glyph for the reason
+ * every bare row does: the icon is the rail's anchor, and one row has no rail.
  */
 
 function ThoughtChainStepImpl({
   texts,
   running,
   durationMs,
+  bare,
   autoOpen = true,
 }: {
   texts: ReadonlyArray<string>;
   running: boolean;
   /** The settled run's total, from `mergeBurstSteps`. */
   durationMs?: number;
+  /**
+   * This thought IS the whole burst. It drops the glyph for the reason every
+   * bare row does: the icon is the rail's anchor, and one row has no rail.
+   */
+  bare?: boolean;
   /**
    * Whether live reasoning may unfurl its paragraph on its own. `false` under
    * minimal density: the row still shimmers `Thinking`, but the streaming
@@ -232,7 +240,7 @@ function ThoughtChainStepImpl({
               'text-left text-sm leading-[1.5] transition-colors',
             )}
           >
-            <CircleDashedIcon className="text-muted-foreground size-4 flex-none" />
+            {!bare && <CircleDashedIcon className="text-muted-foreground size-4 flex-none" />}
             {running ? (
               <TextShimmer className="leading-[1.5] font-medium tabular-nums">{label}</TextShimmer>
             ) : (
@@ -489,10 +497,10 @@ function ActivityBurstImpl({
    * Shared by the chain and by the bare single-step burst, so the two can never
    * draw the same row two different ways.
    *
-   * `bare` says the row is the ONLY thing here — which is what lets a file-chip
-   * run with no chips fall back to the plain tool row instead of drawing a
-   * "Read 1 file" door in front of it. It is not styling, and it no longer
-   * touches the leading glyph: every row keeps its icon (see `ActivityStep`).
+   * `bare` is not styling — it says the row is the ONLY thing here, which is
+   * what makes the leading glyph pointless (see `ActivityStep`) and what lets a
+   * file-chip run with no chips fall back to the plain tool row instead of
+   * drawing a "Read 1 file" door in front of it.
    */
   const stepBody = (
     step: Exclude<(typeof steps)[number], { kind: 'thought' }>,
@@ -540,6 +548,7 @@ function ActivityBurstImpl({
     return (
       <ActivityStep
         part={step.part}
+        bare={bareRow}
         sessionId={sessionId}
         running={running}
         disableNavigation={disableNavigation}
@@ -565,10 +574,11 @@ function ActivityBurstImpl({
    * prose: unwrapping THAT would have pinned the model's reasoning open with
    * nothing left to close it.
    *
-   * `bare` drops the summary line ONLY. Every row keeps its own leading glyph
-   * — "there is nothing to summarise" and "this row needs no icon" are
-   * different facts, and only the first is what `summary.total === 1`
-   * establishes.
+   * `bare` drops the summary line, and with it the row's leading glyph. It
+   * does not, on its own, decide that a row has no thread — a lone sub-agent is
+   * one row here and a whole nested list of steps one level down, so
+   * `ActivityStep` keeps a delegate row's icon even when bare, and keeps a
+   * failed row's outcome mark. See the `hideIcon` note there.
    */
   const bare = steps.length === 1 && summary.total === 1;
 
@@ -694,6 +704,7 @@ function ActivityBurstImpl({
                     texts={step.texts}
                     running={running && step.running}
                     durationMs={step.durationMs}
+                    bare={bare}
                     autoOpen={autoExpand}
                   />
                 ) : (
@@ -790,6 +801,7 @@ const ThoughtChainStep = memo(
   (a, b) =>
     a.running === b.running &&
     a.durationMs === b.durationMs &&
+    a.bare === b.bare &&
     a.autoOpen === b.autoOpen &&
     samePartsList(a.texts, b.texts),
 );

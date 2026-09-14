@@ -10,13 +10,16 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
 import { CAPABILITY_TABS } from './capability-tab-routes';
 import { CAPABILITY_TAB_GATE_ACTIONS, visibleCapabilityTabs } from './capability-tabs';
 
-const source = readFileSync(fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)), 'utf8');
+const source = readFileSync(
+  fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)),
+  'utf8',
+);
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 /** Probe map for a caller allowed everything except the listed actions. */
@@ -34,6 +37,16 @@ describe('visibleCapabilityTabs', () => {
     expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
     );
+  });
+
+  // Review Center graduated out of the flag system: Review follows its read
+  // leaf like every other tab, with no flag in front of it.
+  test('Review is visible with no flag, and only its read leaf hides it', () => {
+    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toContain('review');
+    const keys = visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_REVIEW_READ)).map(
+      (t) => t.key,
+    );
+    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
   // The whole point. A member holds project.read, project.trigger.read and
@@ -74,7 +87,9 @@ describe('visibleCapabilityTabs', () => {
   // rather than `!caps[…]?.allowed`.
   test('an in-flight probe is a denial for this helper — the caller keeps it optimistic', () => {
     expect(visibleCapabilityTabs(stillLoading())).toEqual([]);
-    expect(code(source)).toContain("caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false");
+    expect(code(source)).toContain(
+      'caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false',
+    );
     expect(code(source)).toContain('caps[pref.action]?.allowed !== false');
   });
 });
@@ -88,13 +103,22 @@ describe('CapabilityTabs gate wiring', () => {
     expect((body.match(/useProjectCan\(/g) ?? []).length).toBe(1);
   });
 
-  test('both tab groups render from the gated list, never from CAPABILITY_TABS', () => {
+  test('the bar renders from the gated list, never from CAPABILITY_TABS', () => {
     const body = code(source);
     const barStart = body.indexOf('export function CapabilityTabs');
     const bar = body.slice(barStart);
+    // Two groups (Agents + Skills, then the library) with a seam between —
+    // both carved from the GATED `tabs`, never from CAPABILITY_TABS.
     expect(bar).toContain('tabs.filter((tab) => !TRAILING_TABS.includes(tab.key))');
-    expect(bar).toContain('tabs.filter((tab) => TRAILING_TABS.includes(tab.key))');
+    expect(bar).toContain('leading.filter((tab) => PRIMARY_TABS.includes(tab.key))');
+    expect(bar).toContain('leading.filter((tab) => !PRIMARY_TABS.includes(tab.key))');
+    expect(bar).toContain('{primary.map(renderTab)}');
+    expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
+    expect(bar).not.toContain('CAPABILITY_TABS.map');
+    // Permissions are the only gate: no feature flag reaches the bar.
+    expect(bar).toContain('visibleCapabilityTabs(caps)');
+    expect(bar).not.toContain('useFeatureFlag');
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

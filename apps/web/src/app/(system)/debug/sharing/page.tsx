@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Visual harness for the unified <SharingPicker> (secrets / connectors /
  * sessions all use it). Auth-free: seeds the project-access query so the member
@@ -87,7 +87,11 @@ const client = new QueryClient();
 client.setQueryData(qk.project.access(DEMO_PROJECT), DEMO_ACCESS);
 
 function Panel({ title }: { title: string }) {
-  const [value, setValue] = useState<SharingSelection>({ mode: 'members', memberIds: ['u2'], groupIds: [] });
+  const [value, setValue] = useState<SharingSelection>({
+    mode: 'members',
+    memberIds: ['u2'],
+    groupIds: [],
+  });
   return (
     <div className="border-border/60 bg-card w-[420px] rounded-2xl border p-5">
       <h2 className="text-foreground mb-3 text-base font-semibold">{title}</h2>

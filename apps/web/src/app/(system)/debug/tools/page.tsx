@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { ToolParts } from '@/features/session/action-panel/easy/detail-view';
@@ -94,8 +94,8 @@ const EDIT_AFTER = `export function add(a: number, b: number): number {
 
 const WRITE_CONTENT = `:root {
   --radius: 1rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.15 0 0);
+  --background: white;
+  --foreground: black;
 }
 
 body {
@@ -193,12 +193,12 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 <meta charset="utf-8" />
 <title>Pricing comparison</title>
 <style>
-  body { font: 15px/1.6 system-ui, sans-serif; margin: 24px; color: #111; }
+  body { font: 15px/1.6 system-ui, sans-serif; margin: 24px; color: black; }
   h1 { font-size: 22px; margin: 0 0 4px; }
-  p.sub { color: #666; margin: 0 0 20px; }
+  p.sub { color: dimgray; margin: 0 0 20px; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #e5e5e5; padding: 8px 10px; text-align: left; }
-  th { background: #fafafa; font-weight: 600; }
+  th, td { border: 1px solid gainsboro; padding: 8px 10px; text-align: left; }
+  th { background: snow; font-weight: 600; }
 </style>
 <h1>Pricing comparison</h1>
 <p class="sub">Generated from 5 sources</p>
@@ -226,7 +226,7 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // scope for this fixtures pass (see task-10-report.md); going straight from
 // Narrative to Facts here (no Tool/Session/Created) sidesteps them so the
 // debug page itself reads clean.
-const GET_MEM_OUTPUT = `=== Observation #482 [insight] ===
+const GET_MEM_OUTPUT = `=== Observation 482 [insight] ===
 Title: Pricing page conversion insight
 Narrative:
 Users bounce from the pricing page when the enterprise tier shows no price. Adding "Custom — talk to sales" reduced bounce by 12%.
@@ -1233,7 +1233,7 @@ description: The tokens, primitives and rules for building any surface in apps/w
 Compose from \`@/components/ui/*\` before inventing local chrome. Neutral
 surfaces, one earned accent, token-driven spacing.
 
-- Radius is \`rounded-md\` on panel rows, \`rounded-2xl\` on page cards
+- Radius is \`rounded-md\` on panel rows, \`rounded-md\` on page cards
 - Colour comes from \`kortix-*\` tokens, never a literal hex
 - A status needs a tinted icon tile, not a coloured card
 `;
@@ -1405,7 +1405,7 @@ const PANEL_PTY_PARTS = [
  * shape that carries Tags, which fold the same way. Two parts, so this detail
  * also shows a group whose rows are two DIFFERENT sizes once opened.
  */
-const PANEL_GET_MEM_OBSERVATION = `=== Observation #482 [insight] ===
+const PANEL_GET_MEM_OBSERVATION = `=== Observation 482 [insight] ===
 Title: Pricing page conversion insight
 Narrative:
 Logged-out visitors bounced from /pricing whenever the enterprise tier showed an empty price cell. Replacing it with "Custom — talk to sales" cut bounce by 12% in the first week and held for the next three.
@@ -1518,9 +1518,7 @@ function PanelDetailFixture({
 }) {
   return (
     <div data-panel-fixture={fixture}>
-      <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-        {label}
-      </div>
+      <div className="text-muted-foreground/60 mb-2 font-mono text-xs">{label}</div>
       <div className="border-border bg-popover w-[420px] rounded-md border p-4 shadow">
         <ToolParts parts={parts as any} sessionId={fixture} summary={summary} />
       </div>
@@ -1552,7 +1550,9 @@ export default function DebugToolsPage() {
           onClick={() => setOpen((v) => !v)}
           className="border-border bg-card hover:bg-muted rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         >
-          {open ? 'Collapse all' : 'Expand all'}
+          {open
+            ? tI18nHardcoded.raw('i18nComplete.text25f7b3721119')
+            : tI18nHardcoded.raw('i18nComplete.texta3e586be3eff')}
         </button>
       </div>
 
@@ -1561,39 +1561,39 @@ export default function DebugToolsPage() {
           panel modes are eyeball-comparable side by side without needing a
           logged-in session or `panelMode` preference. */}
       <div className="mx-auto w-full max-w-5xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
-          Easy mode vs. Advanced
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
+          {tI18nHardcoded.raw('i18nComplete.text7d54b228a9b3')}
         </h2>
         <div className="flex flex-wrap items-start gap-6">
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Easy
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.textd6915875decb')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <EasyFixture sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Advanced
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text9f088dbebd6c')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Easy — empty (no tool calls yet)
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.textc793951cc86e')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <EasyFixture sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Easy — completed with deliverables (W2/W3/W11)
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text6070217168a4')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <EasyFixture
                 sessionId="debug-easy-completed"
                 messages={COMPLETED_MESSAGES}
@@ -1602,10 +1602,10 @@ export default function DebugToolsPage() {
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Easy — failed run (W7)
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.textfafdc02f3d3b')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <EasyFixture
                 sessionId="debug-easy-failed"
                 messages={FAILED_MESSAGES}
@@ -1618,18 +1618,18 @@ export default function DebugToolsPage() {
               budget.csv") is visible; Easy mode deliberately never surfaces
               raw step text, only the settled outcome banner (W7). */}
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Advanced — same failed run
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text03748cd6138a')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <AdvancedPanel sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              Easy — stopped by you (W7)
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text9b8a8503b147')}
             </div>
-            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
               <EasyFixture
                 sessionId="debug-easy-stopped"
                 messages={STOPPED_MESSAGES}
@@ -1644,45 +1644,45 @@ export default function DebugToolsPage() {
           shape the rework changed. This is the layer a step or a Context group
           opens into; without these blocks it is unreachable on this page. */}
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
-          Panel detail surface (W11)
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
+          {tI18nHardcoded.raw('i18nComplete.text308167c79b3e')}
         </h2>
         <div className="flex flex-wrap items-start gap-6">
           <PanelDetailFixture
-            label="memory group — 3 calls, all closed"
+            label={tI18nHardcoded.raw('i18nComplete.textf9a2b7a7e2a0')}
             fixture="panel-memory"
             parts={PANEL_MEMORY_PARTS}
-            summary="Read, edited and renamed one memory note"
+            summary={tI18nHardcoded.raw('i18nComplete.textf83ee52d8860')}
           />
           <PanelDetailFixture
-            label="skills — 2 calls, closed"
+            label={tI18nHardcoded.raw('i18nComplete.textb1a390ad4e70')}
             fixture="panel-skills"
             parts={PANEL_SKILL_PARTS}
-            summary="Loaded 2 skills"
+            summary={tI18nHardcoded.raw('i18nComplete.text0d2f45864f0c')}
           />
           <PanelDetailFixture
-            label="bash — lone call, opens"
+            label={tI18nHardcoded.raw('i18nComplete.texte4c358d1bbfb')}
             fixture="panel-bash"
             parts={PANEL_BASH_PARTS}
           />
           <PanelDetailFixture
-            label="pty_read — 63 lines, 39 folded"
+            label={tI18nHardcoded.raw('i18nComplete.text87bcc72ce19e')}
             fixture="panel-pty"
             parts={PANEL_PTY_PARTS}
           />
           <PanelDetailFixture
-            label="get_mem — folded provenance"
+            label={tI18nHardcoded.raw('i18nComplete.text455ac40f4185')}
             fixture="panel-get-mem"
             parts={PANEL_GET_MEM_PARTS}
-            summary="Recalled 2 memories"
+            summary={tI18nHardcoded.raw('i18nComplete.texte99d219d04d1')}
           />
           <PanelDetailFixture
-            label="unregistered tool — MCP fallback"
+            label={tI18nHardcoded.raw('i18nComplete.text0989a07682e0')}
             fixture="panel-mcp"
             parts={PANEL_MCP_PARTS}
           />
           <PanelDetailFixture
-            label="show (markdown) — fills the detail, no row"
+            label={tI18nHardcoded.raw('i18nComplete.text43f898e71741')}
             fixture="panel-show"
             parts={PANEL_SHOW_PARTS}
           />
@@ -1698,15 +1698,15 @@ export default function DebugToolsPage() {
             - other     → file icon + name, source only, NO toggle
           All three share the same right-hand actions. */}
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
-          FileViewer
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
+          {tI18nHardcoded.raw('i18nComplete.textdb8b450c822e')}
         </h2>
         <div className="flex flex-wrap items-start gap-6">
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              markdown — no toggle
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.textd912982e31da')}
             </div>
-            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-md border">
               <FileViewer
                 content={MARKDOWN_PREVIEW_CONTENT}
                 fileName="jay-suthar.md"
@@ -1716,10 +1716,10 @@ export default function DebugToolsPage() {
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              html — preview / source toggle
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text28f8a1bd60bb')}
             </div>
-            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-md border">
               <FileViewer
                 content={HTML_PREVIEW_CONTENT}
                 fileName="report.html"
@@ -1729,10 +1729,10 @@ export default function DebugToolsPage() {
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
-              other — source only
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              {tI18nHardcoded.raw('i18nComplete.texte5bd74e98514')}
             </div>
-            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-md border">
               <FileViewer
                 content={TS_SOURCE_CONTENT}
                 fileName="example.ts"
@@ -1747,10 +1747,10 @@ export default function DebugToolsPage() {
       {/* Side-panel Actions view preview — the focused navigator that reuses
           the same ToolPartRenderer handlers, fed the mock tool parts. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
           {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
         </h2>
-        <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-2xl border">
+        <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-md border">
           <AdvancedPanel
             sessionId="debug"
             messages={[
@@ -1766,10 +1766,10 @@ export default function DebugToolsPage() {
       {/* Side-panel Changes view preview — explanation + agent CR button +
           git-status list (empty here, no sandbox). */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
           {tHardcodedUi.raw('appDebugToolsPage.line305JsxTextSidePanelChanges')}
         </h2>
-        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-2xl border">
+        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-md border">
           <SessionFilesPanel />
         </div>
       </div>
@@ -1778,10 +1778,10 @@ export default function DebugToolsPage() {
           /files FileExplorerPage, in preview mode). Without a live sandbox it
           shows its "server not reachable" empty state. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold">
           {tI18nHardcoded.raw('autoAppSystemDebugToolsPageJsxTextSidePanelFileseba2e222')}
         </h2>
-        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-2xl border">
+        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-md border">
           <SessionFilesExplorer />
         </div>
       </div>
@@ -1795,16 +1795,14 @@ export default function DebugToolsPage() {
           </p>
           {GROUPS.map((group) => (
             <section key={group.title} className="mb-12">
-              <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
-                {group.title}
-              </h2>
+              <h2 className="text-muted-foreground mb-4 text-xs font-semibold">{group.title}</h2>
               <div className="space-y-3">
                 {group.rows.map((row) => (
                   <div key={row.label}>
-                    <div className="text-muted-foreground/50 mb-1 font-mono text-xs tracking-wide uppercase">
+                    <div className="text-muted-foreground/50 mb-1 font-mono text-xs">
                       {row.label}
                     </div>
-                    <div className="border-border/40 bg-card/30 rounded-2xl border px-4 py-3">
+                    <div className="border-border/40 bg-card/30 rounded-md border px-4 py-3">
                       <ToolPartRenderer
                         part={row.node as any}
                         sessionId="debug"

@@ -4,20 +4,20 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
-  CheckIcon as Check,
-  ArrowSquareOutIcon as ExternalLink,
-  PlugIcon as Plug,
-} from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
-import { nextConnectorPollDelay } from './connector-poll';
-import { setupLinkApiBase } from './util';
-import {
   finalizeConnectorSetupLink,
   getConnectorSetupLink,
   startConnectorSetupLink,
   type ConnectorSetupLinkInfo,
 } from '@kortix/sdk';
+import {
+  CheckIcon as Check,
+  ArrowSquareOutIcon as ExternalLink,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useEffect, useState } from 'react';
+import { nextConnectorPollDelay } from './connector-poll';
+import { setupLinkApiBase } from './util';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
 
@@ -42,10 +42,20 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
 export function ConnectorIntake({
   token,
   onOpened,
+  onConnected,
   compact,
 }: {
   token: string;
   onOpened?: () => void;
+  /**
+   * Fired once the poll confirms the connection landed.
+   *
+   * The parent cannot observe this on its own: the connect happens in
+   * Pipedream's hosted popup, and the only proof is the finalize poll below.
+   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
+   * "Connected" without reopening the modal.
+   */
+  onConnected?: () => void;
   compact?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -136,12 +146,18 @@ export function ConnectorIntake({
       setPhase('opened');
       onOpened?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.');
+      setError(
+        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
+      );
       setPhase('ready');
     }
   }
 
   const appLabel = info?.app || info?.slug || 'the app';
+
+  useEffect(() => {
+    if (phase === 'connected') onConnected?.();
+  }, [phase, onConnected]);
 
   if (phase === 'loading') {
     return (
@@ -155,7 +171,7 @@ export function ConnectorIntake({
   if (phase === 'error') {
     return (
       <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'This link is invalid or has expired.'}
+        {error || tI18nHardcoded.raw('i18nComplete.text5998ac369aec')}
       </div>
     );
   }
@@ -166,10 +182,11 @@ export function ConnectorIntake({
         <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
           <Check weight="fill" className="text-kortix-green size-5" />
         </span>
-        <p className="text-foreground text-sm font-medium">Connected</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
+        </p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          {appLabel} is connected to this project. You can close this window and return to your
-          session — the agent has been notified.
+          {appLabel} {tI18nHardcoded.raw('i18nComplete.text27fd394a8fbd')}
         </p>
       </div>
     );
@@ -210,12 +227,8 @@ export function ConnectorIntake({
       </p>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
-        {starting ? (
-          <Loading className="mr-2 h-4 w-4" />
-        ) : (
-          <Plug className="mr-2 h-4 w-4" />
-        )}
-        {starting ? 'Opening…' : `Connect ${appLabel}`}
+        {starting ? <Loading className="mr-2 h-4 w-4" /> : <Plug className="mr-2 h-4 w-4" />}
+        {starting ? tI18nHardcoded.raw('i18nComplete.textc926c2c50e65') : `Connect ${appLabel}`}
       </Button>
     </div>
   );

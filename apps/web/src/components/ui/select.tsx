@@ -151,7 +151,7 @@ const SelectItem = React.forwardRef<
   // The removed `variant="secondary"` had no call sites in the app. It carried
   // its own radius (`rounded-[0.4rem]`), its own padding and `transition-all
   // duration-500`, so any row that ever used it would have broken the column.
->(({ className, children, size = 'md', description, ...props }, ref) => (
+>(({ className, children, size = 'sm', description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(

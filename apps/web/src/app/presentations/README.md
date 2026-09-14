@@ -33,18 +33,18 @@ counts, the length estimate and the page metadata are all derived.
 
 ```tsx
 type SlideDef = {
-  id: string;          // stable, unique within the deck
-  label: string;       // shown bottom-left on the stage
+  id: string; // stable, unique within the deck
+  label: string; // shown bottom-left on the stage
   node: ReactNode | ((step: number) => ReactNode);
-  steps?: number;      // extra build steps. Total → presses = steps + 1
-  notes?: string | readonly string[];  // the spoken script
+  steps?: number; // extra build steps. Total → presses = steps + 1
+  notes?: string | readonly string[]; // the spoken script
 };
 ```
 
 **Builds.** `steps: 3` means → is pressed four times on that slide, and `node`
 is called with `step` 0…3 so the picture can add a stage each time. Advancing
 past the last step moves on; reversing off step 0 lands on the previous slide at
-*its* last step, so ← always undoes exactly what → just did.
+_its_ last step, so ← always undoes exactly what → just did.
 
 **Notes** are the words you say. They never render on the stage — only in the
 presenter drawer (`N`) — so a recording of the deck stays clean. Pass an array

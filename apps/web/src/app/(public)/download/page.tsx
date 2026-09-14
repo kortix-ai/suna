@@ -2,14 +2,7 @@ import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/b
 import { ConsentGate } from '@/components/consent-gate';
 import { DesktopCardImage, MobileCardImage } from '@/features/marketing/download/card-images';
 import { DownloadCloseButton } from '@/features/marketing/download/close-button';
-import {
-  DESKTOP_CARD,
-  DESKTOP_ROWS,
-  MOBILE_CARD,
-  MOBILE_ROWS,
-  MOBILE_STATUS,
-  hero,
-} from '@/features/marketing/download/content';
+import { localizedDownloadContent } from '@/features/marketing/download/content';
 import type { DesktopOs, MobileOs, Platform } from '@/features/marketing/download/detect-os';
 import {
   detectPlatform,
@@ -26,8 +19,9 @@ import {
   pickDesktopAsset,
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
-import type { Metadata } from 'next';
 import { marketingMetadata } from '@/lib/seo/metadata';
+import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import { headers } from 'next/headers';
 
 export const metadata: Metadata = marketingMetadata('/download');
@@ -47,11 +41,20 @@ export default async function DownloadPage({
 }: {
   searchParams: Promise<{ platform?: string }>;
 }) {
-  const [headerList, params, release] = await Promise.all([
+  const [headerList, params, release, tI18nComplete] = await Promise.all([
     headers(),
     searchParams,
     getLatestRelease(),
+    getTranslations('hardcodedUi.i18nComplete'),
   ]);
+  const {
+    hero,
+    desktopCard: DESKTOP_CARD,
+    mobileCard: MOBILE_CARD,
+    desktopRows: DESKTOP_ROWS,
+    mobileRows: MOBILE_ROWS,
+    mobileStatus: MOBILE_STATUS,
+  } = localizedDownloadContent(tI18nComplete);
 
   const detected: Platform =
     normalizePlatform(params.platform) ?? detectPlatform(headerList.get('user-agent'));

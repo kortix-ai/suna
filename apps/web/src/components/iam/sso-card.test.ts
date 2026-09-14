@@ -58,8 +58,8 @@ describe('SSO card — service provider details block', () => {
   });
 
   test('uses neutral labels, never naming the delegated identity provider', () => {
-    expect(source).toContain('Identifier (Entity ID)');
-    expect(source).toContain('Reply URL (ACS)');
+    expect(source).toContain("raw('text8e5381229b65')");
+    expect(source).toContain("raw('text2085a74cbb9b')");
     expect(source).not.toContain('Supabase Studio');
     expect(source).not.toContain('SupabaseStudio');
   });
@@ -69,15 +69,15 @@ describe('SSO card — service provider details block', () => {
   // no hand-rolled <code> + icon-button pair.
   test('offers a copy affordance for each SP value, via the shared CopyRow', () => {
     expect(source).toContain("from '@/features/workspace/shared/access'");
-    expect(flatSource).toMatch(/<CopyRow label="Identifier \(Entity ID\)"/);
-    expect(flatSource).toMatch(/<CopyRow label="Reply URL \(ACS\)"/);
+    expect(flatSource).toContain("label={tI18nComplete.raw('text8e5381229b65')}");
+    expect(flatSource).toContain("label={tI18nComplete.raw('text2085a74cbb9b')}");
     expect(source).not.toContain('copyToClipboard');
   });
 
   test('renders the values in a collapsed disclosure (both states) and inside the edit dialog', () => {
     // The card no longer leads with the URL block — the values live in the
     // "Service provider values" disclosure, available connected or not.
-    expect(source).toMatch(/\{spUrls && \([\s\S]*?Service provider values[\s\S]*?<SpDetails/);
+    expect(source).toMatch(/\{spUrls && \([\s\S]*?textc4be9515eb1a[\s\S]*?<SpDetails/);
     expect(source).toMatch(/\{spUrls && (?:\(\s*)?<SpDetails/);
   });
 
@@ -103,7 +103,7 @@ describe('SSO card — group mapping uses the ONE principal picker', () => {
 
 describe('SSO card — enforce_sso toggle (connected state)', () => {
   test('renders the toggle with its own label and off-by-default state', () => {
-    expect(source).toContain('Enforce SSO for this domain');
+    expect(source).toContain("raw('text05b1748edb1e')");
     expect(source).toContain('checked={!!provider.enforce_sso}');
   });
 
@@ -115,8 +115,7 @@ describe('SSO card — enforce_sso toggle (connected state)', () => {
   });
 
   test('warns that pre-enforcement password sign-ins lose the password path', () => {
-    expect(flatSource).toContain('the password option disappears');
-    expect(flatSource).toContain('only your identity provider works after that');
+    expect(flatSource).toContain("raw('text3e29ac703c2f')");
   });
 
   test('the toggle is disabled for non-managers', () => {
@@ -126,14 +125,11 @@ describe('SSO card — enforce_sso toggle (connected state)', () => {
 
 describe('SSO card — domain field explains its consequence (live incident)', () => {
   test('states that every sign-in from the domain routes to the IdP instead of password login', () => {
-    expect(flatSource).toContain(
-      'Every sign-in from this domain is routed to this identity provider instead of password login',
-    );
-    expect(flatSource).toContain('Users on other domains are unaffected');
+    expect(flatSource).toContain("raw('texte6c1f062119d')");
   });
 
   test("warns when the entered domain matches the current admin's own email domain", () => {
     expect(source).toContain('adminEmailDomain');
-    expect(flatSource).toContain('this will route YOUR next sign-in to the IdP');
+    expect(flatSource).toContain("raw('textcd93ff59e7c2')");
   });
 });

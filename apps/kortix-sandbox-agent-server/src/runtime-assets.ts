@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { resolveOpencodeConfigDir, type Config } from './config'
 import { ensureInjectedManagedSkills } from './injected-skills'
+import { homedir } from 'node:os'
 import { logger } from './logger'
 import {
   captureProcessOutput,
@@ -635,6 +636,22 @@ async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
  * installer here would produce a second, subtly different runtime that only
  * ever exists on updated boxes, which is the hardest kind of drift to debug.
  */
+/** The exact global install the image performs (dockerfile-layer.ts), or its pnpm < 10 form. */
+export function pnpmAddOpencodeArgs(version: string, opts: { allowBuild: boolean }): string[] {
+  return opts.allowBuild
+    ? ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${version}`]
+    : ['add', '-g', `opencode-ai@${version}`]
+}
+
+/** pnpm 8/9 answer `--allow-build` with "ERROR  Unknown option: 'allow-build'". */
+export function isUnknownAllowBuildOption(error: unknown): boolean {
+  const e = error as { message?: unknown; stderr?: unknown; stdout?: unknown } | null
+  const text = [e?.message, e?.stderr, e?.stdout]
+    .filter((v): v is string => typeof v === 'string')
+    .join('\n')
+  return /unknown option/i.test(text) && /allow-build/.test(text)
+}
+
 export interface InstallOpencodeVersionOptions {
   installPackage?: (version: string) => Promise<void>
   capture?: CaptureCommand
@@ -646,11 +663,28 @@ export async function installOpencodeVersion(
   options: InstallOpencodeVersionOptions = {},
 ): Promise<void> {
   const installPackage = options.installPackage ?? (async (targetVersion: string) => {
-    await execFileAsync(
-      'pnpm',
-      ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${targetVersion}`],
-      { timeout: OPENCODE_INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-    )
+    // pnpm >= 10 refuses a global install without a global bin dir. Images set
+    // PNPM_HOME at build time; a box converged from an older image may not
+    // carry it, so default to the image's own layout under $HOME.
+    const pnpmHome = process.env.PNPM_HOME || join(homedir(), '.local', 'share', 'pnpm')
+    const pathParts = (process.env.PATH ?? '').split(':').filter(Boolean)
+    for (const dir of [`${pnpmHome}/bin`, pnpmHome]) {
+      if (!pathParts.includes(dir)) pathParts.unshift(dir)
+    }
+    const env = { ...process.env, PNPM_HOME: pnpmHome, PATH: pathParts.join(':') }
+    const run = (args: string[]) =>
+      execFileAsync('pnpm', args, { timeout: OPENCODE_INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env })
+    try {
+      await run(pnpmAddOpencodeArgs(targetVersion, { allowBuild: true }))
+    } catch (error) {
+      // A 2026-07 image ships pnpm 8, which predates `--allow-build` (pnpm 10)
+      // and runs the package's build scripts by default anyway. Same package,
+      // same version, same global layout — only the flag is dropped, and only
+      // for this exact rejection, so a current box never takes this path.
+      if (!isUnknownAllowBuildOption(error)) throw error
+      logger.warn('[runtime-assets] pnpm rejects --allow-build (pnpm < 10); retrying without it')
+      await run(pnpmAddOpencodeArgs(targetVersion, { allowBuild: false }))
+    }
   })
   const capture = options.capture ?? captureProcessOutput
 

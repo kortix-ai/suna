@@ -98,7 +98,7 @@ export function Passage({ passage }: { passage: PassageContent }): ReactNode {
           </p>
 
           {/* body · the measure column */}
-          <div className="min-w-0 max-w-[32rem]">
+          <div className="max-w-[32rem] min-w-0">
             <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance sm:text-3xl">
               {passage.title}
             </h2>

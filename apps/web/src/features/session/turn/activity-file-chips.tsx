@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * A run of reads or writes rendered as FILES rather than as tool cards.
  *
@@ -126,6 +127,7 @@ function isInFlight(part: ToolPart): boolean {
  * disappear under the pointer.
  */
 function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const filename = getFilename(path);
   const type = getFileType(filename);
   // The glyph for THIS file, not for its category — a .ts, a .png and a .zip
@@ -136,7 +138,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
   // second line that costs 16px and says nothing. The extension itself is the
   // information; "File" survives only for a name that genuinely has none.
   const ext = filename.includes('.') ? filename.split('.').pop() : undefined;
-  const typeLabel = getTypeLabel(type, ext);
+  const typeLabel = getTypeLabel(type, ext, tI18nComplete);
 
   return (
     <li>
@@ -205,6 +207,7 @@ function ActivityFileChipStepImpl({
   /** This row is the WHOLE burst — see `ActivityBurst`. */
   bare?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Called before every early return below — hook order is not negotiable.
   // This is the same door `read-tool.tsx` uses, and it reads the SHARED query
@@ -314,10 +317,23 @@ function ActivityFileChipStepImpl({
             'text-left text-sm leading-[1.5] transition-colors',
           )}
         >
-          {/* A bare row drops the family glyph: the icon is the chain rail's
-              anchor (`left-2`), and a single row has no rail to anchor. The
-              failure mark stays — on a bare row it is the only verdict left,
-              since the burst's summary line and closing step are both gone. */}
+          {/* EVERY row keeps its leading glyph, single-row bursts included —
+              the same rule, and the same reasoning, `ActivityStep` already
+              carries. A bare row used to drop it on the geometric argument that
+              the icon anchors the chain rail (`left-2`) and one row has no
+              chain. That traded the row's IDENTITY for its alignment: a lone
+              write rendered as a bare line of text with no pencil on it, and
+              the tool's own name is not always recoverable from the words.
+
+              A lone `write` is precisely the case with the least surrounding
+              context to recover it from — there is no burst summary above and
+              no sibling row beside it. And the 28px lane the glyph holds is the
+              same lane `pl-7` already puts the chips in below, so keeping it is
+              what makes a bare row line up, not what breaks it.
+
+              The failure mark still replaces the glyph while closed: on a bare
+              row it is the only verdict left, since the burst's summary line and
+              closing step are both gone. */}
           {status === 'error' ? (
             <>
               {/* Closed: failure mark replaces the family glyph. Open: the
@@ -325,19 +341,16 @@ function ActivityFileChipStepImpl({
                   back to the family icon and drops the duplicate warning. */}
               <WarningIcon
                 weight="fill"
-                aria-label="This step failed"
+                aria-label={tI18nComplete.raw('textf0103f528539')}
                 className={cn(
-                  'size-4 flex-none',
-                  !bare && 'group-data-[state=open]/step:hidden',
+                  'size-4 flex-none group-data-[state=open]/step:hidden',
                   STATUS_TEXT.destructive,
                 )}
               />
-              {!bare && (
-                <Icon className="text-muted-foreground hidden size-4 flex-none group-data-[state=open]/step:block" />
-              )}
+              <Icon className="text-muted-foreground hidden size-4 flex-none group-data-[state=open]/step:block" />
             </>
           ) : (
-            !bare && <Icon className="text-muted-foreground size-4 flex-none" />
+            <Icon className="text-muted-foreground size-4 flex-none" />
           )}
           {status === 'running' ? (
             <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
@@ -358,10 +371,10 @@ function ActivityFileChipStepImpl({
         {/* `pl-7` puts the files under the LABEL (size-4 icon + gap-3), clear of
 				    the chain rail at `left-2` — the indent is what says they belong to
 				    the row above rather than to the chain. */}
-        {/* The indent survives a bare row even though the icon it was measured
-					  from does not. The chain rail runs at `left-2`, so content flush to
-					  the margin puts the hairline 8px inside it — straight through the
-					  left edge of the first chip. 28px is the lane the rail needs. */}
+        {/* 28px is also the lane the chain rail needs: the rail runs at
+					  `left-2`, so content flush to the margin puts the hairline 8px
+					  inside it — straight through the left edge of the first chip. The
+					  indent now agrees with the glyph on every row, bare included. */}
         <div className="mt-3 space-y-3 pl-7">
           {paths.length > 0 && (
             <ul className="flex flex-wrap gap-2">

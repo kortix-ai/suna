@@ -1,11 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, type CSSProperties } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase } from '@/lib/dotmatrix-core';
+import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare6Props = DotMatrixCommonProps;
 
@@ -13,34 +12,38 @@ const COLUMN_HEIGHT = 5;
 
 export function DotmSquare6({
   speed = 2.2,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare6Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
 
   const animationResolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const goesUp = col % 2 === 0;
       const position = goesUp ? COLUMN_HEIGHT - 1 - row : row;
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         return { style: { opacity: 0.22 + (position / (COLUMN_HEIGHT - 1)) * 0.66 } };
       }
 
       return {
-        className: "dmx-square6-col-snake",
-        style: { "--dmx-col-pos": position } as CSSProperties
+        className: 'dmx-square6-col-snake',
+        style: { '--dmx-col-pos': position } as CSSProperties,
       };
     };
   }, [reducedMotion]);

@@ -38,9 +38,7 @@ export function getActiveSessionContext(): SessionContext | null {
  * Build metadata for a preview tab, enriched with session context if available.
  * Merges the session context into the provided metadata object.
  */
-export function enrichPreviewMetadata(
-  metadata: Record<string, unknown>,
-): Record<string, unknown> {
+export function enrichPreviewMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   const ctx = getActiveSessionContext();
   if (!ctx) return metadata;
 

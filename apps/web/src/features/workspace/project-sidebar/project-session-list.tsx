@@ -1,20 +1,20 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
   directSubsessions,
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
-  SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
+  sessionIsShared,
   sessionSource,
   spawnedBySessionId,
-  type SessionDisplayStatus,
-  type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -29,26 +29,33 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
+import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
   getSessionDisplayTitle,
+  groupChangeRequestsBySession,
   groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
-  sessionLastActivityAt,
   shortRelative,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import {
+  MobileSessionCreatedTime,
+  SessionBriefDescription,
+  SessionBriefHoverCard,
+} from '@/features/workspace/project-sidebar/session-brief-hover-card';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
+import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
+import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
   selectCollapsedSections,
@@ -61,18 +68,17 @@ import {
 } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
+  listChangeRequests,
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
+  type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
-  CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
-  ClockCounterClockwiseIcon,
   DotsThreeIcon,
-  EnvelopeIcon as Mail,
   FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -80,13 +86,11 @@ import {
   ArrowElbowDownRightIcon as SpawnedBy,
   SquareIcon as Square,
   TrashIcon,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { format, formatDistanceToNowStrict } from 'date-fns';
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -110,23 +114,58 @@ const SESSION_RELATIVE_TIME_CLASS =
  *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
  *  overflowing an 8px content box, centered by coincidence rather than by
  *  layout, with a different hover fill than the other two. */
-const SESSION_MENU_TRIGGER_CLASS =
-  'text-muted-foreground hover:text-sidebar-foreground shrink-0 focus:ring-0 focus-visible:ring-0';
+const SESSION_MENU_TRIGGER_CLASS = cn(
+  'text-muted-foreground shrink-0 transition-none',
+  // An OPAQUE hover fill, and the reason it has to be opaque:
+  //
+  // `variant="ghost"` hovers to `bg-foreground/10`. `background-color` is one
+  // property, so on the row trigger that 10% tint did not sit on top of the
+  // `bg-(--session-row-surface)` mask — it REPLACED it. The mask exists to hide
+  // the truncated session title running underneath the glyph, so hovering
+  // punched a translucent hole in it and the title bled through: the washed-out
+  // grey square in the bug report, with a muted `⋯` floating in it.
+  //
+  // `sidebar-accent` is surface-2, one opaque step above the row's own
+  // surface-1 (`--card`) on hover. The square reads as lifted, stays a solid
+  // mask, and needs no pseudo-element to stack a tint above a fill.
+  'hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent',
+  // Full contrast once the pointer is on it — the glyph is a control now, not a
+  // marker.
+  'hover:text-foreground data-[state=open]:text-foreground',
+);
+
+/** The same trigger on a touch device.
+ *
+ *  It cannot stay hover-revealed and absolutely positioned — there is no hover,
+ *  and the glyph has to hold a real finger target. It goes `relative` (in flex
+ *  flow, nothing running underneath it) and permanently visible.
+ *
+ *  The size is split from the target on purpose. `size-12` made the button the
+ *  full 44.16px of the row's own `min-h-12`, so pressing it lit a slab of
+ *  `bg-sidebar-accent` spanning the entire row height — a control that reads as
+ *  heavy as the row it belongs to. The square is `size-8` and an unpainted
+ *  `::after` carries the touch target instead:
+ *
+ *    size-8            8 × 0.23rem = 29.44px   ← what you see
+ *    after:-inset-2  + 2 × 7.36px   = 44.16px  ← what you can hit
+ *
+ *  44.16px is exactly `min-h-12`, so the target fills the row's height and not
+ *  one pixel more: it can never annex a neighbouring row's right edge. Nothing
+ *  in the row clips (`overflow-hidden` would drop the overflowing hit area), and
+ *  `px-2` on the row is 7.36px, so the target ends flush with the row's edge.
+ *
+ *  All three variants are the exact complement of the hover-card gate
+ *  (`min-width: 768px` AND `hover: hover` AND `pointer: fine`), which is why the
+ *  same block is written narrow-viewport, no-hover, and coarse-pointer. */
+const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
+  "max-md:pointer-events-auto max-md:relative max-md:size-8 max-md:translate-y-0 max-md:opacity-100 max-md:after:absolute max-md:after:-inset-2 max-md:after:content-['']",
+  "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:relative [@media(hover:none)]:size-8 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-2 [@media(hover:none)]:after:content-['']",
+  "[@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:relative [@media(pointer:coarse)]:size-8 [@media(pointer:coarse)]:translate-y-0 [@media(pointer:coarse)]:opacity-100 [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-2 [@media(pointer:coarse)]:after:content-['']",
+);
 
 /** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
  *  centered in an identical 32px line at all three levels. */
 const SESSION_ROW_HEIGHT_CLASS = 'h-8';
-
-const SOURCE_ICONS: Record<
-  Exclude<SessionSourceKind, 'chat'>,
-  ComponentType<{ className?: string }>
-> = {
-  slack: Slack,
-  telegram: Telegram,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
-};
 
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
@@ -148,9 +187,12 @@ function ProjectSessionListSkeleton() {
 }
 
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const { holdPeek } = useSidebar();
+  const canShowSessionHoverCard = useMediaQuery(
+    '(min-width: 768px) and (hover: hover) and (pointer: fine)',
+  );
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -182,12 +224,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     ...contract('inventory'),
   });
 
+  // The brief is a session record, not a Review Center inbox. It therefore
+  // loads every CR state, not only the ones awaiting review.
+  const { data: changeRequestData } = useQuery({
+    queryKey: changeRequestKeys.list(projectId, 'all'),
+    queryFn: () => listChangeRequests(projectId, 'all'),
+    staleTime: 5_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
   // Review Center is one coherent system: the per-session row indicators, the
-  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
-  // and gate on the SAME flag. When the flag is off the summary query never runs,
-  // so no indicators render and nothing polls.
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
+  const reviewSummary = useReviewSessionSummary(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -207,11 +256,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`Restarting "${label}"…`);
+      successToast(tI18nComplete('textdd465809683b', { value0: label }));
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to restart session');
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text1604d2906a45'));
     },
   });
 
@@ -219,24 +268,29 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
-      successToast(`"${label}" stopped`);
+      successToast(tI18nComplete('textb86777c5ad5c', { value0: label }));
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('texte0e30badc30c'));
     },
   });
 
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = data ?? [];
+  const sessions = useMemo(() => data ?? [], [data]);
+  const changeRequestsBySession = useMemo(
+    () => groupChangeRequestsBySession(changeRequestData?.change_requests ?? [], sessions),
+    [changeRequestData?.change_requests, sessions],
+  );
   // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.
   const visibleSessions = sessions.filter(
     (session) =>
-      matchesStatusFilters(session, statusFilters) && matchesSourceFilters(session, sourceFilters),
+      matchesStatusFilters(session, statusFilters) &&
+      matchesSourceFilters(session, sourceFilters, tI18nComplete),
   );
 
   const viewState = resolveSessionListViewState({
@@ -258,11 +312,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       const message = error instanceof Error ? error.message : undefined;
       return (
         <div className="space-y-1.5 px-2 py-2">
-          <p className="text-destructive/80 text-xs">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
-            )}
-          </p>
+          <p className="text-destructive/80 text-xs">{t('sessionList.loadError')}</p>
           {message && (
             <p className="text-muted-foreground/70 truncate text-xs" title={message}>
               {message}
@@ -274,7 +324,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             className="h-6 px-2 text-xs"
             onClick={() => refetch()}
           >
-            Retry
+            {t('retry')}
           </Button>
         </div>
       );
@@ -283,7 +333,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (viewState === 'empty') {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
+          {t('sessionList.empty')}
         </div>
       );
     }
@@ -291,9 +341,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (viewState === 'no-matches') {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0',
-          )}
+          {t('sessionList.noMatches')}
         </div>
       );
     }
@@ -301,12 +349,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // Below the early returns: grouping is only ever read by the content state,
     // and computing it above meant every loading/error/empty render paid for a
     // result it threw away.
-    const grouped = groupSessions(visibleSessions, {
-      mode: groupMode,
-      order: orderMode,
-      reviewCountBySession: reviewSummary.needsYouBySession,
-      hiddenSections,
-    });
+    const grouped = groupSessions(
+      visibleSessions,
+      {
+        mode: groupMode,
+        order: orderMode,
+        reviewCountBySession: reviewSummary.needsYouBySession,
+        hiddenSections,
+      },
+      tI18nComplete,
+    );
 
     // `resolveSessionListViewState` only sees counts before filtering by
     // `hiddenSections` — it has no way to know every section got hidden. Catch
@@ -314,7 +366,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // no explanation.
     if (grouped.sections.length === 0) {
       return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {t('allSectionsHidden')}
+        </div>
       );
     }
 
@@ -348,6 +402,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             displayTitle={getSessionDisplayTitle(session)}
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+            changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
+            canShowHoverCard={canShowSessionHoverCard}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
             onShare={(s) => setSessionToShare(s)}
             onRename={(id, name) => setSessionToRename({ id, name })}
@@ -383,7 +439,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     };
 
     return (
-      <FadedScrollArea className="h-full min-h-0 space-y-1">
+      <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -403,7 +459,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (
-                  <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                  <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
                     {group.children.map((child) => renderSessionNode(child, true))}
                   </div>
                 )}
@@ -416,7 +472,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col space-y-2">
+    <div className="flex h-full min-h-0 flex-col space-y-px">
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
@@ -473,6 +529,7 @@ function SessionListHeader({
   reviewCountBySession: Record<string, number>;
   onMenuOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations('sidebar');
   return (
     <div
       className={cn(
@@ -482,9 +539,9 @@ function SessionListHeader({
     >
       <HoverPrefetchLink
         href={`/projects/${projectId}/sessions`}
-        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
       >
-        <span className="truncate">Sessions</span>
+        <span className="truncate">{t('sessions')}</span>
       </HoverPrefetchLink>
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
@@ -499,7 +556,7 @@ function SessionListHeader({
               variant="ghost"
               size="icon-xs"
               type="button"
-              aria-label="Session view options"
+              aria-label={t('sessionViewOptions')}
               className={SESSION_MENU_TRIGGER_CLASS}
             >
               <DotsThreeIcon className="size-4" />
@@ -541,6 +598,24 @@ function SessionListSection({
   onOpenChange,
   children,
 }: SessionListSectionProps) {
+  const t = useTranslations('sidebar.filter.section');
+  const sectionTranslationKeys = {
+    'needs-you': 'needsYou',
+    running: 'running',
+    recent: 'recent',
+    today: 'today',
+    yesterday: 'yesterday',
+    week: 'week',
+    older: 'older',
+    chat: 'chat',
+    slack: 'slack',
+    telegram: 'telegram',
+    email: 'email',
+    schedule: 'scheduled',
+    webhook: 'webhook',
+    all: 'all',
+  } as const;
+  const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];
   if (!showHeader) {
     return <div className="space-y-px">{children}</div>;
   }
@@ -549,7 +624,7 @@ function SessionListSection({
     <Disclosure
       open={open}
       onOpenChange={onOpenChange}
-      className="group/section space-y-px"
+      className="group/section space-y-1"
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
@@ -559,10 +634,10 @@ function SessionListSection({
             SESSION_ROW_HEIGHT_CLASS,
           )}
         >
-          <span className="truncate">{section.label}</span>
+          <span className="truncate">{sectionKey ? t(sectionKey) : section.label}</span>
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
           <SessionSectionMenu
             projectId={projectId}
@@ -598,19 +673,20 @@ function SessionSectionMenu({
   sessions: ProjectSession[];
   reviewCountBySession: Record<string, number>;
 }) {
+  const t = useTranslations('sidebar');
   const [open, setOpen] = useState(false);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="icon-xs"
           type="button"
-          aria-label="Section options"
+          aria-label={t('sectionOptions')}
           className={cn(
             SESSION_MENU_TRIGGER_CLASS,
-            'relative ml-auto opacity-0 transition-opacity duration-150',
+            'relative ml-auto opacity-0',
             'before:absolute before:-inset-1',
             'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
           )}
@@ -653,6 +729,8 @@ interface ProjectSessionRowProps {
   childCount?: number;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
+  changeRequests: readonly ChangeRequest[];
+  canShowHoverCard: boolean;
   /** Rendered indented under its coordinator — the indent already conveys the
    *  spawn link, so the right-side spawned-by icon is omitted. */
   nested?: boolean;
@@ -674,80 +752,121 @@ function ProjectSessionRow({
   isStopping,
   childCount = 0,
   reviewCount = 0,
+  changeRequests,
+  canShowHoverCard,
   nested = false,
 }: ProjectSessionRowProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const [menuOpen, setMenuOpen] = useState(false);
+  const descriptionId = useId();
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
   };
 
-  const activity = (() => {
-    try {
-      const date = new Date(sessionLastActivityAt(session));
-      return {
-        relative: formatDistanceToNowStrict(date, { addSuffix: false }),
-        exact: format(date, 'MMM d, yyyy, h:mm a'),
-      };
-    } catch {
-      return null;
-    }
-  })();
-
-  const source = sessionSource(session);
+  const source = sessionSource(session, tI18nComplete);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
   const isMeta = isMetaCoordinatorSession(session);
   const spawnedBy = spawnedBySessionId(session);
 
-  return (
-    <div className="group/session-list block">
-      <div
-        className={cn(
-          // --session-row-surface paints the row AND the title fade in the same
-          // style pass. Do not transition background — transition-colors made the
-          // fill ease for 150ms while the fade snapped, which read as a flicker.
-          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
-          isActive
-            ? 'text-sidebar-foreground bg-[var(--session-row-surface)] font-medium [--session-row-surface:var(--sidebar-border)]'
-            : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',
-        )}
-      >
-        {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
-            the viewport, so opening ONE session made the browser fetch the RSC
-            payload of every OTHER session in the sidebar — 19-20 dynamic server
-            renders (~24KB each) per open, 21 hits on this one route where 1 is
-            correct. The prefetch now starts on hover/focus/touch. */}
-        <HoverPrefetchLink
-          href={href}
-          onClick={onNavigate}
-          aria-busy={isSwitching || undefined}
-          aria-current={isActive ? 'page' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+  // Resolved here, not left to the children, for two reasons: the strip must not
+  // render at all when it is empty (an empty flex item still draws the row's
+  // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
+  // the hover shift below only makes sense when there is something to shift.
+  const showSpawnedBy = Boolean(spawnedBy) && !nested;
+  const hasIndicators = showSpawnedBy || Boolean(SourceIcon) || sessionIsShared(session);
+  // `reviewCount` is not optional here, whatever the signature's default says.
+  // Omitting it does not mean "unknown", it asserts "nothing is waiting", which
+  // is how the row's dot and this row's own hover card came to disagree: the dot
+  // passed the count and went green, the card omitted it and went grey while
+  // listing the very change requests that made it `needs-you`. Both now read the
+  // same `reviewCount` prop, so they agree by construction rather than by luck.
+  const displayStatus = sessionDisplayStatus(session, reviewCount);
+
+  const sessionLink = (
+    <HoverPrefetchLink
+      href={href}
+      onClick={onNavigate}
+      aria-busy={isSwitching || undefined}
+      aria-current={isActive ? 'page' : undefined}
+      aria-describedby={descriptionId}
+      className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
+    >
+      <div className="size-4 shrink-0">
+        <SessionStatusDot session={session} reviewCount={reviewCount} />
+      </div>
+
+      {isMeta && (
+        <Hint side="top" label={t('metaCoordinator')}>
+          <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+            <MetaFolder className="size-3.5" weight="fill" />
+          </span>
+        </Hint>
+      )}
+
+      <span className="min-w-0 flex-1">
+        <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
+        <span
+          className="hidden max-md:block [@media(hover:none)]:block [@media(pointer:coarse)]:block"
+          aria-hidden
+          data-session-mobile-created-at="true"
         >
-          <SessionStatusDot session={session} reviewCount={reviewCount} />
+          <MobileSessionCreatedTime createdAt={session.created_at} />
+        </span>
+      </span>
 
-          {isMeta && (
-            <Hint side="top" label="Meta coordinator">
-              <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
-                <MetaFolder className="size-3.5" weight="fill" />
-              </span>
-            </Hint>
+      {childCount > 0 && (
+        <Badge
+          variant="transparent"
+          size="tabular"
+          className="bg-sidebar-accent/60 text-muted-foreground"
+        >
+          {childCount}
+        </Badge>
+      )}
+
+      {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
+          and whatever markers get added here later. These are ambient state,
+          readable at rest; the `⋯` is the action. They occupy the SAME slot,
+          so hovering the row (or leaving its menu open) hands the slot to the
+          trigger and hides the strip.
+
+          Inside the link, not after it. The link is the hover card's trigger,
+          and HoverCard exports no `Anchor`, so the card positions against the
+          link's right edge. As a sibling, the strip shortened the link by its
+          own width plus the row's `gap-2`: a Slack or shared session's card
+          opened 24-56px inside the sidebar while a plain chat session's card
+          cleared it. In here, every row's link ends at the row's `px-2` edge.
+
+          Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
+          flow at its natural width, so the title's truncation point is fixed
+          and the text cannot reflow as the pointer crosses the row. It goes
+          `pointer-events-none` at the same time — an invisible icon must not
+          swallow a click meant for the trigger above it.
+
+          The trade: those icons' tooltips are unreachable, because reaching
+          an icon means hovering the row, which hides it. Accepted — they are
+          markers to be glanced at, not controls.
+
+          No transition, matching the trigger: the `⋯` appears instantly, and
+          a fade would leave both drawn on top of each other mid-cross. */}
+      {hasIndicators && (
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0 transition-none',
+            'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
+            'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
+            'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
           )}
-
-          <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
-
-          {childCount > 0 && (
-            <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
-              {childCount}
-            </span>
-          )}
-        </HoverPrefetchLink>
-
-        <div className="flex shrink-0 items-center gap-0" data-session-indicators="true">
-          {spawnedBy && !nested && (
-            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+          data-session-indicators="true"
+        >
+          {showSpawnedBy && spawnedBy && (
+            <Hint
+              side="top"
+              label={tI18nComplete('text4d67694a7607', { value0: spawnedBy.slice(0, 8) })}
+            >
               <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
                 <SpawnedBy className="size-3" />
               </span>
@@ -771,105 +890,148 @@ function ProjectSessionRow({
             </span>
           )}
           <SessionSharedIcon session={session} />
-
-          <div className="relative w-10 min-w-10 shrink-0">
-            {activity && (
-              <span
-                className={cn(
-                  SESSION_RELATIVE_TIME_CLASS,
-                  // pr-1 (4px), not pr-1.5: the timestamp and the `⋯` swap in
-                  // this same slot on hover, so the text's right edge must land
-                  // on the GLYPH's right edge, not the button's. The 16px glyph
-                  // is inset 4px inside its 24px box — match that, or the two
-                  // states sit 2px apart and the swap visibly shifts.
-                  'pr-1 transition-opacity duration-150',
-                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
-                )}
-                title={`Last activity: ${activity.exact}`}
-                aria-label={`Last activity: ${activity.relative}`}
-              >
-                {shortRelative(activity.relative)}
-              </span>
-            )}
-
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  type="button"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
-                  )}
-                  className={cn(
-                    SESSION_MENU_TRIGGER_CLASS,
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
-                    activity
-                      ? cn(
-                          'pointer-events-none opacity-0',
-                          'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
-                          'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
-                        )
-                      : 'opacity-100',
-                  )}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <DotsThreeIcon className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="right" className="w-44">
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
-                >
-                  <PencilSimpleIcon />
-                  Rename
-                </DropdownMenuItem>
-                {/* Shown to everyone who can open the session: the owner
-                    changes access here, everyone else reads who has it. */}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onShare(session))}
-                >
-                  <Share />
-                  {session.can_manage_sharing !== false ? 'Share' : 'Who has access'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  disabled={isRestarting}
-                  onSelect={() =>
-                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
-                  }
-                >
-                  {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-                  Restart
-                </DropdownMenuItem>
-                {/* Lifecycle, not sharing: a project manager keeps Stop on a
-                    session they did not create. */}
-                {session.status === 'running' && session.can_manage_lifecycle !== false && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    disabled={isStopping}
-                    onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
-                  >
-                    {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
-                    Stop
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-                >
-                  <TrashIcon />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
         </div>
+      )}
+    </HoverPrefetchLink>
+  );
+
+  return (
+    <div className="group/session-list block">
+      <div
+        className={cn(
+          // --session-row-surface paints the row AND the title fade in the same
+          // style pass. Do not transition background — transition-colors made the
+          // fill ease for 150ms while the fade snapped, which read as a flicker.
+          // Paint with the variable (not bg-card + a different surface token) so
+          // the end fade can never disagree with the row fill.
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
+          'max-md:h-auto max-md:min-h-12 max-md:gap-1',
+          '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
+          '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
+          isActive
+            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
+        )}
+      >
+        {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
+            the viewport, so opening ONE session made the browser fetch the RSC
+            payload of every OTHER session in the sidebar — 19-20 dynamic server
+            renders (~24KB each) per open, 21 hits on this one route where 1 is
+            correct. The prefetch now starts on hover/focus/touch. */}
+        {canShowHoverCard ? (
+          <SessionBriefHoverCard
+            sessionId={session.session_id}
+            title={displayTitle}
+            status={displayStatus}
+            createdAt={session.created_at}
+            source={source}
+            changeRequests={changeRequests}
+            projectId={session.project_id}
+          >
+            {sessionLink}
+          </SessionBriefHoverCard>
+        ) : (
+          sessionLink
+        )}
+
+        <SessionBriefDescription
+          id={descriptionId}
+          status={displayStatus}
+          createdAt={session.created_at}
+          source={source}
+          changeRequests={changeRequests}
+        />
+
+        {/* Out of flow on purpose. This trigger is a sibling of the link (which
+            holds the indicator strip), absolutely positioned against the row —
+            it reserves NO width, so the title measures against the full row and
+            truncates only at the real edge. It used to sit inside a `relative`
+            wrapper at the end of the indicator strip; that wrapper was still a
+            flex item, so it (and the timestamp slot it once held) ate width the
+            title needed.
+
+            `right-2` matches the row's own `px-2`, so the 24px square spans
+            `[W-32, W-8]` and the 16px glyph `[W-28, W-12]` — the exact geometry
+            the Sessions header and every section header use. All three `⋯`
+            glyphs stay on one vertical axis.
+
+            It paints `--session-row-surface` (the same variable that fills the
+            row) so a long title passing underneath is masked, not shown through
+            the glyph. `hover:bg-foreground/10` from `variant="ghost"` survives
+            tailwind-merge and still lights the square on direct hover. */}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              aria-label={t('sessionList.actionsFor', { title: displayTitle })}
+              className={cn(
+                SESSION_MENU_TRIGGER_CLASS,
+                'absolute top-1/2 right-1 z-10 -translate-y-1/2',
+                'bg-(--session-row-surface)',
+                'pointer-events-none opacity-0',
+                'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
+                'focus-visible:pointer-events-auto focus-visible:opacity-100',
+                'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
+                SESSION_MENU_TRIGGER_TOUCH_CLASS,
+              )}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="right" className="w-44">
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
+            >
+              <PencilSimpleIcon />
+              {tI18nComplete.raw('text3064d79a295c')}
+            </DropdownMenuItem>
+            {/* Shown to everyone who can open the session: the owner
+                changes access here, everyone else reads who has it. */}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onShare(session))}
+            >
+              <Share />
+              {session.can_manage_sharing !== false
+                ? 'Share'
+                : tI18nComplete.raw('textadc01d813da0')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              disabled={isRestarting}
+              onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+            >
+              {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+              {tI18nComplete.raw('text6b983a81e5e8')}
+            </DropdownMenuItem>
+            {/* Lifecycle, not sharing: a project manager keeps Stop on a
+                session they did not create. */}
+            {session.status === 'running' && session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isStopping}
+                onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
+              >
+                {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
+                {tI18nComplete.raw('textcae7d57bc067')}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+            >
+              <TrashIcon />
+              {tI18nComplete.raw('texte2d0a54968ea')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -896,7 +1058,7 @@ function ProjectSubsessionRow({
     <HoverPrefetchLink href={href} className="block">
       <div
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm',
           isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
         )}
       >
@@ -910,31 +1072,6 @@ function ProjectSubsessionRow({
   );
 }
 
-/** Per-display-status paint. Green appears in exactly two rows — the two that
- *  mean live or actionable. `done` is muted on purpose: it is the change that
- *  drains the green out of a long list and makes the rest mean something.
- *
- *  `glyph` is what separates the two muted states. Both used to be rings that
- *  differed only by a dash pattern, and at 16px that is not a difference a user
- *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
- *  The check stays muted — a check is not a licence to go green. */
-const STATUS_DOT_STYLE: Record<
-  SessionDisplayStatus,
-  { color: string; glyph: 'ring' | 'check'; fill: boolean }
-> = {
-  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
-  // `starting` renders <Loading /> instead and never reads glyph/fill.
-  starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
-  running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
-  done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
-  stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
-  failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
-  // `legacy` renders <ClockCounterClockwiseIcon /> instead and never reads
-  // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
-  // the history glyph says "restorable" without spending any color.
-  legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
-};
-
 function SessionStatusDot({
   session,
   reviewCount = 0,
@@ -943,56 +1080,9 @@ function SessionStatusDot({
   reviewCount?: number;
 }) {
   const display = sessionDisplayStatus(session, reviewCount);
-  const style = STATUS_DOT_STYLE[display];
-  const label =
-    display === 'needs-you'
-      ? `${reviewCount} awaiting your review`
-      : SESSION_DISPLAY_STATUS_LABELS[display];
-
   return (
-    <Hint side="right" label={<span className="text-xs">{label}</span>}>
-      <div className="flex size-4 shrink-0 items-center justify-center">
-        {display === 'starting' ? (
-          // Loading is the only spinner in this codebase. The previous
-          // implementation spun an SVG with animate-spin, which the rule bans.
-          <Loading className="text-kortix-yellow size-3.5" />
-        ) : display === 'legacy' ? (
-          <ClockCounterClockwiseIcon
-            className="size-3.5 shrink-0"
-            style={{ color: style.color }}
-            aria-hidden
-          />
-        ) : (
-          <svg
-            height="16"
-            width="16"
-            viewBox="0 0 16 16"
-            strokeLinejoin="round"
-            style={{ color: style.color }}
-            className="flex shrink-0 items-center justify-center"
-            aria-hidden
-          >
-            {style.glyph === 'check' ? (
-              // Same 16px box, same 1.5 stroke, same currentColor as the rings,
-              // so the dot column stays optically aligned row to row.
-              <path
-                d="M4 8.4 L6.8 11.2 L12 5.2"
-                stroke="currentColor"
-                fill="none"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            ) : (
-              <>
-                <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
-                {style.fill && (
-                  <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
-                )}
-              </>
-            )}
-          </svg>
-        )}
-      </div>
-    </Hint>
+    <div className="flex size-4 shrink-0 items-center justify-center">
+      <SessionStatusMark status={display} />
+    </div>
   );
 }

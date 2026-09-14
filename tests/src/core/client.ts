@@ -68,6 +68,7 @@ const SENSITIVE_HEADERS = new Set([
   'cookie',
   'set-cookie',
   'x-kortix-token',
+  'x-kortix-ci-passthrough',
   'x-kortix-signature',
   'x-hub-signature',
   'x-hub-signature-256',

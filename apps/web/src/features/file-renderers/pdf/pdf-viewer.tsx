@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createPluginRegistration, refreshPages } from '@embedpdf/core';
 import { EmbedPDF, useRegistry } from '@embedpdf/core/react';
 import type { PdfDocumentObject, PdfEngine, Rect, Rotation } from '@embedpdf/models';
@@ -153,7 +154,7 @@ const THUMBNAIL_SIDEBAR_CLOSED_CLASS = '-ml-40';
 const PAGE_BASE_RENDER_MAX_SCALE = 1;
 const PAGE_BASE_RENDER_DPR = 1;
 const PDF_SEARCH_DEBOUNCE_MS = 300;
-const TEXT_SELECTION_BACKGROUND = 'rgba(59, 130, 246, 0.14)';
+const TEXT_SELECTION_BACKGROUND = 'color-mix(in srgb, var(--kortix-blue) 14%, transparent)';
 const THUMBNAIL_FOCUS_RING_CLASS =
   'group-focus-visible/pdf-thumbnail-sidebar:ring-2 group-focus-visible/pdf-thumbnail-sidebar:ring-ring group-focus-visible/pdf-thumbnail-sidebar:ring-offset-1 group-focus-visible/pdf-thumbnail-sidebar:ring-offset-background';
 
@@ -463,6 +464,7 @@ function PDFViewerFallbackShell({
   state: 'loading' | 'error' | 'empty';
   onUploadFile?: (file: File) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
       data-slot="pdf-viewer"
@@ -484,15 +486,18 @@ function PDFViewerFallbackShell({
         ) : null}
         {state === 'error' ? (
           <div className="bg-background text-muted-foreground absolute inset-0 z-20 grid place-items-center p-6 text-sm">
-            Unable to load the PDF preview.
+            {tI18nComplete.raw('textc009fe87348b')}
           </div>
         ) : null}
         {state === 'empty' ? (
           <div className="bg-background text-muted-foreground absolute inset-0 z-20 grid place-items-center p-6 text-center text-sm">
             <div className="max-w-sm space-y-3">
-              <div className="text-foreground font-medium">Upload a PDF to preview</div>
+              <div className="text-foreground font-medium">
+                {tI18nComplete.raw('textfb31480e7db1')}
+              </div>
               <div>
-                Pass a PDF URL with the <code>src</code> prop or use the upload control.
+                {tI18nComplete.raw('textc72772b1c8d9')} <code>src</code>{' '}
+                {tI18nComplete.raw('textf7552f3489ab')}
               </div>
             </div>
           </div>
@@ -528,6 +533,7 @@ function PDFViewerFileActionsMenu({
   showDownload?: boolean;
   showUpload?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   if (!showDownload && !showUpload) return null;
@@ -558,7 +564,7 @@ function PDFViewerFileActionsMenu({
             variant="ghost"
             size="icon-sm"
             className="transition-transform active:scale-[0.96]"
-            aria-label="Open PDF actions"
+            aria-label={tI18nComplete.raw('text55a733d57ce1')}
           >
             <Ellipsis className="size-4" />
           </Button>
@@ -571,13 +577,13 @@ function PDFViewerFileActionsMenu({
               ) : (
                 <Download className="size-4" />
               )}
-              Download
+              {tI18nComplete.raw('textd6eafe823591')}
             </DropdownMenuItem>
           ) : null}
           {showUpload && onUploadFile ? (
             <DropdownMenuItem onClick={() => inputRef.current?.click()}>
               <Upload className="size-4" />
-              Upload
+              {tI18nComplete.raw('text865e89de78d9')}
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
@@ -597,6 +603,7 @@ function PDFViewerPageNumberControl({
   numPages: number;
   onPageChange: (pageNumber: number) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = React.useRef<HTMLInputElement>(null);
   const displayPage = numPages ? activePage : 1;
   const [isEditing, setIsEditing] = React.useState(false);
@@ -626,11 +633,11 @@ function PDFViewerPageNumberControl({
 
   return (
     <div className="text-primary flex items-center text-sm whitespace-nowrap tabular-nums">
-      <span>Page</span>
+      <span>{tI18nComplete.raw('text0a30a815d67d')}</span>
       {isEditing ? (
         <Input
           ref={inputRef}
-          aria-label="Page number"
+          aria-label={tI18nComplete.raw('text05fa2e3b0a10')}
           inputMode="numeric"
           pattern="[0-9]*"
           size="sm"
@@ -655,7 +662,7 @@ function PDFViewerPageNumberControl({
           variant="ghost"
           size="sm"
           className="font-normal"
-          aria-label={`Current page ${displayPage}. Edit page number`}
+          aria-label={tI18nComplete('text8b5b847c92d6', { value0: displayPage })}
           disabled={controlsDisabled || !numPages}
           onClick={() => {
             setDraftPage(String(displayPage));
@@ -665,7 +672,9 @@ function PDFViewerPageNumberControl({
           {displayPage}
         </Button>
       )}
-      <span>of {numPages || '–'}</span>
+      <span>
+        {tI18nComplete.raw('text28391d3bc64e')} {numPages || '–'}
+      </span>
     </div>
   );
 }
@@ -677,6 +686,7 @@ function PDFViewerSearchControl({
   documentId: string;
   controlsDisabled: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { state, provides } = useSearch(documentId);
   const { provides: scroll } = useScroll(documentId);
   const [searchDraft, setSearchDraft] = React.useState('');
@@ -829,14 +839,14 @@ function PDFViewerSearchControl({
 
   return (
     <Popover>
-      <ToolbarTooltip label="Search text">
+      <ToolbarTooltip label={tI18nComplete.raw('text38d268a10995')}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className="transition-transform active:scale-[0.96]"
-            aria-label="Search text"
+            aria-label={tI18nComplete.raw('text38d268a10995')}
             disabled={controlsDisabled}
           >
             <Search className="size-4" />
@@ -846,7 +856,7 @@ function PDFViewerSearchControl({
       <PopoverContent align="end" className="w-72">
         <div className="space-y-3">
           <Input
-            placeholder="Search text"
+            placeholder={tI18nComplete.raw('text38d268a10995')}
             value={searchDraft}
             onChange={handleSearchDraftChange}
             onKeyDown={(event) => {
@@ -881,7 +891,7 @@ function PDFViewerSearchControl({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Previous result"
+                aria-label={tI18nComplete.raw('text965bc32426d7')}
                 disabled={isSearching || state.total === 0}
                 onClick={() => navigate(-1)}
               >
@@ -892,7 +902,7 @@ function PDFViewerSearchControl({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Next result"
+                aria-label={tI18nComplete.raw('textbf56a193cb9f')}
                 disabled={isSearching || state.total === 0}
                 onClick={() => navigate(1)}
               >
@@ -902,7 +912,7 @@ function PDFViewerSearchControl({
           </div>
           <div className="flex justify-end">
             <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
-              Clear
+              {tI18nComplete.raw('text83b12c2216ef')}
             </Button>
           </div>
         </div>
@@ -930,6 +940,7 @@ function PDFViewerThumbnails({
   selectedPageIndexes: Set<number>;
   onSelectPage: (pageNumber: number, mode: ThumbnailSelectionMode) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const thumbnailListboxId = React.useId();
   const activeDescendantId =
     activePage > 0 ? `${thumbnailListboxId}-page-${activePage}` : undefined;
@@ -982,7 +993,9 @@ function PDFViewerThumbnails({
           pageRotationDelta % 2 === 1
             ? {
                 height: meta.width,
-                transform: `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
+                transform: tI18nComplete('text8c5f37b673ef', {
+                  value0: rotationToDegrees(pageRotationDelta),
+                }),
                 width: meta.height,
               }
             : {
@@ -990,7 +1003,9 @@ function PDFViewerThumbnails({
                 transform:
                   pageRotationDelta === 0
                     ? undefined
-                    : `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
+                    : tI18nComplete('text8c5f37b673ef', {
+                        value0: rotationToDegrees(pageRotationDelta),
+                      }),
                 width: meta.width,
               };
 
@@ -1076,6 +1091,7 @@ function PDFViewerThumbnailScrollArea({
   pageRotationDeltas: PageRotationDeltas;
   pdfDocument: PdfDocumentObject | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { plugin: thumbnailPlugin } = useThumbnailPlugin();
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const [viewportMetrics, setViewportMetrics] = React.useState({
@@ -1195,7 +1211,7 @@ function PDFViewerThumbnailScrollArea({
       viewportClassName="group/pdf-thumbnail-sidebar px-4 focus-visible:ring-0 focus-visible:ring-offset-0"
       viewportProps={{
         'aria-activedescendant': activeDescendantId,
-        'aria-label': 'PDF pages',
+        'aria-label': tI18nComplete.raw('text5b5a81a901e5'),
         'aria-multiselectable': true,
         onKeyDown,
         onMouseDown: (event) => {
@@ -1559,6 +1575,7 @@ function PDFViewerScroller({
   basePageRotations: Rotation[];
   renderPage: (props: PageLayout) => React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { plugin: scrollPlugin } = useScrollPlugin();
   const [layoutData, setLayoutData] = React.useState<{
     docId: string | null;
@@ -1618,7 +1635,7 @@ function PDFViewerScroller({
         height: `${scrollerLayout.totalHeight}px`,
         position: 'relative',
         boxSizing: 'border-box',
-        margin: '0 auto',
+        margin: "0 auto",
         ...(scrollerLayout.strategy === ScrollStrategy.Horizontal && {
           display: 'flex',
           flexDirection: 'row',
@@ -1747,6 +1764,7 @@ function PDFViewerInner({
   onPagePointerCancel,
   onUploadFile,
 }: PDFViewerInnerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { registry } = useRegistry();
   const { state: scrollState, provides: scroll } = useScroll(documentId);
   const { state: zoomState, provides: zoom } = useZoom(documentId);
@@ -2127,8 +2145,8 @@ function PDFViewerInner({
               documentId={documentId}
               pageIndex={page.pageIndex}
               className="pointer-events-none"
-              highlightColor="rgba(253, 224, 71, 0.45)"
-              activeHighlightColor="rgba(249, 115, 22, 0.55)"
+              highlightColor="color-mix(in srgb, var(--kortix-yellow) 45%, transparent)"
+              activeHighlightColor="color-mix(in srgb, var(--kortix-orange) 55%, transparent)"
             />
             <PDFViewerTextSelectionLayer
               documentId={documentId}
@@ -2173,13 +2191,13 @@ function PDFViewerInner({
         <div className="bg-background flex min-h-12 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <TooltipProvider>
-              <ToolbarTooltip label="Toggle thumbnails">
+              <ToolbarTooltip label={tI18nComplete.raw('text3bba69274a7d')}>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-sm"
                   className="transition-transform active:scale-[0.96]"
-                  aria-label="Toggle thumbnails"
+                  aria-label={tI18nComplete.raw('text3bba69274a7d')}
                   disabled={controlsDisabled}
                   onClick={() => setSidebarOpen((open) => !open)}
                 >
@@ -2199,26 +2217,26 @@ function PDFViewerInner({
               {showRotateControls ? (
                 <>
                   <div className="flex flex-none items-center gap-1">
-                    <ToolbarTooltip label="Rotate counterclockwise">
+                    <ToolbarTooltip label={tI18nComplete.raw('text10fdf5583470')}>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
                         className="transition-transform active:scale-[0.96]"
-                        aria-label="Rotate counterclockwise"
+                        aria-label={tI18nComplete.raw('text10fdf5583470')}
                         disabled={controlsDisabled}
                         onClick={() => rotateSelectedPages(-1)}
                       >
                         <RotateCw className="size-4" />
                       </Button>
                     </ToolbarTooltip>
-                    <ToolbarTooltip label="Rotate clockwise">
+                    <ToolbarTooltip label={tI18nComplete.raw('textfb594c58c73d')}>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
                         className="transition-transform active:scale-[0.96]"
-                        aria-label="Rotate clockwise"
+                        aria-label={tI18nComplete.raw('textfb594c58c73d')}
                         disabled={controlsDisabled}
                         onClick={() => rotateSelectedPages(1)}
                       >
@@ -2230,13 +2248,13 @@ function PDFViewerInner({
                 </>
               ) : null}
               <div className="flex flex-none items-center gap-1">
-                <ToolbarTooltip label="Zoom out">
+                <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom out"
+                    aria-label={tI18nComplete.raw('textbc7b631a689b')}
                     disabled={controlsDisabled || currentZoomLevel <= ZOOM_OPTIONS[0]}
                     onClick={() => {
                       const nextZoom = [...ZOOM_OPTIONS]
@@ -2256,7 +2274,7 @@ function PDFViewerInner({
                   modal={false}
                 >
                   <SelectTrigger size="sm" className="w-[84px] min-w-[84px] tabular-nums">
-                    <SelectValue placeholder="Zoom">
+                    <SelectValue placeholder={tI18nComplete.raw('text509c517ede79')}>
                       {Math.round(currentZoomLevel * 100)}%
                     </SelectValue>
                   </SelectTrigger>
@@ -2268,13 +2286,13 @@ function PDFViewerInner({
                     ))}
                   </SelectContent>
                 </Select>
-                <ToolbarTooltip label="Zoom in">
+                <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
                     className="transition-transform active:scale-[0.96]"
-                    aria-label="Zoom in"
+                    aria-label={tI18nComplete.raw('text0e47f09a748f')}
                     disabled={
                       controlsDisabled || currentZoomLevel >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]
                     }
@@ -2497,6 +2515,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
   },
   ref,
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { engine, error: engineError } = useSharedPdfEngine();
   const [uploadedPdfFile, setUploadedPdfFile] = React.useState<{
     src: string | undefined;
@@ -2571,7 +2590,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
           className,
         )}
       >
-        Unable to load the PDF engine.
+        {tI18nComplete.raw('text84658b676d2f')}
       </div>
     );
   }

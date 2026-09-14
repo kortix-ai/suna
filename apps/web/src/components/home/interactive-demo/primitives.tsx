@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { favicon } from './data';
 
@@ -40,12 +40,19 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <div className={cn('border-border bg-card overflow-hidden rounded-[calc(var(--radius-xl)-4px)] border', className)}>
+    <div
+      className={cn(
+        'border-border bg-card overflow-hidden rounded-[calc(var(--radius-xl)-4px)] border',
+        className,
+      )}
+    >
       {title && (
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
-            {count ? <span className="text-muted-foreground ml-1.5 font-normal">{count}</span> : null}
+            {count ? (
+              <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>
+            ) : null}
           </span>
           {action}
         </div>
@@ -163,13 +170,15 @@ export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
 }
 
 export function ConnectBadge({ connected }: { connected: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return connected ? (
     <Badge size="sm" variant="success" className="ml-auto shrink-0 gap-1">
-      <span className="size-1.5 rounded-full bg-emerald-500" /> Connected
+      <span className="size-1.5 rounded-full bg-emerald-500" />{' '}
+      {tI18nComplete.raw('text22965568d22a')}
     </Badge>
   ) : (
     <Badge size="sm" variant="outline" className="ml-auto shrink-0">
-      Connect
+      {tI18nComplete.raw('text1a2303ede074')}
     </Badge>
   );
 }

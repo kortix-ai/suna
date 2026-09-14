@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import { DiceStage } from './dice-stage';
 
-export const metadata: Metadata = {
-  title: { absolute: 'All in one — Kortix' },
-  description:
-    'Six layers of the agent stack on the six faces of one die. Roll it to read a face.',
-  alternates: { canonical: 'https://kortix.com/a1o' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  return {
+    title: { absolute: t.raw('text16b9d8d63ecb') },
+    description: t.raw('textf48bdbd4d197'),
+    alternates: { canonical: 'https://kortix.com/a1o' },
+  };
+}
 
 export default function A1oPage() {
   return (

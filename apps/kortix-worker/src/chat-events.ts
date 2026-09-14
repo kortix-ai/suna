@@ -81,7 +81,9 @@ export class ChatEventAdapter {
     const sessionID = this.sessionID;
     switch (event.type) {
       case 'agent_start':
-        return [{ type: 'session.status', properties: { sessionID, status: { type: 'running' } } }];
+        // OpenCode accepts only idle, busy, and retry. Emitting another value
+        // makes strict consumers report an active session as idle.
+        return [{ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }];
 
       case 'message_start': {
         // Only ASSISTANT messages translate. The worker publishes the USER

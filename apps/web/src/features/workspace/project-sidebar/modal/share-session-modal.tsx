@@ -22,6 +22,8 @@ import {
   type SharingCopy,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
 import {
   GlobeIcon as Globe,
@@ -29,7 +31,6 @@ import {
   UsersIcon as UsersSolid,
 } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
 
@@ -49,12 +50,12 @@ const SESSION_SHARING_COPY: SharingCopy = {
   members: { label: 'Specific people', desc: 'Only the members and groups you choose.' },
 };
 
-function delegateCopy(ownerLabel: string): SharingCopy {
+function delegateCopy(ownerLabel: string, tI18nComplete: UiTranslator): SharingCopy {
   return {
     ...SESSION_SHARING_COPY,
     private: {
-      label: `Only ${ownerLabel}`,
-      desc: 'Unavailable — saving this would remove your own access.',
+      label: tI18nComplete('text0df9df285277', { value0: ownerLabel }),
+      desc: tI18nComplete.raw('text38b08d83da73'),
     },
   };
 }
@@ -69,26 +70,41 @@ function LockSolidFilled({ className }: { className?: string }) {
   return <LockSolid className={className} weight="fill" />;
 }
 
-export function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
+export function sessionVisibilityMeta(
+  session: Pick<ProjectSession, 'visibility'>,
+  tI18nComplete: UiTranslator,
+) {
   switch (session.visibility) {
     case 'project':
-      return { icon: Globe, label: 'Team', tone: 'shared' as const };
+      return { icon: Globe, label: tI18nComplete.raw('text5985039f106d'), tone: 'shared' as const };
     case 'restricted':
-      return { icon: UsersSolidFilled, label: 'Shared', tone: 'shared' as const };
+      return {
+        icon: UsersSolidFilled,
+        label: tI18nComplete.raw('texte3c4b39d6d50'),
+        tone: 'shared' as const,
+      };
     default:
-      return { icon: LockSolidFilled, label: 'Private', tone: 'private' as const };
+      return {
+        icon: LockSolidFilled,
+        label: tI18nComplete.raw('textc63eb6720c6e'),
+        tone: 'private' as const,
+      };
   }
 }
 
 export function SessionVisibilityBadge({ session }: { session: ProjectSession }) {
-  const meta = sessionVisibilityMeta(session);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const meta = sessionVisibilityMeta(session, tI18nComplete);
   const Icon = meta.icon;
 
   if (session.visibility === 'private' && session.is_owner !== false) return null;
   const sharedBy =
     !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
   return (
-    <Hint side="bottom" label={sharedBy ?? `${meta.label} · who can access this session`}>
+    <Hint
+      side="bottom"
+      label={sharedBy ?? tI18nComplete('text6bf74b3f6d7a', { value0: meta.label })}
+    >
       <Badge variant="kortix" size="sm" className="gap-2">
         <Icon className="size-3" />
         {meta.label}
@@ -110,6 +126,7 @@ export function ShareSessionModal({
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'private',
@@ -130,11 +147,12 @@ export function ShareSessionModal({
       return setProjectSessionSharing(projectId, session!.session_id, selectionToIntent(sharing));
     },
     onSuccess: () => {
-      successToast('Session access updated');
+      successToast(tI18nHardcoded.raw('i18nComplete.textd8b630796604'));
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not update session access'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text68d66e06fd0f')),
   });
 
   const view = session
@@ -179,7 +197,11 @@ export function ShareSessionModal({
               projectId={projectId}
               value={sharing}
               onChange={setSharing}
-              copy={view.role === 'owner' ? SESSION_SHARING_COPY : delegateCopy(view.ownerLabel)}
+              copy={
+                view.role === 'owner'
+                  ? SESSION_SHARING_COPY
+                  : delegateCopy(view.ownerLabel, tI18nComplete)
+              }
               disabledModes={view.disabledModes}
             />
           ) : (
@@ -209,7 +231,7 @@ export function ShareSessionModal({
               className="w-full sm:w-auto"
             >
               {save.isPending && <Loading />}
-              Save
+              {tI18nHardcoded.raw('i18nComplete.text1509f561f241')}
             </Button>
           )}
         </ModalFooter>

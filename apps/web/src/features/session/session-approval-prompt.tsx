@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * In-session "agent needs your approval" card, pinned above the composer.
  *
@@ -36,8 +37,8 @@ import {
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
-  ApprovalUnreviewableNotice,
   approvalReviewable,
+  ApprovalUnreviewableNotice,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ import { useEffect, useRef, useState } from 'react';
 const DECIDED_LINGER_MS = 5_000;
 
 export function SessionApprovalPrompt() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId, sessionId: projectSessionId } = useParams<{
     id: string;
     sessionId: string;
@@ -109,7 +111,11 @@ export function SessionApprovalPrompt() {
             [executionId]: { action: row.action, decision },
           }));
           setExpanded((current) => (current === executionId ? null : current));
-          successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+          successToast(
+            decision === tI18nComplete.raw('text74e21680eac7')
+              ? tI18nComplete.raw('text0674d4a026cb')
+              : tI18nComplete.raw('text4341be8eb7f0'),
+          );
           timers.current.push(
             window.setTimeout(() => {
               setDecided((current) => {
@@ -121,7 +127,9 @@ export function SessionApprovalPrompt() {
           );
         },
         onError: (cause: unknown) =>
-          errorToast(cause instanceof Error ? cause.message : 'Failed to resolve approval'),
+          errorToast(
+            cause instanceof Error ? cause.message : tI18nComplete.raw('textaa7e623fc09a'),
+          ),
         onSettled: () =>
           setBusy((current) => {
             const next = { ...current };
@@ -165,10 +173,11 @@ export function SessionApprovalNotice({
   onToggle,
   onDecide,
 }: SessionApprovalNoticeProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (rows.length === 0) return null;
 
   const pendingCount = rows.filter((row) => row.decision === null).length;
-  const headline = approvalNoticeHeadline(pendingCount);
+  const headline = approvalNoticeHeadline(pendingCount, tI18nComplete);
 
   return (
     <div
@@ -223,7 +232,9 @@ export function SessionApprovalNotice({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-muted-foreground text-xs">Run</span>
+                        <span className="text-muted-foreground text-xs">
+                          {tI18nComplete.raw('text00d60e31a4e6')}
+                        </span>
                         <code className="text-foreground truncate font-mono text-xs font-medium">
                           {action.action}
                         </code>
@@ -243,7 +254,7 @@ export function SessionApprovalNotice({
                         </p>
                       ) : null}
                       <p className="text-muted-foreground mt-0.5 text-xs">
-                        Requested {relativeTime(action.at)}
+                        {tI18nComplete.raw('text2d9e28289fac')} {relativeTime(action.at)}
                       </p>
                     </div>
                     {decision ? (
@@ -256,7 +267,7 @@ export function SessionApprovalNotice({
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
-                        Review
+                        {tI18nComplete.raw('textaff0766a5290')}
                         <CaretDownIcon
                           className={cn(
                             'size-3 transition-transform duration-150',
@@ -266,7 +277,7 @@ export function SessionApprovalNotice({
                       </span>
                     )}
                     {action.approval_url ? (
-                      <Hint label="Open the full approval page" side="top">
+                      <Hint label={tI18nComplete.raw('textb7d2844482b4')} side="top">
                         <Button
                           size="icon-sm"
                           variant="ghost"
@@ -281,7 +292,7 @@ export function SessionApprovalNotice({
                             href={action.approval_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label="Open the full approval page"
+                            aria-label={tI18nComplete.raw('textb7d2844482b4')}
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}
                           >

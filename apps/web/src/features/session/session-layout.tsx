@@ -35,7 +35,7 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type React from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as ResizablePrimitive from 'react-resizable-panels';
@@ -665,7 +665,7 @@ function PanelHeaderSwitcher({
       // this Advanced-mode button is a narrower thing — the detail panel only.
       label={
         <span className="flex items-center gap-1.5">
-          {isSidePanelOpen ? 'Close' : 'Open'} panel
+          {isSidePanelOpen ? 'Close' : 'Open'} {tHardcodedUi.raw('i18nComplete.text320e00e73a7d')}
         </span>
       }
     >
@@ -699,19 +699,19 @@ function PanelHeaderSwitcher({
           )}
         >
           <TabsTrigger size="xs" value="actions" className="h-7 w-fit">
-            Actions
+            {tHardcodedUi.raw('i18nComplete.textff8059dc6752')}
           </TabsTrigger>
           <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
-            Browser
+            {tHardcodedUi.raw('i18nComplete.textd31de1a5c5c8')}
           </TabsTrigger>
           <TabsTrigger size="xs" value="explorer" className="hit-area-2 h-7 w-fit">
-            Files
+            {tHardcodedUi.raw('i18nComplete.textabc7e9892806')}
           </TabsTrigger>
           <TabsTrigger size="xs" value="terminal" className="hit-area-2 h-7 w-fit">
-            Terminal
+            {tHardcodedUi.raw('i18nComplete.texte0926fdac700')}
           </TabsTrigger>
           <TabsTrigger size="xs" value="audit" className="hit-area-2 h-7 w-fit gap-1.5">
-            Audit
+            {tHardcodedUi.raw('i18nComplete.textbb6aea287396')}
             {auditBadge > 0 ? (
               <Badge variant="secondary" size="xs" className="tabular-nums">
                 {auditBadge}
@@ -727,7 +727,7 @@ function PanelHeaderSwitcher({
           onClick={onToggleMode}
           className="text-muted-foreground hover:text-foreground hit-area-2 h-7 cursor-pointer text-xs"
         >
-          Easy
+          {tHardcodedUi.raw('i18nComplete.textd6915875decb')}
         </Button>
         {panelToggle}
       </div>

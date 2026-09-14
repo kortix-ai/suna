@@ -42,7 +42,9 @@ describe('connector tools write path', () => {
     // `../..` is the capabilities root: this file sits at connectors/detail/.
     const root = join(import.meta.dir, '..', '..');
     const callers = readdirSync(root, { recursive: true, encoding: 'utf8' })
-      .filter((name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'))
+      .filter(
+        (name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('.test.tsx'),
+      )
       .filter((name) => readFileSync(join(root, name), 'utf8').includes('setConnectorPolicies('));
     expect(callers).toEqual(['connectors/detail/connector-tools.tsx']);
   });
@@ -61,7 +63,10 @@ describe('connector tools write path', () => {
   test('rules reach the wire through applyBulkPolicy, never hand-built', () => {
     // Hand-building a rule array would bypass both the case-insensitive
     // replacement and the pattern-preservation guarantee.
-    for (const marker of ['applyBulkPolicy(policies, [path], choice)', 'applyBulkPolicy(policies, bulkPaths, bulk.choice)']) {
+    for (const marker of [
+      'applyBulkPolicy(policies, [path], choice)',
+      'applyBulkPolicy(policies, bulkPaths, bulk.choice)',
+    ]) {
       expect(source).toContain(marker);
     }
   });

@@ -3,8 +3,6 @@ title: Apps
 description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable Kortix URLs.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A Kortix App is a provider-neutral serverless deployment owned by one project.
 An App owns one stable URL. Each deployment is immutable and numbered. A failed
 deployment never replaces live traffic.
@@ -174,12 +172,12 @@ Terminal and paused states answer differently:
 `kortix apps stop` suspends compute immediately; the next authorized request
 resumes the App. `kortix apps start` warms it before traffic arrives.
 
-<Callout type="info" title="Cold starts stay invisible">
+:::info[Cold starts stay invisible]
 The stable URL never exposes an `app_stopped` state. A provider edge that
 answers `502` during the first request after a resume is served as the ordinary
 cold-start page instead. A warm App owns its own HTTP status, including a
 deliberate application `502`.
-</Callout>
+:::
 
 ## Access modes
 
@@ -214,10 +212,10 @@ Changing an access policy increments its revision, which revokes every existing
 App cookie. Passwords are Argon2id hashes; the API, the CLI, and the SDK never
 return a password or its hash.
 
-<Callout type="warn" title="Never put an App password in your repo">
+:::warning[Never put an App password in your repo]
 `kortix.yaml` holds deployment defaults only. Pass a password with `--password`,
 or set it from the access modal.
-</Callout>
+:::
 
 Being able to see an App listed and being able to open it are different
 verdicts. A project manager sees every App in the project, so a private App

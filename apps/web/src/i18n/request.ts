@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
 import { defaultLocale, type Locale } from './config';
-import { getUserLocale, normalizeLocale } from './locale';
+import { getRouteLocale, getUserLocale } from './locale';
 
 export default getRequestConfig(async ({ requestLocale }) => {
   let locale: Locale = defaultLocale;
@@ -52,7 +52,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
 
   // Priority 2: If locale is provided in the URL path (e.g., /de, /it), use it for marketing pages
   // This allows SEO-friendly URLs like /de, /it for marketing content
-  const urlLocale = normalizeLocale((await requestLocale) || headersList.get('x-locale'));
+  const urlLocale = getRouteLocale(await requestLocale, headersList.get('x-locale'));
   if (urlLocale) {
     locale = urlLocale;
     return {

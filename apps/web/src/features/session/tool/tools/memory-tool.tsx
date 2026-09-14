@@ -27,7 +27,7 @@ import {
   CaretRightIcon as ChevronRight,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { type ReactNode, useContext, useMemo } from 'react';
 
 import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
@@ -211,7 +211,13 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     } else {
       body = (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Reading memory…' : 'Nothing to show.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tI18nHardcoded.raw('i18nComplete.textc3c709a999c1')
+                : tI18nHardcoded.raw('i18nComplete.textb1cd8bf2581b')
+            }
+          />
         </ToolResultCard>
       );
     }
@@ -224,7 +230,13 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
       )
     ) : (
       <ToolResultCard>
-        <ToolEmptyState message={isStreaming ? 'Writing memory…' : 'No content.'} />
+        <ToolEmptyState
+          message={
+            isStreaming
+              ? tI18nHardcoded.raw('i18nComplete.text426a8655550c')
+              : tI18nHardcoded.raw('i18nComplete.text9acf3e31d12e')
+          }
+        />
       </ToolResultCard>
     );
   } else if (command === 'str_replace') {

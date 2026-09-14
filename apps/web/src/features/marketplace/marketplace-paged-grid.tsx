@@ -2,12 +2,15 @@
 
 import { PackageIcon as PackageSearch } from '@phosphor-icons/react';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useInfiniteMarketplaceItems } from '@/hooks/marketplace';
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { ItemsPage, MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
 import Loading from '../../components/ui/loading';
@@ -66,6 +69,7 @@ export function MarketplacePagedGrid({
   emptyAction?: ReactNode;
   header?: (info: { total: number; count: number }) => ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const itemsQuery = useInfiniteMarketplaceItems(
     { query, type, source, publicOnly },
     { initialData },
@@ -99,8 +103,8 @@ export function MarketplacePagedGrid({
     return (
       <EmptyState
         icon={PackageSearch}
-        title="Couldn't load"
-        description={(itemsQuery.error as Error)?.message ?? 'Something went wrong.'}
+        title={tI18nComplete.raw('text2c1cff23cb89')}
+        description={(itemsQuery.error as Error)?.message ?? tI18nComplete.raw('text0c953ab32c60')}
       />
     );
   }
@@ -146,7 +150,7 @@ export function MarketplacePagedGrid({
       {isFetchingNextPage && (
         <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-2 text-xs">
           <Loading className="size-3.5 animate-spin" />
-          Loading more…
+          {tI18nComplete.raw('text964e5f88d036')}
         </div>
       )}
     </div>
@@ -205,10 +209,13 @@ function GridRow({
   gridClassName: string;
   showSource: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (row.kind === 'header') {
     return (
       <div className="flex items-center justify-between gap-2 py-1 pt-4 first:pt-0">
-        <h3 className="text-foreground text-sm font-medium">{row.label}</h3>
+        <h3 className="text-foreground text-sm font-medium">
+          {translateUiCatalogText(row.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS)}
+        </h3>
         <span className="text-muted-foreground text-xs tabular-nums">{row.count}</span>
       </div>
     );

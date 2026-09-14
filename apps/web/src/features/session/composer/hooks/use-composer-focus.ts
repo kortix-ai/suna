@@ -59,8 +59,7 @@ export function useComposerFocus({
   disabled = false,
   onTypeAhead,
 }: UseComposerFocusOptions) {
-  const shouldAutoFocus =
-    autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
+  const shouldAutoFocus = autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
 
   // Mirror the latest onTypeAhead into a ref so the keydown listener effect
   // below doesn't need it as a dependency — a consumer passing an inline

@@ -14,9 +14,9 @@ import { FoldedSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { stripAnsi } from '@/ui';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
 /**
@@ -140,7 +140,9 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
         <ToolResultCard>
           {parsed.buffer.earlierCount > 0 && (
             <FoldedSection
-              label={`${parsed.buffer.earlierCount} earlier lines`}
+              label={tHardcodedUi('i18nComplete.textffffeef5ea06', {
+                value0: parsed.buffer.earlierCount,
+              })}
               className="px-2 pt-1.5"
             >
               <PreWithPaths

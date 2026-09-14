@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { WrenchIcon as RawWrenchIcon } from '@phosphor-icons/react/dist/ssr';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DEFAULT_ICON_WEIGHT } from './icon-config';
@@ -16,9 +16,7 @@ describe('server-component icons', () => {
     expect(renderToStaticMarkup(<CaretRightIcon />)).not.toBe(
       renderToStaticMarkup(<RawWrenchIcon weight="regular" />),
     );
-    expect(renderToStaticMarkup(<WrenchIcon />)).not.toBe(
-      renderToStaticMarkup(<RawWrenchIcon />),
-    );
+    expect(renderToStaticMarkup(<WrenchIcon />)).not.toBe(renderToStaticMarkup(<RawWrenchIcon />));
   });
 
   test('let an explicit weight win', () => {

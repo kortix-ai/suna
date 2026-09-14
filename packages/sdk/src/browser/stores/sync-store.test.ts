@@ -931,6 +931,28 @@ describe("useSyncStore — session.error attaches to the turn that failed", () =
 });
 
 describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + message", () => {
+	test("stamps runtime activity while a streamed delta changes the visible transcript", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+
+		store.applyEvent({
+			id: "evt_live_delta",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_asst",
+				partID: "prt_reasoning",
+				sessionID: "ses_1",
+				field: "text",
+				delta: "Still thinking",
+			},
+		} as never);
+
+		// `projectWorking` expires old status and turn observations after 45s.
+		// A delta is the runtime itself producing output, so it must refresh the
+		// activity evidence that keeps Stop and the busy indicator visible.
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+
 	test("auto-creates the assistant message + part so a delta before message.part.updated still renders", () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_user"));
@@ -973,6 +995,28 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 	});
 });
 
+describe("useSyncStore — streamed part activity follows resolved session identity", () => {
+	test("stamps activity when message.part.updated omits sessionID but its message identifies the session", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_asst"));
+
+		store.applyEvent({
+			id: "evt_part_without_session",
+			type: "message.part.updated",
+			properties: {
+				part: {
+					id: "prt_reasoning",
+					messageID: "msg_asst",
+					type: "reasoning",
+					text: "Still thinking",
+				},
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+});
+
 // T14 — `applyPartDelta` used to be `existing + delta` with no
 // identity consulted anywhere in the pipeline, so a duplicate delivery of
 // the SAME `message.part.delta` doubled the streamed text. `eventID` is the
@@ -986,6 +1030,19 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1"); // duplicate
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("a replayed delta does not refresh runtime activity", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		// Move the activity stamp behind the observation window without waiting.
+		// A duplicate delivery is reconnect history, not live runtime output.
+		useSyncStore.setState({ sessionActivityAt: { ses_1: 1 } });
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBe(1);
 	});
 
 	test("replaying an identical delta STREAM twice (a stacked second SSE connection) produces byte-identical text", () => {
@@ -3278,6 +3335,173 @@ describe("useSyncStore — an echo under a RE-MINTED id is aliased to the optimi
 	});
 });
 
+// ============================================================================
+// A BURST of queued prompts. Three inbox-backed sends wait in the server queue;
+// the drain delivers them one at a time, each under a RE-MINTED id. The echo
+// carries no parts (they arrive as separate frames) and the row that names the
+// re-mint is up to one poll behind — so neither correlation is available at the
+// instant the echo lands.
+//
+// The store used to `return` there: no bubble may be consumed on a guess with
+// several in flight, which is right, but it dropped the SERVER's message with
+// it. Nothing re-reads a healthy stream, so the delivered prompt was missing
+// until a reload — and the `message.part.updated` that followed re-created it
+// as an ASSISTANT message, putting the user's own words in the agent's voice
+// and re-parenting the reply onto the wrong bubble.
+// ============================================================================
+
+describe("useSyncStore — a burst of inbox-backed sends never loses an echo", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	function partUpdated(part: Part, sessionID = "ses_1") {
+		return {
+			id: "evt_p",
+			type: "message.part.updated",
+			properties: { sessionID, part },
+		} as never;
+	}
+
+	/**
+	 * One prompt POSTed to the durable inbox: painted, dispatched, backed.
+	 *
+	 * UNTIMED, like the real stub — `beginOptimisticSend` omits `time.created`
+	 * on purpose, so display order comes from the wire id rather than from a
+	 * browser clock the box may be running ahead of.
+	 */
+	function queueSend(id: string, text: string): void {
+		const store = useSyncStore.getState();
+		const stub = { id, sessionID: "ses_1", role: "user", time: {} } as unknown as Message;
+		store.optimisticAdd("ses_1", stub, [textPart(`prt_${id}`, id, text)]);
+		store.markOptimisticDispatched("ses_1", id);
+		store.markOptimisticInboxBacked("ses_1", id);
+	}
+
+	test("an echo that matches nothing joins the transcript instead of being discarded", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+		queueSend("msg_wire_c", "third");
+
+		useSyncStore.getState().applyEvent(userMessageUpdated("msg_reminted_a"));
+
+		const s = useSyncStore.getState();
+		const rows = s.messages["ses_1"] ?? [];
+		expect(rows.map((m) => m.id)).toContain("msg_reminted_a");
+		// And it consumed nothing: with three in flight there is no safe guess,
+		// so every bubble the user typed is still on screen.
+		expect(rows.map((m) => m.id)).toEqual([
+			"msg_wire_a",
+			"msg_wire_b",
+			"msg_wire_c",
+			"msg_reminted_a",
+		]);
+	});
+
+	test("the part frame that follows never re-creates the prompt as an assistant message", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated("msg_reminted_a"));
+		store.applyEvent(partUpdated(textPart("prt_server_a", "msg_reminted_a", "first")));
+
+		const row = useSyncStore
+			.getState()
+			.messages["ses_1"]?.find((m) => m.id === "msg_reminted_a");
+		expect(row?.role).toBe("user");
+	});
+
+	test("the inbox row's alias, arriving after the echo, retires the bubble it names", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+		queueSend("msg_wire_c", "third");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated("msg_reminted_a"));
+		// One poll later the row lists both ids, which is the identity match the
+		// echo did not carry.
+		store.registerOptimisticEcho("ses_1", "msg_wire_a", "msg_reminted_a");
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual([
+			"msg_wire_b",
+			"msg_wire_c",
+			"msg_reminted_a",
+		]);
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted_a")).toBe("msg_wire_a");
+		// The bubble's text bridges over, so it never blinks empty while the
+		// server's own part is still in flight.
+		expect(s.parts["msg_reminted_a"]?.[0]).toMatchObject({ text: "first" });
+		expect(s.parts["msg_wire_a"]).toBeUndefined();
+	});
+
+	test("the delivered prompt owns its reply — one bubble, in the agent's turn", () => {
+		// The whole timeline, in wire order: three prompts queue, the drain
+		// delivers the first under a re-minted id, its text and its answer
+		// stream in, and the row that names the pairing lands one poll later.
+		// Real wire ids: `compareMessagesForDisplay` reads the id as the
+		// message's POSITION for anything opencode placed, and the drain's
+		// re-mint deliberately sorts above the ids this tab minted at Enter.
+		const [wireA, wireB, wireC] = [
+			"msg_000000000001aaaa",
+			"msg_000000000002aaaa",
+			"msg_000000000003aaaa",
+		];
+		const remintedA = "msg_000000000009aaaa";
+		const replyA = "msg_00000000000aaaaa";
+		queueSend(wireA, "first");
+		queueSend(wireB, "second");
+		queueSend(wireC, "third");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated(remintedA));
+		store.applyEvent(partUpdated(textPart("prt_server_a", remintedA, "first")));
+		store.applyEvent({
+			id: "evt_a",
+			type: "message.updated",
+			properties: { info: { ...assistantMessage(replyA), parentID: remintedA } },
+		} as never);
+		store.applyEvent(partUpdated(textPart("prt_reply_a", replyA, "on it")));
+		store.registerOptimisticEcho("ses_1", wireA, remintedA);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(
+			turns.map((t) => ({
+				user: t.userMessage.info.id,
+				role: t.userMessage.info.role,
+				assistants: t.assistantMessages.map((a) => a.info.id),
+			})),
+		).toEqual([
+			// The two prompts still waiting keep the ids this tab minted, which
+			// sort below the re-mint — they are drawn above the answer until the
+			// drain reaches them and re-mints them too.
+			{ user: wireB, role: "user", assistants: [] },
+			{ user: wireC, role: "user", assistants: [] },
+			// ONE bubble for the delivered prompt, as a USER message, with the
+			// reply under it. Before this fix the echo was discarded, the part
+			// frame re-created the id as an assistant message, and the reply
+			// re-parented onto whichever bubble sorted last.
+			{ user: remintedA, role: "user", assistants: [replyA] },
+		]);
+	});
+
+	test("a late alias for a bubble the runtime never echoed changes nothing", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+
+		useSyncStore.getState().registerOptimisticEcho("ses_1", "msg_wire_a", "msg_reminted_a");
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire_a", "msg_wire_b"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire_a")).toBe("msg_reminted_a");
+	});
+});
+
 describe("useSyncStore — optimisticRemove is a no-op for a message the runtime confirmed", () => {
 	test("after a same-id echo the message is the transcript's; removing the queue row leaves it", () => {
 		const store = useSyncStore.getState();
@@ -3654,5 +3878,132 @@ describe("a committed revert deletes the captured set, not a string range", () =
 		const state = useSyncStore.getState();
 		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_c"]);
 		expect(state.parts.msg_b).toBeUndefined();
+	});
+});
+
+/**
+ * A PART frame can arrive before the message frame it belongs to, and the
+ * store's safety net used to answer that by inventing an assistant message.
+ *
+ * For an assistant's own reply that guess is right. For the ECHO of a prompt
+ * this tab just sent it is wrong twice over: the runtime re-mints a queued
+ * prompt's wire id at delivery, so the echo arrives under an id the tab has
+ * never seen, and its first part carries the USER's text. The invented message
+ * therefore painted the user's own words a second time, in the agent's voice,
+ * beside the bubble they were already looking at — until the real
+ * `message.updated` landed a moment later and corrected both.
+ *
+ * Reported 2026-09-08: "I send the prompt, I see it dimmed with the X and the
+ * working row, then after milliseconds I see that same prompt duplicated, then
+ * it goes back to a single prompt and starts."
+ */
+describe("a part frame that beats its message frame never invents a role", () => {
+	const S = "ses_echo";
+	const WIRE = "msg_wire0000001";
+	const REMINT = "msg_remint000001";
+	const TEXT = "ok just testing to show weird behavior";
+
+	const rolesById = () =>
+		(useSyncStore.getState().messages[S] ?? []).map((m) => `${m.role}:${m.id}`);
+
+	const partFrame = (messageID: string) => ({
+		type: "message.part.updated",
+		properties: {
+			part: {
+				id: "prt_server_1",
+				messageID,
+				sessionID: S,
+				type: "text",
+				text: TEXT,
+			},
+		},
+	});
+
+	const infoFrame = (id: string) => ({
+		type: "message.updated",
+		properties: { info: { id, sessionID: S, role: "user", time: { created: 2 } } },
+	});
+
+	function sendOptimistically() {
+		useSyncStore
+			.getState()
+			.optimisticAdd(
+				S,
+				{ id: WIRE, sessionID: S, role: "user", time: {} } as unknown as Message,
+				[{ id: "prt_local_1", messageID: WIRE, sessionID: S, type: "text", text: TEXT } as Part],
+			);
+		useSyncStore.getState().markOptimisticDispatched(S, WIRE);
+		useSyncStore.getState().markOptimisticInboxBacked(S, WIRE);
+	}
+
+	beforeEach(() => {
+		useSyncStore.getState().reset();
+	});
+
+	test("the re-minted echo's part does not paint the prompt a second time", () => {
+		sendOptimistically();
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// The part frame wins the race. Before: a message appeared here as
+		// `assistant:msg_remint000001` carrying the user's own text.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// …and the text is not lost: the info frame places the message and the
+		// part it already holds comes with it, as one user bubble.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("an id the store already knows to be an echo is never an assistant either", () => {
+		sendOptimistically();
+		useSyncStore.getState().registerOptimisticEcho(S, WIRE, REMINT);
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById().some((entry) => entry.startsWith("assistant:"))).toBe(false);
+	});
+
+	test("with no send in flight the safety net still creates the assistant stub", () => {
+		// The net exists for a real assistant part that outran its own message
+		// frame, and that case is untouched: nothing here is waiting for an
+		// echo, so there is nothing the part could be mistaken for.
+		//
+		// A user message has to exist first. An assistant part is a REPLY, so a
+		// session with nothing to reply to cannot be what this net is for — see
+		// the empty-session test below.
+		useSyncStore.getState().applyEvent(infoFrame("msg_user00000001") as never);
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0001") as never);
+		expect(rolesById()).toEqual(["user:msg_user00000001", "assistant:msg_assistant0001"]);
+	});
+
+	test("a part for an unknown message never opens a session with an assistant", () => {
+		// The project-home route: the prompt is a server-created inbox row, so
+		// this tab paints no optimistic message and `awaitsUserEcho` has nothing
+		// to see. The transcript is EMPTY, and the first thing to arrive is a
+		// part of the re-minted echo — carrying the USER's text. Inventing an
+		// assistant for it put the prompt on screen in the agent's voice beside
+		// its own queued bubble.
+		//
+		// A session cannot begin with an assistant turn. `message.part.delta`
+		// has guarded on exactly this since it was written ("only if the session
+		// already has a user message"); this is the same rule on the frame that
+		// actually creates the message.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([]);
+
+		// Not lost — the part is stored, and the info frame brings it in.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("a send already confirmed does not keep suppressing the net", () => {
+		sendOptimistically();
+		useSyncStore.getState().applyEvent(infoFrame(WIRE) as never);
+		// The echo landed under the id we painted, so nothing is outstanding.
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0002") as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
 	});
 });

@@ -34,6 +34,10 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
+import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import {
@@ -57,15 +61,18 @@ import {
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
   GlobeIcon,
+  GridNineIcon,
   LockKeyIcon,
   PauseIcon,
   PlayIcon,
+  SquaresFourIcon,
   TrashIcon,
   XIcon,
+  type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
 
@@ -112,10 +119,12 @@ export const DEPLOYMENT_COPY: Record<
  */
 export function deployNotice(
   latest: AppDeployment | undefined,
+  tI18nComplete: UiTranslator,
 ): { label: string; tone: DeploymentTone } | null {
   if (!latest || latest.status === 'ready' || latest.status === 'cancelled') return null;
-  if (latest.status === 'failed') return { label: 'Update failed', tone: 'destructive' };
-  return { label: 'Updating', tone: 'warning' };
+  if (latest.status === 'failed')
+    return { label: tI18nComplete.raw('texte58282fd73fb'), tone: 'destructive' };
+  return { label: tI18nComplete.raw('text0b5260e1b405'), tone: 'warning' };
 }
 
 function appCommand(app: App): string {
@@ -149,13 +158,20 @@ export function appHost(url: string): string {
  * `active_deployment_id` first, and it does so here rather than in each of the
  * three places that used to re-derive it.
  */
-function appStatus(app: App): { deployed: boolean; live: boolean; label: string; dot: string } {
+function appStatus(
+  app: App,
+  tI18nComplete: UiTranslator,
+): { deployed: boolean; live: boolean; label: string; dot: string } {
   const deployed = Boolean(app.active_deployment_id);
   const live = deployed && app.desired_state === 'running';
   return {
     deployed,
     live,
-    label: !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
+    label: translateUiCatalogText(
+      !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
+      tI18nComplete,
+      PRODUCT_CATALOG_TRANSLATION_KEYS,
+    ),
     // Three states, three weights of the same neutral-vs-green pair: running is
     // the only one that earns colour.
     dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
@@ -171,11 +187,20 @@ function appStatus(app: App): { deployed: boolean; live: boolean; label: string;
  * as long as it takes to check whether it is.
  */
 const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
-  private: { label: 'Only you', desc: 'Only the App creator can open it' },
+  // "Only you" stated a guarantee the code does not make: a project manager can
+  // always open and operate an App (appVisibleToSubject), deliberately, so a
+  // private App does not become unmanageable the moment its creator leaves the
+  // account. A false promise about access, in the one dialog where people
+  // reason about access, is worse than a longer label.
+  private: { label: 'Just you', desc: 'You, and anyone who can manage this project' },
   project: { label: 'Whole team', desc: 'Every member of this project' },
   restricted: { label: 'Select members', desc: 'Chosen members and groups' },
-  public: { label: 'Public', desc: 'Anyone with the URL' },
-  password: { label: 'Password', desc: 'Anyone with the App password' },
+  // These two describe PUBLIC traffic only. Both are still team-visible: a
+  // password protects the App's hostname from the internet, it never hides the
+  // App from the teammates who operate it. Read as "only people with the
+  // password", it hides that every project member can open it too.
+  public: { label: 'Public', desc: 'Anyone with the URL, plus your team' },
+  password: { label: 'Password', desc: 'Anyone with the password, plus your team' },
 };
 
 /**
@@ -290,6 +315,7 @@ export function AppPreviewOverlay({
   failed: boolean;
   slow: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // A failure is never worth waiting to report — `onError` means the frame is
   // done and it is not going to paint.
   if (!failed && (loaded || !slow)) return null;
@@ -297,7 +323,9 @@ export function AppPreviewOverlay({
     <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         {failed ? null : <Loading className="size-4 shrink-0" />}
-        <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
+        <span>
+          {failed ? tI18nComplete.raw('texte89cabb62100') : tI18nComplete.raw('text8f624e45d6bf')}
+        </span>
       </div>
     </div>
   );
@@ -321,49 +349,57 @@ export function AppPreviewOverlay({
  * **The ratio is load-bearing.** The frame is scaled to the tile's WIDTH, so
  * any mismatch between the viewport's aspect and the tile's shows up as dead
  * space at the bottom of every tile (viewport shorter) or a crop (taller).
- * 1080x1350 is 4:5 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
+ * 1280x720 is 16:9 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
  * fills the tile edge to edge. Change one, change the other — the parity is
  * asserted in `app-preview.test.tsx`.
  *
  * The width and the height answer two different questions, and only the second
  * is about the ratio. The viewport WIDTH decides which layout the App renders,
- * and 1080px is a desktop breakpoint — no App answers the thumbnail with its
+ * and 1280px is a desktop breakpoint — no App answers the thumbnail with its
  * hamburger. The viewport HEIGHT decides how far down that page the thumbnail
- * reaches: 1350px of a 1080px-wide page is a hero and the section under it,
- * where the 720px of the old 16:9 tile was the header alone.
+ * reaches: 720px of a 1280px-wide page is roughly the header and the top of the
+ * hero.
  *
  * The ratio is a row-height decision: every candidate trades how much page a
  * tile shows against how many rows fit a screen, at a fixed tile width.
  *
- *   | ratio     | height/width | tile at cap | four-across row              |
- *   | ---       | ---          | ---         | ---                          |
- *   | `16/9`    | 0.56x        | 300x169     | a letterbox of the header    |
- *   | `1/1`     | 1.00x        | 300x300     | two rows and part of a third |
- *   | **`4/5`** | **1.25x**    | **300x375** | **two rows on a laptop**     |
- *   | `3/4`     | 1.33x        | 300x400     | a row and a half             |
- *   | `2/3`     | 1.50x        | 300x450     | a row and a third            |
- *   | `9/16`    | 1.78x        | 300x533     | about one row                |
+ *   | ratio      | height/width | tile at cap | four-across row              |
+ *   | ---        | ---          | ---         | ---                          |
+ *   | **`16/9`** | **0.56x**    | **300x169** | **three rows and change**    |
+ *   | `1/1`      | 1.00x        | 300x300     | two rows and part of a third |
+ *   | `4/5`      | 1.25x        | 300x375     | two rows on a laptop         |
+ *   | `3/4`      | 1.33x        | 300x400     | a row and a half             |
+ *   | `2/3`      | 1.50x        | 300x450     | a row and a third            |
+ *   | `9/16`     | 1.78x        | 300x533     | about one row                |
  *
- * 4:5 is the one ratio here that shipped BEFORE and was reverted (`e56c580271`,
- * reverted by `e6c4ba0b62`), so the reason it works now and did not then has to
- * be written down: it was paired with a `max-w-5xl` cap and a fixed four-column
- * grid, which is a 230px tile — the App at 18% scale, every card the same grey
- * rectangle. What changed is not the ratio. The cap is `max-w-7xl` and the
- * columns come from a container ladder floored at ~232px, so the tile is 300px
- * at the cap and never the 230px that killed it. Do not revert this to 16:9
- * again; fix the ladder if a tile ever gets small.
+ * **This ratio has moved twice, so read the history before moving it again.**
+ * 16:9 shipped, was replaced by 4:5 (`e56c580271`), reverted back to 16:9
+ * (`e6c4ba0b62`), then set to 4:5 a second time — and is now 16:9 again by
+ * Jay's call on 2026-08-31. The recorded objection to 16:9 is that a tile is a
+ * letterbox: at the cap it is 300x169, and the App inside it is a 1280px page
+ * at 23% scale, so a thumbnail shows about the header and the top of the hero
+ * rather than a hero plus the section under it. The counter-argument, and the
+ * reason it keeps coming back, is that 16:9 is the shape a web page is actually
+ * screenshotted in and three rows fit a laptop instead of two.
  *
- * At the four columns a docked desktop lands on (`APP_GRID_COLUMNS`), a tile is
- * ~276x345 — the App at ~26% scale.
+ * The thing that genuinely broke a previous attempt was never the ratio: 4:5
+ * paired with a `max-w-5xl` cap and a fixed four-column grid gave a 230px tile,
+ * the App at 18% scale, every card the same grey rectangle. The cap is
+ * `max-w-7xl` now and the columns come from a container ladder floored at
+ * ~232px. Keep that floor whatever the ratio is.
+ *
+ * At the three columns a docked desktop lands on by default
+ * (`APP_GRID_COLUMN_OPTIONS`), a tile is ~320x180 — the App at ~25% scale. At
+ * the cap it is ~405x228, or ~32%.
  *
  * Note what does NOT solve the mobile-layout problem — `showAspectRatioToCSS`
  * in `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying
  * out at the host's width, which is the thing that produced it here.
  */
-export const PREVIEW_VIEWPORT_WIDTH = 1080;
-export const PREVIEW_VIEWPORT_HEIGHT = 1350;
+export const PREVIEW_VIEWPORT_WIDTH = 1280;
+export const PREVIEW_VIEWPORT_HEIGHT = 720;
 /** The tile's shape, written once so the class and the viewport cannot drift. */
-export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
+export const PREVIEW_TILE_ASPECT = 'aspect-[16/9]';
 
 /**
  * How many tiles the gallery puts in a row.
@@ -383,10 +419,10 @@ export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
  *   | step            | container | cols | tile    |
  *   | ---             | ---       | ---  | ---     |
  *   | (base)          | < 512px   | 1    | full    |
- *   | `@lg`  (32rem)  | 512px     | 2    | 232x290 |
- *   | `@3xl` (48rem)  | 768px     | 3    | 235x294 |
- *   | `@5xl` (64rem)  | 1024px    | 4    | 236x295 |
- *   | (cap)           | 1280px    | 4    | 300x375 |
+ *   | `@lg`  (32rem)  | 512px     | 2    | 232x131 |
+ *   | `@3xl` (48rem)  | 768px     | 3    | 235x132 |
+ *   | `@5xl` (64rem)  | 1024px    | 4    | 236x133 |
+ *   | (cap)           | 1280px    | 4    | 300x169 |
  *
  * Four across is therefore what a docked desktop lands on, and a phone still
  * gets one column — a 170px tile is the grey rectangle again.
@@ -397,8 +433,138 @@ export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
  */
 export const APP_GRID_CONTAINER = '@container/apps';
 
-export const APP_GRID_COLUMNS =
-  'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3 @5xl/apps:grid-cols-4';
+/**
+ * How many columns the gallery is ALLOWED to reach, as a reader's choice.
+ *
+ * There is a default and there is a choice, in that order. Three across is the
+ * default: at the `max-w-7xl` cap that is a ~405px tile, where four is ~300px,
+ * and the tile width is the only thing that decides whether the scaled-down
+ * desktop page inside it reads as a page or as a swatch. Someone with twenty
+ * Apps wants to see twenty Apps, so the control trades size for count — but
+ * nobody has to touch it to get a sane page.
+ *
+ * Both ladders share every step below their cap, so switching only ever changes
+ * what happens in a WIDE container. Neither drops below the ~232px tile floor
+ * that turns a card into a grey rectangle.
+ *
+ * Written out as full literals, one per option. Tailwind scans source text, so
+ * a class assembled at runtime (`grid-cols-${n}`) never reaches the compiled
+ * stylesheet and silently does nothing.
+ */
+export type AppGridColumns = 3 | 4;
+
+export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;
+
+export const APP_GRID_COLUMN_OPTIONS: Record<
+  AppGridColumns,
+  { label: string; grid: string; icon: PhosphorIcon }
+> = {
+  3: {
+    label: 'Comfortable — up to 3 per row',
+    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3',
+    icon: SquaresFourIcon,
+  },
+  4: {
+    label: 'Compact — up to 4 per row',
+    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3 @5xl/apps:grid-cols-4',
+    icon: GridNineIcon,
+  },
+};
+
+function localizedAppCopy(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    {
+      deployment: DEPLOYMENT_COPY,
+      access: ACCESS_COPY,
+      viewerScope: VIEWER_SCOPE_COPY,
+      grid: APP_GRID_COLUMN_OPTIONS,
+    },
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
+}
+
+/** Left to right in the control: biggest tile first, densest last. */
+export const APP_GRID_COLUMN_ORDER = [3, 4] as const;
+
+export const APP_GRID_COLUMNS_STORAGE_KEY = 'kortix.apps.grid-columns';
+
+/**
+ * The stored preference, or `null` for anything that is not one of ours.
+ *
+ * `localStorage` is a string bucket shared with every other tab and every past
+ * version of this page, so the value read back is untrusted input: a count this
+ * build removed, a key someone else wrote, `undefined` stringified by a bug.
+ * Any of those would land in `APP_GRID_COLUMN_OPTIONS[n]` as `undefined` and
+ * render a grid with no column class at all.
+ */
+export function parseAppGridColumns(value: string | null): AppGridColumns | null {
+  if (!value) return null;
+  return Object.hasOwn(APP_GRID_COLUMN_OPTIONS, value) ? (Number(value) as AppGridColumns) : null;
+}
+
+/**
+ * Where the choice lives when `localStorage` will not take it.
+ *
+ * A browser set to block site data throws on `setItem`, and the reader who
+ * clicked a density button is owed the density they clicked whether or not it
+ * can outlive the tab. Module scope, so it survives a remount the way the real
+ * store would.
+ */
+let blockedStorageColumns: AppGridColumns | null = null;
+
+/** Same-tab subscribers. The `storage` event covers every OTHER tab, not this one. */
+const columnListeners = new Set<() => void>();
+
+function subscribeAppGridColumns(onChange: () => void) {
+  columnListeners.add(onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    columnListeners.delete(onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
+function readAppGridColumns(): AppGridColumns {
+  if (blockedStorageColumns) return blockedStorageColumns;
+  try {
+    return (
+      parseAppGridColumns(window.localStorage.getItem(APP_GRID_COLUMNS_STORAGE_KEY)) ??
+      APP_GRID_DEFAULT_COLUMNS
+    );
+  } catch {
+    return APP_GRID_DEFAULT_COLUMNS;
+  }
+}
+
+function writeAppGridColumns(next: AppGridColumns) {
+  blockedStorageColumns = next;
+  try {
+    window.localStorage.setItem(APP_GRID_COLUMNS_STORAGE_KEY, String(next));
+  } catch {
+    // Site data blocked. `blockedStorageColumns` already holds the choice for
+    // this tab's lifetime, which is the whole guarantee we can make.
+  }
+  for (const listener of columnListeners) listener();
+}
+
+/**
+ * The reader's column choice.
+ *
+ * `useSyncExternalStore` rather than `useState` + an effect: the server has no
+ * `localStorage`, so the server snapshot is the DEFAULT and the client reads
+ * the real value during hydration. An effect would paint the default first and
+ * then jump, which on this page is every tile resizing one frame after load.
+ */
+function useAppGridColumns(): [AppGridColumns, (next: AppGridColumns) => void] {
+  const value = useSyncExternalStore(
+    subscribeAppGridColumns,
+    readAppGridColumns,
+    () => APP_GRID_DEFAULT_COLUMNS,
+  );
+  const setValue = useCallback((next: AppGridColumns) => writeAppGridColumns(next), []);
+  return [value, setValue];
+}
 
 /**
  * How far to shrink the desktop frame so it fits the tile. `null` for a width
@@ -475,6 +641,7 @@ export function AppPreview({
   interactive: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const slow = useSlowPreview(!loaded && !failed);
@@ -496,7 +663,7 @@ export function AppPreview({
         )}
         data-testid="app-preview-empty"
       >
-        Deploy to see a live preview.
+        {tI18nComplete.raw('text3efdcf91931a')}
       </div>
     );
   }
@@ -511,11 +678,11 @@ export function AppPreview({
         data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}
       >
         {accessError ? (
-          'You do not have access to preview this App.'
+          tI18nComplete.raw('texteccce15347a4')
         ) : (
           <span className="flex items-center gap-2">
             <Loading className="size-4 shrink-0" />
-            Preparing preview
+            {tI18nComplete.raw('text2158038765cc')}
           </span>
         )}
       </div>
@@ -527,7 +694,7 @@ export function AppPreview({
       <iframe
         key={app.active_deployment_id}
         src={url}
-        title={`${app.name} live preview`}
+        title={tI18nComplete('text04132f84d7c3', { value0: app.name })}
         style={
           interactive
             ? undefined
@@ -576,7 +743,65 @@ export function AppPreview({
   );
 }
 
-function AppsHeader() {
+/**
+ * Column count, as two states of one control rather than a menu.
+ *
+ * A segmented `ButtonGroup` of icon buttons is the pattern this product already
+ * uses for a small closed set of view choices. Two options is few enough that
+ * both are visible without opening anything, and the glyphs read as the thing
+ * they do: four squares, then nine, the second denser than the first.
+ */
+function AppGridColumnsControl({
+  value,
+  onChange,
+}: {
+  value: AppGridColumns;
+  onChange: (next: AppGridColumns) => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const appCopy = localizedAppCopy(tI18nComplete);
+  return (
+    <ButtonGroup aria-label={tI18nComplete.raw('texte39d334ebb3c')}>
+      {APP_GRID_COLUMN_ORDER.map((key) => {
+        const option = appCopy.grid[key];
+        const Glyph = option.icon;
+        const active = value === key;
+        return (
+          <Hint key={key} side="bottom" label={option.label}>
+            <Button
+              type="button"
+              variant={active ? 'secondary' : 'outline'}
+              size="icon-sm"
+              aria-pressed={active}
+              aria-label={option.label}
+              onClick={() => onChange(key)}
+            >
+              <Glyph className="size-4" />
+            </Button>
+          </Hint>
+        );
+      })}
+    </ButtonGroup>
+  );
+}
+
+function AppsHeader({
+  columns,
+  onColumnsChange,
+  showColumns,
+}: {
+  columns: AppGridColumns;
+  onColumnsChange: (next: AppGridColumns) => void;
+  /**
+   * The control only exists to reshape a grid, so it is absent whenever there
+   * is no grid — the feature gate, the error state and the empty state each
+   * fill the page on their own, and a column picker over any of them is a dead
+   * switch. It stays visible over the SKELETON: a control that appears once
+   * loading finishes moves the two beside it on every page load.
+   */
+  showColumns: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const sidebar = useOptionalSidebar();
 
   return (
@@ -586,8 +811,15 @@ function AppsHeader() {
     >
       <SidebarToggle />
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
-        <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
+        <h1 className="text-foreground shrink-0 text-sm font-medium">
+          {tI18nComplete.raw('text89dd748442c1')}
+        </h1>
       </div>
+      {showColumns ? (
+        <div className="flex shrink-0 items-center pr-1">
+          <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
+        </div>
+      ) : null}
       <Link
         href="/docs/feature-flags/apps"
         target="_blank"
@@ -595,7 +827,7 @@ function AppsHeader() {
         prefetch={false}
         className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors"
       >
-        Docs
+        {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
     </div>
@@ -603,6 +835,7 @@ function AppsHeader() {
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // One gating primitive, fail-closed. Apps NEVER enables itself from here:
   // activation lives only in Customize → Feature flags, so this page has no
   // mutation and no self-enable button.
@@ -620,6 +853,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
   // fresh row instead of a stale copy captured at click time.
   const [openAppId, setOpenAppId] = useState<string | null>(null);
+  const [gridColumns, setGridColumns] = useAppGridColumns();
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
   useEffect(() => {
@@ -629,8 +863,10 @@ export function AppsView({ projectId }: { projectId: string }) {
     if (!app) return;
     void createAppAccessSession(projectId, app.app_id)
       .then((session) => window.location.replace(session.url))
-      .catch((error) => errorToast(error instanceof Error ? error.message : 'App access denied'));
-  }, [apps.data, projectId, searchParams]);
+      .catch((error) =>
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta68c25790cbe')),
+      );
+  }, [apps.data, projectId, searchParams, tI18nComplete]);
 
   return (
     // `h-svh`, for the same reason the `(capabilities)` layout carries it:
@@ -643,7 +879,13 @@ export function AppsView({ projectId }: { projectId: string }) {
     // assumes mobile browser chrome is visible, so the bar can never be pushed
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader />
+      <AppsHeader
+        columns={gridColumns}
+        onColumnsChange={setGridColumns}
+        showColumns={
+          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
+        }
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
@@ -662,37 +904,37 @@ export function AppsView({ projectId }: { projectId: string }) {
             take their natural height and stay at the top, unaffected. */}
         <div
           className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20',
+            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20 md:px-8',
             APP_GRID_CONTAINER,
           )}
         >
           {appsGate.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={gridColumns} />
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
-              description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
+              description={tI18nComplete.raw('text3387c31a18b3')}
             />
           ) : apps.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
               size="sm"
-              title="Failed to load Apps"
+              title={tI18nComplete.raw('text17168ad2af4a')}
               description={(apps.error as Error).message}
               action={
                 <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
           ) : apps.data?.length ? (
             /* A gallery grid, sized by the space it has rather than by the
-               window (`APP_GRID_COLUMNS`). `gap-y` is larger than `gap-x`
+               window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
-            <ul className={cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)}>
+            <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
               {apps.data.map((app) => (
                 <AppCard
                   key={app.app_id}
@@ -726,19 +968,22 @@ export function AppsView({ projectId }: { projectId: string }) {
 }
 
 /**
- * Shape-matched placeholder: same grid, same 4:5 tile, same ONE-line caption
- * hanging below it as `AppCard`. Eight tiles — two full rows at the four
- * columns a desktop lands on, so the placeholder fills the page it stands in
- * for instead of trailing off half way down it.
+ * Shape-matched placeholder: same grid, same 16:9 tile, same ONE-line caption
+ * hanging below it as `AppCard`. It takes the SAME column count as the real
+ * grid — a skeleton laid out three across in front of a grid that resolves to
+ * four is a layout shift dressed as a loading state.
+ *
+ * Nine tiles: three full rows at the default three columns, so the placeholder
+ * fills the page it stands in for instead of trailing off half way down it.
  *
  * The second caption bar went when the card's hostname line did. A skeleton
  * taller than the thing it stands in for is a layout shift dressed as a
  * loading state.
  */
-function AppGridSkeleton() {
+function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
   return (
-    <ul className={cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)}>
-      {Array.from({ length: 8 }).map((_, index) => (
+    <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[columns].grid)}>
+      {Array.from({ length: 9 }).map((_, index) => (
         <li key={index}>
           <Skeleton className={cn(PREVIEW_TILE_ASPECT, 'w-full rounded-lg')} />
           <Skeleton className="mt-3 h-3.5 w-1/2 rounded-sm" />
@@ -758,17 +1003,19 @@ function AppGridSkeleton() {
  * this screen to a card.
  */
 function AppsEmptyState() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <EmptyState
       icon={GlobeIcon}
-      title="No Apps yet"
-      description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image from your project directory. It shows up here the moment it goes live."
+      title={tI18nComplete.raw('text7aaec6fe02f0')}
+      description={tI18nComplete.raw('text4b2e1a2b9cbc')}
       action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
     />
   );
 }
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
@@ -776,7 +1023,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
-  const status = appStatus(app);
+  const status = appStatus(app, tI18nComplete);
 
   return (
     <li>
@@ -796,7 +1043,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             caption under a picture, and the picture is the object. */}
         <div
           className={cn(
-            'relative overflow-hidden rounded-lg border transition-transform duration-150 ease-out group-hover:-translate-y-1',
+            'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
           <AppPreview
@@ -854,6 +1101,7 @@ function AppDetailModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const apps = useProjectApps(projectId);
   const deployments = useAppDeployments(projectId, app.app_id);
   const canAccess = app.viewer_can_access !== false;
@@ -862,8 +1110,8 @@ function AppDetailModal({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const latest = deployments.data?.[0];
-  const status = appStatus(app);
-  const notice = deployNotice(latest);
+  const status = appStatus(app, tI18nComplete);
+  const notice = deployNotice(latest, tI18nComplete);
   const running = app.desired_state === 'running';
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
@@ -873,9 +1121,15 @@ function AppDetailModal({
       await (action === 'start'
         ? apps.start.mutateAsync(app.app_id)
         : apps.stop.mutateAsync(app.app_id));
-      successToast(`${app.name} ${action === 'start' ? 'is ready' : 'suspended'}`);
+      successToast(
+        `${app.name} ${action === 'start' ? tI18nComplete.raw('text61659f74fe37') : tI18nComplete.raw('textde2d423ac039')}`,
+      );
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : `Failed to ${action} App`);
+      errorToast(
+        error instanceof Error
+          ? error.message
+          : tI18nComplete('textdf6cab363226', { value0: action }),
+      );
     }
   };
 
@@ -943,14 +1197,22 @@ function AppDetailModal({
               <ButtonGroup>
                 {canDeploy ? (
                   <Hint
-                    label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                    label={
+                      running
+                        ? tI18nComplete.raw('text6f50fb1f4f46')
+                        : tI18nComplete.raw('text971ed7129524')
+                    }
                     side="bottom"
                   >
                     <Button
                       size="icon"
                       variant="outline"
                       disabled={busy || !status.deployed}
-                      aria-label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                      aria-label={
+                        running
+                          ? tI18nComplete.raw('text6f50fb1f4f46')
+                          : tI18nComplete.raw('text971ed7129524')
+                      }
                       onClick={() => lifecycle(running ? 'stop' : 'start')}
                     >
                       {busy ? (
@@ -963,13 +1225,16 @@ function AppDetailModal({
                     </Button>
                   </Hint>
                 ) : null}
-                <Hint label={`Open ${appHost(app.url)} in a new tab`} side="bottom">
+                <Hint
+                  label={tI18nComplete('text06ce842278f6', { value0: appHost(app.url) })}
+                  side="bottom"
+                >
                   <Button asChild size="icon" variant="outline">
                     <a
                       href={liveUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label="Open in a new tab"
+                      aria-label={tI18nComplete.raw('text306ef19c8ac3')}
                     >
                       <ArrowSquareOutIcon className="size-4 shrink-0" />
                     </a>
@@ -982,7 +1247,11 @@ function AppDetailModal({
                     looking for something else. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="outline" aria-label="More actions">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+                    >
                       <DotsThreeIcon className="size-4 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -990,23 +1259,31 @@ function AppDetailModal({
                     {canWrite ? (
                       <DropdownMenuItem onClick={() => setAccessOpen(true)}>
                         <LockKeyIcon className="size-3.5 shrink-0" />
-                        Who can open this
+                        {tI18nComplete.raw('text407951d1c2e0')}
                         {/* The current value, on the row that changes it. */}
                         <span className="text-muted-foreground ml-auto pl-3 text-xs">
-                          {ACCESS_COPY[app.access_mode].label}
+                          {
+                            localizeUiCatalog(
+                              ACCESS_COPY[app.access_mode],
+                              tI18nComplete,
+                              PRODUCT_CATALOG_TRANSLATION_KEYS,
+                            ).label
+                          }
                         </span>
                       </DropdownMenuItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
                       <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-                      {versionsOpen ? 'Hide earlier versions' : 'Earlier versions'}
+                      {versionsOpen
+                        ? tI18nComplete.raw('text26b1a7703eac')
+                        : tI18nComplete.raw('text401dc1a55cb9')}
                     </DropdownMenuItem>
                     {canWrite ? (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
                           <TrashIcon className="size-3.5 shrink-0" />
-                          Delete App
+                          {tI18nComplete.raw('textd1b0a6e3985a')}
                         </DropdownMenuItem>
                       </>
                     ) : null}
@@ -1014,11 +1291,11 @@ function AppDetailModal({
                 </DropdownMenu>
               </ButtonGroup>
 
-              <Hint label="Close" side="bottom">
+              <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom">
                 <Button
                   size="icon"
                   variant="ghost"
-                  aria-label="Close"
+                  aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
                   onClick={() => onOpenChange(false)}
                 >
                   <XIcon className="size-4 shrink-0" />
@@ -1066,16 +1343,24 @@ function AppDetailModal({
                       onRollback={async () => {
                         try {
                           await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(`Rolled back to version ${deployment.version}`);
+                          successToast(
+                            tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
+                          );
                         } catch (error) {
-                          errorToast(error instanceof Error ? error.message : 'Rollback failed');
+                          errorToast(
+                            error instanceof Error
+                              ? error.message
+                              : tI18nComplete.raw('text147cd182c820'),
+                          );
                         }
                       }}
                     />
                   ))}
                 </div>
               ) : (
-                <p className="text-muted-foreground text-xs">No deployments yet.</p>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textf1fc77ca3b24')}
+                </p>
               )}
             </div>
           ) : null}
@@ -1085,9 +1370,9 @@ function AppDetailModal({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete App"
-        description={`Delete ${app.name} and every runtime? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={tI18nComplete.raw('textd1b0a6e3985a')}
+        description={tI18nComplete('textb7ddab3f7df8', { value0: app.name })}
+        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         isPending={apps.remove.isPending}
         onConfirm={async () => {
@@ -1097,9 +1382,11 @@ function AppDetailModal({
             // The App this modal is about no longer exists — close it, or the
             // frame keeps rendering a deleted App behind a dead action bar.
             onOpenChange(false);
-            successToast(`${app.name} deleted`);
+            successToast(tI18nComplete('text84a4a73df826', { value0: app.name }));
           } catch (error) {
-            errorToast(error instanceof Error ? error.message : 'Failed to delete App');
+            errorToast(
+              error instanceof Error ? error.message : tI18nComplete.raw('texted3ae8cdf028'),
+            );
           }
         }}
       />
@@ -1129,13 +1416,15 @@ function AppAccessModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Modal open={open} onOpenChange={(value) => !access.update.isPending && onOpenChange(value)}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>App access</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('text869903a43092')}</ModalTitle>
           <ModalDescription>
-            Choose who can open {app.name}. Apps are private by default.
+            {tI18nComplete.raw('text2395784386a5')} {app.name}
+            {tI18nComplete.raw('text56000ae371ac')}
           </ModalDescription>
         </ModalHeader>
         {access.policy.isLoading ? (
@@ -1147,18 +1436,18 @@ function AppAccessModal({
             <ModalBody>
               <ErrorState
                 size="sm"
-                title="Failed to load App access"
+                title={tI18nComplete.raw('textac7f89823c42')}
                 description={(access.policy.error as Error).message}
                 action={
                   <Button size="sm" variant="outline" onClick={() => access.policy.refetch()}>
-                    Retry
+                    {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 }
               />
             </ModalBody>
             <ModalFooter>
               <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-                Close
+                {tI18nComplete.raw('text7d9eb7acb13e')}
               </Button>
             </ModalFooter>
           </>
@@ -1187,6 +1476,7 @@ function AppAccessForm({
   update: ReturnType<typeof useAppAccess>['update'];
   onSaved: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [mode, setMode] = useState<AppAccessMode>(policy.mode);
   const [memberIds, setMemberIds] = useState<string[]>(policy.member_ids);
   const [groupIds, setGroupIds] = useState<string[]>(policy.group_ids);
@@ -1207,10 +1497,10 @@ function AppAccessForm({
         ...(mode === 'password' && password ? { password } : {}),
         ...(hasSignedInViewer ? { viewer_token_scope: viewerScope } : {}),
       });
-      successToast('App access updated');
+      successToast(tI18nComplete.raw('text0e76da589934'));
       onSaved();
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Failed to update App access');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text7df8a0fb4684'));
     }
   };
 
@@ -1226,8 +1516,20 @@ function AppAccessForm({
             <ShareOption
               key={value}
               value={value}
-              label={ACCESS_COPY[value].label}
-              desc={ACCESS_COPY[value].desc}
+              label={
+                localizeUiCatalog(
+                  ACCESS_COPY[value],
+                  tI18nComplete,
+                  PRODUCT_CATALOG_TRANSLATION_KEYS,
+                ).label
+              }
+              desc={
+                localizeUiCatalog(
+                  ACCESS_COPY[value],
+                  tI18nComplete,
+                  PRODUCT_CATALOG_TRANSLATION_KEYS,
+                ).desc
+              }
             />
           ))}
         </RadioGroup>
@@ -1245,7 +1547,13 @@ function AppAccessForm({
         {mode === 'password' ? (
           <div className="space-y-2">
             <Label htmlFor="app-access-password">
-              {policy.password_configured ? 'Replace password' : 'Password'}
+              {policy.password_configured
+                ? tI18nComplete.raw('textd96a37fc02f0')
+                : translateUiCatalogText(
+                    'Password',
+                    tI18nComplete,
+                    PRODUCT_CATALOG_TRANSLATION_KEYS,
+                  )}
             </Label>
             <Input
               id="app-access-password"
@@ -1256,14 +1564,14 @@ function AppAccessForm({
               autoComplete="new-password"
               placeholder={
                 policy.password_configured
-                  ? 'Leave blank to keep the current password'
-                  : 'At least 8 characters'
+                  ? tI18nComplete.raw('text985a580ee200')
+                  : tI18nComplete.raw('text977f3b2676a9')
               }
             />
           </div>
         ) : null}
         <div className="space-y-2">
-          <Label id="app-viewer-identity-label">Viewer identity</Label>
+          <Label id="app-viewer-identity-label">{tI18nComplete.raw('text5562d6d4c826')}</Label>
           {hasSignedInViewer ? (
             <RadioGroup
               aria-labelledby="app-viewer-identity-label"
@@ -1275,23 +1583,35 @@ function AppAccessForm({
                 <ShareOption
                   key={value}
                   value={value}
-                  label={VIEWER_SCOPE_COPY[value].label}
-                  desc={VIEWER_SCOPE_COPY[value].desc}
+                  label={
+                    localizeUiCatalog(
+                      VIEWER_SCOPE_COPY[value],
+                      tI18nComplete,
+                      PRODUCT_CATALOG_TRANSLATION_KEYS,
+                    ).label
+                  }
+                  desc={
+                    localizeUiCatalog(
+                      VIEWER_SCOPE_COPY[value],
+                      tI18nComplete,
+                      PRODUCT_CATALOG_TRANSLATION_KEYS,
+                    ).desc
+                  }
                 />
               ))}
             </RadioGroup>
           ) : (
             <p className="text-muted-foreground text-xs">
               {mode === 'public'
-                ? 'A public App has no signed-in Kortix viewer.'
-                : 'A password-protected App has no signed-in Kortix viewer.'}
+                ? tI18nComplete.raw('textd3e9c765c2a3')
+                : tI18nComplete.raw('text44332adbd9d2')}
             </p>
           )}
         </div>
       </ModalBody>
       <ModalFooter className="sm:justify-between">
         <Button variant="outline-ghost" size="sm" onClick={onSaved} disabled={update.isPending}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
         <Button
           size="sm"
@@ -1299,7 +1619,7 @@ function AppAccessForm({
           disabled={update.isPending || incomplete || passwordMissing}
         >
           {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Save
+          {tI18nComplete.raw('text1509f561f241')}
         </Button>
       </ModalFooter>
     </>
@@ -1319,6 +1639,7 @@ function DeploymentRow({
   rollbackPending: boolean;
   onRollback: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
       <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
@@ -1328,7 +1649,11 @@ function DeploymentRow({
           rest report their own build outcome. Showing both — a `ready` badge
           and a separate "Live" word on the same row — said one thing twice. */}
       <Badge size="xs" variant={active ? 'success' : DEPLOYMENT_COPY[deployment.status].tone}>
-        {active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label}
+        {translateUiCatalogText(
+          active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label,
+          tI18nComplete,
+          PRODUCT_CATALOG_TRANSLATION_KEYS,
+        )}
       </Badge>
       {/* Age, not `hosting_provider`. That field is the name of the sandbox
           fleet the build landed on ("daytona", "platinum") — infrastructure
@@ -1350,7 +1675,7 @@ function DeploymentRow({
           ) : (
             <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
           )}
-          Restore
+          {tI18nComplete.raw('texta76e13b98392')}
         </Button>
       ) : null}
     </div>

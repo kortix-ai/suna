@@ -25,78 +25,78 @@ export { gitRefExplorerSource } from './git-ref-explorer-source';
 
 // Types
 export type {
-  FileNode,
+  FileCommitDiff,
   FileContent,
+  FileHistoryResult,
+  FileNode,
   FilePatch,
   FilePatchHunk,
   FindMatch,
+  GitCommit,
   LssHit,
   LssSearchResult,
   RuntimeProjectInfo,
   ServerHealth,
-  GitCommit,
-  FileHistoryResult,
-  FileCommitDiff,
 } from '@/features/file-browser/types';
 
 // API — read
 export {
-  listFiles,
-  readFile,
+  copyFile,
+  createFile,
+  deleteFile,
+  downloadFile,
   findFiles,
   findText,
   getCurrentProject,
   getServerHealth,
   isServerReachable,
+  listFiles,
+  mkdirFile,
+  readFile,
   // binary helpers
   readFileAsBlob,
-  downloadFile,
+  renameFile,
   // write
   uploadFile,
-  deleteFile,
-  mkdirFile,
-  renameFile,
-  createFile,
-  copyFile,
   type UploadResult,
 } from './api/runtime-files';
 
 // API — git history
-export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
+export { getFileAtCommit, getFileCommitDiff, getFileHistory } from './api/git-history';
 
 // API — branches (Versions) & whole-repo commits (Checkpoints)
 export { fetchBranches } from './api/branches';
-export { fetchCommits, fetchCommit, fetchCommitDiff } from './api/commits';
+export { fetchCommit, fetchCommitDiff, fetchCommits } from './api/commits';
 
 // Hooks
 export {
-  useFileList,
-  useInvalidateFileList,
-  useFileContent,
-  useInvalidateFileContent,
-  useFileSearch,
-  useServerHealth,
-  useCurrentProject,
-  useFileEventInvalidation,
-  useFileUpload,
-  useFileDelete,
-  useFileMkdir,
-  useFileRename,
-  useFileCreate,
-  useFileCopy,
-  useFileHistory,
-  useFileCommitDiff,
-  useFileAtCommit,
-  useBranches,
   branchKeys,
-  useCommits,
+  commitKeys,
+  fileContentKeys,
+  fileHistoryKeys,
+  fileListKeys,
+  fileSearchKeys,
+  useBranches,
   useCommit,
   useCommitDiff,
-  commitKeys,
-  fileListKeys,
-  fileContentKeys,
-  fileSearchKeys,
-  fileHistoryKeys,
+  useCommits,
+  useCurrentProject,
+  useFileAtCommit,
+  useFileCommitDiff,
+  useFileContent,
+  useFileCopy,
+  useFileCreate,
+  useFileDelete,
+  useFileEventInvalidation,
+  useFileHistory,
+  useFileList,
+  useFileMkdir,
+  useFileRename,
+  useFileSearch,
+  useFileUpload,
+  useInvalidateFileContent,
+  useInvalidateFileList,
+  useServerHealth,
 } from './hooks';
 
 // Standalone workspace file search (mirrors files feature surface)
@@ -104,34 +104,34 @@ export { searchWorkspaceFiles } from './search/workspace-search-service';
 
 // Store
 export {
-  createFilesStore,
   FilesStoreProvider,
+  createFilesStore,
   globalFilesStore,
   useFilesStore,
   useFilesStoreApi,
-  type FilesView,
-  type ClipboardOperation,
   type ClipboardItem,
+  type ClipboardOperation,
   type FilesStore,
   type FilesStoreApi,
+  type FilesView,
 } from '@/features/file-browser/store/files-store';
 
 // Per-project Version selection
-export { useVersionStore, useSelectedVersion } from './store/version-store';
+export { useSelectedVersion, useVersionStore } from './store/version-store';
 
 // Components
 export {
+  CheckpointsPanel,
   DRIVE_ACTION_ROW_CLASS,
   DriveExplorer,
-  FileContentRenderer,
-  FileSearch,
   FileBreadcrumbs,
-  FilePathBreadcrumbs,
-  FileTreeItem,
-  FileThumbnail,
+  FileContentRenderer,
   FileExplorerPage,
+  FilePathBreadcrumbs,
+  FileSearch,
+  FileThumbnail,
+  FileTreeItem,
   VersionSelector,
-  CheckpointsPanel,
   getFileCategory,
   getFileIcon,
   getLanguageFromExt,

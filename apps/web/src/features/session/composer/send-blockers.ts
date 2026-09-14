@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * What still refuses a submission once the server owns prompt ordering.
  *
@@ -43,11 +44,7 @@
  */
 
 export type SendBlocker =
-  | 'active_question'
-  | 'pending_permission'
-  | 'read_only'
-  | 'session_working'
-  | 'runtime_waking';
+  'active_question' | 'pending_permission' | 'read_only' | 'session_working' | 'runtime_waking';
 
 export interface SendBlockerInput {
   /** A structured question is on screen for this session. */
@@ -114,29 +111,32 @@ export function commandBlocker(
 }
 
 /** User-facing copy. One place, so no call site invents its own wording. */
-export function sendBlockerMessage(blocker: SendBlocker): {
+export function sendBlockerMessage(
+  blocker: SendBlocker,
+  tI18nComplete: UiTranslator,
+): {
   message: string;
   description?: string;
 } {
   switch (blocker) {
     case 'read_only':
-      return { message: 'This session is read-only.' };
+      return { message: tI18nComplete.raw('text9c2b4e67342e') };
     case 'active_question':
       return {
-        message: 'Answer the question above to continue.',
-        description: 'Sending now would answer it with this text instead.',
+        message: tI18nComplete.raw('text88c2105adecf'),
+        description: tI18nComplete.raw('text9cf511ca5657'),
       };
     case 'pending_permission':
-      return { message: 'Approve or deny the pending action to continue.' };
+      return { message: tI18nComplete.raw('text3e11e93e0f42') };
     case 'session_working':
       return {
-        message: 'Wait for the agent to finish before running a command.',
-        description: 'A command starts its own turn, so it would interrupt this turn.',
+        message: tI18nComplete.raw('textd780563bef66'),
+        description: tI18nComplete.raw('text968cf44e4d9c'),
       };
     case 'runtime_waking':
       return {
-        message: 'This session is still waking up.',
-        description: 'A command needs the sandbox running — send it again in a moment.',
+        message: tI18nComplete.raw('text376f3f363e3e'),
+        description: tI18nComplete.raw('text918174950933'),
       };
   }
 }

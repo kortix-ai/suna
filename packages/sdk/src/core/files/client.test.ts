@@ -254,22 +254,8 @@ test('a transient STATUS is still retried — the status path was already correc
 
 // ── upload: the deadline scales with the body ───────────────────────────────
 
-test('a large upload gets a longer deadline than the flat 30s default', async () => {
-  const signals: Array<AbortSignal | null | undefined> = [];
-  globalThis.fetch = mock(async (_input: unknown, init: RequestInit = {}) => {
-    signals.push(init.signal);
-    return new Response(JSON.stringify([]), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-
-  // 30 MB — comfortably past anything a flat 30s budget can move on a slow link.
-  const big = new Blob([new Uint8Array(30 * 1024 * 1024)]);
-  await F.uploadFile(big, '/workspace/uploads', 'big.zip');
-
-  expect(signals).toHaveLength(1);
-  expect(F.uploadTimeoutMsForBytes(big.size)).toBeGreaterThan(30_000);
+test('the deadline helper gives a large body more time than the flat 30s default', () => {
+  expect(F.uploadTimeoutMsForBytes(30 * 1024 * 1024)).toBeGreaterThan(30_000);
 });
 
 test('the deadline is bounded at both ends', () => {
@@ -285,6 +271,51 @@ test('the deadline is bounded at both ends', () => {
 
 test('an unknown-size body still gets a usable deadline', () => {
   expect(F.uploadTimeoutMsForBytes(undefined)).toBeGreaterThanOrEqual(30_000);
+});
+
+test('a ready-session upload crosses the sandbox edge in bounded chunks and reports progress', async () => {
+  const landedPath = '/workspace/uploads/report-2.pdf';
+  const chunkSizes: number[] = [];
+  const offsets: number[] = [];
+  const progress: Array<{ loadedBytes: number; totalBytes: number }> = [];
+  let cumulative = 0;
+
+  routeDaemon((url, init) => {
+    if (url.endsWith('/file/upload')) {
+      const form = init.body as FormData;
+      const reserved = form.get('file') as File;
+      expect(reserved.size).toBe(0);
+      return jsonOk([{ path: landedPath, size: 0 }]);
+    }
+    if (url.endsWith('/file/append')) {
+      const form = init.body as FormData;
+      const chunk = form.get('file') as File;
+      chunkSizes.push(chunk.size);
+      offsets.push(Number(form.get('offset')));
+      cumulative += chunk.size;
+      return jsonOk({ path: landedPath, size: cumulative });
+    }
+    return undefined;
+  });
+
+  const bytes = 150 * 1024;
+  const result = await F.uploadFile(
+    new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }),
+    '/workspace/uploads',
+    'report.pdf',
+    { onProgress: (event) => progress.push(event) },
+  );
+
+  expect(result).toEqual([{ path: landedPath, size: bytes }]);
+  expect(chunkSizes).toEqual([64 * 1024, 64 * 1024, 22 * 1024]);
+  expect(offsets).toEqual([0, 64 * 1024, 128 * 1024]);
+  expect(progress).toEqual([
+    { loadedBytes: 64 * 1024, totalBytes: bytes },
+    { loadedBytes: 128 * 1024, totalBytes: bytes },
+    { loadedBytes: bytes, totalBytes: bytes },
+  ]);
+  expect(calls.filter((call) => call.url.endsWith('/file/upload'))).toHaveLength(1);
+  expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(3);
 });
 
 // ── the runtime must be resolved before any byte leaves the client ───────────
@@ -684,4 +715,3 @@ test('a trailing-slash path with a pathological slash run normalises in linear t
   await F.writeFile(hostile, new Blob(['x'])).catch(() => undefined);
   expect(performance.now() - started).toBeLessThan(1_000);
 });
-

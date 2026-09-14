@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { stack } from './content';
+import { getLocalizedSelfHostedContent } from './content';
 
 /**
  * The self-host stack drawn as what it is: one box with one Compose project
@@ -12,15 +13,17 @@ import { stack } from './content';
  * into `kortix self-host logs`.
  */
 export function StackDiagram(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { stack } = getLocalizedSelfHostedContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       <div className="border-border flex items-center gap-3 border-b px-5 py-3.5 sm:px-7">
         <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-          one host
+          {tI18nComplete.raw('text4b1b13a946e5')}
         </span>
         <span aria-hidden className="bg-border h-px flex-1" />
         <span className="text-muted-foreground/60 font-mono text-[10px] tracking-widest">
-          docker compose
+          {tI18nComplete.raw('text75ddf920195c')}
         </span>
       </div>
 

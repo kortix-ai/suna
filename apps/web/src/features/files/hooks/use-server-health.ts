@@ -1,8 +1,11 @@
 'use client';
 
-import { requestRuntimeReconnect, useRuntimeConnectionStore } from '@kortix/sdk/react';
-import { useRuntimeProjectInfo } from '@kortix/sdk/react';
 import type { ServerHealth } from '@/features/file-browser/types';
+import {
+  requestRuntimeReconnect,
+  useRuntimeConnectionStore,
+  useRuntimeProjectInfo,
+} from '@kortix/sdk/react';
 import { fileServerHealthState } from './server-health-state';
 
 /**

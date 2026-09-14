@@ -1,3 +1,7 @@
+import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/agents-and-skills` copy.
  *
@@ -332,3 +336,11 @@ export const closing = {
   ctaSecondary: 'Read the agent docs',
   ctaSecondaryHref: '/docs/project/agents',
 } as const;
+
+export function getLocalizedAgentsAndSkillsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, agent, reach, skill, repo, marketplace, closing },
+    tI18nComplete,
+    AGENTS_LANDING_TRANSLATION_KEYS,
+  );
+}

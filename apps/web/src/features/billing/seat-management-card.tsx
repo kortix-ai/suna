@@ -1,6 +1,7 @@
 'use client';
 
 import type { AccountState } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * Team seats — rendered when `account_state.billing_model === 'per_seat'`.
@@ -18,6 +19,7 @@ export interface SeatManagementCardProps {
 }
 
 export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const seats = accountState.seats;
   if (!seats || accountState.billing_model !== 'per_seat') return null;
 
@@ -26,15 +28,19 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
   return (
     <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
       <div className="min-w-0">
-        <p className="text-foreground text-sm font-medium">Team seats</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text42ef2c24bd7a')}
+        </p>
         <p className="text-muted-foreground mt-0.5 text-xs tabular-nums">
-          {seats.count} {seats.count === 1 ? 'seat' : 'seats'} · ${seats.price_per_seat_usd} per
-          teammate, compute included
+          {seats.count} {seats.count === 1 ? 'seat' : 'seats'} · ${seats.price_per_seat_usd}{' '}
+          {tI18nComplete.raw('text6a65480c06db')}
         </p>
       </div>
       <p className="shrink-0 text-right text-sm font-semibold tabular-nums">
         ${monthlyTotal}
-        <span className="text-muted-foreground ml-1 text-xs font-normal">/mo</span>
+        <span className="text-muted-foreground ml-1 text-xs font-normal">
+          {tI18nComplete.raw('textdcc954337afd')}
+        </span>
       </p>
     </div>
   );

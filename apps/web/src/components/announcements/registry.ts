@@ -9,7 +9,7 @@ export const announcementRegistry: Record<string, ComponentType<AnnouncementComp
 
 export function registerAnnouncement(
   name: string,
-  component: ComponentType<AnnouncementComponentProps>
+  component: ComponentType<AnnouncementComponentProps>,
 ) {
   announcementRegistry[name] = component;
 }

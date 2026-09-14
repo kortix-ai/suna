@@ -43,6 +43,14 @@ function rowToHandle(row: typeof chatTurnStreams.$inferSelect): TeamsLiveTurn {
   };
 }
 
+/**
+ * `expires_at` is not a reaper here — identical reasoning to the Slack side, see
+ * channels/slack/turn.ts loadTurn. `STREAM_TTL_MS` is refreshed only by a `slack
+ * step` relay, so any quiet stretch of real agent work longer than 15 minutes
+ * deleted the row and silently dropped every later step and the final answer.
+ * The GC sweep below is the reaper: keyed on `updated_at`, and it posts before
+ * it deletes.
+ */
 export async function loadTurn(sessionId: string): Promise<TeamsLiveTurn | null> {
   if (!sessionId) return null;
   const [row] = await db
@@ -51,11 +59,6 @@ export async function loadTurn(sessionId: string): Promise<TeamsLiveTurn | null>
     .where(eq(chatTurnStreams.sessionId, sessionId))
     .limit(1);
   if (!row || !row.channelRef) return null;
-  const expiry = new Date(row.expiresAt).getTime();
-  if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-    await deleteTurn(sessionId);
-    return null;
-  }
   return rowToHandle(row);
 }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -24,7 +26,6 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
@@ -113,17 +114,14 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   getConnectStatus,
-  getProjectDetail,
   listAllConnections,
   listConnections,
   listConnectors,
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
-  type OAuth2ResourceDiscovery,
   pollConnectionOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
-  reconcileConnection,
   reconcileMemberConnection,
   registerConnectionOAuth2Client,
   revokeConnection,
@@ -140,6 +138,21 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
+  buildEasyConnectConnectorDraft,
+  buildEmailConnectorConnectionSlug,
+  connectionOwnerTypeForStrategy,
+  connectorAuthorizationStrategyForProvider,
+  connectorAuthorizationStrategyIsEditable,
+  connectorAuthorizationUpdateIsPending,
+  connectorConnectionQueryKeys,
+  connectorSetupStatus,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  type EasyConnectApp,
+  proposeConnectorConnectionSlug,
+} from './connector-connection-form';
+import { AuthorizationStrategyField, ConnectorConnectionModal } from './connector-connection-modal';
+import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
   createConnectorWithOptionalOAuth2,
@@ -151,28 +164,13 @@ import {
   type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
+import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
 } from './connector-oauth2-auto';
-import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
-import {
-  connectionOwnerTypeForStrategy,
-  buildEasyConnectConnectorDraft,
-  buildEmailConnectorConnectionSlug,
-  connectorConnectionQueryKeys,
-  connectorAuthorizationStrategyForProvider,
-  connectorAuthorizationStrategyIsEditable,
-  connectorAuthorizationUpdateIsPending,
-  connectorSetupStatus,
-  connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
-  type EasyConnectApp,
-  proposeConnectorConnectionSlug,
-} from './connector-connection-form';
-import { AuthorizationStrategyField, ConnectorConnectionModal } from './connector-connection-modal';
 import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
@@ -259,8 +257,9 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   const oauth2Error = search?.get('oauth2_error');
   useEffect(() => {
     if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
+    if (oauth2Result === 'connected')
+      successToast(tI18nHardcoded.raw('i18nComplete.text5738301b7beb'));
+    else errorToast(oauth2Error || tI18nHardcoded.raw('i18nComplete.texta6fac795d6d6'));
     for (const affectedQueryKey of connectionQueryKeys) {
       void queryClient.invalidateQueries({ queryKey: affectedQueryKey });
     }
@@ -269,7 +268,16 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     params.delete('oauth2_error');
     const suffix = params.toString();
     router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-  }, [connectionQueryKeys, oauth2Error, oauth2Result, pathname, queryClient, router, search]);
+  }, [
+    connectionQueryKeys,
+    oauth2Error,
+    oauth2Result,
+    pathname,
+    queryClient,
+    router,
+    search,
+    tI18nHardcoded,
+  ]);
   const select = (sel: Selection) => {
     const key = sel.kind === 'connector' ? sel.slug : sel.kind;
     const params = new URLSearchParams(search?.toString() ?? '');
@@ -290,10 +298,17 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     mutationFn: () => syncConnectors(projectId),
     onSuccess: (res) => {
       invalidate();
-      if (res.errors.length) warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
-      else successToast(`Synced ${res.synced} connector(s)`);
+      if (res.errors.length)
+        warningToast(
+          tI18nHardcoded('i18nComplete.text01e458a231aa', {
+            value0: res.synced,
+            value1: res.errors.length,
+          }),
+        );
+      else successToast(tI18nHardcoded('i18nComplete.textf6a7db3563d0', { value0: res.synced }));
     },
-    onError: (err: Error) => errorToast(err.message || 'Sync failed'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.textabf3e80b5b4c')),
   });
 
   if (query.isLoading) return <MasterDetailSkeleton />;
@@ -324,11 +339,11 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           )}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-              Retry
+              {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
             </Button>
           }
         >
-          {(query.error as Error)?.message ?? 'Unknown error'}
+          {(query.error as Error)?.message ?? tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2')}
         </InfoBanner>
       </div>
     );
@@ -431,7 +446,7 @@ function SaveBar({
       </span>
       {onReset && (
         <Button size="sm" variant="ghost" onClick={onReset} disabled={saving}>
-          Reset
+          {tI18nHardcoded.raw('i18nComplete.textdaee7606b339')}
         </Button>
       )}
       <Button size="sm" onClick={onSave} disabled={saving || disabled} className="gap-1.5">
@@ -468,7 +483,7 @@ function ConnectorRail({
 
   return (
     <nav
-      aria-label="Connectors"
+      aria-label={tI18nHardcoded.raw('i18nComplete.textc3d2e79ebdd0')}
       className="border-border/60 bg-muted/20 flex w-72 shrink-0 flex-col border-r"
     >
       <div className="border-border/60 space-y-2 border-b p-3">
@@ -519,7 +534,9 @@ function ConnectorRail({
           </p>
         ) : (
           <>
-            {ready.length > 0 && <RailGroupLabel>Available</RailGroupLabel>}
+            {ready.length > 0 && (
+              <RailGroupLabel>{tI18nHardcoded.raw('i18nComplete.texte674447337e8')}</RailGroupLabel>
+            )}
             {ready.map((c) => (
               <RailItem
                 key={c.slug}
@@ -588,11 +605,7 @@ function ConnectorRail({
 }
 
 function RailGroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground/50 px-3 pt-3 pb-1 text-xs font-medium tracking-wider uppercase">
-      {children}
-    </div>
-  );
+  return <div className="text-muted-foreground px-3 pt-3 pb-1 text-xs font-medium">{children}</div>;
 }
 
 function CodeSnippet({
@@ -607,7 +620,7 @@ function CodeSnippet({
   return (
     <div
       className={cn(
-        'border-border/60 bg-card flex w-full overflow-x-auto rounded-2xl border',
+        'border-border/60 bg-card flex w-full overflow-x-auto rounded-md border',
         className,
       )}
     >
@@ -691,13 +704,14 @@ function ConnectionRow({
   pending: boolean;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
   const mayMutate = isProjectAuthorization ? canManage : isMine;
 
-  const { copy } = useCopy({ successMessage: 'Connection ID copied to clipboard.' });
+  const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
@@ -718,17 +732,19 @@ function ConnectionRow({
           <span className="truncate text-sm font-medium">{connection.label}</span>
           {connection.is_default && (
             <Badge variant="outline" size="xs">
-              Default
+              {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
         </div>
         <InlineMeta>
-          {isProjectAuthorization ? 'Shared with the project' : 'Private — only you'}
+          {isProjectAuthorization
+            ? tI18nComplete.raw('text1c22fac2a9fd')
+            : tI18nComplete.raw('text1e1353702c42')}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
           {/* Every connection carries its own id — this is what a backend passes
               in connector_bindings to run as THIS account. Truncated to keep the
               row readable; the row menu copies the full value. */}
-          <Hint label="Connection ID — use it in the backend (connector_bindings) to run as this connection.">
+          <Hint label={tI18nComplete.raw('text48d73db2396c')}>
             <code className="cursor-help font-mono">{connection.connection_id.slice(0, 8)}…</code>
           </Hint>
         </InlineMeta>
@@ -739,7 +755,7 @@ function ConnectionRow({
             variant="ghost"
             size="icon"
             className="size-8 shrink-0"
-            aria-label={`Actions for ${connection.label}`}
+            aria-label={tI18nComplete('text33da220b1a34', { value0: connection.label })}
             disabled={pending || disabled}
           >
             {pending ? (
@@ -751,17 +767,24 @@ function ConnectionRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
           <DropdownMenuItem onClick={() => copy(connection.connection_id)}>
-            Copy connection ID
+            {tI18nComplete.raw('text99775327d988')}
           </DropdownMenuItem>
           {mayMutate && isMine && active && onStartSession && (
-            <DropdownMenuItem onClick={onStartSession}>Use in a new session</DropdownMenuItem>
+            <DropdownMenuItem onClick={onStartSession}>
+              {tI18nComplete.raw('textfae237eed0c5')}
+            </DropdownMenuItem>
           )}
           {mayMutate && !connection.is_default && active && (
             <DropdownMenuItem onClick={onSetDefault}>
-              Use by default{isProjectAuthorization ? ' for the project' : ''}
+              {tI18nComplete.raw('texta92f66fd3d83')}
+              {isProjectAuthorization ? tI18nComplete.raw('text801a345cd406') : ''}
             </DropdownMenuItem>
           )}
-          {mayMutate && <DropdownMenuItem onClick={onDisconnect}>Disconnect</DropdownMenuItem>}
+          {mayMutate && (
+            <DropdownMenuItem onClick={onDisconnect}>
+              {tI18nComplete.raw('textacfc5be785a9')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </li>
@@ -791,6 +814,7 @@ export function ConnectionsList({
   onStartSession?: () => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [addScope, setAddScope] = useState<'project' | 'member' | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
@@ -827,19 +851,19 @@ export function ConnectionsList({
   const setDefault = useMutation({
     mutationFn: (connectionId: string) => setDefaultConnection(projectId, connectionId),
     onSuccess: () => {
-      successToast('Default connection updated');
+      successToast(tI18nComplete.raw('text109ff88aec78'));
       refresh();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to set the default'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
-      successToast('Disconnected');
+      successToast(tI18nComplete.raw('text04dfac3671b4'));
       setConfirmDisconnect(null);
       refresh();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to disconnect'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textb7668a581f59')),
   });
 
   const adding = addProject.isPending || addMine.isPending;
@@ -852,7 +876,7 @@ export function ConnectionsList({
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <Label>Connections</Label>
+        <Label>{tI18nComplete.raw('textdc273117482b')}</Label>
         <div className="flex items-center gap-2">
           {connectionOwnerType === 'project' && canManageConnections && (
             <Button
@@ -862,7 +886,7 @@ export function ConnectionsList({
               disabled={disabled}
             >
               <Plus className="size-4" />
-              Add project connection
+              {tI18nComplete.raw('text9ba9dd084952')}
             </Button>
           )}
           {connectionOwnerType === 'member' && (
@@ -873,7 +897,7 @@ export function ConnectionsList({
               disabled={disabled}
             >
               <Lock className="size-3.5 shrink-0" />
-              Add my own
+              {tI18nComplete.raw('textcbf6389cf9df')}
             </Button>
           )}
         </div>
@@ -888,11 +912,11 @@ export function ConnectionsList({
         <EmptyState
           size="sm"
           icon={Plug}
-          title={`No ${displayName} connections yet`}
+          title={tI18nComplete('textee168539f43a', { value0: displayName })}
           description={
             connectionOwnerType === 'project'
-              ? 'Connect a project-managed account for allowed sessions.'
-              : 'Connect your own account for your private sessions.'
+              ? tI18nComplete.raw('texte6e0b4594c95')
+              : tI18nComplete.raw('text6533f1aa30ab')
           }
         />
       ) : (
@@ -929,13 +953,13 @@ export function ConnectionsList({
           <ModalHeader>
             <ModalTitle>
               {addScope === 'project'
-                ? `Add a project ${displayName} connection`
-                : `Add your own ${displayName}`}
+                ? tI18nComplete('textca04bb211a4b', { value0: displayName })
+                : tI18nComplete('text9819d9aeec29', { value0: displayName })}
             </ModalTitle>
             <ModalDescription>
               {addScope === 'project'
-                ? 'Everyone on this project can use it. Name it so people can tell your accounts apart.'
-                : 'Only you can use it, in your own private sessions. Name it to tell your accounts apart.'}
+                ? tI18nComplete.raw('textcfc47949d9f8')
+                : tI18nComplete.raw('textf43ce58ed44c')}
             </ModalDescription>
           </ModalHeader>
           <form
@@ -946,17 +970,21 @@ export function ConnectionsList({
           >
             <ModalBody>
               <Field>
-                <FieldLabel htmlFor="connection-label">Name</FieldLabel>
+                <FieldLabel htmlFor="connection-label">
+                  {tI18nComplete.raw('textdcd1d5223f73')}
+                </FieldLabel>
                 <Input
                   id="connection-label"
                   value={labelDraft}
                   onChange={(e) => setLabelDraft(e.target.value)}
-                  placeholder={addScope === 'project' ? 'Support inbox' : 'Work'}
+                  placeholder={
+                    addScope === 'project' ? tI18nComplete.raw('text945ce03ec79f') : 'Work'
+                  }
                   maxLength={255}
                   autoFocus
                   disabled={adding || disabled}
                 />
-                <FieldDescription>You'll authorize the account in the next step.</FieldDescription>
+                <FieldDescription>{tI18nComplete.raw('text99953938d987')}</FieldDescription>
               </Field>
             </ModalBody>
             <ModalFooter className="sm:justify-between">
@@ -969,11 +997,11 @@ export function ConnectionsList({
                 }}
                 disabled={adding}
               >
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button type="submit" disabled={adding || disabled || !labelDraft.trim()}>
                 {adding ? <Loading className="size-4 shrink-0" /> : null}
-                Continue
+                {tI18nComplete.raw('text31fbef162594')}
               </Button>
             </ModalFooter>
           </form>
@@ -983,13 +1011,13 @@ export function ConnectionsList({
       <ConfirmDialog
         open={confirmDisconnect !== null}
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
-        title={`Disconnect "${confirmDisconnect?.label ?? ''}"?`}
+        title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
           confirmDisconnect?.owner_type === 'project'
-            ? 'Everyone on this project loses access to this account. Sessions bound to it will stop working.'
-            : 'Your own connection is removed. Sessions bound to it will stop working.'
+            ? tI18nComplete.raw('texte2cbafcec553')
+            : tI18nComplete.raw('text64db32d83da9')
         }
-        confirmLabel="Disconnect"
+        confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
         isPending={disconnect.isPending}
         onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
@@ -999,10 +1027,11 @@ export function ConnectionsList({
 }
 
 function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (status === 'active') {
     return (
-      <Badge variant="outline" size="sm" className="text-emerald-600">
-        Connected
+      <Badge variant="outline" size="sm" className="text-kortix-green">
+        {tI18nComplete.raw('text22965568d22a')}
       </Badge>
     );
   }
@@ -1027,6 +1056,7 @@ export function ConnectionRoster({
   connectorSlug: string;
   displayName: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const connectionsQuery = useQuery({
     queryKey: ['connections-all', projectId],
     queryFn: () => listAllConnections(projectId),
@@ -1051,13 +1081,17 @@ export function ConnectionRoster({
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="text-muted-foreground border-b px-4 py-2.5 text-xs font-medium">
-        Project members' own {displayName} connections
+        {tI18nComplete.raw('texta2d64eeafcb9')} {displayName}{' '}
+        {tI18nComplete.raw('text1e5fac867454')}
       </div>
       {connectionsQuery.isLoading ? (
-        <div className="text-muted-foreground px-4 py-3 text-sm">Loading…</div>
+        <div className="text-muted-foreground px-4 py-3 text-sm">
+          {tI18nComplete.raw('textba3bbbe10d8b')}
+        </div>
       ) : rows.length === 0 ? (
         <div className="text-muted-foreground px-4 py-3 text-sm">
-          No project member has connected their own {displayName} yet.
+          {tI18nComplete.raw('text56e264eb39f6')} {displayName}{' '}
+          {tI18nComplete.raw('textf55f49c47f7f')}
         </div>
       ) : (
         <ul className="divide-y">
@@ -1069,7 +1103,7 @@ export function ConnectionRoster({
               <span className="min-w-0 truncate text-sm">
                 {emailByUser.get(connection.owner_id ?? '') ??
                   connection.owner_id ??
-                  'Unknown member'}
+                  tI18nComplete.raw('text29824c5acaf8')}
               </span>
               <RosterStatusBadge status={connection.status} />
             </li>
@@ -1205,11 +1239,12 @@ export function ConnectorDetail({
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, connector.slug, nameDraft.trim()),
     onSuccess: () => {
-      successToast('Renamed');
+      successToast(tI18nHardcoded.raw('i18nComplete.text05487af3f074'));
       setEditingName(false);
       onChanged();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.text8fcf8ce07dcf')),
   });
 
   const updateAuthorizationStrategy = useMutation({
@@ -1218,18 +1253,23 @@ export function ConnectorDetail({
     onSuccess: (result, next) => {
       const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
       if (syncError) {
-        warningToast(
-          `Authorization owner changed, but synchronization failed: ${syncError.error}. Use Sync to retry.`,
-        );
+        warningToast(tI18nHardcoded('i18nComplete.textec7a4e3094f9', { value0: syncError.error }));
         onChanged();
         return;
       }
-      successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
+      successToast(
+        tI18nHardcoded('i18nComplete.text67ccb61d5f27', {
+          value0:
+            next === tI18nHardcoded.raw('i18nComplete.text244210e48437')
+              ? tI18nHardcoded.raw('i18nComplete.text985959785319')
+              : tI18nHardcoded.raw('i18nComplete.textb512d97e7cbf'),
+        }),
+      );
       onChanged();
     },
     onError: (error: Error) => {
       setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || 'Failed to update authorization owner');
+      errorToast(error.message || tI18nHardcoded.raw('i18nComplete.texta743aa4452d3'));
     },
   });
   const strategyUpdating = connectorAuthorizationUpdateIsPending(
@@ -1241,10 +1281,11 @@ export function ConnectorDetail({
   const remove = useMutation({
     mutationFn: () => deleteConnector(projectId, connector.slug),
     onSuccess: () => {
-      successToast(`Removed ${displayName}`);
+      successToast(tI18nHardcoded('i18nComplete.textffd34ade9168', { value0: displayName }));
       onRemoved();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to remove'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.text1d0486014da5')),
   });
 
   const toolCount = connector.actions.length;
@@ -1297,19 +1338,19 @@ export function ConnectorDetail({
                 }}
                 disabled={rename.isPending || strategyUpdating}
               >
-                Cancel
+                {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
               </Button>
             </form>
           ) : (
             <div className="group flex items-center gap-2">
               <h2 className="text-foreground truncate text-lg font-semibold">{displayName}</h2>
               {canWrite && (
-                <Hint label="Rename">
+                <Hint label={tI18nHardcoded.raw('i18nComplete.text3064d79a295c')}>
                   <button
                     type="button"
                     onClick={() => !strategyUpdating && setEditingName(true)}
                     disabled={strategyUpdating}
-                    aria-label="Rename"
+                    aria-label={tI18nHardcoded.raw('i18nComplete.text3064d79a295c')}
                     className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                   >
                     <PencilSimpleIcon className="h-3.5 w-3.5" />
@@ -1351,7 +1392,7 @@ export function ConnectorDetail({
               ) : (
                 <KeyRound className="h-4 w-4" />
               )}
-              Reconnect
+              {tI18nHardcoded.raw('i18nComplete.textbf8a9eab9e7e')}
             </Button>
           ) : (
             <Button
@@ -1362,14 +1403,14 @@ export function ConnectorDetail({
               disabled={strategyUpdating}
             >
               <KeyRound className="h-4 w-4" />
-              Replace credential
+              {tI18nHardcoded.raw('i18nComplete.text54483ce856e0')}
             </Button>
           ))}
       </div>
 
       <div className="mt-7 space-y-5">
         <section className="space-y-2">
-          <Label>Authorization</Label>
+          <Label>{tI18nHardcoded.raw('i18nComplete.textca5839e38a15')}</Label>
           <div className="bg-popover rounded-md border px-4 py-3">
             <AuthorizationStrategyField
               idPrefix={`connector-${connector.slug}`}
@@ -1388,7 +1429,7 @@ export function ConnectorDetail({
               //
               // UI-only: `updateAuthorizationStrategy` below and its route are
               // left intact, so re-enabling is deleting this one prop.
-              lockedReason="Set when the connector was created. Remove and re-add the connector to change it — switching now would orphan the connections and permission rules already stored under the current owner."
+              lockedReason={tI18nHardcoded.raw('i18nComplete.text70e7dfb50669')}
               pending={strategyUpdating}
             />
           </div>
@@ -1401,7 +1442,7 @@ export function ConnectorDetail({
             <InfoBanner
               tone="info"
               icon={Users}
-              title={`Connect ${displayName} for the project`}
+              title={tI18nHardcoded('i18nComplete.textbe90d607b9d7', { value0: displayName })}
               action={
                 canWrite ? (
                   <Button
@@ -1413,14 +1454,16 @@ export function ConnectorDetail({
                     {isManagedProvider && reconnect.isPending && (
                       <Loading className="size-4 shrink-0" />
                     )}
-                    {isManagedProvider ? 'Connect for the project' : 'Set shared credential'}
+                    {isManagedProvider
+                      ? tI18nHardcoded.raw('i18nComplete.text4f8632819544')
+                      : tI18nHardcoded.raw('i18nComplete.text65a59547b132')}
                   </Button>
                 ) : undefined
               }
             >
               {isManagedProvider
-                ? `One project-managed ${displayName} account is available to allowed sessions and triggers.`
-                : `One shared credential that everyone on this project uses — the agent and your triggers run on it.`}
+                ? tI18nHardcoded('i18nComplete.text877733202b1b', { value0: displayName })
+                : tI18nHardcoded.raw('i18nComplete.textd460f97920a4')}
             </InfoBanner>
           )}
         {connector.authSecret &&
@@ -1431,7 +1474,7 @@ export function ConnectorDetail({
             <InfoBanner
               tone="info"
               icon={Lock}
-              title={`Connect ${displayName} for your sessions`}
+              title={tI18nHardcoded('i18nComplete.text5fe5c81da268', { value0: displayName })}
               action={
                 <Button
                   size="lg"
@@ -1440,12 +1483,11 @@ export function ConnectorDetail({
                   disabled={strategyUpdating}
                 >
                   <KeyRound className="size-4 shrink-0" />
-                  Set or replace my credential
+                  {tI18nHardcoded.raw('i18nComplete.text3a8f214698ec')}
                 </Button>
               }
             >
-              Your credential is private to your account. Only your private sessions can use this
-              connection.
+              {tI18nHardcoded.raw('i18nComplete.textc50fbc7b7acc')}
             </InfoBanner>
           )}
         {/* One tab per question this page answers: what can I use (Connections),
@@ -1465,7 +1507,7 @@ export function ConnectorDetail({
             >
               {showConnections && (
                 <TabsTrigger value="connections" className="w-fit flex-none gap-2">
-                  Connections
+                  {tI18nHardcoded.raw('i18nComplete.textdc273117482b')}
                   {connectionCount > 0 ? (
                     <Badge variant="secondary" size="sm">
                       {connectionCount}
@@ -1475,17 +1517,17 @@ export function ConnectorDetail({
               )}
               {showConnectionTab && (
                 <TabsTrigger value="connection" className="w-fit flex-none">
-                  Connection
+                  {tI18nHardcoded.raw('i18nComplete.text639a40e82b9a')}
                 </TabsTrigger>
               )}
               {showPermissions && (
                 <TabsTrigger value="permissions" className="w-fit flex-none">
-                  Permissions
+                  {tI18nHardcoded.raw('i18nComplete.textabccc78cc93c')}
                 </TabsTrigger>
               )}
               {showRoster && (
                 <TabsTrigger value="roster" className="w-fit flex-none">
-                  Project members
+                  {tI18nHardcoded.raw('i18nComplete.text96f64f836aa3')}
                 </TabsTrigger>
               )}
             </TabsList>
@@ -1524,7 +1566,9 @@ export function ConnectorDetail({
                     onChanged={onChanged}
                     canWrite={canWrite && !strategyUpdating}
                     onSetCredential={
-                      isManagedProvider || !usesProjectAuthorization ? undefined : () => setCredOpen(true)
+                      isManagedProvider || !usesProjectAuthorization
+                        ? undefined
+                        : () => setCredOpen(true)
                     }
                   />
                 )}
@@ -1575,7 +1619,7 @@ export function ConnectorDetail({
                 disabled={strategyUpdating}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Remove
+                {tI18nHardcoded.raw('i18nComplete.textc3812fc4acb8')}
               </Button>
             </div>
           </div>
@@ -1585,7 +1629,7 @@ export function ConnectorDetail({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Remove ${displayName}?`}
+        title={tI18nHardcoded('i18nComplete.textbc43ab815937', { value0: displayName })}
         description={
           <>
             {tI18nHardcoded.raw(
@@ -1652,6 +1696,7 @@ export function ChannelConnectionSection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const platform = connectorPlatform(connector);
   if (platform === 'email') {
     return (
@@ -1676,11 +1721,9 @@ export function ChannelConnectionSection({
   }
   return (
     <section className="space-y-4">
-      <Label>Connection</Label>
+      <Label>{tI18nComplete.raw('text639a40e82b9a')}</Label>
       <div className="bg-popover rounded-md border px-4 py-3">
-        <InfoBanner tone="warning">
-          This channel connection is missing its platform setting.
-        </InfoBanner>
+        <InfoBanner tone="warning">{tI18nComplete.raw('text53f76274b923')}</InfoBanner>
       </div>
     </section>
   );
@@ -1699,17 +1742,16 @@ function EmailChannelConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const install = useEmailInstall(projectId, connector.slug);
 
   return (
     <section className="space-y-4">
-      <Label>Email connection</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">
-        AgentMail inbox assigned to this connection.
-      </p>
+      <Label>{tI18nComplete.raw('text7033ce3d1e7a')}</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('text28d1c949e5e6')}</p>
       <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : install.data ? (
           <ConnectedEmailConnection
             projectId={projectId}
@@ -1725,8 +1767,8 @@ function EmailChannelConnection({
             onConnected={onChanged}
           />
         ) : (
-          <InfoBanner tone="neutral" icon={Mail} title="Email not connected">
-            This channel connection has no AgentMail inbox yet.
+          <InfoBanner tone="neutral" icon={Mail} title={tI18nComplete.raw('textf0aea4d97b8e')}>
+            {tI18nComplete.raw('text2dec6c273b47')}
           </InfoBanner>
         )}
       </div>
@@ -1747,17 +1789,23 @@ function ConnectedEmailConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectEmail();
   const [confirming, setConfirming] = useState(false);
 
   return (
     <div className="space-y-4">
-      <InfoBanner tone="success" icon={Check} title="Email connected">
-        Address <code className="font-mono">{installation.email}</code>
-        {' · '}Inbox <code className="font-mono">{installation.inboxId}</code>
+      <InfoBanner tone="success" icon={Check} title={tI18nComplete.raw('textc23cc1f72afe')}>
+        {tI18nComplete.raw('text56ef8f20955f')}{' '}
+        <code className="font-mono">{installation.email}</code>
+        {' · '}
+        {tI18nComplete.raw('text94835ea2fcf7')}{' '}
+        <code className="font-mono">{installation.inboxId}</code>
         {installation.webhookId ? (
           <>
-            {' · '}Webhook <code className="font-mono">{installation.webhookId}</code>
+            {' · '}
+            {tI18nComplete.raw('text4814f62c108d')}{' '}
+            <code className="font-mono">{installation.webhookId}</code>
           </>
         ) : null}
       </InfoBanner>
@@ -1772,10 +1820,10 @@ function ConnectedEmailConnection({
           {confirming ? (
             <>
               <span className="text-muted-foreground mr-auto text-xs">
-                Removes the Email connection from this project.
+                {tI18nComplete.raw('text2a528ae2d4ae')}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 variant="destructive"
@@ -1794,12 +1842,12 @@ function ConnectedEmailConnection({
                 }
               >
                 {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                Disconnect
+                {tI18nComplete.raw('textacfc5be785a9')}
               </Button>
             </>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-              Disconnect
+              {tI18nComplete.raw('textacfc5be785a9')}
             </Button>
           )}
         </div>
@@ -1841,6 +1889,7 @@ function EmailSenderPolicyEditor({
   policy: EmailSenderPolicy | null | undefined;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const update = useUpdateEmailPolicy();
   const initial = normalizeEmailSenderPolicy(policy);
   const [restricted, setRestricted] = useState(initial.mode === 'restricted');
@@ -1889,7 +1938,7 @@ function EmailSenderPolicyEditor({
     regex !== (initial.allowedRegex ?? '');
 
   return (
-    <div className="border-border/60 bg-card rounded-2xl border p-4">
+    <div className="border-border/60 bg-card rounded-md border p-4">
       <div className="flex items-start gap-3">
         <Checkbox
           id="email-sender-restricted"
@@ -1900,10 +1949,9 @@ function EmailSenderPolicyEditor({
         />
         <div className="min-w-0 flex-1 space-y-3">
           <div>
-            <Label htmlFor="email-sender-restricted">Restrict who can start email sessions</Label>
+            <Label htmlFor="email-sender-restricted">{tI18nComplete.raw('texta48c89f63885')}</Label>
             <p className="text-muted-foreground mt-1 text-xs">
-              Leave off to accept every inbound sender. Turn on to allow exact emails, domains, or a
-              regex.
+              {tI18nComplete.raw('text8c67b476d59b')}
             </p>
           </div>
           {restricted ? (
@@ -1912,7 +1960,7 @@ function EmailSenderPolicyEditor({
                 <Input
                   value={emails}
                   onChange={(e) => setEmails(e.target.value)}
-                  placeholder="person@example.com"
+                  placeholder={tI18nComplete.raw('text542d24012988')}
                   disabled={!canWrite}
                 />
               </Field>
@@ -1920,7 +1968,7 @@ function EmailSenderPolicyEditor({
                 <Input
                   value={domains}
                   onChange={(e) => setDomains(e.target.value)}
-                  placeholder="example.com"
+                  placeholder={tI18nComplete.raw('texta379a6f6eeaf')}
                   disabled={!canWrite}
                 />
               </Field>
@@ -1929,7 +1977,7 @@ function EmailSenderPolicyEditor({
                   <Input
                     value={regex}
                     onChange={(e) => setRegex(e.target.value)}
-                    placeholder=".*@customer-[0-9]+\\.com$"
+                    placeholder={tI18nComplete.raw('text8b21058f3253')}
                     spellCheck={false}
                     disabled={!canWrite}
                   />
@@ -1949,7 +1997,7 @@ function EmailSenderPolicyEditor({
                 setDomains(initial.allowedDomains.join('\n'));
                 setRegex(initial.allowedRegex ?? '');
               }}
-              label="Save policy"
+              label={tI18nComplete.raw('text57ee14ce1425')}
             />
           )}
         </div>
@@ -1967,6 +2015,7 @@ export function EmailConnectForm({
   connectorSlug: string;
   onConnected: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const mode = useEmailMode(projectId);
   const connect = useConnectEmail();
   const [displayName, setDisplayName] = useState('Kortix Agent');
@@ -2040,33 +2089,39 @@ export function EmailConnectForm({
       <InfoBanner
         tone={managedAvailable ? 'info' : 'warning'}
         icon={Mail}
-        title={managedAvailable ? 'Create managed Email inbox' : 'Managed Email is not configured'}
+        title={
+          managedAvailable
+            ? tI18nComplete.raw('texte654b63c8098')
+            : tI18nComplete.raw('textafe9444782eb')
+        }
       >
         {managedAvailable
-          ? 'Kortix will create and manage the AgentMail inbox for this connection.'
-          : 'This deployment needs a project-specific AgentMail key before it can create an inbox.'}
+          ? tI18nComplete.raw('textec9ace8d8ff6')
+          : tI18nComplete.raw('text608977655d2d')}
       </InfoBanner>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field>
           <Input
             id="email-channel-display-name"
             name="email-channel-display-name"
-            aria-label="Email display name"
+            aria-label={tI18nComplete.raw('textf912567c97f2')}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Kortix Agent"
+            placeholder={tI18nComplete.raw('text952144fe1418')}
           />
         </Field>
         {attachExisting ? (
           <Field>
-            <FieldLabel htmlFor="email-channel-existing-email">Existing inbox email</FieldLabel>
+            <FieldLabel htmlFor="email-channel-existing-email">
+              {tI18nComplete.raw('text2fcfd290b610')}
+            </FieldLabel>
             <Input
               id="email-channel-existing-email"
               name="email-channel-existing-email"
-              aria-label="Existing AgentMail email"
+              aria-label={tI18nComplete.raw('textaa042b472947')}
               value={existingEmail}
               onChange={(e) => setExistingEmail(e.target.value.trim().toLowerCase())}
-              placeholder="support@agentmail.to"
+              placeholder={tI18nComplete.raw('textbca888f9f9fd')}
               autoComplete="off"
               spellCheck={false}
             />
@@ -2076,18 +2131,18 @@ export function EmailConnectForm({
             <Input
               id="email-channel-username"
               name="email-channel-username"
-              aria-label="Email address prefix"
+              aria-label={tI18nComplete.raw('textcbf297bfb5e6')}
               value={username}
               onChange={(e) =>
                 setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
               }
-              placeholder="support"
+              placeholder={tI18nComplete.raw('texta18603086e5b')}
               autoComplete="off"
               spellCheck={false}
             />
             <p className="text-muted-foreground text-xs">
-              AgentMail will create this prefix when available, for example {username || 'support'}
-              @agentmail.to.
+              {tI18nComplete.raw('textf0a216500b54')} {username || 'support'}
+              {tI18nComplete.raw('text39e4dae21daa')}
             </p>
           </Field>
         )}
@@ -2102,22 +2157,25 @@ export function EmailConnectForm({
           />
           <div className="min-w-0 flex-1 space-y-3">
             <div>
-              <Label htmlFor="email-channel-existing-inbox">Attach existing AgentMail inbox</Label>
+              <Label htmlFor="email-channel-existing-inbox">
+                {tI18nComplete.raw('textd7cc97510eb3')}
+              </Label>
               <p className="text-muted-foreground mt-1 text-xs">
-                Use this when the mailbox already exists or the AgentMail account has reached its
-                inbox limit. Kortix will still create the webhook for this connection.
+                {tI18nComplete.raw('text3bb2e4fa1c03')}
               </p>
             </div>
             {attachExisting ? (
               <Field>
-                <FieldLabel htmlFor="email-channel-existing-inbox-id">Existing inbox ID</FieldLabel>
+                <FieldLabel htmlFor="email-channel-existing-inbox-id">
+                  {tI18nComplete.raw('texta35f4f3f0587')}
+                </FieldLabel>
                 <Input
                   id="email-channel-existing-inbox-id"
                   name="email-channel-existing-inbox-id"
-                  aria-label="Existing AgentMail inbox ID"
+                  aria-label={tI18nComplete.raw('textdc5376ca47b4')}
                   value={existingInboxId}
                   onChange={(e) => setExistingInboxId(e.target.value.trim())}
-                  placeholder="support@agentmail.to"
+                  placeholder={tI18nComplete.raw('textbca888f9f9fd')}
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -2137,28 +2195,26 @@ export function EmailConnectForm({
           <ChevronDown
             className={cn('h-3.5 w-3.5 transition-transform', customKeyOpen && 'rotate-180')}
           />
-          Use custom AgentMail key
+          {tI18nComplete.raw('text1bb320d9db5d')}
         </Button>
         {customKeyOpen ? (
           <Field>
             <Input
               id="email-channel-agentmail-api-key"
               name="email-channel-agentmail-api-key"
-              aria-label="AgentMail API key"
+              aria-label={tI18nComplete.raw('text87b0e5101fd8')}
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="am_..."
+              placeholder={tI18nComplete.raw('text3ce8275b54eb')}
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="text-muted-foreground text-xs">
-              Optional when managed Email is configured. Stored as an encrypted project secret.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text0ec2e7ccbd17')}</p>
           </Field>
         ) : null}
       </div>
-      <div className="border-border/60 bg-card rounded-2xl border p-4">
+      <div className="border-border/60 bg-card rounded-md border p-4">
         <div className="flex items-start gap-3">
           <Checkbox
             id="email-channel-restrict-senders"
@@ -2169,11 +2225,10 @@ export function EmailConnectForm({
           <div className="min-w-0 flex-1 space-y-3">
             <div>
               <Label htmlFor="email-channel-restrict-senders">
-                Restrict who can start sessions
+                {tI18nComplete.raw('textb1fb183269ba')}
               </Label>
               <p className="text-muted-foreground mt-1 text-xs">
-                Optional. Allow exact emails, domains, or a regex before inbound mail can trigger
-                the agent.
+                {tI18nComplete.raw('text5284184cef68')}
               </p>
             </div>
             {restricted ? (
@@ -2182,7 +2237,7 @@ export function EmailConnectForm({
                   <Input
                     value={emails}
                     onChange={(e) => setEmails(e.target.value)}
-                    placeholder="person@example.com"
+                    placeholder={tI18nComplete.raw('text542d24012988')}
                     spellCheck={false}
                   />
                 </Field>
@@ -2190,7 +2245,7 @@ export function EmailConnectForm({
                   <Input
                     value={domains}
                     onChange={(e) => setDomains(e.target.value)}
-                    placeholder="example.com"
+                    placeholder={tI18nComplete.raw('texta379a6f6eeaf')}
                     spellCheck={false}
                   />
                 </Field>
@@ -2199,7 +2254,7 @@ export function EmailConnectForm({
                     <Input
                       value={regex}
                       onChange={(e) => setRegex(e.target.value)}
-                      placeholder=".*@customer-[0-9]+\\.com$"
+                      placeholder={tI18nComplete.raw('text8b21058f3253')}
                       spellCheck={false}
                     />
                   </Field>
@@ -2213,7 +2268,7 @@ export function EmailConnectForm({
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={connect.isPending || mode.isLoading}>
           {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-          Create inbox
+          {tI18nComplete.raw('text72d9ee78a15c')}
         </Button>
       </div>
     </div>
@@ -2231,16 +2286,15 @@ function SlackChannelConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const install = useSlackInstall(projectId);
   return (
     <section className="space-y-4">
-      <Label>Slack connection</Label>
-      <p className="text-muted-foreground -mt-2 text-xs">
-        Slack workspace assigned to this connection.
-      </p>
+      <Label>{tI18nComplete.raw('text51b3bfca2e8c')}</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">{tI18nComplete.raw('textff5091ba4fe1')}</p>
       <div className="bg-popover rounded-md border px-4 py-3">
         {install.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : install.data ? (
           <ConnectedSlackConnection
             projectId={projectId}
@@ -2251,8 +2305,12 @@ function SlackChannelConnection({
         ) : canWrite ? (
           <SlackConnectForm projectId={projectId} onConnected={onChanged} />
         ) : (
-          <InfoBanner tone="neutral" icon={<SlackLogo />} title="Slack not connected">
-            This channel connection has no Slack workspace yet.
+          <InfoBanner
+            tone="neutral"
+            icon={<SlackLogo />}
+            title={tI18nComplete.raw('textb36d622566f6')}
+          >
+            {tI18nComplete.raw('text98d27bdc2fa7')}
           </InfoBanner>
         )}
       </div>
@@ -2271,12 +2329,13 @@ function ConnectedSlackConnection({
   onRemoved: () => void;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const disconnect = useDisconnectSlack();
   const [confirming, setConfirming] = useState(false);
   return (
     <div className="space-y-4">
-      <InfoBanner tone="success" icon={Check} title="Slack connected">
-        Workspace{' '}
+      <InfoBanner tone="success" icon={Check} title={tI18nComplete.raw('text4fce550efde4')}>
+        {tI18nComplete.raw('text87bb59ba2f92')}{' '}
         <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
       </InfoBanner>
       {canWrite && (
@@ -2284,10 +2343,10 @@ function ConnectedSlackConnection({
           {confirming ? (
             <>
               <span className="text-muted-foreground mr-auto text-xs">
-                Removes the Slack connection from this project.
+                {tI18nComplete.raw('text73b407259d54')}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 variant="destructive"
@@ -2303,12 +2362,12 @@ function ConnectedSlackConnection({
                 }
               >
                 {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                Disconnect
+                {tI18nComplete.raw('textacfc5be785a9')}
               </Button>
             </>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-              Disconnect
+              {tI18nComplete.raw('textacfc5be785a9')}
             </Button>
           )}
         </div>
@@ -2326,6 +2385,7 @@ export function SlackConnectForm({
   onConnected: () => void;
   customOnly?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const mode = useSlackMode(projectId);
   const manifest = useSlackManifest(projectId);
   const connect = useConnectSlack();
@@ -2353,10 +2413,10 @@ export function SlackConnectForm({
     try {
       await navigator.clipboard.writeText(manifest.data);
       setCopiedManifest(true);
-      successToast('Slack manifest copied');
+      successToast(tI18nComplete.raw('text1f1228d5e972'));
       setTimeout(() => setCopiedManifest(false), 1500);
     } catch {
-      errorToast('Copy failed - select and copy manually');
+      errorToast(tI18nComplete.raw('text1801bed8cea5'));
     }
   };
 
@@ -2364,30 +2424,30 @@ export function SlackConnectForm({
     <div className="space-y-4">
       {!customOnly &&
         (mode.isLoading ? (
-          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-md" />
         ) : installUrl ? (
           <InfoBanner
             tone="info"
             icon={<SlackLogo />}
-            title="Add Kortix to your Slack workspace"
+            title={tI18nComplete.raw('text0e671041e03f')}
             action={
               <Button size="sm" className="shrink-0 gap-1.5" asChild>
                 <a href={installUrl}>
-                  Add to Slack
+                  {tI18nComplete.raw('text3357cd3d0cee')}
                   <ChevronRight className="h-4 w-4" />
                 </a>
               </Button>
             }
           >
-            One-click install - authorize Kortix in your workspace, no setup required.
+            {tI18nComplete.raw('text8b3305c40176')}
           </InfoBanner>
         ) : (
           <InfoBanner
             tone="warning"
             icon={<SlackLogo />}
-            title="Managed Slack install is not configured"
+            title={tI18nComplete.raw('text36e7df856716')}
           >
-            Use a custom Slack app for this deployment.
+            {tI18nComplete.raw('text51e0d22747d7')}
           </InfoBanner>
         ))}
       <div className={cn(!customOnly && 'space-y-3')}>
@@ -2402,23 +2462,23 @@ export function SlackConnectForm({
             <ChevronDown
               className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
             />
-            Use custom Slack app
+            {tI18nComplete.raw('textaed3545ea8e4')}
           </Button>
         )}
         {showCustom ? (
           <div
             className={cn(
               'space-y-5',
-              !customOnly && 'border-border/60 bg-card rounded-2xl border p-4',
+              !customOnly && 'border-border/60 bg-card rounded-md border p-4',
             )}
           >
             {!customOnly && (
               <div className="space-y-1">
                 <h3 className="text-foreground text-base font-semibold">
-                  Bring your own Slack app
+                  {tI18nComplete.raw('text6e3fcca472c5')}
                 </h3>
                 <p className="text-muted-foreground text-sm">
-                  For self-hosted setups or custom-scoped installs.
+                  {tI18nComplete.raw('text0881271239f3')}
                 </p>
               </div>
             )}
@@ -2432,9 +2492,11 @@ export function SlackConnectForm({
               >
                 <div className="space-y-1">
                   <div className="text-foreground text-sm font-medium">
-                    Step 1 of 2 - paste the manifest into Slack and install the app.
+                    {tI18nComplete.raw('text8cd1f7bcdc71')}
                   </div>
-                  <div className="text-muted-foreground text-xs font-medium">App manifest</div>
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {tI18nComplete.raw('textcc6e921330d3')}
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
@@ -2454,7 +2516,7 @@ export function SlackConnectForm({
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
                     <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">
-                      Open Slack
+                      {tI18nComplete.raw('text4ddf02a36df5')}
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   </Button>
@@ -2462,22 +2524,22 @@ export function SlackConnectForm({
               </div>
 
               {manifest.isLoading ? (
-                <Skeleton className={cn('h-52 w-full', !customOnly && 'rounded-2xl')} />
+                <Skeleton className={cn('h-52 w-full', !customOnly && 'rounded-md')} />
               ) : manifest.isError ? (
                 <InfoBanner tone="destructive">
-                  {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
+                  {(manifest.error as Error)?.message || tI18nComplete.raw('text65a8ec4a4a48')}
                 </InfoBanner>
               ) : manifest.data ? (
-                <div className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-2xl')}>
+                <div className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-md')}>
                   <CodeSnippet code={manifest.data} language="json" />
                 </div>
               ) : null}
 
               <ol className="space-y-2">
                 {[
-                  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-                  'On the next screen, click Install to Workspace and approve.',
-                  'Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.',
+                  tI18nComplete.raw('texta89d28175307'),
+                  tI18nComplete.raw('text690ee10ca19e'),
+                  tI18nComplete.raw('text2cf7a6e21f7e'),
                 ].map((step, index) => (
                   <li key={step} className="text-muted-foreground flex gap-2 text-xs">
                     <span className="border-border/60 bg-muted/40 text-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
@@ -2492,10 +2554,10 @@ export function SlackConnectForm({
             <div className="space-y-3">
               <div>
                 <div className="text-foreground text-sm font-medium">
-                  Step 2 of 2 - paste tokens from Slack.
+                  {tI18nComplete.raw('textf00ff63fb851')}
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
+                  {tI18nComplete.raw('texte5974d3936df')}
                 </p>
               </div>
               <div className={cn('grid gap-3', !customOnly && 'sm:grid-cols-2')}>
@@ -2503,11 +2565,11 @@ export function SlackConnectForm({
                   <Input
                     id="slack-channel-bot-token"
                     name="slack-channel-bot-token"
-                    aria-label="Slack bot token"
+                    aria-label={tI18nComplete.raw('textc297a4c9177d')}
                     type="password"
                     value={botToken}
                     onChange={(e) => setBotToken(e.target.value)}
-                    placeholder="xoxb-..."
+                    placeholder={tI18nComplete.raw('textdf964376e432')}
                     autoComplete="off"
                     spellCheck={false}
                   />
@@ -2516,11 +2578,11 @@ export function SlackConnectForm({
                   <Input
                     id="slack-channel-signing-secret"
                     name="slack-channel-signing-secret"
-                    aria-label="Slack signing secret"
+                    aria-label={tI18nComplete.raw('text52594f72e6fc')}
                     type="password"
                     value={signingSecret}
                     onChange={(e) => setSigningSecret(e.target.value)}
-                    placeholder="Slack signing secret"
+                    placeholder={tI18nComplete.raw('text52594f72e6fc')}
                     autoComplete="off"
                     spellCheck={false}
                   />
@@ -2534,7 +2596,7 @@ export function SlackConnectForm({
                   disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
                 >
                   {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-                  Connect custom Slack app
+                  {tI18nComplete.raw('text75b86fa11745')}
                 </Button>
               </div>
             </div>
@@ -2631,18 +2693,19 @@ export function ConnectionSection({
         slug: connector.slug,
       }),
     onSuccess: () => {
-      successToast('Connection saved');
+      successToast(tI18nHardcoded.raw('i18nComplete.text23922935b1f8'));
       queryClient.invalidateQueries({
         queryKey: qk.project.connectorConfig(projectId, connector.slug),
       });
       onChanged();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to save connection'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.textf9581c8d3b47')),
   });
 
   return (
     <section className="space-y-4">
-      <Label>Connection</Label>
+      <Label>{tI18nHardcoded.raw('i18nComplete.text639a40e82b9a')}</Label>
       <p className="text-muted-foreground -mt-2 text-xs">
         {tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
@@ -2657,17 +2720,18 @@ export function ConnectionSection({
             )}
             action={
               <Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>
-                Retry
+                {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
               </Button>
             }
           >
-            {(configQuery.error as Error)?.message ?? 'Unknown error'}
+            {(configQuery.error as Error)?.message ??
+              tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2')}
           </InfoBanner>
         ) : configQuery.isLoading || !draft ? (
           <div className="space-y-3">
-            <Skeleton className="h-9 w-full rounded-2xl" />
-            <Skeleton className="h-9 w-2/3 rounded-2xl" />
-            <Skeleton className="h-9 w-full rounded-2xl" />
+            <Skeleton className="h-9 w-full rounded-md" />
+            <Skeleton className="h-9 w-2/3 rounded-md" />
+            <Skeleton className="h-9 w-full rounded-md" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -2678,11 +2742,13 @@ export function ConnectionSection({
               onSetCredential && (
                 <div className="border-border/60 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">Credential</p>
+                    <p className="text-sm font-medium">
+                      {tI18nHardcoded.raw('i18nComplete.textb1c42b3ce118')}
+                    </p>
                     <p className="text-muted-foreground text-xs">
                       {connector.secretSet
-                        ? 'Kortix holds this credential and attaches it to every call.'
-                        : 'Not connected yet — the agent and your triggers cannot call this connector.'}
+                        ? tI18nHardcoded.raw('i18nComplete.text0b7bd1b43899')
+                        : tI18nHardcoded.raw('i18nComplete.text44160e26b787')}
                     </p>
                   </div>
                   {/* One credential action per connector, and it lives in the
@@ -2690,7 +2756,9 @@ export function ConnectionSection({
                       connector-modal.tsx). A second button here read as a
                       different action and gave the same modal a third label. */}
                   <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
-                    {connector.secretSet ? 'Connected' : 'Not connected'}
+                    {connector.secretSet
+                      ? 'Connected'
+                      : tI18nHardcoded.raw('i18nComplete.text0303e1824670')}
                   </Badge>
                 </div>
               )}
@@ -2737,10 +2805,13 @@ function PermissionPicker({
   onChange: (c: PolicyChoice) => void;
   readOnly?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const policyChoices = useLocalizedUiCatalog(POLICY_CHOICES);
+  const policyLabels = useLocalizedUiCatalog(POLICY_LABEL);
   const meta =
     value === 'default'
-      ? { label: 'Default', tint: 'text-muted-foreground' }
-      : { label: POLICY_LABEL[value].label, tint: POLICY_LABEL[value].tint };
+      ? { label: tI18nComplete.raw('text21b111cbfe6e'), tint: 'text-muted-foreground' }
+      : { label: policyLabels[value].label, tint: policyLabels[value].tint };
   if (readOnly) {
     return (
       <span
@@ -2768,9 +2839,9 @@ function PermissionPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-28">
-        {POLICY_CHOICES.map((c) => (
+        {policyChoices.map((c) => (
           <DropdownMenuItem key={c.value} onClick={() => onChange(c.value)} className="text-xs">
-            <span className={cn(c.value !== 'default' && POLICY_LABEL[c.value].tint)}>
+            <span className={cn(c.value !== 'default' && policyLabels[c.value].tint)}>
               {c.label}
             </span>
             {c.value === value && <Check className="ml-auto size-3.5" />}
@@ -2852,10 +2923,15 @@ export function PermissionsSection({
   const sensitiveMut = useMutation({
     mutationFn: (next: boolean) => setConnectorSensitive(projectId, connector.slug, next),
     onSuccess: (_r, next) => {
-      successToast(next ? 'Marked sensitive — reads now ask' : 'No longer sensitive');
+      successToast(
+        next
+          ? tI18nHardcoded.raw('i18nComplete.text3f4f94c9ca11')
+          : tI18nHardcoded.raw('i18nComplete.text5fcf2002eb0b'),
+      );
       onChanged();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.textc00080b272bc')),
   });
 
   const policiesQuery = useQuery({
@@ -2912,12 +2988,13 @@ export function PermissionsSection({
       return setConnectorPolicies(projectId, connector.slug, policies);
     },
     onSuccess: () => {
-      successToast('Permissions saved');
+      successToast(tI18nHardcoded.raw('i18nComplete.text06f352cee5a7'));
       queryClient.invalidateQueries({
         queryKey: ['connector-policies', projectId, connector.slug],
       });
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to save permissions'),
+    onError: (e: Error) =>
+      errorToast(e.message || tI18nHardcoded.raw('i18nComplete.textecd3c555ab44')),
   });
 
   const setChoice = (path: string, choice: PolicyChoice) =>
@@ -2989,7 +3066,9 @@ export function PermissionsSection({
     <section className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-medium">Permissions</h3>
+          <h3 className="text-sm font-medium">
+            {tI18nHardcoded.raw('i18nComplete.textabccc78cc93c')}
+          </h3>
           <p className="text-muted-foreground mt-1 text-xs">
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
@@ -3017,16 +3096,21 @@ export function PermissionsSection({
         <InfoBanner
           tone="warning"
           icon={Lock}
-          title={`${projectDecided.size} ${projectDecided.size === 1 ? 'action is' : 'actions are'} set by a project-wide rule`}
+          title={tI18nHardcoded('i18nComplete.textc5a4b3f3a022', {
+            value0: projectDecided.size,
+            value1:
+              projectDecided.size === 1
+                ? tI18nHardcoded.raw('i18nComplete.text547602d87c05')
+                : tI18nHardcoded.raw('i18nComplete.text5273e4e9e2bc'),
+          })}
         >
-          Project rules apply across every connector and are evaluated first, so for those actions
-          whatever you set here is ignored. They are marked below.
+          {tI18nHardcoded.raw('i18nComplete.text0eaf8d2c6d6c')}
         </InfoBanner>
       )}
       <div className="bg-popover rounded-md border px-4 py-3">
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Default</Label>
+            <Label>{tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}</Label>
             <RadioGroup
               value={connector.sensitive ? 'ask_first' : 'follow_rules'}
               onValueChange={(v) => canWrite && sensitiveMut.mutate(v === 'ask_first')}
@@ -3035,8 +3119,8 @@ export function PermissionsSection({
               <RadioGroupItem
                 value="follow_rules"
                 id={`connector-default-follow-${connector.slug}`}
-                label="Follow global rules & risk"
-                description="Reads run automatically; writes and destructive actions still ask, per the rules below."
+                label={tI18nHardcoded.raw('i18nComplete.textb6a712c43af9')}
+                description={tI18nHardcoded.raw('i18nComplete.texta1e247e8a9f9')}
                 size="lg"
                 variant="outline"
                 disabled={sensitiveMut.isPending || !canWrite}
@@ -3044,14 +3128,14 @@ export function PermissionsSection({
               <RadioGroupItem
                 value="ask_first"
                 id={`connector-default-ask-${connector.slug}`}
-                label="Ask first"
+                label={tI18nHardcoded.raw('i18nComplete.text4a9e8cf39abb')}
                 description={
                   <>
-                    Every action — including{' '}
-                    <span className="text-foreground font-medium">reads</span> — asks before it runs
-                    (approve once, or “allow for session”). For email, files, or secrets, where
-                    reading is itself risky. A per-tool rule below can still override a specific
-                    action.
+                    {tI18nHardcoded.raw('i18nComplete.text284268708d2d')}{' '}
+                    <span className="text-foreground font-medium">
+                      {tI18nHardcoded.raw('i18nComplete.text3566cf23ecb6')}
+                    </span>{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text5b707c83333c')}
                   </>
                 }
                 size="lg"
@@ -3073,7 +3157,7 @@ export function PermissionsSection({
               )}
             </InfoBanner>
           ) : (
-            <div className="border-border/60 overflow-hidden rounded-2xl border">
+            <div className="border-border/60 overflow-hidden rounded-md border">
               {/* Select-all + bulk apply */}
               <div className="border-border/60 bg-muted/30 flex h-9 items-center gap-2 border-b px-3">
                 {canWrite && (
@@ -3091,7 +3175,7 @@ export function PermissionsSection({
                 {canWrite && selected.size > 0 ? (
                   <>
                     <span className="text-foreground text-xs font-medium">
-                      {selected.size} selected
+                      {selected.size} {tI18nHardcoded.raw('i18nComplete.textd7cbbb688b2e')}
                     </span>
                     <span className="text-muted-foreground text-xs">
                       {tI18nHardcoded.raw(
@@ -3118,7 +3202,7 @@ export function PermissionsSection({
                       onClick={() => setSelected(new Set())}
                       className="text-muted-foreground hover:text-foreground ml-auto text-xs transition-colors"
                     >
-                      Clear
+                      {tI18nHardcoded.raw('i18nComplete.text83b12c2216ef')}
                     </button>
                   </>
                 ) : (
@@ -3179,7 +3263,9 @@ export function PermissionsSection({
                               'shrink-0 text-xs opacity-80',
                               POLICY_LABEL[ruled.action].tint,
                             )}
-                            title={`From pattern rule: ${ruled.match}`}
+                            title={tI18nHardcoded('i18nComplete.textdf6224fb4ca9', {
+                              value0: ruled.match,
+                            })}
                           >
                             {POLICY_LABEL[ruled.action].label}{' '}
                             {tI18nHardcoded.raw(
@@ -3189,20 +3275,22 @@ export function PermissionsSection({
                         )}
                         {projectAction && (
                           <Hint
-                            label={`A project-wide rule sets this to "${POLICY_LABEL[projectAction].label}". Project rules are evaluated first and win — anything you set here is ignored for this tool.`}
+                            label={tI18nHardcoded('i18nComplete.text9e2fda379985', {
+                              value0: POLICY_LABEL[projectAction].label,
+                            })}
                           >
                             <Badge variant="outline" size="sm" className="shrink-0 gap-1">
                               <Lock className="size-3 shrink-0" />
                               <span className={POLICY_LABEL[projectAction].tint}>
                                 {POLICY_LABEL[projectAction].label}
                               </span>
-                              by project
+                              {tI18nHardcoded.raw('i18nComplete.text9f382d463ed1')}
                             </Badge>
                           </Hint>
                         )}
                         <ChevronRight
                           className={cn(
-                            'size-3 shrink-0 transition',
+                            'duration-normal size-3 shrink-0 transition-[transform,opacity,color]',
                             isOpen
                               ? 'text-muted-foreground/70 rotate-90'
                               : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100',
@@ -3261,11 +3349,11 @@ export function PermissionsSection({
 
           {/* Advanced pattern rules */}
           {tools.length > 0 && (
-            <div className="border-border/60 rounded-2xl border">
+            <div className="border-border/60 rounded-md border">
               <button
                 type="button"
                 onClick={() => setShowRules((s) => !s)}
-                className="text-foreground hover:bg-muted/40 flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium"
+                className="text-foreground hover:bg-muted/40 flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium"
               >
                 <ChevronRight
                   className={cn(
@@ -3458,8 +3546,8 @@ export function AddAppPanel({
       <div className="mx-auto w-full max-w-2xl space-y-8">
         <EmptyState
           icon={Plug}
-          title="No connectors yet"
-          description="You have read-only access to this project's connectors. Ask a project manager to add one."
+          title={tI18nHardcoded.raw('i18nComplete.text51ae0a7e3783')}
+          description={tI18nHardcoded.raw('i18nComplete.text0bf59aef2b27')}
         />
       </div>
     );
@@ -3473,7 +3561,9 @@ export function AddAppPanel({
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
+        <h2 className="text-foreground text-xl font-medium">
+          {tI18nHardcoded.raw('i18nComplete.text3a06bf051e48')}
+        </h2>
       </header>
       <Tabs defaultValue={defaultTab}>
         <TabsList type="underline">
@@ -3490,9 +3580,17 @@ export function AddAppPanel({
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
-          {discoverEnabled && <TabsTrigger value="discover">Discover</TabsTrigger>}
-          <TabsTrigger value="channels">Channels</TabsTrigger>
-          <TabsTrigger value="custom">Custom</TabsTrigger>
+          {discoverEnabled && (
+            <TabsTrigger value="discover">
+              {tI18nHardcoded.raw('i18nComplete.textd4a33d5b78bc')}
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="channels">
+            {tI18nHardcoded.raw('i18nComplete.text4c8906cf76f5')}
+          </TabsTrigger>
+          <TabsTrigger value="custom">
+            {tI18nHardcoded.raw('i18nComplete.text494ca78f7374')}
+          </TabsTrigger>
         </TabsList>
         {!easyConnectDisabled && (
           <TabsContent value="apps" className="mt-4">
@@ -3584,6 +3682,7 @@ function AddEmailConnectionCard({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('Email inbox');
   const [username, setUsername] = useState('');
@@ -3608,16 +3707,14 @@ function AddEmailConnectionCard({
     onSuccess: ({ slug, syncError }) => {
       setOpen(false);
       if (syncError) {
-        warningToast(
-          `Added the Email inbox to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('text4e12058e58c1', { value0: syncError }));
         onAdded();
         return;
       }
-      successToast('Added Email inbox');
+      successToast(tI18nComplete.raw('textd1dcd7a7bbec'));
       onAdded(slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add Email inbox'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text3df88e8f7ea6')),
   });
 
   return (
@@ -3626,36 +3723,41 @@ function AddEmailConnectionCard({
         <div className="flex items-center gap-3">
           <EntityAvatar icon={Mail} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">Email inbox</div>
-            <div className="text-muted-foreground truncate text-xs">Channel connection</div>
+            <div className="text-foreground truncate text-sm font-medium">
+              {tI18nComplete.raw('textf00606184e4d')}
+            </div>
+            <div className="text-muted-foreground truncate text-xs">
+              {tI18nComplete.raw('text2283269ca150')}
+            </div>
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Add a separate AgentMail inbox connection for support, sales, founders, or any mailbox the
-          agent should run.
+          {tI18nComplete.raw('text3b61c181f516')}
         </p>
       </button>
       <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>Add Email inbox</ModalTitle>
-            <ModalDescription>
-              Create a separate connection. You choose the AgentMail address when connecting it.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text2b47dcc33a2a')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text630694bd2dec')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field>
-              <FieldLabel htmlFor="email-connection-name">Display name</FieldLabel>
+              <FieldLabel htmlFor="email-connection-name">
+                {tI18nComplete.raw('text2b7f6a84de91')}
+              </FieldLabel>
               <Input
                 id="email-connection-name"
                 name="email-connection-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Support inbox"
+                placeholder={tI18nComplete.raw('text945ce03ec79f')}
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="email-connection-prefix">Address prefix</FieldLabel>
+              <FieldLabel htmlFor="email-connection-prefix">
+                {tI18nComplete.raw('text4e6946711ca8')}
+              </FieldLabel>
               <Input
                 id="email-connection-prefix"
                 name="email-connection-prefix"
@@ -3663,22 +3765,22 @@ function AddEmailConnectionCard({
                 onChange={(e) =>
                   setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
                 }
-                placeholder="support"
+                placeholder={tI18nComplete.raw('texta18603086e5b')}
                 autoComplete="off"
                 spellCheck={false}
               />
               <p className="text-muted-foreground text-xs">
-                Used as the first choice for the AgentMail address, for example support@agentmail.
+                {tI18nComplete.raw('text2549e14d07c9')}
               </p>
             </Field>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
               {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Add inbox
+              {tI18nComplete.raw('text8dff8c0800fd')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -3694,9 +3796,10 @@ function AddSlackConnectionCard({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const handleConnected = () => {
-    successToast('Slack connected');
+    successToast(tI18nComplete.raw('text1bfa15228ca8'));
     setOpen(false);
     onAdded('kortix_slack');
   };
@@ -3707,22 +3810,23 @@ function AddSlackConnectionCard({
         <div className="flex items-center gap-3">
           <SlackIconTile />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-medium">Slack</div>
-            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+            <div className="text-foreground truncate text-sm font-medium">
+              {tI18nComplete.raw('textb27fb38ba323')}
+            </div>
+            <div className="text-muted-foreground truncate text-xs">
+              {tI18nComplete.raw('textbbbf43b8819c')}
+            </div>
           </div>
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
-          Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
+          {tI18nComplete.raw('text43b4b568012f')}
         </p>
       </button>
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>Add Kortix to Slack</ModalTitle>
-            <ModalDescription>
-              Connect the built-in Slack channel. The connection appears automatically after
-              installation.
-            </ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('text62da6a2b1758')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text8b5b9b72f2ec')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
@@ -3777,15 +3881,19 @@ function AppCatalogue({
       setSelectedApp(null);
       if (connector.syncError) {
         warningToast(
-          `Added ${connector.name} to the manifest, but synchronization failed: ${connector.syncError}. Use Sync to retry.`,
+          tI18nHardcoded('i18nComplete.textd6a135de3872', {
+            value0: connector.name,
+            value1: connector.syncError,
+          }),
         );
         onAdded();
         return;
       }
-      successToast(`Added ${connector.name} — click Connect to authorize`);
+      successToast(tI18nHardcoded('i18nComplete.text590d36262e11', { value0: connector.name }));
       onAdded(connector.slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.texta34a2714da91')),
   });
 
   return (
@@ -3826,7 +3934,11 @@ function AppCatalogue({
             title={tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda',
             )}
-            description={q ? `Nothing matches "${q}".` : 'Try a search.'}
+            description={
+              q
+                ? tI18nHardcoded('i18nComplete.text3e71adfa7d54', { value0: q })
+                : tI18nHardcoded.raw('i18nComplete.textecbd276ebec2')
+            }
           />
         ) : (
           <>
@@ -3886,7 +3998,7 @@ function AppCatalogue({
                       )}
                     </>
                   ) : (
-                    'Load more'
+                    tI18nHardcoded.raw('i18nComplete.textac8991ef0101')
                   )}
                 </Button>
               </div>
@@ -3898,7 +4010,7 @@ function AppCatalogue({
         open={selectedApp !== null}
         idPrefix="easy-connect-connector"
         title={`Add ${selectedApp?.name ?? 'app'}`}
-        description="Create a connector for this app. The name and slug identify it in sessions and project configuration."
+        description={tI18nHardcoded.raw('i18nComplete.text6acbef3d00c7')}
         initialName={selectedApp?.name ?? ''}
         initialSlug={
           selectedApp ? proposeConnectorConnectionSlug(selectedApp.name, existingSlugs) : ''
@@ -3945,6 +4057,7 @@ function HeadersEditor({
   readOnly?: boolean;
   authHeaderName?: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
   // Re-seed only when the saved value genuinely differs from what we're showing,
   // so a refetch can't wipe a row the user is mid-way through typing.
@@ -3985,7 +4098,7 @@ function HeadersEditor({
 
   return (
     <Field>
-      <FieldLabel>Headers</FieldLabel>
+      <FieldLabel>{tI18nComplete.raw('text194e9fe656a1')}</FieldLabel>
       <div className="space-y-2">
         {rows.map(([name, val], i) => {
           const err = nameError(name, i);
@@ -3999,7 +4112,7 @@ function HeadersEditor({
                   onChange={(e) =>
                     commit(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))
                   }
-                  placeholder="X-Tenant-Id"
+                  placeholder={tI18nComplete.raw('text1447557b9c1e')}
                   className="font-mono text-xs"
                   variant="popover"
                   disabled={readOnly}
@@ -4010,7 +4123,7 @@ function HeadersEditor({
                   onChange={(e) =>
                     commit(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))
                   }
-                  placeholder="acme"
+                  placeholder={tI18nComplete.raw('text822b33ad87c1')}
                   className="font-mono text-xs"
                   variant="popover"
                   disabled={readOnly}
@@ -4021,7 +4134,7 @@ function HeadersEditor({
                     size="icon"
                     variant="ghost"
                     className="shrink-0"
-                    aria-label="Remove header"
+                    aria-label={tI18nComplete.raw('texte42db5eb1789')}
                     onClick={() => commit(rows.filter((_, j) => j !== i))}
                   >
                     <X className="size-4" />
@@ -4040,14 +4153,11 @@ function HeadersEditor({
             className="gap-1.5"
             onClick={() => setRows([...rows, ['', '']])}
           >
-            <Plus className="size-3.5" /> Add header
+            <Plus className="size-3.5" /> {tI18nComplete.raw('text1192c90dd497')}
           </Button>
         )}
       </div>
-      <FieldDescription>
-        Sent on every call this connector makes. Stored in the manifest in plain text — put
-        credentials in Auth, not here.
-      </FieldDescription>
+      <FieldDescription>{tI18nComplete.raw('text3ca228539c82')}</FieldDescription>
     </Field>
   );
 }
@@ -4097,7 +4207,9 @@ function ConnectorConfigFields({
     <FieldGroup className="gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
-          <FieldLabel htmlFor="connector-slug">Slug</FieldLabel>
+          <FieldLabel htmlFor="connector-slug">
+            {tI18nHardcoded.raw('i18nComplete.textd15387ecc6c5')}
+          </FieldLabel>
           <Input
             id="connector-slug"
             value={draft.slug}
@@ -4105,7 +4217,7 @@ function ConnectorConfigFields({
               slugTouched.current = true;
               set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') });
             }}
-            placeholder="my-api"
+            placeholder={tI18nHardcoded.raw('i18nComplete.text9696f2b4e020')}
             className="font-mono text-xs"
             variant="popover"
             disabled={!slugEditable || readOnly}
@@ -4113,7 +4225,9 @@ function ConnectorConfigFields({
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor="connector-provider">Provider</FieldLabel>
+          <FieldLabel htmlFor="connector-provider">
+            {tI18nHardcoded.raw('i18nComplete.text472590ae974d')}
+          </FieldLabel>
           <Select
             value={p}
             disabled={readOnly}
@@ -4144,19 +4258,27 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openapi">OpenAPI</SelectItem>
-              <SelectItem value="postman">Postman</SelectItem>
-              <SelectItem value="graphql">GraphQL</SelectItem>
+              <SelectItem value="openapi">
+                {tI18nHardcoded.raw('i18nComplete.textcf2c9e218033')}
+              </SelectItem>
+              <SelectItem value="postman">
+                {tI18nHardcoded.raw('i18nComplete.text213985e12832')}
+              </SelectItem>
+              <SelectItem value="graphql">
+                {tI18nHardcoded.raw('i18nComplete.textee27322554e4')}
+              </SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
-              <SelectItem value="channel">Channel</SelectItem>
+              <SelectItem value="channel">
+                {tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </Field>
       </div>
       {p === 'channel' && (
         <div className="space-y-1.5">
-          <Label>Channel</Label>
+          <Label>{tI18nHardcoded.raw('i18nComplete.textce4683e7013a')}</Label>
           <Select
             value={
               draft.platform === 'email' && !emailChannelEnabled
@@ -4170,8 +4292,14 @@ function ConnectorConfigFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {emailChannelEnabled && <SelectItem value="email">Email</SelectItem>}
-              <SelectItem value="slack">Slack</SelectItem>
+              {emailChannelEnabled && (
+                <SelectItem value="email">
+                  {tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')}
+                </SelectItem>
+              )}
+              <SelectItem value="slack">
+                {tI18nHardcoded.raw('i18nComplete.textb27fb38ba323')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -4180,7 +4308,7 @@ function ConnectorConfigFields({
         <Field>
           <FieldLabel htmlFor="connector-spec">
             {p === 'postman'
-              ? 'Collection, repository, or workspace'
+              ? tI18nHardcoded.raw('i18nComplete.textcd8dd219cc48')
               : tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
                 )}
@@ -4198,8 +4326,7 @@ function ConnectorConfigFields({
           />
           {p === 'postman' ? (
             <FieldDescription>
-              Supports Collection v2 JSON, Postman-managed Git repositories, and configured public
-              workspaces.
+              {tI18nHardcoded.raw('i18nComplete.textc26ca4369200')}
             </FieldDescription>
           ) : null}
         </Field>
@@ -4207,7 +4334,9 @@ function ConnectorConfigFields({
       {p === 'graphql' && (
         <>
           <Field>
-            <FieldLabel htmlFor="connector-endpoint">Endpoint</FieldLabel>
+            <FieldLabel htmlFor="connector-endpoint">
+              {tI18nHardcoded.raw('i18nComplete.text3df9726c68ba')}
+            </FieldLabel>
             <Input
               id="connector-endpoint"
               value={draft.endpoint ?? ''}
@@ -4228,7 +4357,7 @@ function ConnectorConfigFields({
               id="connector-sdl"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
-              placeholder=".kortix/connectors/schema.graphql"
+              placeholder={tI18nHardcoded.raw('i18nComplete.textecccd43d1878')}
               variant="popover"
               disabled={readOnly}
             />
@@ -4250,7 +4379,9 @@ function ConnectorConfigFields({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="connector-transport">Transport</FieldLabel>
+            <FieldLabel htmlFor="connector-transport">
+              {tI18nHardcoded.raw('i18nComplete.textaaead4abf5d0')}
+            </FieldLabel>
             <Select
               value={draft.transport ?? 'http'}
               disabled={readOnly}
@@ -4260,8 +4391,12 @@ function ConnectorConfigFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="http">http</SelectItem>
-                <SelectItem value="sse">sse</SelectItem>
+                <SelectItem value="http">
+                  {tI18nHardcoded.raw('i18nComplete.texte0603c499aae')}
+                </SelectItem>
+                <SelectItem value="sse">
+                  {tI18nHardcoded.raw('i18nComplete.textfe3811fe21af')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -4295,7 +4430,7 @@ function ConnectorConfigFields({
               id="connector-routes"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
-              placeholder=".kortix/connectors/routes.toml"
+              placeholder={tI18nHardcoded.raw('i18nComplete.textb2c293b68745')}
               variant="popover"
               disabled={readOnly}
             />
@@ -4305,7 +4440,9 @@ function ConnectorConfigFields({
       {needsAuth && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
+            <FieldLabel htmlFor="connector-auth">
+              {tI18nHardcoded.raw('i18nComplete.text8eb3ea9bbde6')}
+            </FieldLabel>
             <Select
               value={oauth2Selected ? 'oauth2_client_credentials' : (draft.auth?.type ?? 'auto')}
               disabled={readOnly}
@@ -4324,18 +4461,38 @@ function ConnectorConfigFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="bearer">Bearer</SelectItem>
-                <SelectItem value="basic">Basic</SelectItem>
-                <SelectItem value="api_key">API key</SelectItem>
+                <SelectItem value="auto">
+                  {tI18nHardcoded.raw('i18nComplete.text89ebfb7a88ca')}
+                </SelectItem>
+                <SelectItem value="none">
+                  {tI18nHardcoded.raw('i18nComplete.textdc937b598926')}
+                </SelectItem>
+                <SelectItem value="bearer">
+                  {tI18nHardcoded.raw('i18nComplete.text710e0dbdd422')}
+                </SelectItem>
+                <SelectItem value="basic">
+                  {tI18nHardcoded.raw('i18nComplete.text0e35f6e9742e')}
+                </SelectItem>
+                <SelectItem value="api_key">
+                  {tI18nHardcoded.raw('i18nComplete.text16f0ee47f993')}
+                </SelectItem>
                 {onOAuth2SelectedChange && (
-                  <SelectItem value="oauth2_client_credentials">OAuth 2.0</SelectItem>
+                  <SelectItem value="oauth2_client_credentials">
+                    {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+                  </SelectItem>
                 )}
-                <SelectItem value="oauth1">OAuth 1.0</SelectItem>
-                <SelectItem value="hmac">HMAC-SHA256</SelectItem>
-                <SelectItem value="aws_sigv4">AWS Signature Version 4</SelectItem>
-                <SelectItem value="mtls">Mutual TLS</SelectItem>
+                <SelectItem value="oauth1">
+                  {tI18nHardcoded.raw('i18nComplete.textf461c90d16f6')}
+                </SelectItem>
+                <SelectItem value="hmac">
+                  {tI18nHardcoded.raw('i18nComplete.textf9a4ecea0836')}
+                </SelectItem>
+                <SelectItem value="aws_sigv4">
+                  {tI18nHardcoded.raw('i18nComplete.text1746a52157af')}
+                </SelectItem>
+                <SelectItem value="mtls">
+                  {tI18nHardcoded.raw('i18nComplete.textd0dd76e23558')}
+                </SelectItem>
                 <SelectItem value="custom">
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCustomHeader1e0e82ed',
@@ -4345,23 +4502,24 @@ function ConnectorConfigFields({
             </Select>
             <FieldDescription>
               {oauth2Selected ? (
-                'Kortix obtains, refreshes, and injects a bearer token for this connector.'
+                tI18nHardcoded.raw('i18nComplete.text80770d26537b')
               ) : draft.auth === undefined && detectedAuth ? (
                 <>
-                  Detected <span className="font-medium">{detectedAuth.type}</span>
+                  {tI18nHardcoded.raw('i18nComplete.text756a8ba97dce')}{' '}
+                  <span className="font-medium">{detectedAuth.type}</span>
                   {detectedAuth.parameterName ? (
                     <>
                       {' '}
-                      via{' '}
-                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+                      {tI18nHardcoded.raw('i18nComplete.text4d327af41f96')}{' '}
+                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
                         {detectedAuth.parameterName}
                       </code>
                     </>
                   ) : null}
-                  . Add the credential after saving — you can override this anytime.
+                  {tI18nHardcoded.raw('i18nComplete.text5c48a6568d59')}
                 </>
               ) : (
-                'Auto-detect reads authentication metadata from the source. Choose None to opt out.'
+                tI18nHardcoded.raw('i18nComplete.text566a18d73a39')
               )}
             </FieldDescription>
           </Field>
@@ -4370,7 +4528,9 @@ function ConnectorConfigFields({
               source is the authority until the user picks an explicit override. */}
           {draft.auth === undefined && detectedAuth?.parameterName && (
             <Field>
-              <FieldLabel htmlFor="connector-auth-detected">Header name</FieldLabel>
+              <FieldLabel htmlFor="connector-auth-detected">
+                {tI18nHardcoded.raw('i18nComplete.textc1dcc8fb31f6')}
+              </FieldLabel>
               <Input
                 id="connector-auth-detected"
                 value={detectedAuth.parameterName}
@@ -4379,26 +4539,30 @@ function ConnectorConfigFields({
                 className="font-mono text-xs"
               />
               <FieldDescription>
-                From the source. Choose Custom header to change it.
+                {tI18nHardcoded.raw('i18nComplete.text46c6aec94116')}
               </FieldDescription>
             </Field>
           )}
           {(draft.auth?.type === 'custom' || draft.auth?.type === 'api_key') && (
             <>
               <Field>
-                <FieldLabel htmlFor="connector-auth-name">Parameter name</FieldLabel>
+                <FieldLabel htmlFor="connector-auth-name">
+                  {tI18nHardcoded.raw('i18nComplete.textd7cb455aa690')}
+                </FieldLabel>
                 <Input
                   id="connector-auth-name"
                   value={draft.auth?.name ?? ''}
                   onChange={(e) => setAuth({ name: e.target.value })}
-                  placeholder="X-API-Key"
+                  placeholder={tI18nHardcoded.raw('i18nComplete.text6f9f03f95e78')}
                   variant="popover"
                   disabled={readOnly}
                   required
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="connector-auth-placement">Placement</FieldLabel>
+                <FieldLabel htmlFor="connector-auth-placement">
+                  {tI18nHardcoded.raw('i18nComplete.text4df9939944a7')}
+                </FieldLabel>
                 <Select
                   value={draft.auth?.in ?? 'header'}
                   disabled={readOnly}
@@ -4410,9 +4574,15 @@ function ConnectorConfigFields({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="header">Header</SelectItem>
-                    <SelectItem value="query">Query</SelectItem>
-                    <SelectItem value="cookie">Cookie</SelectItem>
+                    <SelectItem value="header">
+                      {tI18nHardcoded.raw('i18nComplete.textba5caa4285a8')}
+                    </SelectItem>
+                    <SelectItem value="query">
+                      {tI18nHardcoded.raw('i18nComplete.textb80a37564fbb')}
+                    </SelectItem>
+                    <SelectItem value="cookie">
+                      {tI18nHardcoded.raw('i18nComplete.text45823eaac0c8')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -4500,17 +4670,23 @@ export function CustomConnectorForm({
     onSuccess: (result) => {
       if (result.syncError) {
         warningToast(
-          `Added ${draft.slug} to the manifest, but synchronization failed: ${result.syncError}. Use Sync to retry.`,
+          tI18nHardcoded('i18nComplete.textd6a135de3872', {
+            value0: draft.slug,
+            value1: result.syncError,
+          }),
         );
         onAdded();
         return;
       }
       successToast(
-        result.credentialStored ? `Added and connected ${draft.slug}` : `Added ${draft.slug}`,
+        result.credentialStored
+          ? tI18nHardcoded('i18nComplete.text5120ee26cbf5', { value0: draft.slug })
+          : tI18nHardcoded('i18nComplete.text29f396e2d238', { value0: draft.slug }),
       );
       onAdded(draft.slug);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.textbdc7d54433e6')),
   });
   const discovery = useQuery<ConnectorAuthDiscovery>({
     queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
@@ -4567,9 +4743,8 @@ export function CustomConnectorForm({
           />
           {sharedOAuth2Selected && (
             <div className="space-y-4">
-              <InfoBanner tone="info" title="OAuth 2.0 client credentials">
-                Kortix requests a token before saving. It encrypts the configuration and refreshes
-                the access token before expiry.
+              <InfoBanner tone="info" title={tI18nHardcoded.raw('i18nComplete.textc2a08c85f9d8')}>
+                {tI18nHardcoded.raw('i18nComplete.text9dedee588b5e')}
               </InfoBanner>
               <OAuth2CredentialFields
                 value={oauth2}
@@ -4580,25 +4755,28 @@ export function CustomConnectorForm({
           )}
           {effectiveAuthorizationStrategy === 'user' && authActive && (
             <InfoBanner tone="info">
-              Add the connector first. Each user then stores their own private credential from the
-              connector page.
+              {tI18nHardcoded.raw('i18nComplete.text547a92020d87')}
             </InfoBanner>
           )}
           {draft.auth === undefined && discovery.isFetching && (
-            <InfoBanner tone="info">Checking the source for authentication settings…</InfoBanner>
+            <InfoBanner tone="info">
+              {tI18nHardcoded.raw('i18nComplete.text0fc5f970755c')}
+            </InfoBanner>
           )}
           {draft.auth === undefined && discovery.data?.status === 'none' && (
-            <InfoBanner tone="neutral">The source does not advertise authentication.</InfoBanner>
+            <InfoBanner tone="neutral">
+              {tI18nHardcoded.raw('i18nComplete.textcec52b040075')}
+            </InfoBanner>
           )}
           {draft.auth === undefined && discovery.data?.status === 'unsupported' && (
             <InfoBanner tone="warning">
-              The source advertises authentication Kortix cannot inject yet. Choose a manual
-              override or None.
+              {tI18nHardcoded.raw('i18nComplete.text028f0773776c')}
             </InfoBanner>
           )}
           {draft.auth === undefined && discovery.error && (
             <InfoBanner tone="warning">
-              Could not inspect authentication: {(discovery.error as Error).message}
+              {tI18nHardcoded.raw('i18nComplete.textf26a5845c994')}{' '}
+              {(discovery.error as Error).message}
             </InfoBanner>
           )}
           {authActive && !sharedOAuth2Selected && effectiveAuthorizationStrategy === 'project' && (
@@ -4719,14 +4897,19 @@ export function SetCredentialModal({
         if (stopped || status.status === 'pending') return;
         stopped = true;
         if (status.status === 'active') {
-          successToast('OAuth 2.0 device connection completed');
+          successToast(tI18nHardcoded.raw('i18nComplete.textc2a5f8398f12'));
           onSaved();
           onOpenChange(false);
         } else {
-          errorToast(status.error_code || 'OAuth 2.0 device connection failed');
+          errorToast(status.error_code || tI18nHardcoded.raw('i18nComplete.text911a1cde90bc'));
         }
       } catch (error) {
-        if (!stopped) errorToast(error instanceof Error ? error.message : 'Device polling failed');
+        if (!stopped)
+          errorToast(
+            error instanceof Error
+              ? error.message
+              : tI18nHardcoded.raw('i18nComplete.textfa23c868781d'),
+          );
       }
     };
     void poll();
@@ -4734,7 +4917,7 @@ export function SetCredentialModal({
     const expiryTimer = window.setTimeout(
       () => {
         stopped = true;
-        errorToast('The device authorization code expired');
+        errorToast(tI18nHardcoded.raw('i18nComplete.text02c1d7b545ea'));
       },
       Math.max(0, new Date(device.expires_at).getTime() - Date.now()),
     );
@@ -4743,7 +4926,7 @@ export function SetCredentialModal({
       window.clearInterval(timer);
       window.clearTimeout(expiryTimer);
     };
-  }, [device, deviceConnectionId, onOpenChange, onSaved, projectId]);
+  }, [device, deviceConnectionId, onOpenChange, onSaved, projectId, tI18nHardcoded]);
   const resolveConnectionId = async (): Promise<string> => {
     if (connectionId) return connectionId;
     if (authorizationStrategy === 'user') {
@@ -4838,7 +5021,8 @@ export function SetCredentialModal({
       window.location.assign(result.authorization_url);
       return result;
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text46c9f3b7520f')),
   });
 
   const save = useMutation({
@@ -4896,14 +5080,19 @@ export function SetCredentialModal({
     },
     onSuccess: () => {
       if (credentialType === 'oauth2' && application.grant !== 'client_credentials') return;
-      successToast(credentialType === 'oauth2' ? 'OAuth 2.0 connection saved' : 'Credential saved');
+      successToast(
+        credentialType === tI18nHardcoded.raw('i18nComplete.textd8ad572d2fb1')
+          ? tI18nHardcoded.raw('i18nComplete.text6984a3c945fa')
+          : tI18nHardcoded.raw('i18nComplete.textf0341f8dbcc5'),
+      );
       setValue('');
       setOauth2(EMPTY_OAUTH2_CREDENTIAL_FORM);
       setApplication(EMPTY_OAUTH2_APPLICATION_FORM);
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to save'),
+    onError: (err: Error) =>
+      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text2c07997249ab')),
   });
   return (
     <Modal
@@ -4925,10 +5114,7 @@ export function SetCredentialModal({
             )}
             {connector?.slug}
           </ModalTitle>
-          <ModalDescription>
-            Kortix encrypts credentials and applies the selected authentication strategy to upstream
-            requests.
-          </ModalDescription>
+          <ModalDescription>{tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84')}</ModalDescription>
         </ModalHeader>
         <form
           onSubmit={(e) => {
@@ -4948,13 +5134,19 @@ export function SetCredentialModal({
               className="gap-4"
             >
               <TabsList>
-                <TabsTrigger value="static">Static credential</TabsTrigger>
-                <TabsTrigger value="oauth2">OAuth 2.0</TabsTrigger>
+                <TabsTrigger value="static">
+                  {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
+                </TabsTrigger>
+                <TabsTrigger value="oauth2">
+                  {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="static">
                 <Field>
                   <FieldLabel htmlFor="connector-static-credential">
-                    {objectCredential ? 'Credential JSON' : 'Value'}
+                    {objectCredential
+                      ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1')
+                      : 'Value'}
                   </FieldLabel>
                   {objectCredential ? (
                     <Textarea
@@ -4978,26 +5170,39 @@ export function SetCredentialModal({
                   )}
                   {objectCredential && (
                     <FieldDescription>
-                      The selected {requestAuth} strategy requires one encrypted JSON object.
+                      {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
+                      {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
                     </FieldDescription>
                   )}
                 </Field>
               </TabsContent>
               <TabsContent value="oauth2" className="space-y-4">
                 {discoveryPending ? (
-                  <InfoBanner tone="neutral" title="Checking how this server authorizes">
-                    Kortix is reading the server's OAuth 2.0 metadata.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
                   </InfoBanner>
                 ) : plan.kind === 'no_authorization' ? (
-                  <InfoBanner tone="neutral" title="No authorization needed">
-                    This server answered without credentials. It does not need an OAuth connection.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
                   </InfoBanner>
                 ) : plan.kind === 'register' && !manualSetup ? (
                   <div className="space-y-3">
-                    <InfoBanner tone="neutral" title="One-click OAuth 2.1 available">
-                      This server publishes its authorization metadata. Kortix registers itself as
-                      an OAuth client, so there is no client ID or secret to create.
-                      {plan.scopes.length ? ` Scopes: ${plan.scopes.join(', ')}.` : ''}
+                    <InfoBanner
+                      tone="neutral"
+                      title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}
+                    >
+                      {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
+                      {plan.scopes.length
+                        ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
+                            value0: plan.scopes.join(', '),
+                          })
+                        : ''}
                     </InfoBanner>
                     <div className="flex items-center gap-2">
                       <Button
@@ -5016,19 +5221,21 @@ export function SetCredentialModal({
                         variant="outline-ghost"
                         onClick={() => setManualSetup(true)}
                       >
-                        Use my own OAuth app
+                        {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
                       </Button>
                     </div>
                   </div>
                 ) : plan.kind === 'client_id_required' ? (
-                  <InfoBanner tone="neutral" title="This server needs a pre-registered OAuth app">
-                    Kortix discovered its endpoints and scopes, but the server does not support
-                    dynamic client registration. Create an app there and paste its client ID below.
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}
+                  >
+                    {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
                   </InfoBanner>
                 ) : plan.kind === 'manual' && !manualSetup ? (
                   <InfoBanner
                     tone="neutral"
-                    title="Automatic setup unavailable"
+                    title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
                     action={
                       <Button
                         type="button"
@@ -5036,7 +5243,7 @@ export function SetCredentialModal({
                         variant="outline"
                         onClick={() => setManualSetup(true)}
                       >
-                        Configure manually
+                        {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
                       </Button>
                     }
                   >
@@ -5044,19 +5251,23 @@ export function SetCredentialModal({
                   </InfoBanner>
                 ) : (
                   <InfoBanner tone="info">
-                    Kortix stores the application configuration, rotates refresh tokens, and revokes
-                    the connection when you disconnect it.
+                    {tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}
                   </InfoBanner>
                 )}
                 {discoveryError && (
-                  <InfoBanner tone="neutral" title="Could not read the server's metadata">
+                  <InfoBanner
+                    tone="neutral"
+                    title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}
+                  >
                     {discoveryError}
                   </InfoBanner>
                 )}
                 {showManualOAuth2Fields && (
                   <>
                     <Field>
-                      <FieldLabel htmlFor="connector-oauth2-grant">Grant</FieldLabel>
+                      <FieldLabel htmlFor="connector-oauth2-grant">
+                        {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
+                      </FieldLabel>
                       <Select
                         value={application.grant}
                         onValueChange={(grant) => {
@@ -5071,11 +5282,15 @@ export function SetCredentialModal({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="client_credentials">Client Credentials</SelectItem>
-                          <SelectItem value="authorization_code">
-                            Authorization Code with PKCE
+                          <SelectItem value="client_credentials">
+                            {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
                           </SelectItem>
-                          <SelectItem value="device_authorization">Device Authorization</SelectItem>
+                          <SelectItem value="authorization_code">
+                            {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
+                          </SelectItem>
+                          <SelectItem value="device_authorization">
+                            {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </Field>
@@ -5097,7 +5312,9 @@ export function SetCredentialModal({
                 {device && (
                   <InfoBanner
                     tone="neutral"
-                    title={`Enter code ${device.user_code}`}
+                    title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
+                      value0: device.user_code,
+                    })}
                     action={
                       <Button
                         type="button"
@@ -5112,11 +5329,12 @@ export function SetCredentialModal({
                         }
                       >
                         <ExternalLink className="size-4" />
-                        Open verification page
+                        {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
                       </Button>
                     }
                   >
-                    Kortix checks the connection every {device.interval_seconds} seconds until{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
                     {new Date(device.expires_at).toLocaleTimeString()}.
                   </InfoBanner>
                 )}
@@ -5131,7 +5349,7 @@ export function SetCredentialModal({
               onClick={() => onOpenChange(false)}
               disabled={save.isPending}
             >
-              Cancel
+              {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
             </Button>
             <Button
               type="submit"
@@ -5143,9 +5361,9 @@ export function SetCredentialModal({
             >
               {save.isPending && <Loading className="size-4 shrink-0" />}
               {credentialType === 'oauth2' && application.grant === 'authorization_code'
-                ? 'Continue to provider'
+                ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
                 : credentialType === 'oauth2' && application.grant === 'device_authorization'
-                  ? 'Get device code'
+                  ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
                   : 'Save'}
             </Button>
           </ModalFooter>
@@ -5166,8 +5384,8 @@ function MasterDetailSkeleton() {
       </div>
       <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-7">
         <Skeleton className="h-12 w-2/3" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-md" />
+        <Skeleton className="h-64 w-full rounded-md" />
       </div>
     </div>
   );

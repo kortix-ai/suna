@@ -32,9 +32,7 @@ export function isPlanWriteTool(tool: string): boolean {
   return tool === 'todowrite' || tool === 'todo_write';
 }
 
-export function planAnchorMessageId(
-  allMessages: ReadonlyArray<MessageWithParts>,
-): string | null {
+export function planAnchorMessageId(allMessages: ReadonlyArray<MessageWithParts>): string | null {
   let currentUserId: string | null = null;
   let anchorId: string | null = null;
   let lastUserId: string | null = null;

@@ -19,7 +19,7 @@
  * hunt.
  *
  * **Why `/accounts/<id>` with no `?tab=`.** That page's `VALID_TABS` falls back
- * to `members` (`app/(app)/accounts/[id]/page.tsx:349`), which is the section a
+ * to `members` (`features/accounts/hub/account-hub-content.tsx:349`), which is the section a
  * reader arriving from "which organizations am I in" is asking about. Same
  * destination the workspace switcher's "Account settings" row and the Members
  * pane's "Organization account settings" row already use — one account link in
@@ -36,20 +36,40 @@
  * more attention than the shortcut is worth.
  */
 
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Button } from '@/components/ui/button';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { type KortixAccount, listAccounts } from '@kortix/sdk';
+import { type KortixAccount } from '@kortix/sdk';
+
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 
 /** Exactly the fields this list reads — nothing else from `KortixAccount`. */
 export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'>;
 
-/** Matches `workspace-grouping.ts`'s fallback: a row never renders blank. */
-const FALLBACK_ACCOUNT_NAME = 'Account';
+export interface AccountMembershipsCopy {
+  title: string;
+  description: string;
+  fallbackAccountName: string;
+  owner: string;
+  admin: string;
+  member: string;
+  manage: string;
+}
+
+export const DEFAULT_ACCOUNT_MEMBERSHIPS_COPY: AccountMembershipsCopy = {
+  title: 'Organizations',
+  description: "Members, billing, roles, and audit live in each organization's own settings.",
+  fallbackAccountName: 'Account',
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Member',
+  manage: 'Manage',
+};
 
 /**
  * The row's second line: the caller's role in that account.
@@ -59,14 +79,17 @@ const FALLBACK_ACCOUNT_NAME = 'Account';
  * an absent or unrecognized value returns `undefined` and the row renders with
  * no description rather than the literal string it was handed.
  */
-export function accountRoleLabel(role: string | null | undefined): string | undefined {
+export function accountRoleLabel(
+  role: string | null | undefined,
+  copy: AccountMembershipsCopy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
+): string | undefined {
   switch (role) {
     case 'owner':
-      return 'Owner';
+      return copy.owner;
     case 'admin':
-      return 'Admin';
+      return copy.admin;
     case 'member':
-      return 'Member';
+      return copy.member;
     default:
       return undefined;
   }
@@ -75,6 +98,7 @@ export function accountRoleLabel(role: string | null | undefined): string | unde
 export interface AccountMembershipsSectionProps {
   accounts?: readonly AccountMembership[];
   isLoading?: boolean;
+  copy?: AccountMembershipsCopy;
 }
 
 /**
@@ -85,16 +109,14 @@ export interface AccountMembershipsSectionProps {
 export function AccountMembershipsSection({
   accounts = [],
   isLoading = false,
+  copy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
 }: AccountMembershipsSectionProps) {
   // Nothing, not a heading over an empty box — see this file's header.
   if (!isLoading && accounts.length === 0) return null;
 
   return (
     <section className="space-y-3">
-      <SettingsSubsectionHeader
-        title="Organizations"
-        description="Members, billing, roles, and audit live in each organization's own settings."
-      />
+      <SettingsSubsectionHeader title={copy.title} description={copy.description} />
 
       <SettingsRowGroup>
         {isLoading ? (
@@ -108,11 +130,11 @@ export function AccountMembershipsSection({
           accounts.map((account) => (
             <SettingsRow
               key={account.account_id}
-              label={account.name?.trim() || FALLBACK_ACCOUNT_NAME}
-              description={accountRoleLabel(account.account_role)}
+              label={account.name?.trim() || copy.fallbackAccountName}
+              description={accountRoleLabel(account.account_role, copy)}
             >
               <Button asChild variant="outline" size="sm">
-                <Link href={`/accounts/${account.account_id}`}>Manage</Link>
+                <HubLink to={hubTarget(account.account_id)}>{copy.manage}</HubLink>
               </Button>
             </SettingsRow>
           ))
@@ -125,17 +147,13 @@ export function AccountMembershipsSection({
 /**
  * The accounts the user belongs to.
  *
- * The SAME `['accounts']` key, `queryFn` and `staleTime` every other caller
- * uses (`use-ensure-selected-account.ts`, `workspace-menu-section.tsx`), so
- * React Query serves all of them from one fetch — opening this pane inside a
- * project shell costs no request at all, because `WorkspaceSwitcher` already
- * primed that entry on mount.
+ * Reads through `useAccountsList()`, the one definition of that query, so this
+ * pane, `use-ensure-selected-account.ts` and `workspace-menu-section.tsx` all
+ * share one user-scoped cache entry — opening this pane inside a project shell
+ * costs no request at all, because `WorkspaceSwitcher` already primed that
+ * entry on mount.
  */
 export function useAccountMemberships(): { accounts: AccountMembership[]; isLoading: boolean } {
-  const query = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const query = useAccountsList();
   return { accounts: query.data ?? [], isLoading: query.isLoading };
 }

@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { InstallResult, ItemCapabilities } from '@/lib/marketplace-client';
 
 /** Everything the install success toast needs, decoupled from the mutation's
@@ -12,11 +13,12 @@ export interface InstallSuccessSummary {
 export function buildInstallSuccessSummary(
   itemTitle: string,
   result: Pick<InstallResult, 'file_count'>,
+  tI18nComplete: UiTranslator,
 ): InstallSuccessSummary {
   const { file_count } = result;
   return {
-    title: `Added ${itemTitle}`,
-    description: `Committed ${file_count} file${file_count === 1 ? '' : 's'} — live in the next session.`,
+    title: tI18nComplete('text29f396e2d238', { value0: itemTitle }),
+    description: tI18nComplete('text60163fad94cf', { value0: file_count }),
   };
 }
 

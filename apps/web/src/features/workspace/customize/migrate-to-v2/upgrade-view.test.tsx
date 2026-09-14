@@ -1,9 +1,30 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { UpgradesViewContent } from './upgrade-view';
+import { DEFAULT_UPGRADES_COPY, UpgradesViewContent } from './upgrade-view';
 
 describe('UpgradesViewContent — per-state rendering', () => {
+  test('renders injected Serbian upgrade copy', () => {
+    const copy = {
+      ...DEFAULT_UPGRADES_COPY,
+      available: 'Доступне надоградње',
+      run: 'Покрени',
+      oneOff: 'Једнократна надоградња',
+      upgrades: {
+        'manifest-v2': {
+          title: 'Пребаци манифест на v2 (kortix.yaml)',
+          description: 'Претвара манифест и отвара захтев за измену.',
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite copy={copy} />,
+    );
+    expect(html).toContain('Доступне надоградње');
+    expect(html).toContain('Пребаци манифест');
+    expect(html).toContain('Једнократна надоградња');
+    expect(html).not.toContain('Migrate manifest');
+  });
   test('v1 lists the manifest migration with a Run action, plus the one-off runner', () => {
     const html = renderToStaticMarkup(
       <UpgradesViewContent version={1} onRun={() => {}} pending={false} canWrite />,

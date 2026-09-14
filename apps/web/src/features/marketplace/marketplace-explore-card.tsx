@@ -1,6 +1,7 @@
 'use client';
 
 import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +22,7 @@ export function MarketplaceExploreCard({
    *  but should still read exactly like the skill boxes. */
   navigable?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
   const installed = surface.variant === 'project' && surface.installedNames.has(item.name);
 
@@ -38,7 +40,7 @@ export function MarketplaceExploreCard({
           <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
           {installed ? (
             <Badge variant="success" size="sm" className="shrink-0">
-              Installed
+              {tI18nComplete.raw('textf8b32f4e92bd')}
             </Badge>
           ) : null}
         </div>

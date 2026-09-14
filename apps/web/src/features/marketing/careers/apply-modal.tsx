@@ -22,8 +22,9 @@ import {
 } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { applyForm } from './content';
+import { getLocalizedCareersContent } from './content';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -45,6 +46,8 @@ export function ApplyModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { applyForm } = getLocalizedCareersContent(tI18nComplete);
   const [step, setStep] = useState<'form' | 'done'>('form');
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState('');
@@ -98,20 +101,23 @@ export function ApplyModal({
         }),
       });
     } catch {
-      errorToast('Could not send your application', {
-        description: 'Write to marko@kortix.com instead.',
+      errorToast(tI18nComplete.raw('textc3bf78fdd3b9'), {
+        description: tI18nComplete.raw('textfedb675f658f'),
       });
       return;
     } finally {
       setSubmitting(false);
     }
     setStep('done');
-  }, [area, email, link, name, owned]);
+  }, [area, email, link, name, owned, tI18nComplete]);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       {step === 'form' ? (
-        <ModalContent variant="base" className="gap-0 space-y-0 overflow-hidden p-0 sm:max-w-[440px]">
+        <ModalContent
+          variant="base"
+          className="gap-0 space-y-0 overflow-hidden p-0 sm:max-w-[440px]"
+        >
           <form
             className="contents"
             onSubmit={(e) => {

@@ -146,11 +146,12 @@ export function buildSegments(text: string, mentions: Mention[]): MinimapSegment
   for (const mention of byLongestName) {
     if (!mention.name) continue;
     const needle = `@${mention.name}`;
-    for (let from = 0; ; ) {
+    for (let from = 0; ;) {
       const start = text.indexOf(needle, from);
       if (start === -1) break;
       const end = start + needle.length;
-      if (!overlaps(start, end)) ranges.push({ start, end, name: mention.name, kind: mention.kind });
+      if (!overlaps(start, end))
+        ranges.push({ start, end, name: mention.name, kind: mention.kind });
       from = end;
     }
   }

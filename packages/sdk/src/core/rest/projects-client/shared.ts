@@ -29,6 +29,10 @@ export interface ProjectGitConnection {
   default_branch: string;
   auth_method: string;
   installation_id: string | null;
+  /** True when Kortix created this repository (a `managed-kortix/…` repo the
+   *  managed-org credential administers) — the flag `repo access` and the
+   *  collaborator flows key on. Absent on older servers. */
+  managed?: boolean;
   visibility: string | null;
   status: string;
   last_validated_at: string | null;

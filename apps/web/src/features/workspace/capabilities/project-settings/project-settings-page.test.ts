@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
@@ -10,7 +10,7 @@ import {
 } from './project-settings-page';
 
 /**
- * `/projects/[id]/config` is the SECOND host of `SettingsNav` — the context
+ * `/projects/[id]/customize/settings` is the SECOND host of `SettingsNav` — the context
  * `features/workspace/shared/settings-nav-context.tsx` was deliberately kept
  * panel-agnostic for. The panes it still mounts (General, the Sandbox/Snapshots
  * pair) speak the settings overlay's vocabulary, so the adapter's whole job is
@@ -37,6 +37,41 @@ function navFor(
   });
   return { nav, pushed };
 }
+
+/**
+ * A fake browser, because the account-hub branch below opens a MODAL rather
+ * than navigating: the hub has no route, so its destination is `?accountId=`
+ * written onto the current page with `history.pushState`
+ * (`stores/account-panel-store.ts`). `pushed` therefore stays empty for those
+ * ids, and `hubUrl()` is what proves the click went somewhere.
+ */
+const originalWindow = (globalThis as { window?: unknown }).window;
+let historyUrl = '/projects/p1';
+
+function installFakeBrowser() {
+  historyUrl = '/projects/p1';
+  (globalThis as { window?: unknown }).window = {
+    location: { pathname: '/projects/p1', search: '' },
+    history: {
+      pushState: (_s: unknown, _t: unknown, url: string) => {
+        historyUrl = url;
+      },
+      replaceState: (_s: unknown, _t: unknown, url: string) => {
+        historyUrl = url;
+      },
+      back: () => {},
+    },
+  };
+}
+
+function hubUrl() {
+  return historyUrl;
+}
+
+afterEach(() => {
+  if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+  else (globalThis as { window?: unknown }).window = originalWindow;
+});
 
 beforeEach(() => {
   useSettingsPanelStore.setState({ open: false, membersTab: 'people' });
@@ -97,9 +132,9 @@ describe('projectCapabilityNavTarget', () => {
     // out of it, because `capabilityTabHref` builds paths without a query.
     expect(projectCapabilityNavTarget('channels')).toBe('connectors');
     expect(projectCapabilityNavHref('p1', 'channels', 'connectors')).toBe(
-      '/projects/p1/connectors?scope=channels',
+      '/projects/p1/customize/connectors?scope=channels',
     );
-    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe('/projects/p1/secrets');
+    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe('/projects/p1/customize/secrets');
   });
 
   test('anything this page owns, or the overlay owns, is not a capability target', () => {
@@ -122,13 +157,13 @@ describe('buildProjectSettingsNav', () => {
   test('navigate() to another section pushes its URL', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('feature-flags');
-    expect(pushed).toEqual(['/projects/p1/config?section=feature-flags']);
+    expect(pushed).toEqual(['/projects/p1/customize/settings?section=feature-flags']);
   });
 
   test('navigate("llm-providers") leaves this page entirely — Models is its own top-level tab now', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('llm-providers');
-    expect(pushed).toEqual(['/projects/p1/models']);
+    expect(pushed).toEqual(['/projects/p1/customize/models']);
   });
 
   test('navigate("secrets") and navigate("channels") also leave this page', () => {
@@ -136,10 +171,10 @@ describe('buildProjectSettingsNav', () => {
     nav.navigate('secrets');
     nav.navigate('channels');
     expect(pushed).toEqual([
-      '/projects/p1/secrets',
+      '/projects/p1/customize/secrets',
       // Channels keeps its scope across the hop. Pushing the bare Connectors
       // route would land a person who asked for Slack on the catalogue.
-      '/projects/p1/connectors?scope=channels',
+      '/projects/p1/customize/connectors?scope=channels',
     ]);
   });
 
@@ -185,15 +220,17 @@ describe('buildProjectSettingsNav', () => {
     expect(useSettingsPanelStore.getState().open).toBe(false);
   });
 
-  test('navigate() to an ACCOUNT_GRADUATED id (groups, roles) routes to the account page', () => {
+  test('navigate() to an ACCOUNT_GRADUATED id (groups, roles) opens the account hub', () => {
     // Regression: Members' Access tab links "Create one in Groups" / "Create
     // one in Roles" through this same navigate() vocabulary. Before this
     // branch existed, `groups`/`roles` matched none of the three checks and
     // the click did nothing — reported live as "when I click the groups
     // link, it doesn't work either."
+    installFakeBrowser();
     const { nav, pushed } = navFor('sandbox', 'acct-1');
     nav.navigate('groups');
-    expect(pushed).toEqual(['/accounts/acct-1?tab=groups']);
+    expect(pushed).toEqual([]);
+    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=groups');
   });
 
   test('an ACCOUNT_GRADUATED id with no accountId yet does nothing, not a broken URL', () => {

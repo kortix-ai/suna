@@ -4,8 +4,10 @@ import { BasicTool, partInput } from '@/features/session/tool/shared/infrastruct
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CheckIcon as Check } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const result = (input.result as string) || '';
   return (
@@ -20,7 +22,7 @@ export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
           <Check className="text-kortix-green size-3 shrink-0" />
         </span>
       }
-      trigger={{ title: 'Task done' }}
+      trigger={{ title: tI18nComplete.raw('text6d291878fb81') }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >

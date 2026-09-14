@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import {
@@ -14,10 +14,7 @@ import {
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
 const modelDefaultsSource = readFileSync(
-  join(
-    import.meta.dir,
-    '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts',
-  ),
+  join(import.meta.dir, '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts'),
   'utf8',
 );
 
@@ -72,7 +69,9 @@ describe('gateway routing editor helpers', () => {
   test('keeps custom and disabled fallback modes distinct', () => {
     expect(fallbackModeForPolicy(null)).toBe('inherit');
     expect(fallbackModeForPolicy({ models: [], fallbackOn: 'transient' })).toBe('disabled');
-    expect(fallbackModeForPolicy({ models: ['glm-5.3-flash'], fallbackOn: 'any-error' })).toBe('custom');
+    expect(fallbackModeForPolicy({ models: ['glm-5.3-flash'], fallbackOn: 'any-error' })).toBe(
+      'custom',
+    );
     expect(
       validateRoutingDraft(
         {
@@ -91,9 +90,9 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('renders an editable vision model override saved through the same routing policy', () => {
-    expect(routingSource).toContain('Vision model');
+    expect(routingSource).toContain("raw('text0a15fd3848fa')");
     expect(routingSource).toContain('draft.visionModel');
-    expect(routingSource).toContain('unsetLabel="Inherit platform"');
+    expect(routingSource).toContain("raw('text975aa2ab538e')");
     expect(routingSource).toContain(
       'onChange={(visionModel) => setDraft({ ...draft, visionModel })}',
     );
@@ -107,7 +106,7 @@ describe('gateway routing editor helpers', () => {
     expect(routingSource).toContain('routing.preview.mutateAsync');
     expect(routingSource).toContain('setTimeout');
     expect(routingSource).toContain('AvailabilityBadge');
-    expect(routingSource).toContain('Not connected');
+    expect(routingSource).toContain("raw('text0303e1824670')");
   });
 
   test('collects a deduped preview target list across the primary, vision override, default chain, and rule chains', () => {
@@ -117,7 +116,11 @@ describe('gateway routing editor helpers', () => {
           visionModel: 'anthropic/claude-sonnet-4.6',
           defaultFallback: { models: ['glm-5.3-flash', 'auto'], fallbackOn: 'transient' },
           rules: [
-            { model: 'codex/gpt-5.6-sol', fallbackModels: ['glm-5.3-flash'], fallbackOn: 'transient' },
+            {
+              model: 'codex/gpt-5.6-sol',
+              fallbackModels: ['glm-5.3-flash'],
+              fallbackOn: 'transient',
+            },
           ],
         },
         'anthropic/claude-opus-4.8',
@@ -153,7 +156,7 @@ describe('gateway routing editor helpers', () => {
     expect(gatewayViewSource).not.toContain('useRuntimeProviders');
     expect(gatewayViewSource).not.toContain('modelDefaults.setAccountDefault');
     expect(gatewayViewSource).toContain('modelDefaults.isUpdating');
-    expect(gatewayViewSource).toContain("errorToast('Could not update the project default')");
+    expect(gatewayViewSource).toContain("raw('text5ed9bd98de1b')");
   });
 
   test('default changes refresh routing and the shared compact picker cache', () => {
@@ -201,17 +204,15 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
-    expect(routingSource).toContain(
-      "from './generation-controls'",
-    );
+    expect(routingSource).toContain("from './generation-controls'");
     expect(routingSource).toContain('<GenerationControlsPanel');
     expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
   });
 
   test('Per-model overrides is promoted ahead of Vision model and Generation defaults, both foreground-weighted', () => {
-    const overridesIndex = routingSource.indexOf('Per-model overrides');
-    const visionIndex = routingSource.indexOf('>Vision model<');
-    const generationIndex = routingSource.indexOf('>Generation defaults<');
+    const overridesIndex = routingSource.indexOf('text5c63c15261bb');
+    const visionIndex = routingSource.indexOf('text0a15fd3848fa');
+    const generationIndex = routingSource.indexOf('textea942b85faac');
     expect(overridesIndex).toBeGreaterThan(-1);
     expect(visionIndex).toBeGreaterThan(-1);
     expect(generationIndex).toBeGreaterThan(-1);
@@ -222,16 +223,18 @@ describe('gateway routing editor helpers', () => {
     expect(overridesIndex).toBeLessThan(generationIndex);
     // Fallback and Per-model overrides carry the full-strength heading; Vision
     // model and Generation defaults keep the muted default inside Advanced.
-    expect(routingSource).toContain('<Label className="text-foreground">Fallback</Label>');
     expect(routingSource).toContain(
-      '<Label className="text-foreground">Per-model overrides</Label>',
+      "<Label className=\"text-foreground\">{tI18nComplete.raw('text325e84939c64')",
+    );
+    expect(routingSource).toContain(
+      "<Label className=\"text-foreground\">{tI18nComplete.raw('text5c63c15261bb')",
     );
   });
 
   test('Vision model and Generation defaults fold under a single Advanced disclosure', () => {
     const disclosureIndex = routingSource.indexOf('<Disclosure open={advancedOpen}');
-    const visionIndex = routingSource.indexOf('>Vision model<');
-    const generationIndex = routingSource.indexOf('>Generation defaults<');
+    const visionIndex = routingSource.indexOf('text0a15fd3848fa');
+    const generationIndex = routingSource.indexOf('textea942b85faac');
     const disclosureCloseIndex = routingSource.indexOf('</Disclosure>');
     expect(disclosureIndex).toBeGreaterThan(-1);
     expect(disclosureIndex).toBeLessThan(visionIndex);
@@ -251,7 +254,10 @@ describe('gateway routing editor helpers', () => {
       }),
     ).toBe(false);
     expect(
-      hasAdvancedRoutingConfig({ visionModel: 'anthropic/claude-sonnet-4.6', modelGenerationConfig: {} }),
+      hasAdvancedRoutingConfig({
+        visionModel: 'anthropic/claude-sonnet-4.6',
+        modelGenerationConfig: {},
+      }),
     ).toBe(true);
     expect(
       hasAdvancedRoutingConfig({

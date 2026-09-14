@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
+import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -25,6 +27,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
@@ -101,9 +104,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     routeParams?.sessionId ?? null,
   );
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // Remember the project so the next `/` hit and the next sign-in land straight
   // back here instead of going through the id-free landing door. Gated on a
@@ -266,8 +267,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 }
 
 const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
-  const { state, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
-  const isExpanded = state === 'expanded';
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { state, isMobile, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
+  const isExpanded = !isMobile && state === 'expanded';
   // The sidebar hides fully when collapsed (offcanvas everywhere, no icon
   // rail), so a hidden sidebar means no seam border and no way back from the
   // panel itself. On the desktop shell the reopen control lives HERE, in the
@@ -290,10 +292,17 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
           session header indents its leading buttons past it below md. */}
 
       {desktopShell && !isExpanded && (
-        <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
+        <Hint
+          label={
+            peek ? tI18nComplete.raw('textbc44e1fccb68') : tI18nComplete.raw('text45609089ee73')
+          }
+          side="bottom"
+        >
           <Button
             type="button"
-            aria-label={peek ? 'Pin sidebar' : 'Open sidebar'}
+            aria-label={
+              peek ? tI18nComplete.raw('textbc44e1fccb68') : tI18nComplete.raw('text45609089ee73')
+            }
             onClick={toggleSidebar}
             onPointerEnter={peekEnter}
             onPointerLeave={peekLeave}
@@ -309,7 +318,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             // are generated from one table — see globals.css and
             // apps/desktop-electron/src/window-chrome.js. They also carry the
             // Win/Linux values, so there is no platform branch here.
-            className="text-muted-foreground hover:text-foreground fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
+            className={cn(TITLEBAR_CONTROL_CLASS, 'flex w-[var(--kx-titlebar-control-size)]')}
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>

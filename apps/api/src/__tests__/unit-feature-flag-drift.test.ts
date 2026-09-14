@@ -29,10 +29,13 @@ import { FEATURE_FLAG_KEYS as SDK_FEATURE_FLAG_KEYS } from '@kortix/sdk';
 
 import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog } from '../feature-flags/registry';
 
-const contractKeys = [...CONTRACT_FEATURE_FLAG_KEYS].sort();
-const sdkKeys = [...SDK_FEATURE_FLAG_KEYS].sort();
-const registryKeys = REGISTERED_FEATURE_FLAGS.map((flag) => flag.key).sort();
-const catalogKeys = buildFeatureFlagCatalog({})
+// Compared as plain strings: the SDK's `FeatureFlagKey` union still carries
+// deprecated graduated keys (`FEATURE_FLAG_KEYS` does not), so the two
+// packages' element types differ on purpose while the runtime lists must match.
+const contractKeys: string[] = [...CONTRACT_FEATURE_FLAG_KEYS].sort();
+const sdkKeys: string[] = [...SDK_FEATURE_FLAG_KEYS].sort();
+const registryKeys: string[] = REGISTERED_FEATURE_FLAGS.map((flag) => flag.key).sort();
+const catalogKeys: string[] = buildFeatureFlagCatalog({})
   .map((flag) => flag.key)
   .sort();
 

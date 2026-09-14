@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  ATTACHMENT_TILE_CAP,
-  planAttachmentGrid,
-  type NormalizedAttachment,
-} from './user-message';
+import { ATTACHMENT_TILE_CAP, planAttachmentGrid, type NormalizedAttachment } from './user-message';
 
 // One shape, one cap, one overflow tile.
 //

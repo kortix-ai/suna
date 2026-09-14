@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Service account tokens: the account's machine identities.
  *
@@ -86,7 +88,13 @@ import {
   listServiceAccountsApi,
 } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
-import { KeyIcon, MagnifyingGlassIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/react';
+import {
+  KeyIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  ProhibitIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 
@@ -109,12 +117,14 @@ import {
  * state nobody chose, and the one that silently stops a CI job — takes a
  * warning colour.
  */
-const STATUS_BADGE: Record<ApiKeyStatus, { label: string; variant: 'success' | 'update' | 'muted' }> =
-  {
-    active: { label: 'Active', variant: 'success' },
-    expired: { label: 'Expired', variant: 'update' },
-    revoked: { label: 'Revoked', variant: 'muted' },
-  };
+const STATUS_BADGE: Record<
+  ApiKeyStatus,
+  { label: string; variant: 'success' | 'update' | 'muted' }
+> = {
+  active: { label: 'Active', variant: 'success' },
+  expired: { label: 'Expired', variant: 'update' },
+  revoked: { label: 'Revoked', variant: 'muted' },
+};
 
 const STATUS_OPTIONS: ApiKeyStatus[] = ['active', 'expired', 'revoked'];
 
@@ -149,6 +159,8 @@ export interface ApiKeysListProps {
 
 /** The list itself. The create action is the caller's, so the pane header can own it. */
 export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const statusBadges = useLocalizedUiCatalog(STATUS_BADGE);
   const queryClient = useQueryClient();
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: SERVICE_ACCOUNTS_KEY(accountId) });
@@ -168,21 +180,21 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
     // audit trail and every request it makes is refused from here on.
     mutationFn: (row: ApiKeyRow) => disableServiceAccountApi(accountId, row.id),
     onSuccess: () => {
-      successToast('Token revoked');
+      successToast(tI18nComplete.raw('text775f96fcc9db'));
       invalidate();
       setPending(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not revoke that token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textfe4666578c32')),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (row: ApiKeyRow) => deleteServiceAccountApi(accountId, row.id),
     onSuccess: () => {
-      successToast('Token deleted');
+      successToast(tI18nComplete.raw('text126b835f55e1'));
       invalidate();
       setPending(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not delete that token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text3a42e3a0cc79')),
   });
 
   if (serviceAccountsQuery.isLoading) {
@@ -206,30 +218,29 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
       return (
         <InfoBanner
           tone="warning"
-          title="Confirm it's you"
+          title={tI18nComplete.raw('text6176eec272e8')}
           action={
             <Button
               variant="outline"
               size="sm"
               onClick={() => window.dispatchEvent(new CustomEvent(MFA_REQUIRED_EVENT))}
             >
-              Verify
+              {tI18nComplete.raw('texteea2745e2867')}
             </Button>
           }
         >
-          This workspace asks for a second factor before showing its tokens. The list refreshes on
-          its own once you have verified.
+          {tI18nComplete.raw('text534e356b9a09')}
         </InfoBanner>
       );
     }
     return (
       <ErrorState
         size="sm"
-        title="Couldn't load these tokens"
+        title={tI18nComplete.raw('text72f493e2adcc')}
         description={error instanceof Error ? error.message : undefined}
         action={
           <Button variant="outline" size="sm" onClick={() => serviceAccountsQuery.refetch()}>
-            Retry
+            {tI18nComplete.raw('text942087cc2d41')}
           </Button>
         }
       />
@@ -261,8 +272,8 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search tokens"
-            aria-label="Search tokens"
+            placeholder={tI18nComplete.raw('text1b5465e03357')}
+            aria-label={tI18nComplete.raw('text1b5465e03357')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             variant="popover"
@@ -275,18 +286,21 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
             Automation — which is not a question this list can answer any more:
             every row on it is an automation. */}
         <Select value={view} onValueChange={(value) => setView(value as ApiKeyFilterValue)}>
-          <SelectTrigger className="w-full shrink-0 sm:w-44" aria-label="Filter tokens">
+          <SelectTrigger
+            className="w-full shrink-0 sm:w-44"
+            aria-label={tI18nComplete.raw('text47cb1961551f')}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent align="end">
             <SelectItem size="sm" value="all" description={countLabel(counts.all)}>
-              All tokens
+              {tI18nComplete.raw('text229c8c14416e')}
             </SelectItem>
             {statusOptions.length > 0 ? (
               <>
                 <SelectSeparator />
                 <SelectGroup>
-                  <SelectLabel>Status</SelectLabel>
+                  <SelectLabel>{tI18nComplete.raw('text920e413c7d41')}</SelectLabel>
                   {statusOptions.map((value) => (
                     <SelectItem
                       size="sm"
@@ -294,7 +308,7 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
                       value={value}
                       description={countLabel(counts[value])}
                     >
-                      {STATUS_BADGE[value].label}
+                      {statusBadges[value].label}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -308,12 +322,13 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
         <p className="text-muted-foreground px-3 py-6 text-center text-xs">
           {search.trim() ? (
             <>
-              No tokens match <span className="text-foreground font-mono">{search.trim()}</span>.
+              {tI18nComplete.raw('textdd730b855f7f')}{' '}
+              <span className="text-foreground font-mono">{search.trim()}</span>.
             </>
           ) : (
             // Only reachable when the selection goes stale mid-session — revoke
             // the last active token while "Active" is showing.
-            'Nothing left under this filter. Choose “All tokens” to see the rest.'
+            tI18nComplete.raw('text4058739857b7')
           )}
         </p>
       ) : (
@@ -326,7 +341,7 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
               : canRevoke
                 ? [
                     {
-                      label: 'Revoke token',
+                      label: tI18nComplete.raw('text14683b379324'),
                       icon: <ProhibitIcon className="size-3.5 shrink-0" />,
                       variant: 'destructive',
                       onSelect: () => setPending({ row, action: 'revoke' }),
@@ -334,7 +349,7 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
                   ]
                 : [
                     {
-                      label: 'Delete token',
+                      label: tI18nComplete.raw('text8cb21e2a5846'),
                       icon: <TrashIcon className="size-3.5 shrink-0" />,
                       variant: 'destructive',
                       onSelect: () => setPending({ row, action: 'delete' }),
@@ -346,18 +361,22 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
                 leading={<EntityAvatar icon={KeyIcon} label={row.name} size="sm" />}
                 title={row.name}
                 badges={
-                  <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
-                    {STATUS_BADGE[row.status].label}
+                  <Badge variant={statusBadges[row.status].variant} size="sm">
+                    {statusBadges[row.status].label}
                   </Badge>
                 }
                 metaParts={[
                   row.hint,
                   `Created ${relativeTime(row.createdAt)}`,
-                  row.lastUsedAt ? `Last used ${relativeTime(row.lastUsedAt)}` : 'Never used',
-                  row.expiresAt ? `Expires ${relativeTime(row.expiresAt)}` : 'Never expires',
+                  row.lastUsedAt
+                    ? `Last used ${relativeTime(row.lastUsedAt)}`
+                    : tI18nComplete.raw('text24d3236c3ac4'),
+                  row.expiresAt
+                    ? `Expires ${relativeTime(row.expiresAt)}`
+                    : tI18nComplete.raw('text6a9894204cc7'),
                 ]}
                 kebab={kebab}
-                kebabLabel={`Actions for ${row.name}`}
+                kebabLabel={tI18nComplete('text33da220b1a34', { value0: row.name })}
                 pending={busy && pending?.row.id === row.id}
               />
             );
@@ -370,12 +389,16 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
         onOpenChange={(open) => {
           if (!open) setPending(null);
         }}
-        title={pending?.action === 'delete' ? 'Delete this token?' : 'Revoke this token?'}
+        title={
+          pending?.action === 'delete'
+            ? tI18nComplete.raw('text26ecc76c0ce9')
+            : tI18nComplete.raw('text33271bd27f08')
+        }
         description={
           pending
             ? pending.action === 'delete'
-              ? `Removes "${pending.row.name}" from this list for good, along with anything it was allowed to do.`
-              : `"${pending.row.name}" stops working right away. Anything still using it — a script, a CI job — starts getting turned away. This can't be undone.`
+              ? tI18nComplete('textb3fd52fda8e3', { value0: pending.row.name })
+              : tI18nComplete('textca226cefdb63', { value0: pending.row.name })
             : ''
         }
         confirmLabel={pending?.action === 'delete' ? 'Delete' : 'Revoke'}
@@ -410,6 +433,7 @@ export interface CreateApiKeyDialogProps {
  * the policies attached to it, not from a binding chosen at mint time.
  */
 export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiKeyDialogProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
@@ -425,13 +449,13 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
     retry: false,
   });
   const policy = policyQuery.data ?? null;
-  const expiryChoices = expiryOptions(policy);
+  const expiryChoices = expiryOptions(policy, tI18nComplete);
   // The policy lands after first paint, and it can remove the option currently
   // selected ("Never", once expiry is required). Re-point at a legal value
   // rather than submitting one the backend will reject.
   const selectedExpiry = expiryChoices.some((o) => o.value === expiry)
     ? expiry
-    : defaultExpiryOption(policy);
+    : defaultExpiryOption(policy, tI18nComplete);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -446,7 +470,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
       queryClient.invalidateQueries({ queryKey: SERVICE_ACCOUNTS_KEY(accountId) });
       setCreated(result);
     },
-    onError: (err: Error) => errorToast(err.message || 'Could not create that token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc85c6ea416c8')),
   });
 
   function close() {
@@ -473,29 +497,29 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
         {created ? (
           <>
             <ModalHeader>
-              <ModalTitle>Copy this token now</ModalTitle>
+              <ModalTitle>{tI18nComplete.raw('textd7db5a6e1483')}</ModalTitle>
               <ModalDescription>
-                This is the only time <strong>{created.name}</strong>&apos;s token is shown. Save it
-                somewhere safe — we can&apos;t show it again, and a lost token has to be replaced.
+                {tI18nComplete.raw('textd21d10509292')} <strong>{created.name}</strong>
+                {tI18nComplete.raw('text26a69b6ee645')}
               </ModalDescription>
             </ModalHeader>
             <ModalBody>
-              <CopyRow value={created.secret} successMessage="Token copied" />
+              <CopyRow
+                value={created.secret}
+                successMessage={tI18nComplete.raw('textc9feac7acc32')}
+              />
             </ModalBody>
             <ModalFooter>
               <Button type="button" size="sm" onClick={close}>
-                Done
+                {tI18nComplete.raw('text11a6767d5674')}
               </Button>
             </ModalFooter>
           </>
         ) : (
           <>
             <ModalHeader>
-              <ModalTitle>Create a service account token</ModalTitle>
-              <ModalDescription>
-                A service account is an identity of its own — it acts with the permissions you
-                grant it, and it keeps working after the person who made it leaves.
-              </ModalDescription>
+              <ModalTitle>{tI18nComplete.raw('text44d5cf8e9451')}</ModalTitle>
+              <ModalDescription>{tI18nComplete.raw('text7074515e8fda')}</ModalDescription>
             </ModalHeader>
             <form
               onSubmit={(event) => {
@@ -506,24 +530,28 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
             >
               <ModalBody className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="service-account-name">Name</Label>
+                  <Label htmlFor="service-account-name">
+                    {tI18nComplete.raw('textdcd1d5223f73')}
+                  </Label>
                   <Input
                     id="service-account-name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Deploy from GitHub"
+                    placeholder={tI18nComplete.raw('textc725967d3988')}
                     disabled={mutation.isPending}
                     maxLength={128}
                     autoFocus
                     variant="popover"
                   />
                   <p className="text-muted-foreground text-xs">
-                    Name it after the job it does, so an audit line reads as itself.
+                    {tI18nComplete.raw('textb74399647bf0')}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="service-account-expiry">Expires</Label>
+                  <Label htmlFor="service-account-expiry">
+                    {tI18nComplete.raw('textf6725f3af08a')}
+                  </Label>
                   <Select
                     value={selectedExpiry}
                     onValueChange={setExpiry}
@@ -542,7 +570,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
                   </Select>
                   {policy?.require_expiry ? (
                     <p className="text-muted-foreground text-xs">
-                      This workspace asks every key to have an end date.
+                      {tI18nComplete.raw('texta06efd337206')}
                     </p>
                   ) : null}
                 </div>
@@ -555,7 +583,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
                   onClick={close}
                   disabled={mutation.isPending}
                 >
-                  Cancel
+                  {tI18nComplete.raw('text19766ed6ccb2')}
                 </Button>
                 <Button
                   type="submit"
@@ -564,7 +592,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
                   className="gap-1.5"
                 >
                   {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Create token
+                  {tI18nComplete.raw('text5d8e8e30bc4f')}
                 </Button>
               </ModalFooter>
             </form>
@@ -587,13 +615,14 @@ export interface ApiKeysSectionProps {
  * key has to be able to leave with one.
  */
 export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <section className="space-y-4">
       <SettingsSubsectionHeader
-        title="Service account tokens"
-        description="Identities for CI, scripts, and integrations — they act on their own, not as a person."
+        title={tI18nComplete.raw('textaff66989659f')}
+        description={tI18nComplete.raw('textce5979e3cee6')}
         action={
           canManage ? (
             <Button
@@ -603,7 +632,7 @@ export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
               onClick={() => setCreateOpen(true)}
             >
               <PlusIcon className="size-4 shrink-0" />
-              New token
+              {tI18nComplete.raw('textfe46cb83ad1c')}
             </Button>
           ) : undefined
         }
@@ -614,9 +643,9 @@ export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
           lives in the header above, where the eye already lands. */}
       <ApiKeysList accountId={accountId} canManage={canManage} />
       <p className="text-muted-foreground text-xs">
-        Your own API keys — the ones that sign the CLI in as you — live in your{' '}
+        {tI18nComplete.raw('text4703d3bef6c4')}{' '}
         <Link href="/settings/tokens" className="text-foreground underline underline-offset-2">
-          settings → API keys
+          {tI18nComplete.raw('text80b9316cb15b')}
         </Link>
         .
       </p>

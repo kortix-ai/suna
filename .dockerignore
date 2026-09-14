@@ -61,6 +61,16 @@ node_modules
 .next
 **/.next
 
+# ── Whitelist: the built docs site ──
+# `docs` / `**/docs` above is meant for documentation SOURCE, but it also matches
+# apps/web/public/docs — the Blume static build that serves /docs. Without these
+# two lines the image ships a public/ with a docs-shaped hole: Blume builds, next
+# build succeeds, the deploy goes green, and /docs 404s in production. Nothing
+# fails, because Docker reads this file long after the build hook's checks ran.
+# Must come after `**/docs` to override it.
+!apps/web/public/docs
+!apps/web/public/docs/**
+
 # ── Whitelist: frontend standalone output (MUST come LAST to override excludes above) ──
 !apps/web/.next
 !apps/web/.next/standalone

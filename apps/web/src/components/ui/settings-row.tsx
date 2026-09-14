@@ -97,7 +97,7 @@ export function SettingsRow({
       // that rule always matches, and at specificity (0,2,0) it beats a plain
       // `items-center` (0,1,0). Without the important flag the variant wins and
       // every control top-aligns regardless of what is passed here.
-      className={cn('gap-4 px-4 py-3 !items-center', className)}
+      className={cn('!items-center gap-4 px-4 py-3', className)}
       {...props}
     >
       <FieldContent className="min-w-0 flex-1 gap-0">

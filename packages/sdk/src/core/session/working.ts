@@ -8,7 +8,9 @@ import type {
  * WHICH observation decided the state.
  *
  * `server` — `GET .../turn`, the control plane's lifecycle authority, or the
- * session's durable prompt inbox. Both are rows the server owns.
+ * session's durable prompt inbox. Both are rows the server owns — including
+ * the DISAPPEARANCE of one between two readings of the list, which is the
+ * control plane saying it handed the prompt to the runtime (`drainedAtMs`).
  * `stream` — a `session.status` / `session.idle` frame off the live SSE stream.
  * `optimistic` — this tab's own send receipt, which no server source has
  * answered yet.
@@ -278,6 +280,26 @@ export interface WorkingInboxInput {
    * review as a stale empty snapshot hiding a backend-confirmed queue row.
    */
   serverAtMs?: number;
+  /**
+   * This tab's clock at the reading in which a row it had SEEN waiting was
+   * gone — the control plane took it off the queue and handed it to the
+   * runtime.
+   *
+   * The one transition every observer is blind to at the same instant. The
+   * list is right that nothing of yours is waiting (it is running), and the
+   * last `/turn` read is right that there were no turns (it was issued before
+   * the hand-off). Believing both is how a session goes INACTIVE with the
+   * user's prompt in flight — the composer drops Stop and the waiting row
+   * disappears, seconds after the prompt was accepted (dev, 2026-09-06, on
+   * video).
+   *
+   * Set only by a caller that compared two readings and watched a `queued` or
+   * `delivering` row leave (see the host's `inboxDrained`). A caller that
+   * reports a count and nothing else leaves it absent, and decides exactly as
+   * before. Carried forward while the list stays empty, dropped the moment it
+   * is not — the fact is about the queue, not about one HTTP response.
+   */
+  drainedAtMs?: number;
 }
 
 /**
@@ -582,6 +604,48 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       source: 'server',
       turnId: receiptLive ? receiptTurnId : null,
       since: inbox!.atMs,
+      serverOpenTurnToken,
+    };
+  }
+
+  // A ROW THE SERVER TOOK OFF THE QUEUE. The list is empty because the control
+  // plane handed the prompt to the runtime, and the ledger row for the turn
+  // that hand-off opens is written by a request this tab has not read since.
+  // So both readings below are honest AND out of date, and rule 3 would call a
+  // starting turn idle.
+  //
+  // EVIDENCE, NOT A TIMER, in three parts:
+  //
+  //  * Only a SERVER READ retires it — one that could have seen the turn, i.e.
+  //    taken at or after the drain, whatever it then says. A stream frame may
+  //    not: a box that has just come up answers `idle` in its status snapshot
+  //    while the turn it was handed is not on the wire yet, and the SSE-connect
+  //    sweep fabricates a `local` idle at the same moment. Neither knows about
+  //    a hand-off the control plane made. `useSessionWorking` invalidates
+  //    `/turn` the instant this arms, so the wait is one round trip.
+  //  * A live stop never arms it. Stop marks the queue `held`, which drops the
+  //    live count to zero — the same shape as a drain, the opposite meaning.
+  //  * It dies with the reading that carried it (`inboxFresh`), so there is no
+  //    second bound to tune and `workingExpiryAtMs` already schedules the
+  //    instant it stops deciding.
+  //
+  // `turnId` is null on purpose, even under a live receipt. A send made during
+  // another response names THAT response's turn, and once the row drains the
+  // association is stale: naming it puts the shimmer on a turn whose answer is
+  // complete, where `suppressWorkingTurnBusy` then draws nothing at all.
+  const drainedAtMs = inbox?.drainedAtMs;
+  const drainFloorHolds =
+    inboxFresh &&
+    inbox!.pending === 0 &&
+    drainedAtMs != null &&
+    !abortLive &&
+    !(serverFresh && server!.atMs >= drainedAtMs);
+  if (drainFloorHolds) {
+    return {
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      since: drainedAtMs!,
       serverOpenTurnToken,
     };
   }

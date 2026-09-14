@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { owning, type TreeNode } from './content';
@@ -72,12 +73,16 @@ function TreeRow({ node, prefix }: { node: TreeNode; prefix: string }): ReactNod
   );
 }
 
-function RepoPanel(): ReactNode {
+function RepoPanel({ content }: { content: typeof owning }): ReactNode {
   return (
-    <Panel title={owning.panel.title} label={owning.panel.label} footer={owning.panel.footer}>
+    <Panel title={content.panel.title} label={content.panel.label} footer={content.panel.footer}>
       <ul className="py-4">
-        {owning.tree.map((node, index) => (
-          <TreeRow key={`${node.depth}-${node.name}`} node={node} prefix={gutter(owning.tree, index)} />
+        {content.tree.map((node, index) => (
+          <TreeRow
+            key={`${node.depth}-${node.name}`}
+            node={node}
+            prefix={gutter(content.tree, index)}
+          />
         ))}
       </ul>
     </Panel>
@@ -85,13 +90,14 @@ function RepoPanel(): ReactNode {
 }
 
 export function OwningInterlude(): ReactNode {
+  const content = useLocalizedUiCatalog(owning);
   return (
     <Interlude
       id="owning"
-      eyebrow={owning.eyebrow}
-      title={owning.title}
-      paragraphs={owning.paragraphs}
-      panel={<RepoPanel />}
+      eyebrow={content.eyebrow}
+      title={content.title}
+      paragraphs={content.paragraphs}
+      panel={<RepoPanel content={content} />}
       flip
     />
   );

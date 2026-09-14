@@ -11,10 +11,11 @@ import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { ApplyModal } from './apply-modal';
-import { LOCATIONS, apply, bar, hero, openings } from './content';
+import { getLocalizedCareersContent } from './content';
 
 /* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
    runs its full width. */
@@ -26,6 +27,8 @@ const MEASURE = 'max-w-[34rem]';
  * is a job description — the detail belongs in a conversation.
  */
 function Board({ onApply }: { onApply: () => void }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { LOCATIONS, apply, openings } = getLocalizedCareersContent(tI18nComplete);
   return (
     <section id="openings" className="mx-auto max-w-7xl px-6 pb-4 sm:pb-8">
       <Reveal>
@@ -89,6 +92,8 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
 
 /** The bar. The one prose block on the page that earns its space. */
 function Bar(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { bar } = getLocalizedCareersContent(tI18nComplete);
   return (
     <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <SectionHeader eyebrow={bar.eyebrow} title={bar.title} description={bar.lead} />
@@ -114,14 +119,12 @@ function Bar(): ReactNode {
 }
 
 function Apply({ onApply }: { onApply: () => void }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { apply } = getLocalizedCareersContent(tI18nComplete);
   return (
     <section id="apply" className="mx-auto max-w-7xl px-6 pb-16 sm:pb-24">
       <div className="border-border border-t pt-12 sm:pt-16">
-        <SectionHeader
-          eyebrow={apply.eyebrow}
-          title={apply.title}
-          description={apply.body}
-        />
+        <SectionHeader eyebrow={apply.eyebrow} title={apply.title} description={apply.body} />
         <Reveal>
           <Button size="sm" className="mt-8" onClick={onApply}>
             {apply.cta}
@@ -158,6 +161,8 @@ function Apply({ onApply }: { onApply: () => void }): ReactNode {
  * in `content.ts`.
  */
 export function CareersPage(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = getLocalizedCareersContent(tI18nComplete);
   const [applyOpen, setApplyOpen] = useState(false);
   const openApply = () => setApplyOpen(true);
 
@@ -167,7 +172,11 @@ export function CareersPage(): ReactNode {
         <SectionHeader eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
         <Reveal delay={0.06}>
           <div className="kx-hero-text mt-8 flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
-            <Button size="lg" className="flex-1 active:scale-[0.97] sm:flex-none" onClick={openApply}>
+            <Button
+              size="lg"
+              className="flex-1 active:scale-[0.97] sm:flex-none"
+              onClick={openApply}
+            >
               {hero.ctaPrimary}
             </Button>
             <Button

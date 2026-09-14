@@ -16,7 +16,7 @@ import {
   HardDrivesIcon as Server,
   ShieldIcon as Shield,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 import { ACCORDION, type AccordionIcon } from './content';
@@ -30,11 +30,12 @@ const ACCORDION_ICONS: Record<AccordionIcon, React.ReactNode> = {
 };
 
 const Block = ({ tab }: { tab: string }) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   switch (tab) {
     case 'isolation':
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          Isolation
+          {tI18nComplete.raw('text45c4fc064e52')}
         </div>
       );
 
@@ -48,14 +49,14 @@ const Block = ({ tab }: { tab: string }) => {
     case 'selfhost':
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          Self-host
+          {tI18nComplete.raw('text37a5d04181b5')}
         </div>
       );
 
     default:
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          Default
+          {tI18nComplete.raw('text21b111cbfe6e')}
         </div>
       );
   }

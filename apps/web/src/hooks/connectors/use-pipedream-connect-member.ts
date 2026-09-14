@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
@@ -18,6 +19,7 @@ export function usePipedreamConnectMember(
   slug: string,
   onConnected: () => void,
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
       let connectionId: string | null = null;
@@ -38,7 +40,7 @@ export function usePipedreamConnectMember(
     },
     onSuccess: (res) => {
       if (!res.connected) return;
-      successToast('Connected privately — only you can use this');
+      successToast(tI18nComplete.raw('text5fac4e8e1d8f'));
       onConnected();
     },
     onError: (err: Error) => errorToast(err.message),

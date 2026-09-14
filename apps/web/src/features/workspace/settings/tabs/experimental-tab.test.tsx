@@ -2,12 +2,12 @@ import type { FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ExperimentalTabView, filterFeatures } from './experimental-tab';
+import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
-  key: 'review_center',
-  name: 'Review Center',
-  description: 'Review agent output.',
+  key: 'meta_agent',
+  name: 'Meta Agent',
+  description: 'Coordinate agent sessions.',
   stability: 'beta',
   available: true,
   enabled: true,
@@ -33,32 +33,57 @@ const experimentalFeature: FeatureFlagView = {
  * as every other tab's real container (see `api-keys-tab.test.tsx`).
  */
 describe('ExperimentalTabView', () => {
+  test('renders injected Serbian state copy and localized feature content', () => {
+    const copy = {
+      ...DEFAULT_EXPERIMENTAL_COPY,
+      stability: { experimental: 'Експериментално', beta: 'Бета', stable: 'Стабилно' },
+      overridden: 'Промењено за овај пројекат',
+    };
+    const out = renderToStaticMarkup(
+      <ExperimentalTabView
+        features={[
+          {
+            ...betaFeature,
+            name: 'Мета агент',
+            description: 'Координишите сесије агената.',
+          },
+        ]}
+        copy={copy}
+      />,
+    );
+    expect(out).toContain('Мета агент');
+    expect(out).not.toContain('Бета');
+    expect(out).toContain('Промењено за овај пројекат');
+    expect(out).not.toContain('Meta Agent');
+  });
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     // "Feature flags", not "Experimental": the pane moved to
-    // `/projects/[id]/config?section=feature-flags` and took the name the
+    // `/projects/[id]/customize/settings?section=feature-flags` and took the name the
     // `CustomizeSection` id has always used.
     expect(out).toContain('Feature flags');
     expect(out).toContain('Features you can switch on before they are generally available.');
   });
 
-  test('renders one row per feature, each with its name, description, and stability badge', () => {
+  test('renders one row per feature with its name and description — and no stability badge', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out).toContain('Review Center');
-    expect(out).toContain('Review agent output.');
-    expect(out).toContain('Beta');
+    expect(out).toContain('Meta Agent');
+    expect(out).toContain('Coordinate agent sessions.');
     expect(out).toContain('Apps');
     expect(out).toContain('Early-access app discovery.');
-    expect(out).toContain('Experimental');
+    // Experimental / Beta / Stable labels were removed (Marko, 2026-09-03).
+    expect(out).not.toContain('>Beta<');
+    expect(out).not.toContain('>Experimental<');
+    expect(out).not.toContain('>Stable<');
   });
 
   test('rows render in the same order as the features array', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out.indexOf('Review Center')).toBeLessThan(out.indexOf('Apps'));
+    expect(out.indexOf('Meta Agent')).toBeLessThan(out.indexOf('Apps'));
   });
 
   test('a feature switch reflects its enabled state via aria-checked', () => {
@@ -81,9 +106,9 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out).toContain('id="feature-flag-review_center"');
+    expect(out).toContain('id="feature-flag-meta_agent"');
     expect(out).toContain('id="feature-flag-apps"');
-    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-review_center"/);
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-meta_agent"/);
     expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-apps"/);
     // Every switch in the pane is named — none may ship unlabelled.
     expect(out.match(/role="switch"/g)?.length).toBe(2);
@@ -94,12 +119,12 @@ describe('ExperimentalTabView', () => {
     // `aria-labelledby` is only a name if the target exists and holds the text.
     // A dangling id would leave the switch just as unnamed as before.
     const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
-    expect(out).toMatch(/id="feature-flag-review_center"[^>]*>Review Center</);
+    expect(out).toMatch(/id="feature-flag-meta_agent"[^>]*>Meta Agent</);
   });
 
   test('a pending feature key disables its own switch', () => {
     const out = renderToStaticMarkup(
-      <ExperimentalTabView features={[betaFeature]} pendingKeys={['review_center']} canManage />,
+      <ExperimentalTabView features={[betaFeature]} pendingKeys={['meta_agent']} canManage />,
     );
     expect(out).toMatch(/role="switch"[^>]*disabled/);
   });
@@ -123,7 +148,7 @@ describe('ExperimentalTabView', () => {
 
   test('loading state shows a skeleton, not any feature row', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView isLoading features={[betaFeature]} />);
-    expect(out).not.toContain('Review Center');
+    expect(out).not.toContain('Meta Agent');
   });
 
   test('error state shows a retry action, not any feature row', () => {
@@ -132,25 +157,7 @@ describe('ExperimentalTabView', () => {
     );
     expect(out).toContain('Retry');
     expect(out).toContain('boom');
-    expect(out).not.toContain('Review Center');
-  });
-
-  test('every stability the API can serve has its own badge, including stable', () => {
-    // Ported from `main`'s `feature-flags-view.test.ts`. `FeatureFlagStability`
-    // is experimental | beta | stable; the two-way ternary this replaced
-    // rendered a `stable` flag as "Experimental" — a wrong label, not a
-    // compile error.
-    const stable: FeatureFlagView = {
-      key: 'teams',
-      name: 'Teams',
-      description: 'Shipped, still behind a switch.',
-      stability: 'stable',
-      available: true,
-      enabled: true,
-      overridden: false,
-    };
-    const out = renderToStaticMarkup(<ExperimentalTabView features={[stable]} />);
-    expect(out).toContain('Stable');
+    expect(out).not.toContain('Meta Agent');
   });
 
   test('each row states whether it is a default or a project override', () => {
@@ -257,7 +264,7 @@ describe('filterFeatures', () => {
   });
 
   test('matches the description', () => {
-    expect(filterFeatures(all, 'review agent').map((f) => f.key)).toEqual(['review_center']);
+    expect(filterFeatures(all, 'coordinate agent').map((f) => f.key)).toEqual(['meta_agent']);
   });
 
   test('is case-insensitive and ignores surrounding whitespace', () => {

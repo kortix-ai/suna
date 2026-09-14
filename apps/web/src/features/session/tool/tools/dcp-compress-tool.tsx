@@ -1,4 +1,5 @@
 'use client';
+
 import Loading from '@/components/ui/loading';
 import {
   BasicTool,
@@ -10,9 +11,11 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useContext } from 'react';
 
 export function DCPCompressTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const isRunning = useContext(ToolRunningContext);
@@ -23,7 +26,9 @@ export function DCPCompressTool({ part, defaultOpen, forceOpen }: ToolProps) {
       icon={<Scissors className="text-muted-foreground/50 size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="text-foreground text-xs font-medium whitespace-nowrap">Compress</span>
+          <span className="text-foreground text-xs font-medium whitespace-nowrap">
+            {tI18nComplete.raw('text033fc0445b90')}
+          </span>
           <span className="text-muted-foreground/50 text-xs font-medium whitespace-nowrap">
             DCP
           </span>

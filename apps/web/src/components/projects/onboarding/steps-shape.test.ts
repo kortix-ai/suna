@@ -50,14 +50,14 @@ describe('tools step', () => {
   });
 
   test('keeps the accessible name that distinguishes adding another connection', () => {
-    expect(tools).toContain('aria-label={`Add ${app.name} connection`}');
+    expect(tools).toContain("aria-label={t('addConnection', { app: app.name })}");
   });
 
   test('shows connected state as status without exposing a toggle', () => {
     expect(tools).not.toContain('active={existingSlugs.includes(app.slug)}');
     expect(tools).toContain('<Badge');
     expect(tools).toContain('variant="success"');
-    expect(tools).toContain('Connected');
+    expect(tools).toContain("t('connected')");
   });
 
   test('exposes connected status as the add action description', () => {
@@ -73,17 +73,17 @@ describe('slack step', () => {
   // unrelated shapes on a screen where every other step is a list of rows.
   test('offers both install paths as the shared row primitive', () => {
     expect(slack).toContain('<ActionRow');
-    expect(slack).toContain('Add to Slack');
-    expect(slack).toContain('Use a custom Slack app');
+    expect(slack).toContain("t('add')");
+    expect(slack).toContain("t('custom')");
   });
 
   test('exposes the install-method label as a group name', () => {
     expect(slack).toContain('role="group"');
-    expect(slack).toContain('aria-label="Slack install method"');
+    expect(slack).toContain("aria-label={t('installMethod')}");
   });
 
   test('collapses to a single confirmed state once connected', () => {
-    expect(slack).toContain('Connected to Slack');
+    expect(slack).toContain("t('connected')");
   });
 
   // The custom-app setup sits under the chooser in the same decision lane. An
@@ -91,7 +91,7 @@ describe('slack step', () => {
   test('opens the custom app inline in the decision lane', () => {
     expect(slack).not.toContain('StepContext');
     expect(slack).not.toContain('xl:flex-row');
-    expect(slack).toContain('Bring your own Slack app');
+    expect(slack).toContain("t('bringOwn')");
     expect(slack).toContain('customOpen &&');
   });
 
@@ -161,9 +161,9 @@ describe('plan step', () => {
 
   test('offers three ways forward, including deferring', () => {
     expect(plan).toContain('<SelectionRow');
-    expect(plan).toContain('Use Kortix models');
-    expect(plan).toContain('Bring your own API key');
-    expect(plan).toContain('Decide later');
+    expect(plan).toContain("t('useKortix')");
+    expect(plan).toContain("t('bringKey')");
+    expect(plan).toContain("t('decideLater')");
   });
 
   // THE fix for this step. Clicking a row used to fire a modal instantly: the
@@ -179,17 +179,13 @@ describe('plan step', () => {
 
   // The modal that opens should never be a surprise, so the button names it.
   test('labels the primary with what it will actually do', () => {
-    expect(plan).toContain("'See plans'");
-    expect(plan).toContain("'Add a key'");
+    expect(plan).toContain("t('seePlans')");
+    expect(plan).toContain("t('addKey')");
   });
 
   test('describes BYOK accurately with and without an existing model', () => {
-    expect(plan).toContain(
-      "label={hasSelectableModels ? 'Connect another provider' : 'Bring your own API key'}",
-    );
-    expect(plan).toContain(
-      "label={hasSelectableModels ? 'Keep what I have' : 'Decide later'}",
-    );
+    expect(plan).toContain("label={hasSelectableModels ? t('connectAnother') : t('bringKey')}");
+    expect(plan).toContain("label={hasSelectableModels ? t('keepCurrent') : t('decideLater')}");
   });
 
   // An earlier version short-circuited to a confirm-only screen when a model
@@ -197,7 +193,7 @@ describe('plan step', () => {
   // provider or move onto a plan. A connected model is context, not an answer.
   test('keeps every option available even when a model is already connected', () => {
     expect(plan).not.toContain('if (hasSelectableModels)');
-    expect(plan).toContain('Connect another provider');
-    expect(plan).toContain('Keep what I have');
+    expect(plan).toContain("t('connectAnother')");
+    expect(plan).toContain("t('keepCurrent')");
   });
 });

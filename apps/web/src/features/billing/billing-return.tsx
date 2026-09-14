@@ -9,6 +9,7 @@ import { syncSubscription } from '@kortix/sdk';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef } from 'react';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 /**
  * Coming back from Stripe.
@@ -100,12 +101,13 @@ function stripParam(param: string) {
  * purchase. Invalidate anyway and let the next fetch correct it.
  */
 export function useBillingReturn(): void {
+  const billingReturns = useLocalizedUiCatalog(BILLING_RETURNS);
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const handled = useRef<string | null>(null);
 
   useEffect(() => {
-    const match = BILLING_RETURNS.find((r) => searchParams.get(r.param) === r.value);
+    const match = billingReturns.find((r) => searchParams.get(r.param) === r.value);
     if (!match || handled.current === match.param) return;
     handled.current = match.param;
 
@@ -126,7 +128,7 @@ export function useBillingReturn(): void {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, queryClient]);
+  }, [billingReturns, searchParams, queryClient]);
 }
 
 /** Mount once, app-wide. Renders nothing. */

@@ -11,12 +11,12 @@ import {
 import { AccountSwitcher } from '@/features/layout/account-switcher';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useIsMobile } from '@/hooks/utils';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import type { User } from '@supabase/supabase-js';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { lazy, Suspense, useState } from 'react';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { lazy, Suspense } from 'react';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({

@@ -30,12 +30,14 @@ export function WallpaperCard({
   thumbSrc,
   isActive,
   onSelect,
+  defaultLabel = 'Default',
 }: {
   wallpaper: Wallpaper;
   /** Pre-rendered preview image — shader wallpapers never run a live canvas in the picker */
   thumbSrc?: string;
   isActive: boolean;
   onSelect: () => void;
+  defaultLabel?: string;
 }) {
   return (
     <button
@@ -45,7 +47,7 @@ export function WallpaperCard({
     >
       <div
         className={cn(
-          'bg-background relative isolate aspect-video w-full overflow-hidden rounded-md border transition-colors duration-200',
+          'bg-background duration-moderate relative isolate aspect-video w-full overflow-hidden rounded-md border transition-colors',
           isActive ? 'border-primary/40' : 'border-border group-hover:border-border/80',
         )}
       >
@@ -66,7 +68,7 @@ export function WallpaperCard({
 
         <div
           className={cn(
-            'pointer-events-none absolute inset-0 transition-colors duration-200',
+            'duration-moderate pointer-events-none absolute inset-0 transition-colors',
             isActive ? 'bg-transparent' : 'group-hover:bg-foreground/[0.06] bg-transparent',
           )}
         />
@@ -82,7 +84,7 @@ export function WallpaperCard({
           {wallpaper.name}
           {wallpaper.id === DEFAULT_WALLPAPER_ID && (
             <Badge size="sm" variant="secondary">
-              Default
+              {defaultLabel}
             </Badge>
           )}
         </span>
@@ -90,4 +92,3 @@ export function WallpaperCard({
     </button>
   );
 }
-

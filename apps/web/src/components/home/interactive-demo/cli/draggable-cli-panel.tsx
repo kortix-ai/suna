@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 
 export type CliDragHandleProps = HTMLAttributes<HTMLDivElement> & {
@@ -72,6 +73,7 @@ export function DraggableCliPanel({
   show = false,
   initialAnchor = 'bottom-right',
 }: DraggableCliPanelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [entranceReady, setEntranceReady] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -187,7 +189,7 @@ export function DraggableCliPanel({
       {children({
         dragHandleProps: {
           onPointerDown,
-          className: cn('lg:cursor-grab lg:touch-none', dragging && 'lg:cursor-grabbing'),
+          className: cn(tI18nComplete.raw('text27bd1ae9d9e2'), dragging && 'lg:cursor-grabbing'),
         },
         dragging,
       })}

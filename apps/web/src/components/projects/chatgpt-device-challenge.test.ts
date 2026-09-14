@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const challengeSource = readFileSync(join(import.meta.dir, 'chatgpt-device-challenge.tsx'), 'utf8');
@@ -26,7 +26,7 @@ describe('ChatGPT device authorization', () => {
 
   test('provides a device-code copy action', () => {
     expect(challengeSource).toContain('<CopyButton code={code}');
-    expect(challengeSource).toContain('label="Copy code"');
+    expect(challengeSource).toContain("raw('text49a0053f3b0d')");
   });
 
   test('does not open the auth page from either connection request', () => {

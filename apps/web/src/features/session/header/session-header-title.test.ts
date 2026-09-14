@@ -7,9 +7,9 @@
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the
  * left one.
  */
-import { describe, expect, test } from 'bun:test';
-import type { ProjectSession } from '@kortix/sdk';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import type { ProjectSession } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 const SRC = await Bun.file(new URL('./session-site-header.tsx', import.meta.url).pathname).text();
 
@@ -32,7 +32,7 @@ function session(over: Partial<ProjectSession>): ProjectSession {
 }
 
 describe('the header renders the sidebar name', () => {
-  test('uses the sidebar helper, not opencode\'s title', () => {
+  test("uses the sidebar helper, not opencode's title", () => {
     const src = code();
     expect(src).toContain('getSessionDisplayTitle(projectSession)');
     // The regression shape: the raw prop back in the label.
@@ -48,7 +48,9 @@ describe('the header renders the sidebar name', () => {
   test('still falls back to the prop without a project session', () => {
     // The share viewer and instant shell render this header with no project
     // session; hardcoding the helper would blank the title there.
-    expect(code()).toContain('projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle');
+    expect(code()).toContain(
+      'projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle',
+    );
   });
 });
 

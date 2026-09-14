@@ -1,3 +1,7 @@
+import { CHANNELS_COMPANY_TRANSLATION_KEYS } from '@/i18n/channels-company-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * `/channels` copy.
  *
@@ -348,3 +352,11 @@ export const closing = {
   ctaSecondary: 'Read the channel docs',
   ctaSecondaryHref: '/docs/connect/slack',
 } as const;
+
+export function getLocalizedChannelsContent(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { hero, surfaces, thread, connect, back, commands, rules, custom, closing },
+    tI18nComplete,
+    CHANNELS_COMPANY_TRANSLATION_KEYS,
+  );
+}

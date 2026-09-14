@@ -1,6 +1,7 @@
 'use client';
 
 import { WarningIcon as AlertTriangle, DownloadIcon as Download } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
@@ -115,6 +116,7 @@ export function PptxRenderer({
   onDownload,
   isDownloading,
 }: PptxRendererProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -183,10 +185,10 @@ export function PptxRenderer({
         <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
           <AlertTriangle className="text-muted-foreground h-4 w-4" />
         </div>
-        <p className="text-muted-foreground text-sm">Couldn&apos;t display this presentation.</p>
+        <p className="text-muted-foreground text-sm">{tI18nComplete.raw('textc6902b467e2d')}</p>
         <Button size="sm" variant="outline" onClick={handleDownload} disabled={busy}>
           {busy ? <KortixLoader size="small" /> : <Download className="mr-2 h-4 w-4" />}
-          Download to view
+          {tI18nComplete.raw('texteaef0b00e1d6')}
         </Button>
       </div>
     );

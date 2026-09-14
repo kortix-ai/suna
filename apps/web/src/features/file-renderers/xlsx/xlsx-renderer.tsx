@@ -8,6 +8,7 @@ import {
   FileXlsIcon as FileSpreadsheet,
   ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useState } from 'react';
 import { XlsxViewerPreview } from './xlsx-viewer';
@@ -43,6 +44,7 @@ export function XlsxRenderer({
   compact = false,
   toolbarActions,
 }: XlsxRendererProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,12 +105,14 @@ export function XlsxRenderer({
             <FileSpreadsheet className="text-muted-foreground h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-foreground text-lg font-medium">Failed to load spreadsheet</h3>
+            <h3 className="text-foreground text-lg font-medium">
+              {tI18nComplete.raw('text29f7878c46b4')}
+            </h3>
             <p className="text-muted-foreground mt-1 text-xs">{error}</p>
           </div>
           <Button onClick={handleRetry} variant="outline" size="sm">
             <RefreshCw className="mr-2 h-3 w-3" />
-            Retry
+            {tI18nComplete.raw('text942087cc2d41')}
           </Button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `ProviderDetail` — one catalog provider in depth: its credential summary, its
  * help link, and every model it declares with capabilities, wire id, context /
@@ -57,6 +58,7 @@ export function ProviderDetail({
   onBack: () => void;
   onConnect: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const models = provider.models;
   const helpHostname = helpHostnameFromUrl(provider.helpUrl);
   const pricingLookup = useModelPricingLookup(undefined);
@@ -71,7 +73,7 @@ export function ProviderDetail({
         onClick={onBack}
       >
         <ChevronLeft className="size-3.5 shrink-0" />
-        Back to providers
+        {tI18nComplete.raw('textefe5419c900b')}
       </Button>
 
       <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
@@ -81,12 +83,13 @@ export function ProviderDetail({
             <span className="text-foreground truncate text-sm font-medium">{provider.label}</span>
             {isConnected && (
               <Badge variant="success" size="sm">
-                Connected
+                {tI18nComplete.raw('text22965568d22a')}
               </Badge>
             )}
           </div>
           <p className="text-muted-foreground mt-0.5 truncate text-xs">
-            {providerCredentialSummary(provider)} · {models.length} model
+            {providerCredentialSummary(provider)} · {models.length}{' '}
+            {tI18nComplete.raw('text9372c470eead')}
             {models.length === 1 ? '' : 's'}
           </p>
         </div>
@@ -112,17 +115,17 @@ export function ProviderDetail({
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label>
-            Models
+            {tI18nComplete.raw('textd17d2d78d76e')}
             <span className="text-muted-foreground font-normal"> ({models.length})</span>
           </Label>
           <span className="text-muted-foreground/40 text-xs">
-            newest first
+            {tI18nComplete.raw('textd5a5a90ac986')}
           </span>
         </div>
 
         {models.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No models declared.
+            {tI18nComplete.raw('text978fb29c5424')}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -158,11 +161,19 @@ export function ProviderDetail({
                     </div>
                     {hasMeta && (
                       <InlineMeta>
-                        {ctx && <span className="tabular-nums">{ctx} ctx</span>}
-                        {out && <span className="tabular-nums">{out} max out</span>}
+                        {ctx && (
+                          <span className="tabular-nums">
+                            {ctx} {tI18nComplete.raw('text0230c6b1d833')}
+                          </span>
+                        )}
+                        {out && (
+                          <span className="tabular-nums">
+                            {out} {tI18nComplete.raw('textc661a1039aa0')}
+                          </span>
+                        )}
                         {priceIn && priceOut && (
                           <span className="tabular-nums">
-                            {priceIn} / {priceOut} per 1M
+                            {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
                           </span>
                         )}
                       </InlineMeta>

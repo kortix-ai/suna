@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The action chronology bar — prev/next, a scrubber, the position, and the
  * wall-clock time of the focused action, with ←/→ stepping the whole run from
@@ -20,7 +21,10 @@ import { Button } from '@/components/ui/button';
 import { NativeSlider } from '@/components/ui/slider-native';
 import { cn } from '@/lib/utils';
 import type { ToolPart } from '@/ui';
-import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   type FollowMode,
@@ -45,6 +49,7 @@ export function ActionNavigator({
   isLive: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const count = parts.length;
 
   const [mounted, setMounted] = useState(false);
@@ -104,7 +109,7 @@ export function ActionNavigator({
           onClick={goPrev}
           className="hit-area-2 hit-area-r-0"
           disabled={index === 0}
-          aria-label="Previous action"
+          aria-label={tI18nComplete.raw('text730c9f9f651f')}
         >
           <ChevronLeft className="size-4" />
         </Button>
@@ -114,7 +119,7 @@ export function ActionNavigator({
           onClick={goNext}
           className="hit-area-2 hit-area-l-0"
           disabled={atLatest}
-          aria-label="Next action"
+          aria-label={tI18nComplete.raw('text365987d015f7')}
         >
           <ChevronRight className="size-4" />
         </Button>
@@ -141,7 +146,10 @@ export function ActionNavigator({
           {count}
         </span>
         {isLive && atLatest && (
-          <span className="bg-primary/60 size-1.5 rounded-full" aria-label="Live" />
+          <span
+            className="bg-primary/60 size-1.5 rounded-full"
+            aria-label={tI18nComplete.raw('textb64ac05f17e6')}
+          />
         )}
       </span>
     </div>

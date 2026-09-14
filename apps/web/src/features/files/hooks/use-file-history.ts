@@ -1,9 +1,10 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import type { FileCommitDiff, FileHistoryResult } from '@/features/file-browser/types';
 import { useRuntimeStore } from '@kortix/sdk/react';
-import { getFileHistory, getFileCommitDiff, getFileAtCommit } from '../api/git-history';
-import type { FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
+import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
+import { getFileAtCommit, getFileCommitDiff, getFileHistory } from '../api/git-history';
 
 export const fileHistoryKeys = {
   all: ['runtime-files', 'history'] as const,
@@ -31,15 +32,14 @@ export function useFileHistory(
     skip?: number;
   },
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const limit = options?.limit ?? 50;
   const skip = options?.skip ?? 0;
 
   return useQuery<FileHistoryResult>({
-    queryKey: filePath
-      ? fileHistoryKeys.filePaged(serverUrl, filePath, skip, limit)
-      : [],
-    queryFn: () => getFileHistory(filePath!, limit, skip),
+    queryKey: filePath ? fileHistoryKeys.filePaged(serverUrl, filePath, skip, limit) : [],
+    queryFn: () => getFileHistory(filePath!, tI18nComplete, limit, skip),
     enabled: !!filePath && options?.enabled !== false,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
@@ -68,14 +68,13 @@ export function useFileCommitDiff(
   commitHash: string | null,
   options?: { enabled?: boolean },
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useQuery<FileCommitDiff>({
     queryKey:
-      filePath && commitHash
-        ? fileHistoryKeys.commitDiff(serverUrl, filePath, commitHash)
-        : [],
-    queryFn: () => getFileCommitDiff(filePath!, commitHash!),
+      filePath && commitHash ? fileHistoryKeys.commitDiff(serverUrl, filePath, commitHash) : [],
+    queryFn: () => getFileCommitDiff(filePath!, commitHash!, tI18nComplete),
     enabled: !!filePath && !!commitHash && options?.enabled !== false,
     staleTime: 5 * 60_000, // Commit diffs are immutable
     gcTime: 10 * 60_000,
@@ -91,14 +90,13 @@ export function useFileAtCommit(
   commitHash: string | null,
   options?: { enabled?: boolean },
 ) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useQuery<string>({
     queryKey:
-      filePath && commitHash
-        ? fileHistoryKeys.fileAtCommit(serverUrl, filePath, commitHash)
-        : [],
-    queryFn: () => getFileAtCommit(filePath!, commitHash!),
+      filePath && commitHash ? fileHistoryKeys.fileAtCommit(serverUrl, filePath, commitHash) : [],
+    queryFn: () => getFileAtCommit(filePath!, commitHash!, tI18nComplete),
     enabled: !!filePath && !!commitHash && options?.enabled !== false,
     staleTime: Infinity, // File content at a commit never changes
     gcTime: 10 * 60_000,

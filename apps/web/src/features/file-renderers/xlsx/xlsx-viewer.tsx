@@ -24,6 +24,7 @@ import {
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 
@@ -449,6 +450,7 @@ function WorkbookFileActionsMenu({
   showNightRenderToggle?: boolean;
   showUploadButton: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const showThemeControl = showNightRenderToggle && Boolean(onIsDarkChange);
   const showFileActions = (showDownloadButton && onDownload) || showUploadButton;
   if (!showThemeControl && !showFileActions) return null;
@@ -461,7 +463,7 @@ function WorkbookFileActionsMenu({
           variant="ghost"
           size="icon-sm"
           className="transition-transform active:scale-[0.96]"
-          aria-label="Open workbook actions"
+          aria-label={tI18nComplete.raw('text456a5556852f')}
         >
           <Ellipsis className="size-4" />
         </Button>
@@ -470,13 +472,13 @@ function WorkbookFileActionsMenu({
         {showDownloadButton && onDownload ? (
           <DropdownMenuItem onClick={onDownload}>
             <Download className="size-4" />
-            Download
+            {tI18nComplete.raw('textd6eafe823591')}
           </DropdownMenuItem>
         ) : null}
         {showUploadButton ? (
           <DropdownMenuItem onClick={onUploadClick}>
             <Upload className="size-4" />
-            Upload
+            {tI18nComplete.raw('text865e89de78d9')}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -499,6 +501,7 @@ export function WorkbookTableHeaderMenu({
   triggerIcon,
   triggerProps,
 }: XlsxTableHeaderMenuRenderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -510,7 +513,7 @@ export function WorkbookTableHeaderMenu({
           variant="ghost"
           size="icon-sm"
           className={cn('size-6 rounded-sm', triggerProps.className)}
-          aria-label="Column menu"
+          aria-label={tI18nComplete.raw('text0fdefeed5773')}
         >
           {triggerIcon ? triggerIcon : <Ellipsis className="size-3.5" />}
         </Button>
@@ -527,8 +530,12 @@ export function WorkbookTableHeaderMenu({
             setOpen(false);
           }}
         >
-          <DropdownMenuRadioItem value="ascending">Sort ascending</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="descending">Sort descending</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="ascending">
+            {tI18nComplete.raw('textec3c9c77806c')}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="descending">
+            {tI18nComplete.raw('text8993b788afbe')}
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -542,6 +549,7 @@ function WorkbookSearchPopover({
   viewportRef: React.RefObject<HTMLDivElement | null>;
   workbookIdentity: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const controller = useXlsxViewer();
   const [searchDraft, setSearchDraft] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -674,14 +682,14 @@ function WorkbookSearchPopover({
 
   return (
     <Popover>
-      <ToolbarTooltip label="Search workbook">
+      <ToolbarTooltip label={tI18nComplete.raw('text6b11523da566')}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className="transition-transform active:scale-[0.96]"
-            aria-label="Search workbook"
+            aria-label={tI18nComplete.raw('text6b11523da566')}
             disabled={controlsDisabled}
           >
             <Search className="size-4" />
@@ -691,7 +699,7 @@ function WorkbookSearchPopover({
       <PopoverContent align="end" className="w-72">
         <div className="space-y-3">
           <Input
-            placeholder="Search workbook"
+            placeholder={tI18nComplete.raw('text6b11523da566')}
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -731,7 +739,7 @@ function WorkbookSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Previous result"
+                aria-label={tI18nComplete.raw('text965bc32426d7')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
@@ -742,7 +750,7 @@ function WorkbookSearchPopover({
                 variant="outline"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
-                aria-label="Next result"
+                aria-label={tI18nComplete.raw('textbf56a193cb9f')}
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
@@ -752,7 +760,7 @@ function WorkbookSearchPopover({
           </div>
           <div className="flex justify-end">
             <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
-              Clear
+              {tI18nComplete.raw('text83b12c2216ef')}
             </Button>
           </div>
         </div>
@@ -786,6 +794,7 @@ function WorkbookToolbar({
   viewportRef: React.RefObject<HTMLDivElement | null>;
   workbookIdentity: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { canZoomIn, canZoomOut, setZoomScale, zoomIn, zoomOut, zoomScale } = useXlsxViewerZoom();
   const currentZoom = Math.round(zoomScale);
 
@@ -799,14 +808,14 @@ function WorkbookToolbar({
       <TooltipProvider>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div className="flex flex-none items-center gap-1">
-            <ToolbarTooltip label="Zoom out">
+            <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
                 disabled={!canZoomOut}
-                aria-label="Zoom out"
+                aria-label={tI18nComplete.raw('textbc7b631a689b')}
                 onClick={zoomOut}
               >
                 <CircleMinus className="size-4" />
@@ -820,7 +829,7 @@ function WorkbookToolbar({
               <SelectTrigger
                 size="sm"
                 className="w-[84px] min-w-[84px] tabular-nums"
-                aria-label="Zoom level"
+                aria-label={tI18nComplete.raw('text3926ced4e6c4')}
               >
                 <SelectValue>{currentZoom}%</SelectValue>
               </SelectTrigger>
@@ -836,14 +845,14 @@ function WorkbookToolbar({
                 ))}
               </SelectContent>
             </Select>
-            <ToolbarTooltip label="Zoom in">
+            <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
                 disabled={!canZoomIn}
-                aria-label="Zoom in"
+                aria-label={tI18nComplete.raw('text0e47f09a748f')}
                 onClick={zoomIn}
               >
                 <CirclePlus className="size-4" />
@@ -1151,7 +1160,7 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
       {typeof document !== 'undefined' && previewSheet && visiblePreviewIndex !== null && previewUrl
         ? createPortal(
             <div
-              className="bg-background/95 pointer-events-none fixed z-40 translate-y-0 overflow-hidden rounded-lg border opacity-100 shadow-xl backdrop-blur-md transition-[opacity,transform] duration-100"
+              className="bg-background/95 duration-fast pointer-events-none fixed z-40 translate-y-0 overflow-hidden rounded-lg border opacity-100 shadow-xl backdrop-blur-md transition-[opacity,transform]"
               style={{
                 left: previewPosition.left,
                 top: previewPosition.top,
@@ -1204,6 +1213,7 @@ export function XlsxWorkbookSurface({
   toolbarActions?: React.ReactNode;
   workbookIdentity: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { error } = useXlsxViewer();
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -1271,9 +1281,9 @@ export function XlsxWorkbookSurface({
             fileTooLargeState={
               <div className="grid h-full w-full min-w-full place-items-center p-6">
                 <div className="bg-background max-w-sm rounded-lg border p-4 text-sm">
-                  <p className="font-medium">File too large</p>
+                  <p className="font-medium">{tI18nComplete.raw('text8a2819cae213')}</p>
                   <p className="text-muted-foreground mt-1">
-                    This workbook exceeds the display limit. Download it to view the full file.
+                    {tI18nComplete.raw('textd3821f7d63f3')}
                   </p>
                 </div>
               </div>
@@ -1282,7 +1292,7 @@ export function XlsxWorkbookSurface({
             renderScroller={renderSearchableScroller}
             errorState={
               <div className="text-destructive grid h-full w-full min-w-full place-items-center p-6 text-sm">
-                {error?.message ?? 'Unable to display workbook.'}
+                {error?.message ?? tI18nComplete.raw('text8d75c18adecc')}
               </div>
             }
             renderTableHeaderMenu={renderTableHeaderMenu}
@@ -1354,6 +1364,7 @@ function XlsxViewerContent({
   toolbarActions?: React.ReactNode;
   url?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploadedWorkbook, setUploadedWorkbook] = React.useState<UploadedWorkbook | null>(null);
   const sourceFileName = React.useMemo(
@@ -1453,9 +1464,10 @@ function XlsxViewerContent({
         />
         <div className="bg-muted/30 grid min-h-0 flex-1 place-items-center p-4">
           <div className="bg-background max-w-md rounded-lg border p-4 text-center text-sm shadow-xs">
-            <p className="font-medium">Upload a workbook to preview</p>
+            <p className="font-medium">{tI18nComplete.raw('text2e15b5a6e45a')}</p>
             <p className="text-muted-foreground mt-1">
-              Pass an XLSX URL with the <code>src</code> prop or upload a file.
+              {tI18nComplete.raw('text27acc1f81d66')} <code>src</code>{' '}
+              {tI18nComplete.raw('text37056f2381e2')}
             </p>
             <Button
               type="button"
@@ -1465,7 +1477,7 @@ function XlsxViewerContent({
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="size-4" />
-              Upload XLSX
+              {tI18nComplete.raw('text522d6e41c020')}
             </Button>
           </div>
         </div>
@@ -1492,7 +1504,7 @@ function XlsxViewerContent({
         />
         <div className="bg-muted/30 grid min-h-0 flex-1 place-items-center p-4">
           <div className="bg-background max-w-md rounded-lg border p-4 text-sm">
-            <p className="font-medium">Unable to display workbook</p>
+            <p className="font-medium">{tI18nComplete.raw('texte3190ee3d8a8')}</p>
             <p className="text-muted-foreground mt-1">{loadError}</p>
             <Button
               type="button"
@@ -1502,7 +1514,7 @@ function XlsxViewerContent({
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="size-4" />
-              Upload XLSX
+              {tI18nComplete.raw('text522d6e41c020')}
             </Button>
           </div>
         </div>

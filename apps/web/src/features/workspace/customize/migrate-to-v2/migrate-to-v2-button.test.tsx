@@ -19,9 +19,7 @@ describe('MigrateToV2ButtonView — v1/v2 visibility', () => {
   });
 
   test('disables itself and swaps the icon for a spinner while a session is being created', () => {
-    const html = renderToStaticMarkup(
-      <MigrateToV2ButtonView visible pending onClick={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<MigrateToV2ButtonView visible pending onClick={() => {}} />);
     expect(html).toContain('disabled');
   });
 });

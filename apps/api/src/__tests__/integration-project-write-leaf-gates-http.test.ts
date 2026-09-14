@@ -32,10 +32,10 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'write-leaf-gate-test-project',
     repoUrl: 'https://example.com/write-leaf-gate-test.git',
-    // Flag-gated routes in CASES (review/*, channels/email/*, channels/teams/*)
-    // reject with 403 `feature_disabled` when off. Turn them on so this suite
-    // measures the LEAF gate, not the flag.
-    metadata: { experimental: { review_center: true, agentmail_email: true, teams: true } },
+    // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
+    // with 403 `feature_disabled` when off. Turn them on so this suite measures
+    // the LEAF gate, not the flag.
+    metadata: { experimental: { agentmail_email: true, teams: true } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },

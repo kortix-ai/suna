@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '@kortix/sdk';
+import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
+  groupChangeRequestsBySession,
   groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
@@ -25,6 +26,81 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     ...overrides,
   } as unknown as ProjectSession;
 }
+
+function makeChangeRequest(overrides: Partial<ChangeRequest> = {}): ChangeRequest {
+  return {
+    cr_id: 'cr-1',
+    project_id: 'p1',
+    number: 1,
+    title: 'Change request',
+    head_ref: 'session/s1',
+    status: 'open',
+    origin_session_id: 's1',
+    created_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  } as ChangeRequest;
+}
+
+describe('groupChangeRequestsBySession', () => {
+  test('keeps open, merged, and closed change requests for their origin session', () => {
+    const requests = [
+      makeChangeRequest({ cr_id: 'open', number: 1, status: 'open' }),
+      makeChangeRequest({ cr_id: 'merged', number: 2, status: 'merged' }),
+      makeChangeRequest({ cr_id: 'closed', number: 3, status: 'closed' }),
+    ];
+
+    expect(
+      groupChangeRequestsBySession(requests, [makeSession()])
+        .get('s1')
+        ?.map((cr) => cr.cr_id),
+    ).toEqual(['closed', 'merged', 'open']);
+  });
+
+  test('uses a unique matching branch only when origin_session_id is absent', () => {
+    const session = makeSession({ session_id: 'legacy', branch_name: 'session/legacy' });
+    const request = makeChangeRequest({
+      origin_session_id: null,
+      head_ref: 'session/legacy',
+    });
+
+    expect(groupChangeRequestsBySession([request], [session]).get('legacy')).toEqual([request]);
+  });
+
+  test('origin_session_id wins over a matching branch', () => {
+    const origin = makeSession({ session_id: 'origin', branch_name: 'session/origin' });
+    const branchMatch = makeSession({ session_id: 'branch', branch_name: 'session/branch' });
+    const request = makeChangeRequest({
+      origin_session_id: 'origin',
+      head_ref: 'session/branch',
+    });
+
+    const grouped = groupChangeRequestsBySession([request], [origin, branchMatch]);
+    expect(grouped.get('origin')).toEqual([request]);
+    expect(grouped.has('branch')).toBe(false);
+  });
+
+  test('does not guess when a legacy branch matches more than one session', () => {
+    const request = makeChangeRequest({ origin_session_id: null, head_ref: 'shared-branch' });
+    const sessions = [
+      makeSession({ session_id: 'a', branch_name: 'shared-branch' }),
+      makeSession({ session_id: 'b', branch_name: 'shared-branch' }),
+    ];
+
+    expect(groupChangeRequestsBySession([request], sessions).size).toBe(0);
+  });
+
+  test('sorts each session newest first without mutating the response', () => {
+    const older = makeChangeRequest({ cr_id: 'older', created_at: '2026-01-01T00:00:00.000Z' });
+    const newer = makeChangeRequest({ cr_id: 'newer', created_at: '2026-01-02T00:00:00.000Z' });
+    const requests = [older, newer];
+
+    expect(groupChangeRequestsBySession(requests, [makeSession()]).get('s1')).toEqual([
+      newer,
+      older,
+    ]);
+    expect(requests).toEqual([older, newer]);
+  });
+});
 
 describe('shouldPollProjectSessions', () => {
   test('polls when a session is queued', () => {

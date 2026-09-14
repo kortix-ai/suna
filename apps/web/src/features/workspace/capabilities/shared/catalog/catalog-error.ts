@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * What a failed catalog load should actually say.
  *
@@ -34,54 +35,54 @@ export interface CatalogErrorCopy {
   canRetry: boolean;
 }
 
-export function catalogErrorCopy(error: unknown): CatalogErrorCopy {
+export function catalogErrorCopy(error: unknown, tI18nComplete: UiTranslator): CatalogErrorCopy {
   const status = statusOf(error);
 
   // No status: the request never completed. This is the ONLY case where the
   // user's connection is a fair thing to point at.
   if (status === null) {
     return {
-      title: "Couldn't load",
-      description: 'Check your connection and try again.',
+      title: tI18nComplete.raw('text2c1cff23cb89'),
+      description: tI18nComplete.raw('text481859b689b0'),
       canRetry: true,
     };
   }
 
   if (status === 401) {
     return {
-      title: 'Session expired',
-      description: 'Sign in again to continue.',
+      title: tI18nComplete.raw('texte5ee1e7e84aa'),
+      description: tI18nComplete.raw('text40f531d6cd85'),
       canRetry: false,
     };
   }
 
   if (status === 403) {
     return {
-      title: 'No access',
-      description: "You don't have permission to view this.",
+      title: tI18nComplete.raw('text9b1f0823459d'),
+      description: tI18nComplete.raw('text516f7c6c91fd'),
       canRetry: false,
     };
   }
 
   if (status === 404) {
     return {
-      title: 'Not found',
-      description: 'This has been moved or deleted.',
+      title: tI18nComplete.raw('texte3ebaa16dd9d'),
+      description: tI18nComplete.raw('textf7571d57f984'),
       canRetry: false,
     };
   }
 
   if (status >= 500) {
     return {
-      title: 'Server error',
-      description: `The server failed to answer (${status}). Retrying may work; the details are in the server log.`,
+      title: tI18nComplete.raw('textdfe0c2e802b1'),
+      description: tI18nComplete('text9ebbc86cb85b', { value0: status }),
       canRetry: true,
     };
   }
 
   return {
-    title: "Couldn't load",
-    description: `The request was rejected (${status}).`,
+    title: tI18nComplete.raw('text2c1cff23cb89'),
+    description: tI18nComplete('text164e80bf993e', { value0: status }),
     canRetry: false,
   };
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // CopyRow — a monospace value plus a copy button, in one row.
 //
 // Replaces the `SpDetails` rows in `sso-card.tsx`, the SCIM base-URL /
@@ -20,13 +21,13 @@ import type { ReactNode } from 'react';
  * Imperative copy for call sites that are not a `CopyRow` (a kebab item, a
  * toast action button). Same toast pair the three private copies used.
  */
-export async function copyValue(value: string, successMsg = 'Copied to clipboard') {
+export async function copyValue(value: string, successMsg: string, failureMsg: string) {
   try {
     await navigator.clipboard.writeText(value);
     successToast(successMsg);
     return true;
   } catch {
-    errorToast('Copy failed — select and copy manually');
+    errorToast(failureMsg);
     return false;
   }
 }
@@ -48,11 +49,17 @@ export function CopyRow({
   value,
   label,
   display,
-  successMessage = 'Copied to clipboard',
+  successMessage,
   actions,
   className,
 }: CopyRowProps) {
-  const { copy, copied } = useCopy({ successMessage });
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { copy, copied } = useCopy({
+    successMessage: successMessage ?? tI18nComplete.raw('textd37078fe6a1f'),
+  });
+  const copyLabel = copied
+    ? tI18nComplete.raw('text8d525e5f158b')
+    : tI18nComplete.raw('texte21f935f11d7');
 
   return (
     <div className={cn('space-y-1.5', className)}>
@@ -62,12 +69,12 @@ export function CopyRow({
           {display ?? value}
         </code>
         {actions}
-        <Hint label={copied ? 'Copied' : 'Copy'}>
+        <Hint label={copyLabel}>
           <Button
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label={copied ? 'Copied' : 'Copy'}
+            aria-label={copyLabel}
             onClick={() => void copy(value)}
             className="text-muted-foreground hover:text-foreground shrink-0"
           >

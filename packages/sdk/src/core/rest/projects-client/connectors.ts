@@ -1294,6 +1294,54 @@ export async function listConnectToolkits(
   };
 }
 
+/** One browse section of the hosted toolkit catalog. */
+export interface ConnectSection {
+  /** The provider's category slug. `listConnectToolkits({ category: key })` opens it. */
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `toolkits.length`. A heading states this. */
+  total: number;
+  toolkits: ConnectToolkit[];
+}
+
+/** A category of the hosted toolkit catalog, with its size. */
+export interface ConnectCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ConnectSectionsPage {
+  provider: 'composio';
+  /** The largest categories, each a fixed top slice by usage. */
+  sections: ConnectSection[];
+  /** Every category, largest first. */
+  categories: ConnectCategory[];
+}
+
+/**
+ * The hosted toolkit catalog's browse page: a fixed top slice of each of the
+ * largest categories, each with the category's true total, in one request.
+ *
+ * The Composio counterpart of `listPipedreamSections`. Sections are grouped
+ * server-side from the complete catalog, so a heading's count never describes
+ * only the toolkits a single loaded page happened to contain.
+ */
+export async function listConnectSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<ConnectSectionsPage>(
+      `/connectors/projects/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
 
 export interface DiscoverConnector {
@@ -1362,14 +1410,82 @@ export type DiscoverIntegrationsPage = DiscoverConnectorsPage;
 /** @deprecated Use `DiscoverConnectorDetail`. */
 export type DiscoverIntegrationDetail = DiscoverConnectorDetail;
 
-export async function listDiscoverConnectors(projectId: string, q?: string, cursor?: string) {
+export interface DiscoverConnectorsQuery {
+  q?: string;
+  cursor?: string;
+  /** A browse-section key from `listDiscoverSections`. The page then holds
+   *  exactly the connectors that section counted, picks first. */
+  category?: string;
+  limit?: number;
+}
+
+/**
+ * A page of the Discover catalogue. Accepts the original positional
+ * `(projectId, q, cursor)` form or a query object carrying a category filter.
+ */
+export async function listDiscoverConnectors(
+  projectId: string,
+  qOrQuery?: string | DiscoverConnectorsQuery,
+  cursor?: string,
+) {
+  const query: DiscoverConnectorsQuery =
+    typeof qOrQuery === 'string' || qOrQuery === undefined
+      ? { ...(qOrQuery ? { q: qOrQuery } : {}), ...(cursor ? { cursor } : {}) }
+      : qOrQuery;
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (cursor) params.set('cursor', cursor);
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
       `/connectors/projects/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+/** One browse section of the Discover catalogue. */
+export interface DiscoverSection {
+  /** The section key. `listDiscoverConnectors({ category: key })` opens it. */
+  key: string;
+  label: string;
+  /** The section's TRUE size — not `items.length`. A heading states this. */
+  total: number;
+  items: DiscoverConnector[];
+}
+
+/** A Discover browse section, with its size. */
+export interface DiscoverCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface DiscoverSectionsPage {
+  /** The top of the whole catalogue by popularity. */
+  popular: DiscoverConnector[];
+  /** The leading sections in browse order, each a fixed top slice. */
+  sections: DiscoverSection[];
+  /** Every section in browse order. */
+  categories: DiscoverCategory[];
+}
+
+/**
+ * The Discover browse page in one request: Popular, then a fixed top slice of
+ * each section with the section's true total across the complete catalogue.
+ */
+export async function listDiscoverSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<DiscoverSectionsPage>(
+      `/connectors/projects/${projectId}/discover/sections${qs ? `?${qs}` : ''}`,
     ),
   );
 }

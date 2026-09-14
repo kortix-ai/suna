@@ -20,6 +20,7 @@
  * for good the moment the manifest lands on v2.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -53,6 +54,7 @@ export function ProjectManifestUpgradeAlertView({
    *  in tests; the real sidebar always starts collapsed. */
   defaultOpen?: boolean;
 }) {
+  const t = useTranslations('sidebar');
   const [isOpen, setIsOpen] = useState(defaultOpen);
   if (!visible) return null;
 
@@ -60,15 +62,16 @@ export function ProjectManifestUpgradeAlertView({
     <SidebarAlert
       tone="info"
       icon={<ArrowUpCircle className="size-4" />}
-      label="Upgrade to v2"
+      label={t('manifestUpgrade.title')}
       open={isOpen}
       onOpenChange={setIsOpen}
     >
       <SidebarAlertBody>
         <SidebarAlertText>
-          This project still runs <span className="font-mono">kortix.toml</span>. An agent converts
-          it to <span className="font-mono">kortix.yaml</span>, refreshes managed skills, and opens
-          a change request. Nothing changes until you approve it.
+          {t.rich('manifestUpgrade.description', {
+            toml: (chunks) => <span className="font-mono">{chunks}</span>,
+            yaml: (chunks) => <span className="font-mono">{chunks}</span>,
+          })}
         </SidebarAlertText>
       </SidebarAlertBody>
       <SidebarAlertActions>
@@ -78,7 +81,7 @@ export function ProjectManifestUpgradeAlertView({
           ) : (
             <ArrowUpCircle className="size-3.5 shrink-0" />
           )}
-          Start upgrade
+          {t('manifestUpgrade.start')}
         </Button>
       </SidebarAlertActions>
     </SidebarAlert>

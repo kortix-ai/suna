@@ -1,4 +1,5 @@
 'use client';
+
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -9,6 +10,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   getChildSessionId,
@@ -47,12 +49,13 @@ import { useCallback, useMemo, useState } from 'react';
  * on touch, and this is the only route to a running sub-agent's full transcript.
  */
 function FullViewAction({ onOpen }: { onOpen: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <span
       role="button"
       tabIndex={0}
-      aria-label="Open full view"
-      title="Open full view"
+      aria-label={tI18nComplete.raw('text229fbeec6b2f')}
+      title={tI18nComplete.raw('text229fbeec6b2f')}
       onClick={(e) => {
         e.stopPropagation();
         onOpen();
@@ -69,7 +72,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
         'underline-offset-2 transition-colors hover:underline',
       )}
     >
-      View
+      {tI18nComplete.raw('textdcc839a4015c')}
     </span>
   );
 }
@@ -97,6 +100,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
  * which is what kept the empty case from being empty.
  */
 export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const status = partStatus(part);
 
@@ -155,7 +159,7 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <BasicTool
         icon={<SquareKanban className="size-3.5 shrink-0" />}
         trigger={{
-          title: `Agent · ${subagentType}`,
+          title: tI18nComplete('text9471197a871a', { value0: subagentType }),
           subtitle,
         }}
         defaultOpen={defaultOpen}
@@ -183,7 +187,10 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}
-          title={`Agent · ${subagentType}${description ? `: ${description}` : ''}`}
+          title={tI18nComplete('text7decbfdbacee', {
+            value0: subagentType,
+            value1: description ? tI18nComplete('textb581fd88ea24', { value0: description }) : '',
+          })}
         />
       )}
     </>

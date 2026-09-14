@@ -218,6 +218,70 @@ test('composioConnectUrl uses session.authorize and does not treat its id as the
   });
 });
 
+test('composioConnectUrl retries under a fresh alias when Composio says the slug alias is taken', async () => {
+  // A previous Connect left a non-active account aliased `github`; Composio
+  // refuses the slug alias with ConnectedAccount_BadRequest. The retry must
+  // use a different alias and the caller must still get a connect URL.
+  const aliases: Array<string | undefined> = [];
+  const created = session({
+    toolkit: { slug: 'github', name: 'GitHub', isNoAuth: false },
+    authorize: async (_toolkit, options) => {
+      aliases.push(options?.alias);
+      if (aliases.length === 1) {
+        throw new Error(
+          '400 {"error":{"message":"Alias \\"github\\" is already in use by another connection for this entity","code":600,"slug":"ConnectedAccount_BadRequest","status":400}}',
+        );
+      }
+      return {
+        id: 'auth-request-2',
+        status: 'INITIATED',
+        redirectUrl: 'https://composio.test/connect-2',
+        toJSON: () => ({
+          id: 'auth-request-2',
+          status: 'INITIATED',
+          redirectUrl: 'https://composio.test/connect-2',
+        }),
+      };
+    },
+  });
+
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'github',
+    app: 'github',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime: fakeRuntime({ created }),
+  });
+
+  expect(aliases[0]).toBe('github');
+  expect(aliases[1]).toMatch(/^github-[0-9a-z]+$/);
+  expect(aliases[1]).not.toBe('github');
+  expect(result.connectUrl).toBe('https://composio.test/connect-2');
+  expect(result.authRequestId).toBe('auth-request-2');
+});
+
+test('composioConnectUrl surfaces any other Composio refusal as a 502, not an opaque 500', async () => {
+  const created = session({
+    toolkit: { slug: 'github', name: 'GitHub', isNoAuth: false },
+    authorize: async () => {
+      throw new Error('403 {"error":{"message":"Toolkit disabled for this org"}}');
+    },
+  });
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'github',
+    app: 'github',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime: fakeRuntime({ created }),
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 502,
+    message: expect.stringContaining('Composio refused the authorization'),
+  });
+});
+
 test('composioConnectUrl uses Composio managed Gmail defaults without selecting stale auth configs', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const created = session({
@@ -728,4 +792,74 @@ test('composioCatalogPage enriches the paged catalogue with the metadata that pa
     description: null,
     categories: [],
   });
+});
+
+test('composioCatalogPage searches one and two letters across every provider page', async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    if (options?.search && options.search.length < 3) {
+      throw new Error('Search query must be at least 3 characters long');
+    }
+    return { items: [], totalPages: 1 };
+  };
+  const catalogClient = {
+    toolkits: {
+      async list(query: { cursor?: string }) {
+        requests.push(query);
+        return query.cursor
+          ? {
+              items: [
+                {
+                  slug: 'gmail',
+                  name: 'Gmail',
+                  meta: { description: 'Email', categories: [{ id: 'email', name: 'Email' }] },
+                },
+              ],
+              next_cursor: null,
+            }
+          : {
+              items: [
+                { slug: 'alpha', name: 'Alpha', meta: {} },
+                { slug: 'zoom', name: 'Zoom', meta: {} },
+              ],
+              next_cursor: 'page-2',
+            };
+      },
+    },
+  };
+  const input = {
+    projectId: 'project-1',
+    runtime: fakeRuntime({ created }),
+    catalogClient,
+    limit: 1,
+  };
+  const first = await composioCatalogPage({ ...input, q: ' A ' });
+  expect(first).toMatchObject({
+    provider: 'composio',
+    total: 2,
+    hasMore: true,
+    toolkits: [{ slug: 'alpha' }],
+  });
+  if (!('nextCursor' in first)) throw new Error('expected a next cursor');
+  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.nextCursor });
+  expect(second).toMatchObject({
+    total: 2,
+    hasMore: false,
+    toolkits: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'gm' })).toMatchObject({
+    total: 1,
+    hasMore: false,
+    toolkits: [{ slug: 'gmail' }],
+  });
+  expect(await composioCatalogPage({ ...input, q: 'zz' })).toMatchObject({
+    total: 0,
+    hasMore: false,
+    toolkits: [],
+  });
+  expect(requests).toEqual([
+    { limit: 1000, sort_by: 'usage' },
+    { limit: 1000, sort_by: 'usage', cursor: 'page-2' },
+  ]);
 });

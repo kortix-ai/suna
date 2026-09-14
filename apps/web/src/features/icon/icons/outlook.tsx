@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const Outlook = ({ className }: { className?: string }) => {
   const tI18nHardcoded = useTranslations('hardcodedUi');

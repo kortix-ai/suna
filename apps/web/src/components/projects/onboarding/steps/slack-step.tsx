@@ -11,6 +11,7 @@
  */
 
 import { CheckCircleIcon, SlidersHorizontalIcon, XIcon as X } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { Suspense, lazy, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ export function SlackStep({
   onContinue: () => void;
   onSkip: () => void;
 }) {
+  const t = useTranslations('projectOnboarding.slack');
   const mode = useSlackMode(projectId);
   const install = useSlackInstall(projectId);
   const [customRequested, setCustomRequested] = useState(false);
@@ -85,33 +87,33 @@ export function SlackStep({
 
   return (
     <StepShell
-      title="Add Kortix to Slack"
-      description="This is where most teams actually use Kortix — @mention your agent, kick off tasks, get results in the channel."
-      primaryLabel="Continue"
+      title={t('title')}
+      description={t('description')}
+      primaryLabel={t('continue')}
       primaryDisabled={!connected}
       onPrimary={onContinue}
-      skipLabel={connected ? undefined : 'Not now'}
+      skipLabel={connected ? undefined : t('notNow')}
       onSkip={connected ? undefined : onSkip}
     >
       {connected ? (
         <div aria-live="polite" aria-atomic="true" className="flex items-center gap-2">
           <CheckCircleIcon weight="fill" className="text-kortix-green size-4 shrink-0" />
-          <h2 className="text-foreground text-sm font-medium">Connected to Slack</h2>
+          <h2 className="text-foreground text-sm font-medium">{t('connected')}</h2>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2" role="group" aria-label="Slack install method">
+          <div className="flex flex-col gap-2" role="group" aria-label={t('installMethod')}>
             <ActionRow
-              label="Add to Slack"
-              description="One click, nothing to configure"
+              label={t('add')}
+              description={t('addDescription')}
               disabled={mode.isLoading || !installUrl || waiting}
               onSelect={openInstall}
               leading={<Slack className="size-5 shrink-0" />}
             />
             <ActionRow
               active={customOpen}
-              label="Use a custom Slack app"
-              description="For self-hosted workspaces, or when managed install is unavailable"
+              label={t('custom')}
+              description={t('customDescription')}
               onSelect={toggleCustom}
               onPreload={preloadConnectorsView}
               leading={
@@ -131,13 +133,10 @@ export function SlackStep({
             >
               <div className="flex items-center gap-2">
                 <Loading className="size-4 shrink-0" />
-                <h2 className="text-foreground text-sm font-medium">
-                  Waiting for approval in Slack…
-                </h2>
+                <h2 className="text-foreground text-sm font-medium">{t('waiting')}</h2>
               </div>
               <p className="text-muted-foreground mt-2 text-xs leading-5 text-pretty">
-                Complete the install in the Slack popup. Kortix checks the connection every 2.5
-                seconds.
+                {t('waitingDescription')}
               </p>
             </div>
           )}
@@ -146,15 +145,15 @@ export function SlackStep({
             <div className="border-border bg-popover rounded-md border p-4">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <h2 className="text-foreground text-sm font-medium">Bring your own Slack app</h2>
+                  <h2 className="text-foreground text-sm font-medium">{t('bringOwn')}</h2>
                   <p className="text-muted-foreground text-xs leading-5">
-                    For self-hosted setups or workspace-scoped installs.
+                    {t('bringOwnDescription')}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Close custom Slack app setup"
+                  aria-label={t('closeCustom')}
                   className="text-muted-foreground shrink-0"
                   onClick={() => setCustomRequested(false)}
                 >

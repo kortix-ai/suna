@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, mock, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
-import type { ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { PanelMode } from '@/stores/user-preferences-store';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, expect, mock, test } from 'bun:test';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
+import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
@@ -92,18 +92,14 @@ mock.module('@/stores/user-preferences-store', () => ({
 describe('panel mode gate', () => {
   test('missing panelMode (pre-panelMode persisted state) falls back to Easy', () => {
     mockPanelMode = undefined;
-    const html = renderToStaticMarkup(
-      withQueryClient(withPanel(<ActionPanel />)),
-    );
+    const html = renderToStaticMarkup(withQueryClient(withPanel(<ActionPanel />)));
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
   });
 
   test("panelMode: 'easy' renders the Easy card home", () => {
     mockPanelMode = 'easy';
-    const html = renderToStaticMarkup(
-      withQueryClient(withPanel(<ActionPanel />)),
-    );
+    const html = renderToStaticMarkup(withQueryClient(withPanel(<ActionPanel />)));
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
   });
@@ -123,9 +119,7 @@ describe('panel mode gate', () => {
   });
 
   test('EasyPanel renders the card home — Outputs/Context promises, no stepper', () => {
-    const html = renderToStaticMarkup(
-      withQueryClient(withPanel(<EasyPanel />)),
-    );
+    const html = renderToStaticMarkup(withQueryClient(withPanel(<EasyPanel />)));
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
   });
@@ -169,7 +163,7 @@ describe('shouldDiscardPendingPrimaryOpen (W7)', () => {
     expect(shouldDiscardPendingPrimaryOpen('advanced', null, 's1')).toBe(false);
   });
 
-  test('end to end: Advanced mode consumes this session\'s pending request via the store', () => {
+  test("end to end: Advanced mode consumes this session's pending request via the store", () => {
     useKortixComputerStore.getState().reset();
     useKortixComputerStore.getState().requestPrimaryOpen('s1');
     expect(

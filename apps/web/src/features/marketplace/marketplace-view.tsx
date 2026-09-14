@@ -1,11 +1,12 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
+import { useMarketplaceItem, useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import { MarketplaceDetail, useDetailNav } from './marketplace-detail';
 import { MarketplaceExplore } from './marketplace-explore';
@@ -23,6 +24,7 @@ const NO_INSTALLED_NAMES = new Set<string>();
  *  start an agent-import session in THIS project, in-panel overlay
  *  navigation). */
 export function MarketplaceView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const closeDetail = useMarketplaceDetailStore((s) => s.close);
@@ -44,7 +46,9 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
         <div className="flex h-full min-h-0 flex-col">
           {/* Fixed top bar — stays put; the content below scrolls. */}
           <div className="border-border/60 flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
-            <h2 className="text-foreground text-sm font-medium">Marketplace</h2>
+            <h2 className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('textc608981d8d68')}
+            </h2>
           </div>
 
           <div className="h-full min-h-0 flex-1 px-4 py-4">
@@ -99,6 +103,7 @@ function MarketplaceExploreTab({
 /** Fetches the open item by id and renders the shared detail as an in-panel
  *  overlay (the project surface makes its actions install into this project). */
 function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const query = useMarketplaceItem(openId);
@@ -120,9 +125,9 @@ function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
     return (
       <div className="space-y-4">
         <Button variant="outline" size="sm" onClick={onBack}>
-          Back
+          {tI18nComplete.raw('text76900f1bfd16')}
         </Button>
-        <p className="text-muted-foreground text-sm">Couldn&apos;t load this item.</p>
+        <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text90b1ad72d8b7')}</p>
       </div>
     );
   }

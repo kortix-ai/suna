@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { hero, platform, statements } from './content';
+import { getLocalizedAboutContent } from './content';
 
 /* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
    runs its full width. */
@@ -29,6 +30,8 @@ const MEASURE = 'max-w-[34rem]';
  * void. Widen the ratio further and the crop line reaches the tallest head.
  */
 function Hero(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = getLocalizedAboutContent(tI18nComplete);
   return (
     <section className="mx-auto max-w-7xl px-6 pt-28 pb-14 sm:pt-36 sm:pb-28">
       <Reveal>
@@ -79,6 +82,8 @@ function Hero(): ReactNode {
 
 /** The three claims. Mono index, headline, one paragraph, a rule between each. */
 function Statements(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { statements } = getLocalizedAboutContent(tI18nComplete);
   return (
     <section id="thesis" className="mx-auto max-w-7xl px-6">
       <ol>
@@ -115,6 +120,8 @@ function Statements(): ReactNode {
 }
 
 function PlatformSection(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { platform } = getLocalizedAboutContent(tI18nComplete);
   return (
     <section id="platform" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <SectionHeader eyebrow={platform.eyebrow} title={platform.title} />

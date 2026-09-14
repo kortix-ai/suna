@@ -21,7 +21,7 @@ export function useGitStatus(_options?: { enabled?: boolean }) {
     isLoading: false,
     isError: false,
     error: null as Error | null,
-    refetch: async () => ({ data: [] as GitFileStatus[] } as any),
+    refetch: async () => ({ data: [] as GitFileStatus[] }) as any,
   };
 }
 

@@ -117,19 +117,51 @@ export function isConnectorConnectionSlugAvailable(
   return normalized.length > 0 && !existingSlugs.includes(normalized);
 }
 
+/** Six base36 characters — 2.2 billion values; enough that a second
+ *  connection to the same app never needs a human to invent a suffix. */
+export function randomConnectorSlugSuffix(): string {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => (b % 36).toString(36)).join('');
+}
+
+/**
+ * Always `<app>-<random>` (Marko, 2026-09-03: "unique slug, always
+ * sentry-<something random>"). The slug is a manifest key and a Composio
+ * alias; a bare `sentry` collided with a previous attempt's leftovers and a
+ * `-1` suffix collided with the next person's. Random never does. `random`
+ * is injectable so tests stay deterministic.
+ */
 export function proposeConnectorConnectionSlug(
   displayName: string,
   existingSlugs: readonly string[],
+  random: () => string = randomConnectorSlugSuffix,
 ): string {
-  const base = normalizeConnectorConnectionSlug(displayName) || 'connector';
-  if (isConnectorConnectionSlugAvailable(base, existingSlugs)) return base;
-
-  for (let index = 1; ; index += 1) {
-    const suffix = `-${index}`;
+  const base = normalizeConnectorConnectionSlug(displayName).replace(/[-_]+$/g, '') || 'connector';
+  for (;;) {
+    const suffix = `-${random()}`;
     const stem = base.slice(0, MAX_CONNECTOR_SLUG_LENGTH - suffix.length).replace(/[-_]+$/g, '');
     const candidate = `${stem}${suffix}`;
     if (isConnectorConnectionSlugAvailable(candidate, existingSlugs)) return candidate;
   }
+}
+
+/**
+ * The display name a new connection is proposed with: the app's name, or
+ * `<name> 2`, `<name> 3` … when the project already has connections to that
+ * app (counted by slug stem — the slug is the one field that is unique).
+ * So two Sentry connections read "Sentry" and "Sentry 2", never "Sentry" twice.
+ */
+export function proposeConnectorConnectionName(
+  appName: string,
+  existingSlugs: readonly string[],
+): string {
+  const name = appName.trim();
+  if (!name) return name;
+  const base = normalizeConnectorConnectionSlug(name).replace(/[-_]+$/g, '');
+  if (!base) return name;
+  const taken = existingSlugs.filter((s) => s === base || s.startsWith(`${base}-`)).length;
+  return taken === 0 ? name : `${name} ${taken + 1}`;
 }
 
 export function connectorConnectionSlugAfterNameChange({

@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwise } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   type SessionScopeConnectorOption,
@@ -142,13 +143,14 @@ export function setSessionConnectorEnabled(
 export function ResetAxisButton({
   disabled = false,
   onReset,
-  label = 'Reset to default',
+  label,
 }: {
   disabled?: boolean;
   onReset: () => void;
   /** Names where the default comes from — "Reset to agent default" etc. */
   label?: string;
 }) {
+  const t = useTranslations('sessionScope');
   return (
     <Button
       type="button"
@@ -159,7 +161,7 @@ export function ResetAxisButton({
       onClick={onReset}
     >
       <ArrowCounterClockwise className="size-3.5 shrink-0" />
-      {label}
+      {label ?? t('resetDefault')}
     </Button>
   );
 }
@@ -175,10 +177,11 @@ export function SessionSecretsEditor({
   disabled = false,
   onChange,
 }: SessionScopeEditorProps) {
+  const t = useTranslations('sessionScope');
   if (catalog.secrets.status === 'unavailable') {
     return (
-      <InfoBanner tone="neutral" title="Secret access is unavailable">
-        The current secret selection stays unchanged.
+      <InfoBanner tone="neutral" title={t('secrets.unavailableTitle')}>
+        {t('secrets.unavailableDescription')}
       </InfoBanner>
     );
   }
@@ -191,7 +194,7 @@ export function SessionSecretsEditor({
         checked={draft.secrets === null}
         disabled={disabled}
         className="min-h-10"
-        label="Use the project default"
+        label={t('secrets.useProjectDefault')}
         onCheckedChange={(checked) => onChange(setAllSessionSecrets(draft, checked === true))}
       />
       {catalog.secrets.items.length > 0 ? (
@@ -215,7 +218,9 @@ export function SessionSecretsEditor({
                   </span>
                 }
                 onCheckedChange={(nextChecked) =>
-                  onChange(toggleSessionSecret(draft, catalog, secret.identifier, nextChecked === true))
+                  onChange(
+                    toggleSessionSecret(draft, catalog, secret.identifier, nextChecked === true),
+                  )
                 }
               />
             );
@@ -223,7 +228,7 @@ export function SessionSecretsEditor({
         </div>
       ) : (
         <p className="text-muted-foreground border-border border-t px-1 py-3 text-xs text-pretty">
-          No secrets are available for this agent.
+          {t('secrets.empty')}
         </p>
       )}
     </div>
@@ -242,19 +247,18 @@ export function SessionConnectorsEditor({
   disabled = false,
   onChange,
 }: SessionScopeEditorProps) {
+  const t = useTranslations('sessionScope');
   if (catalog.connector_connections.status === 'unavailable') {
     return (
-      <InfoBanner tone="neutral" title="Connector access is unavailable">
-        The current connector selection stays unchanged.
+      <InfoBanner tone="neutral" title={t('connectors.unavailableTitle')}>
+        {t('connectors.unavailableDescription')}
       </InfoBanner>
     );
   }
 
   if (catalog.connector_connections.items.length === 0) {
     return (
-      <p className="text-muted-foreground px-1 py-3 text-xs text-pretty">
-        No connectors are available for this agent.
-      </p>
+      <p className="text-muted-foreground px-1 py-3 text-xs text-pretty">{t('connectors.empty')}</p>
     );
   }
 
@@ -289,11 +293,15 @@ export function SessionConnectorsEditor({
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="text-foreground truncate">{connector.name}</span>
                     <Badge variant="outline" size="xs">
-                      {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                      {connector.authorization_strategy === 'user'
+                        ? t('connectors.private')
+                        : t('connectors.project')}
                     </Badge>
                     {!hasConnection ? (
                       <span className="text-muted-foreground truncate text-xs font-normal">
-                        {requiredUnconnected ? 'Required — connect to continue' : 'Not connected'}
+                        {requiredUnconnected
+                          ? t('connectors.required')
+                          : t('connectors.notConnected')}
                       </span>
                     ) : null}
                   </span>
@@ -307,8 +315,7 @@ export function SessionConnectorsEditor({
                 // Select to offer — rendering it would show an empty
                 // dropdown that looks broken. Say what will happen instead.
                 <p className="text-muted-foreground pr-2 pb-2 pl-10 text-xs text-pretty">
-                  Nothing is connected to {connector.name} yet. This session will ask you to connect
-                  it before its next reply.
+                  {t('connectors.connectBeforeReply', { connector: connector.name })}
                 </p>
               ) : null}
               {selected && !requiredUnconnected ? (
@@ -324,18 +331,20 @@ export function SessionConnectorsEditor({
                       size="md"
                       variant="outline"
                       className="w-full"
-                      aria-label={`Connection for ${connector.name}`}
+                      aria-label={t('connectors.connectionAria', { connector: connector.name })}
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent align="end">
                       {currentConnection && !currentConnectionIsAvailable ? (
-                        <SelectItem value={currentConnection}>Current connection</SelectItem>
+                        <SelectItem value={currentConnection}>
+                          {t('connectors.currentConnection')}
+                        </SelectItem>
                       ) : null}
                       {connector.connections.map((connection) => (
                         <SelectItem key={connection.connection_id} value={connection.connection_id}>
                           {connection.label}
-                          {connection.is_default ? ' · Default' : ''}
+                          {connection.is_default ? ` · ${t('connectors.default')}` : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>

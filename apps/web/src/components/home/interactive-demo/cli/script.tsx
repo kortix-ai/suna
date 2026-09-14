@@ -279,7 +279,12 @@ export const SCRIPT: Command[] = [
       nav('security'),
       wait(220),
       fx((a) => a.inviteMember()),
-      okLine(t('Invited '), t('alex@acme.ai', 'fg'), t(' as member '), t('(pending signup)', 'faded')),
+      okLine(
+        t('Invited '),
+        t('alex@acme.ai', 'fg'),
+        t(' as member '),
+        t('(pending signup)', 'faded'),
+      ),
       wait(1400),
     ],
   },

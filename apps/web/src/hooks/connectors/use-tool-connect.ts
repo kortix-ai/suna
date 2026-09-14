@@ -1,10 +1,11 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
-  type ConnectorConnectResult,
   type ConnectorAuthorizationStrategy,
+  type ConnectorConnectResult,
   createConnector,
   pipedreamConnect,
   pipedreamConnectConnection,
@@ -62,6 +63,7 @@ export async function requestToolAuthorization(
 }
 
 export function useToolConnect(projectId: string, onConnected: () => void) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return useMutation({
     mutationFn: async (input: ToolConnectInput) => {
       const draft = buildToolConnectorDraft(input);
@@ -121,16 +123,14 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
     onSuccess: (res) => {
       onConnected();
       if (res.syncError) {
-        warningToast(
-          `Added the connector to the manifest, but synchronization failed: ${res.syncError}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('text1a425eb8b2b6', { value0: res.syncError }));
         return;
       }
       if (res.connectError) {
-        warningToast(`Added the connector, but authorization failed: ${res.connectError}`);
+        warningToast(tI18nComplete('text7d870610b59d', { value0: res.connectError }));
         return;
       }
-      if (res.connected) successToast('Connected');
+      if (res.connected) successToast(tI18nComplete.raw('text22965568d22a'));
     },
     onError: (err: Error) => errorToast(err.message),
   });

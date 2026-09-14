@@ -12,19 +12,14 @@
  */
 
 import type { StatusTone } from '@/components/ui/status';
+import type { UiTranslator } from '@/i18n/translator';
 
 // ---------------------------------------------------------------------------
 // what happened to a file
 // ---------------------------------------------------------------------------
 
 /** The statuses git reports. Kept as the key; never shown to a reader. */
-export type ChangeKind =
-  | 'added'
-  | 'modified'
-  | 'deleted'
-  | 'renamed'
-  | 'copied'
-  | 'typechange';
+export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
 
 export interface ChangeKindMeta {
   /** The word a reader sees. Never "modified" — that is a git word. */
@@ -212,10 +207,18 @@ export function proposedChangeTimeline(
     closed_at?: string | null;
   },
   relative: (iso: string) => string,
+  tI18nComplete?: UiTranslator,
 ): string {
-  if (cr.status === 'merged' && cr.merged_at) return `Applied ${relative(cr.merged_at)}`;
-  if (cr.status === 'closed' && cr.closed_at) return `Dismissed ${relative(cr.closed_at)}`;
-  return `Proposed ${relative(cr.created_at)}`;
+  if (cr.status === 'merged' && cr.merged_at) {
+    const time = relative(cr.merged_at);
+    return tI18nComplete ? tI18nComplete('text640afe0ce78c', { time }) : `Applied ${time}`;
+  }
+  if (cr.status === 'closed' && cr.closed_at) {
+    const time = relative(cr.closed_at);
+    return tI18nComplete ? tI18nComplete('text86c15f03c03a', { time }) : `Dismissed ${time}`;
+  }
+  const time = relative(cr.created_at);
+  return tI18nComplete ? tI18nComplete('textf6eaf58e6b8a', { time }) : `Proposed ${time}`;
 }
 
 // ---------------------------------------------------------------------------

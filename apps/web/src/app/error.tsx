@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import * as Sentry from '@sentry/nextjs';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
@@ -96,7 +96,7 @@ export default function Error({
 
         <div className="flex items-center gap-2">
           <Button asChild size="sm">
-            <Link href="/">Home</Link>
+            <Link href="/">{tI18nHardcoded.raw('i18nComplete.text3a78695388b3')}</Link>
           </Button>
           <Button onClick={handleReset} size="sm" variant="secondary">
             {tI18nHardcoded.raw('autoAppErrorJsxTextTryAgain3351b1d3')}

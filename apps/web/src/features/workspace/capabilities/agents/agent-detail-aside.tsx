@@ -1,17 +1,21 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
- * The right-hand column of the agent detail modal: who inherits this agent,
- * and how it is configured.
+ * The v1 fallback cards of the agent page, plus the scope-checklist helpers
+ * the v2 editor shares with them.
  *
- * Moved out of the Customize overlay's `agents-view.tsx` when Agents
- * graduated to `/projects/[id]/agent`. "Edit configuration" does not open a
- * modal — it calls `onEditConfig`, and the page swaps the editor into the
- * detail modal's source pane (`paneOverride`).
+ * `AgentModel` and `AgentScope` are what a project on the legacy manifest
+ * (kortix.toml, kortix_version 1) gets in place of the full editor — the
+ * per-agent gateway model pin and the read-only/editable scope mirror. We
+ * degrade, never blank the column. The v2 page
+ * (`capabilities/agents/agent-page.tsx`) renders neither; its Model and Access
+ * sections write the manifest block directly.
  *
- * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) project; the
- * `fallback` below is what a v1 project still gets — the legacy model + scope
- * cards. We degrade, never blank the pane.
+ * Historically this file was the whole right-hand aside of the agent detail
+ * MODAL (assignments + configuration summary). The modal is gone — an agent
+ * is a routed page now, Customize being agent-centric (Marko, 2026-09-01) —
+ * and the assignments moved to `agent-people-section.tsx`.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -21,8 +25,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
-import { toArray } from '@/features/workspace/customize/shared/utils';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -30,109 +33,16 @@ import {
   type AgentGrantSet,
   getProjectDetail,
   listConnectors,
-  listProjectResourceGrants,
   listProjectSecrets,
   type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
-import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
-
-/**
- * The whole aside, for one agent. `config` supplies the project's declared
- * skills for the governance picker — `toArray` because the API can return
- * `skills` as undefined for a repo-less / capability-gated project, and
- * `.map` on that throws (the chunk-22256 Sentry cluster).
- */
-export function AgentDetailAside({
-  projectId,
-  agent,
-  config,
-  onEditConfig,
-}: {
-  projectId: string;
-  agent: Agent;
-  config: ProjectConfigSummary;
-  /** Opens the full configuration editor — the page swaps it into the detail
-   *  modal's source pane (`paneOverride`), so it is not a modal on a modal. */
-  onEditConfig: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <AgentAssignments projectId={projectId} agentName={agent.name} />
-      <AgentConfigEditor
-        projectId={projectId}
-        agent={agent}
-        skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
-        onEditConfig={onEditConfig}
-        fallback={
-          <>
-            <AgentModel projectId={projectId} agentName={agent.name} />
-            <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
-          </>
-        }
-      />
-    </div>
-  );
-}
-
-/**
- * Who inherits this agent — the members/groups assigned to it. Each inherits the
- * agent's declared secrets & connectors as their own.
- *
- * Gated on `project.members.manage`, the leaf the grants endpoint asserts. It
- * used to read the roster's coarse `can_manage` flag, which is a role label by
- * another name: a custom role granted exactly `project.members.manage` was
- * denied this panel, and the flag also went stale with the roster cache.
- */
-function AgentAssignments({ projectId, agentName }: { projectId: string; agentName: string }) {
-  const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
-  const grantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId),
-    queryFn: () => listProjectResourceGrants(projectId),
-    enabled: canManage,
-    retry: false,
-    ...contract('inventory'),
-  });
-  // Live capability gate: even if the grants cache still holds data from when the
-  // viewer held the leaf, someone who no longer holds it never sees it.
-  if (!canManage) return null;
-  const assigned = (grantsQuery.data?.grants ?? []).filter(
-    (g) => g.resource_type === 'agent' && g.resource_id === agentName,
-  );
-  if (assigned.length === 0) return null;
-  return (
-    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-      <div className="flex items-center gap-2">
-        <Label>Assigned to</Label>
-        <Badge variant="muted" size="xs" className="tabular-nums">
-          {assigned.length}
-        </Badge>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {assigned.map((g) => (
-          <Badge key={g.grant_id} variant="outline" size="xs" className="gap-1 font-medium">
-            {g.principal_type === 'group' ? (
-              <Users className="size-3 shrink-0" />
-            ) : (
-              <User className="size-3 shrink-0" />
-            )}
-            {g.principal_label}
-          </Badge>
-        ))}
-      </div>
-      <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-        They inherit this agent's secrets and connectors as their own.
-      </p>
-    </div>
-  );
-}
 
 /**
  * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
@@ -140,7 +50,8 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
  * project → account → platform default. Manager-gated; everyone else sees the
  * read-only resolved model.
  */
-function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
+export function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // Pinning an agent's model is a customize write, which is what the route
   // asserts — not "is this person a manager".
   const canManage =
@@ -171,10 +82,10 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
   return (
     <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
       <div className="flex items-center gap-2">
-        <Label>Model</Label>
+        <Label>{tI18nComplete.raw('text5e2c614c23f0')}</Label>
         {explicit ? (
           <Badge variant="muted" size="xs">
-            Pinned
+            {tI18nComplete.raw('textf20c87946555')}
           </Badge>
         ) : null}
       </div>
@@ -201,35 +112,35 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
               className="h-7 px-2 text-xs"
               onClick={() => {
                 void defaults.clearAgentDefault(agentName);
-                successToast(`${agentName} follows the default model again`);
+                successToast(tI18nComplete('text86781ce4c5b4', { value0: agentName }));
               }}
             >
-              Reset to default
+              {tI18nComplete.raw('textbc5b45ae7b60')}
             </Button>
           ) : null}
         </div>
       ) : (
         <Badge variant="outline" size="sm" className="font-mono">
-          {nameOf(resolved) ?? 'No model configured'}
+          {nameOf(resolved) ?? tI18nComplete.raw('text1f0a5246c481')}
         </Badge>
       )}
 
       <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
         {explicit ? (
           <>
-            Every session run by this agent uses{' '}
+            {tI18nComplete.raw('text40124896532d')}{' '}
             <span className="text-foreground font-medium">{nameOf(explicit)}</span>.
           </>
         ) : (
           <>
-            Follows the project default
+            {tI18nComplete.raw('text46e3bd02feee')}
             {resolved ? (
               <>
                 {' '}
                 (<span className="text-foreground font-medium">{nameOf(resolved)}</span>)
               </>
             ) : null}
-            . Pick a model to pin it.
+            {tI18nComplete.raw('textd5bf3036405d')}
           </>
         )}
       </p>
@@ -246,7 +157,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
  * escalation, manifest-only). Absent for OpenCode-discovered agents, which
  * aren't governed by the manifest.
  */
-function AgentScope({
+export function AgentScope({
   projectId,
   agentName,
   scope,
@@ -270,6 +181,7 @@ function AgentScopeCard({
   agentName: string;
   scope: NonNullable<Agent['scope']>;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   // `PUT /projects/:id/agents/:name/scope` asserts `project.customize.write`
   // (docs/sdk/reference: "the route answers 403 otherwise"). Ask for that.
@@ -317,25 +229,25 @@ function AgentScopeCard({
   const save = useMutation({
     mutationFn: () => setAgentScope(projectId, agentName, { env, connectors }),
     onSuccess: () => {
-      successToast(`Scope updated for ${agentName}`);
+      successToast(tI18nComplete('text62dc0f9c686a', { value0: agentName }));
       // Refetch the project config so the committed scope (this card's source) updates.
       queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text3738dea54aaa')),
   });
 
   // Non-managers get the read-only mirror (the old presentation).
   if (!canManage) {
     return (
       <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-        <Label>Access</Label>
+        <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
         <dl className="space-y-2">
-          <ScopeRow label="Secrets" value={scope.env} />
-          <ScopeRow label="Connectors" value={scope.connectors} />
+          <ScopeRow label={tI18nComplete.raw('textd8707d411d99')} value={scope.env} />
+          <ScopeRow label={tI18nComplete.raw('textc3d2e79ebdd0')} value={scope.connectors} />
           <ScopeRow label="CLI" value={scope.kortix_cli} />
         </dl>
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          All = everything the person launching the session can see. None = fully scoped out.
+          {tI18nComplete.raw('textac4c418e412f')}
         </p>
       </div>
     );
@@ -343,12 +255,12 @@ function AgentScopeCard({
 
   return (
     <div className="bg-popover space-y-4 rounded-md border px-4 py-4">
-      <Label>Access</Label>
+      <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
       <ScopeEditor
         key={`env-${editorNonce}`}
-        label="Secrets"
-        allLabel="All the launcher can see"
-        emptyLabel="No secrets in this project yet."
+        label={tI18nComplete.raw('textd8707d411d99')}
+        allLabel={tI18nComplete.raw('text922315177668')}
+        emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
         value={env}
         options={secretOptions}
         match="case-insensitive"
@@ -356,9 +268,9 @@ function AgentScopeCard({
       />
       <ScopeEditor
         key={`connectors-${editorNonce}`}
-        label="Connectors"
-        allLabel="Every project connector"
-        emptyLabel="No connectors in this project yet."
+        label={tI18nComplete.raw('textc3d2e79ebdd0')}
+        allLabel={tI18nComplete.raw('texta2e8754e4899')}
+        emptyLabel={tI18nComplete.raw('text389fb5217392')}
         value={connectors}
         options={connectorOptions}
         onChange={setConnectors}
@@ -380,11 +292,11 @@ function AgentScopeCard({
               setEditorNonce((n) => n + 1);
             }}
           >
-            Reset
+            {tI18nComplete.raw('textdaee7606b339')}
           </Button>
           <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending && <Loading className="size-3.5 shrink-0" />}
-            Save
+            {tI18nComplete.raw('text1509f561f241')}
           </Button>
         </div>
       ) : null}
@@ -521,6 +433,7 @@ function ScopeEditor({
   match?: ScopeMatch;
   onChange: (v: AgentGrantSet) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // "Specific" with nothing selected yet is a real UI state the value type can't
   // hold — an empty list is indistinguishable from "None". So we latch the user's
   // choice locally: without this, clicking Specific from All writes `[]`, which
@@ -603,7 +516,11 @@ function ScopeEditor({
                     {o.hint}
                   </span>
                 ) : null}
-                {o.orphan && <span className="text-kortix-orange">missing</span>}
+                {o.orphan && (
+                  <span className="text-kortix-orange">
+                    {tI18nComplete.raw('textffa63583dfa6')}
+                  </span>
+                )}
               </button>
             ))}
           </div>

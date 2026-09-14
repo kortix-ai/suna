@@ -1,5 +1,8 @@
+'use client';
+
 import { PostAuthorAvatar } from '@/components/blog/post-author-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import { useTranslations } from '@/i18n/use-translations';
 import { formatPostDate, type Author } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +25,7 @@ export function PostByline({
   compact?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className={cn('flex items-center', compact ? 'gap-2.5' : 'gap-3', className)}>
       <PostAuthorAvatar author={author} size={compact ? 'sm' : 'lg'} />
@@ -31,7 +35,7 @@ export function PostByline({
         <InlineMeta className="min-w-0">
           <span className="text-foreground/80 font-medium">{author.name}</span>
           <time dateTime={date}>{formatPostDate(date)}</time>
-          {`${readingTime} min read`}
+          {tI18nComplete('text7def269b78b1', { value0: readingTime })}
         </InlineMeta>
       ) : (
         <div className="min-w-0">
@@ -39,7 +43,7 @@ export function PostByline({
           <InlineMeta className="mt-0.5">
             {author.role ? author.role : null}
             <time dateTime={date}>{formatPostDate(date)}</time>
-            {`${readingTime} min read`}
+            {tI18nComplete('text7def269b78b1', { value0: readingTime })}
           </InlineMeta>
         </div>
       )}

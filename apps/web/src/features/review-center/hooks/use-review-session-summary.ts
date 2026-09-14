@@ -47,8 +47,8 @@ export function summarizeReviewSessions(items: readonly ApiReviewItem[]): Review
  * Per-session review state for the project sidebar. Reads the unified inbox via
  * the shared `['review-center', projectId, 'list']` query key (deduping with the
  * Review Center view and the Customize rail badge), and derives the summary
- * client-side. Gate the caller on the `review_center` flag — pass
- * `{ enabled: false }` to keep the poll (and the surface) dark when it's off.
+ * client-side. Pass `{ enabled: false }` to keep the poll dark (e.g. no project
+ * yet).
  */
 export function useReviewSessionSummary(
   projectId: string,

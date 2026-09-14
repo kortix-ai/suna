@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   bulkSkipMessage,
-  crChangeRequestId,
   connectorCallId,
+  crChangeRequestId,
   formatItemAge,
   formatItemAgeLong,
   isQuickDecidableApproval,

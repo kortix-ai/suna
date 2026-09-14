@@ -1,5 +1,6 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
+import type { SandboxExecOptions, SandboxExecResult } from './index';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -678,6 +679,31 @@ export class E2BProvider implements SandboxProvider {
         return 'removed';
       }
       return 'unknown';
+    }
+  }
+
+  async exec(
+    externalId: string,
+    command: string[],
+    opts: SandboxExecOptions,
+  ): Promise<SandboxExecResult> {
+    const sandbox = await this.connected(externalId);
+    const line = command.map((arg) => `'${arg.replace(/'/g, `'\\''`)}'`).join(' ');
+    try {
+      const result = await sandbox.commands.run(line, { user: 'root', timeoutMs: opts.timeoutMs });
+      return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+    } catch (error) {
+      // The E2B SDK throws CommandExitError for a non-zero exit; it carries the
+      // same fields as a result. Surface it as a result, not a transport fault.
+      const e = error as { exitCode?: unknown; stdout?: unknown; stderr?: unknown; message?: string };
+      if (typeof e?.exitCode === 'number') {
+        return {
+          exitCode: e.exitCode,
+          stdout: typeof e.stdout === 'string' ? e.stdout : '',
+          stderr: typeof e.stderr === 'string' ? e.stderr : (e.message ?? ''),
+        };
+      }
+      throw error;
     }
   }
 

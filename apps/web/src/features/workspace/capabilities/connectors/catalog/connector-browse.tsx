@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { ArrowLeftIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
 import { memo, useCallback } from 'react';
 
@@ -33,10 +34,11 @@ import { useCatalogAutoload } from './use-catalog-autoload';
  * one badge's width and needs no decoding.
  */
 function CatalogAffordance({ connected }: { connected: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (connected) {
     return (
       <Badge variant="success" size="sm" data-testid="catalog-connected">
-        Connected
+        {tI18nComplete.raw('text22965568d22a')}
       </Badge>
     );
   }
@@ -152,6 +154,7 @@ function CategorySection({
   onSelect: (entry: CatalogEntry) => void;
   onViewAll: (category: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -161,7 +164,7 @@ function CategorySection({
           {/* `tabular-nums` so the figure does not jitter the heading's width
               if the catalogue count changes between refreshes. */}
           <span className="text-muted-foreground/40" aria-hidden>
-            &bull;
+            {tI18nComplete.raw('text3b9453dad42b')}
           </span>
           <span className="text-muted-foreground/70 tabular-nums">
             {section.total.toLocaleString()}
@@ -175,7 +178,7 @@ function CategorySection({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`View all ${section.label} connectors`}
+            aria-label={tI18nComplete('text2a3cae7cc0a7', { value0: section.label })}
             onClick={() => onViewAll(section.key)}
             // `size="sm"` is `h-8` — 29.44px at this repo's `--spacing: 0.23rem`,
             // under the 40px minimum hit area. `-inset-y-1.5` adds 5.52px top
@@ -184,7 +187,7 @@ function CategorySection({
             // toward the heading it sits opposite.
             className="relative shrink-0 transition-transform duration-150 ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
           >
-            View all
+            {tI18nComplete.raw('text30a64216eaea')}
           </Button>
         ) : null}
       </div>
@@ -224,19 +227,20 @@ function CategoryViewHeader({
   total: number | null;
   onBack: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex items-center gap-2">
       <Button
         variant="ghost"
         size="sm"
         onClick={onBack}
-        aria-label="Back to all connectors"
+        aria-label={tI18nComplete.raw('text74fc2cf3bb54')}
         // `-inset-1.5` on all sides here, unlike the section buttons: this
         // control sits at the row's left edge with nothing to its left.
         className="text-muted-foreground hover:text-foreground relative -ml-2 transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
       >
         <ArrowLeftIcon className="size-3.5" />
-        Back
+        {tI18nComplete.raw('text76900f1bfd16')}
       </Button>
       <span aria-hidden className="bg-border h-4 w-px shrink-0" />
       <h2 className="text-foreground flex min-w-0 items-center gap-1.5 text-sm font-medium">
@@ -245,7 +249,7 @@ function CategoryViewHeader({
         {total !== null ? (
           <>
             <span className="text-muted-foreground/40" aria-hidden>
-              &bull;
+              {tI18nComplete.raw('text3b9453dad42b')}
             </span>
             <span className="text-muted-foreground/70 tabular-nums">{total.toLocaleString()}</span>
           </>
@@ -278,6 +282,7 @@ function CatalogFoot({
   isLoadingMore: boolean;
   loadMore: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!hasMore && summary === null) return null;
   return (
     <div className="flex flex-col items-center gap-2 pt-2">
@@ -292,7 +297,7 @@ function CatalogFoot({
           onClick={loadMore}
           className="transition-transform duration-150 ease-out active:scale-[0.96]"
         >
-          Load more
+          {tI18nComplete.raw('textac8991ef0101')}
         </Button>
       ) : null}
       {/* ONE line, spinner included. `tabular-nums` because these quantities
@@ -431,7 +436,8 @@ export function ConnectorBrowse({
         shown: entries.length,
         loaded: entries.length,
         total,
-        categoryLabel: activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
+        categoryLabel:
+          activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
         searching,
         hasMore,
         isLoadingMore: state.isLoadingMore,

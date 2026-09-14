@@ -76,15 +76,11 @@ export {
 // they're only ever used in native mode, where every listed var is read
 // directly by the upstream SDK. No mismatch there; no override needed.
 //
-// NOTE: deliberately inlined here (not a separate ./auth-requirements
-// module) — this package publishes dist/ via `tsc` with
-// moduleResolution:"Bundler" (see tsconfig.build.json), which does not emit
-// the explicit .js extensions plain Node ESM needs on relative imports.
-// Every other export in this package has always lived in this one file for
-// the same reason; keep new code here too rather than reintroducing a
-// cross-file import that only breaks post-publish (`bun test`/`tsc --noEmit`
-// both resolve it fine in-repo, which is why this class of bug doesn't show
-// up until the SDK's install-smoke test actually runs the published tarball).
+// NOTE: this package publishes dist/ via `tsc` with
+// moduleResolution:"Bundler" (see tsconfig.build.json). Turbopack consumes the
+// extensionless workspace source. `tsc-alias --resolve-full-paths` adds `.js`
+// to the emitted relative import for plain Node ESM. The SDK install smoke
+// imports the React entry and enforces the packed output.
 
 export interface ProviderAuthMethod {
   /** Optional label, surfaced only if a provider ever exposes >1 method in the UI (none do today — the connect form always uses methods[0]). */

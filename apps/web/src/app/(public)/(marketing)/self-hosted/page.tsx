@@ -1,22 +1,14 @@
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
-import { SelfHostedHeroVisual } from '@/features/marketing/self-hosted/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { BoundaryDiagram } from '@/features/marketing/self-hosted/boundary-diagram';
 import { CodePanel } from '@/features/marketing/self-hosted/code-panel';
-import {
-  commands,
-  firstRun,
-  hero,
-  models,
-  parity,
-  stack,
-  targets,
-  yours,
-} from '@/features/marketing/self-hosted/content';
+import { getLocalizedSelfHostedContent } from '@/features/marketing/self-hosted/content';
+import { SelfHostedHeroVisual } from '@/features/marketing/self-hosted/hero-visual';
 import { StackDiagram } from '@/features/marketing/self-hosted/stack-diagram';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -87,7 +79,10 @@ function RowList({
  * what `kortix self-host start` gives you; there is no Redis). Read it before
  * editing a line here.
  */
-export default function SelfHostedPage(): ReactNode {
+export default async function SelfHostedPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { commands, firstRun, hero, models, parity, stack, targets, yours } =
+    getLocalizedSelfHostedContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

@@ -1,12 +1,12 @@
-import { describe, expect, test } from 'bun:test';
 import type { Command } from '@kortix/sdk/react';
 import { Editor } from '@tiptap/core';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
+import { describe, expect, test } from 'bun:test';
 
 import { baseExtensions } from '../editor/extensions';
 import { MentionNode } from '../editor/mention-node';
-import { createSlashSuggestion } from './slash-controller';
 import { SLASH_ACTIONS, type SlashAction } from './slash-actions';
+import { createSlashSuggestion } from './slash-controller';
 import type { SlashFile } from './slash-files';
 import type { SlashRow } from './slash-items';
 
@@ -141,7 +141,8 @@ describe('createSlashSuggestion — Enter declines with zero rows, consumes with
 
   test('going back to zero rows (query changes to a non-match) declines Enter again', () => {
     const selected: SlashRow[] = [];
-    const { onStart, onUpdate, onKeyDown } = createSlashSuggestion({ getCommands: () => [] }).render!();
+    const { onStart, onUpdate, onKeyDown } = createSlashSuggestion({ getCommands: () => [] })
+      .render!();
 
     withStubDocument(() => {
       onStart!(fakeStartProps('', (row) => selected.push(row)));
@@ -233,7 +234,10 @@ describe('createSlashSuggestion — getActions threads through to buildSlashSect
 function editorWithSlashQuery(typed: string): Editor {
   return new Editor({
     extensions: [...baseExtensions(() => ''), MentionNode],
-    content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: typed }] }] },
+    content: {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: typed }] }],
+    },
   });
 }
 
@@ -260,7 +264,13 @@ describe('createSlashSuggestion — a picked command becomes an inline chip', ()
     options.command!({
       editor,
       range: { from: 1, to: 6 }, // the "/deep" the user typed
-      props: { index: 0, type: 'command', name: 'deep-research', description: '', command: deepResearch },
+      props: {
+        index: 0,
+        type: 'command',
+        name: 'deep-research',
+        description: '',
+        command: deepResearch,
+      },
     } as never);
 
     expect(chipsIn(editor)).toEqual([{ kind: 'command', label: 'deep-research' }]);
@@ -299,7 +309,13 @@ describe('createSlashSuggestion — a picked command becomes an inline chip', ()
     options.command!({
       editor,
       range: { from: 1, to: 8 },
-      props: { index: 0, type: 'action', name: 'Switch model', description: '', action: SLASH_ACTIONS[0] },
+      props: {
+        index: 0,
+        type: 'action',
+        name: 'Switch model',
+        description: '',
+        action: SLASH_ACTIONS[0],
+      },
     } as never);
 
     expect(chipsIn(editor)).toEqual([]);
@@ -317,7 +333,13 @@ describe('createSlashSuggestion — a picked command becomes an inline chip', ()
     options.command!({
       editor,
       range: { from: 1, to: 6 },
-      props: { index: 0, type: 'command', name: 'deep-research', description: '', command: deepResearch },
+      props: {
+        index: 0,
+        type: 'command',
+        name: 'deep-research',
+        description: '',
+        command: deepResearch,
+      },
     } as never);
 
     expect(notified).toEqual([deepResearch]);
@@ -384,7 +406,7 @@ const reportFile: SlashFile = {
   origin: 'output',
 };
 
-describe("createSlashSuggestion — a picked file becomes a file mention", () => {
+describe('createSlashSuggestion — a picked file becomes a file mention', () => {
   test('selecting a file row replaces the typed /query with a file mention', () => {
     const editor = editorWithSlashQuery('/report');
     const options = createSlashSuggestion({ getCommands: () => [], getFiles: () => [reportFile] });
@@ -405,7 +427,7 @@ describe("createSlashSuggestion — a picked file becomes a file mention", () =>
     expect(editor.state.doc.textBetween(0, editor.state.doc.content.size)).not.toContain('/report');
   });
 
-  test('the mention label is the PATH, never the row\'s display name', () => {
+  test("the mention label is the PATH, never the row's display name", () => {
     // `serialize.ts`'s `collectMentions` addresses files by LABEL — `value` is
     // dropped for every kind but `session`. A display name here would hand the
     // agent a `<file_ref>` for "Q3 revenue report", which resolves to nothing.

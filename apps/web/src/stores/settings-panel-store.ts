@@ -21,7 +21,10 @@
 
 import { create } from 'zustand';
 
-import { DEFAULT_SETTINGS_TAB, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import {
+  DEFAULT_SETTINGS_TAB,
+  type SettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 
 /** Sub-tab to land on inside the Members section when deep-linking there.
  *  "People" is the primary surface, so it's the default. Mirrors

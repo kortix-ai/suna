@@ -1,3 +1,4 @@
+import { DEPRECATED_KORTIX_CLI_ALIASES } from '@kortix/manifest-schema';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
@@ -36,18 +37,20 @@ export function isProjectSessionPrincipal(c: Context): boolean {
  * underlying commit as the latter. Spec §2.4 collapsed them — neither string is
  * in `kortix.permissions`, so no route can assert one and no role can grant one.
  *
- * They survive in exactly ONE place: a hand-written `kortix_cli:` list in a
- * kortix.yaml an author wrote before the collapse. This table rewrites such a
+ * They are absent from `PROJECT_ACTIONS`, from the grantable catalog, from the
+ * agent-grant editor and from `kortix validate --scopes`, so nothing offers
+ * them as a live choice. They survive in exactly ONE place: a hand-written
+ * `kortix_cli:` list in a kortix.yaml an author wrote before the collapse,
+ * which both validators still ACCEPT (with a warning) precisely so that one
+ * outdated string cannot fail a manifest and leave its agent with an empty
+ * grant. This table rewrites such a
  * list to the live spelling ONCE, when the grant is resolved
  * (`canonicalizeGrantActions`, called from projects/agents.ts beside the
  * connector canonicalization). It is a spelling correction on INPUT — NOT a
  * runtime alias table, and NOT a second permission model: after normalization
  * `agentMayPerform` is a plain membership test against the catalog's spelling.
  */
-const MANIFEST_ACTION_ALIASES: Readonly<Record<string, string>> = {
-  'project.cr.open': 'project.gitops.push',
-  'project.cr.merge': 'project.gitops.merge',
-};
+const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_CLI_ALIASES;
 
 /**
  * Rewrite a grant's `kortixCli` list to the catalog's spelling.

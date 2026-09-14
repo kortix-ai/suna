@@ -6,6 +6,7 @@ import {
   DEFAULT_COMPUTE_HOURLY_PRICE_USD,
   TEAM_CREDITS_PER_SEAT,
 } from '@/features/billing/compute-pricing';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ReactNode } from 'react';
 
 /** Credits one default Agent Computer burns per hour — derived, never typed. */
@@ -57,6 +58,7 @@ function ReceiptRow({ label, value }: { label: string; value: string }): ReactNo
  * typed-in copy of a billing number has drifted wrong here before).
  */
 export function ComputeCreditCalculator(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [seats, setSeats] = useState(3);
   const [hoursPerDay, setHoursPerDay] = useState(4);
 
@@ -72,9 +74,11 @@ export function ComputeCreditCalculator(): ReactNode {
       <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
         <div className="flex flex-col gap-8 p-6 sm:p-8">
           <ControlRow
-            label="Team seats"
+            label={tI18nComplete.raw('text42ef2c24bd7a')}
             value={String(seats)}
-            hint={`Each seat adds ${FMT.format(TEAM_CREDITS_PER_SEAT)} pooled credits a month. The whole team draws from one balance.`}
+            hint={tI18nComplete('text415d8dfb1c5e', {
+              value0: FMT.format(TEAM_CREDITS_PER_SEAT),
+            })}
           >
             <Slider
               value={[seats]}
@@ -82,15 +86,15 @@ export function ComputeCreditCalculator(): ReactNode {
               min={1}
               max={20}
               step={1}
-              thumbLabel="Team seats"
+              thumbLabel={tI18nComplete.raw('text42ef2c24bd7a')}
               formatValue={(v) => `${v} seats`}
             />
           </ControlRow>
 
           <ControlRow
-            label="Agent Computer runtime"
+            label={tI18nComplete.raw('texte835694dddb1')}
             value={`${hoursPerDay} h / day`}
-            hint="Total running time across the team, on the default 2 vCPU / 4 GiB machine. Auto-stop means stopped time draws 0 credits."
+            hint={tI18nComplete.raw('textcd83da12309d')}
           >
             <Slider
               value={[hoursPerDay]}
@@ -98,40 +102,61 @@ export function ComputeCreditCalculator(): ReactNode {
               min={0}
               max={24}
               step={1}
-              thumbLabel="Agent Computer hours per day"
+              thumbLabel={tI18nComplete.raw('texte80375a6f7fa')}
               formatValue={(v) => `${v} hours per day`}
             />
           </ControlRow>
         </div>
 
         <div className="border-border bg-muted/40 dark:bg-muted/15 flex flex-col gap-3 border-t p-6 sm:p-8 md:border-t-0 md:border-l">
-          <ReceiptRow label="Pooled credits / month" value={FMT.format(pooledCredits)} />
-          <ReceiptRow label="Runtime the pool covers" value={`≈ ${FMT.format(Math.floor(poolHours))} h`} />
-          <ReceiptRow label={`Your runtime (${DAYS_PER_MONTH} days)`} value={`${FMT.format(usedHours)} h`} />
-          <ReceiptRow label="Compute draw" value={`≈ ${FMT.format(Math.round(usedCredits))} credits`} />
+          <ReceiptRow
+            label={tI18nComplete.raw('text46ad72cccceb')}
+            value={FMT.format(pooledCredits)}
+          />
+          <ReceiptRow
+            label={tI18nComplete.raw('text5cd0ee53ceef')}
+            value={`≈ ${FMT.format(Math.floor(poolHours))} h`}
+          />
+          <ReceiptRow
+            label={tI18nComplete('text8a0da33ebd1f', { value0: DAYS_PER_MONTH })}
+            value={`${FMT.format(usedHours)} h`}
+          />
+          <ReceiptRow
+            label={tI18nComplete.raw('textbf4d20c9ba67')}
+            value={`≈ ${FMT.format(Math.round(usedCredits))} credits`}
+          />
 
           <div className="border-border mt-auto border-t pt-4">
             <div className="text-muted-foreground text-xs">
-              {covered ? 'Left in the pool' : 'Top-up needed'}
+              {covered
+                ? tI18nComplete.raw('textf8f562ffbadf')
+                : tI18nComplete.raw('texteb18916a62d5')}
             </div>
             <div className="text-foreground mt-1 font-mono text-2xl font-medium tracking-tight tabular-nums">
-              {`≈ ${FMT.format(Math.round(Math.abs(remaining)))} credits`}
+              {tI18nComplete('textc1abcf2a909a', {
+                value0: FMT.format(Math.round(Math.abs(remaining))),
+              })}
             </div>
             <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
               {covered
-                ? 'Spend it on managed model tokens or more runtime — or don’t; unused compute bills nothing.'
-                : `About $${(Math.abs(remaining) / CREDITS_PER_USD).toFixed(0)} of top-up credits at this pace.`}
+                ? tI18nComplete.raw('textdf2f3683ff04')
+                : tI18nComplete('textd04c52d2b1ba', {
+                    value0: (Math.abs(remaining) / CREDITS_PER_USD).toFixed(0),
+                  })}
             </p>
           </div>
         </div>
       </div>
 
       <p className="text-muted-foreground border-border border-t px-6 py-4 text-xs leading-relaxed sm:px-8">
-        Compute is billed per second, per resource. The default Agent Computer uses{' '}
+        {tI18nComplete.raw('texta30391a29336')}{' '}
         <span className="text-foreground font-medium tabular-nums">
-          {`≈ ${CREDITS_PER_HOUR.toFixed(0)} credits ($${DEFAULT_COMPUTE_HOURLY_PRICE_USD.toFixed(2)}) per hour`}
+          {tI18nComplete('text6ae9b5084741', {
+            value0: CREDITS_PER_HOUR.toFixed(0),
+            value1: DEFAULT_COMPUTE_HOURLY_PRICE_USD.toFixed(2),
+          })}
         </span>{' '}
-        while running. Optional managed model usage is token-based and draws from the same pool.
+        {tI18nComplete.raw('text1bb8a6b21d3c')}
       </p>
     </div>
   );

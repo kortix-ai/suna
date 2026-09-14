@@ -18,10 +18,10 @@ export function IconFrame({ className, children }: IconFrameProps) {
   return (
     <div
       className={cn(
-        '@container relative isolate aspect-square size-full shrink-0 text-background',
+        'text-background @container relative isolate aspect-square size-full shrink-0',
         SQUIRCLE,
         'shadow-[0_8cqw_22cqw_rgb(0_0_0/0.28),0_2cqw_6cqw_rgb(0_0_0/0.16)]',
-        'contrast-more:outline-1 contrast-more:outline-foreground',
+        'contrast-more:outline-foreground contrast-more:outline-1',
         className,
       )}
     >
@@ -34,7 +34,7 @@ export function IconFrame({ className, children }: IconFrameProps) {
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute top-[-10%] right-[-20%] h-[125%] w-[82%] rounded-[100%] bg-[radial-gradient(ellipse_at_42%_40%,color-mix(in_oklab,var(--background)_42%,transparent)_0%,transparent_70%)] opacity-90 blur-[4cqw] dark:bg-[radial-gradient(ellipse_at_42%_40%,color-mix(in_oklab,var(--foreground)_42%,transparent)_0%,transparent_70%)] [@media(prefers-reduced-transparency:reduce)]:blur-none [@media(prefers-reduced-transparency:reduce)]:opacity-50"
+          className="pointer-events-none absolute top-[-10%] right-[-20%] h-[125%] w-[82%] rounded-[100%] bg-[radial-gradient(ellipse_at_42%_40%,color-mix(in_oklab,var(--background)_42%,transparent)_0%,transparent_70%)] opacity-90 blur-[4cqw] dark:bg-[radial-gradient(ellipse_at_42%_40%,color-mix(in_oklab,var(--foreground)_42%,transparent)_0%,transparent_70%)] [@media(prefers-reduced-transparency:reduce)]:opacity-50 [@media(prefers-reduced-transparency:reduce)]:blur-none"
         />
 
         <span
@@ -45,10 +45,10 @@ export function IconFrame({ className, children }: IconFrameProps) {
         <span className="relative z-1 grid size-full place-items-center">
           <span
             className={cn(
-              'grid size-[54%] aspect-square place-items-center',
+              'grid aspect-square size-[54%] place-items-center',
               'drop-shadow-[0_1.8cqw_2.8cqw_rgb(0_0_0/0.22)]',
               '*:size-full *:max-h-full *:max-w-full *:object-contain',
-              '[&>svg]:size-full! [&>img]:size-full!',
+              '[&>img]:size-full! [&>svg]:size-full!',
             )}
           >
             {children}
@@ -61,7 +61,7 @@ export function IconFrame({ className, children }: IconFrameProps) {
         />
         <span
           aria-hidden
-          className="pointer-events-none absolute top-[-22%] right-[-30%] z-2 h-[88%] w-[92%] rounded-full bg-[radial-gradient(circle_at_38%_28%,color-mix(in_oklab,var(--background)_70%,transparent)_0%,transparent_56%)] opacity-55 blur-[5cqw] mix-blend-soft-light motion-reduce:mix-blend-normal dark:bg-[radial-gradient(circle_at_38%_28%,color-mix(in_oklab,var(--foreground)_70%,transparent)_0%,transparent_56%)] [@media(prefers-reduced-transparency:reduce)]:hidden"
+          className="pointer-events-none absolute top-[-22%] right-[-30%] z-2 h-[88%] w-[92%] rounded-full bg-[radial-gradient(circle_at_38%_28%,color-mix(in_oklab,var(--background)_70%,transparent)_0%,transparent_56%)] opacity-55 mix-blend-soft-light blur-[5cqw] motion-reduce:mix-blend-normal dark:bg-[radial-gradient(circle_at_38%_28%,color-mix(in_oklab,var(--foreground)_70%,transparent)_0%,transparent_56%)] [@media(prefers-reduced-transparency:reduce)]:hidden"
         />
 
         <span

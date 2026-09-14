@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
@@ -13,6 +14,7 @@ import { bindSlackIdentity } from '@kortix/sdk';
  * user to this Kortix account so the agent runs as THEM — not the installer.
  */
 export default function SlackLoginPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const params = useParams<{ token: string }>();
   const token = params?.token ?? '';
 
@@ -22,11 +24,12 @@ export default function SlackLoginPage() {
       token={token}
       loginPath={`/slack/login/${token}`}
       bind={bindSlackIdentity}
-      missingLinkMessage="This page is opened from a Kortix message in Slack. Run /kortix login in Slack to get a fresh link."
+      missingLinkMessage={tI18nComplete.raw('text86d74a15857f')}
       disconnectNote={
         <>
-          Disconnect anytime with <span className="text-foreground font-mono">/kortix logout</span>{' '}
-          in Slack.
+          {tI18nComplete.raw('text64cc97c96c03')}{' '}
+          <span className="text-foreground font-mono">{tI18nComplete.raw('text242443486b8c')}</span>{' '}
+          {tI18nComplete.raw('text017245d54fdb')}
         </>
       }
     />

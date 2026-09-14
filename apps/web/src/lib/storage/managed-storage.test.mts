@@ -1,5 +1,5 @@
-import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import test, { afterEach } from 'node:test';
 
 // `install()`/`installNullStorage()` stomp `globalThis.window` (and the bare
 // `localStorage`/`sessionStorage` globals) to simulate a browser. bun's test
@@ -120,7 +120,10 @@ test('quota pressure evicts another family before failing the write', () => {
   assert.equal(ok, true);
   assert.equal(store.getItem('durable-key'), 'y'.repeat(80));
   // The disposable family entry was sacrificed.
-  assert.equal(store.keys().some((k) => k.startsWith('fam_bloat:')), false);
+  assert.equal(
+    store.keys().some((k) => k.startsWith('fam_bloat:')),
+    false,
+  );
 });
 
 test('ScopedCache treats legacy un-wrapped entries as a miss', () => {
@@ -140,7 +143,10 @@ test('exact-key disposables are evicted only after scoped families', () => {
   // Need room for a durable write; the scoped family should go first.
   const ok = mod.safeSetItem('durable2', 'd'.repeat(60));
   assert.equal(ok, true);
-  assert.equal(store.keys().some((k) => k.startsWith('fam_pri:')), false); // scoped evicted
+  assert.equal(
+    store.keys().some((k) => k.startsWith('fam_pri:')),
+    false,
+  ); // scoped evicted
   assert.equal(store.getItem('blob-key'), 'b'.repeat(60)); // blob survived
 });
 

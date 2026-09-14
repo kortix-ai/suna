@@ -74,6 +74,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import type { ManifestVersion } from './manifest-version';
@@ -87,11 +88,47 @@ import { useRunUpgrade } from './use-run-upgrade';
  *  ids come from `PROJECT_UPGRADES`, which has no entry by this name. */
 const ONE_OFF_ID = 'one-off';
 
+export interface UpgradesCopy {
+  available: string;
+  readOnly: string;
+  none: string;
+  upToDateDescription: string;
+  upToDate: string;
+  run: string;
+  oneOff: string;
+  oneOffDescription: string;
+  oneOffPlaceholder: string;
+  runUpgrade: string;
+  upgrades: Record<string, { title: string; description: string }>;
+}
+
+export const DEFAULT_UPGRADES_COPY: UpgradesCopy = {
+  available: 'Available upgrades',
+  readOnly: 'Read-only — running an upgrade needs write access to this workspace.',
+  none: 'No upgrades available',
+  upToDateDescription: 'This workspace is already up to date.',
+  upToDate: 'Up to date',
+  run: 'Run',
+  oneOff: 'One-off upgrade',
+  oneOffDescription:
+    'Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.',
+  oneOffPlaceholder: "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
+  runUpgrade: 'Run upgrade',
+  upgrades: {
+    'manifest-v2': {
+      title: 'Migrate manifest to v2 (kortix.yaml)',
+      description:
+        'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.',
+    },
+  },
+};
+
 export function UpgradesViewContent({
   version,
   onRun,
   pending,
   canWrite = false,
+  copy = DEFAULT_UPGRADES_COPY,
 }: {
   /** `null` = the manifest read hasn't resolved yet. */
   version: ManifestVersion | null;
@@ -101,6 +138,7 @@ export function UpgradesViewContent({
    *  first section says why. The upgrade list itself stays visible — knowing
    *  what is pending is a read, not a write. */
   canWrite?: boolean;
+  copy?: UpgradesCopy;
 }) {
   const [oneOff, setOneOff] = useState('');
   // Which control the user actually pressed. `pending` is global — only one
@@ -121,14 +159,10 @@ export function UpgradesViewContent({
 
       <section className="space-y-3">
         <SettingsSubsectionHeader
-          title="Available upgrades"
+          title={copy.available}
           // Only said when it is true — an explanation of a control you can
           // see is noise; an explanation of a control that is missing is not.
-          description={
-            canWrite
-              ? undefined
-              : 'Read-only — running an upgrade needs write access to this workspace.'
-          }
+          description={canWrite ? undefined : copy.readOnly}
         />
         {upgrades === null ? (
           // Shape-matched to one grouped row (px-4 py-3 around a title and a
@@ -138,20 +172,17 @@ export function UpgradesViewContent({
         ) : (
           <SettingsRowGroup>
             {upgrades.length === 0 ? (
-              <SettingsRow
-                label="No upgrades available"
-                description="This workspace is already up to date."
-              >
+              <SettingsRow label={copy.none} description={copy.upToDateDescription}>
                 <Badge variant="success" size="sm">
-                  Up to date
+                  {copy.upToDate}
                 </Badge>
               </SettingsRow>
             ) : (
               upgrades.map((upgrade: ProjectUpgrade) => (
                 <SettingsRow
                   key={upgrade.id}
-                  label={upgrade.title}
-                  description={upgrade.description}
+                  label={copy.upgrades[upgrade.id]?.title ?? upgrade.title}
+                  description={copy.upgrades[upgrade.id]?.description ?? upgrade.description}
                 >
                   {canWrite ? (
                     <Button
@@ -162,7 +193,7 @@ export function UpgradesViewContent({
                       {pending && startedId === upgrade.id ? (
                         <Loading className="size-3.5 shrink-0" />
                       ) : null}
-                      Run
+                      {copy.run}
                     </Button>
                   ) : null}
                 </SettingsRow>
@@ -176,19 +207,16 @@ export function UpgradesViewContent({
           use it. The first section already said why it is not here. */}
       {canWrite ? (
         <section className="space-y-3">
-          <SettingsSubsectionHeader
-            title="One-off upgrade"
-            description="Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request."
-          />
+          <SettingsSubsectionHeader title={copy.oneOff} description={copy.oneOffDescription} />
           <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
             <Textarea
               // The section heading is an `h3`, not a `<label htmlFor>`, so the
               // control carries its own accessible name — same as the rows in
               // `general-tab.tsx` and `organization-tab.tsx`.
-              aria-label="One-off upgrade"
+              aria-label={copy.oneOff}
               value={oneOff}
               onChange={(event) => setOneOff(event.target.value)}
-              placeholder="e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced"
+              placeholder={copy.oneOffPlaceholder}
               minHeight={72}
             />
             <div className="flex justify-end">
@@ -201,7 +229,7 @@ export function UpgradesViewContent({
                 {pending && startedId === ONE_OFF_ID ? (
                   <Loading className="size-3.5 shrink-0" />
                 ) : null}
-                Run upgrade
+                {copy.runUpgrade}
               </Button>
             </div>
           </div>
@@ -212,6 +240,7 @@ export function UpgradesViewContent({
 }
 
 export function UpgradesView({ projectId }: { projectId: string }) {
+  const t = useTranslations('settings.upgrades');
   const { version } = useProjectManifestVersion(projectId);
   const run = useRunUpgrade(projectId);
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
@@ -221,6 +250,24 @@ export function UpgradesView({ projectId }: { projectId: string }) {
       onRun={run.start}
       pending={run.pending}
       canWrite={canWrite}
+      copy={{
+        available: t('available'),
+        readOnly: t('readOnly'),
+        none: t('none'),
+        upToDateDescription: t('upToDateDescription'),
+        upToDate: t('upToDate'),
+        run: t('run'),
+        oneOff: t('oneOff'),
+        oneOffDescription: t('oneOffDescription'),
+        oneOffPlaceholder: t('oneOffPlaceholder'),
+        runUpgrade: t('runUpgrade'),
+        upgrades: {
+          'manifest-v2': {
+            title: t('manifestV2.title'),
+            description: t('manifestV2.description'),
+          },
+        },
+      }}
     />
   );
 }

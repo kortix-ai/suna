@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
+import { useEffect } from 'react';
 
 /**
  * Why did this session page load again?
@@ -147,7 +147,9 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
       const message = event?.message ?? '';
-      if (/loading chunk|chunkloaderror|failed to fetch dynamically imported module/i.test(message)) {
+      if (
+        /loading chunk|chunkloaderror|failed to fetch dynamically imported module/i.test(message)
+      ) {
         noteChunkLoadFailure(message);
       }
     };

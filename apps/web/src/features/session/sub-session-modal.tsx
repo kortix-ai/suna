@@ -4,6 +4,7 @@ import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SessionChat } from '@/features/session/session-chat';
 import { cn } from '@/lib/utils';
 import { KanbanIcon as SquareKanban, XIcon as X } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 interface SubSessionModalProps {
   open: boolean;
@@ -13,6 +14,7 @@ interface SubSessionModalProps {
 }
 
 export function SubSessionModal({ open, onOpenChange, sessionId, title }: SubSessionModalProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent
@@ -34,7 +36,7 @@ export function SubSessionModal({ open, onOpenChange, sessionId, title }: SubSes
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="Close sub-session"
+            aria-label={tI18nComplete.raw('text35a0f571f5cd')}
             className={cn(
               // size-6 visible, 40px hit area — the header is dense, so the
               // target is grown with a pseudo-element instead of the box.

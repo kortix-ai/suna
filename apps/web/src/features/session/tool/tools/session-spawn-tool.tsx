@@ -1,10 +1,12 @@
 'use client';
+
 import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   getChildSessionId,
@@ -21,6 +23,7 @@ import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const status = partStatus(part);
   const pathname = usePathname();
@@ -91,7 +94,9 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
             hasPreview ? 'cursor-pointer' : 'cursor-default',
           )}
         >
-          <span className="shrink-0 whitespace-nowrap">Worker · {agentName}</span>
+          <span className="shrink-0 whitespace-nowrap">
+            {tI18nComplete.raw('text2ee7054bf895')} {agentName}
+          </span>
           {subtitle && (
             <span className="text-muted-foreground min-w-0 truncate font-mono text-xs">
               {subtitle}
@@ -102,7 +107,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           )}
           {isCompleted && childToolParts.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
-              {childToolParts.length} steps
+              {childToolParts.length} {tI18nComplete.raw('textb7595e2a8639')}
             </span>
           )}
         </button>
@@ -112,7 +117,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
                 time, so Next prefetches it and the click never runs a cold RSC
                 fetch that could degrade into a full page load. */}
             <Link href={childHref} prefetch>
-              Open session
+              {tI18nComplete.raw('textb205bb47f81a')}
               <ExternalLink className="size-3" />
             </Link>
           </Button>
@@ -127,7 +132,10 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}
-          title={`Worker · ${agentName}${label ? `: ${label}` : ''}`}
+          title={tI18nComplete('textc65feb0006ea', {
+            value0: agentName,
+            value1: label ? tI18nComplete('textb581fd88ea24', { value0: label }) : '',
+          })}
         />
       )}
     </>

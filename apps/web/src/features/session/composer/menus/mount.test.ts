@@ -32,8 +32,7 @@ interface PositionArg {
   strategy: string;
 }
 
-const rectAt = (left: number, bottom: number) =>
-  ({ left, bottom }) as DOMRect;
+const rectAt = (left: number, bottom: number) => ({ left, bottom }) as DOMRect;
 
 describe('mountSuggestionMenu', () => {
   it('passes onPosition, which is what stops the plugin hiding the menu', () => {

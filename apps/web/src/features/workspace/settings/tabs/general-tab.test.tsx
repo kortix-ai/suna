@@ -13,6 +13,29 @@ import { GeneralTabView } from './general-tab';
  * own directly: loading/error states and the Delete-workspace section.
  */
 describe('GeneralTabView', () => {
+  test('renders supplied locale copy', () => {
+    const out = renderToStaticMarkup(
+      <GeneralTabView
+        copy={{
+          loadFailed: 'Пројекат није могао да се учита',
+          retry: 'Покушај поново',
+          dangerZone: 'Опасна зона',
+          deleteWorkspace: 'Избриши радни простор',
+          deleteDescription: 'Уклања радни простор за све чланове.',
+          deleteTitle: 'Избрисати радни простор?',
+          deleteDialog: (name) => `Ово брише ${name} за све.`,
+          consequencesTitle: 'Одмах губите:',
+          consequences: ['Све сесије', 'Сва заказана покретања'],
+          reassurance: 'Повезано Git складиште се не брише.',
+          keepWorkspace: 'Задржи радни простор',
+        }}
+      />,
+    );
+    expect(out).toContain('Опасна зона');
+    expect(out).toContain('Избриши радни простор');
+    expect(out).not.toContain('Danger zone');
+  });
+
   test('renders the general fields slot', () => {
     const out = renderToStaticMarkup(
       <GeneralTabView generalFieldsSlot={<div>name-icon-marker</div>} />,

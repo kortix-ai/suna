@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 const NotFound = () => {
@@ -34,7 +34,7 @@ const NotFound = () => {
               </Link>
             </Button>
             <Button asChild className="w-full">
-              <Link href="/docs">Documentation</Link>
+              <Link href="/docs">{tI18nHardcoded.raw('i18nComplete.textc205924de0fe')}</Link>
             </Button>
           </div>
         </div>

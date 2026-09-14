@@ -4,9 +4,9 @@
 // what the customer sees. These tests pin the shared piece and the fact that
 // both callers actually use it.
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   CreditTransactionsTable,
@@ -16,10 +16,7 @@ import {
 
 const dir = import.meta.dir;
 const creditTransactionsSource = readFileSync(join(dir, 'credit-transactions.tsx'), 'utf8');
-const adminPageSource = readFileSync(
-  join(dir, '../../app/admin/accounts/page.tsx'),
-  'utf8',
-);
+const adminPageSource = readFileSync(join(dir, '../../app/admin/accounts/page.tsx'), 'utf8');
 
 describe('creditTransactionBadge', () => {
   test('names the ledger types an operator reads most', () => {
@@ -124,7 +121,14 @@ describe('CreditTransactionsTable renders a ledger row', () => {
 
   test('a row with no description or credit type still renders', () => {
     const html = render([
-      { id: 'led_3', createdAt: null, type: 'usage', description: null, amount: 0, balanceAfter: 0 },
+      {
+        id: 'led_3',
+        createdAt: null,
+        type: 'usage',
+        description: null,
+        amount: 0,
+        balanceAfter: 0,
+      },
     ]);
     expect(html).toContain('No description');
     expect(html).toContain('—');

@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { schedule } from './content';
+import { getLocalizedAutomationsContent } from './content';
 
 /**
  * The trigger list, drawn as the thing it is: five columns of mono text, one
@@ -12,6 +13,8 @@ import { schedule } from './content';
  * because nobody reads `0 0 9 * * 1-5` as "weekdays at nine" on sight.
  */
 export function ScheduleTable(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { schedule } = getLocalizedAutomationsContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-x-auto rounded-sm border">
       <table className="w-full min-w-max border-collapse text-left">

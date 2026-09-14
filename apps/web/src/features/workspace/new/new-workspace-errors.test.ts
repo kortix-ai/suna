@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { isRetryableError, messageFor } from './use-create-workspace';
 import { ApiError } from '@kortix/sdk';
+import { isRetryableError, messageFor } from './use-create-workspace';
 
 const pageSource = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'utf8');
 const hookSource = readFileSync(join(import.meta.dir, 'use-create-workspace.ts'), 'utf8');
@@ -147,7 +147,9 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
   test('isRetryableError is false for the managed-git-unavailable 503, true for a 502', () => {
     expect(isRetryableError(new ApiError('Bad Gateway', { status: 502 }))).toBe(true);
     expect(
-      isRetryableError(new ApiError('Managed git is not configured on this server', { status: 503 })),
+      isRetryableError(
+        new ApiError('Managed git is not configured on this server', { status: 503 }),
+      ),
     ).toBe(false);
   });
 

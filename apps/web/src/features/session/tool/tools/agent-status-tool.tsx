@@ -1,7 +1,8 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
-import { STATUS_TEXT } from '@/components/ui/status';
 import Loading from '@/components/ui/loading';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -21,12 +22,14 @@ import {
   StackIcon as Layers,
   XIcon as X,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 
 export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const status = partStatus(part);
   const output = partOutput(part);
   const isRunning = status === 'running' || status === 'pending';
@@ -43,11 +46,12 @@ export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <>
       <BasicTool
         icon={<Layers className="size-3.5 shrink-0" />}
-        trigger={{ title: 'Agent status' }}
+        trigger={{ title: tI18nComplete.raw('textca9c05caf0c3') }}
         badge={
           !isRunning && taskRows.length > 0 ? (
             <Badge variant="muted" size="sm">
-              {taskRows.length} task{taskRows.length !== 1 ? 's' : ''}
+              {taskRows.length} {tI18nComplete.raw('text0ebb429fa86d')}
+              {taskRows.length !== 1 ? 's' : ''}
             </Badge>
           ) : undefined
         }

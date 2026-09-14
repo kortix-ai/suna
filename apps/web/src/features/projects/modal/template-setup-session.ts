@@ -3,10 +3,7 @@ import {
   buildProjectOnboardingPrompt,
   buildTemplateSetupPrompt,
 } from '@/features/marketplace/marketplace-setup-prompt';
-import {
-  createProjectSession,
-  type KortixProject,
-} from '@kortix/sdk';
+import { createProjectSession, type KortixProject } from '@kortix/sdk';
 
 /**
  * Cloned from a marketplace item → don't drop the user on an empty project.
@@ -20,6 +17,7 @@ import {
 export async function startTemplateSetupSession(
   project: KortixProject,
   { itemId, title }: { itemId: string; title: string },
+  errorMessage: string,
 ): Promise<string | null> {
   try {
     const session = await createProjectSession(project.project_id, {
@@ -30,7 +28,7 @@ export async function startTemplateSetupSession(
     return session.session_id;
   } catch (error) {
     console.error('Failed to start template setup session', error);
-    errorToast('Project created, but the setup session could not be started');
+    errorToast(errorMessage);
     return null;
   }
 }
@@ -43,6 +41,7 @@ export async function startTemplateSetupSession(
  */
 export async function startProjectOnboardingSession(
   project: KortixProject,
+  errorMessage: string,
 ): Promise<string | null> {
   try {
     const session = await createProjectSession(project.project_id, {
@@ -53,7 +52,7 @@ export async function startProjectOnboardingSession(
     return session.session_id;
   } catch (error) {
     console.error('Failed to start onboarding session', error);
-    errorToast('Project created, but the onboarding session could not be started');
+    errorToast(errorMessage);
     return null;
   }
 }

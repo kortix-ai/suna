@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The hand-off that turns "you are signed in to Kortix" into "this preview
  * origin will serve you".
@@ -85,6 +86,7 @@ export default function PreviewAuthorizePage() {
 }
 
 function PreviewAuthorize() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
@@ -140,7 +142,7 @@ function PreviewAuthorize() {
     return (
       <AuthFrame>
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-sm font-medium">Cannot open that preview</h1>
+          <h1 className="text-sm font-medium">{tI18nComplete.raw('text4ce7b95988e3')}</h1>
           <p className="text-muted-foreground text-xs">{error}</p>
         </div>
       </AuthFrame>

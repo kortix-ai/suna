@@ -133,8 +133,8 @@ export const useDeleteOperationStore = create<DeleteOperationStore>()(
     }),
     {
       name: 'delete-operation-store',
-    }
-  )
+    },
+  ),
 );
 
 // Hook for backward compatibility

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { useUserPreferencesStore } from './user-preferences-store';
 
 describe('panelMode', () => {

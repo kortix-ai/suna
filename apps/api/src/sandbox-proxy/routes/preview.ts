@@ -39,7 +39,7 @@ import {
   previewStatePage,
   type PreviewState,
 } from '../preview-state-page';
-import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -916,6 +916,24 @@ export async function forwardToSandbox(
       boundCredentialSessionId,
     }))
   ) {
+    // Name the branch. See `takeSessionAccessRefusal`: six branches can refuse
+    // here and the constant message named none of them, which is why 6,970
+    // server-side delivery refusals in 48h were undiagnosable.
+    const refusal = takeSessionAccessRefusal({
+      sessionId: record.sessionId,
+      userId,
+      callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
+    });
+    console.warn('[preview] session access refused', {
+      userId,
+      port: upstreamPort,
+      ...(refusal ?? {
+        sessionId: record.sessionId,
+        projectId: record.projectId,
+        detail: 'no recorded verdict (served from the visibility cache)',
+      }),
+    });
     throw new HTTPException(403, {
       message: 'Not authorized to access this session',
     });

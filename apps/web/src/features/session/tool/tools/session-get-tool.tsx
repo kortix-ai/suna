@@ -26,7 +26,7 @@ import {
   ArrowsInSimpleIcon as Minimize2,
   ArrowClockwiseIcon as RefreshCw,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import React, { useMemo } from 'react';
 
 export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -101,7 +101,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     <BasicTool
       icon={<BookOpen className="size-3.5 shrink-0" />}
       trigger={{
-        title: parsed?.title ?? 'Session Get',
+        title: parsed?.title ?? tHardcodedUi.raw('i18nComplete.text5885ace14d89'),
         subtitle: parsed?.id || sid,
         args: headerArgs,
       }}
@@ -135,7 +135,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
             )}
             {parsed.parent && (
               <span className="flex items-center gap-1 font-mono text-xs">
-                Parent: {parsed.parent}
+                {tHardcodedUi.raw('i18nComplete.text8add5fd1782e')} {parsed.parent}
               </span>
             )}
           </div>
@@ -153,7 +153,9 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     <ChevronRight className="text-muted-foreground/40 size-2.5" />
                   )}
                   <ListTodo className="text-muted-foreground/60 size-3" />
-                  <span className="text-xs font-medium">Todos</span>
+                  <span className="text-xs font-medium">
+                    {tHardcodedUi.raw('i18nComplete.textbd02b9a7d71d')}
+                  </span>
                   <span className="text-muted-foreground/50 ml-auto text-xs">
                     {parsed.todos.length}
                   </span>
@@ -211,11 +213,13 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     <ChevronRight className="text-muted-foreground/40 size-2.5" />
                   )}
                   <MessageCircle className="text-muted-foreground/60 size-3" />
-                  <span className="text-xs font-medium">Conversation</span>
+                  <span className="text-xs font-medium">
+                    {tHardcodedUi.raw('i18nComplete.textccca18175753')}
+                  </span>
                   <span className="text-muted-foreground/50 ml-auto text-xs">
                     {parsed.msgCount}{' '}
                     {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
-                    {parsed.toolCount} tools
+                    {parsed.toolCount} {tHardcodedUi.raw('i18nComplete.textf9d35d43770d')}
                   </span>
                 </button>
               </DisclosureTrigger>

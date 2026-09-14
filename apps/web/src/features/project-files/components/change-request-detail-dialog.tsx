@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * A proposed change, and the two things you can do about it.
  *
@@ -40,6 +41,8 @@ import {
 } from '@/features/changes';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import {
   ArrowCounterClockwiseIcon,
   CheckIcon,
@@ -76,6 +79,7 @@ interface ChangeRequestDetailDialogProps {
 }
 
 export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetailDialogProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const open = crId !== null;
   const detailQuery = useChangeRequest(crId);
   const diffQuery = useChangeRequestDiff(crId);
@@ -151,7 +155,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleApply = () => {
     if (!crId) return;
     mergeMutation.mutate(crId, {
-      onSuccess: () => successToast('Changes applied'),
+      onSuccess: () => successToast(tI18nComplete.raw('textafb5023c3c05')),
       // Recoverable blocks render in the dialog. Everything else stays a toast.
       onError: (err) => {
         const code = (err as { code?: string })?.code;
@@ -178,7 +182,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleDismiss = () => {
     if (!crId) return;
     closeMutation.mutate(crId, {
-      onSuccess: () => successToast('Change dismissed'),
+      onSuccess: () => successToast(tI18nComplete.raw('text5280b011dd29')),
       onError: (err) => errorToast(err.message),
     });
   };
@@ -186,7 +190,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleReopen = () => {
     if (!crId) return;
     reopenMutation.mutate(crId, {
-      onSuccess: () => successToast('Change reopened'),
+      onSuccess: () => successToast(tI18nComplete.raw('text3df124e48264')),
       onError: (err) => errorToast(err.message),
     });
   };
@@ -205,7 +209,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
         <ModalHeader className="flex shrink-0 flex-col space-y-0 border-b px-5 py-4 pr-14">
           {!cr ? (
             <div className="space-y-2">
-              <ModalTitle className="sr-only">Proposed change</ModalTitle>
+              <ModalTitle className="sr-only">{tI18nComplete.raw('text28b00af7cb71')}</ModalTitle>
               <Skeleton className="h-5 w-2/3" />
               <Skeleton className="h-3 w-1/3" />
             </div>
@@ -213,7 +217,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             <>
               <div className="flex min-w-0 items-start gap-2.5">
                 <ModalTitle className="text-foreground min-w-0 flex-1 text-base leading-snug font-medium text-balance">
-                  {cr.title || 'Untitled change'}
+                  {cr.title || tI18nComplete.raw('text63cb7c2ea609')}
                 </ModalTitle>
                 {/* An open proposal's state is the two buttons at the bottom.
                     Only a finished one needs a word for what happened to it. */}
@@ -223,25 +227,31 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     size="sm"
                     className="mt-0.5 shrink-0"
                   >
-                    {cr.status === 'merged' ? 'Applied' : 'Dismissed'}
+                    {translateUiCatalogText(
+                      cr.status === 'merged' ? 'Applied' : 'Dismissed',
+                      tI18nComplete,
+                      REMAINING_UI_TRANSLATION_KEYS,
+                    )}
                   </Badge>
                 )}
               </div>
               <p className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs">
                 <span className="tabular-nums">#{cr.number}</span>
                 <span className="text-muted-foreground/40" aria-hidden>
-                  &bull;
+                  {tI18nComplete.raw('text3b9453dad42b')}
                 </span>
-                <span>{proposedChangeTimeline(cr, relative)}</span>
+                <span>{proposedChangeTimeline(cr, relative, tI18nComplete)}</span>
                 {/* The destination is worth a line only when it is not the
                     one everything lands in — otherwise it is the same three
                     words on every change, telling the reader nothing. */}
                 {cr.base_ref !== defaultBranch && (
                   <>
                     <span className="text-muted-foreground/40" aria-hidden>
-                      &bull;
+                      {tI18nComplete.raw('text3b9453dad42b')}
                     </span>
-                    <span className="truncate">into {cr.base_ref}</span>
+                    <span className="truncate">
+                      {tI18nComplete.raw('text6b847a0ed0b2')} {cr.base_ref}
+                    </span>
                   </>
                 )}
               </p>
@@ -260,7 +270,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               <InfoBanner
                 tone="destructive"
                 icon={WarningIcon}
-                title={`This change breaks ${manifestFilename}, so it can't be applied yet`}
+                title={tI18nComplete('text8e5d6f03865c', { value0: manifestFilename })}
               >
                 {manifestIssues.length > 0 ? (
                   <ul className="mt-1 space-y-1">
@@ -274,12 +284,14 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                           {issue.path}
                         </code>{' '}
                         {issue.message}
-                        {issue.line ? ` (line ${issue.line})` : ''}
+                        {issue.line
+                          ? tI18nComplete('texta6b97728ff89', { value0: issue.line })
+                          : ''}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <span>Ask your agent to fix it.</span>
+                  <span>{tI18nComplete.raw('textcc85fb556a48')}</span>
                 )}
               </InfoBanner>
             )}
@@ -288,7 +300,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               <InfoBanner
                 tone="warning"
                 icon={WarningIcon}
-                title={`${fileCount(conflictPaths.length)} changed in both places`}
+                title={tI18nComplete('text57bbed2817ff', {
+                  value0: fileCount(conflictPaths.length),
+                })}
               >
                 <ul className="mt-1 space-y-0.5">
                   {conflictPaths.map((path) => (
@@ -302,7 +316,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
             {alreadyApplied && (
               <InfoBanner tone="neutral" icon={CheckIcon} className="items-center">
-                These changes are already in {cr?.base_ref}.
+                {tI18nComplete.raw('text30b077fb0e07')} {cr?.base_ref}.
               </InfoBanner>
             )}
 
@@ -345,9 +359,14 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 size="sm"
                 className="py-16"
                 icon={FileDashedIcon}
-                title="No changes detected"
+                title={tI18nComplete.raw('text37d715d202ea')}
                 description={
-                  cr ? `Nothing differs between ${cr.head_ref} and ${cr.base_ref}.` : undefined
+                  cr
+                    ? tI18nComplete('texta09346870b37', {
+                        value0: cr.head_ref,
+                        value1: cr.base_ref,
+                      })
+                    : undefined
                 }
               />
             )}
@@ -370,7 +389,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   className="active:scale-[0.96]"
                 >
                   {closeMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                  Dismiss
+                  {tI18nComplete.raw('text48845bff334a')}
                 </Button>
                 {/* When something blocks the apply, the primary button IS the
                     way out of it. A disabled "Apply changes" beside a banner
@@ -387,7 +406,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     ) : (
                       <SparkleIcon weight="fill" className="size-4" />
                     )}
-                    {isStartingRecovery ? 'Starting…' : 'Fix with agent'}
+                    {isStartingRecovery
+                      ? tI18nComplete.raw('textbbe5fc3b9ef3')
+                      : tI18nComplete.raw('textc8f9300b57bf')}
                   </Button>
                 ) : (
                   <Button
@@ -400,7 +421,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     ) : (
                       <CheckIcon className="size-4" />
                     )}
-                    {mergeMutation.isPending ? 'Applying…' : 'Apply changes'}
+                    {mergeMutation.isPending
+                      ? tI18nComplete.raw('text3329a9bb48b9')
+                      : tI18nComplete.raw('text85045ccc0567')}
                   </Button>
                 )}
               </>
@@ -416,7 +439,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 ) : (
                   <ArrowCounterClockwiseIcon className="size-4" />
                 )}
-                Reopen
+                {tI18nComplete.raw('texta886d1dc4f12')}
               </Button>
             )}
           </div>

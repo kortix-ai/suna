@@ -138,9 +138,9 @@ describe('stepLabel', () => {
  */
 describe('stepLabel drops search operators', () => {
   test('a site: scope becomes English', () => {
-    expect(stepLabel(tool('web_search', { query: 'site:daytona.io Daytona sandboxes' })).object).toBe(
-      'Daytona sandboxes on daytona.io',
-    );
+    expect(
+      stepLabel(tool('web_search', { query: 'site:daytona.io Daytona sandboxes' })).object,
+    ).toBe('Daytona sandboxes on daytona.io');
   });
 
   test('engine-only operators are dropped', () => {
@@ -150,9 +150,9 @@ describe('stepLabel drops search operators', () => {
   });
 
   test('a plain query is untouched', () => {
-    expect(stepLabel(tool('web_search', { query: 'Daytona developer infrastructure' })).object).toBe(
-      'Daytona developer infrastructure',
-    );
+    expect(
+      stepLabel(tool('web_search', { query: 'Daytona developer infrastructure' })).object,
+    ).toBe('Daytona developer infrastructure');
   });
 
   test('memory_search reads its query the same way', () => {

@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Budget — the spend cap for this project's gateway.
  *
@@ -95,10 +97,7 @@ function Meter({ spent, limit, className }: { spent: number; limit: number; clas
   return (
     <div className={cn('bg-primary/[0.06] h-2 overflow-hidden rounded-full', className)}>
       <div
-        className={cn(
-          'h-full rounded-full transition-[width] duration-700 ease-out',
-          meterTone(pct),
-        )}
+        className={cn('h-full rounded-full', meterTone(pct))}
         style={{ width: `${Math.min(100, pct)}%` }}
       />
     </div>
@@ -119,6 +118,7 @@ export function GatewayBudgetSection({
   projectId: string;
   canWrite?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useGatewayBudgets(projectId);
   const setBudget = useSetGatewayBudget(projectId);
   const delBudget = useDeleteGatewayBudget(projectId);
@@ -133,8 +133,9 @@ export function GatewayBudgetSection({
 
   const remove = (budgetId: string) =>
     delBudget.mutate(budgetId, {
-      onSuccess: () => successToast('Budget removed'),
-      onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not remove budget'),
+      onSuccess: () => successToast(tI18nComplete.raw('text663742f42a78')),
+      onError: (e) =>
+        errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text8a345d23f9f6')),
     });
 
   const alerts: { label: string; pct: number }[] = [];
@@ -143,7 +144,10 @@ export function GatewayBudgetSection({
     projectBudget.limit_usd > 0 &&
     projectSpend / projectBudget.limit_usd >= 0.8
   ) {
-    alerts.push({ label: 'Project', pct: (projectSpend / projectBudget.limit_usd) * 100 });
+    alerts.push({
+      label: tI18nComplete.raw('text985959785319'),
+      pct: (projectSpend / projectBudget.limit_usd) * 100,
+    });
   }
   for (const m of members) {
     const b = memberBudget(m.user_id);
@@ -164,19 +168,24 @@ export function GatewayBudgetSection({
       {alerts.length > 0 && (
         <InfoBanner
           tone={exceeded ? 'destructive' : 'warning'}
-          title={exceeded ? 'Budget exceeded' : 'Approaching budget'}
+          title={
+            exceeded ? tI18nComplete.raw('text7689a34422be') : tI18nComplete.raw('text05126477f420')
+          }
         >
           {alerts.map((a) => (
             <div key={a.label} className="tabular-nums">
-              {a.label} — {a.pct >= 100 ? 'over limit' : `${Math.round(a.pct)}% used`}
+              {a.label} —{' '}
+              {a.pct >= 100
+                ? tI18nComplete.raw('text2743ed9c1ab8')
+                : tI18nComplete('texteb5de9e6bbb3', { value0: Math.round(a.pct) })}
             </div>
           ))}
         </InfoBanner>
       )}
 
       <Panel
-        title="Budget"
-        description="Cap what this project can spend through the gateway"
+        title={tI18nComplete.raw('text1c6225ec7092')}
+        description={tI18nComplete.raw('textbf9a0f6614bb')}
         action={
           canWrite ? (
             <div className="flex items-center gap-1">
@@ -187,11 +196,11 @@ export function GatewayBudgetSection({
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => remove(projectBudget.budget_id)}
                 >
-                  Remove
+                  {tI18nComplete.raw('textc3812fc4acb8')}
                 </Button>
               )}
               <Button size="sm" variant="outline" onClick={() => setEditing({ scope: 'project' })}>
-                {projectBudget ? 'Edit' : 'Set budget'}
+                {projectBudget ? 'Edit' : tI18nComplete.raw('textdf4e88af065d')}
               </Button>
             </div>
           ) : undefined
@@ -206,24 +215,27 @@ export function GatewayBudgetSection({
               <div className="text-foreground flex flex-wrap items-baseline gap-x-1.5 text-sm tabular-nums">
                 <span className="font-medium">{fmtUsd(projectSpend)}</span>
                 <span className="text-muted-foreground">
-                  of {fmtUsd(projectBudget.limit_usd)} per {projectBudget.period} ·{' '}
-                  {projectBudget.action === 'block' ? 'blocks at limit' : 'warns only'} ·{' '}
-                  {Math.round(pct)}% used
+                  {tI18nComplete.raw('text28391d3bc64e')} {fmtUsd(projectBudget.limit_usd)}{' '}
+                  {tI18nComplete.raw('textb427c3dec904')} {projectBudget.period} ·{' '}
+                  {projectBudget.action === 'block'
+                    ? tI18nComplete.raw('texta34c2be0a636')
+                    : tI18nComplete.raw('textdbe46defeac2')}{' '}
+                  · {Math.round(pct)}
+                  {tI18nComplete.raw('text19e8fbbc0d7b')}
                 </span>
               </div>
               <Meter spent={projectSpend} limit={projectBudget.limit_usd} />
             </div>
           ) : (
-            <p className="text-muted-foreground text-sm">
-              No cap. This project&apos;s gateway spend is unlimited.
-            </p>
+            <p className="text-muted-foreground text-sm">{tI18nComplete.raw('texta60137ff4904')}</p>
           )}
 
           {members.length > 0 && (
             <div className="border-border/60 space-y-3 border-t pt-4">
               <p className="text-muted-foreground text-xs">
-                Per-member caps ({members.length} {members.length === 1 ? 'member' : 'members'} with
-                spend this month)
+                {tI18nComplete.raw('textfd94861c802e')}
+                {members.length} {members.length === 1 ? 'member' : 'members'}{' '}
+                {tI18nComplete.raw('text21c3f4d1d0d0')}
               </p>
               {members.map((m) => (
                 <MemberRow
@@ -260,11 +272,13 @@ export function GatewayBudgetSection({
               },
               {
                 onSuccess: () => {
-                  successToast('Budget saved');
+                  successToast(tI18nComplete.raw('text27593c2cec19'));
                   setEditing(null);
                 },
                 onError: (e) =>
-                  errorToast(e instanceof Error ? e.message : 'Could not save budget'),
+                  errorToast(
+                    e instanceof Error ? e.message : tI18nComplete.raw('text1ff455ad5cf0'),
+                  ),
               },
             )
           }
@@ -295,6 +309,7 @@ function MemberRow({
   onSetCap: () => void;
   onRemove: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = member.email ?? 'Unknown member';
   return (
     <div className="flex items-center gap-3">
@@ -316,11 +331,11 @@ function MemberRow({
             onClick={() => onRemove(budget.budget_id)}
             className="text-muted-foreground hover:text-foreground shrink-0 text-xs transition-colors"
           >
-            Remove
+            {tI18nComplete.raw('textc3812fc4acb8')}
           </button>
         ) : (
           <Button size="sm" variant="ghost" className="shrink-0" onClick={onSetCap}>
-            Set cap
+            {tI18nComplete.raw('text05ba3d9821ab')}
           </Button>
         ))}
     </div>
@@ -345,6 +360,9 @@ function BudgetDialog({
     action: 'block' | 'warn';
   }) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const periods = useLocalizedUiCatalog(PERIODS);
+  const actions = useLocalizedUiCatalog(ACTIONS);
   const [limit, setLimit] = useState(existing ? String(existing.limit_usd) : '');
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>(existing?.period ?? 'month');
   const [action, setAction] = useState<'block' | 'warn'>(existing?.action ?? 'block');
@@ -357,45 +375,51 @@ function BudgetDialog({
     <Modal open onOpenChange={(next) => (next ? undefined : onClose())}>
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
-          <ModalTitle>{target.scope === 'project' ? 'Project budget' : 'Member cap'}</ModalTitle>
-          <ModalDescription>Cap gateway spend for {who}.</ModalDescription>
+          <ModalTitle>
+            {target.scope === 'project'
+              ? tI18nComplete.raw('textedfb4ed7afaf')
+              : tI18nComplete.raw('text10dbcac3bc2c')}
+          </ModalTitle>
+          <ModalDescription>
+            {tI18nComplete.raw('texte80b27e5e39d')} {who}.
+          </ModalDescription>
         </ModalHeader>
         <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Limit (USD)</Label>
+            <Label>{tI18nComplete.raw('textc6f380561a26')}</Label>
             <Input
               autoFocus
               inputMode="decimal"
-              placeholder="e.g. 50"
+              placeholder={tI18nComplete.raw('text5f448b8c41a4')}
               value={limit}
               onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ''))}
               variant="popover"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Period</Label>
-            <PillGroup options={PERIODS} value={period} onChange={setPeriod} />
+            <Label>{tI18nComplete.raw('text6e795d4d3cc2')}</Label>
+            <PillGroup options={periods} value={period} onChange={setPeriod} />
           </div>
           <div className="space-y-1.5">
-            <Label>At limit</Label>
-            <PillGroup options={ACTIONS} value={action} onChange={setAction} />
+            <Label>{tI18nComplete.raw('textcfac8a356cfe')}</Label>
+            <PillGroup options={actions} value={action} onChange={setAction} />
             <p className="text-muted-foreground text-xs text-pretty">
               {action === 'block'
-                ? 'New requests are blocked once the limit is reached.'
-                : 'Requests keep flowing; the bar just turns over-budget.'}
+                ? tI18nComplete.raw('textb66d289c5384')
+                : tI18nComplete.raw('textbd5edd378cd3')}
             </p>
           </div>
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button type="button" variant="outline-ghost" onClick={onClose}>
-            Cancel
+            {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
           <Button
             disabled={!valid || saving}
             onClick={() => valid && onSave({ limit_usd: amount, period, action })}
           >
             {saving ? <Loading className="size-4 shrink-0" /> : null}
-            Save budget
+            {tI18nComplete.raw('text6520b66830b2')}
           </Button>
         </ModalFooter>
       </ModalContent>

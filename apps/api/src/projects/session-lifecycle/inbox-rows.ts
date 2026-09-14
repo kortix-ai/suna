@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
 /**
@@ -66,7 +67,7 @@ export async function listInboxPrompts(
         ),
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(limit);
 }
 
@@ -147,8 +148,8 @@ export async function deleteInboxPrompt(
  * This is both "retry" and "send now" — one primitive, because they are one
  * intent: the user pointed at a row and asked for THAT message. `promoted`
  * is what the admission gate reads to let it past the ordering rule
- * (`older_prompt_pending`). A live turn and an in-flight sibling still bind a
- * promoted row because both are unsafe delivery boundaries.
+ * (`older_prompt_pending`). An in-flight sibling still binds a promoted row
+ * because two concurrent network deliveries can reverse their arrival order.
  *
  * `payload.remintOnDelivery` is stamped because this row did NOT go out on its
  * first claim: whatever the session did in the meantime has written HIGHER wire
@@ -479,7 +480,7 @@ export async function claimDueSessionInboxSiblings(input: {
         // rows are ordered by the batch itself; held rows stay excluded.
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(input.limit ?? 20);
   const claimed: SessionLifecycleCommandRow[] = [];
   for (const row of rows) {

@@ -140,7 +140,7 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
  * credential. The grant is read from the default branch, so any `[[agents]]`
  * change activates only through a merged change request.
  */
-async function mintSessionToken(opts: {
+export async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
   projectId: string;

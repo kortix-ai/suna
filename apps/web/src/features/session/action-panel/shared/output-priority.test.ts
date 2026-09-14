@@ -49,12 +49,7 @@ describe('sortOutputs', () => {
   });
 
   it('ranks the document family in the order a person values it', () => {
-    const sorted = sortOutputs([
-      file('d.pptx'),
-      file('c.docx'),
-      file('b.xlsx'),
-      file('a.pdf'),
-    ]);
+    const sorted = sortOutputs([file('d.pptx'), file('c.docx'), file('b.xlsx'), file('a.pdf')]);
     expect(names(sorted)).toEqual(['a.pdf', 'b.xlsx', 'c.docx', 'd.pptx']);
   });
 
@@ -74,11 +69,7 @@ describe('sortOutputs', () => {
   });
 
   it('is stable — equal-rank files keep the order the agent made them in', () => {
-    const sorted = sortOutputs([
-      file('one.tsx'),
-      file('two.tsx'),
-      file('three.tsx'),
-    ]);
+    const sorted = sortOutputs([file('one.tsx'), file('two.tsx'), file('three.tsx')]);
     expect(names(sorted)).toEqual(['one.tsx', 'two.tsx', 'three.tsx']);
   });
 
@@ -99,7 +90,12 @@ describe('sortOutputs', () => {
 });
 
 describe('selectPrimaryDeliverable (W2)', () => {
-  const app = { callID: 'a', name: 'Dashboard', kind: 'app' as const, url: 'http://localhost:3000' };
+  const app = {
+    callID: 'a',
+    name: 'Dashboard',
+    kind: 'app' as const,
+    url: 'http://localhost:3000',
+  };
   const pdf = { callID: 'f', name: 'report.pdf', kind: 'file' as const, path: 'report.pdf' };
   const css = { callID: 'g', name: 'globals.css', kind: 'file' as const, path: 'globals.css' };
 

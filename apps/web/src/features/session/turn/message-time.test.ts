@@ -152,7 +152,10 @@ describe('absent data renders nothing, not a placeholder', () => {
 
 describe('messageCreatedAt', () => {
   const withTime = (created: unknown) =>
-    ({ info: { id: 'm1', role: 'user', time: { created } }, parts: [] }) as unknown as MessageWithParts;
+    ({
+      info: { id: 'm1', role: 'user', time: { created } },
+      parts: [],
+    }) as unknown as MessageWithParts;
 
   test('reads the stamp off the union arm', () => {
     expect(messageCreatedAt(withTime(1_760_000_000_000))).toBe(1_760_000_000_000);

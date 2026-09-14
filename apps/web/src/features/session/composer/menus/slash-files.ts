@@ -126,7 +126,5 @@ export function sessionSlashFiles(input: {
 export function filterSlashFiles(files: readonly SlashFile[], query: string): SlashFile[] {
   const q = query.toLowerCase().trim();
   if (!q) return [...files];
-  return files.filter(
-    (f) => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q),
-  );
+  return files.filter((f) => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
 }

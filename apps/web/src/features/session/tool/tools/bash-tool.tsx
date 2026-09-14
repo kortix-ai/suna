@@ -19,6 +19,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
@@ -172,6 +173,7 @@ function CommandBlock({
   /** The call has finished. Until it has, silence means "not yet", not "none". */
   settled: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasOutput = Boolean(richOutput || output);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
   // On the panel the row card is the frame and the disclosure body is the
@@ -239,7 +241,7 @@ function CommandBlock({
             </div>
           ) : (
             <p className={cn('text-muted-foreground/50', paneInset, 'text-xs leading-relaxed')}>
-              No output
+              {tI18nComplete.raw('textf7e31759b202')}
             </p>
           )}
         </div>
@@ -257,7 +259,7 @@ function CommandBlock({
             pad && 'px-3',
           )}
         >
-          Exit code {exitCode}
+          {tI18nComplete.raw('textccc6eb1c87a1')} {exitCode}
         </div>
       )}
     </div>
@@ -299,6 +301,7 @@ function BashTrigger({
   /** The call is still running under a live stream. */
   live: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const open = useToolOpen();
 
   if (live) {
@@ -309,11 +312,13 @@ function BashTrigger({
           // read as in-progress, and with the command gone there is nothing
           // else left on it to carry the motion.
           <TextShimmer duration={1} spread={2} className="min-w-0 truncate text-xs">
-            Running command
+            {tI18nComplete.raw('text2afb17673ff9')}
           </TextShimmer>
         ) : (
           <>
-            <span className="text-foreground shrink-0 text-xs">Running command</span>
+            <span className="text-foreground shrink-0 text-xs">
+              {tI18nComplete.raw('text2afb17673ff9')}
+            </span>
             <TextShimmer
               duration={1}
               spread={2}
@@ -356,6 +361,7 @@ function BashTrigger({
 }
 
 export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -425,7 +431,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <TextShimmer duration={1} spread={2}>
-              Working...
+              {tI18nComplete.raw('textb93900bded31')}
             </TextShimmer>
           </div>
         ) : commandPreview ? (

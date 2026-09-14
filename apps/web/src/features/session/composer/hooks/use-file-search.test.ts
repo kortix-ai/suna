@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { qk, runtimeKeys } from '@kortix/sdk/react';
+import { describe, expect, test } from 'bun:test';
 
 import {
   canKeepPlaceholderFiles,
@@ -203,7 +203,7 @@ describe('menuRevalidationKeys', () => {
     expect(keys.some((prefix) => prefixMatches(prefix, realKey))).toBe(true);
   });
 
-  test('the projectId-scoped key is built through the SDK\'s own qk.project.detail, not a hand-typed literal', () => {
+  test("the projectId-scoped key is built through the SDK's own qk.project.detail, not a hand-typed literal", () => {
     expect(menuRevalidationKeys('proj-123')).toContainEqual([
       ...qk.project.detail('proj-123'),
       'agents',

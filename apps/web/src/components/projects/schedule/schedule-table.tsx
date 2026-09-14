@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The schedules / webhooks list.
  *
@@ -51,19 +52,23 @@ import {
 } from '@phosphor-icons/react';
 
 import {
-  KIND_COPY,
-  type TriggerKind,
   describeLastRun,
   describeSecurity,
   describeWhen,
+  localizedKindCopy,
   triggerName,
   triggerStatus,
+  type TriggerKind,
 } from './schedule-copy';
 
-async function copyWebhookAddress(url: string): Promise<void> {
+async function copyWebhookAddress(
+  url: string,
+  copiedMessage: string,
+  failedMessage: string,
+): Promise<void> {
   const ok = await copyToClipboard(url);
-  if (ok) successToast('Address copied');
-  else errorToast('Copy failed — open the webhook and copy it from there');
+  if (ok) successToast(copiedMessage);
+  else errorToast(failedMessage);
 }
 
 export interface ScheduleTableProps {
@@ -92,16 +97,23 @@ export function ScheduleTable({
   onToggle,
   onDelete,
 }: ScheduleTableProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead>Name</TableHead>
-          <TableHead className="hidden sm:table-cell">When</TableHead>
-          <TableHead className="hidden lg:table-cell">Agent</TableHead>
-          <TableHead className="hidden md:table-cell">Last run</TableHead>
+          <TableHead>{tI18nComplete.raw('textdcd1d5223f73')}</TableHead>
+          <TableHead className="hidden sm:table-cell">
+            {tI18nComplete.raw('textcf9c7aa24a26')}
+          </TableHead>
+          <TableHead className="hidden lg:table-cell">
+            {tI18nComplete.raw('text11b39c93777e')}
+          </TableHead>
+          <TableHead className="hidden md:table-cell">
+            {tI18nComplete.raw('text512a48218ba2')}
+          </TableHead>
           <TableHead className="w-[52px]">
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -143,11 +155,12 @@ function ScheduleTableRow({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const kind = trigger.type;
   const name = triggerName(trigger);
-  const status = triggerStatus(trigger.enabled);
+  const status = triggerStatus(trigger.enabled, tI18nComplete);
   const when = describeWhen(trigger);
-  const security = describeSecurity(trigger);
+  const security = describeSecurity(trigger, tI18nComplete);
   const KindIcon = kind === 'cron' ? TimerIcon : WebhooksLogoIcon;
   const StatusIcon = status.active ? KindIcon : PauseIcon;
 
@@ -179,7 +192,9 @@ function ScheduleTableRow({
             </button>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
             {!status.active && (
-              <span className="text-muted-foreground hidden text-xs sm:block">Paused</span>
+              <span className="text-muted-foreground hidden text-xs sm:block">
+                {tI18nComplete.raw('texte159b06187d3')}
+              </span>
             )}
           </span>
         </div>
@@ -241,10 +256,11 @@ function RowActions({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Safe: `ScheduleView` filters every list to `isTriggerKind` before it
   // reaches this table.
   const kind = trigger.type as TriggerKind;
-  const noun = KIND_COPY[kind].noun;
+  const noun = localizedKindCopy(tI18nComplete)[kind].noun;
   const webhookUrl = trigger.webhook_url ?? '';
 
   return (
@@ -253,7 +269,7 @@ function RowActions({
         <Button
           size="icon"
           variant="ghost"
-          aria-label={`Actions for ${triggerName(trigger)}`}
+          aria-label={tI18nComplete('text33da220b1a34', { value0: triggerName(trigger) })}
           onClick={(e) => e.stopPropagation()}
         >
           {busy ? (
@@ -264,11 +280,21 @@ function RowActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onClick={onOpen}>Open {noun}</DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpen}>
+          {tI18nComplete.raw('texted077f3d8125')} {noun}
+        </DropdownMenuItem>
         {kind === 'webhook' && webhookUrl ? (
-          <DropdownMenuItem onClick={() => void copyWebhookAddress(webhookUrl)}>
+          <DropdownMenuItem
+            onClick={() =>
+              void copyWebhookAddress(
+                webhookUrl,
+                tI18nComplete.raw('texta26175817712'),
+                tI18nComplete.raw('text07ef6afe47b4'),
+              )
+            }
+          >
             <CopyIcon className="size-3.5 shrink-0" />
-            Copy address
+            {tI18nComplete.raw('text7c4e5224f9d4')}
           </DropdownMenuItem>
         ) : null}
         {canWrite ? (
@@ -276,7 +302,7 @@ function RowActions({
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onRun}>
               <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-              Run now
+              {tI18nComplete.raw('text0991397702fa')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onToggle}>
               {active ? (
@@ -289,7 +315,7 @@ function RowActions({
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
               <TrashIcon className="size-3.5 shrink-0" />
-              Delete {noun}
+              {tI18nComplete.raw('texte2d0a54968ea')} {noun}
             </DropdownMenuItem>
           </>
         ) : null}

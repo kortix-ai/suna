@@ -9,9 +9,9 @@ import {
   MicrophoneIcon as RiMicAiFill,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
-import { SCENARIOS } from './scenarios';
+import { localizedScenarios, SCENARIOS } from './scenarios';
 
 /** Clickable demo prompts — each maps to a scripted scenario. */
 export const DEMO_PROMPTS = SCENARIOS.map((s) => s.prompt);
@@ -28,9 +28,11 @@ function DemoPromptChips({
   onPick: (prompt: string) => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const scenarios = localizedScenarios(tI18nComplete);
   return (
     <div className="flex gap-1.5 overflow-x-auto">
-      {SCENARIOS.slice(0, 2).map((s) => (
+      {scenarios.slice(0, 2).map((s) => (
         <button
           key={s.id}
           type="button"
@@ -48,19 +50,24 @@ function DemoPromptChips({
 const HOME_PROMPT_CYCLE_MS = 4000;
 
 export function CyclingPromptText({ className }: { className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const messages = [
+    tI18nComplete.raw('textbe3f588110fe'),
+    ...localizedScenarios(tI18nComplete).map((scenario) => scenario.prompt),
+  ];
   const reduce = useReducedMotion();
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     if (reduce) return;
     const interval = window.setInterval(
-      () => setIndex((i) => (i + 1) % HOME_PROMPT_MESSAGES.length),
+      () => setIndex((i) => (i + 1) % messages.length),
       HOME_PROMPT_CYCLE_MS,
     );
     return () => window.clearInterval(interval);
-  }, [reduce]);
+  }, [messages.length, reduce]);
 
-  if (reduce) return <span className={className}>{HOME_PROMPT_MESSAGES[0]}</span>;
+  if (reduce) return <span className={className}>{messages[0]}</span>;
 
   return (
     <div aria-hidden className={cn('relative overflow-hidden', className)}>
@@ -72,7 +79,7 @@ export function CyclingPromptText({ className }: { className?: string }) {
           animate={{ opacity: 1, y: 0, transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] } }}
           exit={{ opacity: 0, y: -8, transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] } }}
         >
-          {HOME_PROMPT_MESSAGES[index]}
+          {messages[index]}
         </m.span>
       </AnimatePresence>
     </div>
@@ -133,7 +140,9 @@ export function Composer({
               }
             }}
             placeholder={
-              variant === 'reply' ? 'Reply to kortix…' : 'Describe a task to start a session…'
+              variant === 'reply'
+                ? tI18nHardcoded.raw('i18nComplete.texte75c06dacd1c')
+                : tI18nHardcoded.raw('i18nComplete.textd1f4d56aecde')
             }
             className="text-foreground placeholder:text-muted-foreground relative w-full resize-none bg-transparent text-sm outline-none"
           />
@@ -146,7 +155,7 @@ export function Composer({
             {variant === 'home' && (
               <>
                 <span className="text-foreground inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs">
-                  <KortixLogo size={12} /> kortix
+                  <KortixLogo size={12} /> {tI18nHardcoded.raw('i18nComplete.text388f7968512c')}
                 </span>
                 <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
                   <Claude className="size-3.5" />
@@ -163,7 +172,7 @@ export function Composer({
             </span>
             <button
               type="button"
-              aria-label="Send"
+              aria-label={tI18nHardcoded.raw('i18nComplete.textf6f4688ff23d')}
               onClick={submit}
               disabled={disabled || value.trim().length === 0}
               className="bg-foreground text-background inline-flex size-7 items-center justify-center rounded-full transition-opacity disabled:opacity-40"

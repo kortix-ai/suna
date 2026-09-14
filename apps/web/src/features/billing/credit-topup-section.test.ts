@@ -13,6 +13,24 @@ import { describeTopup } from './credit-topup-section';
  * test that every state produces a non-empty hint.
  */
 describe('describeTopup', () => {
+  test('uses locale copy and number grouping', () => {
+    const copy = {
+      minimum: (amount: string) => `Минимум је ${amount}.`,
+      contactSales: (amount: string) => `За више од ${amount}, контактирајте продају.`,
+      creditHint: (credits: string) => `${credits} кредита · додају се након плаћања.`,
+      noExpiry: 'Кредити не истичу. 1 $ = 100 кредита.',
+      processing: 'Обрада',
+      addAmount: (amount: string) => `Додај ${amount}`,
+      addCredits: 'Додај кредите',
+      locale: 'sr',
+    };
+    expect(describeTopup(50, false, copy)).toEqual({
+      canBuy: true,
+      hint: '5.000 кредита · додају се након плаћања.',
+      actionLabel: 'Додај 50 US$',
+    });
+  });
+
   test('no amount chosen: nothing to buy, and the line explains the unit instead', () => {
     const { canBuy, hint, actionLabel } = describeTopup(null);
     expect(canBuy).toBe(false);

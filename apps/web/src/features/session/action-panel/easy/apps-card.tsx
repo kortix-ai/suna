@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `AppsCard` — the "Preview" card: the things the agent has running, one row
  * each.
@@ -52,6 +53,7 @@ export function AppsCard({
   apps: OutputItem[];
   onOpenApp: (app: OutputItem) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // One subscription for the card, not one per row: liveness is a property of
   // the sandbox, and every app in it lives or dies together. The green pulse
   // was static markup before this — a stopped sandbox kept "live" dots pulsing
@@ -64,14 +66,14 @@ export function AppsCard({
 
   return (
     <PanelCard
-      title="Preview"
+      title={tI18nComplete.raw('text324b134f57c7')}
       count={apps.length}
       isEmpty={apps.length === 0}
       // The payoff: if the agent got something running, that is the single most
       // interesting fact in the panel. It should not take a click to learn it.
       defaultExpanded={apps.length > 0}
       emptyArt={<AppsArt />}
-      emptyText="Anything the agent runs — a site, an app, an API — opens from here."
+      emptyText={tI18nComplete.raw('texte0687cb3046c')}
       contentClassName="border-border border-t px-2 py-2"
     >
       <ul className="flex flex-col gap-0">
@@ -106,7 +108,9 @@ export function AppsCard({
                 </span>
                 <span className="text-foreground min-w-0 flex-1 truncate text-sm">{app.name}</span>
                 {!sandboxAlive && (
-                  <span className="text-muted-foreground shrink-0 text-xs">stopped</span>
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {tI18nComplete.raw('text8322e87d2458')}
+                  </span>
                 )}
                 {sandboxAlive && port > 0 && (
                   <span className="text-muted-foreground shrink-0 text-xs tabular-nums">

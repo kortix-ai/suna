@@ -35,6 +35,34 @@ export const POST_AUTH_INTENT_COOKIE = 'kortix_post_auth';
 /** Short-lived on purpose: it only has to outlive the post-auth redirect. */
 export const POST_AUTH_INTENT_MAX_AGE = 60 * 5;
 
+/**
+ * Written by the middleware at the exact moment it turns an unauthenticated
+ * request into `/auth?redirect=<path>`. Value: `<ownerId>:<encoded path>`.
+ *
+ * The `redirect` query param carries the path but no identity, so the auth
+ * flows downstream cannot tell "this user's own session just expired" from
+ * "a different user was here 30 seconds ago". They are opposite answers: the
+ * first must return to the path, the second must never see it. Signing in as B
+ * on a screen bounced from A's project sent B to A's "Request access" page,
+ * because the only guard in place ran for brand-new accounts.
+ *
+ * The owner half is allowed to be EMPTY. Middleware does not always have a user
+ * id to attach (the stale-session self-heal may have already nulled it), and a
+ * pasted or bookmarked `/auth?redirect=…` link arrives with no cookie at all.
+ * An empty owner means UNATTRIBUTED, which never demotes — see
+ * `shouldDemoteReturnUrl`.
+ *
+ * Accepted cost of the window: a bounce can outlive the navigation that caused
+ * it, so a genuinely shared deep link opened within 300s of somebody else's
+ * bounce is demoted once. Every successful sign-in clears the cookie, so
+ * re-opening the link works immediately — it self-corrects, and erring toward
+ * the landing door is the right direction to be wrong in.
+ */
+export const AUTH_BOUNCE_COOKIE = 'kortix_auth_bounce';
+
+/** Short-lived on purpose: it only has to outlive one trip through /auth. */
+export const AUTH_BOUNCE_MAX_AGE = 60 * 5;
+
 /** One year. The value is a project id, not a credential. */
 export const LAST_PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
@@ -85,6 +113,60 @@ export function parseLastProjectForUser(
   const projectId = cookieValue.slice(separator + 1);
   if (ownerId !== currentUserId) return null;
   return isValidProjectId(projectId) ? projectId : null;
+}
+
+/**
+ * The owner half of a `<ownerId>:<rest>` cookie, or `''` when the cookie is
+ * absent, has no separator, or names something that is not a user id.
+ *
+ * Both cookies written by this module use that shape, and both are written by
+ * the browser, so the owner is validated before anyone compares against it.
+ * `''` is the honest answer for "no identity here", never a wildcard.
+ */
+function ownerIdFromCookie(cookieValue: string | null | undefined): string {
+  if (!cookieValue) return '';
+  const separator = cookieValue.indexOf(':');
+  if (separator === -1) return '';
+  const ownerId = cookieValue.slice(0, separator);
+  return isValidProjectId(ownerId) ? ownerId : '';
+}
+
+/**
+ * The `AUTH_BOUNCE_COOKIE` value for one middleware bounce.
+ *
+ * The path is percent-encoded here rather than left to the cookie serializer,
+ * because a request path can legally hold characters a cookie value cannot (a
+ * comma, a semicolon, a space) and a truncated header is not worth the risk.
+ * Only the owner half is ever read back; the path rides along so a bounce is
+ * legible in a browser inspector and in a bug report.
+ */
+export function serializeAuthBounce(ownerId: string | null | undefined, path: string): string {
+  return `${isValidProjectId(ownerId) ? ownerId : ''}:${encodeURIComponent(path)}`;
+}
+
+/** Who owned the session that got bounced, or `''` for an UNATTRIBUTED bounce. */
+export function parseAuthBounceOwner(cookieValue: string | null | undefined): string {
+  return ownerIdFromCookie(cookieValue);
+}
+
+/**
+ * Who the remembered project belongs to, or `''`. The middleware falls back to
+ * this when the bounce happens after the stale-session self-heal has already
+ * dropped the Supabase cookies and there is no user id left to read.
+ *
+ * Byte-identical to `parseAuthBounceOwner` today — both cookies share the
+ * `<ownerId>:<rest>` shape via `ownerIdFromCookie`. Kept as a SEPARATE
+ * exported name rather than an alias on purpose: `AUTH_BOUNCE_COOKIE` and
+ * `LAST_PROJECT_COOKIE` answer different questions, and a rule that should
+ * apply to only one of them (a shorter TTL, a stricter owner check) must not
+ * force touching the other's call sites to add. If that divergence never
+ * happens, collapse the two into one — until then,
+ * `landing-destination.test.ts`'s "these two must agree" test is the
+ * anti-drift guard: a change to one that is not mirrored to the other fails
+ * immediately instead of drifting silently.
+ */
+export function parseLastProjectOwner(cookieValue: string | null | undefined): string {
+  return ownerIdFromCookie(cookieValue);
 }
 
 /** `/projects/<id>` for a trusted-shaped id, else null. */

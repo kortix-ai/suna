@@ -1,6 +1,8 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations } from '@/i18n/get-translations';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -21,26 +23,33 @@ const RELEASE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   day: 'numeric',
 };
 
-export const metadata: Metadata = {
-  title: 'Changelog',
-  description:
-    'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
-  openGraph: {
-    title: 'Kortix Changelog',
-    description: 'Every Kortix release, straight from the source.',
-    url: `${CANONICAL_ORIGIN}/changelog`,
-    siteName: 'Kortix',
-    type: 'website',
-    images: [{ url: '/banner.png', width: 1200, height: 630, alt: 'Kortix Changelog' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Kortix Changelog',
-    description: 'Every Kortix release, straight from the source.',
-    images: ['/banner.png'],
-  },
-  alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  return localizeUiCatalog(
+    {
+      title: 'Changelog',
+      description:
+        'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+      openGraph: {
+        title: 'Kortix Changelog',
+        description: 'Every Kortix release, straight from the source.',
+        url: `${CANONICAL_ORIGIN}/changelog`,
+        siteName: 'Kortix',
+        type: 'website' as const,
+        images: [{ url: '/banner.png', width: 1200, height: 630, alt: 'Kortix Changelog' }],
+      },
+      twitter: {
+        card: 'summary_large_image' as const,
+        title: 'Kortix Changelog',
+        description: 'Every Kortix release, straight from the source.',
+        images: ['/banner.png'],
+      },
+      alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
+    },
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
+}
 
 // Rebuild hourly so new releases show up without a deploy.
 export const revalidate = 3600;
@@ -147,6 +156,7 @@ function ReleaseNotes({ body }: { body: string }) {
 }
 
 export default async function ChangelogPage() {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = await getTranslations('hardcodedUi');
   const releases = await getReleases();
 
@@ -155,7 +165,7 @@ export default async function ChangelogPage() {
       <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
         <header className="pt-28 pb-16 sm:pt-36 sm:pb-28">
           <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-            Changelog
+            {tI18nComplete.raw('textead07c84baac')}
           </h1>
         </header>
 
@@ -220,12 +230,12 @@ export default async function ChangelogPage() {
                           </span>
                           {isLatest && (
                             <Badge size="sm" variant="kortix" className="rounded">
-                              Latest
+                              {tI18nComplete.raw('text8730d3c2022a')}
                             </Badge>
                           )}
                           {release.prerelease && (
                             <Badge size="sm" variant="kortix" className="rounded">
-                              Pre-release
+                              {tI18nComplete.raw('texta90d2f735a49')}
                             </Badge>
                           )}
                         </div>
@@ -255,7 +265,9 @@ export default async function ChangelogPage() {
 
                         <Button asChild variant="ghost" className="group/arrow-right">
                           <Link href={release.html_url} target="_blank" rel="noopener noreferrer">
-                            {isLong ? 'Read the full release on GitHub' : 'Release on GitHub'}
+                            {isLong
+                              ? tI18nComplete.raw('text21613c68434c')
+                              : tI18nComplete.raw('textd3dc01b4e53e')}
 
                             <ArrowRightIcon />
                           </Link>

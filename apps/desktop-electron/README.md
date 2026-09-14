@@ -46,7 +46,68 @@ KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-ele
 
 At runtime you can also switch via the native **Kortix → Frontend URL** menu
 (Production / Dev / Local / Custom… / Reset). The choice is remembered across
-launches (stored in `userData/frontend_url`).
+launches (stored in `userData/frontend_url`). `KORTIX_DESKTOP_USER_DATA=<dir>`
+runs against an isolated profile instead of the real one.
+
+### First launch: choose a Kortix instance
+
+A new profile asks which instance to connect to before any page loads. The
+window is `src/instance-chooser.js` + `assets/instance-chooser.html`; URL rules
+and the reachability check are `src/instance-rules.js`; `frontend_url`, the
+first-launch marker, and URL precedence are `src/instance-store.js`.
+
+- **Kortix Cloud** — the URL baked in at build time (`kortix.com` for prod,
+  `dev.kortix.com` for dev builds). Nothing is written to `frontend_url`, so the
+  app keeps following the baked default.
+- **Self-hosted** — the URL the user types. A bare host gets `https://` (a bare
+  `localhost` gets `http://`), a `/` path becomes `/projects`, and query and
+  fragment are dropped. URLs with a username or password are rejected. The app
+  sends `HEAD` with no credentials and an 8 s timeout; any HTTP status counts as
+  reachable. A network error shows inline, with **Continue Anyway** for hosts
+  that are only reachable on a VPN. The URL is saved to `frontend_url`.
+
+Rules:
+
+- "New profile" = `userData` is missing or empty at process start. The shell
+  then writes `userData/instance_setup_pending` and removes it once the user
+  chooses. Quitting the chooser asks again on the next launch.
+- Existing installs have a non-empty `userData` and are never asked.
+- `KORTIX_DESKTOP_URL` or a saved `frontend_url` skips the chooser, so
+  `pnpm dev` and the native e2e journey never see it.
+
+The same window opens from **Frontend URL → Custom URL…**, and when the app
+origin fails to load (`did-fail-load` on the main frame): the title reads
+**Can't reach \<host\>**, with **Try Again** or a different instance. To see the
+first-launch chooser locally, launch without `KORTIX_DESKTOP_URL` on an empty
+profile:
+
+```bash
+pnpm --filter @kortix/desktop-electron run setup
+KORTIX_DESKTOP_USER_DATA="$(mktemp -d)" pnpm --filter @kortix/desktop-electron exec electron .
+```
+
+### The dev/staging environment password (HTTP Basic)
+
+`dev.kortix.com` and `staging.kortix.com` sit behind one shared HTTP Basic
+credential (`apps/web/src/middleware.ts` answers `401 Authentication required.`).
+Chrome pops its own username/password dialog for that; Electron does not, so the
+shell handles the challenge itself (`src/main.js` → `answerBasicChallenge`, policy
+in `src/basic-auth.js`):
+
+1. `KORTIX_DESKTOP_BASIC_PASSWORD` (+ optional `KORTIX_DESKTOP_BASIC_USER`,
+   default `kortix`) answers silently — for CI and scripted launches.
+2. Otherwise a credential the user entered earlier for that host answers
+   silently. "Remember on this device" stores it in `userData/basic_auth.json`,
+   encrypted with Electron `safeStorage` (macOS Keychain / DPAPI / libsecret).
+3. Otherwise a native-style sign-in dialog (`assets/basic-auth.html`) opens over
+   the app window. A rejected password (the server re-challenges within 60 s)
+   drops the remembered copy and reopens the dialog with an error. Cancel leaves
+   the bare 401 page, like Chrome; reload asks again.
+
+The credential is only ever sent to the configured app origin. Any other host
+(sandbox previews, iframes) that returns a Basic challenge is refused.
+**Kortix → Frontend URL → Forget Saved Environment Password** clears the
+remembered credential for the current host.
 
 ### Testing login (the `kortix://` deep link)
 

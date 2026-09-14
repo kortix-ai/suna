@@ -2,6 +2,8 @@
   "name": "kortix",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "secrets:check": "bash scripts/check-env-encrypted.sh",
     "dev": "bash scripts/dev-local.sh",
     "preview": "bash scripts/dev-local.sh --build",
     "worktree": "bun run scripts/worktree/cli.ts",
@@ -40,25 +42,25 @@
     "migrate:lint:squawk": "pnpm --filter @kortix/db lint:squawk"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@clack/prompts": "^0.7.0",
     "@dotenvx/dotenvx": "^1.69.2",
     "@types/bun": "^1.3.12",
     "@types/pg": "^8.15.5",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
-    "@biomejs/biome": "^1.9.4",
     "dotenv": "^16",
     "dotenv-expand": "^12",
     "node-pg-migrate": "^8",
     "pg": "^8",
     "picocolors": "^1.1.1",
-    "supabase": "2.111.0"
+    "supabase": "2.116.0"
   },
   "packageManager": "pnpm@8.11.0",
   "pnpm": {
     "overrides": {
       "@icons-pack/react-simple-icons@>=13.11.2 <14": "13.11.1",
       "import-in-the-middle": "3.0.0",
-      "next@>=15.0.0 <16.3.0": "16.3.0",
+      "next@>=15.0.0 <16.3.3": "16.3.3",
       "@types/react": "19.2.18",
       "@types/react-dom": "19.2.3",
       "axios@>=1.0.0 <1.18.0": "1.18.0",
@@ -107,7 +109,8 @@
       "markdown-it@>=0.0.0 <14.2.0": "14.2.0"
     },
     "patchedDependencies": {
-      "e2b@2.37.0": "patches/e2b@2.37.0.patch"
+      "e2b@2.37.0": "patches/e2b@2.37.0.patch",
+      "blume@1.5.3": "patches/blume@1.5.3.patch"
     }
   },
   "version": "1.0.0",

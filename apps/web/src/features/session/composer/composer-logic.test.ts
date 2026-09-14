@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
+import { describe, expect, test } from 'bun:test';
 
 import {
   planDraftSubmission,
@@ -299,7 +299,8 @@ describe('planFailedSendRecovery', () => {
   });
 
   test('files restore ahead of newly attached files without duplicates, matching mergeFailedSubmissionFiles', () => {
-    const sent = localFile('offer.pdf', 'blob:offer');
+    const firstSent = localFile('offer.pdf', 'blob:offer');
+    const secondSent = localFile('terms.pdf', 'blob:terms');
     const addedWhileSending = localFile('notes.txt', 'blob:notes');
 
     const plan = planFailedSendRecovery({
@@ -309,10 +310,10 @@ describe('planFailedSendRecovery', () => {
       currentDoc: EMPTY_DOC,
       currentIsEmpty: true,
       currentAttachedFiles: [addedWhileSending],
-      sentFiles: [sent],
+      sentFiles: [firstSent, secondSent],
     });
 
-    expect(plan?.attachedFiles).toEqual([sent, addedWhileSending]);
+    expect(plan?.attachedFiles).toEqual([firstSent, secondSent, addedWhileSending]);
   });
 
   test('clearOnSend=true with everything empty and nothing sent → still returns a plan, empty files, null doc', () => {
@@ -485,7 +486,7 @@ describe('planDraftSubmission', () => {
 
 // ── Clicking the composer's padding ────────────────────────────────────────
 //
-// The editor's wrapper carries `px-2 pb-6`, and padding belongs to the
+// The editor's wrapper carries `px-1 pb-9`, and padding belongs to the
 // wrapper's box rather than to the contenteditable inside it. So a 24px band
 // under the last line — exactly where you click to resume typing — and an 8px
 // strip down each side swallowed the press and focused nothing. The input read

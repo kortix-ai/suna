@@ -13,9 +13,10 @@ import { OpenAI } from '@/features/icon/icons/open-ai';
 import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { stack, type StackLayerId, type StackLogoKey } from './content';
+import { getLocalizedLandingContent, type StackLayerId, type StackLogoKey } from './content';
 
 /** `stack.layers[].logos` selects a logo by name at runtime, so it can't be
  *  statically resolved to a single import — this explicit map is the smallest
@@ -73,6 +74,8 @@ function LayerLogos({
  * drops the 3D slabs, showing what each layer actually runs on instead.
  */
 export function StackSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { stack } = getLocalizedLandingContent(tI18nComplete);
   const [open, setOpen] = useState<StackLayerId>('models');
 
   return (

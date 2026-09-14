@@ -24,6 +24,7 @@ import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { STATUS_BORDER } from '@/components/ui/status';
@@ -112,7 +113,10 @@ const SHOW_EXT_ICONS: Array<[RegExp, PhosphorIcon]> = [
   [/\.(png|jpe?g|gif|webp|avif|heic|bmp|ico)$/i, ImageIcon],
   [/\.(mp4|mov|webm|mkv|avi)$/i, Video],
   [/\.(mp3|wav|m4a|aac|ogg|flac)$/i, Music],
-  [/\.(m?[jt]sx?|py|rb|go|rs|java|cc?|cpp|hpp?|cs|php|sh|bash|zsh|json|ya?ml|toml|sql|s?css|less|vue|swift|kt)$/i, FileCode],
+  [
+    /\.(m?[jt]sx?|py|rb|go|rs|java|cc?|cpp|hpp?|cs|php|sh|bash|zsh|json|ya?ml|toml|sql|s?css|less|vue|swift|kt)$/i,
+    FileCode,
+  ],
 ];
 
 const SHOW_TYPE_FILE_ICONS: Record<string, PhosphorIcon> = {
@@ -240,6 +244,7 @@ export function ShowFileActions({
   path: string;
   inPanel?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -277,26 +282,26 @@ export function ShowFileActions({
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Hint label="Refresh" side="top">
+      <Hint label={tI18nComplete.raw('text0e9161011702')} side="top">
         <Button
           variant="ghost"
           size="icon-sm"
           type="button"
           onClick={handleRefresh}
-          aria-label="Refresh"
+          aria-label={tI18nComplete.raw('text0e9161011702')}
           className="active:scale-[0.96]"
         >
           <ArrowClockwiseIcon className={cn('size-4', refreshing && 'animate-spinner-spin')} />
         </Button>
       </Hint>
 
-      <Hint label="Full screen" side="top">
+      <Hint label={tI18nComplete.raw('text674fe2acd0d5')} side="top">
         <Button
           variant="ghost"
           size="icon-sm"
           type="button"
           onClick={openFullScreen}
-          aria-label="Full screen"
+          aria-label={tI18nComplete.raw('text674fe2acd0d5')}
           className="active:scale-[0.96]"
         >
           <Maximize2 className="size-4" />
@@ -304,9 +309,9 @@ export function ShowFileActions({
       </Hint>
 
       {!inPanel && (
-        <Hint label="Open in the panel" side="top">
+        <Hint label={tI18nComplete.raw('textbb59775ca8ea')} side="top">
           <Button type="button" onClick={openInPanel} size="xs" className="active:scale-[0.96]">
-            Preview
+            {tI18nComplete.raw('text324b134f57c7')}
           </Button>
         </Hint>
       )}

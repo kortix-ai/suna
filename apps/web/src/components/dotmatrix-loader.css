@@ -64,7 +64,7 @@
 }
 
 .dmx-root.dmx-dot-shape-hearts .dmx-dot::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   background: var(--dmx-dot-fill, currentColor);
@@ -79,52 +79,45 @@
 }
 
 .dmx-bloom .dmx-dot {
-  filter:
-    drop-shadow(
+  filter: drop-shadow(
       0 0
-      calc(
-        var(--dmx-dot-size, 3px) * 0.75 *
-          max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
-      )
-      currentColor
+        calc(
+          var(--dmx-dot-size, 3px) * 0.75 * max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
+        )
+        currentColor
     )
     drop-shadow(
       0 0
-      calc(
-        var(--dmx-dot-size, 3px) * 1.35 *
-          max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
-      )
-      currentColor
+        calc(
+          var(--dmx-dot-size, 3px) * 1.35 * max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
+        )
+        currentColor
     );
   will-change: opacity, filter;
 }
 
 /* Halo: modestly wider falloff than selective bloom (same --dmx-bloom-level on each dot). */
 .dmx-root.dmx-bloom-halo.dmx-bloom .dmx-dot {
-  filter:
-    drop-shadow(
+  filter: drop-shadow(
       0 0
-      calc(
-        var(--dmx-dot-size, 3px) * 0.92 *
-          max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
-      )
-      currentColor
+        calc(
+          var(--dmx-dot-size, 3px) * 0.92 * max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
+        )
+        currentColor
     )
     drop-shadow(
       0 0
-      calc(
-        var(--dmx-dot-size, 3px) * 1.62 *
-          max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
-      )
-      currentColor
+        calc(
+          var(--dmx-dot-size, 3px) * 1.62 * max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
+        )
+        currentColor
     )
     drop-shadow(
       0 0
-      calc(
-        var(--dmx-dot-size, 3px) * 2.55 *
-          max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
-      )
-      currentColor
+        calc(
+          var(--dmx-dot-size, 3px) * 2.55 * max(var(--dmx-bloom-level, 0), var(--dmx-halo-level, 0))
+        )
+        currentColor
     );
   will-change: opacity, filter;
 }
@@ -150,22 +143,24 @@
 .dmx-ripple {
   animation: dmx-ripple calc(var(--dmx-cycle) * var(--dmx-speed, 1)) cubic-bezier(0.42, 0, 0.58, 1)
     infinite;
-  animation-delay: calc(var(--dmx-ripple-ring, 0) * 0.2333 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  animation-delay: calc(
+    var(--dmx-ripple-ring, 0) * 0.2333 * var(--dmx-cycle) * var(--dmx-speed, 1)
+  );
   will-change: opacity;
 }
 
 .dmx-ripple-echo {
   animation: dmx-ripple-echo calc(var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out infinite;
   animation-delay: calc(
-    (var(--dmx-ripple-ring, 0) * 0.14 + var(--dmx-ripple-parity, 0) * 0.03) *
-      var(--dmx-cycle) *
+    (var(--dmx-ripple-ring, 0) * 0.14 + var(--dmx-ripple-parity, 0) * 0.03) * var(--dmx-cycle) *
       var(--dmx-speed, 1)
   );
   will-change: opacity;
 }
 
 .dmx-center-origin-ripple {
-  animation: dmx-center-origin-ripple calc(var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out infinite;
+  animation: dmx-center-origin-ripple calc(var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out
+    infinite;
   animation-delay: calc(
     var(--dmx-center-ripple-ring, 0) * 0.16 * var(--dmx-cycle) * var(--dmx-speed, 1)
   );
@@ -196,8 +191,8 @@
 }
 
 .dmx-path-3 {
-  animation: dmx-ripple-3 calc(0.68 * var(--dmx-cycle) * var(--dmx-speed, 1)) cubic-bezier(0.42, 0, 0.58, 1)
-    infinite;
+  animation: dmx-ripple-3 calc(0.68 * var(--dmx-cycle) * var(--dmx-speed, 1))
+    cubic-bezier(0.42, 0, 0.58, 1) infinite;
   animation-delay: calc(var(--dmx-path, 0) * 0.19 * var(--dmx-cycle) * var(--dmx-speed, 1));
   will-change: opacity;
 }
@@ -205,8 +200,7 @@
 .dmx-diagonal-alt-sweep {
   animation: dmx-diagonal-alt-sweep calc(var(--dmx-cycle) * var(--dmx-speed, 1)) linear infinite;
   animation-delay: calc(
-    (var(--dmx-path, 0) * 0.2 + var(--dmx-diagonal-parity, 0) * 0.5) *
-      var(--dmx-cycle) *
+    (var(--dmx-path, 0) * 0.2 + var(--dmx-diagonal-parity, 0) * 0.5) * var(--dmx-cycle) *
       var(--dmx-speed, 1)
   );
   will-change: opacity;
@@ -220,12 +214,15 @@
 
 .dmx-spiral-snake-3 {
   animation: dmx-spiral-snake calc(0.78 * var(--dmx-cycle) * var(--dmx-speed, 1)) linear infinite;
-  animation-delay: calc(var(--dmx-spiral-order, 0) * 0.038 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  animation-delay: calc(
+    var(--dmx-spiral-order, 0) * 0.038 * var(--dmx-cycle) * var(--dmx-speed, 1)
+  );
   will-change: opacity;
 }
 
 .dmx-center-ripple-3 {
-  animation: dmx-center-origin-ripple calc(0.82 * var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out infinite;
+  animation: dmx-center-origin-ripple calc(0.82 * var(--dmx-cycle) * var(--dmx-speed, 1))
+    ease-in-out infinite;
   animation-delay: calc(
     var(--dmx-center-ripple-ring, 0) * 0.11 * var(--dmx-cycle) * var(--dmx-speed, 1)
   );
@@ -233,22 +230,22 @@
 }
 
 .dmx-snake-path-3 {
-  animation: dmx-ripple-3 calc(1.04 * var(--dmx-cycle) * var(--dmx-speed, 1)) cubic-bezier(0.42, 0, 0.58, 1)
-    infinite;
+  animation: dmx-ripple-3 calc(1.04 * var(--dmx-cycle) * var(--dmx-speed, 1))
+    cubic-bezier(0.42, 0, 0.58, 1) infinite;
   animation-delay: calc(var(--dmx-snake-order, 0) * 0.085 * var(--dmx-cycle) * var(--dmx-speed, 1));
   will-change: opacity;
 }
 
 .dmx-frame-chase-3 {
-  animation: dmx-ripple-3 calc(0.98 * var(--dmx-cycle) * var(--dmx-speed, 1)) cubic-bezier(0.42, 0, 0.58, 1)
-    infinite;
+  animation: dmx-ripple-3 calc(0.98 * var(--dmx-cycle) * var(--dmx-speed, 1))
+    cubic-bezier(0.42, 0, 0.58, 1) infinite;
   animation-delay: calc(var(--dmx-frame-order, 0) * 0.09 * var(--dmx-cycle) * var(--dmx-speed, 1));
   will-change: opacity;
 }
 
 .dmx-core-pulse-3 {
-  animation: dmx-ripple-3 calc(0.46 * var(--dmx-cycle) * var(--dmx-speed, 1)) cubic-bezier(0.42, 0, 0.58, 1)
-    infinite;
+  animation: dmx-ripple-3 calc(0.46 * var(--dmx-cycle) * var(--dmx-speed, 1))
+    cubic-bezier(0.42, 0, 0.58, 1) infinite;
   will-change: opacity;
 }
 
@@ -259,10 +256,10 @@
 }
 
 .dmx-ripple-echo-3 {
-  animation: dmx-ripple-echo calc(1.06 * var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out infinite;
+  animation: dmx-ripple-echo calc(1.06 * var(--dmx-cycle) * var(--dmx-speed, 1)) ease-in-out
+    infinite;
   animation-delay: calc(
-    (var(--dmx-ripple-ring, 0) * 0.1 + var(--dmx-ripple-parity, 0) * 0.02) *
-      var(--dmx-cycle) *
+    (var(--dmx-ripple-ring, 0) * 0.1 + var(--dmx-ripple-parity, 0) * 0.02) * var(--dmx-cycle) *
       var(--dmx-speed, 1)
   );
   will-change: opacity;
@@ -278,13 +275,17 @@
 
 .dmx-outer-snake {
   animation: dmx-ring-snake calc(var(--dmx-cycle) * var(--dmx-speed, 1)) linear infinite;
-  animation-delay: calc(var(--dmx-outer-order, 0) * 0.0625 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  animation-delay: calc(
+    var(--dmx-outer-order, 0) * 0.0625 * var(--dmx-cycle) * var(--dmx-speed, 1)
+  );
   will-change: opacity;
 }
 
 .dmx-middle-snake {
   animation: dmx-ring-snake calc(var(--dmx-cycle) * var(--dmx-speed, 1)) linear infinite;
-  animation-delay: calc(var(--dmx-middle-order, 0) * 0.125 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  animation-delay: calc(
+    var(--dmx-middle-order, 0) * 0.125 * var(--dmx-cycle) * var(--dmx-speed, 1)
+  );
   will-change: opacity;
 }
 
@@ -440,12 +441,16 @@
   }
 
   16% {
-    opacity: calc(0.5 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.5 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
   24% {
-    opacity: calc(0.25 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.3 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.25 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.3 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
@@ -473,12 +478,16 @@
   }
 
   16% {
-    opacity: calc(0.5 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.5 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
   24% {
-    opacity: calc(0.25 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.3 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.25 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.3 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
@@ -506,12 +515,16 @@
   }
 
   20% {
-    opacity: calc(0.45 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.45 * var(--dmx-opacity-peak) + 0.45 * var(--dmx-opacity-mid) + 0.1 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
   30% {
-    opacity: calc(0.2 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.4 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.2 * var(--dmx-opacity-peak) + 0.4 * var(--dmx-opacity-mid) + 0.4 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
@@ -1081,7 +1094,8 @@
 }
 
 .dmx-square6-col-snake {
-  animation: dmx-square6-col-snake calc(var(--dmx-cycle) * var(--dmx-speed, 1)) steps(5, end) infinite;
+  animation: dmx-square6-col-snake calc(var(--dmx-cycle) * var(--dmx-speed, 1)) steps(5, end)
+    infinite;
   animation-delay: calc(var(--dmx-col-pos, 0) * 0.2 * var(--dmx-cycle) * var(--dmx-speed, 1));
   will-change: opacity;
 }
@@ -1089,13 +1103,17 @@
 @keyframes dmx-square6-col-snake {
   0%,
   20% {
-    opacity: calc(0.6 * var(--dmx-opacity-peak) + 0.25 * var(--dmx-opacity-mid) + 0.15 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.6 * var(--dmx-opacity-peak) + 0.25 * var(--dmx-opacity-mid) + 0.15 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
   20%,
   40% {
-    opacity: calc(0.3 * var(--dmx-opacity-peak) + 0.5 * var(--dmx-opacity-mid) + 0.2 * var(--dmx-opacity-base));
+    opacity: calc(
+      0.3 * var(--dmx-opacity-peak) + 0.5 * var(--dmx-opacity-mid) + 0.2 * var(--dmx-opacity-base)
+    );
     --dmx-bloom-level: 0;
   }
 
@@ -1120,7 +1138,9 @@
 
 .dmx-circular2-ring {
   animation: dmx-circular2-ring calc(var(--dmx-cycle) * var(--dmx-speed, 1)) steps(12, end) infinite;
-  animation-delay: calc(var(--dmx-ring-order, 0) * 0.0833333333 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  animation-delay: calc(
+    var(--dmx-ring-order, 0) * 0.0833333333 * var(--dmx-cycle) * var(--dmx-speed, 1)
+  );
   will-change: opacity;
 }
 

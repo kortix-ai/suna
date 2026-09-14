@@ -489,10 +489,39 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend design standard — Jay/Kortix bar
 
+#### Desktop parity is a UI gate
+
+The Electron app loads `apps/web`. Keep product components, routes, tokens,
+and data behavior shared. Put native window geometry in the shell's explicit
+titlebar classes. Never apply titlebar height or drag rules to generic ARIA
+roles, all sidebars, or page content.
+
+For every shared UI change, verify the affected controls on web and in Electron
+before handoff. Check the outgoing request or route and the visible result.
+Check both themes, the minimum supported window (720 × 480), sidebar collapse,
+fullscreen overlays, and browser zoom. Window controls must not overlap app
+controls. Lists must not overlap or clip their last row. Keyboard focus and
+scrolling must remain usable.
+
+Add regressions to the existing Playwright journeys. The desktop journey runs
+in `pnpm test -- --browser-only` and supports the actual Electron shell:
+`E2E_DESKTOP_NATIVE=1 E2E_GREP='27 — desktop parity' pnpm test -- --browser-only`.
+Run the native journey when changing shell CSS, navigation, settings, agents,
+or connectors. A desktop user-agent test does not prove native hit testing.
+See `docs/runbooks/desktop-verification.md` for the commands and evidence list.
+Report any unverified desktop behavior explicitly. Do not promise that tests
+prevent every future regression.
+
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.claude/skills/kortix-design-system/SKILL.md` first and compose existing
+- Read `.claude/skills/kortix-brand-guidelines/SKILL.md` before writing the first
+  `className`. It is the value law: the complete allowlist of every color,
+  spacing step, type rung, radius, elevation, and duration you may use. Note
+  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
+  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
+  before opening the PR; it must be clean on files you touched.
+- Read `.claude/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,

@@ -1,0 +1,23 @@
+// Generated from review-meta.ts labels.
+export const REVIEW_META_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  Agent: 'text11b39c93777e',
+  Approval: 'text147fb813a251',
+  Approved: 'text87b42e40c2a2',
+  Change: 'textc0bf75bd78bf',
+  'Changes requested': 'text10a92a8ad3ee',
+  Dismissed: 'text9d74727714db',
+  Done: 'text11a6767d5674',
+  Finished: 'text7804f7a79a9e',
+  'High risk': 'text4682a7f79721',
+  'Low risk': 'textba13e1e74457',
+  'Medium risk': 'text17b2d4b0499f',
+  'Needs you': 'text74b6abdf5969',
+  Open: 'texted077f3d8125',
+  Output: 'textb2439bcb8dee',
+  Question: 'text289aff12b042',
+  Rejected: 'textaea4a04a8042',
+  Safe: 'text4f9f0dabcd26',
+  Slack: 'textb27fb38ba323',
+  'Waiting on agent': 'textbd19c57b5482',
+  Web: 'text2975104784a4',
+};

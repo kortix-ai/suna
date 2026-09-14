@@ -1,7 +1,7 @@
 'use client';
 
+import type { RuntimeProjectInfo, ServerHealth } from '@/features/file-browser/types';
 import { useMemo } from 'react';
-import type { ServerHealth, RuntimeProjectInfo } from '@/features/file-browser/types';
 
 /**
  * In the project-files view, "the server" is always the backend API — there
@@ -14,7 +14,7 @@ export function useServerHealth(_options?: { enabled?: boolean }) {
       isLoading: false,
       isError: false,
       error: null as Error | null,
-      refetch: async () => ({ data: { healthy: true, version: 'project-files' } } as any),
+      refetch: async () => ({ data: { healthy: true, version: 'project-files' } }) as any,
     }),
     [],
   );
@@ -39,7 +39,7 @@ export function useCurrentProject(_options?: { enabled?: boolean }) {
       isLoading: false,
       isError: false,
       error: null as Error | null,
-      refetch: async () => ({ data } as any),
+      refetch: async () => ({ data }) as any,
     }),
     [],
   );

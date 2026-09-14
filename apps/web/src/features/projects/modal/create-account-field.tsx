@@ -16,6 +16,7 @@ import {
   CheckCircleIcon as CheckCircleSolid,
   CaretUpDownIcon as ChevronsUpDown,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function CreateAccountField({
   current,
@@ -30,6 +31,7 @@ export function CreateAccountField({
   disabled?: boolean;
   onSelect: (accountId: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const label = current.name || 'Account';
   const summary = (
     <span className="flex min-w-0 items-center gap-2">
@@ -40,7 +42,7 @@ export function CreateAccountField({
 
   return (
     <div className="space-y-1.5 px-5" data-testid="project-create-account">
-      <Label>Account</Label>
+      <Label>{tI18nComplete.raw('text7e1b0d5641f2')}</Label>
       {canSwitch ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -58,7 +60,9 @@ export function CreateAccountField({
             align="start"
             className="w-[var(--radix-dropdown-menu-trigger-width)]"
           >
-            <DropdownMenuLabel className="text-muted-foreground">Create in</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-muted-foreground">
+              {tI18nComplete.raw('textbf1652052c65')}
+            </DropdownMenuLabel>
             <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {options.map((account) => {
                 const itemLabel = account.name || 'Account';

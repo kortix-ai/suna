@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Toolbar controls shared by the detail layer's three viewers — `FileViewer`
  * (text), `PreviewShell` (everything else) and `AppPreview` (a running port).
@@ -170,6 +171,7 @@ export function ViewerActions({
   extraMenuItems?: React.ReactNode;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const share = usePublicShareLink({
     projectId: shareContext?.projectId,
     sessionId: shareContext?.sessionId,
@@ -223,7 +225,7 @@ export function ViewerActions({
         }}
       >
         <LinkSimpleIcon />
-        Copy link
+        {tI18nComplete.raw('textdbf362d4f210')}
       </DropdownMenuItem>,
     );
   }
@@ -231,7 +233,7 @@ export function ViewerActions({
     menu.push(
       <DropdownMenuItem key="download" disabled={dl.pending} onSelect={() => void dl.run()}>
         <DownloadSimpleIcon />
-        Download file
+        {tI18nComplete.raw('text9de4149fb971')}
       </DropdownMenuItem>,
     );
   }
@@ -249,7 +251,7 @@ export function ViewerActions({
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="More actions"
+            aria-label={tI18nComplete.raw('textf8d46c2570e7')}
             className={cn('shrink-0 active:scale-[0.96]', className)}
           >
             <DotsThreeIcon className="size-3.5" />
@@ -332,7 +334,7 @@ export function ViewerActions({
           <Button
             variant="outline"
             size="icon"
-            aria-label="More actions"
+            aria-label={tI18nComplete.raw('textf8d46c2570e7')}
             className="active:scale-[0.96]"
           >
             {/* The caret carries the pending state for anything started from

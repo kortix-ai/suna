@@ -2,14 +2,14 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
   SparkleIcon as HiMiniSparkles,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { CORE_SKILLS, GKW_SKILLS } from '../data';
 import { PageHead } from '../primitives';
@@ -62,7 +62,7 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
   return (
     <div>
       <PageHead
-        title="Skills"
+        title={tI18nHardcoded.raw('i18nComplete.text66d0f523a379')}
         sub={`${total} skills · packaged once, reused by every agent`}
         action={
           <Button variant="default" size="sm">
@@ -89,13 +89,18 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
             onClick={() => setQ('')}
             className="text-muted-foreground hover:text-foreground text-xs"
           >
-            Clear
+            {tI18nHardcoded.raw('i18nComplete.text83b12c2216ef')}
           </button>
         )}
       </div>
 
       {core.length > 0 && (
-        <SkillGroup label="Core" count={core.length} skills={core} focusedSkill={focusedSkill} />
+        <SkillGroup
+          label={tI18nHardcoded.raw('i18nComplete.text70ea1983c983')}
+          count={core.length}
+          skills={core}
+          focusedSkill={focusedSkill}
+        />
       )}
       {gkw.length > 0 && (
         <SkillGroup

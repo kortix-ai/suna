@@ -1,6 +1,6 @@
-import type { PluggableList } from 'unified';
 import { defaultSchema } from 'rehype-sanitize';
 import { defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
+import type { PluggableList } from 'unified';
 
 // ---------------------------------------------------------------------------
 // KaTeX / LaTeX markdown support for Streamdown
@@ -15,12 +15,47 @@ import { defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
 
 /** MathML tags KaTeX may emit (keep in sync with KaTeX output, not hand-picked subset). */
 const KATEX_MATHML_TAG_NAMES = [
-  'math', 'semantics', 'annotation', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mspace', 'mstyle',
-  'msup', 'msub', 'msubsup', 'mmultiscripts', 'mprescripts', 'mfrac', 'mover', 'munder', 'munderover',
-  'msqrt', 'mroot', 'mtable', 'mtr', 'mtd', 'mlabeledtr', 'menclose', 'merror', 'mpadded', 'mphantom',
-  'mfenced', 'mglyph', 'maction', 'maligngroup', 'malignmark',
+  'math',
+  'semantics',
+  'annotation',
+  'mrow',
+  'mi',
+  'mo',
+  'mn',
+  'ms',
+  'mtext',
+  'mspace',
+  'mstyle',
+  'msup',
+  'msub',
+  'msubsup',
+  'mmultiscripts',
+  'mprescripts',
+  'mfrac',
+  'mover',
+  'munder',
+  'munderover',
+  'msqrt',
+  'mroot',
+  'mtable',
+  'mtr',
+  'mtd',
+  'mlabeledtr',
+  'menclose',
+  'merror',
+  'mpadded',
+  'mphantom',
+  'mfenced',
+  'mglyph',
+  'maction',
+  'maligngroup',
+  'malignmark',
   // SVG elements for sqrt signs, fraction bars, stretchy delimiters, etc.
-  'svg', 'path', 'line', 'g', 'rect',
+  'svg',
+  'path',
+  'line',
+  'g',
+  'rect',
 ] as const;
 
 const katexSanitizeSchema = {
@@ -230,7 +265,10 @@ export const katexRemarkPlugins: PluggableList = Object.entries(defaultRemarkPlu
   ([key, plugin]) => {
     if (key === 'math' && Array.isArray(plugin)) {
       const [mathPlugin, mathOpts] = plugin;
-      return [mathPlugin, { ...((mathOpts as Record<string, unknown>) || {}), singleDollarTextMath: true }];
+      return [
+        mathPlugin,
+        { ...((mathOpts as Record<string, unknown>) || {}), singleDollarTextMath: true },
+      ];
     }
     return plugin;
   },
@@ -285,5 +323,7 @@ export function normalizeClassName(className?: string | string[]): string {
 export function isKatexClassName(className?: string | string[]): boolean {
   const cls = normalizeClassName(className);
   if (!cls) return false;
-  return /\b(katex|katex-display|katex-html|katex-mathml|katex-error|math-inline|math-display)\b/.test(cls);
+  return /\b(katex|katex-display|katex-html|katex-mathml|katex-error|math-inline|math-display)\b/.test(
+    cls,
+  );
 }

@@ -19,10 +19,7 @@ describe('billing returns', () => {
   });
 
   test('covers the live Stripe flows', () => {
-    expect(BILLING_RETURNS.map((r) => r.param).sort()).toEqual([
-      'credit_purchase',
-      'team_signup',
-    ]);
+    expect(BILLING_RETURNS.map((r) => r.param).sort()).toEqual(['credit_purchase', 'team_signup']);
   });
 
   test('every return has user-facing copy and a settle step', () => {

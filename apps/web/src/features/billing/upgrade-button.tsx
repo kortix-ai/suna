@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useTranslations } from '@/i18n/use-translations';
 
 interface UpgradeButtonProps {
   accountId?: string;
@@ -11,6 +12,7 @@ interface UpgradeButtonProps {
 }
 
 export function UpgradeButton({ accountId, className }: UpgradeButtonProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
 
@@ -34,7 +36,7 @@ export function UpgradeButton({ accountId, className }: UpgradeButtonProps) {
 
   return (
     <Button type="button" className={className} onClick={handleClick}>
-      Upgrade
+      {tI18nComplete.raw('text7ec0261b8e8a')}
     </Button>
   );
 }

@@ -1,6 +1,6 @@
 import type { GatewayCatalogModel } from '@kortix/sdk';
-import { normalizeProviderList } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
+import { normalizeProviderList } from '@kortix/sdk/react';
 
 // ============================================================================
 // Flat model list helper
@@ -108,7 +108,6 @@ function hasCapabilities(
 ): model is LooseModel & { capabilities: NonNullable<OpencodeCatalogModel['capabilities']> } {
   return model.capabilities != null;
 }
-
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];

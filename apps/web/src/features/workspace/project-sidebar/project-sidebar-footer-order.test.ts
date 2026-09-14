@@ -5,9 +5,17 @@ import { join } from 'node:path';
 /**
  * The sidebar's footer group is bottom-anchored (`mt-auto`), so it grows
  * upward: every item that mounts late shoves everything ABOVE it up the page.
- * Billing items mount late by nature — they wait on account state — so they
- * have to sit above the permanent nav, otherwise Files / Connect visibly jump
- * the moment the wallet resolves.
+ * Billing items mount late by nature — they wait on account state.
+ *
+ * That argued for putting all of them above the permanent nav, and this file
+ * pinned exactly that until 2026-09-03. `SidebarUpgradeButton` moved to LAST
+ * on Jay's call: it is the only paid call to action in the group, and above
+ * Files / Connect GPT it put a sell between the user and the links they use.
+ * The placement is the product decision; the shift is the cost of it, and it
+ * is one row of movement on a resolve that happens once per page load.
+ *
+ * `SidebarBalanceWarning` did NOT move. It is an alert rather than an offer,
+ * and it is still pinned above the nav below.
  *
  * Asserted against the source because the alternative is mounting the whole
  * sidebar (sidebar + auth + query + i18n providers) to observe pure ordering.
@@ -21,9 +29,20 @@ function orderOf(component: string): number {
 }
 
 describe('project sidebar footer ordering', () => {
-  test('late-arriving billing items render above the permanent nav', () => {
-    expect(orderOf('SidebarUpgradeButton')).toBeLessThan(orderOf('ProjectFilesNavItem'));
+  test('the balance alert renders above the permanent nav', () => {
+    // Unchanged rule, narrowed to the row it still covers: an alert about the
+    // wallet is not something to scroll past the nav to find.
     expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectFilesNavItem'));
+  });
+
+  test('the upgrade button is last in the group', () => {
+    // The one deliberate exception to the rule above (Jay, 2026-09-03). Pinned
+    // in its new position rather than deleted, so moving it back is also a
+    // decision someone has to make on purpose.
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectFilesNavItem'));
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(
+      orderOf('ProjectChatGptConnectNavItem'),
+    );
   });
 
   test('the permanent nav keeps its own order', () => {

@@ -1,11 +1,12 @@
-import { ConnectorsHeroVisual } from '@/features/marketing/connectors/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { AuditSection } from '@/features/marketing/connectors/audit-section';
 import { BrokerSection } from '@/features/marketing/connectors/broker-section';
 import { ConnectSection } from '@/features/marketing/connectors/connect-section';
-import { hero } from '@/features/marketing/connectors/content';
+import { getLocalizedConnectorsContent } from '@/features/marketing/connectors/content';
+import { ConnectorsHeroVisual } from '@/features/marketing/connectors/hero-visual';
 import { PolicySection } from '@/features/marketing/connectors/policy-section';
 import { ScopeSection } from '@/features/marketing/connectors/scope-section';
+import { getTranslations } from '@/i18n/get-translations';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -34,6 +35,8 @@ interface ConnectorsPageProps {
 export default async function ConnectorsPage({
   searchParams,
 }: ConnectorsPageProps): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { hero } = getLocalizedConnectorsContent(tI18nComplete);
   const query = await searchParams;
   if (query.connected === 'true' || query.error === 'true') {
     const result = new URLSearchParams();

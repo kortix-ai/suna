@@ -63,7 +63,12 @@ export function buildFileTree(paths: readonly string[], dir: string): FileNode[]
     if (dir ? !p.startsWith(prefix) : p.includes('/')) continue;
     const rel = p.slice(prefix.length);
     const segments = rel.split('/');
-    nodes.push({ path: p, name: segments[segments.length - 1] ?? rel, depth: segments.length - 1, segments });
+    nodes.push({
+      path: p,
+      name: segments[segments.length - 1] ?? rel,
+      depth: segments.length - 1,
+      segments,
+    });
   }
   nodes.sort((a, b) => {
     const aEntry = a.name === 'SKILL.md' && a.depth === 0;

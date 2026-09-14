@@ -1,10 +1,10 @@
 import {
-  addMarketplaceSource as sdkAddMarketplaceSource,
   createMarketplaceInstallSession,
   getMarketplaceCatalogItem,
   getMarketplaceCatalogItemFile,
-  listFeaturedMarketplaces as sdkListFeaturedMarketplaces,
   listMarketplaceCatalogItems,
+  addMarketplaceSource as sdkAddMarketplaceSource,
+  listFeaturedMarketplaces as sdkListFeaturedMarketplaces,
   listMarketplaceSources as sdkListMarketplaceSources,
   listMarketplaces as sdkListMarketplaces,
   removeMarketplaceSource as sdkRemoveMarketplaceSource,
@@ -129,13 +129,13 @@ export async function listMarketplaceItems(params?: {
     type: params?.type === 'all' ? undefined : params?.type,
     source: params?.source === 'all' ? undefined : params?.source,
   })) as unknown as {
-      items: MarketplaceItem[];
-      total?: number;
-      hasMore?: boolean;
-      loading?: boolean;
-      pending?: number;
-      sources?: PendingSource[];
-    };
+    items: MarketplaceItem[];
+    total?: number;
+    hasMore?: boolean;
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  };
   const items = res.items ?? [];
   return {
     items,
@@ -187,11 +187,11 @@ export interface MarketplacesPage {
 
 export async function listMarketplaces(): Promise<MarketplacesPage> {
   const res = (await sdkListMarketplaces()) as unknown as {
-      marketplaces: MarketplaceSummary[];
-      loading?: boolean;
-      pending?: number;
-      sources?: PendingSource[];
-    };
+    marketplaces: MarketplaceSummary[];
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  };
   return {
     marketplaces: res.marketplaces ?? [],
     loading: !!res.loading,

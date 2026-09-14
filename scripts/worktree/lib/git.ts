@@ -27,3 +27,21 @@ export function worktreeAddArgs(root: string, wtPath: string, branch: string, fr
     return { args: ['git', '-C', root, 'worktree', 'add', '--track', '-b', branch, wtPath, `origin/${branch}`], mode: 'remote' };
   return { args: ['git', '-C', root, 'worktree', 'add', '-b', branch, wtPath, from], mode: 'new' };
 }
+
+/**
+ * Remove the worktree at `path`, or throw.
+ *
+ * `git worktree remove` refuses a checkout that has uncommitted changes unless
+ * it is forced. An unchecked call therefore fails silently and leaves both the
+ * directory and its `git worktree list` registration in place — while the
+ * caller goes on to drop the registry slot, orphaning the worktree beyond the
+ * reach of `pnpm worktree`. Callers must let this throw rather than report a
+ * removal that did not happen.
+ */
+export function removeWorktree(root: string, path: string, force: boolean): void {
+  const r = sh(['git', '-C', root, 'worktree', 'remove', ...(force ? ['--force'] : []), path]);
+  if (r.ok) return;
+  const detail = (r.stderr || r.stdout).trim().split('\n')[0] || `exit code ${r.code}`;
+  const remedy = force ? '' : ' — pass --force to discard the working tree';
+  throw new Error(`git worktree remove failed: ${detail}${remedy}`);
+}

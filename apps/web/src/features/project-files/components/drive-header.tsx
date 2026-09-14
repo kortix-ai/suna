@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   GitDiffIcon as FileDiff,
@@ -75,6 +76,7 @@ export function DriveHeader({
   isDownloading,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const sidebar = useOptionalSidebar();
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
@@ -89,15 +91,15 @@ export function DriveHeader({
     >
       {offsetForSidebarToggle ? <SidebarToggle /> : null}
 
-      <DrivePathBar rootLabel="Files" />
+      <DrivePathBar rootLabel={tI18nComplete.raw('textabc7e9892806')} />
 
       <div className="flex shrink-0 items-center gap-1">
         <VersionSelector />
 
-        <Hint label="Browse every saved version of this project" side="bottom">
+        <Hint label={tI18nComplete.raw('text635261ece1f6')} side="bottom">
           <Button
             type="button"
-            aria-label="Version history"
+            aria-label={tI18nComplete.raw('texta6df11e706c5')}
             aria-pressed={historyToggle.open}
             variant={historyToggle.open ? 'secondary' : 'ghost'}
             size="icon-sm"
@@ -119,16 +121,21 @@ export function DriveHeader({
           onClick={reviewsToggle.onToggle}
           title={
             reviewCount > 0
-              ? `${reviewCount} proposed change${reviewCount === 1 ? '' : 's'} waiting for review`
-              : 'Review changes proposed by your agents'
+              ? tI18nComplete('text03fbe991de6e', {
+                  value0: reviewCount,
+                  value1: reviewCount === 1 ? '' : 's',
+                })
+              : tI18nComplete.raw('text1d826553e961')
           }
           className={cn(
             'active:scale-[0.96]',
-            !reviewsToggle.open && reviewCount === 0 && 'text-muted-foreground hover:text-foreground',
+            !reviewsToggle.open &&
+              reviewCount === 0 &&
+              'text-muted-foreground hover:text-foreground',
           )}
         >
           <FileDiff className="size-4 shrink-0" />
-          <span className="hidden sm:inline">Proposed changes</span>
+          <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
           {reviewCount > 0 && (
             <Badge variant="success" size="tabular" className="ml-0.5">
               {reviewCount}

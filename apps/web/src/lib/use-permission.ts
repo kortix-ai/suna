@@ -22,16 +22,16 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
 import {
+  invalidatePermissionProbes,
   useCan as useSdkCan,
   useCans as useSdkCans,
   usePermissionsFor as useSdkPermissionsFor,
-  invalidatePermissionProbes,
   type CanResult,
   type CanTarget,
 } from '@kortix/sdk/react';
 
-export type { CanResult, CanTarget };
 export { invalidatePermissionProbes };
+export type { CanResult, CanTarget };
 
 /** @deprecated Name kept for the existing call sites. Use `CanResult`. */
 export type UsePermissionResult = CanResult;

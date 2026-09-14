@@ -1,9 +1,9 @@
 'use client';
 
+import type { ProjectBranchesResponse } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { fetchBranches } from '../api/branches';
 import { useProjectContext } from '../context';
-import type { ProjectBranchesResponse } from '@kortix/sdk';
 
 export const branchKeys = {
   all: ['project-files', 'branches'] as const,

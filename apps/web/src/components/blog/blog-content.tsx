@@ -1,8 +1,9 @@
 import { BlogCta } from '@/components/blog/blog-cta';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
 import { CheckIcon as Check, MinusIcon as Minus } from '@/lib/icons/ssr';
+import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { Fragment, type ReactNode } from 'react';
 
@@ -132,15 +133,20 @@ function VerdictBlock({
   them: string;
   kortix: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="my-10 grid grid-cols-1 gap-4 md:grid-cols-2">
       <div className="border-border bg-card flex flex-col rounded-2xl border p-6">
-        <span className="text-muted-foreground text-sm font-medium">Choose {themLabel} if…</span>
+        <span className="text-muted-foreground text-sm font-medium">
+          {tI18nComplete.raw('textc7f937836f5d')} {themLabel}{' '}
+          {tI18nComplete.raw('text0d8226e31464')}
+        </span>
         <p className="text-foreground mt-3 text-base leading-relaxed">{renderInline(them)}</p>
       </div>
       <div className="border-kortix-green/30 bg-kortix-green/[0.06] flex flex-col rounded-2xl border p-6">
         <span className="text-foreground flex items-center gap-2 text-sm font-semibold">
-          <span className="bg-kortix-green size-2 rounded-full" /> Choose Kortix if…
+          <span className="bg-kortix-green size-2 rounded-full" />{' '}
+          {tI18nComplete.raw('text3db55a8a36d9')}
         </span>
         <p className="text-foreground mt-3 text-base leading-relaxed">{renderInline(kortix)}</p>
       </div>
@@ -156,22 +162,13 @@ function LeanMark({ side, lean }: { side: 'them' | 'kortix'; lean: RowLean }) {
     return on ? (
       <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
     ) : (
-      <Minus
-        className="text-background/40 mt-0.5 size-4 shrink-0"
-       
-      />
+      <Minus className="text-background/40 mt-0.5 size-4 shrink-0" />
     );
   }
   return on ? (
-    <Check
-      className="text-muted-foreground mt-0.5 size-4 shrink-0"
-     
-    />
+    <Check className="text-muted-foreground mt-0.5 size-4 shrink-0" />
   ) : (
-    <Minus
-      className="text-muted-foreground/30 mt-0.5 size-4 shrink-0"
-     
-    />
+    <Minus className="text-muted-foreground/30 mt-0.5 size-4 shrink-0" />
   );
 }
 

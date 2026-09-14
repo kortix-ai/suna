@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 
 /**
  * The authorization owner is settled once a connector exists.
@@ -44,7 +44,7 @@ describe('connector authorization owner is locked after creation', () => {
     // Both halves matter: WHICH owner (the thing being read) and WHY it cannot
     // move (the thing that stops a support ticket).
     expect(MODAL).toContain('{lockedReason}');
-    expect(MODAL).toContain("isProject ? 'Project' : 'User'");
+    expect(MODAL).toContain("tI18nComplete.raw('text985959785319')");
   });
 
   test('the backend path is still wired, so this stays a one-prop revert', () => {
@@ -61,10 +61,8 @@ describe('connector authorization owner is locked after creation', () => {
   });
 
   test('hideLabel suppresses the label in BOTH the locked and editable branches', () => {
-    expect(MODAL).toContain('{hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}');
-    expect(MODAL).toContain(
-      '{hideLabel ? null : <FieldLabel htmlFor={id}>Authorization owner</FieldLabel>}',
-    );
+    expect(MODAL.match(/hideLabel \? null/g)).toHaveLength(2);
+    expect(MODAL).toContain("raw('textca6f5e1c98a8')");
   });
 
   // The hazard `hideLabel` opens: in the editable branch the suppressed
@@ -74,7 +72,8 @@ describe('connector authorization owner is locked after creation', () => {
   // accessible name. Coupled here rather than documented, because two comments
   // already documented it and it still surprised a reviewer.
   test('hideLabel never leaves the Select without an accessible name', () => {
-    expect(MODAL).toContain("const suppressedLabel = hideLabel ? 'Authorization owner' : undefined");
+    expect(MODAL).toContain('const suppressedLabel = hideLabel ?');
+    expect(MODAL).toContain("raw('textca6f5e1c98a8')");
     expect(MODAL).toContain('<SelectTrigger id={id} aria-label={suppressedLabel}>');
   });
 

@@ -5,7 +5,7 @@ import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { Badge } from '@/components/ui/badge';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { Reveal } from '../../reveal';
 import { SkillsRead } from './skill-reads';
 import { ToolCard } from './tool-card';
@@ -41,7 +41,9 @@ export function AssistantTurn({
     <Reveal>
       <div className="mb-2 flex items-center gap-2">
         <AgentAvatar isDefault size={22} />
-        <span className="text-foreground text-sm font-medium">Kortix</span>
+        <span className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')}
+        </span>
         <AnimatePresence mode="wait" initial={false}>
           <m.span
             key={isDone ? 'done' : 'working'}

@@ -1,7 +1,7 @@
 'use client';
 
 import { HandshakeIcon as Handshake } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {

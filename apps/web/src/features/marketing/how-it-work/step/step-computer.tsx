@@ -4,7 +4,8 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
 import type { Part } from '@/ui';
 import { m, useReducedMotion, type Transition } from 'motion/react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
 /**
@@ -273,10 +274,11 @@ function Block({ children, className }: { children: ReactNode; className?: strin
  * bubble at the product's radius.
  */
 function UserTurn(): ReactNode {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Block className="ml-auto flex w-full max-w-[80%] justify-end">
       <div className="bg-secondary text-foreground flex max-w-full flex-col rounded-lg px-3.5 py-2.5 text-[0.9rem] leading-[22px] font-medium wrap-break-word whitespace-pre-wrap select-none">
-        {PROMPT}
+        {t.raw('text4087def59b40')}
       </div>
     </Block>
   );
@@ -305,6 +307,25 @@ function UserTurn(): ReactNode {
  * done.
  */
 function AgentTurn({ beat }: { beat: number }): ReactNode {
+  const t = useTranslations('hardcodedUi.i18nComplete');
+  const toolParts = useMemo(
+    () =>
+      TOOL_PARTS.map((part) =>
+        part.tool === 'bash'
+          ? {
+              ...part,
+              state: {
+                ...part.state,
+                input: {
+                  ...part.state.input,
+                  description: t.raw('textfd11491690d6'),
+                },
+              },
+            }
+          : part,
+      ) satisfies Part[],
+    [t],
+  );
   const toolsShown = Math.max(0, Math.min(beat - 2, TOOL_PARTS.length));
 
   return (
@@ -316,7 +337,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
                 burst of a working turn: it is what holds the disclosure open
                 across the gaps between calls instead of blinking it shut. */}
             <ActivityBurst
-              parts={TOOL_PARTS.slice(0, toolsShown)}
+              parts={toolParts.slice(0, toolsShown)}
               sessionId={SESSION}
               working
               isTrailing
@@ -328,7 +349,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
         {beat >= 2 && (
           <div className="shrink-0">
             <UnifiedMarkdown
-              content={REPLY_MD}
+              content={t.raw('texte10d01e3b40c')}
               className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             />
           </div>

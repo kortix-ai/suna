@@ -262,11 +262,11 @@ describe('"Files read" rows open the file viewer (Task 3)', () => {
     const onOpenFile = (path: string, allPaths: string[]) => calls.push({ path, allPaths });
 
     const rows = buttonsIn(
-      cardBody(
-        (detail) => opened.push(detail),
-        onOpenFile,
-        { files: filesWithAGap, web: [], tools: [] },
-      ),
+      cardBody((detail) => opened.push(detail), onOpenFile, {
+        files: filesWithAGap,
+        web: [],
+        tools: [],
+      }),
     );
     expect(rows).toHaveLength(1); // one group row: "Files read"
     (rows[0].props as { onClick?: () => void }).onClick?.();

@@ -816,6 +816,7 @@ function seedRuntimeCron(opts: {
   slug: string;
   prompt: string;
   nextFireAt: Date;
+  sessionMode?: string;
 }) {
   runtimeRows.push({
     projectId: PROJECT_ID,
@@ -851,7 +852,7 @@ function seedRuntimeCron(opts: {
       runAt: null,
       timezone: 'UTC',
       secretEnv: null,
-      sessionMode: 'fresh',
+      sessionMode: opts.sessionMode ?? 'fresh',
       pinnedSessionId: null,
       sessionKey: null,
       filter: null,
@@ -1486,6 +1487,69 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(triggerExecutionRows[1]?.scheduledFor.toISOString()).toBe(
       '2026-01-01T00:00:31.000Z',
     );
+  });
+
+  test('reuse trigger cron sweep records fired (not queued) for a prompt-enqueued delivery handoff', async () => {
+    seedManifest(cronEntry({
+      slug: 'reuse-stale',
+      name: 'Reuse Stale',
+      cron: '* * * * * *',
+      prompt: 'Reuse sweep run',
+    }));
+    const scheduledFor = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({
+      slug: 'reuse-stale',
+      prompt: 'Reuse sweep run',
+      nextFireAt: scheduledFor,
+      sessionMode: 'reuse',
+    });
+    // Pre-seed a reusable session so the fire path finds it and enqueues (rather
+    // than creating a fresh session, which would return `fired`).
+    sessionRows.push({
+      sessionId: 'sess-reuse',
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      branchName: 'main',
+      baseRef: 'main',
+      sandboxProvider: 'daytona',
+      sandboxId: null,
+      sandboxUrl: null,
+      opencodeSessionId: null,
+      agentName: 'default',
+      status: 'stopped',
+      error: null,
+      createdBy: USER_ID,
+      visibility: 'private',
+      origin: 'system',
+      originRef: null,
+      secretsAllowlist: null,
+      requiredConnectors: null,
+      connectorBindingsInheritUnbound: false,
+      connectorBindingsConfigured: false,
+      metadata: { trigger_slug: 'reuse-stale', trigger_kind: 'git' },
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    const result = await runProjectTriggerSweep(scheduledFor);
+    expect(result).toMatchObject({ scanned: 1, fired: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(scheduledFor)).toMatchObject({
+      fired: 0,
+      queued: 1,
+      failed: 0,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    // The execution drain calls `markGitTriggerFired` — the key
+    // assertion: `lastStatus` is `'fired'`, not `'queued'`, even though
+    // `fireGitTrigger` returned `{ status: 'queued', reason: 'prompt queued
+    // for delivery' }`. The `executeTriggerExecution` path now maps the
+    // delivery handoff to `fired` so the reliability operator's
+    // `QUEUED_OVER_15M` guard does not flag every `session_mode: reuse`
+    // trigger permanently.
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.lastStatus).toBe('fired');
+    expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('webhook fires verify the HMAC signature and reject impostors', async () => {

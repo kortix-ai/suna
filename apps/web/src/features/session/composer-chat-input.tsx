@@ -10,18 +10,19 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
-import { useRuntimeConfig } from '@kortix/sdk/react';
-import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
 import {
   type Command,
+  type ModelKey,
+  useProjectConfig,
   useRuntimeAgents,
   useRuntimeCommands,
+  useRuntimeConfig,
   useRuntimeProviders,
+  useSessionModelSelection,
 } from '@kortix/sdk/react';
-import { useProjectConfig } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
-import type { DraftScope } from './composer/draft/composer-draft';
 import { resolveComposerAgent } from './composer/composer-agent-access';
+import type { DraftScope } from './composer/draft/composer-draft';
 
 export interface ComposerOptions {
   agent?: string;

@@ -34,25 +34,23 @@ interface ComposerPrefillState {
   consume: (projectId: string) => ComposerPrefill | null;
 }
 
-export const useComposerPrefillStore = create<ComposerPrefillState>(
-  (set, get) => ({
-    prefillByProject: {},
-    setPrefill: (projectId, prompt, options) =>
-      set((s) => ({
-        prefillByProject: {
-          ...s.prefillByProject,
-          [projectId]: { text: prompt, autoSend: options?.autoSend },
-        },
-      })),
-    consume: (projectId) => {
-      const value = get().prefillByProject[projectId];
-      if (!value) return null;
-      set((s) => {
-        const next = { ...s.prefillByProject };
-        delete next[projectId];
-        return { prefillByProject: next };
-      });
-      return value;
-    },
-  }),
-);
+export const useComposerPrefillStore = create<ComposerPrefillState>((set, get) => ({
+  prefillByProject: {},
+  setPrefill: (projectId, prompt, options) =>
+    set((s) => ({
+      prefillByProject: {
+        ...s.prefillByProject,
+        [projectId]: { text: prompt, autoSend: options?.autoSend },
+      },
+    })),
+  consume: (projectId) => {
+    const value = get().prefillByProject[projectId];
+    if (!value) return null;
+    set((s) => {
+      const next = { ...s.prefillByProject };
+      delete next[projectId];
+      return { prefillByProject: next };
+    });
+    return value;
+  },
+}));

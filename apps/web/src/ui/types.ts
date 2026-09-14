@@ -12,41 +12,41 @@
 // ---------------------------------------------------------------------------
 
 export type {
-  Session,
-  Message,
-  UserMessage,
-  AssistantMessage,
-  Part,
-  TextPart,
-  ReasoningPart,
-  ToolPart,
-  FilePart,
+  Agent,
   AgentPart,
-  SubtaskPart,
-  StepStartPart,
-  StepFinishPart,
-  SnapshotPart,
-  PatchPart,
-  RetryPart,
+  AssistantMessage,
+  Command,
   CompactionPart,
-  ToolState,
-  ToolStatePending,
-  ToolStateRunning,
-  ToolStateCompleted,
-  ToolStateError,
+  FilePart,
+  Message,
+  Model,
+  Part,
+  PatchPart,
   PermissionRequest,
-  QuestionRequest,
+  Project,
+  Provider,
+  QuestionAnswer,
   QuestionInfo,
   QuestionOption,
-  QuestionAnswer,
+  QuestionRequest,
+  ReasoningPart,
+  RetryPart,
+  Session,
   SessionStatus,
-  Agent,
-  Command,
-  Project,
-  Model,
-  Provider,
-  Todo,
   SnapshotFileDiff,
+  SnapshotPart,
+  StepFinishPart,
+  StepStartPart,
+  SubtaskPart,
+  TextPart,
+  Todo,
+  ToolPart,
+  ToolState,
+  ToolStateCompleted,
+  ToolStateError,
+  ToolStatePending,
+  ToolStateRunning,
+  UserMessage,
 } from '@kortix/sdk';
 
 export type FileDiff = Omit<import('@kortix/sdk').SnapshotFileDiff, 'patch'> & {
@@ -81,7 +81,7 @@ export interface Turn {
 // Tool rendering types (shared between web & mobile tool renderers)
 // ---------------------------------------------------------------------------
 
-export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';
 
 /** Structured trigger data for the BasicTool wrapper. */
 export interface TriggerTitle {

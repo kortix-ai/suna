@@ -36,6 +36,7 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import {
+  DEPRECATED_KORTIX_CLI_ALIASES,
   resolveGrantSet,
   SLUG_RE,
   WORKSPACE_MODES_V2,
@@ -130,6 +131,12 @@ export interface AgentParseError {
 export interface LoadedAgents {
   specs: AgentSpec[];
   errors: AgentParseError[];
+  /** Where the specs came from: the manifest's blob sha and the commit it was
+   *  read at. `null` revision/commit = synthesized (no manifest on disk) or a
+   *  read with no git context; absent = the manifest could not be read at all.
+   *  Grants derived from these specs carry the same provenance
+   *  (`AgentGrant.manifestRevision` / `manifestCommit`). */
+  manifest?: { revision: string | null; commit: string | null } | null;
   /**
    * The manifest's own top-level `default_agent` (v2; v1 has no such
    * field, so this is always `null` for a v1 manifest). Lets grant resolution
@@ -300,10 +307,14 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
+      manifest: null,
     };
   }
   if (!manifest) manifest = synthesizeBlankManifest({ manifestPath: project.manifestPath });
-  return extractAgents(manifest);
+  return {
+    ...extractAgents(manifest),
+    manifest: { revision: manifest.revision ?? null, commit: manifest.commit ?? null },
+  };
 }
 
 /**
@@ -848,6 +859,12 @@ function parseGrantSet(
 /** Returns an error message if the action is not grantable to an agent, else null. */
 function validateKortixAction(action: string): string | null {
   if (GRANTABLE_KORTIX_CLI.has(action)) return null;
+  // A RENAMED action still resolves — `canonicalizeGrantActions` rewrites it to
+  // the live leaf. Accept it here: rejecting it would push the spec into
+  // `loaded.errors`, and an agent whose manifest failed to parse is given an
+  // EMPTY grant (see grantFromLoadedAgents), which strips every capability it
+  // holds over one outdated string.
+  if (action in DEPRECATED_KORTIX_CLI_ALIASES) return null;
   if (VALID_ACTIONS.has(action)) {
     return `\`kortix_cli\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
   }

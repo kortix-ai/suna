@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   isErrorOutput,
@@ -11,9 +12,11 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CpuIcon as Cpu } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -26,7 +29,7 @@ export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   return (
     <BasicTool
       icon={<Cpu className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Video', subtitle: prompt?.slice(0, 60) }}
+      trigger={{ title: tI18nComplete.raw('textd534be829e32'), subtitle: prompt?.slice(0, 60) }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}

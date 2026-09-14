@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { CalendarIcon } from '@phosphor-icons/react';
 import { format } from 'date-fns';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 interface DateTimePickerProps {
@@ -17,6 +18,7 @@ interface DateTimePickerProps {
 }
 
 export function DateTimePicker({ date, setDate, label }: DateTimePickerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [timeValue, setTimeValue] = useState<string>(date ? format(date, 'HH:mm') : '00:00');
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -58,7 +60,9 @@ export function DateTimePicker({ date, setDate, label }: DateTimePickerProps) {
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {date ? format(date, "PPP 'at' HH:mm") : 'Pick a date'}
+            {date
+              ? format(date, tI18nComplete.raw('text1f95658b1ee9'))
+              : tI18nComplete.raw('text29241ab2d244')}
           </Button>
         </PopoverTrigger>
         <PopoverContent
@@ -70,7 +74,9 @@ export function DateTimePicker({ date, setDate, label }: DateTimePickerProps) {
         >
           <Calendar mode="single" selected={date} onSelect={handleDateSelect} initialFocus />
           <div className="border-t p-3">
-            <Label className="text-muted-foreground text-xs">Time</Label>
+            <Label className="text-muted-foreground text-xs">
+              {tI18nComplete.raw('text33b93476cf59')}
+            </Label>
             <Input type="time" value={timeValue} onChange={handleTimeChange} className="mt-1" />
           </div>
         </PopoverContent>

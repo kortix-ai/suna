@@ -265,9 +265,6 @@ export function groupWorkspacePaletteRows(rows: WorkspacePaletteRow[]): Workspac
  * a thread in it than a different workspace. Search covers the other case, and
  * now does so from inside a workspace too.
  */
-export function recentWorkspaceRows(
-  rows: WorkspacePaletteRow[],
-  limit = 5,
-): WorkspacePaletteRow[] {
+export function recentWorkspaceRows(rows: WorkspacePaletteRow[], limit = 5): WorkspacePaletteRow[] {
   return rows.slice(0, limit);
 }

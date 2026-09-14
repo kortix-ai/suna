@@ -534,6 +534,9 @@ describe('GET .../prompts', () => {
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
+        // A text-only prompt names no files. The list is always present so a
+        // client never has to distinguish "no attachments" from "old server".
+        attachments: [],
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },

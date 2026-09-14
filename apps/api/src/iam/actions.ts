@@ -71,8 +71,6 @@ export const PROJECT_ACTIONS = {
   // Change requests. Distinct from write so an agent can be granted
   // "open a CR" WITHOUT "merge it to the base branch" — merge is the canonical
   // destructive action (it lands code on main), and stays human/explicit.
-  PROJECT_CR_OPEN: 'project.cr.open',
-  PROJECT_CR_MERGE: 'project.cr.merge',
 
   PROJECT_SESSION_READ: 'project.session.read',
   PROJECT_SESSION_START: 'project.session.start',
@@ -114,6 +112,16 @@ export const PROJECT_ACTIONS = {
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',
+  // Ref-level push authority, on top of `project.gitops.push`. The git proxy
+  // scopes a SESSION credential to its own branch structurally — that binding
+  // is the credential's identity, not a permission, and is never grantable.
+  // These two leaves are what a principal needs to act OUTSIDE that lane, and
+  // they are what a role or a `kortix_cli` grant can hand to an agent
+  // deliberately. Absent = denied: unlike the rest of the agent-grant fold, the
+  // git path treats a null grant as "principal defaults", never "unrestricted".
+  // See git-proxy/ref-policy.ts.
+  PROJECT_GITOPS_REF_ANY: 'project.gitops.ref.any',
+  PROJECT_GITOPS_REF_DELETE: 'project.gitops.ref.delete',
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',

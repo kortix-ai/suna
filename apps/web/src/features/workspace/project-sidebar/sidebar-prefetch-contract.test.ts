@@ -58,7 +58,9 @@ describe('sidebar prefetch contract', () => {
   });
 
   test('HoverPrefetchLink defers the prefetch until pointer, focus or touch', () => {
-    const code = strip(readFileSync(join(dir, '../../../components/common/hover-prefetch-link.tsx'), 'utf8'));
+    const code = strip(
+      readFileSync(join(dir, '../../../components/common/hover-prefetch-link.tsx'), 'utf8'),
+    );
     // The whole mechanism: `false` until armed, the caller's kind afterwards.
     expect(code).toContain('prefetch={armed ? prefetch : false}');
     expect(code).toMatch(/onMouseEnter=\{\(event\) => \{\s*setArmed\(true\)/);

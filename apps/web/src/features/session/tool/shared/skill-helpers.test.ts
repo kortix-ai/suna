@@ -130,7 +130,9 @@ describe('skillDocumentPath — the install layout, when nothing says otherwise'
   });
 
   test('a name is trimmed of whitespace and slashes', () => {
-    expect(skillDocumentPath('', '', '  webapp/  ')).toBe('.kortix/opencode/skills/webapp/SKILL.md');
+    expect(skillDocumentPath('', '', '  webapp/  ')).toBe(
+      '.kortix/opencode/skills/webapp/SKILL.md',
+    );
   });
 
   test('a traversing name is refused rather than pointed outside the skills dir', () => {

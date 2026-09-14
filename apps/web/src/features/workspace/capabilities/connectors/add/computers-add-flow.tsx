@@ -3,6 +3,7 @@
 import { createConnector } from '@kortix/sdk';
 import { MonitorIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ function ComputersAddFlowContent({
   onClose: () => void;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const initialSlug = proposeConnectorConnectionSlug('Computer Tunnel', existingSlugs);
   const [name, setName] = useState('Computer Tunnel');
   const [slug, setSlug] = useState(initialSlug);
@@ -79,11 +81,11 @@ function ComputersAddFlowContent({
         create_only: true,
       }),
     onSuccess: () => {
-      successToast(`Added ${name.trim()}`);
+      successToast(tI18nComplete('text29f396e2d238', { value0: name.trim() }));
       onAdded(slug);
       onClose();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add Computer Tunnel'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text9bb62f4c5a61')),
   });
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
@@ -98,11 +100,8 @@ function ComputersAddFlowContent({
               <MonitorIcon className="size-5" />
             </span>
             <div className="min-w-0 space-y-1">
-              <ModalTitle>Add Computer Tunnel</ModalTitle>
-              <ModalDescription>
-                Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel.
-                Select the machines that agents using this profile can access.
-              </ModalDescription>
+              <ModalTitle>{tI18nComplete.raw('text206588f5fd84')}</ModalTitle>
+              <ModalDescription>{tI18nComplete.raw('textcbfd0bbb1891')}</ModalDescription>
             </div>
           </div>
         </ModalHeader>
@@ -115,7 +114,9 @@ function ComputersAddFlowContent({
           <ModalBody className="max-h-[75vh] space-y-5 overflow-y-auto">
             <FieldGroup className="grid gap-3 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="computers-profile-name">Profile name</FieldLabel>
+                <FieldLabel htmlFor="computers-profile-name">
+                  {tI18nComplete.raw('textd3663280e101')}
+                </FieldLabel>
                 <Input
                   id="computers-profile-name"
                   value={name}
@@ -124,7 +125,9 @@ function ComputersAddFlowContent({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="computers-profile-slug">Slug</FieldLabel>
+                <FieldLabel htmlFor="computers-profile-slug">
+                  {tI18nComplete.raw('textd15387ecc6c5')}
+                </FieldLabel>
                 <Input
                   id="computers-profile-slug"
                   value={slug}
@@ -136,16 +139,18 @@ function ComputersAddFlowContent({
                   aria-invalid={slug.length > 0 && !slugAvailable}
                 />
                 {!slugAvailable ? (
-                  <p className="text-destructive text-xs">This slug is already in use.</p>
+                  <p className="text-destructive text-xs">
+                    {tI18nComplete.raw('text5cb2baf7db08')}
+                  </p>
                 ) : null}
               </Field>
             </FieldGroup>
 
             <section className="space-y-3">
               <div className="space-y-1">
-                <FieldLabel>Machines</FieldLabel>
+                <FieldLabel>{tI18nComplete.raw('textc061da196eae')}</FieldLabel>
                 <p className="text-muted-foreground text-xs text-pretty">
-                  Pair, inspect, and select one or more machines without leaving this profile.
+                  {tI18nComplete.raw('texta5285ecc196c')}
                 </p>
               </div>
               <ComputerTunnelManager
@@ -163,11 +168,11 @@ function ComputersAddFlowContent({
               disabled={add.isPending}
               onClick={onClose}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button type="submit" disabled={!valid || add.isPending}>
               {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Create profile
+              {tI18nComplete.raw('text61d30d997d13')}
             </Button>
           </ModalFooter>
         </form>

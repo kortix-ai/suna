@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
+import { createClient } from '@/lib/supabase/client';
 import { openStressTestStream } from '@kortix/sdk';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface StressTestConfig {
   num_requests: number;
@@ -17,10 +17,10 @@ export interface StressTestResult {
   project_id?: string;
   agent_run_id?: string;
   // Timing metrics
-  request_time: number;  // Time for HTTP request to complete
-  time_to_first_response?: number | null;  // Time from agent start to first LLM response
-  total_ttft?: number | null;  // request_time + time_to_first_response
-  llm_ttft?: number | null;  // Actual LLM TTFT
+  request_time: number; // Time for HTTP request to complete
+  time_to_first_response?: number | null; // Time from agent start to first LLM response
+  total_ttft?: number | null; // request_time + time_to_first_response
+  llm_ttft?: number | null; // Actual LLM TTFT
   error?: string;
   // Detailed timing breakdown
   timing_breakdown?: {
@@ -116,13 +116,15 @@ export function useStressTest() {
       })),
       summary: null,
       currentBatch: 0,
-      totalBatches: 0,  // Will be set by server response
+      totalBatches: 0, // Will be set by server response
       error: null,
     });
 
     try {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
         throw new Error('Not authenticated');
@@ -130,14 +132,17 @@ export function useStressTest() {
 
       abortControllerRef.current = new AbortController();
 
-      const stream = await openStressTestStream({
+      const stream = await openStressTestStream(
+        {
           ...config,
           measure_ttft: true,
-        }, {
-        backendUrl: getEnv().BACKEND_URL,
-        accessToken: session.access_token,
-        signal: abortControllerRef.current.signal,
-      });
+        },
+        {
+          backendUrl: getEnv().BACKEND_URL,
+          accessToken: session.access_token,
+          signal: abortControllerRef.current.signal,
+        },
+      );
 
       const reader = stream.getReader();
 
@@ -160,34 +165,32 @@ export function useStressTest() {
 
             switch (event.type) {
               case 'config':
-                setState(prev => ({
+                setState((prev) => ({
                   ...prev,
                   totalBatches: event.num_batches,
                 }));
                 break;
 
               case 'batch_start':
-                setState(prev => ({
+                setState((prev) => ({
                   ...prev,
                   currentBatch: event.batch_num,
                 }));
                 break;
 
               case 'status':
-                setState(prev => ({
+                setState((prev) => ({
                   ...prev,
-                  results: prev.results.map(r =>
-                    r.request_id === event.request_id
-                      ? { ...r, status: event.status }
-                      : r
+                  results: prev.results.map((r) =>
+                    r.request_id === event.request_id ? { ...r, status: event.status } : r,
                   ),
                 }));
                 break;
 
               case 'result':
-                setState(prev => ({
+                setState((prev) => ({
                   ...prev,
-                  results: prev.results.map(r =>
+                  results: prev.results.map((r) =>
                     r.request_id === event.request_id
                       ? {
                           request_id: event.request_id,
@@ -202,13 +205,13 @@ export function useStressTest() {
                           error: event.error,
                           timing_breakdown: event.timing_breakdown,
                         }
-                      : r
+                      : r,
                   ),
                 }));
                 break;
 
               case 'summary':
-                setState(prev => ({
+                setState((prev) => ({
                   ...prev,
                   isRunning: false,
                   summary: {
@@ -244,13 +247,13 @@ export function useStressTest() {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isRunning: false,
           error: 'Test cancelled',
         }));
       } else {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isRunning: false,
           error: error instanceof Error ? error.message : 'Unknown error',

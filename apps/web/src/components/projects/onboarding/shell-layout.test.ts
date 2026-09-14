@@ -9,7 +9,7 @@
  * only in the classes.
  */
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const shell = readFileSync(join(import.meta.dir, '..', 'project-onboarding-wizard.tsx'), 'utf8');
@@ -44,7 +44,7 @@ describe('onboarding shell', () => {
   test('centres every step in the fixed decision lane', () => {
     expect(shell).toContain('items-center justify-center');
     expect(shell).toContain('max-w-[520px] pt-8');
-    expect(shell).toContain('pb-[max(2rem,env(safe-area-inset-bottom))]');
+    expect(shell).toContain("'max(calc(var(--spacing) * 8), env(safe-area-inset-bottom, 0px))'");
   });
 
   test('binds dialog labelling to existing ids for the active step', () => {
@@ -84,7 +84,7 @@ describe('onboarding shell', () => {
   test('renders progress centred and a back control, nothing else', () => {
     expect(shell).toContain('<StepProgress');
     expect(shell).toContain('justify-center');
-    expect(shell).toContain('aria-label="Back"');
+    expect(shell).toContain("aria-label={t('back')}");
   });
 
   // The welcome screen is gone, so the founder-concierge CTA has to survive
@@ -208,7 +208,7 @@ describe('step shell primitive', () => {
 
 describe('step action copy', () => {
   test('names survey and optional skips explicitly', () => {
-    expect(step('company-step.tsx')).toContain('skipLabel="Skip survey"');
-    expect(step('tools-step.tsx')).toContain('skipLabel="Skip for now"');
+    expect(step('company-step.tsx')).toContain("skipLabel={t('skipSurvey')}");
+    expect(step('tools-step.tsx')).toContain("skipLabel={t('skipForNow')}");
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `FileViewer` — one file, shown the way that file wants to be read.
  *
@@ -125,6 +126,7 @@ export function FileViewer({
   onClose?: () => void;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Previewable only WITH a path. The preview is the file served by the
   // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
   // to serve there is no rendered form — and therefore no second view to
@@ -154,12 +156,17 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  aria-label="Preview"
+                  aria-label={tI18nComplete.raw('text324b134f57c7')}
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
+                <TabsTrigger
+                  size="xs"
+                  value="source"
+                  aria-label={tI18nComplete.raw('text0e570ca6fabe')}
+                  className="h-7 w-7 px-0"
+                >
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>
@@ -179,7 +186,7 @@ export function FileViewer({
           <ViewerActions
             copy={{
               run: () => navigator.clipboard.writeText(content),
-              ariaLabel: 'Copy file contents',
+              ariaLabel: tI18nComplete.raw('textb3278e5f53cc'),
             }}
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}
@@ -324,11 +331,18 @@ function FileBody({
   // CodeMirror editor still carries its own Pierre-derived theme and does NOT
   // match — a known, accepted gap, not an oversight.
   //
-  // Only the horizontal padding is dropped, not the vertical: the pane's own
-  // background should run edge to edge, so the code is inset from the bottom
-  // but flush to the sides.
+  // Inset on every side: the detail layer opens a file with `padded: false`
+  // (the viewer owns its toolbar), so this view supplies its own frame, the
+  // same 4-step the toolbar and the rest of the panel use. Markdown gets its
+  // `p-6` above; without this the code sat flush against the panel's left
+  // edge under a padded toolbar.
+  //
+  // `w-fit min-w-full`: the scroller is the parent. Padding on a block child
+  // ends where the viewport ends, so a long line scrolled to its end would
+  // touch the right edge. Sized to its content, the wrapper carries its own
+  // right inset to the end of the scroll.
   return (
-    <div className="pb-4 [&_code]:text-[13px]">
+    <div className="w-fit min-w-full p-4 [&_code]:text-[13px]">
       <HighlightedCode code={content} language={languageFor(fileName)} />
     </div>
   );

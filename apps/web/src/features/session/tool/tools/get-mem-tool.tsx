@@ -19,6 +19,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
 import {
@@ -26,7 +27,6 @@ import {
   CalendarDotsIcon as CalendarClock,
   FingerprintIcon as Fingerprint,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
 export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -57,7 +57,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     <BasicTool
       icon={<Brain className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Recalled',
+        title: tHardcodedUi.raw('i18nComplete.textb7416a669c6b'),
         subtitle: recalled || idLabel,
       }}
       badge={recalled ? idLabel : undefined}
@@ -76,9 +76,14 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
         // more labelled sections. Those fold; the answer does not.
         <ToolResultCard bodyClassName="space-y-2.5 p-2">
           {(source || memoryId) && (
-            <FoldedSection label="Request">
+            <FoldedSection label={tHardcodedUi.raw('i18nComplete.text59f03d642b41')}>
               <div className="flex flex-wrap items-center gap-1.5">
-                {source && <ToolField label="Source" value={source} />}
+                {source && (
+                  <ToolField
+                    label={tHardcodedUi.raw('i18nComplete.text0e570ca6fabe')}
+                    value={source}
+                  />
+                )}
                 {memoryId && <ToolField label="ID" value={`#${memoryId}`} mono />}
               </div>
             </FoldedSection>
@@ -119,12 +124,16 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 <h3 className="text-foreground/90 text-xs font-medium">{report.title}</h3>
               )}
               {report.narrative && (
-                <ToolSection label="Narrative">
+                <ToolSection label={tHardcodedUi.raw('i18nComplete.texted2e59c337d0')}>
                   <OutputBlock text={report.narrative} markdown />
                 </ToolSection>
               )}
               {report.facts.length > 0 && (
-                <FoldedSection label={`Facts (${report.facts.length})`}>
+                <FoldedSection
+                  label={tHardcodedUi('i18nComplete.text677e3e9ff173', {
+                    value0: report.facts.length,
+                  })}
+                >
                   <ul className="space-y-1">
                     {report.facts.map((fact, index) => (
                       <li
@@ -139,7 +148,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 </FoldedSection>
               )}
               {report.concepts.length > 0 && (
-                <FoldedSection label="Concepts">
+                <FoldedSection label={tHardcodedUi.raw('i18nComplete.text0d0a8c6df3ac')}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {report.concepts.map((concept) => (
                       <span
@@ -155,7 +164,12 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {report.tool && <ToolField label="Tool" value={report.tool} />}
+                    {report.tool && (
+                      <ToolField
+                        label={tHardcodedUi.raw('i18nComplete.text2e53bdcd0740')}
+                        value={report.tool}
+                      />
+                    )}
                     {/* NOT a `ToolField`. The token is "Prompt #" / "Prompt
                         n°" — a word plus the marker for the number that
                         follows it — and `ToolField` puts a `gap-2` between its
@@ -169,7 +183,13 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                         <span className="text-foreground/80">{report.prompt}</span>
                       </span>
                     )}
-                    {report.session && <ToolField label="Session" value={report.session} mono />}
+                    {report.session && (
+                      <ToolField
+                        label={tHardcodedUi.raw('i18nComplete.text6959b4159575')}
+                        value={report.session}
+                        mono
+                      />
+                    )}
                   </div>
                   {report.filesRead.length > 0 && (
                     <FoldedSection
@@ -195,17 +215,21 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
           ) : (
             <>
               {report.caption && (
-                <ToolSection label="Caption">
+                <ToolSection label={tHardcodedUi.raw('i18nComplete.text87d296ec9489')}>
                   <OutputBlock text={report.caption} markdown />
                 </ToolSection>
               )}
               {report.content && (
-                <ToolSection label="Content">
+                <ToolSection label={tHardcodedUi.raw('i18nComplete.text47bd29075f8b')}>
                   <OutputBlock text={report.content} markdown />
                 </ToolSection>
               )}
               {report.tags.length > 0 && (
-                <FoldedSection label={`Tags (${report.tags.length})`}>
+                <FoldedSection
+                  label={tHardcodedUi('i18nComplete.text7964f184beb2', {
+                    value0: report.tags.length,
+                  })}
+                >
                   <div className="flex flex-wrap items-center gap-1.5">
                     {report.tags.map((tag) => (
                       <span key={tag} className={cn('text-xs font-medium', STATUS_TEXT.success)}>
@@ -217,8 +241,19 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               )}
               {(report.session || report.updated) && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {report.session && <ToolField label="Session" value={report.session} mono />}
-                  {report.updated && <ToolField label="Updated" value={report.updated} />}
+                  {report.session && (
+                    <ToolField
+                      label={tHardcodedUi.raw('i18nComplete.text6959b4159575')}
+                      value={report.session}
+                      mono
+                    />
+                  )}
+                  {report.updated && (
+                    <ToolField
+                      label={tHardcodedUi.raw('i18nComplete.text3a5ecca188c0')}
+                      value={report.updated}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -228,7 +263,13 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="get_mem" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Loading memory...' : 'No memory found.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tHardcodedUi.raw('i18nComplete.textde6a473b60fe')
+                : tHardcodedUi.raw('i18nComplete.textf82de1c9a1f5')
+            }
+          />
         </ToolResultCard>
       )}
     </BasicTool>

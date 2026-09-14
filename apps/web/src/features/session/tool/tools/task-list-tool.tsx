@@ -1,4 +1,5 @@
 'use client';
+
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import {
   BasicTool,
@@ -10,13 +11,13 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import type { TriggerTitle } from '@/ui';
 import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 // Fully static, so it does not need rebuilding (object plus a fresh `args` array)
 // on every render of every task row in a streaming session.
-const TASK_LIST_TRIGGER: TriggerTitle = { title: 'Tasks', subtitle: '', args: [] };
-
 export function TaskListTool({ part, forceOpen }: ToolProps) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   const output = partOutput(part);
   // `isErrorOutput` trims the whole task list and attempts a `JSON.parse` over
   // it, from inside the JSX, on every render.
@@ -24,7 +25,7 @@ export function TaskListTool({ part, forceOpen }: ToolProps) {
   return (
     <BasicTool
       icon={<ListTodo className="size-3.5 shrink-0" />}
-      trigger={TASK_LIST_TRIGGER}
+      trigger={{ title: t.raw('textb3a60e61a523'), subtitle: '', args: [] } satisfies TriggerTitle}
       defaultOpen={false}
       forceOpen={forceOpen}
     >

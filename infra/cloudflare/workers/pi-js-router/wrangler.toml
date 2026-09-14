@@ -1,0 +1,41 @@
+# Cloudflare Worker that serves `pi-js.kortix.com` — the stable name for the JS
+# pi agent (apps/pi-worker-js) running as a Platinum Worker cell on Platinum
+# DEV, the way pi.kortix.com is the stable name for the pi-worker branch
+# environment on Platinum prod.
+#
+# Deploy (first time and every re-point):
+#   wrangler deploy --var TARGET_ORIGIN:https://8080-<cell>.eu-west.sbx-dev.platinum.dev
+#   wrangler secret put PT_PREVIEW_TOKEN      # the cell's exposure token (see below)
+#   wrangler secret put ACCESS_TOKEN          # optional: a shared bearer that gates the name
+#
+# `custom_domain = true`: Cloudflare creates and owns the DNS record and the
+# certificate for pi-js.kortix.com, so there is no separate DNS step.
+#
+# Auth: CLOUDFLARE_APPS_EDGE_API_TOKEN (Account Workers Scripts Write; kortix.com
+# zone DNS Write, Workers Routes Write, SSL and Certificates Write, Zone Read) —
+# the same token pi-router and configure-preview-edge.yml use.
+#
+# Why a token, unlike pi-router: pi.kortix.com's sandbox exposes its port
+# PUBLIC because the Kortix stack behind it has its own auth. The JS agent has
+# none — a request names a session with `?c=` and gets an agent with shell
+# tools — so its cell's port stays token-protected on the Platinum edge and this
+# Worker injects the token (x-pt-preview-token). With ACCESS_TOKEN set, the
+# public name itself requires `Authorization: Bearer <ACCESS_TOKEN>` (or the
+# `x-kortix-access` header); unset, the name is open — pi.kortix.com parity.
+#
+# TARGET_ORIGIN is a plain var: the cell's origin is derived from its sandbox
+# id, which survives stop/start (scale-to-zero) but not a delete + recreate.
+# .github/workflows/deploy-pi-js-router.yml re-publishes it on demand.
+
+main = "worker.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = false
+account_id = "9785405a992435bb0c7bd19f9b6d26d5"
+
+name = "kortix-pi-js-router"
+routes = [
+  { pattern = "pi-js.kortix.com", custom_domain = true },
+]
+
+[vars]
+TARGET_ORIGIN = ""

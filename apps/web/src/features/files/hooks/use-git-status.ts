@@ -1,15 +1,14 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { getFileStatus } from '../api/runtime-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { getFileStatus } from '../api/runtime-files';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {
   all: ['runtime-files', 'git-status'] as const,
-  status: (serverUrl: string) =>
-    ['runtime-files', 'git-status', serverUrl] as const,
+  status: (serverUrl: string) => ['runtime-files', 'git-status', serverUrl] as const,
 };
 
 /**
@@ -22,10 +21,7 @@ export function useGitStatus(options?: { enabled?: boolean }) {
   const { data: project } = useCurrentProject({
     enabled: options?.enabled !== false,
   });
-  const enabled =
-    options?.enabled !== false &&
-    health?.healthy === true &&
-    project?.vcs === 'git';
+  const enabled = options?.enabled !== false && health?.healthy === true && project?.vcs === 'git';
 
   return useQuery<GitFileStatus[]>({
     queryKey: gitStatusKeys.status(serverUrl),

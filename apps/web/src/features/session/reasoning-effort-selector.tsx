@@ -31,6 +31,7 @@
  * 38 days stale (#6879). Two knobs by mode, three catalog copies. Now one.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -151,6 +152,7 @@ export function ReasoningEffortSelector({
   open: openProp,
   onOpenChange,
 }: ReasoningEffortSelectorProps) {
+  const t = useTranslations('threads');
   const choices = reasoningEffortChoices(variants, !!onVariantChange);
 
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -183,11 +185,11 @@ export function ReasoningEffortSelector({
           type="button"
           variant="ghost"
           size="sm"
-          aria-label="Thinking effort"
+          aria-label={t('thinkingEffort')}
           className="text-foreground/70 gap-1.5 rounded-lg"
         >
           <EffortIcon value={current} className="size-4 shrink-0" />
-          <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
+          <span className="max-w-[7rem] truncate">{current ? label(current) : t('auto')}</span>
           <CaretDownIcon
             className={cn(
               'size-3 opacity-50 transition-transform duration-200 ease-out',
@@ -204,7 +206,7 @@ export function ReasoningEffortSelector({
               control would be a one-way door. */}
           <DropdownMenuRadioItem value={AUTO}>
             <EffortIcon value={null} className="size-4 shrink-0" />
-            Auto
+            {t('auto')}
           </DropdownMenuRadioItem>
           {choices.map((value) => (
             <DropdownMenuRadioItem key={value} value={value}>

@@ -47,7 +47,7 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
 describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
   test('the control renders only when onSkip is supplied', () => {
     expect(code).toContain('{onSkip && (');
-    expect(code).toContain('Skip for now');
+    expect(code).toContain("t('skipForNow')");
   });
 
   test('both new props are optional', () => {
@@ -119,7 +119,8 @@ describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () 
  */
 describe('wizard chrome: the skip control is mobile-safe', () => {
   const chromeStart = code.indexOf('grid h-14');
-  const chrome = chromeStart < 0 ? '' : code.slice(chromeStart, code.indexOf('</div>', chromeStart));
+  const chrome =
+    chromeStart < 0 ? '' : code.slice(chromeStart, code.indexOf('</div>', chromeStart));
 
   test('the scan found the chrome bar', () => {
     // Guard the guard: an empty slice passes every `.not.toContain` below.
@@ -145,9 +146,9 @@ describe('wizard chrome: the skip control is mobile-safe', () => {
 
   test('the label shortens on mobile but assistive tech keeps the full phrase', () => {
     const skipBlock = code.slice(code.indexOf('{onSkip && ('));
-    expect(skipBlock).toContain('aria-label="Skip for now"');
-    expect(skipBlock).toContain('<span className="sm:hidden">Skip</span>');
-    expect(skipBlock).toContain('<span className="hidden sm:inline">Skip for now</span>');
+    expect(skipBlock).toContain("aria-label={t('skipForNow')}");
+    expect(skipBlock).toContain('<span className="sm:hidden">{t(\'skip\')}</span>');
+    expect(skipBlock).toContain('<span className="hidden sm:inline">{t(\'skipForNow\')}</span>');
   });
 
   test('the progress bar itself narrows on mobile', () => {

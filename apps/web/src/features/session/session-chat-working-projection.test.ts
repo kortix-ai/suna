@@ -177,11 +177,7 @@ describe('the composer reads ONE working answer', () => {
     // either is severed: the retry predicate must flow into the
     // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
     expect(chat).toContain('hasRetryingAssistantTurn(messages)');
-    const busyResolution = between(
-      chat,
-      'const effectiveBusy = resolveEffectiveBusy({',
-      '});',
-    );
+    const busyResolution = between(chat, 'const effectiveBusy = resolveEffectiveBusy({', '});');
     expect(busyResolution).toContain('hasRetryingAssistant');
     expect(chat).toContain('sessionWorking={effectiveBusy}');
   });

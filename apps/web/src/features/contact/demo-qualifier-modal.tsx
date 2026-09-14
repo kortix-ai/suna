@@ -2,7 +2,7 @@
 
 import Cal, { getCalApi } from '@calcom/embed-react';
 import { CheckIcon as Check, EnvelopeIcon as Mail } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { isWorkEmail } from '@/lib/personal-email';
@@ -168,15 +168,15 @@ export function DemoQualifierModal({
         }),
       });
     } catch {
-      errorToast('Could not save demo request', {
-        description: "We'll still route you to the next step.",
+      errorToast(tI18nHardcoded.raw('i18nComplete.text5859e6efd762'), {
+        description: tI18nHardcoded.raw('i18nComplete.text1a3ba76c2b52'),
       });
     } finally {
       setSubmitting(false);
     }
 
     setStep(qualified ? 'cal' : 'received');
-  }, [email, size, name, company, goal, source]);
+  }, [email, company, size, name, goal, source, tI18nHardcoded]);
 
   const calConfig: Record<string, string> = { layout: 'month_view' };
   if (name.trim()) calConfig.name = name.trim();
@@ -223,7 +223,8 @@ export function DemoQualifierModal({
             <ModalBody className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="dq-name">
-                  Name <span className="text-destructive">*</span>
+                  {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}{' '}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="dq-name"
@@ -297,7 +298,7 @@ export function DemoQualifierModal({
                   <SelectContent>
                     {companySizes.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
-                        {o.value} employees
+                        {o.value} {tI18nHardcoded.raw('i18nComplete.textc49de3d265fb')}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -309,7 +310,9 @@ export function DemoQualifierModal({
                   {tI18nHardcoded.raw(
                     'autoFeaturesContactDemoQualifierModalJsxTextWhatDoYoud0acfddd',
                   )}{' '}
-                  <span className="text-muted-foreground font-normal">(optional)</span>
+                  <span className="text-muted-foreground font-normal">
+                    {tI18nHardcoded.raw('i18nComplete.text0059798b7f70')}
+                  </span>
                 </Label>
                 <Textarea
                   id="dq-goal"
@@ -339,7 +342,7 @@ export function DemoQualifierModal({
                     )}
                   </>
                 ) : (
-                  <>Continue</>
+                  <>{tI18nHardcoded.raw('i18nComplete.text31fbef162594')}</>
                 )}
               </Button>
             </ModalFooter>
@@ -383,7 +386,7 @@ export function DemoQualifierModal({
               </Link>
             </Button>
             <Button onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
-              Done
+              {tI18nHardcoded.raw('i18nComplete.text11a6767d5674')}
             </Button>
           </ModalFooter>
         </ModalContent>

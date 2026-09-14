@@ -29,6 +29,7 @@ import {
   useSessionAudit,
   useSessionAuditTimeline,
 } from '@/features/session/session-audit-shared';
+import { useTranslations } from '@/i18n/use-translations';
 import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
@@ -40,6 +41,7 @@ export function SessionAuditPanel({
   projectId?: string;
   projectSessionId?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const approvalQuery = useSessionAudit(projectId, projectSessionId);
   const { data } = approvalQuery;
   const timelineQuery = useSessionAuditTimeline(projectId, projectSessionId, {
@@ -67,10 +69,16 @@ export function SessionAuditPanel({
       {
         onSuccess: () => {
           setOutcomes((current) => ({ ...current, [executionId]: decision }));
-          successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+          successToast(
+            decision === tI18nComplete.raw('text74e21680eac7')
+              ? tI18nComplete.raw('text0674d4a026cb')
+              : tI18nComplete.raw('text4341be8eb7f0'),
+          );
         },
         onError: (cause: unknown) =>
-          errorToast(cause instanceof Error ? cause.message : 'Failed to resolve approval'),
+          errorToast(
+            cause instanceof Error ? cause.message : tI18nComplete.raw('textaa7e623fc09a'),
+          ),
         onSettled: () =>
           setBusy((current) => {
             const next = { ...current };
@@ -84,9 +92,11 @@ export function SessionAuditPanel({
   return (
     <div className="flex h-full w-full flex-col">
       <header className="border-border shrink-0 border-b px-6 py-3">
-        <h2 className="text-foreground text-sm font-medium">Audit</h2>
+        <h2 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('textbb6aea287396')}
+        </h2>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          Reconstruct every session event in order and review governed actions.
+          {tI18nComplete.raw('text2ce0023296d9')}
         </p>
       </header>
 
@@ -98,8 +108,8 @@ export function SessionAuditPanel({
         ) : approvalQuery.isError || timelineQuery.isError ? (
           <ErrorState
             size="sm"
-            title="Could not load the audit trail"
-            description="Retry the session audit request."
+            title={tI18nComplete.raw('text43127bce57bf')}
+            description={tI18nComplete.raw('textb4415e2f9e92')}
             action={
               <Button
                 size="sm"
@@ -109,7 +119,7 @@ export function SessionAuditPanel({
                   void timelineQuery.refetch();
                 }}
               >
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />
@@ -117,11 +127,15 @@ export function SessionAuditPanel({
           <EmptyState
             icon={ShieldCheckIcon}
             size="sm"
-            title={historyGated ? 'Nothing awaiting approval' : 'No governed actions yet'}
+            title={
+              historyGated
+                ? tI18nComplete.raw('text13d50aaa238b')
+                : tI18nComplete.raw('text877c91ca4226')
+            }
             description={
               historyGated
-                ? 'Pending approvals appear here. Historical audit access requires Enterprise.'
-                : 'Messages, tools, connectors, providers, usage, and lifecycle events appear here.'
+                ? tI18nComplete.raw('text382d329c7bac')
+                : tI18nComplete.raw('text07d75205a8ee')
             }
           />
         ) : (
@@ -129,8 +143,8 @@ export function SessionAuditPanel({
             {pending.length > 0 ? (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-foreground text-xs font-medium tracking-wide uppercase">
-                    Needs your approval
+                  <h3 className="text-foreground text-xs font-medium">
+                    {tI18nComplete.raw('text635ea5c1ebb7')}
                   </h3>
                   <Badge variant="warning" size="xs">
                     {pending.length}
@@ -156,8 +170,8 @@ export function SessionAuditPanel({
             {events.length > 0 ? (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                    Ordered timeline
+                  <h3 className="text-muted-foreground text-xs font-medium">
+                    {tI18nComplete.raw('text129e6ae61447')}
                   </h3>
                   <Badge variant="muted" size="xs" className="tabular-nums">
                     {events.length}
@@ -168,7 +182,7 @@ export function SessionAuditPanel({
                     <li key={event.event_id} className="border-border border-b last:border-b-0">
                       <button
                         type="button"
-                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.998]"
+                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.96]"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs tabular-nums">
@@ -219,7 +233,7 @@ export function SessionAuditPanel({
                       onClick={() => void timelineQuery.fetchNextPage()}
                     >
                       {timelineQuery.isFetchingNextPage ? <Loading className="size-3.5" /> : null}
-                      Load more events
+                      {tI18nComplete.raw('text96f2482de866')}
                     </Button>
                   </div>
                 ) : null}
@@ -228,8 +242,8 @@ export function SessionAuditPanel({
 
             {history.length > 0 ? (
               <section className="space-y-3">
-                <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  History
+                <h3 className="text-muted-foreground text-xs font-medium">
+                  {tI18nComplete.raw('text0e7696009337')}
                 </h3>
                 <ul className="bg-popover overflow-hidden rounded-md border">
                   {history.map((action) => (
@@ -239,7 +253,7 @@ export function SessionAuditPanel({
                     >
                       <button
                         type="button"
-                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.998]"
+                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.96]"
                         onClick={() => setSelected(action)}
                       >
                         <div className="min-w-0 flex-1">
@@ -263,7 +277,10 @@ export function SessionAuditPanel({
                           <p className="text-muted-foreground mt-0.5 truncate text-xs">
                             {action.acted_by_email ?? 'agent'} · {relativeTime(action.at)}
                             {action.resolved_by_email
-                              ? ` · ${action.status === 'denied' ? 'denied' : 'approved'} by ${action.resolved_by_email}`
+                              ? tI18nComplete('text0e16f24ee012', {
+                                  value0: action.status === 'denied' ? 'denied' : 'approved',
+                                  value1: action.resolved_by_email,
+                                })
                               : ''}
                           </p>
                         </div>
@@ -277,7 +294,7 @@ export function SessionAuditPanel({
 
             {historyGated ? (
               <p className="text-muted-foreground text-xs text-pretty">
-                Enterprise audit access includes the full history of allowed and denied actions.
+                {tI18nComplete.raw('text3206f60e481f')}
               </p>
             ) : null}
           </div>
@@ -290,8 +307,8 @@ export function SessionAuditPanel({
       >
         <ModalContent className="lg:max-w-xl">
           <ModalHeader>
-            <ModalTitle>Governed action</ModalTitle>
-            <ModalDescription>The same parameter view used for live approvals.</ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('textf9b4f002634b')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text18fb4a5618b9')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[70vh] overflow-y-auto">
             {selected ? (
@@ -307,9 +324,10 @@ export function SessionAuditPanel({
       >
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>Session event</ModalTitle>
+            <ModalTitle>{tI18nComplete.raw('text7ed62f13532a')}</ModalTitle>
             <ModalDescription>
-              Canonical event #{selectedEvent?.session_sequence ?? '—'} with redacted summaries.
+              {tI18nComplete.raw('text20cec9e797c9')}
+              {selectedEvent?.session_sequence ?? '—'} {tI18nComplete.raw('text28419d670fef')}
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto">
@@ -320,11 +338,11 @@ export function SessionAuditPanel({
                     ['Action', selectedEvent.action],
                     ['Phase', selectedEvent.phase],
                     ['Source', selectedEvent.authoritative_source ?? selectedEvent.source],
-                    ['Event ID', selectedEvent.event_id],
-                    ['OpenCode session', selectedEvent.opencode_session_id],
-                    ['Message ID', selectedEvent.message_id],
-                    ['Tool call ID', selectedEvent.tool_call_id],
-                    ['Execution ID', selectedEvent.execution_id],
+                    [tI18nComplete.raw('text3045abafb173'), selectedEvent.event_id],
+                    [tI18nComplete.raw('text5a26f4425c82'), selectedEvent.opencode_session_id],
+                    [tI18nComplete.raw('text11d5959da5d3'), selectedEvent.message_id],
+                    [tI18nComplete.raw('textfce8323af972'), selectedEvent.tool_call_id],
+                    [tI18nComplete.raw('texte8c80b20c2f7'), selectedEvent.execution_id],
                   ].map(([label, value]) => (
                     <div
                       key={label}
@@ -339,8 +357,14 @@ export function SessionAuditPanel({
                 </div>
                 {selectedEvent.input_summary || selectedEvent.output_summary ? (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <AuditSummary label="Redacted input" value={selectedEvent.input_summary} />
-                    <AuditSummary label="Redacted output" value={selectedEvent.output_summary} />
+                    <AuditSummary
+                      label={tI18nComplete.raw('text57c5a5829f70')}
+                      value={selectedEvent.input_summary}
+                    />
+                    <AuditSummary
+                      label={tI18nComplete.raw('textf130203efa7f')}
+                      value={selectedEvent.output_summary}
+                    />
                   </div>
                 ) : null}
               </>

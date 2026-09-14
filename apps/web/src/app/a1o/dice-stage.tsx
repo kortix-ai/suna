@@ -1,12 +1,13 @@
 'use client';
 
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import dynamic from 'next/dynamic';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 
-import { COPY, LAYERS } from './content';
+import { localizedA1oContent } from './content';
 import { useRollSound } from './use-roll-sound';
 
 /**
@@ -23,13 +24,14 @@ const DieScene = dynamic(() => import('./die-scene'), {
 });
 
 export function DiceStage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { copy: COPY, layers: LAYERS } = localizedA1oContent(tI18nComplete);
   // Starts at 1 so the die is already in the air when the page opens.
   const [rollToken, setRollToken] = useState(1);
   const [spinToken, setSpinToken] = useState(0);
   const [slot, setSlot] = useState<number | null>(null);
   const [hinted, setHinted] = useState(false);
-  const { muted, toggleMuted, playThrow, playImpact, playSettle } =
-    useRollSound();
+  const { muted, toggleMuted, playThrow, playImpact, playSettle } = useRollSound();
 
   const throwDie = useCallback(() => {
     setRollToken((t) => t + 1);
@@ -72,9 +74,7 @@ export function DiceStage() {
             {/* Renders in currentColor, so it picks up the white here. */}
             <KortixLogo variant="icon" size={26} className="text-white" />
             <div>
-              <p className="text-sm font-medium tracking-tight text-white">
-                {COPY.wordmark}
-              </p>
+              <p className="text-sm font-medium tracking-tight text-white">{COPY.wordmark}</p>
               <p className="mt-0.5 text-sm text-white/40">{COPY.title}</p>
             </div>
           </div>
@@ -82,11 +82,13 @@ export function DiceStage() {
           <button
             type="button"
             onClick={toggleMuted}
-            aria-label={muted ? 'Turn sound on' : 'Turn sound off'}
+            aria-label={
+              muted ? tI18nComplete.raw('textbad2768c4d92') : tI18nComplete.raw('text853b0ebee12c')
+            }
             aria-pressed={!muted}
             className="pointer-events-auto cursor-pointer text-xs tracking-tight text-white/40 transition-colors hover:text-white"
           >
-            {muted ? 'Sound off' : 'Sound on'}
+            {muted ? tI18nComplete.raw('text3f5d70944c3f') : tI18nComplete.raw('text8c477e13ad00')}
           </button>
         </header>
 
@@ -102,9 +104,7 @@ export function DiceStage() {
                   exit={{ opacity: 0, y: -6, filter: 'blur(6px)' }}
                   transition={{ type: 'spring', duration: 0.5, bounce: 0 }}
                 >
-                  <p className="font-mono text-sm tabular-nums text-white/45">
-                    {layer.ordinal}
-                  </p>
+                  <p className="font-mono text-sm text-white/45 tabular-nums">{layer.ordinal}</p>
                   <h1 className="mt-3 text-4xl font-medium tracking-tight text-white sm:text-5xl lg:text-6xl">
                     {layer.title}
                   </h1>

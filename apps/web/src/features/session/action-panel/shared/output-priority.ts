@@ -68,9 +68,7 @@ export function outputRank(output: Pick<OutputItem, 'name' | 'kind' | 'shown'>):
 
 /** Scaffolding: the making-of, not the thing — ranks in the last bucket and
  *  folds behind "N more files" whenever a real deliverable exists. */
-export function isScaffoldingOutput(
-  output: Pick<OutputItem, 'name' | 'kind' | 'shown'>,
-): boolean {
+export function isScaffoldingOutput(output: Pick<OutputItem, 'name' | 'kind' | 'shown'>): boolean {
   return outputRank(output) === RANK_OTHER;
 }
 
@@ -121,7 +119,13 @@ export function selectPrimaryDeliverable(
   const pick = (as: OutputItem[], fs: OutputItem[]): OutputItem | null =>
     as.find((a) => a.url) ?? sortOutputs(fs).find((f) => f.path) ?? null;
   return (
-    pick(apps.filter((a) => a.fresh), files.filter((f) => f.fresh)) ??
-    pick(apps.filter((a) => !a.fresh), files.filter((f) => !f.fresh))
+    pick(
+      apps.filter((a) => a.fresh),
+      files.filter((f) => f.fresh),
+    ) ??
+    pick(
+      apps.filter((a) => !a.fresh),
+      files.filter((f) => !f.fresh),
+    )
   );
 }

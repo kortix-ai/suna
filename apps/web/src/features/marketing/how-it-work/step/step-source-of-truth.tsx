@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import {
   BrainIcon,
@@ -13,6 +14,7 @@ import {
   SparkleIcon,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion, type Transition } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
@@ -53,14 +55,7 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  * `.kortix/`. `acme-co` is a placeholder, not a customer.
  */
 
-type NodeId =
-  | 'agents'
-  | 'skills'
-  | 'memory'
-  | 'rules'
-  | 'connectors'
-  | 'triggers'
-  | 'machine';
+type NodeId = 'agents' | 'skills' | 'memory' | 'rules' | 'connectors' | 'triggers' | 'machine';
 
 const NODES: {
   id: NodeId;
@@ -169,6 +164,8 @@ function PortDot({ className }: { className?: string }): ReactNode {
 }
 
 export function StepSourceOfTruth(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const nodes = useLocalizedUiCatalog(NODES);
   const reduced = useReducedMotion();
   const [drawn, setDrawn] = useState(false);
   const [hovered, setHovered] = useState<NodeId | null>(null);
@@ -178,7 +175,8 @@ export function StepSourceOfTruth(): ReactNode {
    *  building — and drops travel, scale and the line drawing. */
   const from = (extra: object) => (reduced ? { opacity: 0 } : { opacity: 0, ...extra });
   const to = { opacity: 1, y: 0, scale: 1 };
-  const at = (delay: number): Transition => (reduced ? { ...ENTER, delay: 0 } : { ...ENTER, delay });
+  const at = (delay: number): Transition =>
+    reduced ? { ...ENTER, delay: 0 } : { ...ENTER, delay };
 
   /**
    * Every edge is a 1px div, not SVG. Motion's `pathLength` draw runs on
@@ -234,11 +232,11 @@ export function StepSourceOfTruth(): ReactNode {
             height: 1,
           }}
         >
-          {edge('x', 'left center', TRUNK_AT, TRUNK_DURATION, false)}
+          {edge('x', tI18nComplete.raw('textaec25fa72ae2'), TRUNK_AT, TRUNK_DURATION, false)}
         </div>
 
         {/* Stubs: trunk → each node's port, drawn away from the trunk. */}
-        {NODES.map((node) => {
+        {nodes.map((node) => {
           const up = node.side === 'up';
           return (
             <div
@@ -254,7 +252,7 @@ export function StepSourceOfTruth(): ReactNode {
             >
               {edge(
                 'y',
-                up ? 'center bottom' : 'center top',
+                up ? tI18nComplete.raw('text716f892aa1ad') : tI18nComplete.raw('texta798d4af6ba5'),
                 stubAt(node.x),
                 0.2,
                 hovered === node.id,
@@ -275,18 +273,18 @@ export function StepSourceOfTruth(): ReactNode {
             className="relative translate-x-12"
           >
             <span className="bg-foreground text-background absolute -top-5 left-0 rounded-t-sm px-2 py-0.5 font-mono text-[10px] leading-4">
-              repo
+              {tI18nComplete.raw('text071ca2227754')}
             </span>
             <div className="border-border bg-background relative flex items-center gap-3 rounded-md rounded-tl-none border px-4 py-3">
               <span className="bg-foreground text-background flex size-8 items-center justify-center rounded-sm">
-                <GitBranchIcon weight='fill' className="size-4" />
+                <GitBranchIcon weight="fill" className="size-4" />
               </span>
               <span className="min-w-0">
                 <span className="text-foreground block font-mono text-sm leading-tight font-medium">
-                  acme-co
+                  {tI18nComplete.raw('text7918c1b7fe03')}
                 </span>
                 <span className="text-muted-foreground block text-[11px] leading-tight whitespace-nowrap">
-                  your whole company, as files
+                  {tI18nComplete.raw('textd224dfd08209')}
                 </span>
               </span>
               <PortDot
@@ -300,7 +298,7 @@ export function StepSourceOfTruth(): ReactNode {
         </div>
 
         {/* The row — each node anchored by the port its stub arrives at. */}
-        {NODES.map((node) => {
+        {nodes.map((node) => {
           const Icon = node.icon;
           const up = node.side === 'up';
           return (
@@ -370,19 +368,19 @@ export function StepSourceOfTruth(): ReactNode {
       <div className="flex h-full flex-col justify-center gap-2 overflow-y-auto p-3 lg:hidden">
         <div className="border-border bg-background flex items-center gap-3 rounded-md border px-3.5 py-2.5">
           <span className="bg-foreground text-background flex size-7 items-center justify-center rounded-sm">
-            <GitBranchIcon weight='fill' className="size-4" />
+            <GitBranchIcon weight="fill" className="size-4" />
           </span>
           <span className="min-w-0">
             <span className="text-foreground block font-mono text-sm leading-tight font-medium">
-              acme-co
+              {tI18nComplete.raw('text7918c1b7fe03')}
             </span>
             <span className="text-muted-foreground block text-[11px] leading-tight">
-              your whole company, as files
+              {tI18nComplete.raw('textd224dfd08209')}
             </span>
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {NODES.map((node) => {
+          {nodes.map((node) => {
             const Icon = node.icon;
             return (
               <div
@@ -390,7 +388,7 @@ export function StepSourceOfTruth(): ReactNode {
                 className="border-border bg-background flex items-center gap-2.5 rounded-md border px-3 py-2"
               >
                 <span className="border-border bg-muted/50 text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm border">
-                  <Icon weight='fill' className="size-3.5" />
+                  <Icon weight="fill" className="size-3.5" />
                 </span>
                 <span className="min-w-0">
                   <span className="text-foreground block text-[13px] leading-tight font-medium">

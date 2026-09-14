@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  sessionAccessSummary,
-  sessionAccessView,
-  sessionOwnerName,
-} from './share-session-access';
+import { sessionAccessSummary, sessionAccessView, sessionOwnerName } from './share-session-access';
 
 const session = (over: Record<string, unknown> = {}) =>
   ({

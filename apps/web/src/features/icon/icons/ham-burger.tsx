@@ -1,8 +1,10 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const HamBurger = ({ className }: { className?: string }) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <svg
       width="16"
@@ -22,7 +24,7 @@ export const HamBurger = ({ className }: { className?: string }) => {
         fill="currentColor"
         style={{
           transformOrigin: 'center',
-          transition: '160ms var(--ease-out-quad)',
+          transition: "160ms var(--ease-out-quad)",
           transform: 'translateY(-3px)',
         }}
       ></rect>
@@ -36,7 +38,7 @@ export const HamBurger = ({ className }: { className?: string }) => {
         fill="currentColor"
         style={{
           transformOrigin: 'center',
-          transition: '160ms var(--ease-out-quad)',
+          transition: "160ms var(--ease-out-quad)",
           transform: 'translateY(3px)',
         }}
       ></rect>

@@ -1,0 +1,84 @@
+---
+title: Credits & usage
+description: What a credit is, what spends one, and how to make a balance last.
+---
+
+Credits are Kortix's unit of platform usage. Every account has a credit balance,
+and running work draws it down. The more complex or lengthy the task, the more
+credits it takes.
+
+Model calls are the main driver. Credits are spent on input tokens (your prompt
+and the context around it) and on output tokens (what the agent writes back),
+and the rate depends on which model tier you pointed the session at. Billing and
+the balance itself are account-level — see [Accounts & access](/docs/accounts#billing).
+
+## Two kinds of credit
+
+An account can hold both at once, and they behave differently:
+
+- **Expiring credits** — included with a paid subscription and renewed
+  automatically each month on your subscription date. They expire at the end of
+  each billing cycle.
+- **Non-expiring credits** — they carry over month to month and never expire.
+  Top-up purchases, refunds, and promotional grants are all non-expiring.
+
+:::info[Spend order]
+Expiring credits are always consumed first. Non-expiring credits are only drawn
+on once the expiring balance reaches zero, so a monthly allowance can never
+silently eat a top-up you paid for.
+:::
+
+## Platform rates
+
+Kortix applies a markup on top of provider cost to cover the infrastructure the
+sandboxes run on, the security work around them, and continued development.
+The rate depends on what you are buying:
+
+| Service | Markup | Applies to |
+|---|---|---|
+| **AI models** | 20% | Every LLM API cost: input tokens, output tokens, and prompt caching. |
+| **Tool calls** | 50% | Web search, web scraping, and the other third-party tools a session can reach. |
+| **Image search** | 100% | Priced separately from the other tools, and higher. |
+| **Your own API key** | 10% | A flat platform fee replaces the model markup — you pay your provider directly. |
+
+Bringing your own key is the one row that is not a markup on a bill Kortix pays.
+You settle with your provider, and Kortix charges a flat 10% platform fee on the
+usage instead. Free-tier accounts pay no fee at all.
+
+## Getting more credits
+
+| Source | Kind | How you get it |
+|---|---|---|
+| Monthly subscription credits | Expiring | Included with a paid plan, renewed automatically each month. |
+| Top-up credits | Non-expiring | Bought when you need them. Available to premium members. |
+| Promotional and event grants | Non-expiring | Bonus credits from events, promotions, or referrals. |
+| Refunds | Non-expiring | Credits returned after a technical issue or a failed task. |
+
+## Tracking your usage
+
+Two places in settings, for two different questions:
+
+- **Settings → Billing** — the current balance, broken down into expiring and
+  non-expiring.
+- **Settings → Usage** — consumption per thread and conversation, which is how
+  you find the sessions that cost the most.
+
+## Making a balance last
+
+- **Match the model to the work.** Point simple work at a smaller model and keep
+  the frontier tier for reasoning that needs it. The rate difference between
+  tiers is far larger than the difference in output quality on an easy task.
+- **Give clear instructions.** A well-defined task cuts the back-and-forth with
+  the agent, and every round trip is tokens.
+- **Watch the Usage tab.** Find the conversations that consume the most and
+  adjust those first.
+- **Stay in the thread.** Repeated turns in one thread hit prompt caching, which
+  reduces token cost significantly.
+
+## If a number looks wrong
+
+If a figure here does not match what you were charged, email
+[support@kortix.com](mailto:support@kortix.com) or ask in
+[Discord](https://discord.com/invite/RvFhXUdZ9H). We are committed to fair and
+transparent billing — if you believe there is an error in your credit usage,
+contact support and we will investigate promptly.

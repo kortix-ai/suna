@@ -69,8 +69,11 @@ describe('the composer submits through the latch', () => {
     // must NOT arm the stash — un-flushed `attachedFiles` state is exactly
     // the hazard the latch exists to swallow. A stashed draft leaves the
     // editor at once, so the next Enter cannot merge into it.
-    const wiring = between('submitLatchRef.current ??= createSubmitLatch<StashedDraft>(', 'const editorPlaceholder');
-    expect(wiring).toContain("if (!editor || !content || !content.text.trim()) return null;");
+    const wiring = between(
+      'submitLatchRef.current ??= createSubmitLatch<StashedDraft>(',
+      'const editorPlaceholder',
+    );
+    expect(wiring).toContain('if (!editor || !content || !content.text.trim()) return null;');
     expect(wiring).toContain('editor.clear();');
     expect(wiring).toContain('attachedFilesRef.current = [];');
   });

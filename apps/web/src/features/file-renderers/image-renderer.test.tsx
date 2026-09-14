@@ -1,9 +1,9 @@
-import { NextIntlClientProvider } from 'next-intl';
-import { describe, expect, test } from 'bun:test';
-import type { ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PreviewFitProvider } from '@/features/file-viewer/preview-fit';
+import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
+import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { ImageRenderer } from './image-renderer';
 
 // ImageRenderer calls `useTranslations('hardcodedUi')` unconditionally for

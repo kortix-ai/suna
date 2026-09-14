@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
@@ -29,7 +30,10 @@ type RuntimeProvidersSnapshot =
     }
   | undefined;
 
-export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmProviderEntry {
+export function buildCodexProvider(
+  ocProviders: RuntimeProvidersSnapshot,
+  tI18nComplete: UiTranslator,
+): LlmProviderEntry {
   const connectedIds = new Set(ocProviders?.connected ?? []);
   const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
   const models: LlmProviderModel[] = [];
@@ -60,7 +64,7 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
 
   return {
     id: 'codex',
-    label: 'ChatGPT',
+    label: tI18nComplete.raw('text50a412294327'),
     envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME],
     // EITHER secret alone is a full ChatGPT subscription connection (current
     // vs. legacy secret name) — two alternative single-var methods, not one
@@ -75,7 +79,7 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
     helpUrl: null,
     // Synthetic entry: no models.dev row, so no vendor API host.
     apiHost: null,
-    hint: 'ChatGPT Plus or Pro subscription',
+    hint: tI18nComplete.raw('texta527a1778404'),
     models,
     featured: true,
   };
@@ -309,4 +313,3 @@ export function orderProviderRows<T extends OrderableProvider>(input: {
   const rest = input.providers.filter((provider) => !shown.has(provider.id));
   return [...firstClass, ...rest];
 }
-

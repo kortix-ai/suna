@@ -117,10 +117,14 @@ All routes sit under `/v1/projects/:projectId/change-requests`.
 
 Read routes need read access to the project. Write routes need write access. Each write action also needs a capability, shown below for a full token and for a session's scoped token.
 
-| Action | Full-token capability | Scoped-token capability |
-| --- | --- | --- |
-| Open a CR | `project.gitops.push` | `project.cr.open` |
-| Request changes | `project.review.act` | `project.cr.open` |
-| Merge | `project.gitops.merge` | `project.cr.merge` |
+| Action | Capability |
+| --- | --- |
+| Open a CR | `project.gitops.push` |
+| Request changes | `project.review.act` |
+| Merge | `project.gitops.merge` |
 
-These are separate capabilities, so a token can open CRs without the power to merge them. This is the mechanism behind the agent mandate above.
+One capability per action, for a full token and a session's scoped token alike. Opening and merging are separate leaves, so a token can open change requests without the power to merge them — that is the mechanism behind the agent mandate above.
+
+`project.cr.open` and `project.cr.merge` were the pre-cutover names for `project.gitops.push` and `project.gitops.merge` — the same capability under a second name. A `kortix.yaml` that still lists one keeps working (the grant is rewritten to the live spelling when it is resolved), but write the `gitops` name in anything new.
+
+A session can never merge a change request it opened itself, whatever it has been granted. That rule is structural, not a capability.

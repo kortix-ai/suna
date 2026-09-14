@@ -1,3 +1,6 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import {
   HardDriveIcon as HardDrive,
   MonitorIcon as Monitor,
@@ -148,6 +151,18 @@ export const EXPIRY_OPTIONS: ExpiryOption[] = [
   { label: '30 days', value: '30d', ms: 2_592_000_000 },
   { label: 'Never', value: 'never', ms: null },
 ];
+
+export function localizedCapabilityRegistry(tI18nComplete: UiTranslator): CapabilityInfo[] {
+  return localizeUiCatalog(CAPABILITY_REGISTRY, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+}
+
+export function localizedScopeRegistry(tI18nComplete: UiTranslator): ScopeInfo[] {
+  return localizeUiCatalog(SCOPE_REGISTRY, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+}
+
+export function localizedExpiryOptions(tI18nComplete: UiTranslator): ExpiryOption[] {
+  return localizeUiCatalog(EXPIRY_OPTIONS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+}
 
 export function getExpiresAt(option: ExpiryOption): string | undefined {
   if (option.ms === null) return undefined;

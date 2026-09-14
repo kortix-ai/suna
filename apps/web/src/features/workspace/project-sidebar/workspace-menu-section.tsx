@@ -24,7 +24,10 @@
  */
 
 import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
@@ -47,6 +50,7 @@ import {
   resolveWorkspaceRowNavigation,
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -54,11 +58,13 @@ import {
   shouldShowProjectSwitchLoading,
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
-import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
 export function WorkspaceMenuSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
@@ -68,11 +74,7 @@ export function WorkspaceMenuSection() {
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
 
   // Every account the user belongs to, and every workspace in each. This menu is
   // the ONLY complete workspace directory now that the /projects index is gone,
@@ -184,7 +186,7 @@ export function WorkspaceMenuSection() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find workspace…"
+            placeholder={t('workspace.find')}
             // A Radix menu owns keyboard input: it runs typeahead on printable
             // keys to jump between items, moving focus off whatever you are
             // typing into. Stopping propagation keeps the keystrokes in the
@@ -210,17 +212,15 @@ export function WorkspaceMenuSection() {
       {switcherAccountId ? (
         <>
           <div className="p-0.5">
-            {/* An anchor, not a handler. A `router.push` from a menu row runs
-                the RSC fetch cold at click time, and that fetch turns into a
-                full document load whenever it comes back wrong — an auth
-                bounce, a build-id skew mid-deploy, a network blip. A
-                prefetched `<Link>` already holds the payload, so the click
-                never runs it. `prefetch` explicitly, not the `auto` default. */}
+            {/* Still an anchor, so Cmd-click opens this page with the hub
+                already on that account — but a plain click opens the modal
+                over the page behind this menu, with no navigation at all and
+                the chunk warmed on hover. */}
             <DropdownMenuItem asChild className="cursor-pointer px-1.5">
-              <Link href={`/accounts/${switcherAccountId}`} prefetch>
+              <HubLink to={hubTarget(switcherAccountId)}>
                 <CogOne />
-                <span className="min-w-0 flex-1 truncate">Account settings</span>
-              </Link>
+                <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
+              </HubLink>
             </DropdownMenuItem>
           </div>
           <DropdownMenuSeparator />
@@ -240,14 +240,14 @@ export function WorkspaceMenuSection() {
           </div>
         ) : isEmpty ? (
           <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-            {query.trim() ? 'No workspaces match' : 'No workspaces yet'}
+            {query.trim() ? t('workspace.noMatches') : t('workspace.empty')}
           </div>
         ) : (
           <>
             {visibleGroups.map((group) => (
               <DropdownMenuGroup key={group.accountId} className="p-0.5">
                 <DropdownMenuLabel className="px-1.5 text-sm">
-                  {group.accountName.replaceAll("'s Account", '')}
+                  {group.accountName.replaceAll(tI18nComplete.raw('text78add5e83e0b'), '')}
                 </DropdownMenuLabel>
                 {group.workspaces.map((workspace) => {
                   const active = workspace.project_id === activeProjectId;
@@ -265,6 +265,41 @@ export function WorkspaceMenuSection() {
                   // full document load whenever it answers wrong — an auth
                   // bounce, a build-id skew mid-deploy, a network blip.
                   const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
+                  const rowBody = (
+                    <>
+                        {/* Same union as the trigger above — see `workspace-switcher.tsx`.
+                            Without `glyph`, every glyph-icon workspace in this
+                            list falls back to its initial. */}
+                        <EntityAvatar
+                          label={workspace.name}
+                          glyph={workspace.icon_glyph}
+                          emoji={workspace.icon}
+                          size="sm"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {workspace.name}
+                        </span>
+                        {loading ? (
+                          <Loading className="text-muted-foreground size-3.5" />
+                        ) : active ? (
+                          // The active row navigates to account settings rather
+                          // than switching, so pointing at it swaps the "you are
+                          // here" check for the destination's own icon. Stacked
+                          // rather than swapped in the tree so the trailing
+                          // column keeps one width and the label never reflows.
+                          <span className="relative size-4 shrink-0">
+                            <CheckCircleSolid
+                              weight="fill"
+                              className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
+                            />
+                            <CogOne
+                              aria-hidden
+                              className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
+                            />
+                          </span>
+                        ) : null}
+                    </>
+                  );
                   return (
                     <DropdownMenuItem
                       key={workspace.project_id}
@@ -281,34 +316,20 @@ export function WorkspaceMenuSection() {
                           per visible row on every submenu open. `auto` fills the
                           segment cache to `projects/[id]/loading.tsx`, which is
                           the boundary the click needs. */}
-                      <Link
-                        href={target.href}
-                        onClick={(event) => startWorkspaceRow(event, workspace, target)}
-                      >
-                        <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {workspace.name}
-                        </span>
-                        {loading ? (
-                          <Loading className="text-muted-foreground size-3.5" />
-                        ) : active ? (
-                          // The active row navigates to account settings rather
-                          // than switching, so pointing at it swaps the "you are
-                          // here" check for the destination's own icon. Stacked
-                          // rather than swapped in the tree so the trailing
-                          // column keeps one width and the label never reflows.
-                          <span className="relative size-4 shrink-0">
-                            <CheckCircleSolid
-                              weight="fill"
-                              className="text-kortix-green absolute top-0 left-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-0"
-                            />
-                            <CogOne
-                              aria-hidden
-                              className="text-muted-foreground absolute top-0 left-0 opacity-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-100"
-                            />
-                          </span>
-                        ) : null}
-                      </Link>
+                      {/* Two kinds of destination, one row body. A switch is
+                          a real navigation; the active row opens the account
+                          hub, which is a modal over this page and so must not
+                          be a `<Link>` at all. */}
+                      {target.kind === 'account-settings' ? (
+                        <HubLink to={target.to}>{rowBody}</HubLink>
+                      ) : (
+                        <Link
+                          href={target.href}
+                          onClick={(event) => startWorkspaceRow(event, workspace, target)}
+                        >
+                          {rowBody}
+                        </Link>
+                      )}
                     </DropdownMenuItem>
                   );
                 })}
@@ -319,9 +340,11 @@ export function WorkspaceMenuSection() {
                 hiding this on a search would tell the user something false. */}
             {failedAccounts.map(({ account, result }) => (
               <DropdownMenuGroup key={account.account_id}>
-                <DropdownMenuLabel>{account.name?.trim() || 'Account'}</DropdownMenuLabel>
+                <DropdownMenuLabel>
+                  {account.name?.trim() || t('workspace.account')}
+                </DropdownMenuLabel>
                 <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate">Couldn&apos;t load</span>
+                  <span className="min-w-0 flex-1 truncate">{t('workspace.loadError')}</span>
                   <Button
                     type="button"
                     variant="ghost"
@@ -330,7 +353,7 @@ export function WorkspaceMenuSection() {
                     onClick={() => result.refetch()}
                     className="shrink-0"
                   >
-                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : 'Retry'}
+                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : t('retry')}
                   </Button>
                 </div>
               </DropdownMenuGroup>

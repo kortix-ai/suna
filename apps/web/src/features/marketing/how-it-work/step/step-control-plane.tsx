@@ -1,13 +1,13 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Cursor } from '@/features/icon/icons/cursor';
+import { AppleCursor } from '@/features/icon/icons/apple-cursor';
 import { cn } from '@/lib/utils';
 import { CheckCircleIcon, CheckIcon, GitPullRequestIcon, XCircleIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion, type Transition } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
-import { AppleCursor } from '@/features/icon/icons/apple-cursor';
 
 type Outcome = 'pending' | 'merged' | 'changes-requested';
 
@@ -21,6 +21,7 @@ function MergePath({
   state: 'open' | 'merging' | 'merged';
   reduced: boolean;
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const active = state !== 'open';
   let transition: Transition = { duration: 0.2 };
   if (reduced) transition = { duration: 0 };
@@ -41,7 +42,7 @@ function MergePath({
             transform: active ? 'scaleX(1)' : 'scaleX(0)',
           }}
           transition={transition}
-          style={{ transformOrigin: 'left center' }}
+          style={{ transformOrigin: "left center" }}
           className="bg-kortix-green absolute inset-0"
         />
       </span>
@@ -100,6 +101,7 @@ function ChangeRequest({
   outcome: Outcome;
   reduced: boolean;
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const merging = beat === 4;
   const merged = outcome === 'merged';
   let status = 'Open';
@@ -123,7 +125,9 @@ function ChangeRequest({
         <StatusIcon outcome={outcome} reduced={reduced} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-foreground truncate text-sm font-medium">Billing webhook retry</p>
+            <p className="text-foreground truncate text-sm font-medium">
+              {tI18nComplete.raw('textd7a593111a3b')}
+            </p>
             <span
               className={cn(
                 'shrink-0 text-xs font-medium',
@@ -136,7 +140,7 @@ function ChangeRequest({
             </span>
           </div>
           <div className="text-muted-foreground mt-0.5 text-xs tabular-nums">
-            2 files · <span className="text-kortix-green">+48</span>{' '}
+            {tI18nComplete.raw('text4f1532e8e1ab')} <span className="text-kortix-green">+48</span>{' '}
             <span className="text-kortix-red">−12</span>
           </div>
           <div className="mt-3">
@@ -161,6 +165,7 @@ function ReviewGate({
   onApprove: () => void;
   onRequestChanges: () => void;
 }): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const merging = beat === 4;
   const contentInitial = reduced
     ? { opacity: 0 }
@@ -209,7 +214,9 @@ function ReviewGate({
               <GitPullRequestIcon className="size-5" />
             </div>
             <MergePath state="merging" reduced={reduced} />
-            <p className="text-muted-foreground mt-4 text-xs">Merging</p>
+            <p className="text-muted-foreground mt-4 text-xs">
+              {tI18nComplete.raw('texta975de4f960f')}
+            </p>
           </m.div>
         ) : (
           <m.div
@@ -223,20 +230,22 @@ function ReviewGate({
             <span className="bg-kortix-blue/15 text-kortix-blue flex size-11 items-center justify-center rounded-sm">
               <GitPullRequestIcon className="size-5" />
             </span>
-            <p className="text-foreground mt-4 text-base font-medium">Merge into main?</p>
+            <p className="text-foreground mt-4 text-base font-medium">
+              {tI18nComplete.raw('textdc27d1015ec8')}
+            </p>
             <p className="text-muted-foreground mt-1 text-xs tabular-nums">
-              2 files · <span className="text-kortix-green">+48</span>{' '}
+              {tI18nComplete.raw('text4f1532e8e1ab')} <span className="text-kortix-green">+48</span>{' '}
               <span className="text-kortix-red">−12</span>
             </p>
 
             <div className="mt-5 flex items-center gap-2">
               <Button type="button" variant="ghost" size="sm" onClick={onRequestChanges}>
-                Request changes
+                {tI18nComplete.raw('textcb5d9f987803')}
               </Button>
               <m.div className="relative" whileTap={{ transform: 'scale(0.96)' }}>
                 <Button type="button" size="sm" className="gap-1.5" onClick={onApprove}>
                   <CheckIcon className="size-3.5 shrink-0" />
-                  Approve & merge
+                  {tI18nComplete.raw('text7a348a00da4d')}
                 </Button>
 
                 {!reduced && (
@@ -244,18 +253,18 @@ function ReviewGate({
                     aria-hidden
                     initial={{
                       opacity: 0,
-                      transform: 'translate(-104px, -52px) scale(0.9)',
+                      transform: tI18nComplete.raw('textd1ec3c181d68'),
                     }}
                     animate={
                       cursorActive
-                        ? { opacity: 1, transform: 'translate(-8px, 9px) scale(1)' }
-                        : { opacity: 0, transform: 'translate(-104px, -52px) scale(0.9)' }
+                        ? { opacity: 1, transform: tI18nComplete.raw('text8b85bfda7d7c') }
+                        : { opacity: 0, transform: tI18nComplete.raw('textd1ec3c181d68') }
                     }
                     transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
                     onAnimationComplete={() => {
                       if (cursorActive) onApprove();
                     }}
-                    className=" pointer-events-none absolute -top-2 -right-2 z-20 flex size-32 items-center justify-center rounded-md shadow-md"
+                    className="pointer-events-none absolute -top-2 -right-2 z-20 flex size-32 items-center justify-center rounded-md shadow-md"
                   >
                     <AppleCursor className="size-30" />
                   </m.span>
@@ -271,6 +280,7 @@ function ReviewGate({
 
 /** Layer 05 — a request becomes a reviewed change before it reaches `main`. */
 export function StepControlPlane(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduced = useReducedMotion();
   const shouldReduceMotion = reduced === true;
   const reducedRef = useRef(reduced);
@@ -344,7 +354,7 @@ export function StepControlPlane(): ReactNode {
             transition={ENTER}
             className="text-foreground bg-secondary ml-auto w-fit max-w-[80%] rounded-lg px-3.5 py-2.5 text-sm leading-relaxed font-medium"
           >
-            Open a change request
+            {tI18nComplete.raw('textcdd4c8afbc99')}
           </m.div>
         )}
       </div>

@@ -5,6 +5,7 @@ import {
   SystemNotificationCard,
   parseSystemNotifications,
 } from '@/features/session/message-parsing';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * /debug/system-message
@@ -83,55 +84,67 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export default function DebugSystemMessagePage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="mx-auto w-full max-w-2xl space-y-10 px-4 py-10">
       <header className="space-y-1">
-        <h1 className="text-foreground text-xl font-medium">System message</h1>
-        <p className="text-muted-foreground text-sm">
-          The primitive, then the chat-stream card that consumes it.
-        </p>
+        <h1 className="text-foreground text-xl font-medium">
+          {tI18nComplete.raw('texte066e37463a8')}
+        </h1>
+        <p className="text-muted-foreground text-sm">{tI18nComplete.raw('textc9841f4162f5')}</p>
       </header>
 
       <section className="space-y-5">
-        <h2 className="text-foreground text-sm font-medium">SystemMessage — variants</h2>
+        <h2 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('textbacd3c9c5def')}
+        </h2>
 
-        <Row label="fill={false}">
+        <Row label={tI18nComplete.raw('text4ded27f0d48b')}>
           <div className="space-y-2">
-            <SystemMessage variant="action">Sandbox is warming up.</SystemMessage>
-            <SystemMessage variant="warning">Session stopped by user interrupt.</SystemMessage>
-            <SystemMessage variant="error">Snapshot build failed after 3 retries.</SystemMessage>
+            <SystemMessage variant="action">{tI18nComplete.raw('text10879d125f53')}</SystemMessage>
+            <SystemMessage variant="warning">{tI18nComplete.raw('textdaa286f24937')}</SystemMessage>
+            <SystemMessage variant="error">{tI18nComplete.raw('text87b8a3923fbb')}</SystemMessage>
           </div>
         </Row>
 
-        <Row label="fill">
+        <Row label={tI18nComplete.raw('textdcd32479a72e')}>
           <div className="space-y-2">
             <SystemMessage variant="action" fill>
-              Sandbox is warming up.
+              {tI18nComplete.raw('text10879d125f53')}
             </SystemMessage>
             <SystemMessage variant="warning" fill>
-              Session stopped by user interrupt.
+              {tI18nComplete.raw('textdaa286f24937')}
             </SystemMessage>
             <SystemMessage variant="error" fill>
-              Snapshot build failed after 3 retries.
+              {tI18nComplete.raw('text87b8a3923fbb')}
             </SystemMessage>
           </div>
         </Row>
 
-        <Row label="cta + isIconHidden + long body">
+        <Row label={tI18nComplete.raw('text40e5d3da0f35')}>
           <div className="space-y-2">
-            <SystemMessage variant="error" fill cta={{ label: 'Retry' }}>
-              Snapshot build failed after 3 retries.
+            <SystemMessage
+              variant="error"
+              fill
+              cta={{ label: tI18nComplete.raw('text942087cc2d41') }}
+            >
+              {tI18nComplete.raw('text87b8a3923fbb')}
             </SystemMessage>
-            <SystemMessage variant="action" cta={{ label: 'Open', variant: 'outline' }}>
-              A deploy finished while you were away.
+            <SystemMessage
+              variant="action"
+              cta={{ label: tI18nComplete.raw('texted077f3d8125'), variant: 'outline' }}
+            >
+              {tI18nComplete.raw('text4657cfe82d4e')}
             </SystemMessage>
             <SystemMessage variant="action" fill isIconHidden>
-              No icon — text starts flush at the left padding.
+              {tI18nComplete.raw('text60de472a143f')}
             </SystemMessage>
-            <SystemMessage variant="warning" fill cta={{ label: 'Dismiss', variant: 'ghost' }}>
-              This message is deliberately long so the row has to wrap its text without pushing the
-              call to action out of the row or clipping the leading icon against the first line of
-              copy.
+            <SystemMessage
+              variant="warning"
+              fill
+              cta={{ label: tI18nComplete.raw('text48845bff334a'), variant: 'ghost' }}
+            >
+              {tI18nComplete.raw('textb675e9b4cde0')}
             </SystemMessage>
           </div>
         </Row>
@@ -139,7 +152,7 @@ export default function DebugSystemMessagePage() {
 
       <section className="space-y-5">
         <h2 className="text-foreground text-sm font-medium">
-          SystemNotificationCard — parsed from XML
+          {tI18nComplete.raw('text160392419673')}
         </h2>
         <div className="space-y-1.5">
           {notifications.map((n, i) => (

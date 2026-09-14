@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Git History API — retrieve commit history for files via a short-lived PTY.
  *
@@ -6,8 +7,8 @@
  * it, and return structured data.
  */
 
+import type { FileCommitDiff, FileHistoryResult, GitCommit } from '@/features/file-browser/types';
 import { runPtyCommand } from '@kortix/sdk/react';
-import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,9 +30,9 @@ const WS_TIMEOUT = 15_000;
  * Create a PTY that runs a command, collect all output, then destroy it.
  * Returns the combined stdout as a string.
  */
-async function runGitCommand(command: string): Promise<string> {
+async function runGitCommand(command: string, tI18nComplete: UiTranslator): Promise<string> {
   return runPtyCommand(command, {
-    title: '__git-history-query__',
+    title: tI18nComplete.raw('text7fe5af1c4cdd'),
     timeoutMs: WS_TIMEOUT,
   });
 }
@@ -136,17 +137,18 @@ function inferChangeStatus(patch: string, before: string, after: string): FileCo
  */
 export async function getFileHistory(
   filePath: string,
+  tI18nComplete: UiTranslator,
   limit = 50,
   skip = 0,
 ): Promise<FileHistoryResult> {
   const format = [
-    '%H',   // full hash
-    '%h',   // short hash
-    '%an',  // author name
-    '%ae',  // author email
-    '%aI',  // author date ISO
-    '%s',   // subject
-    '%b',   // body
+    '%H', // full hash
+    '%h', // short hash
+    '%an', // author name
+    '%ae', // author email
+    '%aI', // author date ISO
+    '%s', // subject
+    '%b', // body
   ].join(FIELD_SEP);
 
   // Request one extra to detect if there are more
@@ -154,7 +156,7 @@ export async function getFileHistory(
 
   const cmd = `git log --follow --format="${COMMIT_SEP}${format}" --skip=${skip} -n ${actualLimit} -- "${filePath}" 2>/dev/null || echo ""`;
 
-  const raw = await runGitCommand(cmd);
+  const raw = await runGitCommand(cmd, tI18nComplete);
   const commits = parseGitLog(raw);
 
   const hasMore = commits.length > limit;
@@ -177,6 +179,7 @@ export async function getFileHistory(
 export async function getFileCommitDiff(
   filePath: string,
   commitHash: string,
+  tI18nComplete: UiTranslator,
 ): Promise<FileCommitDiff> {
   // Run three commands in sequence:
   // 1. Get the unified diff patch
@@ -201,7 +204,7 @@ export async function getFileCommitDiff(
     `echo "===AFTER_END==="`,
   ].join(' && ');
 
-  const raw = await runGitCommand(cmd);
+  const raw = await runGitCommand(cmd, tI18nComplete);
 
   // Strip ANSI codes from the entire output
   const cleaned = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -226,7 +229,7 @@ export async function getFileCommitDiff(
   let parentHash: string | null = null;
   try {
     const parentCmd = `git rev-parse ${commitHash}^ 2>/dev/null || echo ""`;
-    const parentRaw = await runGitCommand(parentCmd);
+    const parentRaw = await runGitCommand(parentCmd, tI18nComplete);
     const cleaned = parentRaw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
     if (cleaned && cleaned.length >= 7 && !cleaned.includes('unknown revision')) {
       parentHash = cleaned;
@@ -257,8 +260,9 @@ export async function getFileCommitDiff(
 export async function getFileAtCommit(
   filePath: string,
   commitHash: string,
+  tI18nComplete: UiTranslator,
 ): Promise<string> {
   const cmd = `git show ${commitHash}:"${filePath}" 2>/dev/null || echo ""`;
-  const raw = await runGitCommand(cmd);
+  const raw = await runGitCommand(cmd, tI18nComplete);
   return raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
 }

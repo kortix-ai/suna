@@ -4,6 +4,7 @@ import { Copy } from '@/features/icon/icons/copy';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';
 
 /**
@@ -15,6 +16,7 @@ import { useCallback, useState } from 'react';
  * the label stays fixed at "Copy link" so the row never reflows.
  */
 export function CopyLinkButton({ anchor, className }: { anchor: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -32,7 +34,9 @@ export function CopyLinkButton({ anchor, className }: { anchor: string; classNam
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? 'Link copied' : 'Copy link to this release'}
+      aria-label={
+        copied ? tI18nComplete.raw('textd12860c21e78') : tI18nComplete.raw('text005ff7fe0036')
+      }
       className={cn(
         'text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm',
         'hit-area-2 cursor-pointer transition-[color,scale] duration-150 outline-none focus-visible:underline',
@@ -54,7 +58,7 @@ export function CopyLinkButton({ anchor, className }: { anchor: string; classNam
           </m.span>
         </AnimatePresence>
       </span>
-      Copy link
+      {tI18nComplete.raw('textdbf362d4f210')}
     </button>
   );
 }

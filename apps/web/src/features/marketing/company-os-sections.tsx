@@ -2,6 +2,8 @@
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
+import { COMPANY_OS_SECTIONS_TRANSLATION_KEYS } from '@/i18n/company-os-sections-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 import {
   AtIcon as AtSign,
@@ -17,7 +19,7 @@ import {
   UsersIcon as Users,
   FlowArrowIcon as Workflow,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 const sectionShell = 'mx-auto max-w-7xl px-6 py-24 md:py-30lg:px-0';
@@ -440,8 +442,14 @@ function CodeBody({ file }: { file: RepoFile }) {
 
 function RepoExplorer() {
   const tHome = useTranslations('hardcodedUi.appHomePage');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localized = localizeUiCatalog(
+    { FILES, TREE },
+    tI18nComplete,
+    COMPANY_OS_SECTIONS_TRANSLATION_KEYS,
+  );
   const [activeId, setActiveId] = useState<keyof typeof FILES>('kortix.yaml');
-  const active = FILES[activeId];
+  const active = localized.FILES[activeId];
 
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
@@ -462,7 +470,7 @@ function RepoExplorer() {
       <div className="grid md:grid-cols-[minmax(0,15rem)_1fr]">
         {/* file tree */}
         <div className="border-border bg-background/40 max-h-[300px] overflow-y-auto border-b py-2 md:max-h-[540px] md:border-r md:border-b-0">
-          {TREE.map((node) => {
+          {localized.TREE.map((node) => {
             const isActive = node.fileId === activeId;
             const isClickable = Boolean(node.fileId);
             const Icon = node.kind === 'folder' ? Folder : FileText;

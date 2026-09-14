@@ -4,7 +4,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The `/projects/[id]/connectors` route's initial client chunk, walked as a
+ * The `/projects/[id]/customize/connectors` route's initial client chunk, walked as a
  * static import graph from the route entry.
  *
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import
@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../..');
-const ROUTE_ENTRY = resolve(SRC, 'app/(app)/projects/[id]/(capabilities)/connectors/page.tsx');
+const ROUTE_ENTRY = resolve(SRC, 'app/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
 
 /** Modules that must not be parsed before the connectors grid paints. */
 const FORBIDDEN = [

@@ -37,9 +37,7 @@ const modalSource = code(join(import.meta.dir, 'llm-provider-modal.tsx'));
  */
 describe('LLM provider modal shell', () => {
   test('renders the page’s components — it declares no chrome of its own', () => {
-    expect(modalSource).toContain(
-      "from '@/features/workspace/customize/sections/gateway-view'",
-    );
+    expect(modalSource).toContain("from '@/features/workspace/customize/sections/gateway-view'");
     for (const shared of [
       '<LlmTabStrip',
       '<LlmSections',
@@ -92,7 +90,9 @@ describe('LLM provider modal shell', () => {
   test('it shows the page’s heading, not a second wording of it', () => {
     expect(MODELS_PAGE_TITLE).toBe('Models');
     expect(MODELS_PAGE_DESCRIPTION).toBe('Which providers and models this project can use.');
-    expect(modalSource).toContain('<ModalTitle className="text-base font-medium">{MODELS_PAGE_TITLE}</ModalTitle>');
+    expect(modalSource).toContain(
+      '<ModalTitle className="text-base font-medium">{MODELS_PAGE_TITLE}</ModalTitle>',
+    );
     expect(modalSource).toContain('<ModalDescription>{MODELS_PAGE_DESCRIPTION}</ModalDescription>');
     expect(modalSource).not.toContain('Connect your own AI accounts');
   });

@@ -30,7 +30,7 @@ const GDPR = (props: Props) => {
           r="148.438"
           fill="url(#paint3_linear_4003_182)"
           stroke="url(#paint4_linear_4003_182)"
-              strokeWidth="3.125"
+          strokeWidth="3.125"
         />
         <mask
           id="mask0_4003_182"

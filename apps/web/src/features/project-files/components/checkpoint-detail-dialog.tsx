@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -111,6 +111,7 @@ function FileRailRow({
   active: boolean;
   onClick: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <button
       onClick={onClick}
@@ -120,7 +121,7 @@ function FileRailRow({
         active ? 'border-l-primary bg-primary/[0.04]' : 'hover:bg-muted/40 border-l-transparent',
       )}
     >
-      {statusIconFor(file.status, 'size-3.5 shrink-0')}
+      {statusIconFor(file.status, tI18nComplete.raw('textba0e4962bc0f'))}
       <span
         className="min-w-0 flex-1 truncate font-mono text-xs"
         title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}
@@ -384,7 +385,7 @@ export function CheckpointDetailDialog({
         aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">
-          Checkpoint {data?.short_hash ?? sha?.slice(0, 7)}
+          {tHardcodedUi.raw('i18nComplete.textee325afd9b4e')} {data?.short_hash ?? sha?.slice(0, 7)}
         </DialogTitle>
 
         {/* Top bar */}
@@ -394,7 +395,7 @@ export function CheckpointDetailDialog({
             size="icon"
             className="-ml-2 h-8 w-8"
             onClick={onClose}
-            title="Close"
+            title={tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -440,7 +441,7 @@ export function CheckpointDetailDialog({
               <Skeleton className="h-4 w-64" />
             ) : (
               <h2 className="truncate text-sm font-medium" title={data?.subject}>
-                {data?.subject || '(no message)'}
+                {data?.subject || tHardcodedUi.raw('i18nComplete.textc480160e33b8')}
               </h2>
             )}
           </div>
@@ -513,7 +514,8 @@ export function CheckpointDetailDialog({
               {data && (
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">
-                    {data.files.length} file{data.files.length === 1 ? '' : 's'}
+                    {data.files.length} {tHardcodedUi.raw('i18nComplete.text3b9c358f36f0')}
+                    {data.files.length === 1 ? '' : 's'}
                   </span>
                   <span className="flex items-center gap-2 tabular-nums">
                     {totals.add > 0 && <span className="text-kortix-green">+{totals.add}</span>}
@@ -555,7 +557,9 @@ export function CheckpointDetailDialog({
               )}
               {data && filteredFiles.length === 0 && !isLoading && (
                 <div className="text-muted-foreground px-3 py-6 text-center text-xs">
-                  {data.files.length === 0 ? 'No file changes' : 'No files match'}
+                  {data.files.length === 0
+                    ? tHardcodedUi.raw('i18nComplete.texteba7b22dda11')
+                    : tHardcodedUi.raw('i18nComplete.textadbc4608457d')}
                 </div>
               )}
               <div className="py-1">

@@ -32,7 +32,7 @@ import {
   ScissorsIcon as Scissors,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { rowDragIntent } from '../upload-batch';
 import { DriveFolderIcon } from './drive-folder-icon';
@@ -96,6 +96,7 @@ export function FolderDriveMenuItems({
   openFolderLabel,
   copyPathLabel,
 }: FolderDriveMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasEditActions = Boolean(onRename || onDelete);
 
   return (
@@ -107,20 +108,20 @@ export function FolderDriveMenuItems({
       {onDownload && (
         <Item onClick={() => onDownload(node)} disabled={isDownloadingItem}>
           <Download />
-          {isDownloadingItem ? 'Zipping...' : 'Download as zip'}
+          {isDownloadingItem ? 'Zipping...' : tI18nComplete.raw('textdda839b13617')}
         </Item>
       )}
       <Separator />
       {onCopy && (
         <Item onClick={() => onCopy(node)}>
           <ClipboardCopy />
-          Copy
+          {tI18nComplete.raw('texte21f935f11d7')}
         </Item>
       )}
       {onCut && (
         <Item onClick={() => onCut(node)}>
           <Scissors />
-          Cut
+          {tI18nComplete.raw('text1f45f02561f4')}
         </Item>
       )}
       <Item onClick={() => navigator.clipboard.writeText(node.path)}>
@@ -133,13 +134,13 @@ export function FolderDriveMenuItems({
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
               <PencilSimpleIcon />
-              Rename
+              {tI18nComplete.raw('text3064d79a295c')}
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
               <TrashIcon />
-              Remove
+              {tI18nComplete.raw('textc3812fc4acb8')}
             </Item>
           )}
         </>
@@ -179,18 +180,19 @@ export function FileDriveMenuItems({
   checkpointHistoryLabel,
   copyPathLabel,
 }: FileDriveMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasEditActions = Boolean(onRename || onDelete);
 
   return (
     <>
       <Item onClick={onClick}>
         <Eye />
-        Preview
+        {tI18nComplete.raw('text324b134f57c7')}
       </Item>
       {onDownload && (
         <Item onClick={() => onDownload(node)}>
           <Download />
-          Download
+          {tI18nComplete.raw('textd6eafe823591')}
         </Item>
       )}
       {onHistory && (
@@ -203,13 +205,13 @@ export function FileDriveMenuItems({
       {onCopy && (
         <Item onClick={() => onCopy(node)}>
           <ClipboardCopy />
-          Copy
+          {tI18nComplete.raw('texte21f935f11d7')}
         </Item>
       )}
       {onCut && (
         <Item onClick={() => onCut(node)}>
           <Scissors />
-          Cut
+          {tI18nComplete.raw('text1f45f02561f4')}
         </Item>
       )}
       <Item onClick={() => navigator.clipboard.writeText(node.path)}>
@@ -222,13 +224,13 @@ export function FileDriveMenuItems({
           {onRename && (
             <Item onClick={() => setTimeout(startRenaming, 100)}>
               <PencilSimpleIcon />
-              Rename
+              {tI18nComplete.raw('text3064d79a295c')}
             </Item>
           )}
           {onDelete && (
             <Item onClick={() => onDelete(node)}>
               <TrashIcon />
-              Remove
+              {tI18nComplete.raw('textc3812fc4acb8')}
             </Item>
           )}
         </>
@@ -584,7 +586,7 @@ function FileCard({
             ) : (
               <div className="flex w-full min-w-0 items-center gap-1.5">
                 {getFileIcon(node.name, {
-                  className: 'size-3.5 shrink-0 text-muted-foreground',
+                  className: tHardcodedUi.raw('i18nComplete.textf5797adb113e'),
                   variant: 'monochrome',
                 })}
                 <span className="text-foreground truncate text-sm font-medium">{node.name}</span>
@@ -659,6 +661,7 @@ export function DriveGridView({
   isDirDownloading,
   readOnly = false,
 }: DriveGridViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -670,18 +673,26 @@ export function DriveGridView({
     <div className="space-y-7 p-5">
       {elevatedDirs.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="System" count={elevatedDirs.length} />
+          <SectionHeader
+            label={tI18nComplete.raw('text6725e7bbcd28')}
+            count={elevatedDirs.length}
+          />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {elevatedDirs.map((node) => {
               const meta = ELEVATED_DIR_META[node.name];
+              const description = meta
+                ? tI18nComplete.raw(
+                    node.name === '.kortix' ? 'text85231c543c71' : 'text96ef9c0ac0c9',
+                  )
+                : undefined;
               return (
                 <div
                   key={node.path}
                   onClick={() => onNavigateToDir(node)}
-                  title={meta?.description}
+                  title={description}
                   className={cn(
                     'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
                   )}
@@ -704,10 +715,10 @@ export function DriveGridView({
 
       {dirs.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="Folders" count={dirs.length} />
+          <SectionHeader label={tI18nComplete.raw('textc4d6bb200f4c')} count={dirs.length} />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {dirs.map((node) => (
               <FolderCard
@@ -731,10 +742,10 @@ export function DriveGridView({
 
       {files.length > 0 && (
         <section className="space-y-2">
-          <SectionHeader label="Files" count={files.length} />
+          <SectionHeader label={tI18nComplete.raw('textabc7e9892806')} count={files.length} />
           <div
             className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
           >
             {files.map((node) => (
               <FileCard

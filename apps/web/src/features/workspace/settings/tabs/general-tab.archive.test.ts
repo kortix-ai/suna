@@ -154,9 +154,15 @@ describe('runProjectArchive', () => {
       },
     });
     await expect(
-      runProjectArchive('p1', 1, failing, () => {}, () => {
-        forgetCalls += 1;
-      }),
+      runProjectArchive(
+        'p1',
+        1,
+        failing,
+        () => {},
+        () => {
+          forgetCalls += 1;
+        },
+      ),
     ).rejects.toThrow('archive failed');
     expect(forgetCalls).toBe(0);
   });

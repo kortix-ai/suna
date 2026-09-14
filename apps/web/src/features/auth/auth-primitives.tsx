@@ -53,10 +53,14 @@ export function Rise({
  * `left-6` matches the `px-6` gutter of the auth `<main>`, so it sits on the
  * same optical edge as the fields below it. The parent surface must be
  * `relative`. Desktop keeps the inline mark inside `StepHeader`.
+ *
+ * `kx-auth-mobile-logo` lets globals.css move the mark below the title-bar
+ * band in a narrow desktop-shell window, where that corner holds the macOS
+ * traffic lights and the frame's Back control.
  */
 export function AuthMobileLogo() {
   return (
-    <div className="absolute top-6 left-6 z-10 md:hidden">
+    <div className="kx-auth-mobile-logo absolute top-6 left-6 z-10 md:hidden">
       <KortixLogo variant="icon" size={22} className="text-foreground" />
     </div>
   );

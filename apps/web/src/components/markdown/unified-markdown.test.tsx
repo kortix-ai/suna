@@ -98,6 +98,58 @@ describe('UnifiedMarkdown table cells', () => {
   });
 });
 
+// ─── Ordered-list marker gutter ─────────────────────────────────────────────
+// Markers hang outside the `ol` padding box. A fixed `pl-6` gutter (22.08px)
+// holds `9. ` (16.3px at 15px Roobert) but not `10. ` (25.7px), so the first
+// digit painted past the list edge and an `overflow-hidden` ancestor cut it.
+// ────────────────────────────────────────────────────────────────────────────
+
+function orderedListTag(html: string): string {
+  const match = /<ol\b[^>]*>/.exec(html);
+  if (!match) throw new Error('no <ol> rendered');
+  return match[0];
+}
+
+function numberedList(count: number, start = 1): string {
+  return Array.from({ length: count }, (_, i) => `${start + i}. item`).join('\n') + '\n';
+}
+
+describe('UnifiedMarkdown ordered-list marker gutter', () => {
+  test('a single-digit list keeps the pl-6 gutter', () => {
+    const tag = orderedListTag(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(9)} />)),
+    );
+
+    expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 0ch)');
+  });
+
+  test('a ten-item list widens the gutter by one digit', () => {
+    const tag = orderedListTag(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(10)} />)),
+    );
+
+    expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 1ch)');
+  });
+
+  test('markers render with tabular digits', () => {
+    const tag = orderedListTag(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(10)} />)),
+    );
+
+    expect(tag).toContain('marker:tabular-nums');
+    expect(tag).not.toMatch(/\bpl-6\b/);
+  });
+
+  test('forwards the start ordinal and sizes the gutter from it', () => {
+    const tag = orderedListTag(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={numberedList(3, 98)} />)),
+    );
+
+    expect(tag).toContain('start="98"');
+    expect(tag).toContain('padding-inline-start:calc(var(--spacing) * 6 + 2ch)');
+  });
+});
+
 // ─── A fenced block inside a list item ──────────────────────────────────────
 // `li` runs its children through `wrapChildrenWithPaths`. That walk used to
 // descend into the fence and swap the snippet for a React element, so

@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   Alert,
@@ -121,7 +121,9 @@ export function DiffPreviewBanner({ loading, error, preview, className }: DiffPr
       <AlertContent>
         <AlertDescription className="flex items-center gap-2 tabular-nums">
           <span>
-            {preview.files_changed} file{preview.files_changed === 1 ? '' : 's'} changed
+            {preview.files_changed} {tHardcodedUi.raw('i18nComplete.text3b9c358f36f0')}
+            {preview.files_changed === 1 ? '' : 's'}{' '}
+            {tHardcodedUi.raw('i18nComplete.textd67e2e944994')}
           </span>
           <DiffStat additions={preview.additions} deletions={preview.deletions} />
         </AlertDescription>

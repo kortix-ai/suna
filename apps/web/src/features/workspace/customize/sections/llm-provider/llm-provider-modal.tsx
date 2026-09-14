@@ -61,10 +61,10 @@ import {
   ProjectDefaultPicker,
   QUICK_LLM_TABS,
 } from '@/features/workspace/customize/sections/gateway-view';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useState } from 'react';
 import type { ActiveTab, ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
@@ -139,8 +139,7 @@ function ProviderModalBody({
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
-  const effectiveTab: ActiveTab =
-    llmGatewayEnabled || isNativeLlmTab(tab) ? tab : 'providers';
+  const effectiveTab: ActiveTab = llmGatewayEnabled || isNativeLlmTab(tab) ? tab : 'providers';
 
   return (
     <>

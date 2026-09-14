@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { AbortSettlement } from '@kortix/sdk/react';
+import { describe, expect, test } from 'bun:test';
 import { stopThenSendNow, type StopThenSendNowDeps } from './session-chat';
 
 // T10: "Stop & send" used to gate its send on `waitForSessionIdle`,

@@ -20,6 +20,7 @@ import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-ur
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
+import { useTranslations } from '@/i18n/use-translations';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
@@ -48,7 +49,6 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -58,12 +58,10 @@ interface PreviewTabContentProps {
   projectSessionId?: string;
 }
 
-const APP_PREVIEW_TITLE = 'App preview';
-
-function normalizePreviewLabel(value: unknown): string {
-  if (typeof value !== 'string') return APP_PREVIEW_TITLE;
+function normalizePreviewLabel(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
-  if (!trimmed || /^localhost:\d+$/i.test(trimmed)) return APP_PREVIEW_TITLE;
+  if (!trimmed || /^localhost:\d+$/i.test(trimmed)) return fallback;
   return trimmed;
 }
 
@@ -89,6 +87,8 @@ function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: 
  */
 export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const appPreviewTitle = tI18nComplete.raw('text6026c1d8c92e');
   const tab = useTabStore((s) => s.tabs[tabId]);
   const updateTabMetadata = useTabStore((s) => s.openTab);
   const recents = useBrowserRecentsStore((s) => s.recents);
@@ -256,7 +256,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
       updateTabMetadata({
         id: tabId,
-        title: APP_PREVIEW_TITLE,
+        title: appPreviewTitle,
         type: 'preview',
         href: `/p/${newPort}`,
         metadata: { url: newProxyUrl, port: newPort, originalUrl: newInternalUrl, path: newPath },
@@ -352,7 +352,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         const internalUrl = toInternalUrl(parsed.port, parsed.path);
         updateTabMetadata({
           id: tabId,
-          title: APP_PREVIEW_TITLE,
+          title: appPreviewTitle,
           type: 'preview',
           href: `/p/${parsed.port}`,
           metadata: {
@@ -407,7 +407,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         const internalUrl = toInternalUrl(parsed.port, parsed.path);
         updateTabMetadata({
           id: tabId,
-          title: APP_PREVIEW_TITLE,
+          title: appPreviewTitle,
           type: 'preview',
           href: `/p/${parsed.port}`,
           metadata: {
@@ -451,7 +451,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     return {
       mode: 'view',
       preview: {
-        label: normalizePreviewLabel(tab?.title),
+        label: normalizePreviewLabel(tab?.title, appPreviewTitle),
         url: originalUrl || toInternalUrl(port, path),
         port,
         path,
@@ -484,7 +484,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   return (
     <div className="bg-background flex h-full flex-col">
       <div className="border-border bg-background flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
-        <Hint label="Back" side="bottom">
+        <Hint label={tHardcodedUi.raw('i18nComplete.text76900f1bfd16')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
@@ -495,7 +495,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           </Button>
         </Hint>
 
-        <Hint label="Forward" side="bottom">
+        <Hint label={tHardcodedUi.raw('i18nComplete.textf1c65e14817e')} side="bottom">
           <Button
             variant="ghost"
             size="icon"
@@ -506,7 +506,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           </Button>
         </Hint>
 
-        <Hint label="Refresh" side="bottom">
+        <Hint label={tHardcodedUi.raw('i18nComplete.text0e9161011702')} side="bottom">
           <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={!hasPreview}>
             <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
           </Button>
@@ -568,14 +568,21 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               </span>
             )}
             {addressError && (
-              <span className="text-kortix-red ml-2 shrink-0 text-xs">Sandbox ports only</span>
+              <span className="text-kortix-red ml-2 shrink-0 text-xs">
+                {tHardcodedUi.raw('i18nComplete.textce1e609b7bf5')}
+              </span>
             )}
           </div>
         </form>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" disabled={!hasPreview} aria-label="More options">
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={!hasPreview}
+              aria-label={tHardcodedUi.raw('i18nComplete.textbc79cdffbaa8')}
+            >
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -591,7 +598,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               disabled={!canShare || shareLink.isPending}
             >
               <Link2 />
-              Copy public link
+              {tHardcodedUi.raw('i18nComplete.text8a29ed34cf47')}
             </DropdownMenuItem>
             {/* The only route to revoking a link. Enabled whenever the session
                 has project context — unlike Copy link it does not need a live
@@ -602,7 +609,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               disabled={!projectId || !projectSessionId}
             >
               <Settings2 />
-              Manage public links
+              {tHardcodedUi.raw('i18nComplete.texteb147164ac2a')}
               {liveShares.length > 0 && (
                 <Badge variant="secondary" size="xs" className="ml-auto">
                   {liveShares.length}
@@ -646,13 +653,13 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               )}
               description={
                 isExternalBrowsing
-                  ? 'Could not reach the target website.'
-                  : `The service on port ${port} may not be running yet.`
+                  ? tHardcodedUi.raw('i18nComplete.texta29e5f4a270e')
+                  : tI18nComplete('textfdf45589cf20', { value0: port })
               }
               action={
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRefresh}>
                   <RefreshCw className="size-3.5 shrink-0" />
-                  Retry
+                  {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
                 </Button>
               }
             />
@@ -662,7 +669,11 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
             key={refreshKey}
             ref={iframeRef}
             src={previewUrl}
-            title={isExternalBrowsing ? `Browse: ${originalUrl}` : `Preview :${port}`}
+            title={
+              isExternalBrowsing
+                ? tI18nComplete('text62132c007f48', { value0: originalUrl })
+                : tI18nComplete('text8d0218f233bb', { value0: port })
+            }
             className="h-full w-full border-0"
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={handleLoad}
@@ -675,7 +686,9 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           {showRecents ? (
             <div className="mx-auto w-full max-w-md px-6 py-12">
               <section className="space-y-3">
-                <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
+                <h3 className="text-muted-foreground px-2 text-sm">
+                  {tHardcodedUi.raw('i18nComplete.text41a86988751a')}
+                </h3>
                 <ul className="space-y-1">
                   {recents.map((recent) => (
                     <li key={recent.url}>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 
 import { MarketplaceExplore } from '@/features/marketplace/marketplace-explore';
 import { PublicMarketplaceProvider } from '@/features/marketplace/marketplace-public-surface';
@@ -8,17 +9,17 @@ import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
 export const revalidate = 3600;
 
-export const metadata: Metadata = {
-  title: 'Marketplace — Clone a ready-made Kortix project',
-  description:
-    'Clone a full, working Kortix project in one click, or add skills from every source into your own.',
-  alternates: { canonical: `${CANONICAL_ORIGIN}/marketplace` },
-  ...socialMetadata(
-    'Kortix Marketplace — Clone a ready-made Kortix project',
-    'Clone a full, working Kortix project in one click, or add skills from every source into your own.',
-    `${CANONICAL_ORIGIN}/marketplace`,
-  ),
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  const title = t.raw('text7eebc3924618');
+  const description = t.raw('text5a7b24722fae');
+  return {
+    title,
+    description,
+    alternates: { canonical: `${CANONICAL_ORIGIN}/marketplace` },
+    ...socialMetadata(title, description, `${CANONICAL_ORIGIN}/marketplace`),
+  };
+}
 
 export default async function MarketplacePage() {
   const { itemsPage, marketplacesPage, projectItems } = await loadMarketplaceExploreData();

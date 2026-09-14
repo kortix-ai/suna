@@ -1,10 +1,10 @@
-import type { QueryClient } from '@tanstack/react-query';
 import {
   invalidateProjectIdentity,
   restoreProjectName,
   writeProjectNameOptimistically,
   type ProjectNameSnapshot,
 } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
 
 /**
  * The `onMutate`/`onError`/`onSettled` trio a project-rename mutation wires

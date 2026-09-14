@@ -19,13 +19,20 @@ const {
   app,
   BrowserWindow,
   Menu,
+  dialog,
   shell,
   ipcMain,
   nativeTheme,
+  safeStorage,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const basicAuth = require('./basic-auth');
+const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
+const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
+const { createInstanceStore } = require('./instance-store');
+const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
@@ -37,7 +44,13 @@ const {
 // and so we never inherit another "Kortix" app's stale Chromium state (per-site
 // zoom / GPU cache) — a real cause of blurry rendering. `${name} Desktop` keeps
 // us off the bare "Kortix" Application Support folder.
-app.setPath('userData', path.join(app.getPath('appData'), `${app.getName()} Desktop`));
+// KORTIX_DESKTOP_USER_DATA points a launch at an isolated profile (automated
+// runs, side-by-side test sessions) without touching the real one.
+app.setPath(
+  'userData',
+  process.env.KORTIX_DESKTOP_USER_DATA ||
+    path.join(app.getPath('appData'), `${app.getName()} Desktop`),
+);
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -76,50 +89,21 @@ const UA_TOKEN = 'KortixDesktop/0.1.0';
 // here it's the native window background.
 const BG_COLOR = '#0a0a0a';
 
-/* ─── Frontend URL override (self-hosting) ────────────────────────────────
-   Persisted as a single line in userData/frontend_url — same contract as the
-   Tauri shell's app-config-dir file. A persisted override wins over the
-   env/compile-time default. */
+// net::ERR_ABORTED — a navigation replaced by another one, not a failure.
+const ERR_ABORTED = -3;
 
-function overridePath() {
-  return path.join(app.getPath('userData'), 'frontend_url');
-}
+/* ─── Kortix instance (frontend URL) ──────────────────────────────────────
+   instance-store.js owns userData/frontend_url (the self-hosting override),
+   the first-launch marker, and URL precedence: saved URL → KORTIX_DESKTOP_URL
+   → DEFAULT_URL. A new profile is marked HERE, at module load, because the
+   single-instance lock at the bottom of this file writes into userData. */
 
-function readUrlOverride() {
-  try {
-    const raw = fs.readFileSync(overridePath(), 'utf8').trim();
-    return raw || null;
-  } catch {
-    return null;
-  }
-}
-
-function writeUrlOverride(url) {
-  try {
-    fs.mkdirSync(path.dirname(overridePath()), { recursive: true });
-    fs.writeFileSync(overridePath(), url, 'utf8');
-  } catch (e) {
-    return String(e);
-  }
-  return null;
-}
-
-function clearUrlOverride() {
-  try {
-    fs.rmSync(overridePath(), { force: true });
-  } catch {
-    /* already gone */
-  }
-}
-
-function appBaseUrl() {
-  return process.env.KORTIX_DESKTOP_URL || DEFAULT_URL;
-}
-
-/** Effective URL the window should load — persisted override beats the default. */
-function resolveAppUrl() {
-  return readUrlOverride() || appBaseUrl();
-}
+const instanceStore = createInstanceStore({
+  dir: app.getPath('userData'),
+  envUrl: process.env.KORTIX_DESKTOP_URL,
+  defaultUrl: DEFAULT_URL,
+});
+instanceStore.markIfNewProfile();
 
 /**
  * Is this auth challenge coming from the exact origin we load the app from?
@@ -130,7 +114,7 @@ function resolveAppUrl() {
 function isAppOriginChallenge(authInfo) {
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -174,16 +158,6 @@ function isPreviewHost(host) {
     host.endsWith('.localhost') ||
     host === 'kortix.cloud' ||
     host.endsWith('.kortix.cloud')
-  );
-}
-
-// App-shell hosts that serve BOTH product and marketing.
-function isMainAppHost(host) {
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === 'kortix.com' ||
-    host.endsWith('.kortix.com')
   );
 }
 
@@ -233,11 +207,12 @@ function shouldLoadInApp(urlStr) {
   // It MUST open in the user's real browser — Google/GitHub reject embedded
   // webviews, and the post-OAuth `kortix://auth/callback` bounce only works from
   // a real browser tab. Our own pages (/auth/callback, /auth/login) live on the
-  // app host and still load in-app via isAppPath below.
+  // configured app origin and still load in-app via isAppPath below.
   if (u.pathname.startsWith('/auth/v1/')) return false;
   const host = u.hostname;
   if (isPreviewHost(host)) return true;
-  if (isMainAppHost(host) && isAppPath(u.pathname)) return true;
+  // Navigation and native commands share the configured frontend origin.
+  if (isConfiguredAppUrl(urlStr, instanceStore.appUrl()) && isAppPath(u.pathname)) return true;
   return false;
 }
 
@@ -258,7 +233,7 @@ function translateDeepLink(deepLink) {
 
   let target;
   try {
-    target = new URL(resolveAppUrl());
+    target = new URL(instanceStore.appUrl());
   } catch {
     return null;
   }
@@ -475,20 +450,277 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
+  // Electron ships no network error page: a dead app origin paints only the
+  // window background. Offer to retry or pick another instance instead. Only
+  // the main frame on the configured origin counts — a failing sandbox preview
+  // is not an instance problem. ERR_ABORTED is a navigation replaced by another.
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === ERR_ABORTED) return;
+      if (!isConfiguredAppUrl(validatedURL, instanceStore.appUrl())) return;
+      console.warn(`[kortix] ${validatedURL} did not load: ${errorDescription} (${errorCode}).`);
+      dismissSplash();
+      if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
+      void changeInstance('unreachable', explainNetError(hostOf(validatedURL), errorDescription));
+    },
+  );
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
-  mainWindow.loadURL(resolveAppUrl());
+  // did-fail-load reports failures; the rejected promise carries nothing more.
+  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
 }
 
-/** Full-page reload of the main window onto `url` (used by the menu/IPC). */
+/**
+ * Full-page load of the main window onto `url` (menu, IPC, instance chooser).
+ * loadURL, not location.replace(): a window whose last load failed has no
+ * document to run script in. History is cleared after the load — Back must not
+ * return to the previous instance.
+ */
 function navigateMainWindow(url) {
   if (!mainWindow) return;
-  mainWindow.webContents.executeJavaScript(
-    `window.location.replace(${JSON.stringify(url)})`,
-  );
+  const wc = mainWindow.webContents;
+  wc.loadURL(url)
+    .then(() => wc.navigationHistory.clear())
+    .catch(() => {}); // did-fail-load reports failures
   mainWindow.focus();
+}
+
+/** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
+function switchInstance(choice) {
+  const error = instanceStore.save(choice);
+  if (!error) navigateMainWindow(instanceStore.appUrl());
+  return error;
+}
+
+/** The instance chooser over the running app; a saved choice reloads the app. */
+async function changeInstance(mode, error = null) {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
+    navigateMainWindow(instanceStore.appUrl());
+  }
+}
+
+/* ─── HTTP Basic credentials (dev/staging environment password) ────────────
+   Policy is basicAuth.decideChallenge(); this section owns the side effects:
+   the safeStorage-encrypted file userData/basic_auth.json, the per-session
+   memory, the dialog window, and the "was that rejected?" bookkeeping. */
+
+/** host → { user, password } for this process lifetime (remembered or not). */
+const sessionBasicCredentials = new Map();
+/** host → { source: 'env'|'stored'|'prompt', at } — last credential we sent. */
+const lastBasicAnswers = new Map();
+/** host → Promise resolving to the dialog result; dedupes parallel challenges. */
+const pendingBasicPrompts = new Map();
+
+function basicAuthStorePath() {
+  return path.join(app.getPath('userData'), 'basic_auth.json');
+}
+
+function readBasicAuthStore() {
+  try {
+    return basicAuth.parseStore(fs.readFileSync(basicAuthStorePath(), 'utf8'));
+  } catch {
+    return basicAuth.parseStore(null);
+  }
+}
+
+function writeBasicAuthStore(store) {
+  try {
+    fs.mkdirSync(path.dirname(basicAuthStorePath()), { recursive: true });
+    fs.writeFileSync(basicAuthStorePath(), basicAuth.serializeStore(store), { mode: 0o600 });
+  } catch (e) {
+    console.warn(`[kortix] could not write ${basicAuthStorePath()}: ${e}`);
+  }
+}
+
+function canRememberBasicCredential() {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+/** Remembered credential for `host` — memory first, then the encrypted file. */
+function loadBasicCredential(host) {
+  const inMemory = sessionBasicCredentials.get(host);
+  if (inMemory) return inMemory;
+  const entry = basicAuth.lookupHost(readBasicAuthStore(), host);
+  if (!entry || !canRememberBasicCredential()) return null;
+  try {
+    const password = safeStorage.decryptString(Buffer.from(entry.secret, 'base64'));
+    const cred = { user: entry.user, password };
+    sessionBasicCredentials.set(host, cred);
+    return cred;
+  } catch (e) {
+    // Keychain changed / different user account — the blob is unreadable.
+    console.warn(`[kortix] dropping unreadable saved credential for ${host}: ${e}`);
+    writeBasicAuthStore(basicAuth.removeHost(readBasicAuthStore(), host));
+    return null;
+  }
+}
+
+function rememberBasicCredential(host, cred, persist) {
+  sessionBasicCredentials.set(host, cred);
+  if (!persist || !canRememberBasicCredential()) return;
+  const secret = safeStorage.encryptString(cred.password).toString('base64');
+  writeBasicAuthStore(basicAuth.upsertHost(readBasicAuthStore(), host, { user: cred.user, secret }));
+}
+
+function forgetBasicCredential(host) {
+  sessionBasicCredentials.delete(host);
+  lastBasicAnswers.delete(host);
+  const store = readBasicAuthStore();
+  const had = !!basicAuth.lookupHost(store, host);
+  if (had) writeBasicAuthStore(basicAuth.removeHost(store, host));
+  return had;
+}
+
+function forgetBasicCredentialForAppHost() {
+  let host;
+  try {
+    host = new URL(instanceStore.appUrl()).hostname;
+  } catch {
+    return;
+  }
+  const had = forgetBasicCredential(host);
+  dialog.showMessageBox({
+    type: 'info',
+    message: had
+      ? `Forgot the saved environment password for ${host}.`
+      : `No environment password is saved for ${host}.`,
+    detail: had ? 'The next time this host asks, the sign-in dialog opens again.' : undefined,
+  });
+}
+
+/**
+ * Open the credential dialog. Resolves to { user, password, remember } or null
+ * on cancel/close. Parallel challenges for one host share one dialog.
+ */
+function promptForBasicCredential({ host, realm, user, error }) {
+  const pending = pendingBasicPrompts.get(host);
+  if (pending) return pending;
+
+  // The first challenge fires before the app has painted, while the main
+  // window is still hidden behind the splash. Chrome shows its dialog over a
+  // blank page; do the same — the dark main window is the parent.
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+    dismissSplash();
+    mainWindow.show();
+  }
+
+  const promise = new Promise((resolve) => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const win = new BrowserWindow({
+      width: 400,
+      height: 320,
+      parent,
+      modal: !!parent,
+      show: false,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      title: 'Sign in',
+      backgroundColor: '#141414',
+      webPreferences: {
+        preload: path.join(__dirname, 'basic-auth-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    win.setMenuBarVisibility(false);
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      console.log(`[kortix] Basic sign-in dialog for ${host}: ${result ? 'submitted' : 'cancelled'}.`);
+      ipcMain.removeListener('kortix:basic-auth:submit', onSubmit);
+      ipcMain.removeListener('kortix:basic-auth:cancel', onCancel);
+      pendingBasicPrompts.delete(host);
+      if (!win.isDestroyed()) win.destroy();
+      resolve(result);
+    };
+    const fromThisDialog = (event) => !win.isDestroyed() && event.sender === win.webContents;
+    const onSubmit = (event, payload) => {
+      if (!fromThisDialog(event)) return;
+      finish({
+        user: String(payload?.user ?? '').trim() || basicAuth.DEFAULT_USER,
+        password: String(payload?.password ?? ''),
+        remember: Boolean(payload?.remember),
+      });
+    };
+    const onCancel = (event) => {
+      if (fromThisDialog(event)) finish(null);
+    };
+    ipcMain.on('kortix:basic-auth:submit', onSubmit);
+    ipcMain.on('kortix:basic-auth:cancel', onCancel);
+    win.on('closed', () => finish(null));
+
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('kortix:basic-auth:init', {
+        host,
+        realm: realm || '',
+        user,
+        error,
+        canRemember: canRememberBasicCredential(),
+      });
+      win.show();
+    });
+    win.loadFile(path.join(__dirname, '..', 'assets', 'basic-auth.html'));
+  });
+  pendingBasicPrompts.set(host, promise);
+  return promise;
+}
+
+/** Answer one app-origin Basic challenge (env → remembered → dialog). */
+async function answerBasicChallenge(authInfo, callback) {
+  const host = authInfo.host;
+  const decision = basicAuth.decideChallenge({
+    host,
+    env: {
+      user: process.env.KORTIX_DESKTOP_BASIC_USER,
+      password: process.env.KORTIX_DESKTOP_BASIC_PASSWORD,
+    },
+    stored: loadBasicCredential(host),
+    lastAnswer: lastBasicAnswers.get(host) || null,
+    now: Date.now(),
+  });
+
+  if (decision.action === 'answer') {
+    console.log(`[kortix] Basic challenge from ${host}: answering from ${decision.source}.`);
+    lastBasicAnswers.set(host, { source: decision.source, at: Date.now() });
+    callback(decision.user, decision.password);
+    return;
+  }
+  console.log(`[kortix] Basic challenge from ${host}: asking the user.`);
+
+  if (decision.dropStored) {
+    console.warn(`[kortix] ${host} rejected the saved environment password — forgetting it.`);
+    forgetBasicCredential(host);
+  }
+  const result = await promptForBasicCredential({
+    host,
+    realm: authInfo.realm,
+    user: decision.user,
+    error: decision.error,
+  });
+  if (!result) {
+    // Cancel → the request fails and the page renders the 401 body, same as
+    // Chrome. A reload re-challenges.
+    lastBasicAnswers.delete(host);
+    callback();
+    return;
+  }
+  rememberBasicCredential(host, { user: result.user, password: result.password }, result.remember);
+  lastBasicAnswers.set(host, { source: 'prompt', at: Date.now() });
+  callback(result.user, result.password);
 }
 
 /* ─── Native menu (incl. hidden "Frontend URL" switcher) ───────────────────*/
@@ -498,50 +730,28 @@ function buildMenu() {
 
   // Hidden, nested dev switcher so the backend the app points at can change
   // without a rebuild — mirrors the Tauri "Frontend URL" submenu.
+  const preset = (label, url) => ({ label, click: () => switchInstance({ kind: 'custom', url }) });
   const frontendSubmenu = {
     label: 'Frontend URL',
     submenu: [
-      {
-        label: 'Production (kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_PROD);
-          navigateMainWindow(PRESET_PROD);
-        },
-      },
-      {
-        label: 'Dev (dev.kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_DEV);
-          navigateMainWindow(PRESET_DEV);
-        },
-      },
-      {
-        label: 'Local (localhost:3000)',
-        click: () => {
-          writeUrlOverride(PRESET_LOCAL);
-          navigateMainWindow(PRESET_LOCAL);
-        },
-      },
+      preset('Production (kortix.com)', PRESET_PROD),
+      preset('Dev (dev.kortix.com)', PRESET_DEV),
+      preset('Local (localhost:3000)', PRESET_LOCAL),
       { type: 'separator' },
       {
         label: 'Custom URL…',
-        // Native menus can't take text input — ask the web layer to pop the
-        // same tiny prompt the Tauri shell uses, which calls back via the
-        // set_frontend_url IPC.
-        click: () => {
-          if (!mainWindow) return;
-          mainWindow.webContents.executeJavaScript(
-            "window.dispatchEvent(new CustomEvent('kortix-open-frontend-url'))",
-          );
-          mainWindow.focus();
-        },
+        // The native instance chooser, not the web app's prompt: it also
+        // works when the current page failed to load. (Older shells dispatch
+        // `kortix-open-frontend-url`; the web prompt stays for them.)
+        click: () => void changeInstance('change'),
       },
+      { label: 'Reset to Default', click: () => switchInstance({ kind: 'default' }) },
+      { type: 'separator' },
       {
-        label: 'Reset to Default',
-        click: () => {
-          clearUrlOverride();
-          navigateMainWindow(appBaseUrl());
-        },
+        // Drops the HTTP Basic credential remembered for the current app host
+        // (dev/staging environment password) so the next challenge asks again.
+        label: 'Forget Saved Environment Password',
+        click: () => forgetBasicCredentialForAppHost(),
       },
     ],
   };
@@ -606,14 +816,12 @@ function buildMenu() {
 // (agent- or attacker-rendered). Only the Kortix app shell may drive privileged
 // commands; otherwise a preview page could call e.g. set_frontend_url to
 // permanently repoint the whole desktop app at an attacker origin. Derive the
-// SENDER's current origin and require it be a main-app host.
+// sender's current origin from the configured frontend URL. Custom frontends
+// need the same bridge as kortix.com. Only the main frame of the main window
+// may call it; embedded previews and other windows do not inherit that trust.
 function isTrustedSender(event) {
   try {
-    const url =
-      event.senderFrame?.url ||
-      BrowserWindow.fromWebContents(event.sender)?.webContents?.getURL() ||
-      '';
-    return isMainAppHost(new URL(url).hostname);
+    return isTrustedAppSender(event, mainWindow?.webContents, instanceStore.appUrl());
   } catch {
     return false;
   }
@@ -643,22 +851,13 @@ function registerIpc() {
         return null;
       }
       case 'get_frontend_url':
-        return resolveAppUrl();
+        return instanceStore.appUrl();
       case 'set_frontend_url': {
-        const raw = String(args.url || '').trim();
-        if (!raw) throw new Error('URL is empty');
-        const candidate = raw.includes('://') ? raw : `https://${raw}`;
-        let parsed;
-        try {
-          parsed = new URL(candidate);
-        } catch (e) {
-          throw new Error(`Invalid URL: ${e}`);
-        }
-        if (!/^https?:$/.test(parsed.protocol)) {
-          throw new Error('URL must use http or https');
-        }
-        writeUrlOverride(candidate);
-        navigateMainWindow(candidate);
+        // Same URL rules as the instance chooser.
+        const normalized = normalizeInstanceUrl(String(args.url || ''));
+        if (!normalized.ok) throw new Error(normalized.error);
+        const saveError = switchInstance({ kind: 'custom', url: normalized.url });
+        if (saveError) throw new Error(`Kortix could not save the URL: ${saveError}`);
         return null;
       }
       default:
@@ -723,32 +922,28 @@ if (!gotLock) {
   // Chrome shows its own username/password dialog for these. Electron does NOT:
   // if nothing handles 'login' the request is simply cancelled, so the window
   // renders the bare 401 body with no way to get past it. That is exactly what
-  // a dev build pointed at dev.kortix.com looks like.
+  // a dev build pointed at dev.kortix.com looked like before this handler.
+  //
+  // Order: KORTIX_DESKTOP_BASIC_PASSWORD env → credential remembered for this
+  // host → a native-style dialog (assets/basic-auth.html). Policy, including
+  // "was our last answer rejected?", is the pure decideChallenge() in
+  // src/basic-auth.js so it is unit-tested.
   //
   // The credential is answered ONLY for the configured app origin. Untrusted
   // in-app content (sandbox previews, iframes) can point at any host, and a
   // 401 Basic challenge is all an attacker host would need to harvest it.
   app.on('login', (event, _webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy && authInfo.scheme === 'basic') {
-      if (!isAppOriginChallenge(authInfo)) {
-        console.warn(
-          `[kortix] ignoring HTTP Basic challenge from ${authInfo.host} — not the app origin.`,
-        );
-        event.preventDefault();
-        callback();
-        return;
-      }
-      const password = process.env.KORTIX_DESKTOP_BASIC_PASSWORD;
-      if (password) {
-        event.preventDefault();
-        callback(process.env.KORTIX_DESKTOP_BASIC_USER || 'kortix', password);
-        return;
-      }
+    if (authInfo.isProxy || authInfo.scheme !== 'basic') return;
+    if (!isAppOriginChallenge(authInfo)) {
       console.warn(
-        `[kortix] ${authInfo.host} requires HTTP Basic auth and no credential is set. ` +
-          `Re-run with KORTIX_DESKTOP_BASIC_PASSWORD=… (user defaults to "kortix").`,
+        `[kortix] ignoring HTTP Basic challenge from ${authInfo.host} — not the app origin.`,
       );
+      event.preventDefault();
+      callback();
+      return;
     }
+    event.preventDefault();
+    answerBasicChallenge(authInfo, callback);
   });
 
   app.on('second-instance', (_event, argv) => {
@@ -759,6 +954,8 @@ if (!gotLock) {
       mainWindow.show();
       mainWindow.focus();
     }
+    // First launch: the chooser is the only window.
+    focusInstanceChooser();
   });
 
   // macOS delivers deep links via open-url.
@@ -768,7 +965,7 @@ if (!gotLock) {
     else pendingDeepLink = url; // arrived before the window existed
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     // Register kortix:// so the OS routes auth callbacks back to the app.
     if (process.defaultApp && process.argv.length >= 2) {
       app.setAsDefaultProtocolClient(URL_SCHEME, process.execPath, [
@@ -782,6 +979,12 @@ if (!gotLock) {
     registerIpc();
     buildMenu();
     nativeTheme.themeSource = 'dark';
+
+    // First launch of a new profile: choose the instance before anything loads.
+    if (instanceStore.needsSetup() && !(await openInstanceChooser({ mode: 'setup', store: instanceStore }))) {
+      app.quit();
+      return;
+    }
 
     createSplash();
     createMainWindow();

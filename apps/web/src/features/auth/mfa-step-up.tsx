@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // Global MFA step-up dialog. The SDK's api-client dispatches
 // `kortix:mfa-required` whenever ANY backend call is denied with the coded
 // 403 `account_mfa_required` (account-wide "Require MFA" is on and this
@@ -38,6 +39,7 @@ export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
 export const MFA_VERIFIED_EVENT = 'kortix:mfa-verified';
 
 export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const queryClient = useQueryClient();
@@ -70,7 +72,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       // making step-up look broken for up to 30s. Invalidate so the next call
       // reads the aal2 token.
       invalidateTokenCache();
-      successToast('Verified');
+      successToast(tI18nComplete.raw('text4f7838402f37'));
       setOpen(false);
       setCode('');
       // Refetch active queries so reads that failed while the session was aal1
@@ -80,7 +82,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       queryClient.invalidateQueries();
       window.dispatchEvent(new CustomEvent(MFA_VERIFIED_EVENT));
     },
-    onError: (err: Error) => errorToast(err.message || 'Code did not verify'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texte7307911656c')),
   });
 
   return (
@@ -97,12 +99,9 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="text-kortix-green size-4" />
-              Verify it’s you
+              {tI18nComplete.raw('text4d8f4755ac09')}
             </DialogTitle>
-            <DialogDescription>
-              This account requires multi-factor authentication for that action. Enter a code from
-              your authenticator app to verify this session.
-            </DialogDescription>
+            <DialogDescription>{tI18nComplete.raw('text3ba20a470a12')}</DialogDescription>
           </DialogHeader>
 
           {factorsQuery.isLoading ? (
@@ -111,7 +110,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
             </div>
           ) : factor ? (
             <div className="space-y-1.5 py-1">
-              <Label className="text-xs">6-digit code</Label>
+              <Label className="text-xs">{tI18nComplete.raw('text0d1fa0dfcc9e')}</Label>
               <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -126,15 +125,18 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
               />
             </div>
           ) : (
-            <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
-              Enroll an authenticator app under Settings → Security, then retry — this account
-              blocks gated actions until your session is MFA-verified.
+            <InfoBanner
+              tone="warning"
+              icon={ShieldWarning}
+              title={tI18nComplete.raw('text669350bd2952')}
+            >
+              {tI18nComplete.raw('textf3a4ff3c0ae3')}
             </InfoBanner>
           )}
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             {factor && (
               <Button
@@ -143,7 +145,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
                 className="gap-1.5"
               >
                 {verify.isPending && <Loading className="size-4" />}
-                Verify
+                {tI18nComplete.raw('texteea2745e2867')}
               </Button>
             )}
           </DialogFooter>

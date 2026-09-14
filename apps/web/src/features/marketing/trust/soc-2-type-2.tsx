@@ -22,7 +22,7 @@ const Soc2Type2 = (props: Props) => {
           cy="200"
           r="198.438"
           stroke="url(#paint2_linear_4003_599)"
-            strokeWidth="3.125"
+          strokeWidth="3.125"
         />
         <circle
           cx="200"

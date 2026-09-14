@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import { GET as getAgentSkillIndex } from '@/app/(public)/.well-known/agent-skills/index.json/route';
 import { GET as getAgentSkill } from '@/app/(public)/.well-known/agent-skills/kortix-public-content/SKILL.md/route';
@@ -12,6 +10,7 @@ import { GET as getProtectedResource } from '@/app/(public)/.well-known/oauth-pr
 import { GET as getAuthMd } from '@/app/(public)/auth.md/route';
 import { GET as getNegotiatedMarkdown } from '@/app/(public)/markdown-negotiation/route';
 import { registerWebMcpTools } from '@/components/agent-discovery/webmcp-tools';
+import { testUiTranslator } from '@/i18n/test-translator';
 import { handlePublicContentMcp } from '@/lib/mcp/public-content-server';
 import { renderRobotsTxt } from '@/lib/seo/robots';
 import { middleware } from '@/middleware';
@@ -125,7 +124,7 @@ describe('agent discovery documents', () => {
       },
     };
     const controller = new AbortController();
-    await registerWebMcpTools(modelContext, controller.signal);
+    await registerWebMcpTools(modelContext, controller.signal, testUiTranslator);
     expect(registered.map(({ tool }) => tool.name)).toEqual([
       'search_kortix_public_content',
       'read_kortix_public_page',

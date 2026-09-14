@@ -1,8 +1,8 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
@@ -11,8 +11,8 @@ import {
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
-  InlineServicePreview,
   BoundActivateContext,
+  InlineServicePreview,
   partInput,
   ServicePreviewActions,
   type ServicePreviewState,
@@ -38,7 +38,7 @@ import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
@@ -123,9 +123,9 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     ) : undefined;
   const contentActions =
     !isCarousel && !isWebsitePreview && !activePath && content && activate && navigationEnabled ? (
-      <Hint label="Open in the panel" side="top">
+      <Hint label={tHardcodedUi.raw('i18nComplete.textbb59775ca8ea')} side="top">
         <Button type="button" onClick={activate} size="xs" className="active:scale-[0.96]">
-          Preview
+          {tHardcodedUi.raw('i18nComplete.text324b134f57c7')}
         </Button>
       </Hint>
     ) : undefined;
@@ -226,7 +226,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         )}
       >
         <span className="truncate">
-          Preview unavailable{displayTitle ? ` — ${displayTitle}` : ''}
+          {tHardcodedUi.raw('i18nComplete.textb99fa6c06150')}
+          {displayTitle ? ` — ${displayTitle}` : ''}
         </span>
         {fallbackHref && (
           <a
@@ -235,7 +236,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
             rel="noopener noreferrer"
             className="text-foreground/70 hover:text-foreground shrink-0 underline underline-offset-2"
           >
-            Open link
+            {tHardcodedUi.raw('i18nComplete.textaab63f85c7f1')}
           </a>
         )}
       </div>
@@ -309,7 +310,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   return (
     <div
       data-component="tool-trigger"
-      className="bg-secondary flex w-full border-[0.5px] flex-col overflow-hidden rounded-lg"
+      className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg border-[0.5px]"
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">

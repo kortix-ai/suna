@@ -1,6 +1,7 @@
 'use client';
 
 import { useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { DemoScenario } from '../types';
 import { matchScenario } from './scenarios';
@@ -30,6 +31,7 @@ export type DemoConversation = {
 };
 
 export function useDemoConversation(opts: { onEnterChat: () => void }): DemoConversation {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { onEnterChat } = opts;
   const reduce = useReducedMotion();
 
@@ -118,7 +120,7 @@ export function useDemoConversation(opts: { onEnterChat: () => void }): DemoConv
       interactedRef.current = true;
       clear(autoTimers);
       clear(sceneTimers);
-      const sc = matchScenario(value);
+      const sc = matchScenario(value, tI18nComplete);
       setUserText(value);
       setScenario(sc);
       setStartedSteps(0);
@@ -136,7 +138,7 @@ export function useDemoConversation(opts: { onEnterChat: () => void }): DemoConv
       }, THINKING_MS);
       sceneTimers.current.push(t);
     },
-    [draft, reduce, onEnterChat, playFrom, finalize],
+    [draft, tI18nComplete, onEnterChat, reduce, finalize, playFrom],
   );
 
   const setDraft = useCallback((t: string) => {

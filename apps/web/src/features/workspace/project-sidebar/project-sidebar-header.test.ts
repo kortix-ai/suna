@@ -49,10 +49,23 @@ describe('project sidebar header', () => {
     expect(source).not.toContain('UserMenu');
   });
 
-  // A `w-fit` trigger inside a full-width wrapper left an inert strip between
-  // the project name and search that looked clickable and was not.
-  test('the control takes the row, so there is no dead strip beside it', () => {
-    expect(header).toContain('className="min-w-0 flex-1"');
+  // The bug: a `w-fit` trigger inside a full-width wrapper left an inert strip
+  // between the project name and search that looked clickable and was not.
+  //
+  // It was fixed by making the switcher span the row, and this test pinned that
+  // MECHANISM (`min-w-0 flex-1` on the wrapper). The row carries three controls
+  // now — switcher, search, collapse toggle — so the switcher cannot own it,
+  // and the mechanism no longer applies. The INVARIANT does, and is what this
+  // now pins: the wrapper hugs its trigger and the trailing controls are pushed
+  // off by `ml-auto` on their own group, so the gap in between belongs to no
+  // control and cannot paint as one.
+  //
+  // What must never come back is the original shape — a wrapper that grows
+  // while the trigger inside it does not.
+  test('no dead strip beside the workspace switcher', () => {
+    expect(header).toContain('<div className="min-w-0">');
+    expect(header).toContain('className="ml-auto flex shrink-0 items-center gap-0.5"');
+    expect(header).not.toContain('min-w-0 flex-1');
     expect(header).not.toContain('max-w-full');
     expect(header).not.toContain('w-fit');
   });
@@ -60,13 +73,13 @@ describe('project sidebar header', () => {
   test('the collapse toggle took the mark button’s place', () => {
     expect(header).toContain('onClick={toggleSidebar}');
     expect(header).toContain('<PanelLeft');
-    expect(header).toContain("aria-label={isExpanded ? 'Collapse sidebar' : 'Pin sidebar'}");
+    expect(header).toContain("aria-label={isExpanded ? t('collapse') : t('pin')}");
   });
 
   // ⌘K is otherwise the palette's only entry point, which is invisible to
   // anyone who does not already know it exists.
   test('a search control opens the command palette', () => {
-    expect(header).toContain('aria-label="Search"');
+    expect(header).toContain("aria-label={t('search')}");
     expect(header).toContain('<MagnifyingGlassIcon');
     expect(header).toContain('onClick={handleOpenSearch}');
     expect(source).toContain('openCommandPalette()');
@@ -74,9 +87,9 @@ describe('project sidebar header', () => {
 
   // No keystroke exists on touch, so the button is the only way in there.
   test('search renders on mobile too, unlike the collapse toggle', () => {
-    const search = header.slice(header.indexOf('aria-label="Search"'));
+    const search = header.slice(header.indexOf("aria-label={t('search')}"));
     expect(search.indexOf('{!isMobile && (')).toBeGreaterThan(-1);
-    const beforeSearch = header.slice(0, header.indexOf('aria-label="Search"'));
+    const beforeSearch = header.slice(0, header.indexOf("aria-label={t('search')}"));
     expect(beforeSearch).not.toContain('{!isMobile && (');
   });
 

@@ -16,7 +16,7 @@ beforeEach(() => {
  * stores whatever `SettingsTab` it is handed. They used to be `billing`,
  * `secrets`, `usage` and `audit`; every one of those left the overlay (the
  * account-scoped ones for `/accounts/[id]`, the project-scoped ones for
- * `/projects/[id]/config`), so they were swapped for surviving tabs rather
+ * `/projects/[id]/customize/settings`), so they were swapped for surviving tabs rather
  * than given a redirect this store knows nothing about. The `members` cases
  * keep their id because `membersTab` is the thing under test there.
  */
@@ -46,7 +46,7 @@ describe('useSettingsPanelStore', () => {
   });
 
   test('openSettings resets membersTab to "people" when no opts are given', () => {
-    // Members itself moved to `/projects/[id]/config?section=members`, but the
+    // Members itself moved to `/projects/[id]/customize/settings?section=members`, but the
     // INTENT still lives here — see `settings/tabs/members-tab-intent.ts`. So
     // this pins the reset against a surviving tab: any open with no explicit
     // opts must clear a pending intent, or a stale 'invite' replays later.

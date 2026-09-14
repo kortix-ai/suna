@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 
 const SOURCE = readFileSync(resolve(import.meta.dir, 'project-settings-nav.tsx'), 'utf8');
+const SIDEBAR_SOURCE = readFileSync(resolve(import.meta.dir, 'project-sidebar.tsx'), 'utf8');
+const SWITCHER_SOURCE = readFileSync(resolve(import.meta.dir, 'workspace-switcher.tsx'), 'utf8');
 
 /**
  * One exported function body, isolated from its neighbours. Cuts at the next
@@ -41,10 +43,12 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(navItem).toContain('<HoverPrefetchLink');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
-    // The href is the Customize INDEX now, not `capabilityTabHref(projectId,
-    // tab)` — the row lands on a card grid over every tab, not straight into
-    // whichever one the caller happens to be able to read first.
-    expect(navItem).toContain('`/projects/${projectId}/customize`');
+    // The href is the first tab the caller may open — Agents, for anyone who
+    // can read them (Marko, 2026-09-01: Customize is agent-centric). It was
+    // the `/customize` index chooser between 2026-08 and this change; that
+    // route now redirects here.
+    expect(navItem).toContain('href={capabilityTabHref(projectId, tab)}');
+    expect(navItem).not.toContain('href={`/projects/${projectId}/customize`}');
     expect(navItem).toContain('asChild');
     expect(navItem).not.toContain('router.push');
   });
@@ -158,12 +162,48 @@ describe('the old Settings overlay sidebar entry is gone', () => {
 });
 
 describe('the Mod+, shortcut', () => {
-  test('still opens the overlay, with no row left to print the keycap on', () => {
-    const hook = fnSource('useSettingsKeyboardShortcut');
+  // It used to be defined in this file, mounted by `ProjectSidebar`, because a
+  // sidebar row printed its keycap. That row went on 2026-08-17; the handler
+  // followed the surface it opens on 2026-09-02. Pinned from here because this
+  // is where someone looking for it will look first.
+  const SHORTCUT = readFileSync(
+    resolve(import.meta.dir, '../settings/settings-shortcut.ts'),
+    'utf8',
+  );
+  const HOOK = readFileSync(
+    resolve(import.meta.dir, '../settings/use-settings-shortcut.ts'),
+    'utf8',
+  );
+  const PANEL = readFileSync(resolve(import.meta.dir, '../settings/settings-panel.tsx'), 'utf8');
 
-    expect(hook).toContain("event.key === ','");
-    expect(hook).toContain('openSettings()');
-    expect(hook).not.toContain('capabilityTabHref');
-    expect(hook).not.toContain('router.push');
+  test('is no longer defined or bound in the sidebar', () => {
+    // Two bindings would preventDefault twice and re-open the panel twice.
+    expect(SOURCE).not.toContain('useSettingsKeyboardShortcut');
+    expect(SIDEBAR_SOURCE).not.toContain('useSettingsKeyboardShortcut');
+  });
+
+  test('is bound by the panel it opens, so it works on every mount of it', () => {
+    // `ProjectShell` and `StandaloneSettingsRoute` both mount `SettingsPanel`;
+    // binding here is what makes the keystroke work on both without a sidebar.
+    expect(PANEL).toContain("from './use-settings-shortcut'");
+    expect(PANEL).toContain('useSettingsKeyboardShortcut();');
+    expect(HOOK).toContain('openSettings()');
+    expect(HOOK).toContain("window.addEventListener('keydown'");
+  });
+
+  test('survives a route with no SidebarProvider', () => {
+    // `useSidebar()` throws outside a provider and would take `/settings` down.
+    expect(HOOK).toContain('useOptionalSidebar');
+    expect(HOOK).not.toContain('useSidebar(');
+  });
+
+  test('advertises the key it handles', () => {
+    // Behaviour is covered by settings-shortcut.test.ts; this only pins that
+    // the printed keycap and the matcher read one constant.
+    expect(SHORTCUT).toContain("export const SETTINGS_SHORTCUT_KEY = ','");
+    expect(SHORTCUT).toContain('${SETTINGS_SHORTCUT_KEY}');
+    // The row that prints the label is the row that opens the overlay.
+    expect(SWITCHER_SOURCE).toContain('settingsShortcutLabel()');
+    expect(SWITCHER_SOURCE).toContain('openUserSettings');
   });
 });

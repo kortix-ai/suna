@@ -46,8 +46,6 @@ describe('getDeploymentCliInstallCommand', () => {
 
   test('falls back to the canonical URL when there is no origin (SSR)', () => {
     expect(getDeploymentCliInstallCommand(undefined, '')).toBe(KORTIX_CLI_INSTALL_COMMAND);
-    expect(getDeploymentCliInstallCommand(undefined, 'not a URL')).toBe(
-      KORTIX_CLI_INSTALL_COMMAND,
-    );
+    expect(getDeploymentCliInstallCommand(undefined, 'not a URL')).toBe(KORTIX_CLI_INSTALL_COMMAND);
   });
 });

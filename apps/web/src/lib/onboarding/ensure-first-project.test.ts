@@ -1,6 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
-import { pickLandingProject, shouldAutoCreateFirstProject } from './ensure-first-project';
+import {
+  clearAutoProjectSuppression,
+  isAutoProjectSuppressed,
+  pickLandingProject,
+  shouldAutoCreateFirstProject,
+  suppressAutoProjectAfterDelete,
+} from './ensure-first-project';
 
 type State = Parameters<typeof shouldAutoCreateFirstProject>[0];
 
@@ -99,5 +105,103 @@ describe('pickLandingProject', () => {
       project_id: A.project_id,
     });
     expect(pickLandingProject(projects, null)).toMatchObject({ project_id: A.project_id });
+  });
+});
+
+/**
+ * JAY: symptom 5. `kortix:suppress-auto-project` used to be a bare `'1'` with
+ * no owner, so a flag set by account A's archive survived a sign-out that
+ * skipped the client-state sweep and suppressed provisioning for whichever
+ * DIFFERENT account signed in next on the same tab. It is now bound to the
+ * account that set it.
+ */
+describe('isAutoProjectSuppressed / suppressAutoProjectAfterDelete', () => {
+  const ACCOUNT_A = '11111111-1111-4111-8111-111111111111';
+  const ACCOUNT_B = '22222222-2222-4222-8222-222222222222';
+
+  class FakeSessionStorage implements Storage {
+    private store = new Map<string, string>();
+    get length(): number {
+      return this.store.size;
+    }
+    clear(): void {
+      this.store.clear();
+    }
+    getItem(key: string): string | null {
+      return this.store.has(key) ? (this.store.get(key) as string) : null;
+    }
+    key(index: number): string | null {
+      return Array.from(this.store.keys())[index] ?? null;
+    }
+    removeItem(key: string): void {
+      this.store.delete(key);
+    }
+    setItem(key: string, value: string): void {
+      this.store.set(key, value);
+    }
+  }
+
+  type MutableGlobals = { window?: unknown };
+  const g = globalThis as MutableGlobals;
+  const originalWindow = g.window;
+  let fakeSessionStorage: FakeSessionStorage;
+
+  function stubWindow(): void {
+    fakeSessionStorage = new FakeSessionStorage();
+    Object.defineProperty(globalThis, 'window', {
+      value: { sessionStorage: fakeSessionStorage },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      value: originalWindow,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  test('suppression set by account A does not suppress for account B', () => {
+    stubWindow();
+    suppressAutoProjectAfterDelete(ACCOUNT_A);
+
+    expect(isAutoProjectSuppressed(ACCOUNT_A)).toBe(true);
+    expect(isAutoProjectSuppressed(ACCOUNT_B)).toBe(false);
+  });
+
+  test('an unset flag suppresses nobody', () => {
+    stubWindow();
+    expect(isAutoProjectSuppressed(ACCOUNT_A)).toBe(false);
+  });
+
+  test('a caller with no account id is never suppressed, even if a flag is set', () => {
+    stubWindow();
+    suppressAutoProjectAfterDelete(ACCOUNT_A);
+    expect(isAutoProjectSuppressed(null)).toBe(false);
+    expect(isAutoProjectSuppressed(undefined)).toBe(false);
+  });
+
+  test('the legacy bare "1" value (pre-binding format) is treated as unsuppressed', () => {
+    stubWindow();
+    fakeSessionStorage.setItem('kortix:suppress-auto-project', '1');
+    expect(isAutoProjectSuppressed(ACCOUNT_A)).toBe(false);
+  });
+
+  test('clearAutoProjectSuppression removes the flag for every account', () => {
+    stubWindow();
+    suppressAutoProjectAfterDelete(ACCOUNT_A);
+    expect(isAutoProjectSuppressed(ACCOUNT_A)).toBe(true);
+
+    clearAutoProjectSuppression();
+
+    expect(isAutoProjectSuppressed(ACCOUNT_A)).toBe(false);
+  });
+
+  test('suppressAutoProjectAfterDelete with no account id writes nothing', () => {
+    stubWindow();
+    suppressAutoProjectAfterDelete(null);
+    expect(fakeSessionStorage.getItem('kortix:suppress-auto-project')).toBeNull();
   });
 });

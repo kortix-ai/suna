@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `OutputsCard` — "what you got." Everything the agent produced that you can
  * actually open, which is not only files: ask for a landing page or a React app
@@ -220,6 +221,7 @@ export function OutputRows({
    */
   initialShowAll?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [showAll, setShowAll] = useState(initialShowAll ?? false);
   // Scaffolding (data/config/source) never occupies a visible row while a
   // real deliverable exists — it lives behind the fold with the overflow.
@@ -285,7 +287,7 @@ export function OutputRows({
               and proportional digits shift the whole label sideways each time
               it crosses a width boundary (9 → 10 → 100). */}
           <span className="truncate tabular-nums">
-            {hidden} more {hidden === 1 ? 'file' : 'files'}
+            {hidden} {tI18nComplete.raw('text187897ce0afc')} {hidden === 1 ? 'file' : 'files'}
           </span>
         </button>
       )}
@@ -301,6 +303,7 @@ export function OutputRows({
  * bytes, and the browser's own failure reporting on error (no toast to wire).
  */
 function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [busy, setBusy] = useState(false);
   const files = outputs.filter((o): o is OutputItem & { path: string } => Boolean(o.path));
   if (files.length < 2) return null;
@@ -325,13 +328,13 @@ function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
   };
 
   return (
-    <Hint label="Download all" side="bottom">
+    <Hint label={tI18nComplete.raw('textf7917eced9c2')} side="bottom">
       <Button
         variant="ghost"
         size="icon"
         onClick={() => void handleDownload()}
         disabled={busy}
-        aria-label="Download all"
+        aria-label={tI18nComplete.raw('textf7917eced9c2')}
         aria-busy={busy}
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
@@ -355,14 +358,15 @@ export function OutputsCard({
   defaultExpanded: boolean;
   onOpenOutput: (output: OutputItem) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <PanelCard
-      title="Outputs"
+      title={tI18nComplete.raw('texte7ce99764a2d')}
       count={outputs.length}
       isEmpty={outputs.length === 0}
       defaultExpanded={defaultExpanded}
       emptyArt={<OutputsArt />}
-      emptyText="Open the files and apps created during this task."
+      emptyText={tI18nComplete.raw('textd5f2ad00f99b')}
       contentClassName="flex min-h-0 flex-col px-2 py-2"
       fill
       headerAction={<DownloadAllAction outputs={outputs} />}

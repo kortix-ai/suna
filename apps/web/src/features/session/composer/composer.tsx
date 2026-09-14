@@ -11,7 +11,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -64,11 +64,11 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
+import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
-import { type ContextUsage, getContextUsage } from './context-ring';
-import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
+import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
@@ -448,6 +448,7 @@ function ComposerImpl({
   escCount = 0,
   parentClassName,
 }: SessionChatInputProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -827,10 +828,13 @@ function ComposerImpl({
    * Kept out of `submitDisabled` on purpose: that value also gates the voice
    * recorder, and dictation is one of the ways out of this state.
    */
-  const commandAttachmentPlan = planCommandAttachments({
-    isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
-    attachmentCount: attachedFiles.length,
-  });
+  const commandAttachmentPlan = planCommandAttachments(
+    {
+      isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
+      attachmentCount: attachedFiles.length,
+    },
+    tI18nComplete,
+  );
 
   const prefillId = prefill?.id;
   const prefillText = prefill?.text ?? '';
@@ -969,7 +973,7 @@ function ComposerImpl({
     // Rows whose handler this host did not provide are dropped, not shown
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
-    const available = SLASH_ACTIONS.filter((action) => {
+    const available = localizedSlashActions(tI18nComplete).filter((action) => {
       if (action.id === 'compact-session') return Boolean(onCompactClick);
       if (action.id === 'show-context') return Boolean(onContextClick);
       return true;
@@ -985,7 +989,7 @@ function ComposerImpl({
       }
       return action;
     });
-  }, [selectedAgent, onCompactClick, onContextClick, contextUsage]);
+  }, [selectedAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
@@ -1046,7 +1050,7 @@ function ComposerImpl({
         readOnly: disabled,
       });
       if (submissionBlocker) {
-        const copy = sendBlockerMessage(submissionBlocker);
+        const copy = sendBlockerMessage(submissionBlocker, tI18nComplete);
         errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
         return;
       }
@@ -1070,10 +1074,13 @@ function ComposerImpl({
         // rather than two that can drift. Nothing is sent, nothing is cleared,
         // and the reason is already on screen next to the send button; the toast
         // covers the keyboard path, which no disabled button can gate.
-        const guard = planCommandAttachments({
-          isCommand: true,
-          attachmentCount: filesNow.length,
-        });
+        const guard = planCommandAttachments(
+          {
+            isCommand: true,
+            attachmentCount: filesNow.length,
+          },
+          tI18nComplete,
+        );
         if (guard.kind === 'refuse') {
           errorToast(guard.message, { description: guard.description });
           return;
@@ -1107,7 +1114,7 @@ function ComposerImpl({
           runtimeReady,
         });
         if (blocker) {
-          const copy = sendBlockerMessage(blocker);
+          const copy = sendBlockerMessage(blocker, tI18nComplete);
           errorToast(
             copy.message,
             copy.description ? { description: copy.description } : undefined,
@@ -1207,23 +1214,24 @@ function ComposerImpl({
       }
     },
     [
-      submitDisabled,
-      modelUnavailable,
       agentUnavailable,
-      clearOnSend,
-      onSend,
-      isBusy,
-      sessionWorking,
-      runtimeReady,
-      disabled,
-      onCommand,
-      commands,
-      attachedFiles,
-      lockForQuestion,
+      modelUnavailable,
       lockForApproval,
+      disabled,
+      attachedFiles,
+      commands,
+      lockForQuestion,
+      submitDisabled,
+      clearOnSend,
+      tI18nComplete,
+      sessionWorking,
+      isBusy,
+      runtimeReady,
+      onCommand,
+      clearSavedDraft,
       onCustomAnswer,
       onQuestionAction,
-      clearSavedDraft,
+      onSend,
     ],
   );
 
@@ -1364,7 +1372,7 @@ function ComposerImpl({
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    {'Sub-session of'}{' '}
+                    {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
                     <span className="text-foreground/80 font-medium">
                       {threadContext.parentTitle}
                     </span>
@@ -1408,7 +1416,7 @@ function ComposerImpl({
             // continuation, not a new edge.
             <div
               className={cn(
-                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1.5',
+                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1',
                 !notice && 'rounded-t-xl',
               )}
             >
@@ -1446,16 +1454,13 @@ function ComposerImpl({
           // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
           // arbitrary `shadow-[…oklch…]` that followed, which was the only
           // raw colour left in the composer.
-          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border',
+          'bg-background border-border relative isolate z-10 w-full rounded-xl border',
           'pt-3',
-          'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+          // The drag border swaps colour AND gains a ring. Without this it
+          // snapped: a hard flash the moment a file crossed the card.
+          'duration-normal ease-default transition-[border-color]',
           'motion-reduce:transition-none',
           cardClassName,
-          // NO `opacity-30` here. It used to sit on the card AND on the column
-          // inside it, and the two multiplied — 0.3 × 0.3 = 0.09 — so the whole
-          // composer, border and drop target included, went all but invisible
-          // the moment a file crossed it. The card keeps full opacity and its
-          // highlighted border; only the CONTENT dims, under the label below.
           isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
           (replyTo || notice) && 'rounded-t-none',
         )}
@@ -1469,7 +1474,7 @@ function ComposerImpl({
             className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center"
           >
             <span className="text-foreground bg-sidebar/80 rounded-md px-3 py-1.5 text-sm font-medium">
-              Drop files to attach
+              {tHardcodedUi.raw('i18nComplete.text1ab1b095c1ed')}
             </span>
           </div>
         )}
@@ -1520,9 +1525,9 @@ function ComposerImpl({
           >
             {/*
               This padding is part of the input, so it has to behave like it.
-              `px-2 pb-6` lives on THIS element, not on the contenteditable
-              inside it, so the 24px band under the last line and the 8px strip
-              down each side were dead: a press landed on the div, the editor
+              `px-1 pb-9` lives on THIS element, not on the contenteditable
+              inside it, so the band under the last line and the strip down
+              each side were dead: a press landed on the div, the editor
               never took focus, and nothing happened. That band is exactly
               where you click to resume typing, which made the composer read as
               broken. `cursor-text` matches the affordance to the behaviour.
@@ -1531,7 +1536,7 @@ function ComposerImpl({
               only a press that TERMINATES here may be forwarded.
             */}
             <div
-              className="relative min-w-0 cursor-text px-2 pb-6"
+              className="relative min-w-0 cursor-text px-1 pb-9"
               onMouseDown={(e) => {
                 if (
                   !shouldFocusEditorFromPadding({
@@ -1642,6 +1647,17 @@ function ComposerImpl({
       </div>
 
       {/*
+        Directly under the card, and BEFORE the underbar — the bar is a tray
+        that hangs off the card's bottom edge (see `ModelConnectionBar` for the
+        overlap), so it has to be the card's next sibling. Below the underbar it
+        was a third detached box under a second detached box.
+
+        The card is `isolate z-10` and this is `z-0`, so the card paints over
+        the overlap and only the tray's exposed strip shows.
+      */}
+      <ModelConnectionBar show={noModelsConnected} />
+
+      {/*
         Attach + agent + context ring, in a row UNDER the card — not in the
         toolbar inside it. The card carries the message and the controls that
         shape the reply; this row carries what you bring to the message and
@@ -1662,8 +1678,6 @@ function ComposerImpl({
           toolbarSlot={toolbarSlot}
         />
       )}
-
-      <ModelConnectionBar show={noModelsConnected} />
 
       {/*
         The `'below'` dock. Absolute, not in flow: `top-full` hangs it off the

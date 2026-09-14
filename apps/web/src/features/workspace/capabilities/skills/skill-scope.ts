@@ -20,8 +20,6 @@ export function filterSkills(
   return skills.filter((s) => {
     if (opts.scope && skillScope(s.name) !== opts.scope) return false;
     if (!q) return true;
-    return (
-      s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)
-    );
+    return s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q);
   });
 }

@@ -4,8 +4,8 @@ import type { ServiceAccount } from '@/lib/iam-client';
 import type { AccountToken, KortixProject } from '@kortix/sdk';
 import {
   RUNTIME_TOKEN_NAME_PREFIX,
-  buildApiKeyRows,
   apiKeyFilter,
+  buildApiKeyRows,
   countApiKeys,
   filterApiKeyRows,
   isRuntimeMintedKey,

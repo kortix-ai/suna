@@ -19,11 +19,13 @@ import {
 import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ProjectFilesSkeleton } from './project-files-skeleton';
 import { resolveFilesRef } from './resolve-files-ref';
 
 export function ProjectFilesView({ projectId }: { projectId: string }) {
+  const t = useTranslations('projectHome');
   // `qk.project.summary(id)` is the canonical getProject cache slot — the
   // same one `useProjectCan` reads (lib/use-project-can.ts:55). The sidebar's
   // Files entry calls that hook to decide whether to render itself, so this
@@ -58,10 +60,8 @@ export function ProjectFilesView({ projectId }: { projectId: string }) {
     if (projectQuery.isError) {
       return (
         <ErrorState
-          title="Failed to load project"
-          description={
-            projectQuery.error instanceof Error ? projectQuery.error.message : undefined
-          }
+          title={t('files.loadError')}
+          description={projectQuery.error instanceof Error ? projectQuery.error.message : undefined}
         />
       );
     }

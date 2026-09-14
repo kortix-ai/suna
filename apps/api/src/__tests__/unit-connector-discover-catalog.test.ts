@@ -209,6 +209,137 @@ describe('Discover integrations.sh catalogue', () => {
   });
 });
 
+describe('Discover browse sections', () => {
+  const entry = (
+    slug: string,
+    categories: string[],
+    popularity: number | null = null,
+    name = slug,
+  ) => ({
+    id: `mcp/${slug}`,
+    kind: 'mcp',
+    slug,
+    name,
+    domain: `${slug}.example`,
+    categories,
+    feeds: [],
+    ...(popularity === null ? {} : { popularity }),
+  });
+
+  // Shaped like the live feed on 2026-09-11: raw categories spelled several ways
+  // (`financial`, `financial-services`, `developer_tools`), uncurated ones
+  // (`cloud`), and uncategorized records. The page used to bucket one 48-item
+  // page of 5531 and head each bucket with its card count — `Finance · 1`.
+  const catalogOf = (data: unknown[]) =>
+    createConnectorCatalog({
+      fetch: async () => new Response(JSON.stringify({ version: 1, data })),
+      ttlMs: 60_000,
+    });
+
+  const LIVE_SHAPED = [
+    entry('ledgerly', ['financial']),
+    entry('coinbase', ['financial-services']),
+    entry('stripe', ['payments'], 50),
+    entry('acme-cloud', ['cloud']),
+    entry('skyhost', ['cloud']),
+    entry('github', ['developer_tools'], 90),
+    entry('mystery', []),
+    entry('notion', ['productivity', 'documents'], 100),
+    entry('asana', ['project-management', 'productivity']),
+  ];
+
+  test('sections state each curated category’s size across the COMPLETE catalogue', async () => {
+    const result = await catalogOf(LIVE_SHAPED).sections({ perCategory: 2, maxCategories: 4 });
+    // Curated rank first (Productivity, Finance, then Developer tools is last of
+    // the curated list), the uncurated tail by size, `Other` at the very end.
+    expect(result.sections.map(({ key, label, total }) => ({ key, label, total }))).toEqual([
+      { key: 'productivity', label: 'Productivity', total: 2 },
+      { key: 'finance', label: 'Finance', total: 3 },
+      { key: 'developer-tools', label: 'Developer tools', total: 1 },
+      { key: 'cloud', label: 'Cloud', total: 2 },
+    ]);
+    // Picks lead a section: Stripe is Finance's first pick, ahead of feed order.
+    expect(result.sections[1].items.map((item) => item.slug)).toEqual(['stripe', 'ledgerly']);
+    // The facet counts every category, `Other` included, so an open category
+    // can name itself and state its size.
+    expect(result.categories).toEqual([
+      { key: 'productivity', label: 'Productivity', count: 2 },
+      { key: 'finance', label: 'Finance', count: 3 },
+      { key: 'developer-tools', label: 'Developer tools', count: 1 },
+      { key: 'cloud', label: 'Cloud', count: 2 },
+      { key: 'Other', label: 'Other', count: 1 },
+    ]);
+  });
+
+  test('Popular is the top of the whole catalogue by rank, capped to one slice', async () => {
+    const result = await catalogOf(LIVE_SHAPED).sections({ perCategory: 2 });
+    expect(result.popular.map((item) => item.slug)).toEqual(['notion', 'github']);
+    // A popular app still appears in its real category. Hiding it there would
+    // make that section lie about what it contains.
+    const productivity = result.sections.find((section) => section.key === 'productivity');
+    expect(productivity?.items.map((item) => item.slug)).toContain('notion');
+
+    const unranked = await catalogOf([entry('ledgerly', ['financial'])]).sections();
+    expect(unranked.popular).toEqual([]);
+  });
+
+  test('a section slice shows one card per product domain, not one per surface', async () => {
+    // Live feed: `stripe-com` (MCP), `stripe-com-openapi` and `stripe-com-cli`
+    // are three records for one product. Picks match by name, so all three
+    // floated into Finance's six cards as "Stripe, Stripe, Stripe". The add
+    // flow resolves every surface for a domain, so one card per domain loses
+    // nothing — and the section total still counts every record "View all"
+    // lists.
+    const surface = (slug: string, domain: string, categories: string[], popularity?: number) => ({
+      ...entry(slug, categories, popularity ?? null, 'Stripe'),
+      domain,
+    });
+    const result = await catalogOf([
+      surface('stripe-com', 'stripe.com', ['payments'], 70),
+      surface('stripe-com-openapi', 'stripe.com', ['payments'], 60),
+      surface('stripe-com-cli', 'stripe.com', ['payments']),
+      entry('ledgerly', ['financial'], 50),
+    ]).sections();
+    const finance = result.sections.find((section) => section.key === 'finance');
+    expect(finance?.total).toBe(4);
+    expect(finance?.items.map((item) => item.slug)).toEqual(['stripe-com', 'ledgerly']);
+    expect(result.popular.map((item) => item.slug)).toEqual(['stripe-com', 'ledgerly']);
+  });
+
+  test('section limits default to 6 x 12 and cap at 24 x 40', async () => {
+    const many = Array.from({ length: 60 }, (_, index) =>
+      entry(`app-${index}`, [`raw-${index}`, 'productivity']),
+    );
+    const catalog = catalogOf(many);
+    const defaults = await catalog.sections();
+    expect(defaults.sections).toHaveLength(12);
+    expect(defaults.sections[0]).toMatchObject({ key: 'productivity', total: 60 });
+    expect(defaults.sections[0].items).toHaveLength(6);
+    const capped = await catalog.sections({ perCategory: 999, maxCategories: 999 });
+    expect(capped.sections).toHaveLength(40);
+    expect(capped.sections[0].items).toHaveLength(24);
+  });
+
+  test('a category filter serves exactly the set its section counted, picks first', async () => {
+    const catalog = catalogOf(LIVE_SHAPED);
+    const page = await catalog.list({ category: 'finance' });
+    expect(page.total).toBe(3);
+    expect(page.items.map((item) => item.slug)).toEqual(['stripe', 'ledgerly', 'coinbase']);
+
+    const other = await catalog.list({ category: 'Other' });
+    expect(other.items.map((item) => item.slug)).toEqual(['mystery']);
+
+    const searched = await catalog.list({ category: 'finance', q: 'coin' });
+    expect(searched.items.map((item) => item.slug)).toEqual(['coinbase']);
+
+    expect(await catalog.list({ category: 'no-such-category' })).toMatchObject({
+      total: 0,
+      items: [],
+      hasMore: false,
+    });
+  });
+});
+
 describe('Pipedream catalogue membership', () => {
   test('accepts any auth type, so long as the app has actions', () => {
     expect(isCatalogApp({ slug: 'github', hasActions: true })).toBe(true);

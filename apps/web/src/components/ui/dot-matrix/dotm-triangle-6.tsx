@@ -1,17 +1,19 @@
-"use client";
+'use client';
 
-import type { CSSProperties } from "react";
+import type { CSSProperties } from 'react';
 
-import { cx } from "@/lib/dotmatrix-core";
-import { resolveDmxColorTokens } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { styleOpacity, stylePx } from "@/lib/dotmatrix-core";
-import { remapOpacityToTriplet } from "@/lib/dotmatrix-core";
-import { dmxBloomRootActive, dmxDotBloomParts } from "@/lib/dotmatrix-core";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotMatrixCommonProps } from "@/lib/dotmatrix-core";
-import { applyDotMatrixScale } from "@/lib/dotmatrix-core";
+import type { DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import {
+  applyDotMatrixScale,
+  cx,
+  dmxBloomRootActive,
+  dmxDotBloomParts,
+  remapOpacityToTriplet,
+  resolveDmxColorTokens,
+  styleOpacity,
+  stylePx,
+} from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmTriangle6Props = DotMatrixCommonProps;
 
@@ -38,16 +40,16 @@ const BLINK_PHASE = 0.36;
 const RESET_PHASE = 0.12;
 
 const TRIANGLE_CELLS = new Set([
-  "1,3",
-  "2,2",
-  "2,4",
-  "3,1",
-  "3,3",
-  "3,5",
-  "4,0",
-  "4,2",
-  "4,4",
-  "4,6"
+  '1,3',
+  '2,2',
+  '2,4',
+  '3,1',
+  '3,3',
+  '3,5',
+  '4,0',
+  '4,2',
+  '4,4',
+  '4,6',
 ]);
 
 function smoothstep01(edge0: number, edge1: number, x: number): number {
@@ -61,9 +63,7 @@ function smoothstep01(edge0: number, edge1: number, x: number): number {
 /** Six fills (D1..D6 order) from a single traveling wave front. */
 function waveFills(introT: number): number[] {
   const waveCenter = -WAVE_HALF + introT * (5 + 2 * WAVE_HALF);
-  return [0, 1, 2, 3, 4, 5].map((i) =>
-    smoothstep01(i - WAVE_HALF, i + WAVE_HALF, waveCenter)
-  );
+  return [0, 1, 2, 3, 4, 5].map((i) => smoothstep01(i - WAVE_HALF, i + WAVE_HALF, waveCenter));
 }
 
 function isWithinTriangleMask(row: number, col: number): boolean {
@@ -103,7 +103,7 @@ const BIT_TO_FILL_INDEX: Record<number, number> = {
   [D3]: 2,
   [D4]: 3,
   [D5]: 4,
-  [D6]: 5
+  [D6]: 5,
 };
 
 function meanFills(indices: readonly number[], fills: readonly number[]): number {
@@ -119,10 +119,9 @@ function opacityForCell(
   col: number,
   fills: readonly number[],
   blinkMul: number,
-  resetMul: number
+  resetMul: number,
 ): number {
-  const lift = (base: number) =>
-    LOW_OPACITY + (base - LOW_OPACITY) * blinkMul * resetMul;
+  const lift = (base: number) => LOW_OPACITY + (base - LOW_OPACITY) * blinkMul * resetMul;
 
   const bit = brailleBitForTriangle(row, col);
   if (bit !== null) {
@@ -133,7 +132,10 @@ function opacityForCell(
 
   if (row === 1 && col === 3) {
     const m = meanFills([0, 3], fills);
-    const raw = LOW_OPACITY + (HIGH_OPACITY - LOW_OPACITY) * m * 0.92 + (MID_OPACITY - LOW_OPACITY) * (1 - m) * 0.35;
+    const raw =
+      LOW_OPACITY +
+      (HIGH_OPACITY - LOW_OPACITY) * m * 0.92 +
+      (MID_OPACITY - LOW_OPACITY) * (1 - m) * 0.35;
     return lift(Math.min(HIGH_OPACITY, raw));
   }
 
@@ -185,44 +187,49 @@ export function DotmTriangle6({
   scale = 1,
   size: sizeProp = 30,
   dotSize: dotSizeProp = 6.5,
-  color = "currentColor",
+  color = 'currentColor',
   colorPreset,
-  ariaLabel = "Loading",
+  ariaLabel = 'Loading',
   className,
   muted = false,
   bloom = false,
   halo = 0,
   dotClassName,
-  dotShape = "circle",
+  dotShape = 'circle',
   speed = 2.2,
   animated = true,
   hoverAnimated = false,
   cellPadding,
   opacityBase,
   opacityMid,
-  opacityPeak
+  opacityPeak,
 }: DotmTriangle6Props) {
   const { size, dotSize } = applyDotMatrixScale(sizeProp, dotSizeProp, scale);
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
-  const cycleActive = !reducedMotion && matrixPhase !== "idle";
+  const cycleActive = !reducedMotion && matrixPhase !== 'idle';
   const cyclePhase = useCyclePhase({
     active: cycleActive,
     cycleMsBase: 3000,
-    speed
+    speed,
   });
 
-  const { fills, blinkMul, resetMul } = reducedMotion || matrixPhase === "idle"
-    ? {
-      fills: [0.55, 0.55, 0.55, 0.55, 0.55, 0.55] as number[],
-      blinkMul: 1,
-      resetMul: 1
-    }
-    : cycleParams(cyclePhase);
+  const { fills, blinkMul, resetMul } =
+    reducedMotion || matrixPhase === 'idle'
+      ? {
+          fills: [0.55, 0.55, 0.55, 0.55, 0.55, 0.55] as number[],
+          blinkMul: 1,
+          resetMul: 1,
+        }
+      : cycleParams(cyclePhase);
 
   const gap =
     cellPadding ?? Math.max(1, Math.floor((size - dotSize * MATRIX_SIZE) / (MATRIX_SIZE - 1)));
@@ -231,10 +238,10 @@ export function DotmTriangle6({
   const rootStyle = {
     width: stylePx(cellPadding == null ? size : matrixSize),
     height: stylePx(cellPadding == null ? size : matrixSize),
-    ["--dmx-dot-size" as const]: `${dotSize}px`,
-      ["--dmx-halo-level" as const]: halo,
-    ["--dmx-dot-fill" as const]: dotFill,
-    color: resolvedColor
+    ['--dmx-dot-size' as const]: `${dotSize}px`,
+    ['--dmx-halo-level' as const]: halo,
+    ['--dmx-dot-fill' as const]: dotFill,
+    color: resolvedColor,
   } as CSSProperties;
 
   return (
@@ -242,7 +249,13 @@ export function DotmTriangle6({
       role="status"
       aria-live="polite"
       aria-label={ariaLabel}
-      className={cx("dmx-root", `dmx-dot-shape-${dotShape}`, muted && "dmx-muted", dmxBloomRootActive(bloom, halo) && "dmx-bloom", className)}
+      className={cx(
+        'dmx-root',
+        `dmx-dot-shape-${dotShape}`,
+        muted && 'dmx-muted',
+        dmxBloomRootActive(bloom, halo) && 'dmx-bloom',
+        className,
+      )}
       style={rootStyle}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -252,7 +265,7 @@ export function DotmTriangle6({
         style={{
           gap,
           gridTemplateColumns: `repeat(${MATRIX_SIZE}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${MATRIX_SIZE}, minmax(0, 1fr))`
+          gridTemplateRows: `repeat(${MATRIX_SIZE}, minmax(0, 1fr))`,
         }}
       >
         {Array.from({ length: MATRIX_SIZE * MATRIX_SIZE }).map((_, index) => {
@@ -262,19 +275,36 @@ export function DotmTriangle6({
 
           const opacity = isActive ? opacityForCell(row, col, fills, blinkMul, resetMul) : 0;
 
-                    const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, opacityBase, opacityMid, opacityPeak);
+          const dmxBloom = dmxDotBloomParts(
+            isActive,
+            opacity,
+            bloom,
+            halo,
+            opacityBase,
+            opacityMid,
+            opacityPeak,
+          );
 
           return (
             <span
               key={index}
               aria-hidden="true"
-              className={cx("dmx-dot", !isActive && "dmx-inactive", dmxBloom.bloomDot && "dmx-bloom-dot", dotClassName)}
-              style={{
-                width: stylePx(dotSize),
-                height: stylePx(dotSize),
-                opacity: styleOpacity(remapOpacityToTriplet(opacity, opacityBase, opacityMid, opacityPeak)),
-                ["--dmx-bloom-level" as const]: dmxBloom.level
-              } as CSSProperties}
+              className={cx(
+                'dmx-dot',
+                !isActive && 'dmx-inactive',
+                dmxBloom.bloomDot && 'dmx-bloom-dot',
+                dotClassName,
+              )}
+              style={
+                {
+                  width: stylePx(dotSize),
+                  height: stylePx(dotSize),
+                  opacity: styleOpacity(
+                    remapOpacityToTriplet(opacity, opacityBase, opacityMid, opacityPeak),
+                  ),
+                  ['--dmx-bloom-level' as const]: dmxBloom.level,
+                } as CSSProperties
+              }
             />
           );
         })}

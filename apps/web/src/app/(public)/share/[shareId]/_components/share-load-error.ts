@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import { PublicSessionShareError } from '@kortix/sdk';
 
 export interface ShareLoadError {
@@ -25,27 +26,30 @@ export function toShareLoadError(err: unknown): ShareLoadError {
  * documents for every other public-share surface: unknown token, revoked or
  * expired token, and a session whose sandbox hasn't been provisioned yet.
  */
-export function describeShareError(error: ShareLoadError | null): { title: string; description: string } {
+export function describeShareError(
+  error: ShareLoadError | null,
+  tI18nComplete: UiTranslator,
+): { title: string; description: string } {
   if (error?.status === 404) {
     return {
-      title: 'Share Not Found',
-      description: 'This shared session does not exist or has been removed.',
+      title: tI18nComplete.raw('text046e63364fb7'),
+      description: tI18nComplete.raw('text9d0813f9e116'),
     };
   }
   if (error?.status === 410) {
     return {
-      title: 'Share Link Expired',
-      description: 'This share link has been revoked or has expired.',
+      title: tI18nComplete.raw('text2a517f64c473'),
+      description: tI18nComplete.raw('text1c5f0707e8b0'),
     };
   }
   if (error?.status === 503) {
     return {
-      title: 'Session Not Ready',
-      description: "This session's sandbox hasn't started yet. Try again in a moment.",
+      title: tI18nComplete.raw('texta6331929630a'),
+      description: tI18nComplete.raw('text7e19c0ed80e9'),
     };
   }
   return {
-    title: 'Error Loading Share',
+    title: tI18nComplete.raw('textfe4e2e5988fd'),
     description: error?.message || 'The session data could not be loaded.',
   };
 }
@@ -53,5 +57,7 @@ export function describeShareError(error: ShareLoadError | null): { title: strin
 /** Copy for a transient in-band transcript failure (still a 200 — see
  *  `PublicSessionTranscript.available`), e.g. OpenCode not ready yet. */
 export function transcriptUnavailableMessage(reason: string | null): string {
-  return reason ? `Conversation temporarily unavailable — ${reason}.` : 'Conversation temporarily unavailable.';
+  return reason
+    ? `Conversation temporarily unavailable — ${reason}.`
+    : 'Conversation temporarily unavailable.';
 }

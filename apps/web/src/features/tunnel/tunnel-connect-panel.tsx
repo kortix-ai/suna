@@ -2,7 +2,7 @@
 
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -23,13 +23,14 @@ function ConnectSteps() {
 }
 
 export function ConnectCommandPanel() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const command = buildTunnelConnectCommand({
     backendUrl: getEnv().BACKEND_URL || '',
     origin: typeof window !== 'undefined' ? window.location.origin : '',
   });
   const { copied, copy } = useCopy({
-    successMessage: 'Command copied',
-    errorMessage: 'Copy failed',
+    successMessage: tI18nComplete.raw('texte5c02424e511'),
+    errorMessage: tI18nComplete.raw('text5b50e7a693fe'),
     duration: 2000,
   });
 
@@ -37,7 +38,9 @@ export function ConnectCommandPanel() {
     <div className="w-full space-y-4">
       <div className="bg-popover overflow-hidden rounded-md border">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-          <span className="text-muted-foreground text-xs">Install command</span>
+          <span className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('text1ae97542051d')}
+          </span>
         </div>
         <div className="bg-secondary relative rounded-t-md">
           <Button
@@ -45,7 +48,7 @@ export function ConnectCommandPanel() {
             variant="accent"
             size="xs"
             onClick={() => copy(command)}
-            aria-label={copied ? 'Copied' : 'Copy command'}
+            aria-label={copied ? 'Copied' : tI18nComplete.raw('text9a01feecae67')}
             className="absolute top-2 right-2 shrink-0 transition-transform active:scale-[0.96]"
           >
             <span className="relative inline-flex size-3.5 items-center justify-center">

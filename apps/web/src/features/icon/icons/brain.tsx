@@ -1,8 +1,10 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const Brain = ({ className }: { className?: string }) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <svg
       height="16"
@@ -12,7 +14,7 @@ export const Brain = ({ className }: { className?: string }) => {
         color: 'currentcolor',
         transitionProperty: 'color',
         transitionDuration: '150ms',
-        transitionTimingFunction: 'cubic-bezier(0.31, 0.1, 0.08, 0.96)',
+        transitionTimingFunction: "cubic-bezier(0.31, 0.1, 0.08, 0.96)",
         transitionDelay: '0ms',
       }}
       viewBox="0 0 16 16"

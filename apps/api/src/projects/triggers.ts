@@ -328,6 +328,9 @@ export interface ParsedManifest {
   revision?: string | null;
   /** Logical manifest files in winner-priority order. */
   candidatePaths?: string[];
+  /** Commit the manifest was read at, or null when unknown (synthesized, or
+   *  a string parse with no git context). Carried onto derived grants. */
+  commit?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -364,6 +367,7 @@ export async function readManifest(
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
       forceRefresh: opts?.forceRefresh,
+      strictRef: opts?.rethrowReadErrors,
     });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
@@ -384,6 +388,7 @@ export async function readManifest(
     found.path,
     found.sha,
     found.candidatePaths,
+    found.commit,
   );
 }
 
@@ -463,6 +468,7 @@ export function parseManifestString(
   path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
   revision?: string | null,
   candidatePaths?: string[],
+  commit?: string | null,
 ): ParsedManifest {
   const parsed = parseManifestText(raw, format);
   const version =
@@ -489,6 +495,7 @@ export function parseManifestString(
   };
   if (revision !== undefined) manifest.revision = revision;
   if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
+  if (commit !== undefined) manifest.commit = commit;
   return manifest;
 }
 
@@ -566,10 +573,13 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
  * arrays + a single top-level error when the manifest fails to parse —
  * never throws.
  */
-export async function loadProjectTriggers(project: GitBackedProject): Promise<LoadedTriggers> {
+export async function loadProjectTriggers(
+  project: GitBackedProject,
+  opts?: { forceRefresh?: boolean },
+): Promise<LoadedTriggers> {
   let manifest: ParsedManifest | null;
   try {
-    manifest = await readManifest(project);
+    manifest = await readManifest(project, { forceRefresh: opts?.forceRefresh });
   } catch (err) {
     // The manifest failed to parse before we learned which candidate file it
     // actually was (.yaml/.yml/.toml) — fall back to the project's configured
@@ -588,6 +598,35 @@ export async function loadProjectTriggers(project: GitBackedProject): Promise<Lo
   }
   if (!manifest) return { specs: [], errors: [] };
   return extractTriggers(manifest);
+}
+
+function forcedTriggerRefreshCooldownMs(): number {
+  const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
+  return Number.isFinite(value) && value >= 0 ? value : 60_000;
+}
+
+const lastForcedTriggerRefreshAt = new Map<string, number>();
+
+/**
+ * Resolve one trigger for an action endpoint. A trigger can be absent from one
+ * API replica's mirror for up to the normal refresh interval after another
+ * replica commits it. Refresh once before returning a definitive miss.
+ */
+export async function findProjectTriggerBySlug(
+  project: GitBackedProject,
+  slug: string,
+): Promise<GitTriggerSpec | null> {
+  const cached = await loadProjectTriggers(project);
+  const cachedSpec = cached.specs.find((spec) => spec.slug === slug);
+  if (cachedSpec) return cachedSpec;
+
+  const now = Date.now();
+  const lastForcedAt = lastForcedTriggerRefreshAt.get(project.projectId) ?? 0;
+  if (now - lastForcedAt < forcedTriggerRefreshCooldownMs()) return null;
+
+  lastForcedTriggerRefreshAt.set(project.projectId, now);
+  const refreshed = await loadProjectTriggers(project, { forceRefresh: true });
+  return refreshed.specs.find((spec) => spec.slug === slug) ?? null;
 }
 
 /* ─── Trigger ↔ manifest-entry conversion ───────────────────────────────── */

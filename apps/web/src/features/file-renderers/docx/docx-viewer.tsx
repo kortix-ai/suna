@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   DocxEditorViewer,
   setWasmSource,
@@ -324,6 +325,7 @@ function DocxFileActionsMenu({
   showTrackedChanges: boolean;
   showUploadButton: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const showFileActions = showDownloadButton || showUploadButton;
 
   return (
@@ -334,7 +336,7 @@ function DocxFileActionsMenu({
           variant="ghost"
           size="icon-sm"
           className="transition-transform active:scale-[0.96]"
-          aria-label="Open DOCX actions"
+          aria-label={tI18nComplete.raw('text9cccb4f00efb')}
         >
           <Ellipsis className="size-4" />
         </Button>
@@ -347,7 +349,7 @@ function DocxFileActionsMenu({
         >
           <span className="flex min-w-0 items-center gap-2">
             <MessageSquare className="size-4" />
-            Comments
+            {tI18nComplete.raw('text355f79f29d7d')}
           </span>
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
@@ -357,20 +359,20 @@ function DocxFileActionsMenu({
         >
           <span className="flex min-w-0 items-center gap-2">
             <FileDiff className="size-4" />
-            Edits
+            {tI18nComplete.raw('text4dd230bca68f')}
           </span>
         </DropdownMenuCheckboxItem>
         {showFileActions ? <DropdownMenuSeparator /> : null}
         {showDownloadButton ? (
           <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
             {isPreparingDownload ? <Spinner className="size-4" /> : <Download className="size-4" />}
-            Download
+            {tI18nComplete.raw('textd6eafe823591')}
           </DropdownMenuItem>
         ) : null}
         {showUploadButton ? (
           <DropdownMenuItem onClick={onUploadClick}>
             <Upload className="size-4" />
-            Upload
+            {tI18nComplete.raw('text865e89de78d9')}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -389,6 +391,7 @@ function DocxPageNumberControl({
   onPageChange: (pageNumber: number) => void;
   pageCount: number;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const activePage = useDocxActivePage(activePageStore);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const displayPage = pageCount ? activePage : 1;
@@ -425,11 +428,11 @@ function DocxPageNumberControl({
 
   return (
     <div className="text-primary flex items-center text-sm whitespace-nowrap tabular-nums">
-      <span>Page</span>
+      <span>{tI18nComplete.raw('text0a30a815d67d')}</span>
       {isEditing ? (
         <Input
           ref={inputRef}
-          aria-label="Page number"
+          aria-label={tI18nComplete.raw('text05fa2e3b0a10')}
           inputMode="numeric"
           pattern="[0-9]*"
           size="sm"
@@ -454,7 +457,7 @@ function DocxPageNumberControl({
           variant="ghost"
           size="sm"
           className="font-normal"
-          aria-label={`Current page ${displayPage}. Edit page number`}
+          aria-label={tI18nComplete('text8b5b847c92d6', { value0: displayPage })}
           disabled={controlsDisabled || !pageCount}
           onClick={() => {
             setDraftPage(String(displayPage));
@@ -464,7 +467,9 @@ function DocxPageNumberControl({
           {displayPage}
         </Button>
       )}
-      <span>of {pageCount || '-'}</span>
+      <span>
+        {tI18nComplete.raw('text28391d3bc64e')} {pageCount || '-'}
+      </span>
     </div>
   );
 }
@@ -514,6 +519,7 @@ function DocxToolbar({
   toolbarActions?: React.ReactNode;
   zoomScale: number;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const canZoomIn = zoomScale < ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1];
   const canZoomOut = zoomScale > ZOOM_OPTIONS[0];
 
@@ -521,13 +527,13 @@ function DocxToolbar({
     <div className="bg-background flex min-h-12 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <TooltipProvider>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <ToolbarTooltip label="Toggle thumbnails">
+          <ToolbarTooltip label={tI18nComplete.raw('text3bba69274a7d')}>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
               className="transition-transform active:scale-[0.96]"
-              aria-label="Toggle thumbnails"
+              aria-label={tI18nComplete.raw('text3bba69274a7d')}
               disabled={controlsDisabled}
               onClick={onToggleSidebar}
             >
@@ -544,14 +550,14 @@ function DocxToolbar({
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div className="flex flex-none items-center gap-1">
-            <ToolbarTooltip label="Zoom out">
+            <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
                 disabled={controlsDisabled || !canZoomOut}
-                aria-label="Zoom out"
+                aria-label={tI18nComplete.raw('textbc7b631a689b')}
                 onClick={() =>
                   setZoomScale((currentZoomScale) => getNextZoomScale(currentZoomScale, -1))
                 }
@@ -569,7 +575,7 @@ function DocxToolbar({
                 size="sm"
                 variant="secondary"
                 className="border-none tabular-nums"
-                aria-label="Zoom level"
+                aria-label={tI18nComplete.raw('text3926ced4e6c4')}
               >
                 <SelectValue>{Math.round(zoomScale)}%</SelectValue>
               </SelectTrigger>
@@ -581,14 +587,14 @@ function DocxToolbar({
                 ))}
               </SelectContent>
             </Select>
-            <ToolbarTooltip label="Zoom in">
+            <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 className="transition-transform active:scale-[0.96]"
                 disabled={controlsDisabled || !canZoomIn}
-                aria-label="Zoom in"
+                aria-label={tI18nComplete.raw('text0e47f09a748f')}
                 onClick={() =>
                   setZoomScale((currentZoomScale) => getNextZoomScale(currentZoomScale, 1))
                 }
@@ -666,7 +672,7 @@ function DocxSidebarThumbnail({
       isLoading={isLoading}
       hasError={hasError}
       className={cn(
-        'w-[92px] rounded-md border-0 shadow-xs ring-0 transition-shadow duration-150',
+        'duration-normal w-[92px] rounded-md border-0 shadow-xs ring-0 transition-shadow',
         isActive && 'shadow-sm',
       )}
     />
@@ -692,6 +698,7 @@ function DocxThumbnailSidebarList({
   sidebarOpen: boolean;
   thumbnails: DocxPageThumbnailItem[];
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const thumbnailListboxId = React.useId();
   const visibleThumbnails = React.useMemo(
@@ -797,7 +804,7 @@ function DocxThumbnailSidebarList({
       viewportProps={{
         'aria-activedescendant': activeDescendantId,
         'aria-busy': isLoadingDocument || undefined,
-        'aria-label': 'DOCX pages',
+        'aria-label': tI18nComplete.raw('textc0abac43e0de'),
         onKeyDown: handleKeyDown,
         onMouseDown: (event) => {
           event.currentTarget.focus({ preventScroll: true });
@@ -1027,6 +1034,7 @@ function DocxViewerContent({
   toolbarActions?: React.ReactNode;
   url?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const [viewportElement, setViewportElement] = React.useState<HTMLDivElement | null>(null);
@@ -1372,7 +1380,7 @@ function DocxViewerContent({
           style={{ backgroundColor: viewerBackgroundColor }}
           viewportClassName="px-4 py-6"
           viewportProps={{
-            'aria-label': 'DOCX document',
+            'aria-label': tI18nComplete.raw('text1d6d3a460fb1'),
             onMouseDown: (event) => {
               if (isInteractiveViewerTarget(event.target)) return;
               event.currentTarget.focus({ preventScroll: true });
@@ -1384,13 +1392,14 @@ function DocxViewerContent({
           {!url && !activeUploadedDocxFile ? (
             <div className="grid h-full min-h-96 place-items-center p-6 text-center">
               <div className="bg-background max-w-md rounded-lg border p-4 text-sm shadow-xs">
-                <div className="font-medium">Upload a Word document to preview</div>
+                <div className="font-medium">{tI18nComplete.raw('text53c247b8cf06')}</div>
                 <div className="text-muted-foreground mt-1">
-                  Pass a DOCX URL with the <code>src</code> prop or upload a file.
+                  {tI18nComplete.raw('text46800e585f61')} <code>src</code>{' '}
+                  {tI18nComplete.raw('text37056f2381e2')}
                 </div>
                 <div className="text-muted-foreground mt-1">
-                  Legacy <code>.doc</code> support is limited and experimental; convert to DOCX for
-                  best fidelity.
+                  {tI18nComplete.raw('text1432897a6136')} <code>.doc</code>{' '}
+                  {tI18nComplete.raw('text73a2f5159338')}
                 </div>
                 <Button
                   type="button"
@@ -1400,14 +1409,14 @@ function DocxViewerContent({
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Upload className="size-4" />
-                  Upload Word document
+                  {tI18nComplete.raw('textdc0451eb46ce')}
                 </Button>
               </div>
             </div>
           ) : loadError ? (
             <div className="grid h-full min-h-96 place-items-center p-6 text-center">
               <div className="bg-background text-destructive max-w-md rounded-lg border p-4 text-sm shadow-xs">
-                <div className="font-medium">Unable to display DOCX</div>
+                <div className="font-medium">{tI18nComplete.raw('text2a5502b48b14')}</div>
                 <div className="text-muted-foreground mt-1">{loadError}</div>
               </div>
             </div>
@@ -1427,7 +1436,7 @@ function DocxViewerContent({
                   showComments={showComments}
                   renderCommentCard={renderCommentCard}
                   loadingState={loadingState}
-                  pageBackgroundColor={effectiveIsDark ? '#0a0a0a' : undefined}
+                  pageBackgroundColor={effectiveIsDark ? 'var(--background)' : undefined}
                   pageGapBackgroundColor={viewerBackgroundColor}
                   pageVirtualization={pageVirtualization}
                   deferInitialPaginationPaint={false}

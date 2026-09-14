@@ -17,7 +17,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo } from 'react';
 
 /**
@@ -109,13 +109,12 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         </ToolResultCard>
       ) : isNoResults ? (
         <ToolResultCard>
-
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3420JsxAttrMessageNoMatchingFilesFound',
-          )}
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3420JsxAttrMessageNoMatchingFilesFound',
+            )}
           />
-          </ToolResultCard>
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="glob" />
       ) : null}

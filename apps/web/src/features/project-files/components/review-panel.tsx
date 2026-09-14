@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -89,6 +90,7 @@ export function ReviewPanel({
   filters?: ReactNode;
   children: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <aside
       aria-hidden={!open}
@@ -105,12 +107,12 @@ export function ReviewPanel({
         <div className="flex h-11 items-center gap-1 pr-2 pl-3">
           <h2 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
           {actions}
-          <Hint label="Close" side="bottom">
+          <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom">
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
               className="text-muted-foreground hover:text-foreground active:scale-[0.96]"
             >
               <XIcon className="size-4" />
@@ -135,10 +137,7 @@ export function ReviewPanel({
 export function ReviewGroupLabel({ children, first }: { children: ReactNode; first?: boolean }) {
   return (
     <h3
-      className={cn(
-        'text-muted-foreground px-3 pb-1 text-xs font-medium',
-        first ? 'pt-3' : 'pt-5',
-      )}
+      className={cn('text-muted-foreground px-3 pb-1 text-xs font-medium', first ? 'pt-3' : 'pt-5')}
     >
       {children}
     </h3>

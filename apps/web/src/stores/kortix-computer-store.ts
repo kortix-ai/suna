@@ -627,7 +627,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         });
       },
 
-
       openSidePanel: () => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
@@ -806,8 +805,7 @@ export const useToggleActionPanel = () =>
   useKortixComputerStore((state) => state.toggleActionPanel);
 
 /** ⌘I / Ctrl+I — the single right-side toggle. See `toggleRightPanel`. */
-export const useToggleRightPanel = () =>
-  useKortixComputerStore((state) => state.toggleRightPanel);
+export const useToggleRightPanel = () => useKortixComputerStore((state) => state.toggleRightPanel);
 
 export const useIsExpanded = () => useKortixComputerStore((state) => state.isExpanded);
 

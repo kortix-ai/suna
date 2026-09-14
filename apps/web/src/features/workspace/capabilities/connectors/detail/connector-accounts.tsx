@@ -1,6 +1,7 @@
 'use client';
 
 import type { AdminConnector } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Label } from '@/components/ui/label';
 import {
@@ -50,6 +51,7 @@ export function ConnectorAccounts({
   onStartSession,
   onSetCredential,
 }: ConnectorAccountsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
@@ -82,7 +84,7 @@ export function ConnectorAccounts({
         />
         {showRoster ? (
           <section className="space-y-2">
-            <Label>Team members</Label>
+            <Label>{tI18nComplete.raw('text74156382383b')}</Label>
             <ConnectionRoster
               projectId={projectId}
               connectorSlug={connector.slug}
@@ -101,11 +103,11 @@ export function ConnectorAccounts({
   if (!canWrite) {
     return (
       <p className="text-muted-foreground text-sm text-pretty">
-        {displayName} runs on{' '}
+        {displayName} {tI18nComplete.raw('text39c6992dbec1')}{' '}
         {usesProjectAuthorization
-          ? 'one account shared by the whole project'
-          : 'each person’s own account'}
-        . You do not have permission to change it — ask a project manager.
+          ? tI18nComplete.raw('texte90f6cee880b')
+          : tI18nComplete.raw('text9b91e724f63b')}
+        {tI18nComplete.raw('textdbc539f3b073')}
       </p>
     );
   }

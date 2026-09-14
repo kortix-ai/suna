@@ -1,9 +1,9 @@
 'use client';
 
-import { use, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTabStore } from '@/stores/tab-store';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { useTabStore } from '@/stores/tab-store';
+import { useRouter } from 'next/navigation';
+import { use, useEffect } from 'react';
 
 /**
  * Preview route handler for /p/[port].
@@ -21,11 +21,7 @@ import { useAppHome } from '@/lib/onboarding/use-app-home';
  *   - Otherwise we can't reconstruct the sandbox context, so we redirect to
  *     the projects index instead of leaving the user on a blank page.
  */
-export default function PreviewPage({
-  params,
-}: {
-  params: Promise<{ port: string }>;
-}) {
+export default function PreviewPage({ params }: { params: Promise<{ port: string }> }) {
   const appHome = useAppHome();
   const { port } = use(params);
   const router = useRouter();

@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
 import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
+import { useEffect } from 'react';
 
 export function BrowserNoiseGuard() {
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      if (!shouldIgnoreBrowserRuntimeNoise({
-        message: event.message,
-        filename: event.filename,
-        error: event.error,
-      })) {
+      if (
+        !shouldIgnoreBrowserRuntimeNoise({
+          message: event.message,
+          filename: event.filename,
+          error: event.error,
+        })
+      ) {
         return;
       }
 

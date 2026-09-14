@@ -7,8 +7,8 @@
  * whole adapter — with it, the admin sheet renders
  * {@link CreditTransactionsTable} instead of a second, drifting list.
  */
-import type { AdminLedgerEntry } from '@/hooks/admin/use-admin-accounts';
 import type { CreditTransactionRow } from '@/features/billing/transactions-table';
+import type { AdminLedgerEntry } from '@/hooks/admin/use-admin-accounts';
 
 /** `'25.00'` → `25`. An unusable value reads as 0: a NaN in a money column is worse. */
 function amount(value: string | null | undefined): number {

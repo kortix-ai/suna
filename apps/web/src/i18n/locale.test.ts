@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { defaultLocale } from './config';
-import { getExplicitLocale, getUserLocale, normalizeLocale } from './locale';
+import { defaultLocale, localeNames, locales } from './config';
+import {
+  getExplicitLocale,
+  getRouteLocale,
+  getUserLocale,
+  normalizeLocale,
+} from './locale';
 
 describe('explicit locale resolution', () => {
   test('defaults to English without a profile locale', () => {
@@ -24,5 +29,18 @@ describe('explicit locale resolution', () => {
     expect(normalizeLocale('ja_JP')).toBe('ja');
     expect(normalizeLocale('Europe/Berlin')).toBeNull();
     expect(normalizeLocale(undefined)).toBeNull();
+  });
+
+  test('ships Serbian and normalizes both Serbian script tags', () => {
+    expect(locales).toContain('sr');
+    expect(localeNames.sr).toBe('Српски');
+    expect(normalizeLocale('sr-Latn')).toBe('sr');
+    expect(normalizeLocale('sr_Cyrl')).toBe('sr');
+  });
+
+  test('explicit route header wins over the next-intl default locale', () => {
+    expect(getRouteLocale('en', 'de')).toBe('de');
+    expect(getRouteLocale('en', 'sr')).toBe('sr');
+    expect(getRouteLocale('fr', null)).toBe('fr');
   });
 });

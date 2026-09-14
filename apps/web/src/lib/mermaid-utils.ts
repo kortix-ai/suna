@@ -42,11 +42,11 @@ export function isMermaidCode(language: string, code: string): boolean {
       'commit',
       'branch',
       'checkout',
-      'merge'
+      'merge',
     ];
 
     // Only treat as Mermaid if the first line starts with a diagram declaration
-    return mermaidStarters.some(starter => firstLine.startsWith(starter.toLowerCase()));
+    return mermaidStarters.some((starter) => firstLine.startsWith(starter.toLowerCase()));
   }
 
   return false;
@@ -62,7 +62,10 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
 
   try {
     // Basic syntax checks
-    const lines = code.split('\n').map(line => line.trim()).filter(Boolean);
+    const lines = code
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
 
     if (lines.length === 0) {
       return { valid: false, error: 'Empty diagram' };
@@ -71,22 +74,37 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
     // Check for basic mermaid structure
     const firstLine = lines[0].toLowerCase();
     const validStarters = [
-      'graph', 'flowchart', 'sequencediagram', 'classdiagram',
-      'statediagram', 'erdiagram', 'journey', 'gantt', 'pie',
-      'gitgraph', 'mindmap', 'timeline', 'sankey', 'block',
-      'quadrant', 'requirement', 'c4context', 'c4container',
-      'c4component', 'c4dynamic'
+      'graph',
+      'flowchart',
+      'sequencediagram',
+      'classdiagram',
+      'statediagram',
+      'erdiagram',
+      'journey',
+      'gantt',
+      'pie',
+      'gitgraph',
+      'mindmap',
+      'timeline',
+      'sankey',
+      'block',
+      'quadrant',
+      'requirement',
+      'c4context',
+      'c4container',
+      'c4component',
+      'c4dynamic',
     ];
 
-    const hasValidStarter = validStarters.some(starter =>
-      firstLine.startsWith(starter) ||
-      firstLine.includes(starter)
+    const hasValidStarter = validStarters.some(
+      (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
     );
 
     if (!hasValidStarter) {
       return {
         valid: false,
-        error: 'Diagram must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.)'
+        error:
+          'Diagram must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.)',
       };
     }
 
@@ -94,7 +112,7 @@ export function validateMermaidSyntax(code: string): { valid: boolean; error?: s
   } catch (error) {
     return {
       valid: false,
-      error: error instanceof Error ? error.message : 'Invalid syntax'
+      error: error instanceof Error ? error.message : 'Invalid syntax',
     };
   }
 }
@@ -128,7 +146,7 @@ export function extractMermaidDiagrams(content: string): Array<{
         original,
         code: code.trim(),
         language: language || 'mermaid',
-        index
+        index,
       });
     }
     index++;

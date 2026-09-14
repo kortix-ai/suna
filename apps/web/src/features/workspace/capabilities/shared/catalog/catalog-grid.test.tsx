@@ -29,13 +29,7 @@ describe('CatalogGrid', () => {
 
   test('CatalogGridSkeleton is the same chrome CatalogGrid uses while loading', () => {
     const fromGrid = renderToStaticMarkup(
-      <CatalogGrid
-        isLoading
-        isError={false}
-        onRetry={() => {}}
-        isEmpty={false}
-        empty={null}
-      >
+      <CatalogGrid isLoading isError={false} onRetry={() => {}} isEmpty={false} empty={null}>
         <div>content</div>
       </CatalogGrid>,
     );

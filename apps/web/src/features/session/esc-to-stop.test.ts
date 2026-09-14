@@ -26,9 +26,9 @@ describe('shouldCountEscape', () => {
    * chat input, not only with focus elsewhere.
    */
   test('inside the composer, counts even though ProseMirror set defaultPrevented', () => {
-    expect(
-      shouldCountEscape({ ...base, fromComposerEditor: true, defaultPrevented: true }),
-    ).toBe(true);
+    expect(shouldCountEscape({ ...base, fromComposerEditor: true, defaultPrevented: true })).toBe(
+      true,
+    );
   });
 
   test('inside the composer, an Escape that dismissed an @ or / menu does not count', () => {
@@ -44,15 +44,13 @@ describe('shouldCountEscape', () => {
 
   test('never counts while focus is inside an overlay (dialog/menu/popover)', () => {
     expect(shouldCountEscape({ ...base, focusInOverlay: true })).toBe(false);
-    expect(
-      shouldCountEscape({ ...base, focusInOverlay: true, fromComposerEditor: true }),
-    ).toBe(false);
+    expect(shouldCountEscape({ ...base, focusInOverlay: true, fromComposerEditor: true })).toBe(
+      false,
+    );
   });
 
   test('never counts an IME composition-cancel Escape', () => {
     expect(shouldCountEscape({ ...base, isComposing: true })).toBe(false);
-    expect(
-      shouldCountEscape({ ...base, isComposing: true, fromComposerEditor: true }),
-    ).toBe(false);
+    expect(shouldCountEscape({ ...base, isComposing: true, fromComposerEditor: true })).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * "Is this session still running the agent I edited?" — answered in the UI.
  *
@@ -151,6 +152,7 @@ export function useSessionConfigFreshness(projectId?: string, sessionId?: string
 }
 
 export function useReloadSessionConfig(projectId: string, sessionId: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<SessionReloadPhase | null>(null);
   // Held in state rather than read off `mutation.error`, because `mutate()`
@@ -203,7 +205,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       const needsAttention =
         result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
       if (needsAttention) warningToast(result.detail);
-      else successToast(result.detail || 'Config reloaded');
+      else successToast(result.detail || tI18nComplete.raw('text4a920574ea10'));
       // A reload RESTARTS opencode. Refreshing only the config query would
       // leave the chat bound to a runtime that just went away — so invalidate
       // exactly what a restart does.
@@ -227,7 +229,7 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       }
       setBusyReason(null);
       const message = error instanceof Error ? error.message.trim() : '';
-      errorToast(message || 'Reload failed. Try again in a moment.');
+      errorToast(message || tI18nComplete.raw('textfe68b872c724'));
     },
     onSettled: () => setPhase(null),
   });

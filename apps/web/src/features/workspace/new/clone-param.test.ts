@@ -39,7 +39,7 @@ describe('readCloneParam integration — form state seeding', () => {
   });
 
   test('the page seeds templateId from the clone param via lazy initializer', () => {
-    expect(code).toContain('readCloneParam(new URLSearchParams(searchParams?.toString() ?? \'\'))');
+    expect(code).toContain("readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''))");
     expect(code).toContain('const cloneItemId = readCloneParam');
     expect(code).toContain('templateId: cloneItemId');
     expect(code).toContain('useState<NewWorkspaceFormState>(() =>');
@@ -51,7 +51,7 @@ describe('readCloneParam integration — form state seeding', () => {
 
   test('the page shows a note when templateId is seeded', () => {
     expect(code).toContain('state.templateId');
-    expect(code).toContain('This workspace will be seeded from the template you picked.');
+    expect(code).toContain("t('templateSeed')");
     expect(code).toContain('text-muted-foreground');
     expect(code).toContain('text-center');
     expect(code).toContain('text-xs');

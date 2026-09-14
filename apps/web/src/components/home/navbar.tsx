@@ -29,6 +29,8 @@ import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
@@ -46,7 +48,7 @@ import {
   XIcon as X,
   XLogoIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
@@ -113,6 +115,7 @@ interface NavbarProps {
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
@@ -139,7 +142,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     setProjectsHref((prev) => (prev === next ? prev : next));
   });
 
-  const filteredNavLinks = siteConfig.nav.links;
+  const filteredNavLinks = localizeUiCatalog(
+    siteConfig.nav.links,
+    tI18nComplete,
+    SITE_CONFIG_TRANSLATION_KEYS,
+  );
   const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();
 
@@ -161,9 +168,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     try {
       const svg = await (await fetch(path)).text();
       await navigator.clipboard.writeText(svg);
-      successToast(tHardcodedUi.raw('componentsHomeNavbar.svgCopied'));
+      successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {
-      errorToast(tHardcodedUi.raw('componentsHomeNavbar.copyFailed'));
+      errorToast(tHardcodedUi.raw('i18nComplete.text5d9940f7d30f'));
     }
   };
 
@@ -263,7 +270,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
                   href="/"
-                  aria-label="Kortix home"
+                  aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
                   className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
                 >
                   <KortixLogo size={15} variant="logomark" />
@@ -391,8 +398,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Github className="size-4 text-foreground" />
-                  <span className={cn('font-medium text-foreground tabular-nums', starsLoading && 'opacity-50')}>
+                  <Github className="text-foreground size-4" />
+                  <span
+                    className={cn(
+                      'text-foreground font-medium tabular-nums',
+                      starsLoading && 'opacity-50',
+                    )}
+                  >
                     {formattedStars}
                   </span>
                 </Link>
@@ -402,7 +414,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             {user ? (
               <Button size="sm" asChild>
                 <Link href={projectsHref} prefetch>
-                  Projects
+                  {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
@@ -435,7 +447,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           >
             <Link
               href="/"
-              aria-label="Kortix home"
+              aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
               onClick={() => setIsDrawerOpen(false)}
               className="flex items-center"
             >
@@ -535,7 +547,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 onClick={() => setIsDrawerOpen(false)}
                 className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
               >
-                Projects
+                {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 <ArrowRightIcon className="size-4" />
               </Link>
             ) : (

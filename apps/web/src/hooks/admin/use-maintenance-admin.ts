@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { systemStatusKeys } from '@/hooks/edge-flags';
 import type { MaintenanceConfig } from '@/lib/maintenance-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const useMaintenanceAdmin = () => {
   return useQuery<MaintenanceConfig>({

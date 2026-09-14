@@ -19,8 +19,7 @@ import { fileURLToPath } from 'node:url';
  * pixel height. Same approach, and same reason, as
  * `session-panel-shortcut.test.ts`.
  */
-const read = (name: string) =>
-  readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
+const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
 
 const easyPanel = read('./easy-panel.tsx');
 const panelCard = read('./panel-card.tsx');

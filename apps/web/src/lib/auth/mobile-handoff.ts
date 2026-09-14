@@ -1,9 +1,5 @@
 const MOBILE_CALLBACK_FLAG = 'mobile_callback';
-const KORTIX_CALLBACK_HOSTS = new Set([
-  'kortix.com',
-  'www.kortix.com',
-  'staging.kortix.com',
-]);
+const KORTIX_CALLBACK_HOSTS = new Set(['kortix.com', 'www.kortix.com', 'staging.kortix.com']);
 
 type MobileSessionHandoffInput = {
   origin: string;
@@ -30,9 +26,10 @@ export function buildMobileSessionHandoffUrl({
   let url: URL;
   try {
     const candidate = new URL(origin);
-    url = candidate.protocol === 'https:' && KORTIX_CALLBACK_HOSTS.has(candidate.hostname)
-      ? new URL('/auth/callback', candidate)
-      : new URL('kortix://auth/callback');
+    url =
+      candidate.protocol === 'https:' && KORTIX_CALLBACK_HOSTS.has(candidate.hostname)
+        ? new URL('/auth/callback', candidate)
+        : new URL('kortix://auth/callback');
   } catch {
     url = new URL('kortix://auth/callback');
   }

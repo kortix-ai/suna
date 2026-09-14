@@ -199,10 +199,7 @@ describe('commitSessionScopeDraft', () => {
 
     await commitSessionScopeDraft({
       sessionId: 'session-1',
-      draft: resetSessionConnectorBindings(
-        createSessionScopeDraft(previous, catalog()),
-        catalog(),
-      ),
+      draft: resetSessionConnectorBindings(createSessionScopeDraft(previous, catalog()), catalog()),
       catalog: catalog(),
       previousScope: previous,
       replaceScope: async (input) => {

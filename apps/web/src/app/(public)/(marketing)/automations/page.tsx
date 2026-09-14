@@ -1,21 +1,13 @@
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
+import { getLocalizedAutomationsContent } from '@/features/marketing/automations/content';
 import { AutomationsHeroVisual } from '@/features/marketing/automations/hero-visual';
+import { ScheduleTable } from '@/features/marketing/automations/schedule-table';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import {
-  closing,
-  declared,
-  hero,
-  review,
-  schedule,
-  session,
-  types,
-  webhook,
-} from '@/features/marketing/automations/content';
-import { ScheduleTable } from '@/features/marketing/automations/schedule-table';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -47,7 +39,10 @@ function SectionDivider(): ReactNode {
  * trigger types and four session modes, and a trigger has no "deliver the
  * result somewhere" field. See the header of `content.ts`.
  */
-export default function AutomationsPage(): ReactNode {
+export default async function AutomationsPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { declared, hero, review, schedule, session, types, webhook } =
+    getLocalizedAutomationsContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero
@@ -102,7 +97,11 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 2 · the schedule, as a table ────────────────────────────────── */}
       <section id="schedule" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={schedule.eyebrow} title={schedule.title} description={schedule.sub} />
+        <SectionHeader
+          eyebrow={schedule.eyebrow}
+          title={schedule.title}
+          description={schedule.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -126,7 +125,11 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 3 · the automation is a file ────────────────────────────────── */}
       <section id="declared" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={declared.eyebrow} title={declared.title} description={declared.sub} />
+        <SectionHeader
+          eyebrow={declared.eyebrow}
+          title={declared.title}
+          description={declared.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -204,10 +207,7 @@ export default function AutomationsPage(): ReactNode {
             {session.steps.map((step, i) => (
               <li
                 key={step.mode}
-                className={cn(
-                  'border-border bg-card flex flex-col p-6 sm:p-7',
-                  GRID_4_RULES[i],
-                )}
+                className={cn('border-border bg-card flex flex-col p-6 sm:p-7', GRID_4_RULES[i])}
               >
                 <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
                   {step.n}
@@ -255,7 +255,6 @@ export default function AutomationsPage(): ReactNode {
           </dl>
         </Reveal>
       </section>
-
     </div>
   );
 }

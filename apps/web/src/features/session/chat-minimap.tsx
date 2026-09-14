@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { CubeIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -53,6 +54,7 @@ function MinimapCard({ item }: { item: MinimapItem }) {
 }
 
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // The rail lives in the chat's left gutter, and that gutter only exists
@@ -173,7 +175,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
 
   return (
     <nav
-      aria-label="Jump to message"
+      aria-label={tI18nComplete.raw('text8ac99b162663')}
       // Desktop only. On phone and tablet the rail is a 3px pointer target
       // sitting on top of the chat — there is no hover, and the gutter it needs
       // does not exist.
@@ -216,7 +218,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
             <button
               key={item.id}
               type="button"
-              aria-label={`Jump to message: ${item.text}`}
+              aria-label={tI18nComplete('text02c72e44de06', { value0: item.text })}
               aria-current={dashes[row].index === activeIndex || undefined}
               style={{ height: DASH_ROW_HEIGHT }}
               // No `title`: a native tooltip would pop up on top of the card

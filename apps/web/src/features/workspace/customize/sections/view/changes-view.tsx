@@ -37,6 +37,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import {
@@ -85,6 +86,7 @@ function CheckpointRow({
   index: number;
   onOpen: (sha: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const byAgent = isKortixAgent(commit);
   return (
     <li
@@ -102,7 +104,7 @@ function CheckpointRow({
 
         <span className="min-w-0 flex-1">
           <span className="text-foreground block truncate text-sm font-medium">
-            {commit.subject || '(no message)'}
+            {commit.subject || tI18nComplete.raw('textc480160e33b8')}
           </span>
           <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
             {byAgent ? (
@@ -120,12 +122,14 @@ function CheckpointRow({
             <span className="truncate" title={commit.author_email}>
               {commit.author_name}
             </span>
-            <span className="text-muted-foreground/40">&bull;</span>
+            <span className="text-muted-foreground/40">
+              {tI18nComplete.raw('text3b9453dad42b')}
+            </span>
             <span className="shrink-0">{relCommit(commit)}</span>
           </span>
         </span>
 
-        <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
+        <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground duration-normal size-4 shrink-0 transition-transform ease-out group-hover:translate-x-0.5" />
       </button>
     </li>
   );
@@ -140,6 +144,7 @@ function ChangeRequestRow({
   onOpen: (crId: string) => void;
   canAct: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const merge = useMergeChangeRequest();
   const close = useCloseChangeRequest();
   const reopen = useReopenChangeRequest();
@@ -151,7 +156,7 @@ function ChangeRequestRow({
 
   const onMerge = () =>
     merge.mutate(cr.cr_id, {
-      onSuccess: () => successToast('Changes applied'),
+      onSuccess: () => successToast(tI18nComplete.raw('textafb5023c3c05')),
       onError: (err) => {
         if ((err as { code?: string }).code === 'MERGE_CONFLICT') {
           onOpen(cr.cr_id);
@@ -162,12 +167,12 @@ function ChangeRequestRow({
     });
   const onClose = () =>
     close.mutate(cr.cr_id, {
-      onSuccess: () => successToast('Proposed change dismissed'),
+      onSuccess: () => successToast(tI18nComplete.raw('text16cd9943e96d')),
       onError: (err) => errorToast(err.message),
     });
   const onReopen = () =>
     reopen.mutate(cr.cr_id, {
-      onSuccess: () => successToast('Proposed change reopened'),
+      onSuccess: () => successToast(tI18nComplete.raw('text4555241852b0')),
       onError: (err) => errorToast(err.message),
     });
 
@@ -199,8 +204,8 @@ function ChangeRequestRow({
         </span>
         <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
           <span className="shrink-0">{crStatusLabel(cr)}</span>
-          <span className="text-muted-foreground/40">&bull;</span>
-          <span className="shrink-0">into</span>
+          <span className="text-muted-foreground/40">{tI18nComplete.raw('text3b9453dad42b')}</span>
+          <span className="shrink-0">{tI18nComplete.raw('text6b847a0ed0b2')}</span>
           <Badge variant="kortix" size="xs">
             {cr.base_ref}
           </Badge>
@@ -210,17 +215,17 @@ function ChangeRequestRow({
       {canAct && cr.status === 'open' && (
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            Dismiss
+            {tI18nComplete.raw('text48845bff334a')}
           </Button>
           <Button size="sm" onClick={onMerge} disabled={busy}>
             {busy ? <Loading className="size-3.5 shrink-0" /> : <Check className="size-3.5" />}
-            Apply
+            {tI18nComplete.raw('text31e392d1c037')}
           </Button>
         </div>
       )}
       {canAct && cr.status === 'closed' && (
         <Button variant="secondary" size="sm" onClick={onReopen} disabled={busy}>
-          Reopen
+          {tI18nComplete.raw('texta886d1dc4f12')}
         </Button>
       )}
     </li>
@@ -307,6 +312,7 @@ function ChangesTimeline({
   projectLoading: boolean;
   canAct: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [detailCrId, setDetailCrId] = useState<string | null>(null);
 
@@ -324,7 +330,7 @@ function ChangesTimeline({
   const isFetching = commitsQuery.isFetching || crsQuery.isFetching;
 
   const refresh = (
-    <Hint label="Refresh changes" side="bottom">
+    <Hint label={tI18nComplete.raw('textc6479e2f4970')} side="bottom">
       <Button
         variant="outline"
         size="icon"
@@ -345,8 +351,8 @@ function ChangesTimeline({
 
   return (
     <CustomizeSectionWrapper
-      title="Changes"
-      description="Review changes your agents propose and browse every version they saved."
+      title={tI18nComplete.raw('textbbd4b6a86bc6')}
+      description={tI18nComplete.raw('text0a1d956ac650')}
       action={hasContent ? refresh : undefined}
     >
       {loading ? (
@@ -359,9 +365,11 @@ function ChangesTimeline({
       ) : commitsFailed && crsFailed ? (
         <ErrorState
           size="sm"
-          title="Couldn't load changes"
+          title={tI18nComplete.raw('text47a8467a2faa')}
           description={
-            commitsQuery.error instanceof Error ? commitsQuery.error.message : 'Please try again.'
+            commitsQuery.error instanceof Error
+              ? commitsQuery.error.message
+              : tI18nComplete.raw('texteea4fb33efd3')
           }
           action={
             <Button
@@ -372,7 +380,7 @@ function ChangesTimeline({
                 void crsQuery.refetch();
               }}
             >
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -380,8 +388,8 @@ function ChangesTimeline({
         <EmptyState
           icon={FileDiff}
           size="sm"
-          title="No changes yet"
-          description="When your agents save work or propose changes, it shows up here."
+          title={tI18nComplete.raw('textdb591dc55a99')}
+          description={tI18nComplete.raw('text8a46d882ade5')}
         />
       ) : (
         <div className="space-y-6">
@@ -389,9 +397,11 @@ function ChangesTimeline({
             <ErrorState
               size="sm"
               title={
-                commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"
+                commitsFailed
+                  ? tI18nComplete.raw('textdaf44c9faf1b')
+                  : tI18nComplete.raw('text769fe61dab43')
               }
-              description="Showing what loaded. Retry to refresh."
+              description={tI18nComplete.raw('textc833eda3bbbb')}
               action={
                 <Button
                   variant="outline"
@@ -401,7 +411,7 @@ function ChangesTimeline({
                     if (crsFailed) void crsQuery.refetch();
                   }}
                 >
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -430,7 +440,8 @@ function ChangesTimeline({
           ))}
           {commitsQuery.data?.hasMore && (
             <p className="text-muted-foreground/60 px-1 text-xs">
-              Showing the {commits.length} most recent versions.
+              {tI18nComplete.raw('text55fa9981994c')} {commits.length}{' '}
+              {tI18nComplete.raw('text0b9049066497')}
             </p>
           )}
         </div>

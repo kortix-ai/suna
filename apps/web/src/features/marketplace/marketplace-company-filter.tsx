@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
@@ -17,9 +18,14 @@ export function MarketplaceCompanyFilter({
   activeId: string;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className={cn('flex flex-wrap gap-2', className)}>
-      <CompanyChip href="/marketplace" label="All sources" active={activeId === 'all'} />
+      <CompanyChip
+        href="/marketplace"
+        label={tI18nComplete.raw('text08e774c5bacc')}
+        active={activeId === 'all'}
+      />
       {marketplaces.map((m) => (
         <CompanyChip
           key={m.id}

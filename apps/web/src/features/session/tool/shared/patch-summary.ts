@@ -11,11 +11,18 @@
  * can create, edit, delete and rename in one call, and each of those is an
  * ordinary English verb:
  *
- *   all add     → Created
+ *   all add     → Wrote
  *   all delete  → Deleted
  *   all move    → Renamed
  *   all update  → Edited
  *   mixed       → Changed
+ *
+ * `add` reports as `Wrote`, not `Created`. Producing a file that was not there
+ * is a write, and that is the word the reader has already met on every `write`
+ * row in the session — `Created 4 files` here beside `Wrote app.py` there is one
+ * product speaking two vocabularies about one act. `narration.ts` settled this
+ * the same way. The `create` GLYPH stays (`FilePlusIcon`): the mark still says
+ * these files are new, which is the part the verb no longer has to carry.
  *
  * "Changed" for a mixed patch is deliberately the weakest word here. A patch
  * that creates one file and deletes another has no honest single verb, and
@@ -25,13 +32,11 @@
  * No React import: this is a pure function, and it is unit-tested as one.
  */
 
+import { FILE_VERBS, type FileVerb } from '@/features/session/tool/shared/file-verb';
+
 export type PatchOp = 'add' | 'update' | 'delete' | 'move';
 
-export interface PatchVerb {
-  /** Past tense, shown once the call has settled. */
-  verb: string;
-  /** Present participle, shown while it runs. */
-  running: string;
+export interface PatchVerb extends FileVerb {
   /**
    * Which glyph the row leads with. `FileCode` was wrong twice over — it says
    * "code" about files that are usually not code, and it says nothing about the
@@ -40,14 +45,22 @@ export interface PatchVerb {
   icon: 'create' | 'delete' | 'edit';
 }
 
+/**
+ * The words come from `file-verb.ts`, the table every file row shares; only the
+ * glyph is this module's own. A patch that adds a file and a `write` that adds a
+ * file did the same thing to the user's disk, so they must not reach for two
+ * different words for it — and before this they each owned a private copy of the
+ * vocabulary that could drift apart one edit at a time.
+ */
 const VERBS: Record<PatchOp, PatchVerb> = {
-  add: { verb: 'Created', running: 'Creating', icon: 'create' },
-  delete: { verb: 'Deleted', running: 'Deleting', icon: 'delete' },
-  move: { verb: 'Renamed', running: 'Renaming', icon: 'edit' },
-  update: { verb: 'Edited', running: 'Editing', icon: 'edit' },
+  // `write`, not a `create` of its own — see the note above the op table.
+  add: { ...FILE_VERBS.write, icon: 'create' },
+  delete: { ...FILE_VERBS.delete, icon: 'delete' },
+  move: { ...FILE_VERBS.rename, icon: 'edit' },
+  update: { ...FILE_VERBS.edit, icon: 'edit' },
 };
 
-const MIXED: PatchVerb = { verb: 'Changed', running: 'Changing', icon: 'edit' };
+const MIXED: PatchVerb = { ...FILE_VERBS.change, icon: 'edit' };
 
 /**
  * The one verb that covers every file in the patch.

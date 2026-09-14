@@ -15,6 +15,7 @@ export function connectorConnectionRows<T extends { connector_alias: string; own
   connectorSlug: string,
 ): T[] {
   return (connections ?? []).filter(
-    (connection) => connection.connector_alias === connectorSlug && connection.owner_type !== 'agent',
+    (connection) =>
+      connection.connector_alias === connectorSlug && connection.owner_type !== 'agent',
   );
 }

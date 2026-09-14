@@ -6,8 +6,16 @@ describe('legalTermsRedirectUrl', () => {
   describe('redirects Terms requests to the Drive file', () => {
     const termsCases: Array<{ name: string; pathname: string; search: string }> = [
       { name: 'stable /legal/terms', pathname: '/legal/terms', search: '' },
-      { name: 'stable /legal/terms with usp=sharing', pathname: '/legal/terms', search: '?usp=sharing' },
-      { name: 'stable /legal/terms with foreign usp', pathname: '/legal/terms', search: '?usp=drive' },
+      {
+        name: 'stable /legal/terms with usp=sharing',
+        pathname: '/legal/terms',
+        search: '?usp=sharing',
+      },
+      {
+        name: 'stable /legal/terms with foreign usp',
+        pathname: '/legal/terms',
+        search: '?usp=drive',
+      },
       { name: 'legacy /legal?tab=terms', pathname: '/legal', search: '?tab=terms' },
       { name: 'locale /de/legal/terms', pathname: '/de/legal/terms', search: '' },
       { name: 'locale /it/legal?tab=terms', pathname: '/it/legal', search: '?tab=terms' },
@@ -96,14 +104,8 @@ describe('legalTermsRedirectUrl', () => {
     });
 
     test('produces a stable, sorted param order on the destination', () => {
-      const a = legalTermsRedirectUrl(
-        '/legal',
-        new URLSearchParams('?tab=terms&z=1&a=2'),
-      )!;
-      const b = legalTermsRedirectUrl(
-        '/legal',
-        new URLSearchParams('?a=2&z=1&tab=terms'),
-      )!;
+      const a = legalTermsRedirectUrl('/legal', new URLSearchParams('?tab=terms&z=1&a=2'))!;
+      const b = legalTermsRedirectUrl('/legal', new URLSearchParams('?a=2&z=1&tab=terms'))!;
       expect(a.searchParams.toString()).toBe(b.searchParams.toString());
       // sorted: a, usp, z
       expect(a.searchParams.toString()).toBe('a=2&usp=sharing&z=1');

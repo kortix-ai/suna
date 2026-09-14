@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -19,7 +19,6 @@ import { fileURLToPath } from 'node:url';
  */
 
 const PAGES = [
-  { name: 'agents', file: '../agents/agents-page.tsx', clear: 'setSelectedPath(null)' },
   { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
@@ -73,14 +72,15 @@ describe('modal shells exist for the resolving window', () => {
     expect(code).toContain('isResolving');
     expect(code).toContain('<ConnectorModalSkeleton />');
     // Radix Dialog requires an accessible name for as long as it is open.
-    expect(code).toContain('<ModalTitle>Loading connector</ModalTitle>');
+    expect(code).toContain("raw('text0c21b0363778')");
   });
 
   test('EntityDetailModal accepts isResolving and renders a skeleton, not null', () => {
     const code = stripComments(read('./entity/entity-modal.tsx'));
     expect(code).toContain('isResolving');
     expect(code).toContain('<EntityModalSkeleton kind={kind} />');
-    expect(code).toContain('Loading {kind}');
+    expect(code).toContain("tI18nComplete.raw('textdc380888c4e2')");
+    expect(code).toContain('{kind}');
   });
 });
 
@@ -122,5 +122,26 @@ describe('catalogue search keeps its results', () => {
     // A dimmed card must not be clickable — the entry under the pointer is
     // about to be replaced by a different one in the same grid position.
     expect(browse).toContain('pointer-events-none');
+  });
+});
+
+/**
+ * Agents left this list on purpose (Marko, 2026-09-01: Customize is
+ * agent-centric). An agent card no longer opens a modal — it is a link to the
+ * agent's own routed page (`agentHref`), so there is no selection to keep
+ * honest here. Pinned so a modal does not quietly come back: the page must
+ * not import the entity modal, and every card must carry the href.
+ */
+describe('agents page — cards are links, not a modal', () => {
+  const code = stripComments(read('../agents/agents-page.tsx'));
+
+  test('does not mount the entity detail modal', () => {
+    expect(code).not.toContain('EntityDetailModal');
+    expect(code).not.toContain('detailSelection(');
+  });
+
+  test('every card navigates to the agent page', () => {
+    expect(code).toContain('href={agentHref(projectId, agent.name)}');
+    expect(code).not.toContain('router.push');
   });
 });

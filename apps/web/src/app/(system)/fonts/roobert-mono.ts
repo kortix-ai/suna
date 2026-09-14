@@ -1,13 +1,21 @@
 // app/fonts/roobert-mono.ts
-import localFont from "next/font/local";
+import localFont from 'next/font/local';
 
 export const roobertMono = localFont({
   src: [
-    { path: "../../../../public/fonts/roobert/RoobertMonoUprightsVF.woff2", style: "normal", weight: "100 900" },
-    { path: "../../../../public/fonts/roobert/RoobertMonoItalicsVF.woff2", style: "italic", weight: "100 900" },
+    {
+      path: '../../../../public/fonts/roobert/RoobertMonoUprightsVF.woff2',
+      style: 'normal',
+      weight: '100 900',
+    },
+    {
+      path: '../../../../public/fonts/roobert/RoobertMonoItalicsVF.woff2',
+      style: 'italic',
+      weight: '100 900',
+    },
   ],
-  variable: "--font-roobert-mono",
-  display: "swap",
+  variable: '--font-roobert-mono',
+  display: 'swap',
   // Not preloaded, unlike the sans. `next/font` emits a <link rel=preload> for
   // every file in `src`, so both mono variable fonts (210KB) were downloaded on
   // every cold page load. Measured on the session route with a production
@@ -21,7 +29,7 @@ export const roobertMono = localFont({
   preload: false,
   declarations: [
     {
-      prop: "font-feature-settings",
+      prop: 'font-feature-settings',
       value: "'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on",
     },
   ],

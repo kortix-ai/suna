@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
 import type { ProjectCommit } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import {
   KORTIX_AGENT_EMAIL,
   buildTimeline,
@@ -73,12 +73,12 @@ describe('isKortixAgent', () => {
   });
 
   test('matches legacy display names case-insensitively', () => {
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Kortix Agent' }))).toBe(
-      true,
-    );
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' }))).toBe(
-      true,
-    );
+    expect(
+      isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Kortix Agent' })),
+    ).toBe(true);
+    expect(
+      isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' })),
+    ).toBe(true);
   });
 
   test('does not match human authors', () => {

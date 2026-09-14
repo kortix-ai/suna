@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -79,6 +80,7 @@ export function GatewayKeys({
   /** Jump to the Models tab from the reveal dialog's reference panel. */
   onViewModels?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isError } = useGatewayKeys(projectId);
   const createKey = useCreateGatewayKey(projectId);
   const revokeKey = useRevokeGatewayKey(projectId);
@@ -92,7 +94,7 @@ export function GatewayKeys({
   if (isError) {
     return (
       <p className="text-muted-foreground py-6 text-center text-sm">
-        You need the manage-keys permission to view gateway keys.
+        {tI18nComplete.raw('text9173e2705c5b')}
       </p>
     );
   }
@@ -106,7 +108,8 @@ export function GatewayKeys({
         setCreating(false);
         setName('');
       },
-      onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not create key'),
+      onError: (e) =>
+        errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text5a517d8378f5')),
     });
   };
 
@@ -119,12 +122,12 @@ export function GatewayKeys({
       {keys.length > 0 && (
         <div className="flex items-start justify-between gap-3">
           <p className="text-muted-foreground text-xs text-pretty">
-            {keys.length === 1 ? '1 key' : `${keys.length} keys`}. Every request made with one is
-            logged and billed to this project.
+            {keys.length === 1 ? tI18nComplete.raw('textd4044e3ef08b') : `${keys.length} keys`}
+            {tI18nComplete.raw('textb899f9301499')}
           </p>
           {canWrite && (
             <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
-              Create key
+              {tI18nComplete.raw('textb6cde9030cef')}
             </Button>
           )}
         </div>
@@ -134,12 +137,12 @@ export function GatewayKeys({
         <EmptyState
           icon={KeyRound}
           size="sm"
-          title="No keys yet"
-          description="Create a project-scoped key to call the gateway from outside a Kortix session."
+          title={tI18nComplete.raw('text3e5039d12acd')}
+          description={tI18nComplete.raw('text16da5dfc6a3b')}
           action={
             canWrite ? (
               <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
-                Create key
+                {tI18nComplete.raw('textb6cde9030cef')}
               </Button>
             ) : undefined
           }
@@ -168,7 +171,9 @@ export function GatewayKeys({
                   </div>
                   <InlineMeta className="mt-0.5">
                     <code className="font-mono">{k.key_prefix}…</code>
-                    <span>last used {fmtDate(k.last_used_at)}</span>
+                    <span>
+                      {tI18nComplete.raw('textb5ed3ee11645')} {fmtDate(k.last_used_at)}
+                    </span>
                   </InlineMeta>
                 </div>
                 {active && canWrite && (
@@ -178,7 +183,7 @@ export function GatewayKeys({
                         size="icon-sm"
                         variant="ghost"
                         className="shrink-0"
-                        aria-label="Key actions"
+                        aria-label={tI18nComplete.raw('textdc958f2a5781')}
                         disabled={revoking}
                       >
                         {revoking ? (
@@ -193,7 +198,7 @@ export function GatewayKeys({
                         onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
                       >
                         <Trash2 className="size-3.5 shrink-0" />
-                        Revoke key
+                        {tI18nComplete.raw('texte29abcb7ef37')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -207,16 +212,16 @@ export function GatewayKeys({
       <Modal open={creating} onOpenChange={(n) => (n ? undefined : setCreating(false))}>
         <ModalContent className="sm:max-w-md">
           <ModalHeader>
-            <ModalTitle>Create gateway key</ModalTitle>
-            <ModalDescription>Name it so you can tell your keys apart later.</ModalDescription>
+            <ModalTitle>{tI18nComplete.raw('textd7d351ef148e')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text8a01d0208ec9')}</ModalDescription>
           </ModalHeader>
           <ModalBody>
             <div className="space-y-1.5">
-              <Label htmlFor="gateway-key-name">Name</Label>
+              <Label htmlFor="gateway-key-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
               <Input
                 id="gateway-key-name"
                 autoFocus
-                placeholder="e.g. Production backend"
+                placeholder={tI18nComplete.raw('text0cab103fc553')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
@@ -226,11 +231,11 @@ export function GatewayKeys({
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => setCreating(false)}>
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button disabled={!name.trim() || createKey.isPending} onClick={submit}>
               {createKey.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Create key
+              {tI18nComplete.raw('textb6cde9030cef')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -257,22 +262,21 @@ export function GatewayKeys({
         onOpenChange={(open) => {
           if (!open) setRevokeTarget(null);
         }}
-        title="Revoke key"
+        title={tI18nComplete.raw('texte29abcb7ef37')}
         description={
-          revokeTarget
-            ? `Revoke ${revokeTarget.name}? Apps calling the gateway with it stop working immediately.`
-            : ''
+          revokeTarget ? tI18nComplete('text539de6570111', { value0: revokeTarget.name }) : ''
         }
-        confirmLabel="Revoke"
+        confirmLabel={tI18nComplete.raw('text87e6d00bbf53')}
         confirmVariant="destructive"
         onConfirm={() => {
           if (!revokeTarget) return;
           revokeKey.mutate(revokeTarget.key_id, {
             onSuccess: () => {
               setRevokeTarget(null);
-              successToast('Key revoked');
+              successToast(tI18nComplete.raw('text113455086576'));
             },
-            onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not revoke'),
+            onError: (e) =>
+              errorToast(e instanceof Error ? e.message : tI18nComplete.raw('text44dfa6d7ebf7')),
           });
         }}
         isPending={revokeKey.isPending}
@@ -293,35 +297,36 @@ function RevealKeyDialog({
   onViewModels?: () => void;
   onClose: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(created.secret_key);
     setCopied(true);
-    successToast('Key copied');
+    successToast(tI18nComplete.raw('textd5abc7bad676'));
   };
   return (
     <Modal open onOpenChange={(n) => (n ? undefined : onClose())}>
       <ModalContent className="sm:max-w-xl">
         <ModalHeader>
-          <ModalTitle>Copy your key</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('text9af5c6042516')}</ModalTitle>
           <ModalDescription>{created.name}</ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[70vh] space-y-3 overflow-y-auto">
-          <InfoBanner tone="warning" title="Shown once">
-            This is the only time the full key is displayed. Store it somewhere safe.
+          <InfoBanner tone="warning" title={tI18nComplete.raw('text22548d041f74')}>
+            {tI18nComplete.raw('text0dfd0cbdd238')}
           </InfoBanner>
           <div className="bg-popover flex items-center gap-2 rounded-md border px-3 py-2.5">
             <code className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">
               {created.secret_key}
             </code>
-            <Hint label={copied ? 'Copied' : 'Copy key'}>
+            <Hint label={copied ? 'Copied' : tI18nComplete.raw('texte47c8bae740d')}>
               <Button
                 type="button"
                 onClick={copy}
                 variant="ghost"
                 size="icon-sm"
                 className="shrink-0"
-                aria-label="Copy key"
+                aria-label={tI18nComplete.raw('texte47c8bae740d')}
               >
                 {copied ? (
                   <Check className="text-kortix-green size-4 shrink-0" />
@@ -338,7 +343,7 @@ function RevealKeyDialog({
           />
         </ModalBody>
         <ModalFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{tI18nComplete.raw('text11a6767d5674')}</Button>
         </ModalFooter>
       </ModalContent>
     </Modal>

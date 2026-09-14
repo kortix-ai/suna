@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'connectors-view.tsx'), 'utf8');
@@ -59,7 +59,7 @@ describe('connection creation controls', () => {
 
   test('surfaces connector synchronization errors after strategy updates', () => {
     expect(source).toContain('result.sync?.errors.find((error) => error.slug === connector.slug)');
-    expect(source).toContain('Authorization owner changed, but synchronization failed:');
+    expect(source).toContain("tI18nHardcoded('i18nComplete.textec7a4e3094f9'");
   });
 
   test('does not use shared OAuth credentials for user-owned custom connectors', () => {
@@ -67,7 +67,7 @@ describe('connection creation controls', () => {
     expect(source).toContain(
       "effectiveAuthorizationStrategy === 'project' ? setOauth2Selected : undefined",
     );
-    expect(source).toContain('Each user then stores their own private credential');
+    expect(source).toContain("raw('i18nComplete.text547a92020d87')");
   });
 
   test('does not load manager-only connector configuration for read-only users', () => {

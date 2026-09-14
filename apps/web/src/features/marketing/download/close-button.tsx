@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Close } from '@/features/icon/icons/close';
+import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
 
 /** The two calls this file makes on the router, and nothing else. */
@@ -43,12 +44,13 @@ export function dismiss(router: Navigate, historyLength: number): void {
  * around a 16px glyph.
  */
 export function CloseButton({ onClose }: { onClose: () => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-lg"
-      aria-label="Close"
+      aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
       onClick={onClose}
       className="fixed top-4 right-4 z-10 rounded-full active:scale-[0.96]"
     >

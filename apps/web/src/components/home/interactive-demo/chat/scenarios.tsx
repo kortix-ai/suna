@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 import {
   SquaresFourIcon as Blocks,
   DatabaseIcon as Database,
@@ -97,9 +101,9 @@ export const SCENARIOS: DemoScenario[] = [
               'autoComponentsHomeInteractiveDemoChatScenariosJsxAttrTitle34fb62bedd',
             )}
             items={[
-              'feat(api): streaming tool results',
-              'fix(web): hydration noise on demo',
-              'chore: bump opencode to 0.4.2',
+              tHardcodedUi.raw('i18nComplete.text46fae4fb6c57'),
+              tHardcodedUi.raw('i18nComplete.textba3db8221d88'),
+              tHardcodedUi.raw('i18nComplete.textb745a3efe7f1'),
             ]}
           />
         ),
@@ -152,7 +156,11 @@ export const AUTO_DEMO_PROMPT = SCENARIOS[0].prompt;
 
 export const GENERIC_ID = 'generic';
 
-function genericToolStep(skills: string[]): DemoStep {
+export function localizedScenarios(tI18nComplete: UiTranslator): DemoScenario[] {
+  return localizeUiCatalog(SCENARIOS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
+function genericToolStep(skills: string[], tI18nComplete: UiTranslator): DemoStep {
   const lead = skills[0];
   const bySkill: Record<string, DemoStep> = {
     'sql-queries': {
@@ -160,7 +168,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'query_warehouse',
       icon: Database,
-      title: 'Pulling warehouse context',
+      title: tI18nComplete.raw('textd24a0b6b8a29'),
       durationMs: 1400,
     },
     'coding-and-data': {
@@ -168,7 +176,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'github.list_commits',
       icon: GitPullRequest,
-      title: 'Scanning recent repo activity',
+      title: tI18nComplete.raw('textc0efaad66248'),
       durationMs: 1400,
     },
     'kortix-slack': {
@@ -176,7 +184,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'slack.conversations_history',
       icon: MessageSquare,
-      title: 'Reading the Slack thread',
+      title: tI18nComplete.raw('text3501013f78b7'),
       durationMs: 1300,
     },
     'customer-research': {
@@ -184,7 +192,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'hubspot.search',
       icon: Users,
-      title: 'Fetching account context',
+      title: tI18nComplete.raw('text51faea8cf46b'),
       durationMs: 1400,
     },
     'financial-statements': {
@@ -192,7 +200,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'query_warehouse',
       icon: Database,
-      title: 'Loading finance.weekly',
+      title: tI18nComplete.raw('textb6daf93376cc'),
       durationMs: 1400,
     },
   };
@@ -202,7 +210,7 @@ function genericToolStep(skills: string[]): DemoStep {
       kind: 'tool',
       tool: 'kortix.route',
       icon: Blocks,
-      title: 'Routing across connected tools',
+      title: tI18nComplete.raw('texta4ed3db2e660'),
       durationMs: 1200,
     }
   );
@@ -213,9 +221,14 @@ function genericThinkingLabel(skills: string[]): string {
   return `Reading ${skills.slice(0, 2).join(', ')}…`;
 }
 
-export function matchScenario(text: string): DemoScenario {
-  const found = SCENARIOS.find((s) => s.prompt.trim().toLowerCase() === text.trim().toLowerCase());
-  if (found) return found;
+export function matchScenario(text: string, tI18nComplete: UiTranslator): DemoScenario {
+  const scenarios = localizedScenarios(tI18nComplete);
+  const normalized = text.trim().toLowerCase();
+  const found = scenarios.find((s) => s.prompt.trim().toLowerCase() === normalized);
+  const canonical = SCENARIOS.find((s) => s.prompt.trim().toLowerCase() === normalized);
+  if (found || canonical) {
+    return found ?? scenarios.find((scenario) => scenario.id === canonical?.id)!;
+  }
 
   const skills = matchSkillsFromPrompt(text);
   return {
@@ -225,11 +238,11 @@ export function matchScenario(text: string): DemoScenario {
     thinkingLabel: genericThinkingLabel(skills),
     skills,
     steps: [
-      genericToolStep(skills),
+      genericToolStep(skills, tI18nComplete),
       {
         id: 'gen-text',
         kind: 'text',
-        markdown: `Here's how I'd approach **"${text.slice(0, 80)}"**:\n\n1. Gather the relevant context across your tools\n2. Draft a plan and confirm the details\n3. Execute end-to-end and report back\n\nWant me to start?`,
+        markdown: tI18nComplete('text4dadc0d96004', { value0: text.slice(0, 80) }),
       },
     ],
   };

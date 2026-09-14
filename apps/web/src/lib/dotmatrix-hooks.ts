@@ -1,24 +1,24 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { DotMatrixPhase } from "@/lib/dotmatrix-core";
+import type { DotMatrixPhase } from '@/lib/dotmatrix-core';
 
 export function usePrefersReducedMotion(): boolean {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const update = () => {
       setPrefersReducedMotion(query.matches);
     };
 
     update();
-    query.addEventListener("change", update);
+    query.addEventListener('change', update);
 
     return () => {
-      query.removeEventListener("change", update);
+      query.removeEventListener('change', update);
     };
   }, []);
 
@@ -47,7 +47,7 @@ export function useCyclePhase({ active, cycleMsBase, speed = 1 }: UseCyclePhaseO
     let rafId = 0;
 
     const tick = (now: number) => {
-      const elapsed = ((now - start) % cycleMs + cycleMs) % cycleMs;
+      const elapsed = (((now - start) % cycleMs) + cycleMs) % cycleMs;
       setPhase(elapsed / cycleMs);
       rafId = requestAnimationFrame(tick);
     };
@@ -106,7 +106,7 @@ export function useSteppedCycle({
   cycleMsBase,
   steps,
   speed = 1,
-  idleStep = 0
+  idleStep = 0,
 }: UseSteppedCycleOptions): number {
   const safeSteps = Math.max(1, Math.floor(steps));
   const safeSpeed = speed > 0 ? speed : 1;
@@ -164,11 +164,11 @@ interface DotMatrixPhasesResult {
 export function useDotMatrixPhases({
   animated = false,
   hoverAnimated = false,
-  speed = 1
+  speed = 1,
 }: UseDotMatrixPhasesOptions): DotMatrixPhasesResult {
   const safeSpeed = speed > 0 ? speed : 1;
   const autoRun = Boolean(animated && !hoverAnimated);
-  const [hoverPhase, setHoverPhase] = useState<DotMatrixPhase>("idle");
+  const [hoverPhase, setHoverPhase] = useState<DotMatrixPhase>('idle');
   const timeouts = useRef<number[]>([]);
   const hoverGen = useRef(0);
 
@@ -191,13 +191,13 @@ export function useDotMatrixPhases({
     }
     clearTimers();
     const gen = ++hoverGen.current;
-    setHoverPhase("collapse");
+    setHoverPhase('collapse');
     const collapseMs = Math.max(1, Math.round(300 / safeSpeed));
     const id = window.setTimeout(() => {
       if (hoverGen.current !== gen) {
         return;
       }
-      setHoverPhase("hoverRipple");
+      setHoverPhase('hoverRipple');
     }, collapseMs);
     timeouts.current.push(id);
   }, [hoverAnimated, autoRun, safeSpeed, clearTimers]);
@@ -208,17 +208,17 @@ export function useDotMatrixPhases({
     }
     hoverGen.current += 1;
     clearTimers();
-    setHoverPhase("idle");
+    setHoverPhase('idle');
   }, [hoverAnimated, autoRun, clearTimers]);
 
-  const phase: DotMatrixPhase = autoRun ? "loadingRipple" : hoverAnimated ? hoverPhase : "idle";
+  const phase: DotMatrixPhase = autoRun ? 'loadingRipple' : hoverAnimated ? hoverPhase : 'idle';
 
   return useMemo(
     () => ({
       phase,
       onMouseEnter,
-      onMouseLeave
+      onMouseLeave,
     }),
-    [phase, onMouseEnter, onMouseLeave]
+    [phase, onMouseEnter, onMouseLeave],
   );
 }

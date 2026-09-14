@@ -1,30 +1,48 @@
 ---
 name: kortix-design-system
-description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web. Always load the companion skill make-interfaces-feel-better (apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) in the same session — brand/tokens here, polish/motion/haptics there. Source of truth: globals.css + the live /design-system page + src/components/ui + the reference implementations listed below."
+description: "Use when building or editing any visual surface in apps/web — a page, screen, list, card, badge, avatar, modal, form, empty state, toast, tooltip, table, or panel — and you need to know WHICH component to compose and which primitives are banned. Load kortix-brand-guidelines first for the values (color, spacing, type, radius, motion budget); this file assumes those and covers components, layout shells, and reference implementations. Source of truth: src/components/ui, the live /design-system page, and the reference implementations listed inside."
 ---
 
 # Kortix Design System
 
 **Track this file:** `.claude/skills/kortix-design-system/SKILL.md`
 
-**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded. (July 2026: `Card` codified as the system panel; elevation ladder added — `shadow-*` now renders the Kortix four-sided soft shadows, not Tailwind's stock bottom-only ones.)
+**If you are touching a visual surface in `apps/web`, follow this.** This file owns **which component to compose**. It does not own values — see below.
 
-## Companion skill — always load both
+> **Read [`kortix-brand-guidelines`](../kortix-brand-guidelines/SKILL.md) first.**
+> It is the value law: the closed allowlist for every color, spacing step, type
+> rung, radius, elevation, easing and duration, plus the rule on **whether to
+> animate at all**. This file assumes you already know those values and shows
+> you what to build with them.
 
-**Always invoke [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) alongside this skill.** They are complementary, not optional alternatives:
+## Companion skills — load all three
 
-| Skill                                | Owns                                                                                                                              |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| **kortix-design-system** (this file) | Brand, tokens, components, layout shells, color/radius/spacing law, reference implementations                                     |
-| **make-interfaces-feel-better**      | Polish: concentric radius, optical alignment, shadows, enter/exit motion, scale-on-press, tabular nums, hit areas, font smoothing |
+| Skill | Owns | Wins when they conflict |
+| --- | --- | --- |
+| [**kortix-brand-guidelines**](../kortix-brand-guidelines/SKILL.md) | The value allowlists. Color, spacing, type, radius, elevation, motion budget. Rejected defaults. `audit.sh`. | **Values and motion restraint** |
+| **kortix-design-system** (this file) | Components, layout shells, reference implementations, banned primitives | **Which component** |
+| [**make-interfaces-feel-better**](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) | Polish: concentric radius, optical alignment, tabular nums, hit areas, font smoothing | **Polish detail** |
 
-Load both before writing or reviewing UI. When Kortix rules and polish rules overlap (e.g. border radius, motion), **Kortix tokens win** — then apply the polish skill within those constraints.
+A polish skill will always propose more motion than Kortix wants.
+`kortix-brand-guidelines` is the ceiling all three operate under.
+
+## Errata — corrections to earlier versions of this file
+
+- **The elevation ladder described here through Aug 2026 does not exist.** An
+  earlier revision claimed `@theme` in `globals.css` defines four-sided soft
+  shadows and that `shadow-*` renders them. Verified false at HEAD:
+  `grep -an "shadow-" apps/web/src/app/globals.css` returns exactly one line,
+  `--shadow-liquid-glass`. `shadow-*` is **stock Tailwind**. The *semantics*
+  below (which step for which surface) still hold; the custom rendering does not.
+- **The house press value is `active:scale-[0.96]`** (169 uses), not `0.97`
+  (21 uses).
 
 ## Philosophy
 
 - **Simplicity is the brand.** Black & white + one accent. Calm, spacious, legible. No decoration that doesn't carry information. Show only important data.
 - **Reuse > Compose > Create.** In that order. Never hand-roll something the system already provides.
 - **Tokens are law.** `apps/web/src/app/globals.css` is the implementation source of truth for every visual property. If a value conflicts with anything else, `globals.css` wins.
+- **Fast, or none.** Kortix is a speed product. Motion exists to make the UI feel *faster* and to say where a thing came from — never to be admired. The more you animate, the less each animation is worth. The default answer to "should this animate?" is **no**.
 - **AI-native & self-documenting.** The living styleguide at `/design-system` renders every component. When you add a component, add it there too.
 
 ## Strictly avoid — deprecated primitives
@@ -271,11 +289,48 @@ removed and blocked by ESLint (`no-restricted-imports`).
   `DEFAULT_ICON_WEIGHT` — that is why `@/lib/icons/ssr` exists and why the raw
   entry is ESLint-blocked outside it.
 
-## Button icon-swap — buttery transitions (blur + scale + opacity)
+## Motion in components
 
-When a button swaps its icon on a state change (copy → copied, play → pause, follow → following), **never hard-swap** `{done ? <CheckIcon/> : <CopyIcon/>}`. Cross-fade the two icons in the same box with **blur + scale + opacity** so it reads as one morph, not two objects blinking. `motion` (`motion/react`) is already a dependency — use it.
+**Budget and easings live in [`kortix-brand-guidelines` → Motion](../kortix-brand-guidelines/SKILL.md).**
+Read the frequency ladder there before adding any animation. The short version:
 
-Exact values (from [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) → Contextual icon animations): **scale `0.25 → 1`, opacity `0 → 1`, blur `4px → 0`**, spring **`{ type: 'spring', duration: 0.3, bounce: 0 }`** (`bounce: 0` keeps it buttery, never playful). Always `initial={false}` so nothing animates on first paint.
+> Kortix is a speed product. **Fast, or none.** Count how many times a day a user
+> sees the interaction; that number sets the budget. Constant-use surfaces —
+> keyboard nav, dense-list hover, focus moves, table selection — get
+> **no animation at all**.
+
+What that means for the components in this file:
+
+| Component | Motion |
+| --- | --- |
+| Row hover in a list, sidebar nav | `transition-colors duration-fast`. Color only — never position. |
+| Keyboard-driven selection / arrow-key nav | **None.** `transition-none`. |
+| `Disclosure`, `Tabs` | 200ms, `ease-out`. Built in — do not add more. |
+| `Modal`, `Dialog`, sheets | 300ms max, `ease-out`, enter from `scale-0.97`. Built into `modal.tsx`. |
+| Toast | Owned by `toast.tsx`. Do not restyle its motion. |
+| `Loading` | Ships its own rotation. Never add `animate-spin`. |
+| Buttons | `active:scale-[0.96]` + `transition-colors`. Nothing else. |
+| Skeleton → content | Cross-fade opacity, or nothing. Never a stagger. |
+
+**Do not add enter animations to list items.** A staggered or animated list is
+measurably slower to read and to click than the same list appearing at once, and
+the cost is paid on every render.
+
+### Sanctioned exception — the icon-swap morph
+
+**Frequency gate:** this pattern is for buttons whose state change is *meaningful
+and occasional* — copy → copied, connect → connected, follow → following. It is
+**not** for a control the user hits repeatedly in a working session. If in doubt,
+hard-swap the icon; a hard swap is never wrong, it is only plain.
+
+When it does apply: never hard-swap `{done ? <CheckIcon/> : <CopyIcon/>}` with no
+transition. Cross-fade the two icons in the same box with **blur + scale +
+opacity** so it reads as one morph, not two objects blinking. The blur is what
+bridges the two states — without it the eye sees two distinct objects.
+
+Values: **scale `0.25 → 1`, opacity `0 → 1`, blur `4px → 0`**, spring
+**`{ type: 'spring', duration: 0.3, bounce: 0 }`**. `bounce: 0` is the brand.
+Always `initial={false}` so nothing animates on first paint.
 
 ```tsx
 import { AnimatePresence, motion } from 'motion/react';
@@ -286,7 +341,7 @@ import { AnimatePresence, motion } from 'motion/react';
   className={cn(
     'inline-flex size-7 items-center justify-center rounded-md',
     'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
-    'cursor-pointer transition-colors active:scale-[0.97]', // press feedback compounds with the swap
+    'cursor-pointer transition-colors active:scale-[0.96]',
   )}
 >
   <span className="relative inline-flex size-3.5 items-center justify-center">
@@ -306,8 +361,12 @@ import { AnimatePresence, motion } from 'motion/react';
 </button>
 ```
 
-Rules: both icons share one fixed-size box (`relative size-3.5` parent, each child `absolute inset-0`) so they overlap and the blur bridges the crossfade. Pair it with `active:scale-[0.97]` press feedback and `transition-colors` hover — the three compound into the "buttery button". Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw palette. **Reference:** `CopyButton` in `apps/web/src/components/markdown/copy-button.tsx`.
-
+Rules: both icons share one fixed-size box (`relative size-3.5` parent, each
+child `absolute inset-0`) so they overlap and the blur bridges the crossfade.
+Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw
+palette. Ship a `prefers-reduced-motion` branch — drop the scale and blur, keep
+the opacity. **Reference:** `CopyButton` in
+`apps/web/src/components/markdown/copy-button.tsx`.
 ## Spacing cheat sheet (from reference views)
 
 | Layer | Classes |
@@ -325,65 +384,24 @@ Rules: both icons share one fixed-size box (`relative size-3.5` parent, each chi
 
 **Padding never sits on a bordered element that hosts flush children** (tables, lists, seams) — put it on the slots/inner sections. A single padded block may use the one-div shorthand `bg-popover rounded-md border px-4 py-5`.
 
-## Tokens — `globals.css` is law
+## Tokens — see `kortix-brand-guidelines`
 
-### Color
+**Every value lives in [`kortix-brand-guidelines`](../kortix-brand-guidelines/SKILL.md).**
+Colors, spacing steps, type rungs, radius ladder, elevation steps, easings and
+durations are enumerated there as closed allowlists, with the reasons and the
+`audit.sh` that enforces them. This file used to restate them; two copies drift,
+so the copy is gone.
 
-Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind palette classes (`bg-blue-500`, `text-red-400`), raw hex/oklch, or manual `dark:` palette hacks.
+The five facts you will get wrong from stock Tailwind habit, restated here only
+because they bite immediately:
 
-**Brand accents (`kortix-*`):** `kortix-base`, `kortix-blue`, `kortix-yellow`, `kortix-orange`, `kortix-green`, `kortix-purple`, `kortix-red` — the *only* sources for semantic UI color.
-
-| State | Token |
+| Fact | Consequence |
 | --- | --- |
-| success / running / connected | `kortix-green` |
-| error / failed | `kortix-red` |
-| warning / needs attention | `kortix-orange` |
-| pending / informational | `kortix-yellow` |
-| idle / neutral | `muted-foreground` |
-
-**Active / selected:** `bg-primary/[0.05]`–`bg-primary/[0.08]` or `variant="subtle"` — never `bg-muted` for selection.
-
-### Radius
-
-| Surface | Radius |
-| --- | --- |
-| Panels, rows, tables | `rounded-md` |
-| Flush seam inside disclosure | `rounded-none` on trigger button |
-| Status icon tiles | `rounded-sm` (`size-8` or `size-9`) |
-| Inputs / selects | `rounded-lg` via `variant="popover"` |
-| Pills (buttons, badges) | `rounded-full` |
-
-**Never:** `rounded-xl` / `rounded-2xl` on app containers, nested rounding (parent + child both rounded).
-
-### Elevation (shadows)
-
-The ladder lives in `@theme` in `globals.css`. Each step layers a tight contact shadow, a directional depth layer with negative spread, and a 0-offset ambient halo — so every shadow reads **softly on all four sides**, hugging the surface, never a hard bottom-only smear. Colors are `light-dark()`: dark mode switches automatically — **never** write `dark:shadow-*`.
-
-| Step | Use |
-| --- | --- |
-| *(none — border only)* | Panels, rows, tables: anything sitting in the page flow is flat |
-| `shadow-2xs` | Hairline lift: inputs, thumbnails |
-| `shadow-xs` | Chips, slider thumbs, glass panels |
-| `shadow-sm` | Sticky bars, segmented controls, hover lift |
-| `shadow-md` | Dropdowns, selects, popovers, hover cards |
-| `shadow-lg` | Modals, sheets, toasts |
-| `shadow-xl` | Command palette, floating windows |
-| `shadow-2xl` | Marketing surfaces, large previews |
-
-- **Elevation = floats above the page.** In-flow surfaces get a border, not a shadow.
-- Overlays pair shadow **with** a hairline border (`bg-popover border shadow-md`) — the shadow adds depth, the border still draws the edge.
-- Tinting is allowed where a glow carries meaning: `shadow-md shadow-kortix-base/20`. Neutral elevation never needs a tint.
-- Don't hand-roll `shadow-[…]` when a ladder step fits.
-
-### Typography
-
-- Section page title (wrapper): `text-xl font-medium`
-- Panel section label: `Label` component
-- Row title: `text-sm font-medium`
-- Row meta: `text-xs text-muted-foreground`
-- Detail title: `text-2xl font-semibold tracking-tight`
-- Named sizes only — no `text-[11px]` except where `Badge size="xs"` already defines it
-
+| `--spacing: 0.23rem`, not `0.25rem` | Every spacing utility is 8% tighter. A 16px mockup padding is `p-4`, never `p-[16px]`. |
+| `--text-xs: 0.8125rem` = **13px**, not 12px | `text-xs` is the workhorse (1999 uses). There is no rung below it. |
+| `--radius: 0.625rem` → `rounded-md` is **8px** | `rounded-md` is the default for every panel, row, table and card. |
+| Color is semantic tokens + the seven `kortix-*` accents | No raw palette, no hex, and **no `dark:` for color** — tokens flip themselves. |
+| In-flow surfaces are **flat** — border, no shadow | Shadows mean "floats above the page". |
 ## Status pattern — tinted icon tile
 
 ```tsx
@@ -500,13 +518,19 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
 - ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `CircleNotchIcon`, `SpinnerIcon`, or any `animate-spin` icon.
+- ✅ Motion → count the frequency first; `transition-colors duration-fast` on hover, `ease-out` on enter/exit, `active:scale-[0.96]` on press. ❌ `transition-all`, ❌ bare `transition`, ❌ `ease-in`, ❌ anything over 300ms in product UI.
+- ✅ Keyboard-driven interactions → `transition-none`. ❌ animating arrow-key nav or focus moves.
+- ✅ Every animation ships a `prefers-reduced-motion` variant. ❌ one variant only.
+- ✅ List items appear at once. ❌ stagger in product UI.
 
 ## Workflow checklist
 
-1. **Load [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md)** — run its review checklist after composing UI.
+1. **Load [`kortix-brand-guidelines`](../kortix-brand-guidelines/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
 4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
-5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → ladder step for overlays only; flat border for in-flow panels.
-6. New primitive? Tokens only, tiny API, add to `/design-system`.
-7. Verify: no banned imports, no raw palette colors, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.
+5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
+6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.
+7. New primitive? Tokens only, tiny API, add to `/design-system`.
+8. Verify: `.claude/skills/kortix-brand-guidelines/audit.sh <your paths>` clean, no banned imports, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.
+9. Replay the interaction ten times. If you still notice the animation, it is too much.

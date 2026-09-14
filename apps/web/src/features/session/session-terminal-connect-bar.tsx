@@ -8,6 +8,7 @@ import {
   CopyIcon as Copy,
   LaptopIcon as Laptop,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -22,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * 1. install, 2. `kortix sessions connect <id>`.
  */
 export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
   const connectCmd = `kortix sessions connect ${projectSessionId}`;
   const installCmd = useDeploymentCliInstallCommand(undefined);
@@ -35,7 +37,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
         aria-expanded={expanded}
       >
         <Laptop className="h-3.5 w-3.5 shrink-0" />
-        <span className="shrink-0 font-medium">Connect from your machine</span>
+        <span className="shrink-0 font-medium">{tI18nComplete.raw('textb85e0ede430b')}</span>
         <span className="text-terminal-fg/40 min-w-0 flex-1 truncate font-mono">{installCmd}</span>
         <ChevronRight
           className={cn('h-3.5 w-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
@@ -45,12 +47,14 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
       {expanded && (
         <div className="space-y-2.5 px-3 pt-0.5 pb-3">
           <p className="text-terminal-fg/50 text-xs leading-relaxed">
-            Attach your local OpenCode TUI straight to this session&apos;s sandbox. The CLI opens a
-            local proxy, injects your Kortix token, then runs{' '}
-            <span className="text-terminal-fg/70 font-mono">opencode attach</span>.
+            {tI18nComplete.raw('textf673a34a7b3e')}{' '}
+            <span className="text-terminal-fg/70 font-mono">
+              {tI18nComplete.raw('text61480b6a8129')}
+            </span>
+            .
           </p>
-          <CommandRow label="1. Install the CLI (once)" command={installCmd} />
-          <CommandRow label="2. Attach to this session" command={connectCmd} />
+          <CommandRow label={tI18nComplete.raw('textd236e9cd730b')} command={installCmd} />
+          <CommandRow label={tI18nComplete.raw('text842bad27af42')} command={connectCmd} />
         </div>
       )}
     </div>
@@ -58,6 +62,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
 }
 
 function CommandRow({ label, command }: { label: string; command: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -83,7 +88,7 @@ function CommandRow({ label, command }: { label: string; command: string }) {
           type="button"
           onClick={copy}
           className="text-terminal-fg/50 hover:bg-terminal-fg/10 hover:text-terminal-fg/90 relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-[background-color,transform] after:absolute after:-inset-1.5 after:content-[''] active:scale-[0.96]"
-          aria-label={copied ? 'Copied' : 'Copy command'}
+          aria-label={copied ? 'Copied' : tI18nComplete.raw('text9a01feecae67')}
         >
           {copied ? (
             <Check className="text-kortix-green h-3.5 w-3.5" />

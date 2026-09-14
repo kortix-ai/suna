@@ -5,8 +5,8 @@
 // destructive action is confirmed, and the tri-state override can express all
 // three states. Same source-assertion style as
 // `src/components/iam/enterprise-upsell.test.ts`.
+import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
@@ -58,8 +58,7 @@ describe('admin accounts — Entitlements tab', () => {
   });
 
   test('managed models is tri-state — null, true and false are all reachable', () => {
-    const choices =
-      pageSource.match(/managedModelsChoices[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    const choices = pageSource.match(/managedModelsChoices[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(choices).toContain('value: null');
     expect(choices).toContain('value: true');
     expect(choices).toContain('value: false');
@@ -85,7 +84,9 @@ describe('admin accounts — Entitlements tab', () => {
   test('an account plan is rendered from the API plan block, never re-derived', () => {
     expect(pageSource).not.toContain('TIER_CATALOG');
     expect(pageSource).not.toMatch(/function tierLabel\b/);
-    expect(pageSource).toMatch(/account\.plan\?\.label \?\? tierKeyLabel\(account\.tier\)/);
+    expect(pageSource).toMatch(
+      /account\.plan\?\.label \?\? tierKeyLabel\(account\.tier(?:, options)?\)/,
+    );
     expect(pageSource).toContain('account.plan?.sublabel');
     // Every place a plan is shown goes through the one component.
     for (const site of [
@@ -120,27 +121,28 @@ describe('admin accounts — Entitlements tab', () => {
     // list row and the click-time snapshot are only fallbacks while it loads.
     expect(pageSource).toContain('useAdminAccount(selected?.accountId ?? null)');
     expect(pageSource).toContain('selectedDetail.data ??');
-    expect(pageSource).toContain(
-      'accounts.find((a) => a.accountId === selected.accountId) ??',
-    );
+    expect(pageSource).toContain('accounts.find((a) => a.accountId === selected.accountId) ??');
     expect(pageSource).toContain('<AccountDetailSheet account={selectedAccount}');
   });
 });
 
 describe('admin accounts — Overrides card', () => {
   test('the card is mounted in the Entitlements tab', () => {
-    expect(pageSource).toMatch(/function EntitlementsTab[\s\S]*?<OverridesCard account=\{account\}/);
+    expect(pageSource).toMatch(
+      /function EntitlementsTab[\s\S]*?<OverridesCard account=\{account\}/,
+    );
   });
 
   test('every override row the server accepts has a control', () => {
-    const rows = pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    const rows =
+      pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(rows).not.toBe('');
     for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels']) {
       expect(rows).toContain(`key: '${key}'`);
     }
     // The two numeric overrides are laid out by hand — an input, not a Select.
-    expect(pageSource).toContain("aria-label=\"Max concurrent sessions override\"");
-    expect(pageSource).toContain("aria-label=\"Compute rate multiplier override\"");
+    expect(pageSource).toContain("raw('text016e549e6831')");
+    expect(pageSource).toContain("raw('texta6b6d1454df0')");
   });
 
   test('the entitlement rows are tri-state — inherit, force on, force off', () => {
@@ -152,7 +154,7 @@ describe('admin accounts — Overrides card', () => {
   });
 
   test('the compute multiplier input carries the range and step the server enforces', () => {
-    const at = pageSource.indexOf('aria-label="Compute rate multiplier override"');
+    const at = pageSource.indexOf("raw('texta6b6d1454df0')");
     expect(at).toBeGreaterThan(-1);
     const declaration = pageSource.slice(at - 400, at + 400);
     expect(declaration).toContain('min={0}');
@@ -208,7 +210,9 @@ describe('EnterpriseDemoCard — the self-serve toggle is now admin-only', () =>
   // block. What is asserted is unchanged: a non-admin is told who can turn this
   // on, and is given a state badge instead of a switch that would only 403.
   test('non-admins get read-only state plus a contact hint, not a switch that 403s', () => {
-    expect(demoCardSource).toMatch(/!isPlatformAdmin\s*\?\s*'[^']*Contact Kortix/);
+    expect(demoCardSource).toMatch(
+      /!isLoading && !isPlatformAdmin\s*\? tI18nComplete\.raw\('text0aa30be6e0c5'\)/,
+    );
     expect(demoCardSource).toMatch(/<Badge variant=\{enabled \? 'success' : 'muted'\}/);
   });
 });

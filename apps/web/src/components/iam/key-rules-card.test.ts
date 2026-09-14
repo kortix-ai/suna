@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseDaysField, policyIdentity } from './key-rules-card';
 import type { PatPolicy } from '@/lib/iam-client';
+import { parseDaysField, policyIdentity } from './key-rules-card';
 
 /**
  * The rules form's only real logic: turning what someone typed into a value

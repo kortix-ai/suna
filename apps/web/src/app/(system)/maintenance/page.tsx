@@ -1,8 +1,9 @@
-import { redirect } from 'next/navigation';
 import { LocalTime } from '@/components/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { WrenchIcon as Wrench } from '@/lib/icons/ssr';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { getTranslations } from '@/i18n/get-translations';
+import { redirect } from 'next/navigation';
 
 const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: 'short',
@@ -35,6 +36,7 @@ export default async function MaintenancePage({
 }: {
   searchParams: Promise<{ from?: string }>;
 }) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = { raw: getHardcodedUiServerText };
   const config = await getMaintenanceConfig();
 
@@ -47,7 +49,7 @@ export default async function MaintenancePage({
     redirect(safeInternalPath(from));
   }
 
-  const title = config.title || 'We\'ll be right back';
+  const title = config.title || "We'll be right back";
   const message =
     config.message ||
     "We're performing scheduled maintenance to improve your experience. Please check back soon.";
@@ -73,7 +75,7 @@ export default async function MaintenancePage({
         {/* Schedule */}
         {hasSchedule && (
           <div className="bg-muted text-muted-foreground inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm">
-            <span className="font-medium">Scheduled:</span>
+            <span className="font-medium">{tI18nComplete.raw('text61dac62928db')}</span>
             <span>
               <LocalTime
                 value={config.startTime!}

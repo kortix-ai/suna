@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `provider-connect.tsx` — THE provider connect surface. One component, mounted
  * by the Models settings tab (`gateway-view.tsx`'s Providers sub-tab, reached
@@ -253,6 +254,7 @@ function CredentialField({
   onValueChange: ProviderConnectViewProps['onValueChange'];
   trailing?: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const id = providerKeyFieldId(row.id, envVar);
   /**
    * A connected provider's field is EMPTY, because the stored key can never be
@@ -334,7 +336,11 @@ function CredentialField({
               size="icon-xs"
               onClick={onReveal}
               title={revealed ? 'Hide' : 'Show'}
-              aria-label={revealed ? `Hide ${row.label} key` : `Show ${row.label} key`}
+              aria-label={
+                revealed
+                  ? tI18nComplete('text1efc71237433', { value0: row.label })
+                  : tI18nComplete('text2c6e8e7b3b77', { value0: row.label })
+              }
               aria-pressed={revealed}
               className="text-muted-foreground/60 hover:text-foreground"
             >
@@ -382,6 +388,7 @@ function ProviderKeyFields({
   children,
   className,
 }: ProviderKeyFieldsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const untouched = row.envVars.every((envVar) => !values[`${row.id}:${envVar}`]);
   /**
    * Stored, and not being edited right now. Provider-wide: the credential is
@@ -411,8 +418,8 @@ function ProviderKeyFields({
           <>
             <span
               role="status"
-              title="Key saved"
-              aria-label="Key saved"
+              title={tI18nComplete.raw('texta45a97cbb780')}
+              aria-label={tI18nComplete.raw('texta45a97cbb780')}
               className="flex shrink-0 items-center"
             >
               <Check className="text-kortix-green size-3.5 shrink-0" weight="fill" />
@@ -421,8 +428,8 @@ function ProviderKeyFields({
               <InputGroupButton
                 size="icon-xs"
                 onClick={() => onRemoveKey(row.id)}
-                title="Remove key"
-                aria-label={`Remove the ${row.label} key`}
+                title={tI18nComplete.raw('text81c45fd9b904')}
+                aria-label={tI18nComplete('textaffe5438ae14', { value0: row.label })}
                 className="text-muted-foreground/60 hover:text-destructive"
               >
                 <Remove className="size-3.5" />
@@ -521,6 +528,7 @@ function ProviderRow({
   subscriptionSlot?: ReactNode;
   onOpenDetail?: (providerId: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const identity = (
     <div className="flex min-w-0 items-start gap-2.5">
       <ProviderLogo providerID={row.id} name={row.label} size="small" />
@@ -532,8 +540,8 @@ function ProviderRow({
               href={row.helpUrl}
               target="_blank"
               rel="noopener noreferrer"
-              title={`Where to get a ${row.label} key`}
-              aria-label={`Where to get a ${row.label} key`}
+              title={tI18nComplete('text2a94ea8db704', { value0: row.label })}
+              aria-label={tI18nComplete('text2a94ea8db704', { value0: row.label })}
               className="text-muted-foreground/50 hover:text-foreground shrink-0 transition-colors"
             >
               <ExternalLink className="size-3.5 shrink-0" />
@@ -546,7 +554,8 @@ function ProviderRow({
             onClick={() => onOpenDetail(row.id)}
             className="text-muted-foreground/50 hover:text-foreground mt-0.5 cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
           >
-            {row.modelCount} model{row.modelCount === 1 ? '' : 's'}
+            {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
+            {row.modelCount === 1 ? '' : 's'}
           </button>
         )}
       </div>
@@ -650,6 +659,7 @@ export function ProviderConnectView({
   detailSlot,
   className,
 }: ProviderConnectViewProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (detailProviderId && detailSlot) {
     return <div className={cn('px-5 py-5', className)}>{detailSlot}</div>;
   }
@@ -664,7 +674,7 @@ export function ProviderConnectView({
           type="text"
           // The count is the list's own size, stated where you would narrow
           // it. Every one of those providers is rendered below.
-          placeholder={`Search ${totalCount} providers…`}
+          placeholder={tI18nComplete('textbcace0f3244e', { value0: totalCount })}
           autoComplete="off"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
@@ -677,13 +687,11 @@ export function ProviderConnectView({
           auto-save nobody is told about is indistinguishable from an edit that
           was lost. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        {canWrite
-          ? 'Paste a key — it saves when you click away. Everyone on this project can use it.'
-          : 'Ask an owner of this project to add a key — you have read-only access.'}
+        {canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
       </p>
 
       {rows.length === 0 ? (
-        <EmptyState size="sm" title={`No provider matches "${search}"`} />
+        <EmptyState size="sm" title={tI18nComplete('text688e27c94de1', { value0: search })} />
       ) : (
         <div className="flex flex-col">
           {rows.map((row) => (
@@ -716,10 +724,10 @@ export function ProviderConnectView({
       {hiddenCount > 0 && onLoadMore ? (
         <div className="flex items-center justify-center gap-3 pt-1" data-provider-load-more="">
           <Button variant="outline" size="sm" onClick={onLoadMore}>
-            Load more
+            {tI18nComplete.raw('textac8991ef0101')}
           </Button>
           <span className="text-muted-foreground text-xs tabular-nums">
-            {rows.length} of {rows.length + hiddenCount}
+            {rows.length} {tI18nComplete.raw('text28391d3bc64e')} {rows.length + hiddenCount}
           </span>
         </div>
       ) : null}
@@ -778,6 +786,7 @@ export function ProviderConnect({
   enabled = true,
   className,
 }: ProviderConnectProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useLiveLlmProviderCatalog(projectId, enabled);
   useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
@@ -881,7 +890,7 @@ export function ProviderConnect({
       return entry;
     },
     onSuccess: (entry) => {
-      successToast(`${entry.label} key saved`);
+      successToast(tI18nComplete('textbc8686cf8d63', { value0: entry.label }));
       // The typed values are KEPT, and recorded as the saved baseline. Clearing
       // them was right when a Connect button ended the interaction; with a
       // blur-driven save the field is still on screen and still focusable, and
@@ -933,7 +942,7 @@ export function ProviderConnect({
       return provider;
     },
     onSuccess: (provider) => {
-      successToast(`${provider.label} key removed`);
+      successToast(tI18nComplete('textb7e29198fc4e', { value0: provider.label }));
       setRemoveId(null);
       // Settle any pending connect for the same provider, and forget the saved
       // baseline — otherwise re-pasting the SAME key would compare equal and
@@ -952,7 +961,8 @@ export function ProviderConnect({
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to remove the key'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textb89e92d0b992')),
   });
 
   // Warn if the refresh never lands. Same contract as the deleted modal's
@@ -964,10 +974,10 @@ export function ProviderConnect({
     if (!pendingProviderId) return;
     const timeout = window.setTimeout(() => {
       setPendingRequest(null);
-      warningToast('The key was saved, but the connected provider list did not refresh.');
+      warningToast(tI18nComplete.raw('texta54c4c33bc36'));
     }, CONNECTION_REFRESH_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
-  }, [pendingProviderId]);
+  }, [pendingProviderId, tI18nComplete]);
 
   const handleValueChange = useCallback((providerId: string, envVar: string, value: string) => {
     setValues((current) => ({ ...current, [`${providerId}:${envVar}`]: value }));
@@ -1036,7 +1046,7 @@ export function ProviderConnect({
       <div
         className="flex min-h-[200px] items-center justify-center"
         role="status"
-        aria-label="Loading providers"
+        aria-label={tI18nComplete.raw('text7f619ff13aa8')}
       >
         <Loading className="text-muted-foreground size-4 shrink-0" />
       </div>
@@ -1114,8 +1124,8 @@ export function ProviderConnect({
       <ConfirmDialog
         open={!!removeId}
         onOpenChange={(open) => !open && setRemoveId(null)}
-        title="Remove this key?"
-        confirmLabel="Remove key"
+        title={tI18nComplete.raw('text088c3ffd67b6')}
+        confirmLabel={tI18nComplete.raw('text81c45fd9b904')}
         confirmVariant="destructive"
         confirmIcon={<Unplug className="size-3.5 shrink-0" />}
         isPending={remove.isPending}
@@ -1123,17 +1133,17 @@ export function ProviderConnect({
         description={
           removeEntry ? (
             <span className="text-xs">
-              This project stops being able to use{' '}
+              {tI18nComplete.raw('texta99dfc3d112a')}{' '}
               <span className="text-foreground font-medium">{removeEntry.label}</span>
               {removeEntry.models.length > 0 && (
                 <>
                   {' '}
-                  and its {removeEntry.models.length} model
+                  {tI18nComplete.raw('textedfd52be9cbc')} {removeEntry.models.length}{' '}
+                  {tI18nComplete.raw('text9372c470eead')}
                   {removeEntry.models.length === 1 ? '' : 's'}
                 </>
               )}
-              , for everyone on it. Kortix does not keep a copy — you will need the key again to put
-              it back.
+              {tI18nComplete.raw('text61c922500051')}
             </span>
           ) : null
         }

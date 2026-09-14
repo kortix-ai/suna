@@ -463,6 +463,85 @@ export function createFilesRouter(cfg: Config): Hono {
     return c.json(results)
   })
 
+  /**
+   * POST /file/append — write ONE bounded chunk of a larger file.
+   *
+   * `/file/upload` carries a whole file in one request body, and the sandbox
+   * provider's edge discards a body over its size ceiling — measured
+   * 2026-09-04 against a live box: ~104 KB arrives, ~115 KB is dropped, and
+   * the drop is silent (the retry answers 200 for a request that never
+   * reached this process). So a photo or a PDF could not be delivered at all.
+   *
+   * This route is the other half: the caller splits the bytes and sends them
+   * in order. `first=true` CREATES OR TRUNCATES, every later chunk appends.
+   * The response carries the file's CUMULATIVE size, which is what lets the
+   * caller prove the whole file landed rather than trusting a status code.
+   *
+   * Deliberately NOT `writeUploadUnique`: a chunked write has to land on one
+   * known path across many requests, so collision-suffixing would scatter the
+   * chunks across several files. The caller therefore writes to a temporary
+   * name it owns and renames on completion (`/file/rename`).
+   */
+  app.post('/append', async (c) => {
+    let body: Record<string, string | File | (string | File)[]>
+    try {
+      body = (await c.req.parseBody({ all: true })) as typeof body
+    } catch (err) {
+      logger.warn('[files] append parseBody failed', { error: (err as Error).message })
+      return c.json({ error: 'Invalid multipart form data' }, 400)
+    }
+
+    const targetDir = typeof body['path'] === 'string' ? (body['path'] as string) : undefined
+    if (!targetDir) return c.json({ error: 'append requires a target path' }, 400)
+    const name = safeUploadName(typeof body['filename'] === 'string' ? body['filename'] : undefined)
+    if (!name) return c.json({ error: 'append requires a usable filename' }, 400)
+    const first = body['first'] === 'true'
+    const rawOffset = typeof body['offset'] === 'string' ? body['offset'] : undefined
+    const offset = rawOffset === undefined ? undefined : Number(rawOffset)
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) {
+      return c.json({ error: 'append offset must be a non-negative integer' }, 400)
+    }
+
+    const part = body['file']
+    const file = Array.isArray(part) ? part[0] : part
+    if (!file || typeof file === 'string' || !(file instanceof globalThis.File)) {
+      return c.json({ error: 'append requires a file part' }, 400)
+    }
+
+    try {
+      const dest = resolveUploadDest(targetDir, name)
+      await fs.mkdir(path.dirname(dest), { recursive: true })
+      const chunk = Buffer.from(await file.arrayBuffer())
+      if (!first && offset !== undefined) {
+        const currentSize = await fs.stat(dest).then((stat) => stat.size).catch((err) => {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 0
+          throw err
+        })
+        if (currentSize === offset + chunk.byteLength) {
+          logger.info('[files] append replay accepted', { path: dest, offset, total: currentSize })
+          return c.json({ path: dest, size: currentSize })
+        }
+        if (currentSize !== offset) {
+          return c.json(
+            { error: `append offset mismatch: expected ${currentSize}, received ${offset}` },
+            409,
+          )
+        }
+      }
+      // 'w' truncates, 'a' extends. A retried upload starts over with
+      // first=true so it can never append onto a half-written attempt.
+      await fs.writeFile(dest, chunk, { flag: first ? 'w' : 'a' })
+      const stat = await fs.stat(dest)
+      logger.info('[files] appended', { path: dest, chunk: chunk.byteLength, total: stat.size })
+      return c.json({ path: dest, size: stat.size })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const denied = message.startsWith('Access denied')
+      logger.warn('[files] append failed', { error: message })
+      return c.json({ error: message }, denied ? 403 : 500)
+    }
+  })
+
   // DELETE /file — recursively delete a file or directory.
   app.delete('/', async (c) => {
     let raw: string | undefined

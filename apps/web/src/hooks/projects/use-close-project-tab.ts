@@ -1,12 +1,9 @@
 'use client';
 
-import { startTransition, useCallback, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { startTransition, useCallback, useEffect } from 'react';
 
-import {
-  useProjectSessionTabsStore,
-  CUSTOMIZE_TAB_ID,
-} from '@/stores/project-session-tabs-store';
+import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 /**
  * Close a project session tab and slide focus to its nearest neighbor.
@@ -53,9 +50,7 @@ export function useCloseProjectTab(projectId: string) {
   const router = useRouter();
   const pathname = usePathname();
   const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
-  const setOptimisticActive = useProjectSessionTabsStore(
-    (s) => s.setOptimisticActive,
-  );
+  const setOptimisticActive = useProjectSessionTabsStore((s) => s.setOptimisticActive);
   const openTabs = useProjectSessionTabsStore((s) => s.tabsByProject[projectId]);
 
   // Warm what a close lands on. Only closing the ACTIVE tab navigates, and it
@@ -84,16 +79,14 @@ export function useCloseProjectTab(projectId: string) {
 
   return useCallback(
     (sessionId: string) => {
-      const tabs =
-        useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
+      const tabs = useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
       const idx = tabs.indexOf(sessionId);
       // Already gone (duplicate event, stale snapshot from a previous close
       // whose `router.push` hasn't flushed yet). Bail before idx underflow.
       if (idx === -1) return;
 
       const isActive =
-        pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ??
-        false;
+        pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ?? false;
 
       if (!isActive) {
         // Closing a background tab — no navigation, just drop it.

@@ -51,7 +51,10 @@ export function beginOptimisticRename(
 ): { previous: ProjectSession[] | undefined } {
   const previous = queryClient.getQueryData<ProjectSession[]>(queryKey);
   if (sessionId && previous) {
-    queryClient.setQueryData<ProjectSession[]>(queryKey, applySessionRename(previous, sessionId, name));
+    queryClient.setQueryData<ProjectSession[]>(
+      queryKey,
+      applySessionRename(previous, sessionId, name),
+    );
   }
   return { previous };
 }

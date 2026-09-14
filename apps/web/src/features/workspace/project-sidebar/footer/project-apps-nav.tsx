@@ -1,14 +1,16 @@
 'use client';
 
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { AppWindowIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 export function ProjectAppsNavItem() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
@@ -30,13 +32,13 @@ export function ProjectAppsNavItem() {
       <SidebarMenuButton
         asChild
         isActive={pathname?.startsWith(`/projects/${projectId}/apps`) === true}
-        tooltip="Apps"
+        tooltip={tI18nComplete.raw('text89dd748442c1')}
         /* Must match the row contract of THIS group — New session and Customize
            (project-settings-nav `ProjectCustomizeNavItem`). The bottom group
            (Files, Settings) uses a different one with no px-3 and no muted
            resting colour; Apps kept that after moving up here, which left its
            icon and label ~8px left of its neighbours and a shade darker. */
-        className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
         {/* Hover-gated prefetch: prefetching on mount cost every session open a
             full dynamic render of /apps for a route most opens never visit. */}
@@ -46,7 +48,7 @@ export function ProjectAppsNavItem() {
           <span className="shrink-0">
             <AppWindowIcon />
           </span>
-          Apps
+          {tI18nComplete.raw('text89dd748442c1')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

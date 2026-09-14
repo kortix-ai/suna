@@ -35,10 +35,17 @@ const allEditorSources = [...sectionSources, editorSource, primitivesSource, gra
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
     expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
-    expect(editorSource).toContain('options.set(initial.sandbox, initial.sandbox)');
-    expect(accessFieldsSource).toContain('label="Environment"');
+    // The project default is named, not just called "default": the hook hands
+    // the page `default_slug`, and the Workspace page resolves it to a name.
+    expect(editorSource).toContain('default_slug');
+    // A stale pin (a slug the project no longer declares) shows as itself
+    // instead of snapping to "Project default" and rewriting the manifest.
+    expect(accessFieldsSource).toContain('stalePin');
+    // The Environment control IS the shared sandbox menu the composer uses.
+    expect(accessFieldsSource).toContain('<SandboxTemplateMenu');
+    expect(accessFieldsSource).toContain("raw('text9e471951a1b4')");
     expect(accessFieldsSource).toContain("set('sandbox'");
-    expect(accessFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
   });
 });
 
@@ -51,7 +58,10 @@ describe('section structure — questions, not storage layers', () => {
     for (const section of [
       'BasicsSection',
       'ModelSection',
-      'AccessSection',
+      'SkillsSection',
+      'ConnectorsSection',
+      'SecretsSection',
+      'ProjectActionsSection',
       'WorkspaceSection',
       'ToolsSection',
     ]) {
@@ -165,10 +175,12 @@ describe('mode pickers use the shared component library', () => {
   // The control these replaced hid "unset" behind clicking the already-active
   // segment. Every inherit-capable picker must now NAME that option.
   test('every inherit-capable picker names its inherit option', () => {
-    expect(accessFieldsSource).toContain('Project default');
-    expect(basicsFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
+    expect(basicsFieldsSource).toContain("raw('text64f405e80a8d')");
     expect(permissionEditorSource).toContain('inheritLabel');
-    expect(permissionEditorSource).toContain('inheritLabel="Inherit"');
+    expect(permissionEditorSource).toContain(
+      "inheritLabel={tI18nComplete.raw('text3f72f0385768')}",
+    );
   });
 });
 

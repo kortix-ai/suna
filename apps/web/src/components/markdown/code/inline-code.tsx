@@ -10,14 +10,15 @@ import {
   probeFileAvailability,
   type FileAvailability,
 } from '@/features/session/file-availability';
-import { useInsideLink } from './inside-link-context';
 import { resolveRuntimePath } from '@/features/session/use-oc-file-open';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useInsideLink } from './inside-link-context';
 
 import { childrenToText } from './children-text';
 // Server-safe by design — see `inline-chip.tsx`. Re-exported so the client
@@ -56,6 +57,7 @@ export { HexColorCode, INLINE_CODE, isHexColor };
  * form it is given.
  */
 function FilePathCode({ text, children }: { text: string; children: React.ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Reactive: a path rendered before the session mounts must become probeable
   // once it does, without waiting for the message to re-render for other
@@ -101,15 +103,16 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
   }, [canProbe, missing, openPreview, text]);
 
   if (missing) {
-    // Inert: no `role`, no handler, no pointer. The demotion to
-    // `text-muted-foreground` is the whole visual signal — deliberately not a
-    // strikethrough, because a probe failure cannot tell a deleted file apart
-    // from a sandbox that stopped answering, and only one of those means the
-    // file is gone.
+    // Inert: no `role`, no handler, no pointer. Losing the affordances IS the
+    // whole signal — the text is deliberately NOT dimmed and NOT struck
+    // through, because a probe failure cannot tell a deleted file apart from a
+    // sandbox that stopped answering, and only one of those means the file is
+    // gone. Dimming would assert the first when only the second may be true;
+    // the title attribute carries the uncertainty instead.
     return (
       <code
-        title={`${text} — not available in this session`}
-        className={cn(INLINE_CODE, 'text-muted-foreground')}
+        title={tI18nComplete('text87245fea85d1', { value0: text })}
+        className={cn(INLINE_CODE)}
       >
         {children}
       </code>
@@ -120,7 +123,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
     <code
       role="button"
       tabIndex={0}
-      title={`Click to preview ${text}`}
+      title={tI18nComplete('text4c65337b5fbf', { value0: text })}
       onPointerEnter={probe}
       onFocus={probe}
       onClick={() => void open()}
@@ -143,6 +146,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 
 // Inline code that becomes a link (URLs) or opens a file preview (paths).
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { proxyUrl } = useSandboxProxy();
   const insideLink = useInsideLink();
   const text = childrenToText(children).trim();
@@ -175,7 +179,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          title={`Open ${text} in a new tab`}
+          title={tI18nComplete('text06ce842278f6', { value0: text })}
           className={linkClass}
         >
           {children}
@@ -188,7 +192,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        title={`Open ${text} in a new tab`}
+        title={tI18nComplete('text06ce842278f6', { value0: text })}
         className={linkClass}
       >
         {children}

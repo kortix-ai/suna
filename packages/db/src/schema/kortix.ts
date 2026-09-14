@@ -2628,6 +2628,24 @@ export interface AgentGrant {
    *  Optional for back-compat with grants minted before this field existed
    *  (treated as 'all'). */
   env?: string[] | 'all';
+  /**
+   * PROVENANCE — which manifest this grant was derived from. Stamped by the
+   * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy
+   * (`projects/lib/session-token-grant.ts`):
+   *   - `manifestRevision`: git BLOB sha of the manifest file. Two reads of the
+   *     same blob must derive the same grant, so a stored grant is never
+   *     REPLACED by a grant read from the same blob — that is how a glitched
+   *     read (INC-2026-09-08-CONNECTOR-GATEWAY) is refused instead of applied.
+   *   - `manifestCommit`: the commit the manifest was read at. A grant derived
+   *     from a commit that is an ANCESTOR of the stored grant's commit is a
+   *     stale read and never narrows the token.
+   *   - `resolvedAt`: ISO timestamp of the derivation (diagnostics only).
+   * All optional: grants minted before this existed carry none, and every gate
+   * ignores them (`agentMayUseConnector`, `agentMayPerform`, `agentMayUseEnv`).
+   */
+  manifestRevision?: string | null;
+  manifestCommit?: string | null;
+  resolvedAt?: string;
 }
 
 export const accountTokens = kortixSchema.table(
@@ -3059,12 +3077,10 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.sessionSequence,
     ),
-    index('idx_audit_events_account_source_phase_time').on(
-      table.accountId,
-      table.authoritativeSource,
-      table.phase,
-      table.occurredAt,
-    ),
+    // `idx_audit_events_account_source_phase_time` was dropped 2026-09-09
+    // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
+    // index write on every audit row. A filter on (authoritative_source, phase)
+    // uses `idx_audit_events_account_time` for the account+time prefix.
     index('idx_audit_events_account_client_source_time')
       .on(table.accountId, table.clientReportedSource, table.occurredAt)
       .where(sql`${table.clientReportedSource} is not null`),

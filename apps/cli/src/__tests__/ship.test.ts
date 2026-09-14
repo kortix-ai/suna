@@ -293,3 +293,50 @@ describe('stale-CLI warning on a 404 from the connector routes', () => {
     expect(capture.chunks.join('')).toBe('');
   });
 });
+
+// `kortix ship` scaffolds the folder with `kortix init` and then pushes that
+// history with a PLAIN (non-force) push. Server-side seeding is the default now
+// (apps/api/src/projects/managed-repo-seed.ts — "a project always has a
+// manifest"), so a seeded repo would turn ship's push into a non-fast-forward
+// rejection. Ship therefore has to say `seed_starter: false` OUT LOUD; an
+// absent flag no longer means "leave it empty", it means "seed it".
+//
+// Pinned on the source because the failure is silent and remote: the provision
+// call still returns 201 and the break only shows up at `git push`.
+describe('ship provisioning declares who owns the first commit', () => {
+  test('the provision body sends seed_starter:false', async () => {
+    const source = await Bun.file(
+      new URL('../commands/ship.ts', import.meta.url).pathname,
+    ).text();
+    const call = source.slice(source.indexOf("client.post<ProvisionResponse>('/projects/provision'"));
+    const body = call.slice(0, call.indexOf('});'));
+    expect(body).toContain('seed_starter: false');
+  });
+});
+
+// A project always has a manifest. Ship declares `seed_starter: false` — it
+// takes responsibility for the first commit — so it must actually HAVE a
+// kortix.yaml to push. This used to pass as "a `.kortix/`-only project —
+// nothing to verify", which is how a shipped project could end up with no
+// declared agents, no skills, and manifest detection falling back to v1.
+describe('ship refuses a project with no manifest', () => {
+  test('prepareManifest treats a missing kortix.yaml as fatal, and --no-verify does not bypass it', async () => {
+    const source = await Bun.file(
+      new URL('../commands/ship.ts', import.meta.url).pathname,
+    ).text();
+    const fn = source.slice(source.indexOf('function prepareManifest'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+    // The old escape hatch must be gone.
+    expect(body).not.toContain('if (!manifest) return { ok: true, env: empty };');
+    // Absence is now fatal.
+    expect(body).toContain('if (!manifest) {');
+    expect(body).toContain('refusing to ship a project with no manifest');
+
+    // --no-verify waives VALIDATION of a manifest, never its existence: the
+    // missing-manifest branch must not be gated on the flag.
+    const missingBranch = body.slice(body.indexOf('if (!manifest) {'));
+    const refusal = missingBranch.slice(0, missingBranch.indexOf('return { ok: false'));
+    expect(refusal).not.toContain('noVerify');
+  });
+});

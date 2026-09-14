@@ -38,7 +38,7 @@ describe('thumbnail sizing', () => {
   test('the picture branch is the one that skips the scale', () => {
     // Pins the pairing: only `rendersAsPicture` may take the unscaled
     // width/height sizing, so a file rendered as source always gets the scale.
-    expect(source).toContain('rendersAsPicture\n            ? { width: \'100%\', height: \'100%\' }');
+    expect(source).toContain("rendersAsPicture\n            ? { width: '100%', height: '100%' }");
     expect(source).toContain(`transform: \`scale(\${THUMB_SCALE})\``);
   });
 });

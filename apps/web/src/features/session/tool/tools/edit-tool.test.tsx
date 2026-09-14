@@ -20,12 +20,13 @@ function withProviders(node: ReactNode) {
 function makePart(
   input: Record<string, unknown>,
   status: 'completed' | 'running' = 'completed',
+  output = 'ok',
 ): ToolPart {
   return {
     type: 'tool',
     tool: 'edit',
     callID: 'call-1',
-    state: status === 'completed' ? { status, input, output: 'ok', metadata: {} } : { status, input },
+    state: status === 'completed' ? { status, input, output, metadata: {} } : { status, input },
   } as unknown as ToolPart;
 }
 
@@ -93,5 +94,57 @@ describe('EditTool trigger carries the line counts', () => {
     );
 
     expect(html).not.toContain('diff-stat');
+  });
+});
+
+describe('EditTool speaks the tense the row is actually in', () => {
+  const edit = { filePath: '/workspace/app.py', oldString: 'a', newString: 'b' };
+
+  test('a live call is present tense, beside the filename it is editing', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolRunningContext.Provider value>
+          <EditTool part={makePart(edit, 'running')} />
+        </ToolRunningContext.Provider>,
+      ),
+    );
+
+    expect(html).toContain('Editing');
+    expect(html).toContain('app.py');
+  });
+
+  // The regression this whole change exists for: `Editing` was hardcoded, so a
+  // call that finished an hour ago still claimed to be mid-flight. A restored
+  // transcript is entirely settled calls, every one of them reading as live.
+  test('a settled call is PAST tense — it is not still editing', () => {
+    const html = renderToStaticMarkup(withProviders(<EditTool part={makePart(edit)} />));
+
+    expect(html).toContain('Edited');
+    expect(html).not.toContain('Editing');
+  });
+
+  test('a failed edit never claims it edited', () => {
+    // Escaped apostrophe: `renderToStaticMarkup` emits the entity, and a raw
+    // string here would be an assertion that can never fail.
+    const html = renderToStaticMarkup(
+      withProviders(<EditTool part={makePart(edit, 'completed', 'Error: ENOENT')} />),
+    );
+
+    expect(html).toContain('Couldn&#x27;t update');
+    expect(html).not.toContain('>Edited<');
+  });
+});
+
+describe('EditTool, for the part that never got its diff', () => {
+  // `write-tool.tsx` removed this shimmer; `edit` kept it, so one situation had
+  // two answers — and on a restored session the animation promised a diff that
+  // was never going to arrive, forever.
+  const stale = makePart({}, 'running');
+
+  test('a stale pending part states the fact instead of shimmering forever', () => {
+    const html = renderToStaticMarkup(withProviders(<EditTool part={stale} defaultOpen />));
+
+    expect(html).toContain('No content received');
+    expect(html).not.toContain('Waiting for file content');
   });
 });

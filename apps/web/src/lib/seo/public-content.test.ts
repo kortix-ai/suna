@@ -141,11 +141,9 @@ describe('public SEO/AEO content coverage', () => {
 title: Sample
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
-<Callout type="warn" title="Keep this warning">
-  Do not drop this meaningful content.
-</Callout>
+:::warning[Keep this warning]
+Do not drop this meaningful content.
+:::
 
 <Figure caption="A truthful diagram" aspect="16/9" />
 
@@ -158,6 +156,69 @@ import { Callout } from 'fumadocs-ui/components/callout';
     expect(markdown).toContain('> Do not drop this meaningful content.');
     expect(markdown).toContain('> Figure: A truthful diagram');
     expect(markdown).toContain('- **3 systems:** One agent');
+    expectCleanAgentMarkdown(markdown, 'fixture');
+  });
+
+  test('renders ::: container directives as blockquotes', () => {
+    const mdx = `---
+title: Sample
+---
+
+:::warning[Keep this warning]
+Do not drop this meaningful content.
+:::
+
+:::info
+Untitled body line.
+:::
+`;
+    const markdown = renderPlainMarkdownFromMdx(mdx);
+    expect(markdown).toContain('> **Keep this warning**');
+    expect(markdown).toContain('> Do not drop this meaningful content.');
+    expect(markdown).toContain('> Untitled body line.');
+    expect(markdown).not.toContain(':::');
+    expectCleanAgentMarkdown(markdown, 'fixture');
+  });
+
+  test('leaves ::: inside a fenced code block untouched', () => {
+    const mdx = [
+      '---',
+      'title: Sample',
+      '---',
+      '',
+      '```md',
+      ':::warning[Not a real callout]',
+      'This is example source, not a directive.',
+      ':::',
+      '```',
+      '',
+    ].join('\n');
+    const markdown = renderPlainMarkdownFromMdx(mdx);
+    expect(markdown).toContain(':::warning[Not a real callout]');
+    expect(markdown).not.toContain('> **Not a real callout**');
+  });
+
+  test('renders Blume block components as plain markdown', () => {
+    const mdx = `---
+title: Sample
+---
+
+<CardGroup>
+  <Card icon="rocket" title="Quickstart" href="/docs/quickstart">Start here.</Card>
+</CardGroup>
+
+<Steps>
+<Step title="Install the CLI">
+Run the install script.
+</Step>
+</Steps>
+`;
+    const markdown = renderPlainMarkdownFromMdx(mdx);
+    expect(markdown).toContain('- [Quickstart](/docs/quickstart): Start here.');
+    expect(markdown).toContain('### Install the CLI');
+    expect(markdown).toContain('Run the install script.');
+    expect(markdown).not.toContain('<Card');
+    expect(markdown).not.toContain('<Step');
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 

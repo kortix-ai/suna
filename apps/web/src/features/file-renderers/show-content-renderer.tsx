@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * ShowContentRenderer — THE single source-of-truth for rendering
  * show tool content inline in the session chat and side panel.
@@ -40,11 +41,12 @@ import { FileContentRenderer } from '@/features/files/components/file-content-re
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { isHeicFile } from '@/lib/utils/heic-convert';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
@@ -218,6 +220,7 @@ export function ShowContentRenderer({
   onStatusChange,
   toolbarActions,
 }: ShowContentProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
   // ── Height presets — fill the panel vs. the compact inline card ──
@@ -609,7 +612,13 @@ export function ShowContentRenderer({
         </Suspense>
       );
     }
-    return <FileCard title={title || 'PDF Document'} fileName={fileName} path={path} />;
+    return (
+      <FileCard
+        title={title || tI18nComplete.raw('text0cbeb39b2ff0')}
+        fileName={fileName}
+        path={path}
+      />
+    );
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -681,7 +690,13 @@ export function ShowContentRenderer({
         </Suspense>
       );
     }
-    return <FileCard title={title || 'Word Document'} fileName={fileName} path={path} />;
+    return (
+      <FileCard
+        title={title || tI18nComplete.raw('text1931491100e0')}
+        fileName={fileName}
+        path={path}
+      />
+    );
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -707,7 +722,13 @@ export function ShowContentRenderer({
         </Suspense>
       );
     }
-    return <FileCard title={title || 'PowerPoint Presentation'} fileName={fileName} path={path} />;
+    return (
+      <FileCard
+        title={title || tI18nComplete.raw('text935176c7f960')}
+        fileName={fileName}
+        path={path}
+      />
+    );
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -801,7 +822,7 @@ export function ShowContentRenderer({
         {htmlBlobUrl && (
           <iframe
             src={htmlBlobUrl}
-            title={title || 'HTML Preview'}
+            title={title || tI18nComplete.raw('textfbe19644d843')}
             className="w-full border-0 bg-white"
             style={frameStyle}
             sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
@@ -933,7 +954,11 @@ function truncateLabel(value: string, max = 18): string {
 }
 
 /** Short pill label for a carousel segment — port, doc extension, filename, domain, or type. */
-export function getShowCarouselItemLabel(item: ShowCarouselItem): string {
+export function getShowCarouselItemLabel(
+  item: ShowCarouselItem,
+  typeLabels: Record<string, string> = SHOW_TYPE_LABELS,
+  fallbackLabel = 'Item',
+): string {
   const localhost = item.url ? parseLocalhostUrl(item.url) : null;
   if (localhost && !isAppRouteUrl(item.url)) return `:${localhost.port}`;
 
@@ -952,17 +977,19 @@ export function getShowCarouselItemLabel(item: ShowCarouselItem): string {
     if (base) return truncateLabel(base);
   }
 
-  return SHOW_TYPE_LABELS[item.type] ?? truncateLabel(item.type || 'Item');
+  return typeLabels[item.type] ?? truncateLabel(item.type || fallbackLabel);
 }
 
 function getShowCarouselItemAriaLabel(
   item: ShowCarouselItem,
   index: number,
   total: number,
+  itemLabel: string,
+  positionLabel: string,
 ): string {
-  const parts = [`Item ${index + 1} of ${total}`];
+  const parts = [positionLabel];
   if (item.title) parts.push(item.title);
-  else parts.push(getShowCarouselItemLabel(item));
+  else parts.push(itemLabel);
   if (item.type) parts.push(item.type);
   return parts.join(' · ');
 }
@@ -974,12 +1001,18 @@ export function ShowCarousel({
   fill = false,
   toolbarActions,
 }: ShowCarouselProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const typeLabels = useLocalizedUiCatalog(SHOW_TYPE_LABELS);
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
   const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const stripRef = useRef<HTMLDivElement | null>(null);
 
-  const labels = useMemo(() => items.map(getShowCarouselItemLabel), [items]);
+  const fallbackLabel = tI18nComplete.raw('text652bcc3a4784');
+  const labels = useMemo(
+    () => items.map((item) => getShowCarouselItemLabel(item, typeLabels, fallbackLabel)),
+    [fallbackLabel, items, typeLabels],
+  );
 
   const goTo = useCallback(
     (idx: number) => {
@@ -1069,7 +1102,7 @@ export function ShowCarousel({
               onClick={prev}
               className="hit-area-2 hit-area-r-0 transition-transform active:scale-[0.96]"
               disabled={currentIndex === 0}
-              aria-label="Previous item"
+              aria-label={tI18nComplete.raw('text81b35f1b4332')}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -1080,7 +1113,7 @@ export function ShowCarousel({
               onClick={next}
               className="hit-area-2 hit-area-l-0 transition-transform active:scale-[0.96]"
               disabled={currentIndex >= count - 1}
-              aria-label="Next item"
+              aria-label={tI18nComplete.raw('text1e47d4f7a1a3')}
             >
               <ChevronRight className="size-4" />
             </Button>
@@ -1104,7 +1137,13 @@ export function ShowCarousel({
                     }}
                     type="button"
                     onClick={() => goTo(i)}
-                    aria-label={getShowCarouselItemAriaLabel(item, i, count)}
+                    aria-label={getShowCarouselItemAriaLabel(
+                      item,
+                      i,
+                      count,
+                      labels[i],
+                      tI18nComplete('text7ce01e1f5095', { current: i + 1, total: count }),
+                    )}
                     aria-current={i === currentIndex ? 'true' : undefined}
                     className={cn(
                       'shrink-0 rounded-md px-2 py-1 text-xs font-medium',

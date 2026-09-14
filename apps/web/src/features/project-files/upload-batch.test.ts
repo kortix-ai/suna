@@ -150,9 +150,9 @@ describe('resolveUploadTarget — the folder dropped on wins', () => {
   });
 
   test('a folder drop still wins while viewing the root', () => {
-    expect(
-      resolveUploadTarget({ currentPath: '/', isRootPath: true, dropTargetDir: 'docs' }),
-    ).toBe('docs');
+    expect(resolveUploadTarget({ currentPath: '/', isRootPath: true, dropTargetDir: 'docs' })).toBe(
+      'docs',
+    );
   });
 });
 

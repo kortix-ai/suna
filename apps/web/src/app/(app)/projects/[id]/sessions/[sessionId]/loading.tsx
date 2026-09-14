@@ -2,10 +2,10 @@
 
 import { useParams } from 'next/navigation';
 
-import ProjectHomeLoading from '../../loading';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { readStartStash } from '@kortix/sdk/react';
+import ProjectHomeLoading from '../../loading';
 
 /**
  * Navigation Suspense boundary for /projects/[id]/sessions/[sessionId].

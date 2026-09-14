@@ -2,11 +2,12 @@
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as CANNON from 'cannon-es';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
-import { LAYERS } from './content';
+import { localizedA1oContent } from './content';
 
 /**
  * A real die, thrown with real rigid-body physics.
@@ -95,8 +96,7 @@ function drawFace(label: string, ordinal: string): THREE.CanvasTexture {
   // readable as "MODELS" instead of being squeezed onto one thin line.
   const lines = label.includes(' ') ? label.split(' ') : [label];
   const maxWidth = px * 0.78;
-  const font = (s: number) =>
-    `600 ${s}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+  const font = (s: number) => `600 ${s}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
 
   // Size to the widest line rather than guessing one size for all six faces.
   let size = lines.length > 1 ? 78 : 92;
@@ -122,10 +122,7 @@ function drawFace(label: string, ordinal: string): THREE.CanvasTexture {
 
 /** Orientation laying a +Z-facing plane flat against a given face normal. */
 function plateQuaternion(normal: THREE.Vector3) {
-  return new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 0, 1),
-    normal,
-  );
+  return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
 }
 
 type DieProps = {
@@ -141,20 +138,12 @@ type DieProps = {
   reducedMotion: boolean;
 };
 
-function Die({
-  rollToken,
-  spinToken,
-  onSettle,
-  onImpact,
-  nudgeRef,
-  reducedMotion,
-}: DieProps) {
+function Die({ rollToken, spinToken, onSettle, onImpact, nudgeRef, reducedMotion }: DieProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { layers: LAYERS } = useMemo(() => localizedA1oContent(tI18nComplete), [tI18nComplete]);
   const meshRef = useRef<THREE.Group>(null);
 
-  const geometry = useMemo(
-    () => new RoundedBoxGeometry(HALF * 2, HALF * 2, HALF * 2, 5, 0.11),
-    [],
-  );
+  const geometry = useMemo(() => new RoundedBoxGeometry(HALF * 2, HALF * 2, HALF * 2, 5, 0.11), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   const faceTextures = useMemo(
@@ -164,18 +153,12 @@ function Die({
         return {
           ...face,
           // Derived from the title, so the face and the copy cannot disagree.
-          map: drawFace(
-            (layer?.title ?? '').toUpperCase(),
-            layer?.ordinal ?? '',
-          ),
+          map: drawFace((layer?.title ?? '').toUpperCase(), layer?.ordinal ?? ''),
         };
       }),
-    [],
+    [LAYERS],
   );
-  useEffect(
-    () => () => faceTextures.forEach((f) => f.map.dispose()),
-    [faceTextures],
-  );
+  useEffect(() => () => faceTextures.forEach((f) => f.map.dispose()), [faceTextures]);
 
   // World, ground and walls are built once and reused across throws.
   const physics = useMemo(() => {
@@ -242,10 +225,7 @@ function Die({
     if (!left || !right || !near || !far) return;
 
     const margin = HALF + WALL_INSET;
-    const halfX = Math.max(
-      1.5,
-      Math.min(Math.abs(left.x), Math.abs(right.x)) - margin,
-    );
+    const halfX = Math.max(1.5, Math.min(Math.abs(left.x), Math.abs(right.x)) - margin);
     const zNear = near.z - margin;
     const zFar = far.z + margin;
 
@@ -308,10 +288,7 @@ function Die({
     if (reducedMotion) {
       // No tumble: place the die flat with a random face up and report it.
       const face = DIE_FACES[Math.floor(Math.random() * DIE_FACES.length)];
-      const q = new THREE.Quaternion().setFromUnitVectors(
-        face.normal,
-        new THREE.Vector3(0, 1, 0),
-      );
+      const q = new THREE.Quaternion().setFromUnitVectors(face.normal, new THREE.Vector3(0, 1, 0));
       die.position.set(0, HALF, 0);
       die.quaternion.set(q.x, q.y, q.z, q.w);
       die.velocity.setZero();
@@ -407,11 +384,7 @@ function Die({
         const dirZ = nudge.y / len;
 
         die.applyImpulse(
-          new CANNON.Vec3(
-            dirX * power * NUDGE_FORCE,
-            0,
-            dirZ * power * NUDGE_FORCE,
-          ),
+          new CANNON.Vec3(dirX * power * NUDGE_FORCE, 0, dirZ * power * NUDGE_FORCE),
           // Above the centre of mass, so the shove leans the die as well.
           new CANNON.Vec3(0, HALF * 0.7, 0),
         );
@@ -433,8 +406,7 @@ function Die({
       stepCount.current += 1;
 
       const resting =
-        die.velocity.length() < REST_SPEED &&
-        die.angularVelocity.length() < REST_SPEED;
+        die.velocity.length() < REST_SPEED && die.angularVelocity.length() < REST_SPEED;
       restCount.current = resting ? restCount.current + 1 : 0;
 
       if (restCount.current >= REST_STEPS || stepCount.current > MAX_STEPS) {
@@ -454,12 +426,7 @@ function Die({
     // Nothing recentres, reorients, or otherwise touches the die after it
     // settles; where physics leaves it is where it stays.
     group.position.set(die.position.x, die.position.y, die.position.z);
-    group.quaternion.set(
-      die.quaternion.x,
-      die.quaternion.y,
-      die.quaternion.z,
-      die.quaternion.w,
-    );
+    group.quaternion.set(die.quaternion.x, die.quaternion.y, die.quaternion.z, die.quaternion.w);
   });
 
   return (
@@ -531,9 +498,7 @@ export default function DieScene({
     }
     // Accumulate, so several moves inside one frame all land as one shove.
     const pending = nudgeRef.current;
-    nudgeRef.current = pending
-      ? { x: pending.x + dx, y: pending.y + dy }
-      : { x: dx, y: dy };
+    nudgeRef.current = pending ? { x: pending.x + dx, y: pending.y + dy } : { x: dx, y: dy };
   };
 
   const endDrag = (e: React.PointerEvent) => {

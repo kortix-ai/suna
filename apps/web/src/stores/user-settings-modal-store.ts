@@ -1,5 +1,5 @@
-import { create } from 'zustand';
 import type { SettingsTabId } from '@/lib/menu-registry';
+import { create } from 'zustand';
 
 /**
  * Single source of truth for opening the UserSettingsModal from anywhere —
@@ -14,10 +14,7 @@ interface UserSettingsModalState {
   isOpen: boolean;
   defaultTab: SettingsTabId;
   highlight: UserSettingsHighlight;
-  openUserSettings: (opts?: {
-    tab?: SettingsTabId;
-    highlight?: UserSettingsHighlight;
-  }) => void;
+  openUserSettings: (opts?: { tab?: SettingsTabId; highlight?: UserSettingsHighlight }) => void;
   closeUserSettings: () => void;
 }
 

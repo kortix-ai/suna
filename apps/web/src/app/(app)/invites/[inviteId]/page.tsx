@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocale, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { ClockIcon as Clock } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -16,14 +16,14 @@ import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
   acceptAccountInvite,
   declineAccountInvite,
   describeAccountInvite,
   type AccountInviteDescribe,
 } from '@kortix/sdk';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
@@ -92,7 +92,10 @@ export default function InvitePage() {
       return { kind: 'account' as const };
     },
     onSuccess: () => {
-      router.replace('/accounts');
+      // `/accounts` was a page; it is a modal (`?accountId=`) now, and a
+      // declined invite is not a reason to open it. The landing door is where
+      // a signed-in user with nothing else to do belongs.
+      router.replace(PROJECT_LANDING_PATH);
     },
   });
 

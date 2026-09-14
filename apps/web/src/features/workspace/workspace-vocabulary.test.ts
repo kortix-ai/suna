@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 /**
@@ -92,8 +92,8 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'project-sidebar/workspace-menu-section.tsx'), 'utf8'),
     );
-    expect(code).toContain('Find workspace…');
-    expect(code).toContain('No workspaces yet');
+    expect(code).toContain("placeholder={t('workspace.find')}");
+    expect(code).toContain("t('workspace.empty')");
   });
 
   // "Create a workspace…" sits inside the Switch Workspace submenu, which
@@ -104,8 +104,8 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'project-sidebar/workspace-switcher.tsx'), 'utf8'),
     );
-    expect(code).toContain('Create a workspace…');
-    expect(code).toContain('Switch Workspace');
+    expect(code).toContain("t('workspace.create')");
+    expect(code).toContain("t('workspace.switchMenu')");
   });
 
   /**
@@ -125,10 +125,9 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
   test('command-palette.tsx says Workspace throughout its switcher', () => {
     const code = stripComments(readFileSync(join(import.meta.dir, 'command-palette.tsx'), 'utf8'));
 
-    expect(code).toContain("'Switch Workspace'");
-    expect(code).toContain("'Search workspaces...'");
-    expect(code).toContain('heading="Workspaces"');
-    expect(code).toContain("'No workspaces yet'");
+    expect(code).toContain("if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025')");
+    expect(code).toContain("if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23')");
+    expect(code).toContain("tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')");
 
     expect(code).not.toContain("'Switch Project'");
     expect(code).not.toContain("'Search projects...'");
@@ -150,16 +149,14 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'new/new-workspace-page.tsx'), 'utf8'),
     );
-    expect(code).toContain('Create a workspace');
+    expect(code).toContain("{t('title')}");
   });
 
   test('advanced-fields.tsx renders the managed-repository description', () => {
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'new/advanced-fields.tsx'), 'utf8'),
     );
-    expect(code).toContain(
-      'Kortix creates and manages a private repository for this workspace.',
-    );
+    expect(code).toContain("t(`repository.sources.${SOURCE_KEYS[state.source]}.description`)");
   });
 
   test('account-picker.tsx names its control Account', () => {
@@ -175,6 +172,6 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     // visible field label would read as a form field on a page whose form is
     // one question. The accessible NAME is the contract, not the element that
     // carries it.
-    expect(code).toContain('aria-label="Account"');
+    expect(code).toContain("aria-label={t('account.label')}");
   });
 });

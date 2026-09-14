@@ -88,3 +88,17 @@ describe('SessionRetryDisplay', () => {
     expect(html).toContain('context_length_exceeded');
   });
 });
+
+// Persisted on a local stack as OpenCode `UnknownError.data.message`:
+// `{"message":"The usage limit has been reached","code":429}`. Once the SDK
+// unwraps that to the sentence, it is a usage stop the user can lift, so it
+// must reach the upgrade card and not the generic failure row.
+describe('TurnErrorDisplay routes a usage-limit sentence to the upgrade card', () => {
+  test('"The usage limit has been reached" renders Upgrade plan', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText="The usage limit has been reached" />,
+    );
+    expect(html).toContain('Upgrade plan');
+    expect(html).toContain('The usage limit has been reached');
+  });
+});

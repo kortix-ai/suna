@@ -2,8 +2,9 @@
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { change } from './content';
+import { getLocalizedCompanyAsCodeContent } from './content';
 
 /**
  * `/company-as-code` hero scene — the spine.
@@ -35,14 +36,15 @@ const MERGED = [
 const SPINE = 13;
 
 export function CompanyAsCodeHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion() ?? false;
-  const { cr } = change;
+  const { cr } = getLocalizedCompanyAsCodeContent(tI18nComplete).change;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="A repository's history: one open change request against main, and the merged commits beneath it."
+      aria-label={tI18nComplete.raw('textb065a9c3b29b')}
     >
       <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── the history, running past the frame ─────────────────────── */}

@@ -1,3 +1,4 @@
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { groupSessions } from './session-grouping';
@@ -28,27 +29,36 @@ describe('groupSessions — status mode', () => {
         makeSession({ session_id: 'rev', status: 'completed' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: { rev: 1 }, now: NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['needs-you', 'running', 'recent']);
   });
 
   test('a review-pending session appears exactly once', () => {
-    const grouped = groupSessions([makeSession({ session_id: 'run', status: 'running' })], {
-      mode: 'status',
-      order: 'activity',
-      reviewCountBySession: { run: 2 },
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [makeSession({ session_id: 'run', status: 'running' })],
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: { run: 2 },
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections.flatMap((s) => s.sessions.map((x) => x.session_id))).toEqual(['run']);
   });
 
   test('a zero review count does not move a session into needs-you', () => {
-    const grouped = groupSessions([makeSession({ session_id: 'run', status: 'running' })], {
-      mode: 'status',
-      order: 'activity',
-      reviewCountBySession: { run: 0 },
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [makeSession({ session_id: 'run', status: 'running' })],
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: { run: 0 },
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections.map((s) => s.id)).toEqual(['running']);
   });
 
@@ -59,6 +69,7 @@ describe('groupSessions — status mode', () => {
         makeSession({ session_id: 'done', status: 'completed' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     const runningSection = grouped.sections.find((s) => s.id === 'running');
     expect(runningSection?.sessions.map((s) => s.session_id)).toEqual(['start']);
@@ -73,6 +84,7 @@ describe('groupSessions — status mode', () => {
         makeSession({ session_id: 'run', status: 'running' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     const recent = grouped.sections.find((s) => s.id === 'recent');
     expect(recent?.sessions.map((s) => s.session_id).sort()).toEqual(['done', 'fail', 'stop']);
@@ -85,6 +97,7 @@ describe('groupSessions — status mode', () => {
         makeSession({ session_id: 'stop', status: 'stopped' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['recent']);
   });
@@ -96,6 +109,7 @@ describe('groupSessions — status mode', () => {
         makeSession({ session_id: 'done', status: 'completed' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     expect(grouped.showHeaders).toBe(true);
   });
@@ -111,12 +125,16 @@ describe('groupSessions — status mode', () => {
       status: 'completed',
       created_at: '2026-02-01T00:00:00.000Z',
     });
-    const grouped = groupSessions([older, newer], {
-      mode: 'status',
-      order: 'activity',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [older, newer],
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
   });
 });
@@ -153,6 +171,7 @@ describe('groupSessions — activity mode', () => {
         }),
       ],
       { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today', 'yesterday', 'week', 'older']);
   });
@@ -170,6 +189,7 @@ describe('groupSessions — activity mode', () => {
         }),
       ],
       { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
   });
@@ -183,6 +203,7 @@ describe('groupSessions — activity mode', () => {
         }),
       ],
       { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
   });
@@ -196,6 +217,7 @@ describe('groupSessions — activity mode', () => {
         }),
       ],
       { mode: 'activity', order: 'activity', reviewCountBySession: { a: 3 }, now: ACTIVITY_NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
   });
@@ -213,6 +235,7 @@ describe('groupSessions — activity mode', () => {
       const grouped = groupSessions(
         [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
         { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+        testUiTranslator,
       );
       expect(grouped.sections.map((s) => s.id)).toEqual(['yesterday']);
     });
@@ -222,6 +245,7 @@ describe('groupSessions — activity mode', () => {
       const grouped = groupSessions(
         [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
         { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+        testUiTranslator,
       );
       expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
     });
@@ -231,6 +255,7 @@ describe('groupSessions — activity mode', () => {
       const grouped = groupSessions(
         [makeSession({ session_id: 'a', created_at: new Date(activityMs).toISOString() })],
         { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: LOCAL_NOW },
+        testUiTranslator,
       );
       expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
     });
@@ -245,6 +270,7 @@ describe('groupSessions — source mode', () => {
         makeSession({ session_id: 'b', metadata: { source: 'slack' } }),
       ],
       { mode: 'source', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['chat', 'slack']);
   });
@@ -252,12 +278,16 @@ describe('groupSessions — source mode', () => {
 
 describe('groupSessions — none mode', () => {
   test('one section, no headers', () => {
-    const grouped = groupSessions([makeSession(), makeSession({ session_id: 's2' })], {
-      mode: 'none',
-      order: 'activity',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [makeSession(), makeSession({ session_id: 's2' })],
+      {
+        mode: 'none',
+        order: 'activity',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections.map((s) => s.id)).toEqual(['all']);
     expect(grouped.showHeaders).toBe(false);
   });
@@ -276,12 +306,16 @@ describe('groupSessions — ordering', () => {
   });
 
   test('created sorts newest first', () => {
-    const grouped = groupSessions([older, newer], {
-      mode: 'none',
-      order: 'created',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [older, newer],
+      {
+        mode: 'none',
+        order: 'created',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['newer', 'older']);
   });
 
@@ -300,12 +334,16 @@ describe('groupSessions — ordering', () => {
       name: 'Banana',
       created_at: '2026-08-05T00:00:00.000Z',
     });
-    const grouped = groupSessions([upper, lower], {
-      mode: 'none',
-      order: 'name',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const grouped = groupSessions(
+      [upper, lower],
+      {
+        mode: 'none',
+        order: 'name',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(grouped.sections[0].sessions.map((s) => s.session_id)).toEqual(['lower', 'upper']);
   });
 });
@@ -324,24 +362,33 @@ describe('groupSessions — hidden sections and invariants', () => {
         hiddenSections: ['running'],
         now: NOW,
       },
+      testUiTranslator,
     );
     expect(grouped.sections.map((s) => s.id)).toEqual(['recent']);
   });
 
   test('showHeaders is false at one or zero populated sections', () => {
-    const one = groupSessions([makeSession({ status: 'completed' })], {
-      mode: 'status',
-      order: 'activity',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const one = groupSessions(
+      [makeSession({ status: 'completed' })],
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(one.showHeaders).toBe(false);
-    const none = groupSessions([], {
-      mode: 'status',
-      order: 'activity',
-      reviewCountBySession: {},
-      now: NOW,
-    });
+    const none = groupSessions(
+      [],
+      {
+        mode: 'status',
+        order: 'activity',
+        reviewCountBySession: {},
+        now: NOW,
+      },
+      testUiTranslator,
+    );
     expect(none.sections).toEqual([]);
     expect(none.showHeaders).toBe(false);
   });
@@ -353,6 +400,7 @@ describe('groupSessions — hidden sections and invariants', () => {
         makeSession({ session_id: 'd', status: 'completed' }),
       ],
       { mode: 'status', order: 'activity', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
     );
     // Headers render the label alone; counts were removed from the UI, so a
     // section exposing a count field again would be dead surface.
@@ -363,7 +411,11 @@ describe('groupSessions — hidden sections and invariants', () => {
 
   test('does not mutate the input array', () => {
     const input = [makeSession({ session_id: 'a' }), makeSession({ session_id: 'b' })];
-    groupSessions(input, { mode: 'status', order: 'name', reviewCountBySession: {}, now: NOW });
+    groupSessions(
+      input,
+      { mode: 'status', order: 'name', reviewCountBySession: {}, now: NOW },
+      testUiTranslator,
+    );
     expect(input.map((s) => s.session_id)).toEqual(['a', 'b']);
   });
 });

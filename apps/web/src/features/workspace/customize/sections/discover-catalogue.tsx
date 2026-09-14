@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   createConnector,
   getConnectStatus,
@@ -83,6 +84,7 @@ export function DiscoverCatalogue({
   existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [q, setQ] = useState('');
   const { debouncedValue: deferredQuery } = useDebounce(q.trim(), 300);
   const [selectedConnector, setSelectedConnector] = useState<DiscoverConnector | null>(null);
@@ -198,16 +200,18 @@ export function DiscoverCatalogue({
     onSuccess: ({ slug, name, pipedream, syncError }) => {
       setConnectorTarget(null);
       if (syncError) {
-        warningToast(
-          `Added ${name} to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('textd6a135de3872', { value0: name, value1: syncError }));
         onAdded();
         return;
       }
-      successToast(pipedream ? `Added ${name} — click Connect to authorize` : `Added ${name}`);
+      successToast(
+        pipedream
+          ? tI18nComplete('text590d36262e11', { value0: name })
+          : tI18nComplete('text29f396e2d238', { value0: name }),
+      );
       onAdded(slug);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('texta34a2714da91')),
   });
 
   const loading = connectorsQuery.isLoading || (pipedreamEnabled && pipedreamQuery.isLoading);
@@ -223,7 +227,7 @@ export function DiscoverCatalogue({
         <Input
           value={q}
           onChange={(event) => setQ(event.target.value)}
-          placeholder="Search 5,000+ APIs, MCP servers, and OAuth apps"
+          placeholder={tI18nComplete.raw('textd95934d15292')}
           variant="popover"
           className="pl-9"
         />
@@ -232,14 +236,14 @@ export function DiscoverCatalogue({
       {connectorsQuery.isError ? (
         <InfoBanner
           tone="destructive"
-          title="Could not load Discover"
+          title={tI18nComplete.raw('textab93638292af')}
           action={
             <Button variant="outline" size="sm" onClick={() => connectorsQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         >
-          {(connectorsQuery.error as Error)?.message ?? 'The public catalogue is unavailable.'}
+          {(connectorsQuery.error as Error)?.message ?? tI18nComplete.raw('text0d31cf2c2307')}
         </InfoBanner>
       ) : loading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -250,8 +254,12 @@ export function DiscoverCatalogue({
       ) : discoverCards.length === 0 ? (
         <EmptyState
           icon={Search}
-          title="No connectors found"
-          description={q ? `Nothing matches "${q}".` : 'Try another search.'}
+          title={tI18nComplete.raw('texta2ac2ce730c9')}
+          description={
+            q
+              ? tI18nComplete('text3e71adfa7d54', { value0: q })
+              : tI18nComplete.raw('text06cf1d8d7c75')
+          }
         />
       ) : (
         <>
@@ -264,7 +272,9 @@ export function DiscoverCatalogue({
               const key = isOAuth ? `pipedream:${card.app.slug}` : card.item.id;
               // The public index often has one feed entry (commonly MCP) for a
               // domain whose surface document contains APIs, CLIs, and more.
-              const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';
+              const subtitle = isOAuth
+                ? tI18nComplete.raw('text87a46ec2620a')
+                : tI18nComplete.raw('text678094dc2f3f');
               return (
                 <button
                   key={key}
@@ -305,7 +315,9 @@ export function DiscoverCatalogue({
                   </div>
                   <p className="text-muted-foreground mt-2 line-clamp-2 min-h-8 text-xs leading-relaxed">
                     {description ??
-                      (isOAuth ? 'Authorize through Pipedream.' : 'View available surfaces.')}
+                      (isOAuth
+                        ? tI18nComplete.raw('textc618c6bd416a')
+                        : tI18nComplete.raw('text673760b857d0'))}
                   </p>
                 </button>
               );
@@ -323,7 +335,7 @@ export function DiscoverCatalogue({
                   {connectorsQuery.isFetchingNextPage ? (
                     <Loading className="size-4 shrink-0" />
                   ) : null}
-                  Load more connectors
+                  {tI18nComplete.raw('texta085437ccc11')}
                 </Button>
               )}
               {pipedreamQuery.hasNextPage && (
@@ -336,7 +348,7 @@ export function DiscoverCatalogue({
                   {pipedreamQuery.isFetchingNextPage ? (
                     <Loading className="size-4 shrink-0" />
                   ) : null}
-                  Load more OAuth apps
+                  {tI18nComplete.raw('text69cea0daa681')}
                 </Button>
               )}
             </div>
@@ -352,7 +364,8 @@ export function DiscoverCatalogue({
           <ModalHeader>
             <ModalTitle>{selectedConnector?.name ?? 'Connector'}</ModalTitle>
             <ModalDescription>
-              Choose a direct surface from {selectedConnector?.domain}. Pipedream is not involved.
+              {tI18nComplete.raw('textcd9f6b36a2c7')} {selectedConnector?.domain}
+              {tI18nComplete.raw('text554add02368e')}
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
@@ -365,14 +378,14 @@ export function DiscoverCatalogue({
             ) : detailQuery.isError ? (
               <InfoBanner
                 tone="destructive"
-                title="Could not load connector surfaces"
+                title={tI18nComplete.raw('textda3e4af8062b')}
                 action={
                   <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-                    Retry
+                    {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 }
               >
-                {(detailQuery.error as Error)?.message ?? 'Try again.'}
+                {(detailQuery.error as Error)?.message ?? tI18nComplete.raw('texta0c2cc1374d9')}
               </InfoBanner>
             ) : detailQuery.data?.variants.length ? (
               <ul className="space-y-2">
@@ -400,7 +413,7 @@ export function DiscoverCatalogue({
                           </Badge>
                           {variant.requiresAuth ? (
                             <span className="text-muted-foreground text-xs">
-                              Credential required
+                              {tI18nComplete.raw('text46f49bfb8d8f')}
                             </span>
                           ) : null}
                         </div>
@@ -419,18 +432,18 @@ export function DiscoverCatalogue({
                             });
                           }}
                         >
-                          Add direct
+                          {tI18nComplete.raw('text16613cfc614f')}
                         </Button>
                       ) : href ? (
                         <Button asChild variant="outline" size="sm" className="shrink-0">
                           <a href={href} target="_blank" rel="noreferrer">
-                            Configure manually
+                            {tI18nComplete.raw('textb1d877ab2f51')}
                             <ExternalLink className="size-3.5 shrink-0" />
                           </a>
                         </Button>
                       ) : (
                         <Badge variant="secondary" size="sm">
-                          Metadata only
+                          {tI18nComplete.raw('textdf0453d185c4')}
                         </Badge>
                       )}
                     </li>
@@ -441,8 +454,8 @@ export function DiscoverCatalogue({
               <EmptyState
                 icon={Globe}
                 size="sm"
-                title="No usable surface published"
-                description="This record is discoverable, but its provider has not published a machine-readable endpoint."
+                title={tI18nComplete.raw('text363579e1d66b')}
+                description={tI18nComplete.raw('text4d286e47d580')}
               />
             )}
           </ModalBody>
@@ -452,7 +465,7 @@ export function DiscoverCatalogue({
         open={connectorTarget !== null}
         idPrefix="discover-connector"
         title={`Add ${connectionDisplayName || 'connector'}`}
-        description="Create a connector. The display name and slug identify it in project configuration."
+        description={tI18nComplete.raw('text49ad6dbe32fb')}
         initialName={connectionDisplayName}
         initialSlug={
           connectorTarget

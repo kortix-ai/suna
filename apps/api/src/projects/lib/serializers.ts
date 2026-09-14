@@ -327,6 +327,10 @@ export function serializeProjectGitConnection(row: ProjectGitConnectionRow | nul
     default_branch: row.defaultBranch,
     auth_method: row.authMethod,
     installation_id: row.installationId,
+    // The flag the web's repo-access section keys on. It used to be read off
+    // `metadata.git.managed`, which is empty once the connection lives in
+    // this table — every managed repo then read as "Kortix did not create it".
+    managed: row.managed ?? false,
     credential_ref: row.credentialRef,
     permissions: row.permissions ?? {},
     visibility: row.visibility,

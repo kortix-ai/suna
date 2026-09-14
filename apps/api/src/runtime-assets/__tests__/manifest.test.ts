@@ -11,11 +11,13 @@ import { _resetRuntimeAssetsCache, runtimeAssetsManifest } from '../manifest';
 
 const CLI_BIN_ENV = 'KORTIX_SNAPSHOT_CLI_BIN_PATH';
 const AGENT_BIN_ENV = 'KORTIX_SNAPSHOT_AGENT_BIN_PATH';
+const ENTRYPOINT_ENV = 'KORTIX_SANDBOX_ENTRYPOINT_PATH';
 const SELF_UPDATE_ENV = 'RUNTIME_AGENT_SELF_UPDATE';
 const BUILD_ENV = 'RUNTIME_ASSETS_BUILD';
 const VERSION_ENV = 'KORTIX_VERSION';
 const COMMIT_ENV = 'KORTIX_COMMIT';
 const MANAGED_ENV = [
+  ENTRYPOINT_ENV,
   CLI_BIN_ENV,
   AGENT_BIN_ENV,
   SELF_UPDATE_ENV,
@@ -45,6 +47,7 @@ beforeEach(() => {
   // have been built.
   process.env[CLI_BIN_ENV] = join(tmpdir(), 'kortix-runtime-assets-unset-cli');
   process.env[AGENT_BIN_ENV] = join(tmpdir(), 'kortix-runtime-assets-unset-agent');
+  process.env[ENTRYPOINT_ENV] = join(tmpdir(), 'kortix-runtime-assets-unset-entrypoint');
   delete process.env[SELF_UPDATE_ENV];
   delete process.env[BUILD_ENV];
   delete process.env[VERSION_ENV];
@@ -168,6 +171,28 @@ describe('runtime assets manifest', () => {
       expect(manifest.components.cli?.sha256).toBe(expectedCli);
       expect(manifest.components.agent?.sha256).toBe(expectedAgent);
     }
+  });
+
+  test('the supervising entrypoint is served as a digested component when the image carries it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runtime-assets-entrypoint-'));
+    const path = join(dir, 'entrypoint.sh');
+    await writeFile(path, '#!/bin/bash\necho supervisor\n');
+    process.env[ENTRYPOINT_ENV] = path;
+    _resetRuntimeAssetsCache();
+    const manifest = await runtimeAssetsManifest();
+    const expected = new Bun.CryptoHasher('sha256').update('#!/bin/bash\necho supervisor\n').digest('hex');
+    expect(manifest.components.entrypoint).toEqual({
+      version: null,
+      sha256: expected,
+      size: '#!/bin/bash\necho supervisor\n'.length,
+      path: '/v1/runtime-assets/entrypoint',
+    });
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test('no entrypoint file = no component, never a fabricated one', async () => {
+    _resetRuntimeAssetsCache();
+    expect((await runtimeAssetsManifest()).components.entrypoint).toBeUndefined();
   });
 
   test('a missing version sidecar reports null, not a fabricated version', async () => {

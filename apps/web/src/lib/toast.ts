@@ -12,7 +12,7 @@ export const toast = Object.assign(
     custom: sonnerToast.custom,
     message: sonnerToast.message,
     dismiss: sonnerToast.dismiss,
-  }
+  },
 );
 
 // Re-export everything else from sonner

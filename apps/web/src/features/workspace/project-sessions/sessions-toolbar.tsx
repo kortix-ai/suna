@@ -14,6 +14,7 @@ import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-
 import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
 import { MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 export function SessionsToolbar({
@@ -45,6 +46,7 @@ export function SessionsToolbar({
   creatingSession: boolean;
   canSelect: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const closeSearch = () => {
     onSearchChange('');
     onSearchOpenChange(false);
@@ -71,13 +73,13 @@ export function SessionsToolbar({
               }
             }}
             size="xs"
-            placeholder="Search by title, owner, source, branch, agent, or ID"
-            aria-label="Search sessions"
+            placeholder={tI18nComplete.raw('textb65a63353da6')}
+            aria-label={tI18nComplete.raw('text8cb650539ec8')}
           />
           {search ? <InputGroupSearchClear onClick={() => onSearchChange('')} /> : null}
         </InputGroupSearch>
         <Button type="button" variant="ghost" size="sm" onClick={closeSearch}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
       </div>
     );
@@ -85,12 +87,12 @@ export function SessionsToolbar({
 
   return (
     <div className="flex items-center gap-1.5">
-      <Hint label="Search sessions" side="bottom">
+      <Hint label={tI18nComplete.raw('text8cb650539ec8')} side="bottom">
         <Button
           type="button"
           variant="outline"
           size="icon"
-          aria-label="Search sessions"
+          aria-label={tI18nComplete.raw('text8cb650539ec8')}
           onClick={() => onSearchOpenChange(true)}
           className="size-8 transition-[scale] duration-150 active:scale-[0.96]"
         >
@@ -109,16 +111,16 @@ export function SessionsToolbar({
               its onClick and ref to a component that discards them — the button
               renders and clicking it does nothing. Guarded by
               sessions-toolbar.test.tsx. */}
-          <Hint label="Session view options" side="bottom">
+          <Hint label={tI18nComplete.raw('text6c03b504d991')} side="bottom">
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                aria-label="Session view options"
+                aria-label={tI18nComplete.raw('text6c03b504d991')}
                 className="transition-[scale] duration-150 active:scale-[0.96]"
               >
-                Filter
+                {tI18nComplete.raw('text638e249f4a15')}
               </Button>
             </DropdownMenuTrigger>
           </Hint>
@@ -143,7 +145,7 @@ export function SessionsToolbar({
           onClick={onEnterSelectMode}
           className="h-8 transition-[scale] duration-150 active:scale-[0.96]"
         >
-          Select
+          {tI18nComplete.raw('text2a78025de6aa')}
         </Button>
       ) : null}
 
@@ -161,7 +163,7 @@ export function SessionsToolbar({
           aria-busy
         >
           <Loading className="size-4 shrink-0" />
-          New
+          {tI18nComplete.raw('text18fdd549b2ed')}
         </Button>
       ) : (
         <Button
@@ -172,7 +174,7 @@ export function SessionsToolbar({
         >
           <Link href={`/projects/${projectId}`} prefetch onClick={onNewSession}>
             <PlusIcon className="size-4 shrink-0" />
-            New
+            {tI18nComplete.raw('text18fdd549b2ed')}
           </Link>
         </Button>
       )}

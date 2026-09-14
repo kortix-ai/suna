@@ -102,7 +102,9 @@ describe('ChannelsSection chrome', () => {
    */
   test('the page heading says what a channel is for while the scope is up', () => {
     expect(pageCode).toContain('description={SCOPE_DESCRIPTION[scope]}');
-    expect(pageCode).toContain("channels: 'Reach your agent from the tools your team already uses.'");
+    expect(pageCode).toContain(
+      "channels: 'Reach your agent from the tools your team already uses.'",
+    );
   });
 
   /**
@@ -115,8 +117,18 @@ describe('ChannelsSection chrome', () => {
       readFileSync(
         join(
           import.meta.dir,
-          '..','..','..','..','..',
-          'app','(app)','projects','[id]','(capabilities)','channels','page.tsx',
+          '..',
+          '..',
+          '..',
+          '..',
+          '..',
+          'app',
+          '(app)',
+          'projects',
+          '[id]',
+          '(capabilities)',
+          'channels',
+          'page.tsx',
         ),
         'utf8',
       ),

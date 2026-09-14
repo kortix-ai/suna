@@ -2,14 +2,14 @@
 
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
 import {
   ArrowSquareOutIcon as ExternalLink,
   ChatCircleIcon as MessageCircle,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 export function formatBashOutput(rawOutput: string): {
   content: string;
@@ -126,6 +126,7 @@ export function SessionTimeLabel({ timestamp }: { timestamp: number }) {
 }
 
 export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
   // `/projects/<id>/sessions/<id>`, not `/sessions/<id>` — the latter is not a
   // route and 404s on reload or Back. See `session-href.ts`.
@@ -134,7 +135,8 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
   return (
     <div className="flex flex-col gap-1 p-1.5">
       <div className="text-muted-foreground px-1.5 py-1 text-xs font-medium tracking-wider uppercase">
-        {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+        {sessions.length} {tI18nComplete.raw('text3f3af1ecebbd')}
+        {sessions.length !== 1 ? 's' : ''}
       </div>
       {sessions.map((s) => (
         <button
@@ -163,7 +165,8 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
                 <span className="flex shrink-0 items-center gap-1.5 text-xs">
                   <DiffStat additions={s.summary.additions} deletions={s.summary.deletions} />
                   <span className="text-muted-foreground">
-                    {s.summary.files} file{s.summary.files !== 1 ? 's' : ''}
+                    {s.summary.files} {tI18nComplete.raw('text3b9c358f36f0')}
+                    {s.summary.files !== 1 ? 's' : ''}
                   </span>
                 </span>
               )}
@@ -225,7 +228,8 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
   return (
     <div className="flex flex-col gap-1 p-1.5">
       <div className="text-muted-foreground px-1.5 py-1 text-xs font-medium tracking-wider uppercase">
-        {messages.length} message{messages.length !== 1 ? 's' : ''}
+        {messages.length} {tHardcodedUi.raw('i18nComplete.textab530a13e459')}
+        {messages.length !== 1 ? 's' : ''}
       </div>
       {messages.map((msg) => (
         <div

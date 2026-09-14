@@ -1,11 +1,12 @@
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   cancelAccountDeletion,
   deleteAccountImmediately,
   getAccountDeletionStatus,
   requestAccountDeletion,
 } from '@kortix/sdk';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 export interface AccountDeletionStatus {
   has_pending_deletion: boolean;
@@ -55,6 +56,7 @@ export function useAccountDeletionStatus() {
 }
 
 export function useRequestAccountDeletion() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -71,12 +73,13 @@ export function useRequestAccountDeletion() {
       });
     },
     onError: (error: Error) => {
-      errorToast(error.message || 'Failed to request account deletion');
+      errorToast(error.message || tI18nComplete.raw('textf2bbdc88c314'));
     },
   });
 }
 
 export function useCancelAccountDeletion() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -93,12 +96,13 @@ export function useCancelAccountDeletion() {
       });
     },
     onError: (error: Error) => {
-      errorToast(error.message || 'Failed to cancel account deletion');
+      errorToast(error.message || tI18nComplete.raw('textfe49d2d1f394'));
     },
   });
 }
 
 export function useDeleteAccountImmediately() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -122,7 +126,7 @@ export function useDeleteAccountImmediately() {
       }, 2000);
     },
     onError: (error: Error) => {
-      errorToast(error.message || 'Failed to delete account immediately');
+      errorToast(error.message || tI18nComplete.raw('textb7ef1459725d'));
     },
   });
 }

@@ -1,33 +1,62 @@
-import { locales, type Locale } from '@/i18n/config';
+import { locales } from '@/i18n/catalog.mjs';
 import {
   authorizeEnvironment,
   deriveEnvironmentAccessCookie,
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
+  AUTH_BOUNCE_COOKIE,
+  AUTH_BOUNCE_MAX_AGE,
   LAST_PROJECT_COOKIE,
+  parseLastProjectOwner,
   PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
+  serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import {
-  resolveMiddlewareIdentity,
-  type MiddlewareUser,
-} from '@/lib/supabase/middleware-identity';
+import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support'];
+type Locale = (typeof locales)[number];
+
+// Public application surfaces that support explicit locale routing for SEO
+// and unauthenticated language verification (/de/about, /sr/pricing, etc.).
+const MARKETING_ROUTES = [
+  '/',
+  '/about',
+  '/agent-computer',
+  '/agents-and-skills',
+  '/automations',
+  '/blog',
+  '/careers',
+  '/channels',
+  '/changelog',
+  '/company-as-code',
+  '/connectors',
+  '/contact',
+  '/design-system',
+  '/developers',
+  '/download',
+  '/enterprise',
+  '/legal',
+  '/marketplace',
+  '/pricing',
+  '/security',
+  '/self-hosted',
+  '/solutions',
+  '/support',
+  '/use-cases',
+];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /help, /legal, /support,
+// app. Functional public routes (/auth, /docs, /legal, /support,
 // /marketplace, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
@@ -56,6 +85,7 @@ const PUBLIC_ROUTES = [
   '/', // Homepage should be public!
   '/auth',
   '/auth/callback',
+  '/logout', // Signing OUT must never require signing IN — a protected /logout would be bounced to /auth?redirect=/logout, and the sign-in would land right back here
   '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',
@@ -67,8 +97,7 @@ const PUBLIC_ROUTES = [
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support page should be public
-  '/help', // Help center and documentation should be public
+  '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
   '/agent-computer', // Agent computer marketing page should be public
@@ -146,7 +175,6 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 const DESKTOP_ALLOWED_ROUTES = [
   '/projects',
   '/new',
-  '/accounts',
   // `/projects/[id]/settings*` rides the `/projects` prefix; the account-scoped
   // `/settings/*` mount has no `[id]` segment, so without its own entry the
   // desktop shell bounces it to the landing door — including the post-sign-in
@@ -174,11 +202,9 @@ export async function middleware(request: NextRequest) {
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    | string
-    | undefined;
+    string | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    | string
-    | undefined;
+    string | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =
@@ -232,7 +258,12 @@ export async function middleware(request: NextRequest) {
       expectedAccessCookie
     ) {
       response.cookies.set(ENVIRONMENT_ACCESS_COOKIE, expectedAccessCookie, {
-        domain: '.kortix.com',
+        // No `domain` — this is the only Domain-scoped cookie in the repo,
+        // and `.kortix.com` sent it to EVERY subdomain: dev's middleware set
+        // a cookie that staging, prod, and api.kortix.com all received on
+        // every request too, regardless of which environment actually
+        // authorized it. Omitting `domain` makes it host-only (RFC 6265
+        // §5.3): scoped to whichever exact host issued it.
         httpOnly: true,
         maxAge: 60 * 60 * 24 * 7,
         path: '/',
@@ -404,8 +435,12 @@ export async function middleware(request: NextRequest) {
 
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
-      const response = NextResponse.rewrite(new URL(remainingPath, request.url));
-      // Store locale in headers so next-intl can pick it up for the explicit URL.
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set('x-locale', locale);
+      const response = NextResponse.rewrite(new URL(remainingPath, request.url), {
+        request: { headers: requestHeaders },
+      });
+      // Keep the locale response header for diagnostics and cache inspection.
       // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 
@@ -454,6 +489,9 @@ export async function middleware(request: NextRequest) {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
       path: '/',
       sameSite: 'lax',
+      // `@supabase/ssr` never sets this itself — see the doc comment in
+      // `lib/supabase/client.ts`.
+      secure: process.env.NODE_ENV === 'production',
     },
     cookies: {
       getAll() {
@@ -498,6 +536,22 @@ export async function middleware(request: NextRequest) {
     user = identity.user;
     authError = identity.authError;
   }
+
+  // Who is being bounced. Captured HERE, before the self-heal below can null
+  // `user`: `getUser()` is allowed to hand back a user AND an error together,
+  // and the self-heal drops that user on the floor a few lines down. Reading
+  // after it would throw away the one identity the request still had.
+  //
+  // The remembered project's owner is the fallback, and it is what actually
+  // carries attribution in the common failure: a rotated refresh token already
+  // resolves to `user: null` before the self-heal runs, so there is no session
+  // id left to read. That cookie outlives the token, and it is the same
+  // browser-written value `resolveDefaultLandingPath` already trusts.
+  //
+  // Empty is an allowed answer. It means UNATTRIBUTED, which never demotes a
+  // return URL — see `shouldDemoteReturnUrl`.
+  const bounceOwnerId =
+    user?.id || parseLastProjectOwner(request.cookies.get(LAST_PROJECT_COOKIE)?.value);
 
   // Self-heal a stale/rotated session. A refresh token that's invalid or
   // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
@@ -553,7 +607,7 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /help, /legal, /support,
+  // else to /auth. Functional public routes (/docs, /legal, /support,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env
@@ -598,7 +652,22 @@ export async function middleware(request: NextRequest) {
       // browser bounces to /auth still carrying the poisoned cookie, and the
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
-      return finalizeEnvironmentAccess(redirectPreservingSession(url));
+      const bounceResponse = redirectPreservingSession(url);
+      // Attach WHO was bounced. `redirect` alone says where, and the auth flows
+      // downstream cannot tell an expired session returning to its own project
+      // from a different account picking up the previous one's path.
+      bounceResponse.cookies.set(
+        AUTH_BOUNCE_COOKIE,
+        serializeAuthBounce(bounceOwnerId, redirectTarget),
+        {
+          httpOnly: true,
+          maxAge: AUTH_BOUNCE_MAX_AGE,
+          path: '/',
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        },
+      );
+      return finalizeEnvironmentAccess(bounceResponse);
     }
 
     return finalizeEnvironmentAccess(supabaseResponse);

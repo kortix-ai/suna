@@ -9,8 +9,23 @@ import { useMemo } from 'react';
  */
 
 export const fileSearchKeys = {
-  files: (projectId: string, ref: string, query: string, type?: 'file' | 'directory', limit?: number) =>
-    ['project-files', 'search', 'files', projectId, ref, query, type ?? 'all', limit ?? 50] as const,
+  files: (
+    projectId: string,
+    ref: string,
+    query: string,
+    type?: 'file' | 'directory',
+    limit?: number,
+  ) =>
+    [
+      'project-files',
+      'search',
+      'files',
+      projectId,
+      ref,
+      query,
+      type ?? 'all',
+      limit ?? 50,
+    ] as const,
 };
 
 export function useFileSearch(

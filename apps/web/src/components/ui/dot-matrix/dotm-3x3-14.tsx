@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrix3Base } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isCenterCell3, outerRingClockwise3OrderValue } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrix3Base, isCenterCell3, outerRingClockwise3OrderValue } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type Dotm3x3_14Props = DotMatrixCommonProps;
 
@@ -17,23 +18,27 @@ const PERIMETER = 8;
 
 export function Dotm3x3_14({
   speed = 1.6,
-  pattern = "full",
-  dotShape = "circle",
+  pattern = 'full',
+  dotShape = 'circle',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: Dotm3x3_14Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1150,
     steps: PERIMETER,
-    speed
+    speed,
   });
 
   const animationResolver = useMemo<DotAnimationResolver>(() => {
@@ -41,11 +46,11 @@ export function Dotm3x3_14({
 
     return ({ isActive, index, row, col, reducedMotion: rm, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       if (isCenterCell3(row, col)) {
-        const opacity = rm || phase === "idle" ? 0.18 : 0.1 + (head % 2) * 0.08;
+        const opacity = rm || phase === 'idle' ? 0.18 : 0.1 + (head % 2) * 0.08;
         return { style: { opacity } };
       }
 
@@ -63,7 +68,7 @@ export function Dotm3x3_14({
         }
       }
 
-      if (rm || phase === "idle") {
+      if (rm || phase === 'idle') {
         return { style: { opacity } };
       }
 

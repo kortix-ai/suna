@@ -29,7 +29,7 @@ describe('the glyph catalogue', () => {
     // grid renders. A name in one but not the other is either an unpickable
     // glyph or an unsavable one.
     const grouped = PROJECT_GLYPH_GROUPS.flatMap((g) => g.names).sort();
-    expect(grouped).toEqual([...PROJECT_GLYPH_NAMES].sort());
+    expect([...PROJECT_GLYPH_NAMES].sort()).toEqual(grouped);
   });
 
   test('no name is duplicated', () => {

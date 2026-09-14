@@ -5,10 +5,11 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Claude } from '@/features/icon/icons/claude';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
-import { hero, heroEyebrow } from '@/features/marketing/landing/content';
+import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { useTranslations } from '@/i18n/use-translations';
 import { type ReactNode, useCallback } from 'react';
 
 /** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
@@ -18,18 +19,27 @@ const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
  *  their marks, so "AI Management System" lands without a paragraph first. */
-function RivalEyebrow() {
+function RivalEyebrow({
+  content,
+}: {
+  content: ReturnType<typeof getLocalizedLandingContent>['heroEyebrow'];
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     /* `justify-center` centres the wrapped rows as a unit; each rival stays its
        own inline `flex items-center` span, so the logo and its label never
        separate when the row wraps on a phone. */
     <div className="kx-hero-text text-muted-foreground flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-sm">
-      <span>{heroEyebrow.lead}</span>
-      {heroEyebrow.rivals.map((r, i) => {
+      <span>{content.lead}</span>
+      {content.rivals.map((r, i) => {
         const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
         return (
           <span key={r.id} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-muted-foreground/50 mr-1">and</span>}
+            {i > 0 && (
+              <span className="text-muted-foreground/50 mr-1">
+                {tI18nComplete.raw('text6201111b83a0')}
+              </span>
+            )}
             {Glyph ? <Glyph className="size-4" /> : null}
             <span className="text-foreground font-medium">{r.label}</span>
           </span>
@@ -42,6 +52,8 @@ function RivalEyebrow() {
 const Hero = () => {
   const { user } = useAuth();
   const openDemo = useRequestDemo();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { hero, heroEyebrow } = getLocalizedLandingContent(tI18nComplete);
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
@@ -89,7 +101,7 @@ const Hero = () => {
           Setting only `--kx-enter` leaves the stylesheet free to zero it. */}
       <div className="relative z-20">
         <div className="mx-auto w-full max-w-7xl px-6">
-          <RivalEyebrow />
+          <RivalEyebrow content={heroEyebrow} />
 
           {/* `mx-auto` on the measure is what actually centres the block: without
               it `max-w-3xl` stays flush left inside max-w-7xl and only the glyphs

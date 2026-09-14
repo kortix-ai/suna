@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * TunnelAuditTable — paginated audit log viewer for tunnel operations.
@@ -80,7 +80,8 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
               {log.durationMs && (
                 <span className="text-muted-foreground ml-2 text-xs">
                   <Clock className="mr-0.5 inline h-3 w-3" />
-                  {log.durationMs}ms
+                  {log.durationMs}
+                  {tHardcodedUi.raw('i18nComplete.textf785c3ce1d58')}
                 </span>
               )}
             </div>
@@ -102,7 +103,9 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
           <span className="text-muted-foreground text-xs">
-            Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
+            {tHardcodedUi.raw('i18nComplete.text0a30a815d67d')} {pagination.page}{' '}
+            {tHardcodedUi.raw('i18nComplete.text28391d3bc64e')} {pagination.totalPages} (
+            {pagination.total} {tHardcodedUi.raw('i18nComplete.text665c0285727d')}
           </span>
           <div className="flex gap-1">
             <Button

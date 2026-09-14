@@ -3,8 +3,6 @@ title: Apps
 description: Create, deploy, and control Kortix Apps from the SDK and from React.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Apps are project-scoped serverless deployments. This page covers the SDK
 surface: the `apps` facade on a project handle, the artifact and deployment
 calls, the access calls, the exported types, and the React hooks.
@@ -16,11 +14,11 @@ behavior, read [Apps](/docs/feature-flags/apps).
 const apps = kortix.project(projectId).apps;
 ```
 
-<Callout type="info" title="Apps is a feature flag">
+:::info[Apps is a feature flag]
 Every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`
 until the project turns Apps on. Use `isFeatureDisabledError(error)` to branch
 on it. See [Feature flags](/docs/feature-flags).
-</Callout>
+:::
 
 ## The apps facade
 

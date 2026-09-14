@@ -1,7 +1,6 @@
 'use client';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { isSandboxNotReadyError } from '@kortix/sdk';
 import { parseImageOutput } from '@/features/session/image-output-path';
 import {
   BasicTool,
@@ -13,8 +12,9 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { ImageIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 
 const TITLE_BY_ACTION: Record<string, string> = {
@@ -72,7 +72,7 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     <BasicTool
       icon={<ImageIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: TITLE_BY_ACTION[action ?? ''] || 'Image Gen',
+        title: TITLE_BY_ACTION[action ?? ''] || tHardcodedUi.raw('i18nComplete.text0753bd774f1b'),
         subtitle: prompt?.slice(0, 60),
       }}
       defaultOpen={defaultOpen}
@@ -84,7 +84,7 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           {displayImageSrc ? (
             <img
               src={displayImageSrc}
-              alt={String(prompt || 'Generated image')}
+              alt={String(prompt || tHardcodedUi.raw('i18nComplete.textdf37e04fda71'))}
               className="max-h-64 rounded-sm object-contain"
             />
           ) : isImageLoading ? (

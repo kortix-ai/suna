@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -100,7 +100,7 @@ describe('ScheduleView page chrome', () => {
 
   test('pause-all lives behind the header gear, not in the content flow', () => {
     expect(shellHeader).toContain('<TriggerActivationMenu projectId={projectId} />');
-    expect(menu).toContain('aria-label="Trigger settings"');
+    expect(menu).toContain("raw('text17c982d8eb68')");
     expect(menu).toContain('GearSixIcon');
     expect(menu).toContain('<PopoverTrigger asChild>');
     // Never back in the list column as a banner.

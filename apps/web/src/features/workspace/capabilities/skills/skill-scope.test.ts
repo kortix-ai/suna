@@ -30,7 +30,9 @@ describe('filterSkills', () => {
     ]);
   });
   test('query matches name and description, case-insensitively', () => {
-    expect(filterSkills(all, { scope: null, query: 'POD' }).map((s) => s.name)).toEqual(['podcast']);
+    expect(filterSkills(all, { scope: null, query: 'POD' }).map((s) => s.name)).toEqual([
+      'podcast',
+    ]);
     expect(filterSkills(all, { scope: null, query: 'episode' }).map((s) => s.name)).toEqual([
       'podcast',
     ]);

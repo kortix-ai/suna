@@ -34,13 +34,33 @@ against the prod backend and does not affect what prod runs. `apps/web` has the 
 encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`, mostly public
 `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
 
-CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow
-allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the
-dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with
-`dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
+CI doesn't need any of these today (builds use placeholders, and `.gitleaks.toml` exempts the
+dotenvx ciphertext lines). If a future job needs real values, add the dotenvx private key as a
+single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it
+decrypts `apps/api/.env` in memory, no other secrets required.
 
 Never write a plaintext secret into a tracked file. Full procedure: the
 [`dotenvx-secrets` skill](./.claude/skills/dotenvx-secrets/SKILL.md).
+
+### What stops a plaintext leak
+
+Three gates, in the order they fire. **`pnpm install` arms the first one** — its `prepare` script
+runs `git config core.hooksPath .githooks`, so a fresh clone is protected without you doing
+anything. (Before 2026-08-29 that step was manual and undocumented, so most clones had no local
+guard at all.)
+
+| # | Gate | When | Catches |
+|---|------|------|---------|
+| 1 | `.githooks/pre-commit` + `pre-push` | before the commit, on your machine | auto-**encrypts** every staged `.env`, then `dotenvx ext precommit` blocks anything still plaintext |
+| 2 | `secrets-guard.yml` → `pnpm secrets:check` | on the PR | **structural**: every value in a committed profile must start with `encrypted:`, whatever it looks like |
+| 3 | `secret-scan.yml` (gitleaks) + GitHub push protection | on the PR / on push | **pattern**-based: known provider keys and high-entropy strings |
+
+Gate 2 exists because gate 3 is pattern-based and gate 1's backstop only inspects the *staged*
+diff — a no-op on a plain CI checkout. Run gate 2 yourself any time with `pnpm secrets:check`.
+
+Editing `.gitleaks.toml`? Every allowlist must be `condition = "AND"` with `regexes`. A path-only
+allowlist exempts the whole file — that is exactly how a plaintext `apps/api/.env` once scanned as
+`no leaks found`. `secrets-guard.yml` fails the build if a path-only allowlist reappears.
 
 ## Testing
 

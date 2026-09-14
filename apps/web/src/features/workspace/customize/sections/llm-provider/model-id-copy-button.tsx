@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';
 
 /**
@@ -14,6 +15,7 @@ import { useCallback, useState } from 'react';
  * `components/markdown/copy-button.tsx` for the same shape.
  */
 export function ModelIdCopyButton({ value, className }: { value: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(
@@ -35,7 +37,7 @@ export function ModelIdCopyButton({ value, className }: { value: string; classNa
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? 'Copied' : 'Copy model id'}
+      aria-label={copied ? 'Copied' : tI18nComplete.raw('text7fadfca18f08')}
       className={cn(
         'text-muted-foreground/50 hover:text-foreground hover:bg-muted-foreground/10 inline-flex size-5 shrink-0 items-center justify-center rounded outline-none',
         'cursor-pointer transition-colors active:scale-[0.96]',

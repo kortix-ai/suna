@@ -20,6 +20,7 @@ import { FoldedSection, ToolSection } from '@/features/session/tool/shared/outpu
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   CodeSimpleIcon as Code2,
@@ -27,7 +28,6 @@ import {
   MagnifyingGlassIcon as Search,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
 /**
@@ -42,6 +42,7 @@ const EMPTY_ARGS = Object.freeze({}) as Record<string, unknown>;
 const EMPTY_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
 
 export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
@@ -55,7 +56,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     <BasicTool
       icon={<Plug className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Connected apps',
+        title: tI18nComplete.raw('textc023d120dd17'),
         args: status === 'completed' ? [`${connectors.length} available`] : undefined,
       }}
       defaultOpen={defaultOpen}
@@ -74,7 +75,9 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                 {String(c.name || c.slug || '')}
               </span>
               <span className="text-muted-foreground/60 font-mono">{String(c.provider ?? '')}</span>
-              <span className="text-muted-foreground/50 ml-auto">{String(c.tools ?? 0)} tools</span>
+              <span className="text-muted-foreground/50 ml-auto">
+                {String(c.tools ?? 0)} {tI18nComplete.raw('textf9d35d43770d')}
+              </span>
               <span
                 className={cn(
                   'text-[10px] font-semibold uppercase',
@@ -90,7 +93,13 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="connectors" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Loading connectors…' : 'No connectors.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tI18nComplete.raw('text47c3d9d2f5c7')
+                : tI18nComplete.raw('textb65b97575287')
+            }
+          />
         </ToolResultCard>
       )}
     </BasicTool>
@@ -99,6 +108,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
 ToolRegistry.register('kortix-connectors_connectors', ConnectorsTool);
 
 export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
@@ -117,7 +127,7 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
     <BasicTool
       icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'App actions',
+        title: tI18nComplete.raw('text2c496ac4ee78'),
         subtitle: query || undefined,
         args:
           status === 'completed'
@@ -151,13 +161,25 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
         </ToolResultCard>
       ) : parsed ? (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Searching…' : `No tools match "${query}".`} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tI18nComplete.raw('textc31723ab3302')
+                : tI18nComplete('text139dfa78cf32', { value0: query })
+            }
+          />
         </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Searching…' : 'No results yet.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tI18nComplete.raw('textc31723ab3302')
+                : tI18nComplete.raw('text9d03981932cd')
+            }
+          />
         </ToolResultCard>
       )}
     </BasicTool>
@@ -182,7 +204,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
     <BasicTool
       icon={<Code2 className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'App details',
+        title: tI18nHardcoded.raw('i18nComplete.text2945df36c2f9'),
         subtitle: tool || undefined,
         args: parsed?.risk ? [String(parsed.risk)] : undefined,
       }}
@@ -216,7 +238,13 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Loading schema…' : 'No schema yet.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tI18nHardcoded.raw('i18nComplete.text3af4d559fa0a')
+                : tI18nHardcoded.raw('i18nComplete.text63a86e996212')
+            }
+          />
         </ToolResultCard>
       )}
     </BasicTool>
@@ -225,6 +253,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
 ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
 
 export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
@@ -253,20 +282,20 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
           : '';
   const outcome =
     callStatus === 'pending_approval'
-      ? { label: 'Needs approval', tint: STATUS_TEXT.warning }
+      ? { label: tI18nComplete.raw('textdb0e960b68b5'), tint: STATUS_TEXT.warning }
       : callStatus === 'denied'
-        ? { label: 'Denied', tint: STATUS_TEXT.destructive }
+        ? { label: tI18nComplete.raw('textda404deb110f'), tint: STATUS_TEXT.destructive }
         : ok
           ? { label: 'OK', tint: STATUS_TEXT.success }
           : parsed
-            ? { label: 'Error', tint: STATUS_TEXT.destructive }
+            ? { label: tI18nComplete.raw('text54a0e8c17ebb'), tint: STATUS_TEXT.destructive }
             : null;
 
   return (
     <BasicTool
       icon={<Terminal className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Used an app',
+        title: tI18nComplete.raw('text7812d84e3512'),
         subtitle: ref || undefined,
         args: [
           ...(parsed?.risk ? [String(parsed.risk)] : []),
@@ -293,13 +322,13 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
               does not. A call's result is the only thing on this card the
               reader opened it for, including the failure reason. */}
           {Object.keys(args).length > 0 && (
-            <FoldedSection label="Request">
+            <FoldedSection label={tI18nComplete.raw('text59f03d642b41')}>
               <ConnectorJson value={args} />
             </FoldedSection>
           )}
 
           {!outputIsError && parsed ? (
-            <ToolSection label="Response">
+            <ToolSection label={tI18nComplete.raw('text9061383b8e22')}>
               {parsed.reason && !ok ? (
                 <p className="text-destructive font-mono text-xs">{String(parsed.reason)}</p>
               ) : (
@@ -307,7 +336,13 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
               )}
             </ToolSection>
           ) : output ? null : (
-            <ToolEmptyState message={isStreaming ? 'Running…' : 'No result yet.'} />
+            <ToolEmptyState
+              message={
+                isStreaming
+                  ? tI18nComplete.raw('text46c541363b02')
+                  : tI18nComplete.raw('text752edcfbfb98')
+              }
+            />
           )}
         </ToolResultCard>
 

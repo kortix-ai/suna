@@ -159,9 +159,7 @@ export function TodoStatusIcon({
     case 'in_progress':
       // The `ring` variant is this exact geometry, arc-animated — so the running
       // state is the pending ring in motion, not a second, fatter circle.
-      return (
-        <Loading variant="ring" className={cn('text-kortix-orange', size, className)} />
-      );
+      return <Loading variant="ring" className={cn('text-kortix-orange', size, className)} />;
 
     case 'cancelled':
       return (

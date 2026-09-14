@@ -50,7 +50,7 @@ const buttonVariants = cva(
         success: 'bg-kortix-green/80 text-background hover:bg-kortix-green/85',
         error: 'bg-kortix-red/80 text-background hover:bg-kortix-red/85',
         info: 'bg-kortix-blue/80 text-background hover:bg-kortix-blue/85',
-        warning: 'bg-kortix-yellow/80 text-background hover:bg-kortix-yellow/85',
+        warning: 'bg-kortix-orange/80 text-background hover:bg-kortix-orange/85',
         popover: 'bg-popover text-foreground',
       },
       size: {

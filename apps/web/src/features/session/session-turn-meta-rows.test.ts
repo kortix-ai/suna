@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { MessageWithParts, Turn, TurnCostInfo } from '@/ui';
+import { describe, expect, test } from 'bun:test';
 import {
   sessionTurnDurationMs,
   sessionTurnEndedAt,
@@ -71,12 +72,15 @@ describe('sessionTurnMetaRows', () => {
   };
 
   test('emits all four rows, in order, for a fully populated turn', () => {
-    const rows = sessionTurnMetaRows({
-      endedAt: NOW - 5_000,
-      now: NOW,
-      durationMs: 3_000,
-      cost: fullCost,
-    });
+    const rows = sessionTurnMetaRows(
+      {
+        endedAt: NOW - 5_000,
+        now: NOW,
+        durationMs: 3_000,
+        cost: fullCost,
+      },
+      testUiTranslator,
+    );
     expect(rows.map((r) => r.label)).toEqual(['Finished', 'Duration', 'Cost', 'Tokens']);
     expect(rows).toEqual([
       { label: 'Finished', value: '5 seconds ago' },
@@ -87,53 +91,71 @@ describe('sessionTurnMetaRows', () => {
   });
 
   test('omits Cost when cost.cost is 0, and omits Tokens when input + output is 0', () => {
-    const rows = sessionTurnMetaRows({
-      endedAt: NOW - 5_000,
-      now: NOW,
-      durationMs: 3_000,
-      cost: { cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 } },
-    });
+    const rows = sessionTurnMetaRows(
+      {
+        endedAt: NOW - 5_000,
+        now: NOW,
+        durationMs: 3_000,
+        cost: {
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      },
+      testUiTranslator,
+    );
     const labels = rows.map((r) => r.label);
     expect(labels).not.toContain('Cost');
     expect(labels).not.toContain('Tokens');
   });
 
   test('omits Tokens when only reasoning/cache fields are nonzero — the row sums input + output only', () => {
-    const rows = sessionTurnMetaRows({
-      endedAt: NOW - 5_000,
-      now: NOW,
-      durationMs: 3_000,
-      cost: {
-        cost: 0.1,
-        tokens: { input: 0, output: 0, reasoning: 5_000, cacheRead: 5_000, cacheWrite: 0 },
+    const rows = sessionTurnMetaRows(
+      {
+        endedAt: NOW - 5_000,
+        now: NOW,
+        durationMs: 3_000,
+        cost: {
+          cost: 0.1,
+          tokens: { input: 0, output: 0, reasoning: 5_000, cacheRead: 5_000, cacheWrite: 0 },
+        },
       },
-    });
+      testUiTranslator,
+    );
     expect(rows.map((r) => r.label)).not.toContain('Tokens');
   });
 
   test('omits Duration for a sub-second durationMs, because formatDuration returns an empty string', () => {
-    const rows = sessionTurnMetaRows({
-      endedAt: NOW - 5_000,
-      now: NOW,
-      durationMs: 400,
-      cost: null,
-    });
+    const rows = sessionTurnMetaRows(
+      {
+        endedAt: NOW - 5_000,
+        now: NOW,
+        durationMs: 400,
+        cost: null,
+      },
+      testUiTranslator,
+    );
     expect(rows.map((r) => r.label)).not.toContain('Duration');
   });
 
   test('returns [] when endedAt, durationMs and cost are all absent', () => {
-    expect(sessionTurnMetaRows({ endedAt: null, now: NOW, durationMs: null, cost: null })).toEqual(
-      [],
-    );
+    expect(
+      sessionTurnMetaRows(
+        { endedAt: null, now: NOW, durationMs: null, cost: null },
+        testUiTranslator,
+      ),
+    ).toEqual([]);
   });
 
   test('the Finished value is derived from the injected now, not the wall clock', () => {
-    const rows = sessionTurnMetaRows({
-      endedAt: NOW - 120_000,
-      now: NOW,
-      durationMs: null,
-      cost: null,
-    });
+    const rows = sessionTurnMetaRows(
+      {
+        endedAt: NOW - 120_000,
+        now: NOW,
+        durationMs: null,
+        cost: null,
+      },
+      testUiTranslator,
+    );
     expect(rows[0]?.value).toContain('2 minutes ago');
   });
 });

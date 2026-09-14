@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon, XIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -135,6 +136,7 @@ export function ApprovalParameters({
   reviewComplete?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const entries = argsPreview ? orderedArgEntries(argsPreview) : [];
 
   return (
@@ -153,13 +155,15 @@ export function ApprovalParameters({
           dense ? 'px-3 py-1.5' : 'px-4 py-2',
         )}
       >
-        <p className="text-foreground text-xs font-medium">Parameters</p>
+        <p className="text-foreground text-xs font-medium">
+          {tI18nComplete.raw('texte68b36b17cbd')}
+        </p>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
           {entries.length === 0
-            ? 'No parameters were recorded for this call.'
+            ? tI18nComplete.raw('textf126c0b0d185')
             : reviewComplete
-              ? 'These are the redacted values the connector will receive.'
-              : 'These are the redacted values the connector will receive. Values too long to show are marked in place.'}
+              ? tI18nComplete.raw('textc5a9e0731890')
+              : tI18nComplete.raw('text877c39a121a9')}
         </p>
       </div>
       {entries.length > 0 && (
@@ -182,7 +186,9 @@ export function ApprovalParameters({
                 )}
               >
                 {value === '[redacted]' ? (
-                  <span className="text-muted-foreground italic">Hidden credential</span>
+                  <span className="text-muted-foreground italic">
+                    {tI18nComplete.raw('text1c57f31d6315')}
+                  </span>
                 ) : (
                   renderArgValue(value)
                 )}
@@ -207,6 +213,7 @@ export function ApprovalUnreviewableNotice({
   dense = false,
   className,
 }: DenseProp & { previewAuthorized?: boolean; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <p
       className={cn(
@@ -216,8 +223,8 @@ export function ApprovalUnreviewableNotice({
       )}
     >
       {previewAuthorized
-        ? 'Nothing was recorded about what this call would do, so it cannot be reviewed here — only denied.'
-        : 'You are not allowed to see this call’s parameters, so it cannot be approved here. Ask a project manager to review it.'}
+        ? tI18nComplete.raw('text7c4a3e7e2251')
+        : tI18nComplete.raw('textf7873b149941')}
     </p>
   );
 }
@@ -242,6 +249,7 @@ export function ApprovalDecisionActions({
   approvable?: boolean;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const size = dense ? 'sm' : 'default';
 
   return (
@@ -264,7 +272,7 @@ export function ApprovalDecisionActions({
         ) : (
           <XIcon className="size-4 shrink-0" />
         )}
-        Deny
+        {tI18nComplete.raw('text05a2d7332eb9')}
       </Button>
       {approvable ? (
         <Button
@@ -278,7 +286,7 @@ export function ApprovalDecisionActions({
           ) : (
             <CheckCircleIcon className="size-4 shrink-0" />
           )}
-          Approve this call
+          {tI18nComplete.raw('texta1982c442ca3')}
         </Button>
       ) : null}
     </div>
@@ -293,6 +301,7 @@ export function ApprovalRequest({
   error = null,
   className,
 }: ApprovalRequestProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reviewComplete = request.reviewComplete !== false;
   const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
   const actionable = request.pending && onDecision;
@@ -328,7 +337,9 @@ export function ApprovalRequest({
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-muted-foreground text-xs">Run</span>
+            <span className="text-muted-foreground text-xs">
+              {tI18nComplete.raw('text00d60e31a4e6')}
+            </span>
             <code className="text-foreground font-mono text-sm font-medium break-all">
               {request.action}
             </code>
@@ -340,7 +351,8 @@ export function ApprovalRequest({
           </div>
           <p className="text-muted-foreground text-xs text-pretty">
             {request.projectName ? `${request.projectName} · ` : ''}
-            Requested {requestedAtFormat.format(new Date(request.requestedAt))}
+            {tI18nComplete.raw('text2d9e28289fac')}{' '}
+            {requestedAtFormat.format(new Date(request.requestedAt))}
           </p>
         </div>
         {resolved ? (

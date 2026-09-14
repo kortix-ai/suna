@@ -16,10 +16,9 @@
 import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { writeStartStash } from '@kortix/sdk/react';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
-export type ConfigureKind = 'agent' | 'skill' | 'command';
+export type ConfigureKind = 'agent' | 'skill' | 'command' | 'connector' | 'trigger' | 'secret';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:
@@ -34,6 +33,19 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     'I want to create a new slash command for this project. Ask me what it ' +
     'should do, then add it at `.kortix/opencode/commands/<name>.md` and open a ' +
     'change request so I can review and merge it.',
+  connector:
+    'I want to connect an outside service to this project. Ask me which service ' +
+    'and what the agents should be able to do with it, then add the connector ' +
+    'with the Kortix CLI and tell me what still needs authorizing.',
+  secret:
+    'I want to add a secret to this project. Ask me what it is for and which ' +
+    'agents need it — never ask me to paste the value in chat — then create the ' +
+    'secret with the Kortix CLI, grant it to those agents, and tell me where to ' +
+    'enter the value.',
+  trigger:
+    'I want to set up a trigger for this project. Ask me what should run, which ' +
+    'agent should run it, and on what schedule or event, then create it with the ' +
+    'Kortix CLI and show me the result.',
 };
 
 export function newConfigPrompt(kind: ConfigureKind): string {

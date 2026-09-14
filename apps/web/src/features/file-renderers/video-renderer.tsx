@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -364,7 +364,7 @@ export function VideoRenderer({
                   onClick={onDownload}
                 >
                   <Download className="h-4 w-4" />
-                  Download
+                  {tHardcodedUi.raw('i18nComplete.textd6eafe823591')}
                 </Button>
               )}
             </div>
@@ -375,13 +375,17 @@ export function VideoRenderer({
             <div className="absolute top-14 right-4 z-10 min-w-[180px] rounded-2xl bg-black/80 p-4 text-sm text-white">
               <div className="space-y-2">
                 <div className="flex justify-between gap-6">
-                  <span className="text-white/60">Resolution</span>
+                  <span className="text-white/60">
+                    {tHardcodedUi.raw('i18nComplete.textd4055fafa379')}
+                  </span>
                   <span className="font-medium">
                     {videoInfo.width} × {videoInfo.height}
                   </span>
                 </div>
                 <div className="flex justify-between gap-6">
-                  <span className="text-white/60">Duration</span>
+                  <span className="text-white/60">
+                    {tHardcodedUi.raw('i18nComplete.text4fc52a3c4c55')}
+                  </span>
                   <span className="font-medium">{formatTime(videoInfo.duration)}</span>
                 </div>
               </div>
@@ -402,7 +406,7 @@ export function VideoRenderer({
                 max={duration || 100}
                 step={0.1}
                 onValueChange={handleSeek}
-                thumbLabel="Seek"
+                thumbLabel={tHardcodedUi.raw('i18nComplete.text67ae3405bcd4')}
                 formatValue={(value) => formatTime(value)}
                 className={VIDEO_SLIDER}
               />
@@ -454,7 +458,7 @@ export function VideoRenderer({
                   max={1}
                   step={0.1}
                   onValueChange={handleVolumeChange}
-                  thumbLabel="Volume"
+                  thumbLabel={tHardcodedUi.raw('i18nComplete.textb10fb966d720')}
                   formatValue={(value) => `${Math.round(value * 100)}%`}
                   className={cn('w-20', VIDEO_SLIDER)}
                 />

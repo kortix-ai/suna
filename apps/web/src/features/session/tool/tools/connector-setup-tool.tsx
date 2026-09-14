@@ -11,7 +11,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { parseConnectorSetupOutput } from '@/lib/utils/kortix-tool-output';
@@ -41,12 +41,12 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Connected an app',
+        title: tHardcodedUi.raw('i18nComplete.text0df337fc286c'),
         subtitle: isError
           ? 'failed'
           : data
             ? `${data.count} connector${data.count !== 1 ? 's' : ''} configured`
-            : 'Setting up...',
+            : tHardcodedUi.raw('i18nComplete.texte9d6212ef873'),
         args: data?.success ? ['configured'] : undefined,
       }}
       defaultOpen={defaultOpen}

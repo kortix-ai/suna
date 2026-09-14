@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   isNewSessionSurface,
+  resolveBootPresentation,
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
-  resolveBootPresentation,
 } from './session-surface';
 
 describe('isNewSessionSurface', () => {

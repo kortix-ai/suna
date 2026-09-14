@@ -21,8 +21,8 @@
  * bare overlay.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
 

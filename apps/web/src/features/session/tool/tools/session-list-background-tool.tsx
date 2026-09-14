@@ -14,7 +14,7 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { StackIcon as Layers } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -52,8 +52,8 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
     <BasicTool
       icon={<Layers className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Background work',
-        subtitle: project || 'all projects',
+        title: tHardcodedUi.raw('i18nComplete.textdb08291c7ba0'),
+        subtitle: project || tHardcodedUi.raw('i18nComplete.text1ff8ad6301d4'),
         args: workers.length > 0 ? [`${workers.length} workers`] : noWorkers ? ['none'] : [],
       }}
       defaultOpen={defaultOpen}

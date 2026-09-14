@@ -1,10 +1,14 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 
-export const metadata: Metadata = {
-  title: 'Kortix — Presentations',
-  description: 'Internal Kortix presentations.',
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('hardcodedUi.i18nComplete');
+  return {
+    title: t.raw('textd84b8be91e7b'),
+    description: t.raw('text2e7ba6cc8aa3'),
+    robots: { index: false, follow: false },
+  };
+}
 
 /**
  * Full-bleed shell for every deck and the index — no marketing navbar or

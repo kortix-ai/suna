@@ -1,6 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
@@ -89,6 +90,7 @@ export function ImageRenderer({
   backdrop: showBackdrop = false,
 }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const backdrops = useLocalizedUiCatalog(BACKDROPS);
   // `null` outside a <PreviewFitProvider> (Advanced-mode viewer, /projects
   // previews, the file-preview modal, share pages) — `report` below is then
   // an inert no-op, which is how this stays byte-identical everywhere except
@@ -313,7 +315,7 @@ export function ImageRenderer({
   const alwaysOn = controls === 'always';
 
   return (
-    <div className={cn('group relative h-full w-full ', className)}>
+    <div className={cn('group relative h-full w-full', className)}>
       {/* Floating controls — reveal on hover or keyboard focus; pinned open
           while the info panel is. Opacity-only (no movement) so rapid
           hover-in/out retargets cleanly. `controls="always"` opts out of the
@@ -345,13 +347,13 @@ export function ImageRenderer({
                 <ZoomOut className="size-4" />
               </Button>
             </Hint>
-            <Hint label="Reset view" side="bottom">
+            <Hint label={tHardcodedUi.raw('i18nComplete.textce89ae822e8b')} side="bottom">
               <Button
                 variant="accent"
                 size="toolbar"
                 className="text-foreground min-w-14 tabular-nums"
                 onClick={handleResetZoom}
-                aria-label="Reset view"
+                aria-label={tHardcodedUi.raw('i18nComplete.textce89ae822e8b')}
               >
                 {Math.round(zoom * 100)}%
               </Button>
@@ -368,13 +370,13 @@ export function ImageRenderer({
                 <ZoomIn className="size-4" />
               </Button>
             </Hint>
-            <Hint label="Rotate" side="bottom">
+            <Hint label={tHardcodedUi.raw('i18nComplete.textc3613b1704f5')} side="bottom">
               <Button
                 variant="accent"
                 size="icon"
                 className="text-foreground"
                 onClick={handleRotate}
-                aria-label="Rotate image"
+                aria-label={tHardcodedUi.raw('i18nComplete.text9dc6b57eecba')}
               >
                 <RotateCw className="size-4" />
               </Button>
@@ -388,7 +390,7 @@ export function ImageRenderer({
             {showBackdrop && (
               <>
                 <ButtonGroupSeparator />
-                {BACKDROPS.map(({ value, label }) => (
+                {backdrops.map(({ value, label }) => (
                   <Hint key={value} label={`${label} background`} side="bottom">
                     <Button
                       variant="accent"
@@ -464,7 +466,7 @@ export function ImageRenderer({
             </div>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRetry}>
               <RotateCw className="size-4" />
-              Try again
+              {tHardcodedUi.raw('i18nComplete.textd8b8392e2c54')}
             </Button>
           </div>
         ) : (
@@ -478,14 +480,19 @@ export function ImageRenderer({
               className="absolute inset-0 flex items-center justify-center p-8"
               style={{
                 transform: canPan ? translateTransform : 'none',
-                transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+                transition: isPanning ? 'none' : "transform 0.1s ease-out",
               }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 ref={imageRef}
                 src={imgSrc}
-                alt={fileName ?? (isSvg ? 'SVG preview' : 'Image preview')}
+                alt={
+                  fileName ??
+                  (isSvg
+                    ? tHardcodedUi.raw('i18nComplete.text2c92015509d0')
+                    : tHardcodedUi.raw('i18nComplete.textf09247433bef'))
+                }
                 className={cn(
                   'max-h-full max-w-full object-contain',
                   // Fade in on load instead of popping; opacity and transform

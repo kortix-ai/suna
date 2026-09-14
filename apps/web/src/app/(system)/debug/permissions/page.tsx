@@ -2,6 +2,7 @@
 
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import type { PermissionRequest } from '@/ui/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 /**
@@ -61,6 +62,7 @@ const SCENARIOS: Record<string, PermissionRequest[]> = {
 };
 
 export default function DebugPermissionsPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [scenario, setScenario] = useState<keyof typeof SCENARIOS>(
     'Four mixed actions (matches the reported screenshot)',
   );
@@ -101,7 +103,9 @@ export default function DebugPermissionsPage() {
         />
 
         <div className="border-border bg-popover rounded-md border px-3 py-2">
-          <span className="text-muted-foreground text-xs">Ask anything...</span>
+          <span className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('textda0e101a67e7')}
+          </span>
         </div>
       </div>
     </div>

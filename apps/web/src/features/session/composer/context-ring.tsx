@@ -73,11 +73,7 @@ export function getContextReading(
   return { percent, tone };
 }
 
-export function ContextRing({
-  percent,
-  tone,
-  className,
-}: ContextReading & { className?: string }) {
+export function ContextRing({ percent, tone, className }: ContextReading & { className?: string }) {
   return (
     <ProgressRing value={percent} className={className} progressClassName={STATUS_TEXT[tone]} />
   );

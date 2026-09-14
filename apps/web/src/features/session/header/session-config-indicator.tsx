@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 /**
  * "This session is running an older version of your agent" — said in the header.
  *
@@ -69,6 +71,7 @@ export function SessionConfigIndicator({
   phase: SessionReloadPhase | null;
   canReload: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { notice } = useSessionConfigFreshness(projectId, sessionId);
   const [open, setOpen] = useState(false);
   const [isAskingAgent, setIsAskingAgent] = useState(false);
@@ -83,13 +86,13 @@ export function SessionConfigIndicator({
         buildAgentGitReconciliationPrompt(baseRef),
       );
       successToast(
-        disposition === 'queued'
-          ? 'Branch sync queued after the current turn'
-          : 'Asked the agent to sync the branch',
+        disposition === tI18nComplete.raw('textd36be6494248')
+          ? tI18nComplete.raw('textb11e0f2cb028')
+          : tI18nComplete.raw('texta56be319eda4'),
       );
       setOpen(false);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Could not reach the agent');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text29490fc13cfc'));
     } finally {
       setIsAskingAgent(false);
     }
@@ -100,7 +103,9 @@ export function SessionConfigIndicator({
   // unmounts mid-question is worse than no dialog.
   if (notice.kind === 'hidden' && !isPending) return null;
 
-  const label = isPending ? reloadProgressText(phase) : 'Agent config update available';
+  const label = isPending
+    ? reloadProgressText(phase, tI18nComplete)
+    : tI18nComplete.raw('textc6b12eb62d1c');
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -116,7 +121,7 @@ export function SessionConfigIndicator({
               <>
                 <Loading className="size-3.5 shrink-0" />
                 <span className="truncate text-xs" aria-live="polite">
-                  {reloadProgressText(phase)}
+                  {reloadProgressText(phase, tI18nComplete)}
                 </span>
               </>
             ) : (
@@ -140,7 +145,7 @@ export function SessionConfigIndicator({
             </span>
             <div className="min-w-0">
               <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
-                {isPending ? 'Reloading agent config' : label}
+                {isPending ? tI18nComplete.raw('text06a8fc899ccb') : label}
               </h3>
             </div>
           </div>
@@ -150,13 +155,11 @@ export function SessionConfigIndicator({
           ) : (
             <>
               <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-                A newer agent config is available. Reloading restarts the agent runtime and leaves
-                every project file and commit unchanged.
+                {tI18nComplete.raw('text69ea5dbbb997')}
               </p>
 
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
-                If the branch is behind, ask the agent to merge the latest base branch, resolve
-                conflicts, test the result, commit it, and reload safely.
+                {tI18nComplete.raw('textaa821f12cbc6')}
               </p>
 
               <p className="text-muted-foreground mt-2.5 font-mono text-[11px]">
@@ -174,9 +177,7 @@ export function SessionConfigIndicator({
 
         {isPending ? (
           <div className="px-4 py-2.5">
-            <p className="text-muted-foreground text-xs">
-              Keep this page open. The session remains available after the runtime swap completes.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texta8f4dc742e8f')}</p>
           </div>
         ) : canReload ? (
           <div className="border-border flex flex-wrap items-center gap-2 border-t px-3 py-2.5">
@@ -186,7 +187,7 @@ export function SessionConfigIndicator({
               ) : (
                 <ArrowsClockwiseIcon className="size-3.5 shrink-0" />
               )}
-              Reload config
+              {tI18nComplete.raw('textb4b21a20cc58')}
             </Button>
             <Button
               size="sm"
@@ -195,7 +196,7 @@ export function SessionConfigIndicator({
               onClick={askAgentToSync}
             >
               {isAskingAgent ? <Loading className="size-3.5 shrink-0" /> : null}
-              Ask agent to sync
+              {tI18nComplete.raw('textb301cac49225')}
             </Button>
           </div>
         ) : (
@@ -203,7 +204,7 @@ export function SessionConfigIndicator({
           // only ever 403s is worse than a sentence saying who can press it.
           <div className="border-border border-t px-4 py-2.5">
             <p className="text-muted-foreground text-xs text-pretty">
-              The session owner or a project manager can reload it.
+              {tI18nComplete.raw('textce49e021df99')}
             </p>
           </div>
         )}
@@ -231,7 +232,9 @@ export function SessionConfigReloadConfirm({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const copy = busyReason ? BUSY_COPY[busyReason] : null;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const busyCopy = useLocalizedUiCatalog(BUSY_COPY);
+  const copy = busyReason ? busyCopy[busyReason] : null;
   return (
     <ConfirmDialog
       open={!!copy}
@@ -243,8 +246,8 @@ export function SessionConfigReloadConfirm({
           <p className="mt-2">{copy?.tail}</p>
         </>
       }
-      confirmLabel="Reload anyway"
-      cancelLabel="Wait"
+      confirmLabel={tI18nComplete.raw('textd5dfe5707a58')}
+      cancelLabel={tI18nComplete.raw('text26b83994dca8')}
       confirmVariant="destructive"
       confirmIcon={<ArrowsClockwiseIcon className="size-3.5" />}
       isPending={isPending}

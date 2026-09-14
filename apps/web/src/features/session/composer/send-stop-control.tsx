@@ -6,6 +6,7 @@ import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
@@ -64,6 +65,8 @@ export function SendStopControl({
   agentUnavailable = false,
   onSubmit,
 }: SendStopControlProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('threads');
   // One line, the same one the agent picker's tooltip carries — the two
   // controls are refusing for one reason and must not word it two ways.
   const refusal = agentUnavailable
@@ -74,7 +77,7 @@ export function SendStopControl({
 
   if (isSending && !lockForQuestion) {
     return (
-      <Button size="icon-base" aria-label="Sending" disabled className={ICON_BUTTON}>
+      <Button size="icon-base" aria-label={t('sending')} disabled className={ICON_BUTTON}>
         <AnimatePresence mode="popLayout" initial={false}>
           <m.span key="pending" className="flex items-center" {...ICON_SWAP}>
             <Loading className="size-4" />
@@ -97,7 +100,11 @@ export function SendStopControl({
           <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
             <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-[13px] whitespace-nowrap">
               <Kbd>ESC</Kbd>
-              <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
+              <span>
+                {escCount === 1
+                  ? tI18nComplete.raw('textb9ef397631ca')
+                  : tI18nComplete.raw('text9754e2d14f9e')}
+              </span>
             </div>
           </div>
         )}
@@ -105,13 +112,13 @@ export function SendStopControl({
           side="top"
           label={
             <p>
-              Stop <Kbd>ESC</Kbd> ×3
+              {tI18nComplete.raw('textcae7d57bc067')} <Kbd>ESC</Kbd> ×3
             </p>
           }
         >
           <Button
             size="icon-base"
-            aria-label="Stop"
+            aria-label={t('stop')}
             onClick={onStop}
             disabled={stopDisabled || !onStop}
             className={ICON_BUTTON}
@@ -141,7 +148,7 @@ export function SendStopControl({
   }
 
   return (
-    <Hint side="top" label={refusal ?? 'Send message'}>
+    <Hint side="top" label={refusal ?? t('sendMessage')}>
       {/* The span, not the button, carries the tooltip trigger: a disabled
           button takes no pointer events, so the reason the send is off would
           never open — which is exactly the state where the reason matters
@@ -159,7 +166,7 @@ export function SendStopControl({
           // refusal is a `aria-describedby`-style detail, not an identity —
           // swapping the name for it made a screen reader announce the button
           // as "No agent available", with nothing left saying what it does.
-          aria-label="Send message"
+          aria-label={t('sendMessage')}
           title={refusal ?? undefined}
           className={ICON_BUTTON}
         >

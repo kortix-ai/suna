@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The generic "Migrate to v2" action — a session-backed button usable from
  * any Customize surface (Settings' project-level card here; the Agents
@@ -34,6 +35,7 @@ export function MigrateToV2ButtonView({
   variant?: ButtonProps['variant'];
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!visible) return null;
   return (
     <Button
@@ -48,7 +50,7 @@ export function MigrateToV2ButtonView({
       ) : (
         <ArrowUpCircle className="size-3.5 shrink-0" />
       )}
-      Migrate to v2
+      {tI18nComplete.raw('text7ead9bf84af8')}
     </Button>
   );
 }

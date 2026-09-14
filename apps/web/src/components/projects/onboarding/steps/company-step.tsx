@@ -12,6 +12,7 @@
  */
 
 import { GlobeIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
@@ -32,6 +33,8 @@ export function CompanyStep({
   onContinue: () => void;
   onSkip: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('projectOnboarding.company');
   const [domainInvalid, setDomainInvalid] = useState(false);
 
   const triggerDomainError = () => {
@@ -53,15 +56,15 @@ export function CompanyStep({
 
   return (
     <StepShell
-      title="Tell us about your company"
-      description="Your agent uses the domain to research your own company. Nothing is shared publicly."
-      primaryLabel="Continue"
+      title={t('title')}
+      description={t('description')}
+      primaryLabel={t('continue')}
       onPrimary={handleContinue}
-      skipLabel="Skip survey"
+      skipLabel={t('skipSurvey')}
       onSkip={onSkip}
     >
       <div className="space-y-3">
-        <Label htmlFor="onboarding-company-domain">Company domain</Label>
+        <Label htmlFor="onboarding-company-domain">{t('domain')}</Label>
         <InputGroup className={cn('h-11', domainInvalid && 'motion-safe:animate-shake')}>
           <InputGroupAddon>
             <GlobeIcon className="text-muted-foreground size-4" />
@@ -80,7 +83,7 @@ export function CompanyStep({
                 triggerDomainError();
               }
             }}
-            placeholder="acme.com"
+            placeholder={tI18nComplete.raw('text1194228da8fd')}
             autoComplete="organization"
             spellCheck={false}
             aria-invalid={domainInvalid || undefined}
@@ -91,7 +94,7 @@ export function CompanyStep({
         </InputGroup>
         {domainInvalid ? (
           <p id="onboarding-company-domain-error" className="text-destructive text-sm" role="alert">
-            Enter a valid link like acme.com or https://acme.com
+            {t('invalidDomain')}
           </p>
         ) : null}
       </div>

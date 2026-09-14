@@ -181,7 +181,8 @@ export function recoverLinkResults(raw: string | undefined, max = 30): Recovered
 
   // url → … → title (scrape ordering), only if the first pass found nothing.
   if (out.length === 0) {
-    const urlFirst = /"url"\s*:\s*"((?:\\.|[^"\\])*)"[^{}]{0,400}?"title"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+    const urlFirst =
+      /"url"\s*:\s*"((?:\\.|[^"\\])*)"[^{}]{0,400}?"title"\s*:\s*"((?:\\.|[^"\\])*)"/g;
     while ((m = urlFirst.exec(raw)) !== null) {
       push(decodeJsonStringLiteral(m[2]), decodeJsonStringLiteral(m[1]));
       if (out.length >= max) return out;

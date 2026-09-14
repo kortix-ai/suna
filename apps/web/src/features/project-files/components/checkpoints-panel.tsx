@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,9 +8,8 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import type { ProjectCommit } from '@kortix/sdk';
-import { ClockCounterClockwiseIcon, ArrowClockwiseIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 
-import { useProjectContext } from '../context';
 import { useCommits } from '../hooks/use-commits';
 import { CheckpointDetailDialog } from './checkpoint-detail-dialog';
 import {
@@ -78,6 +78,7 @@ interface CheckpointsPanelProps {
  * overlays that area rather than reflowing it.
  */
 export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const { data, isLoading, error, refetch, isFetching } = useCommits({ limit: 50, enabled: open });
 
@@ -91,16 +92,16 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
       <ReviewPanel
         open={open}
         onClose={onClose}
-        title="Version history"
+        title={tI18nComplete.raw('texta6df11e706c5')}
         // Unlike the proposed-changes list this one does not poll
         // (`useCommits` is `staleTime: 30s`, no interval), so a manual refresh
         // is the only way to pull a checkpoint that landed while it was open.
         actions={
-          <Hint label="Refresh" side="bottom">
+          <Hint label={tI18nComplete.raw('text0e9161011702')} side="bottom">
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Refresh"
+              aria-label={tI18nComplete.raw('text0e9161011702')}
               onClick={() => refetch()}
               disabled={isFetching}
               className="text-muted-foreground hover:text-foreground active:scale-[0.96]"
@@ -116,15 +117,17 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
       >
         {isLoading && <ReviewRowSkeleton count={7} />}
 
-        {error && !isLoading && <ReviewError title="Couldn't load version history" error={error} />}
+        {error && !isLoading && (
+          <ReviewError title={tI18nComplete.raw('textdaf44c9faf1b')} error={error} />
+        )}
 
         {!isLoading && !error && total === 0 && (
           <ReviewEmpty
             size="sm"
             className="py-10"
             icon={ClockCounterClockwiseIcon}
-            title="No saved versions yet"
-            description="Every time your agents save work, that version appears here."
+            title={tI18nComplete.raw('text36b14500f828')}
+            description={tI18nComplete.raw('textb86941027ad4')}
           />
         )}
 
@@ -149,7 +152,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                       />
                       <span className="min-w-0 flex-1">
                         <span className="text-foreground line-clamp-2 text-sm leading-snug font-medium">
-                          {c.subject || '(no message)'}
+                          {c.subject || tI18nComplete.raw('textc480160e33b8')}
                         </span>
                         <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
                           <span className="truncate" title={c.author_email}>
@@ -170,7 +173,8 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             ))}
             {data?.hasMore && (
               <p className="text-muted-foreground/60 px-3 pt-4 text-xs">
-                Showing the {total} most recent versions.
+                {tI18nComplete.raw('text55fa9981994c')} {total}{' '}
+                {tI18nComplete.raw('text0b9049066497')}
               </p>
             )}
           </div>

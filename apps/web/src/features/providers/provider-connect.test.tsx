@@ -416,7 +416,9 @@ describe('ProviderConnectView — Load more', () => {
   // it is the promise that typing reaches all of them.
   test('the search still counts every provider, not the ones rendered', () => {
     const out = renderToStaticMarkup(
-      <ProviderConnectView {...props({ totalCount: 184, hiddenCount: 172, onLoadMore: () => {} })} />,
+      <ProviderConnectView
+        {...props({ totalCount: 184, hiddenCount: 172, onLoadMore: () => {} })}
+      />,
     );
     expect(out).toContain('Search 184 providers…');
   });

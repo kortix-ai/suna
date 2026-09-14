@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { VALID_TABS } from '../../accounts/hub/sections';
 import {
   ACCOUNT_GRADUATED,
   SETTINGS_TABS,
@@ -71,7 +72,7 @@ describe('the project settings [tab] route resolves legacy segments', () => {
 
   test('and the resolution it delegates to sends computers to Connectors', () => {
     expect(parseSettingsTab('computers')).toBeNull();
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');
   });
 
   test('a genuinely unknown segment still has nowhere to go but the default tab', () => {
@@ -80,48 +81,43 @@ describe('the project settings [tab] route resolves legacy segments', () => {
 });
 
 /**
- * The other half of the account redirect: a `?tab=` value the account page
- * does not accept is silently swallowed. `app/(app)/accounts/[id]/page.tsx`
- * filters `searchParams.get('tab')` against its own `VALID_TABS` and falls
- * back to Members for anything else — no error, no log. So a typo in
- * `ACCOUNT_GRADUATED` would send every `/settings/audit` bookmark to the
- * member roster and look exactly like a working redirect.
+ * The other half of the account redirect: a `?tab=` value the account hub
+ * does not accept is silently swallowed. `useAccountHubSection`
+ * (`features/accounts/hub/use-account-hub-access.ts`) parses
+ * `searchParams.get('tab')` through `parseAccountSection`, which checks
+ * `VALID_TABS` and falls back to Members for anything else — no error, no
+ * log. So a typo in `ACCOUNT_GRADUATED` would send every `/settings/audit`
+ * bookmark to the member roster and look exactly like a working redirect.
  *
- * Nothing links the two lists at the type level (they are different modules
- * with different vocabularies), so this reads the page's own source and pins
- * the join.
+ * The allowlist used to be a private constant inside the page, so this read
+ * the page's source. It is an exported constant of the hub catalog now, so
+ * the join is a plain import.
  */
-describe('every account redirect names a tab the account page accepts', () => {
-  const source = readFileSync(
-    resolve(import.meta.dir, '../../../app/(app)/accounts/[id]/page.tsx'),
-    'utf8',
-  );
-
-  // `const VALID_TABS = [ … ] as const;` — the page's own allowlist.
-  const block = source.match(/const VALID_TABS = \[([\s\S]*?)\] as const;/);
-  const validTabs = [...(block?.[1] ?? '').matchAll(/'([a-z-]+)'/g)].map((m) => m[1]);
-
-  test('the page still declares a VALID_TABS allowlist this test can read', () => {
-    // Guards the regex above: a refactor that renames or reshapes the constant
-    // must fail here rather than silently reduce the join below to nothing.
-    expect(block).not.toBeNull();
-    expect(validTabs).toContain('members');
-    expect(validTabs.length).toBeGreaterThanOrEqual(8);
-  });
-
-  test('every ACCOUNT_GRADUATED target is in that allowlist', () => {
+describe('every account redirect names a tab the account hub accepts', () => {
+  test('every ACCOUNT_GRADUATED target is in the hub allowlist', () => {
     for (const [legacyId, tab] of Object.entries(ACCOUNT_GRADUATED)) {
-      expect(validTabs, `${legacyId} -> ?tab=${tab}`).toContain(tab);
+      expect(VALID_TABS as readonly string[], `${legacyId} -> ?tab=${tab}`).toContain(tab);
     }
   });
 
+  // The destination is the PROJECT the bookmark came from, with the hub's
+  // params on it — the hub is a modal, not a route, so closing it leaves the
+  // person on their project rather than on a page they never chose.
   test('and the redirect builds exactly that URL', () => {
-    expect(legacySectionRedirect('p1', 'audit', 'acc1')).toBe('/accounts/acc1?tab=audit');
-    expect(legacySectionRedirect('p1', 'organization', 'acc1')).toBe('/accounts/acc1?tab=settings');
-    // `api-keys` used to build `?tab=tokens` here. It now resolves into the
-    // overlay, so `groups` is the third account-page id this asserts.
-    expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe('/accounts/acc1?tab=groups');
+    expect(legacySectionRedirect('p1', 'audit', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=audit',
+    );
+    expect(legacySectionRedirect('p1', 'organization', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=settings',
+    );
+    // `api-keys` used to build the hub's Tokens pane here. It now resolves
+    // into the settings overlay, so `groups` is the third hub id this asserts.
+    expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=groups',
+    );
     expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/projects/p1/settings/tokens');
-    expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe('/accounts/acc1?tab=transactions');
+    expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe(
+      '/projects/p1?accountId=acc1&accountTab=transactions',
+    );
   });
 });

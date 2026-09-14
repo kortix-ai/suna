@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const MicrosoftTeams = ({ className }: { className?: string }) => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -30,10 +30,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
         fillOpacity=".7"
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
-      <path
-        fill="url(#e)"
-        d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
-      />
+      <path fill="url(#e)" d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5" />
       <path
         fill="url(#f)"
         fillOpacity=".46"
@@ -60,10 +57,7 @@ export const MicrosoftTeams = ({ className }: { className?: string }) => {
       />
       <rect width="16" height="16" x="4" y="23" fill="url(#k)" rx="3.25" />
       <rect width="16" height="16" x="4" y="23" fill="url(#l)" fillOpacity=".7" rx="3.25" />
-      <path
-        fill="#fff"
-        d="M15.48 28.11h-2.45v7.466h-2.06v-7.466H8.52v-1.68h6.96z"
-      />
+      <path fill="#fff" d="M15.48 28.11h-2.45v7.466h-2.06v-7.466H8.52v-1.68h6.96z" />
       <defs>
         <radialGradient
           id="a"

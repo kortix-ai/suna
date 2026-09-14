@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // PrincipalPicker — THE "who is this for?" control.
 //
 // Evolved from `features/workspace/shared/sharing-picker.tsx`'s
@@ -44,8 +45,7 @@ import { principalLabel } from './access-shared';
 export type PrincipalKind = 'member' | 'group';
 
 export type PrincipalPickerScope =
-  | { kind: 'account'; accountId: string }
-  | { kind: 'project'; projectId: string };
+  { kind: 'account'; accountId: string } | { kind: 'project'; projectId: string };
 
 /** Everything the picker can have selected, in one value. */
 export interface PrincipalSelection {
@@ -76,9 +76,7 @@ export function isInviteEmail(value: string): boolean {
 }
 
 export type PrincipalTarget =
-  | { kind: 'member'; id: string }
-  | { kind: 'group'; id: string }
-  | { kind: 'invite'; id: string };
+  { kind: 'member'; id: string } | { kind: 'group'; id: string } | { kind: 'invite'; id: string };
 
 /**
  * The whole selection model, as one pure reducer.
@@ -161,6 +159,7 @@ export function PrincipalPicker({
   searchPlaceholder,
   className,
 }: PrincipalPickerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [query, setQuery] = useState('');
   // Single mode collapses to a "selected + Change" row once something is
   // chosen; `editing` re-opens the list without clearing the value.
@@ -197,8 +196,7 @@ export function PrincipalPicker({
   });
 
   const rosterMembers: RosterMember[] = useMemo(
-    () =>
-      projectId ? (projectAccessQuery.data?.members ?? []) : (accountMembersQuery.data ?? []),
+    () => (projectId ? (projectAccessQuery.data?.members ?? []) : (accountMembersQuery.data ?? [])),
     [projectId, projectAccessQuery.data, accountMembersQuery.data],
   );
   const excludeSet = useMemo(
@@ -270,7 +268,12 @@ export function PrincipalPicker({
           ? principalLabel(rosterMembers.find((m) => m.user_id === selected.id)) || selected.id
           : selected.id;
     return (
-      <div className={cn('bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2', className)}>
+      <div
+        className={cn(
+          'bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2',
+          className,
+        )}
+      >
         {selected.kind === 'group' ? (
           <EntityAvatar icon={UsersIcon} label={label} size="sm" />
         ) : (
@@ -287,7 +290,7 @@ export function PrincipalPicker({
           disabled={disabled}
           onClick={() => setEditing(true)}
         >
-          Change
+          {tI18nComplete.raw('textc0bf75bd78bf')}
         </Button>
       </div>
     );
@@ -330,7 +333,9 @@ export function PrincipalPicker({
 
       {selection === 'multi' && selectedCount > 0 ? (
         <div className="border-border flex items-center justify-between border-b px-3 py-1.5">
-          <span className="text-muted-foreground text-xs">{selectedCount} selected</span>
+          <span className="text-muted-foreground text-xs">
+            {selectedCount} {tI18nComplete.raw('textd7cbbb688b2e')}
+          </span>
           <Button
             type="button"
             variant="ghost"
@@ -339,7 +344,7 @@ export function PrincipalPicker({
             disabled={disabled}
             onClick={() => onChange(EMPTY_PRINCIPAL_SELECTION)}
           >
-            Clear
+            {tI18nComplete.raw('text83b12c2216ef')}
           </Button>
         </div>
       ) : null}
@@ -360,7 +365,7 @@ export function PrincipalPicker({
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">{allExcludedLabel}</p>
         ) : filteredGroups.length === 0 && filteredMembers.length === 0 && !inviteCandidate ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No matches for your search.
+            {tI18nComplete.raw('texte8dd87902b91')}
           </p>
         ) : (
           <>
@@ -376,13 +381,13 @@ export function PrincipalPicker({
                   </span>
                 }
                 label={`Invite ${inviteCandidate}`}
-                suffix="· not a member yet"
+                suffix={tI18nComplete.raw('text10d9e23d0185')}
               />
             ) : null}
 
             {filteredGroups.length > 0 ? (
               <>
-                <PickerSectionLabel>Groups</PickerSectionLabel>
+                <PickerSectionLabel>{tI18nComplete.raw('text39bbb719fa2b')}</PickerSectionLabel>
                 {filteredGroups.map((group) => (
                   <PickerRow
                     key={group.group_id}
@@ -392,7 +397,7 @@ export function PrincipalPicker({
                     onSelect={() => pick({ kind: 'group', id: group.group_id })}
                     leading={<EntityAvatar icon={UsersIcon} label={group.name} size="sm" />}
                     label={group.name}
-                    suffix="· group"
+                    suffix={tI18nComplete.raw('text24f15c9196e8')}
                   />
                 ))}
               </>
@@ -400,7 +405,9 @@ export function PrincipalPicker({
 
             {filteredMembers.length > 0 ? (
               <>
-                {filteredGroups.length > 0 ? <PickerSectionLabel>Members</PickerSectionLabel> : null}
+                {filteredGroups.length > 0 ? (
+                  <PickerSectionLabel>{tI18nComplete.raw('text1044a4c056d0')}</PickerSectionLabel>
+                ) : null}
                 {filteredMembers.map((member) => {
                   const label = principalLabel(member) || member.user_id;
                   return (

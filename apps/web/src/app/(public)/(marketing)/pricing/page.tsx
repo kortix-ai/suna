@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/marketing/button';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { FaqSection, type FaqItem } from '@/features/marketing/faq';
-import { useTranslations } from 'next-intl';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
 const START_URL = '/auth';
@@ -17,21 +18,6 @@ const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; hre
   team_seat: { cta: 'Get started', href: START_URL },
   enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
-
-const CREDIT_POINTS: { title: string; body: string }[] = [
-  {
-    title: 'Free credits are for sandboxes',
-    body: 'Free includes 200 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
-  },
-  {
-    title: 'Keep model billing with your provider',
-    body: 'Bring your own API key or connect ChatGPT. You pay your model provider directly and keep Kortix credits for Agent Computer runtime.',
-  },
-  {
-    title: 'Compute by the second',
-    body: 'Billed per resource, per second: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.20/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
-  },
-];
 
 const FAQ: readonly FaqItem[] = [
   {
@@ -67,7 +53,7 @@ const FAQ: readonly FaqItem[] = [
 ];
 
 function PlanCard({ plan }: { plan: (typeof PRICING_PLANS)[number] }) {
-  const { cta, href } = PLAN_CTAS[plan.id];
+  const { cta, href } = useLocalizedUiCatalog(PLAN_CTAS)[plan.id];
 
   return (
     <PricingPlanCard
@@ -88,6 +74,7 @@ function PlanCard({ plan }: { plan: (typeof PRICING_PLANS)[number] }) {
 
 export default function PricingPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const faq = useLocalizedUiCatalog(FAQ);
   const headline = String(
     tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521'),
   );
@@ -119,11 +106,11 @@ export default function PricingPage() {
       </div>
 
       <FaqSection
-        eyebrow="Frequently asked questions"
+        eyebrow={tI18nHardcoded.raw('i18nComplete.texte956a9404b46')}
         title={tI18nHardcoded.raw(
           'autoAppPublicMarketingPricingPageJsxTextPricingQuestionsa7129c6e',
         )}
-        items={FAQ}
+        items={faq}
       />
     </div>
   );

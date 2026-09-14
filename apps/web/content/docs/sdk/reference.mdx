@@ -563,8 +563,15 @@ import { files } from '@kortix/sdk';
 const tree = await files.list('/workspace/src');
 const { content } = await files.read('/workspace/README.md');
 const hits = await files.findText('TODO');
-await files.upload(file, '/workspace/uploads');
+await files.upload(file, '/workspace/uploads', file.name, {
+  onProgress: ({ loadedBytes, totalBytes }) => {
+    console.log(`${loadedBytes}/${totalBytes}`);
+  },
+});
 ```
+
+Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
+progress callback runs after each chunk reaches the session filesystem.
 
 `files` targets the globally active sandbox. If your host runs more than one
 session at a time, call `s.files` on the session handle instead. It always

@@ -126,8 +126,15 @@ test.describe('22 — Resource-grant multi-select', () => {
       // "Assign an agent" flow. Members are deny-by-default for agents, so
       // granting the two members with Agents = "Only these… → kortix" is what
       // creates the two resource grants.
+      // The account hub is a MODAL over the project, not a route (2026-09-08):
+      // `/accounts/**` is deleted, and the hub's state is `?accountId=` plus
+      // its prefixed params on whatever page it opened over. So the redirect
+      // lands back on this project with the hub open on Access > Projects,
+      // scoped to it.
       await expect(page).toHaveURL(
-        new RegExp(`/accounts/${accountId}\\?tab=access-projects&project=${projectId}`),
+        new RegExp(
+          `/projects/${projectId}\\?accountId=${accountId}&accountTab=access-projects&accountProject=${projectId}`,
+        ),
       );
       await page.getByRole('button', { name: 'Grant access', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });

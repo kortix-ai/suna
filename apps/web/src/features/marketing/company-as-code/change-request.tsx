@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { change } from './content';
+import { getLocalizedCompanyAsCodeContent } from './content';
 
 /* Kortix is monochrome, so this diff cannot lean on the red/green every diff
    viewer uses. It separates the three line kinds the way print does instead:
@@ -23,7 +24,8 @@ const SIGN: Record<string, string> = { ctx: ' ', del: '-', add: '+' };
  * way to show that is to show the company's know-how in a diff.
  */
 export function ChangeRequest(): ReactNode {
-  const { cr } = change;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { cr } = getLocalizedCompanyAsCodeContent(tI18nComplete).change;
 
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">

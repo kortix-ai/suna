@@ -9,6 +9,7 @@
  * where the catalogue call itself returns one.
  */
 
+import { useTranslations } from '@/i18n/use-translations';
 import { MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import Image from 'next/image';
@@ -27,13 +28,13 @@ import {
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  proposeConnectorConnectionSlug,
-  type EasyConnectApp,
-} from '@/features/workspace/customize/sections/connector-connection-form';
-import {
   listConnectCatalogPage,
   useConnectProviderStatus,
 } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
+import {
+  proposeConnectorConnectionSlug,
+  type EasyConnectApp,
+} from '@/features/workspace/customize/sections/connector-connection-form';
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 
@@ -54,6 +55,33 @@ export function ToolsStep({
   onContinue: () => void;
   onSkip: () => void;
 }) {
+  const t = useTranslations('projectOnboarding.tools');
+  const categoryLabels: Record<string, string> = {
+    email: t('categories.email'),
+    'ai-agents': t('categories.aiAgents'),
+    'developer-tools': t('categories.developerTools'),
+    'scheduling-&-booking': t('categories.scheduling'),
+    notes: t('categories.notes'),
+    spreadsheets: t('categories.spreadsheets'),
+    'artificial-intelligence': t('categories.artificialIntelligence'),
+    'social-media-accounts': t('categories.socialMedia'),
+    'file-management-&-storage': t('categories.fileStorage'),
+    documents: t('categories.documents'),
+    crm: t('categories.crm'),
+    'project-management': t('categories.projectManagement'),
+    productivity: t('categories.productivity'),
+    analytics: t('categories.analytics'),
+    'ai-web-scraping': t('categories.webScraping'),
+    'video-&-audio': t('categories.videoAudio'),
+    'team-chat': t('categories.teamChat'),
+    'online-courses': t('categories.onlineCourses'),
+    'task-management': t('categories.taskManagement'),
+    'images-&-design': t('categories.design'),
+    databases: t('categories.databases'),
+    'news-&-lifestyle': t('categories.newsLifestyle'),
+    ecommerce: t('categories.ecommerce'),
+    signatures: t('categories.signatures'),
+  };
   const [q, setQ] = useState('');
   const [selectedApp, setSelectedApp] = useState<EasyConnectApp | null>(null);
   const connect = useToolConnect(projectId, onConnected);
@@ -85,11 +113,11 @@ export function ToolsStep({
 
   return (
     <StepShell
-      title="Connect your tools"
-      description="Pick the apps you live in and authorize them right here. Your agent can read, write, and act across everything you connect."
-      primaryLabel="Continue"
+      title={t('title')}
+      description={t('description')}
+      primaryLabel={t('continue')}
       onPrimary={onContinue}
-      skipLabel="Skip for now"
+      skipLabel={t('skipForNow')}
       onSkip={onSkip}
     >
       <div className="flex flex-col gap-4">
@@ -100,14 +128,14 @@ export function ToolsStep({
           <InputGroupSearchInput
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search 3,000+ apps…"
+            placeholder={t('searchPlaceholder')}
             variant="popover"
           />
         </InputGroupSearch>
 
         {notConfigured ? (
-          <InfoBanner tone="neutral" title="App connect isn’t configured on this deployment">
-            You can still continue and connect tools later from Connectors.
+          <InfoBanner tone="neutral" title={t('notConfiguredTitle')}>
+            {t('notConfiguredDescription')}
           </InfoBanner>
         ) : (
           // Bounded by the column, not the viewport: a vh-relative height made
@@ -126,7 +154,7 @@ export function ToolsStep({
             ) : apps.length === 0 ? (
               <div className="flex h-full flex-1 flex-col items-center justify-center rounded-md border">
                 <p className="text-muted-foreground py-10 text-center text-xs">
-                  {q ? `Nothing matches “${q}”.` : 'Try a search.'}
+                  {q ? t('noMatches', { query: q }) : t('trySearch')}
                 </p>
               </div>
             ) : (
@@ -140,8 +168,13 @@ export function ToolsStep({
                       <ActionRow
                         key={app.slug}
                         label={app.name}
-                        description={app.categories?.[0]}
-                        aria-label={`Add ${app.name} connection`}
+                        description={
+                          app.categories?.[0]
+                            ? (categoryLabels[app.categories[0]] ??
+                              app.categories[0].replaceAll('-', ' '))
+                            : undefined
+                        }
+                        aria-label={t('addConnection', { app: app.name })}
                         aria-describedby={connected ? connectedStatusId : undefined}
                         disabled={connect.isPending}
                         onSelect={() => setSelectedApp(app)}
@@ -165,7 +198,7 @@ export function ToolsStep({
                             <Loading className="size-4 shrink-0" />
                           ) : connected ? (
                             <Badge id={connectedStatusId} variant="success" size="xs">
-                              Connected
+                              {t('connected')}
                             </Badge>
                           ) : (
                             <PlusIcon className="text-muted-foreground/50 size-4" />
@@ -187,7 +220,7 @@ export function ToolsStep({
                       {appsQuery.isFetchingNextPage ? (
                         <Loading className="size-3.5 shrink-0" />
                       ) : null}
-                      Load more
+                      {t('loadMore')}
                     </Button>
                   </div>
                 )}
@@ -200,8 +233,8 @@ export function ToolsStep({
       <ConnectorConnectionModal
         open={selectedApp !== null}
         idPrefix="onboarding-tool-connection"
-        title={`Add ${selectedApp?.name ?? 'app'}`}
-        description="Create a connector connection before authorization. You can add more than one connection for the same app."
+        title={t('addApp', { app: selectedApp?.name ?? t('appFallback') })}
+        description={t('connectionDescription')}
         initialName={selectedApp?.name ?? ''}
         initialSlug={
           selectedApp ? proposeConnectorConnectionSlug(selectedApp.name, existingSlugs) : ''

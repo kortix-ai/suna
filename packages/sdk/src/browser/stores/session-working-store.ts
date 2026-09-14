@@ -66,7 +66,16 @@ interface SessionWorkingState {
   /** One reading of the durable prompt inbox. `atMs` is this tab's clock at
    *  ISSUE/RECEIVE time (age); `serverAtMs` is the server's `observed_at`
    *  (ordering) when the endpoint supplied one. See `WorkingInboxInput`. */
-  noteInboxPending: (sessionId: string, pending: number, atMs: number, serverAtMs?: number) => void;
+  noteInboxPending: (
+    sessionId: string,
+    pending: number,
+    atMs: number,
+    serverAtMs?: number,
+    /** This reading watched a row the server was going to run leave the list —
+     *  see `WorkingInboxInput.drainedAtMs`. Carried forward while the queue
+     *  stays empty; dropped the moment a row is pending again. */
+    drainedAtMs?: number,
+  ) => void;
   /** `POST .../prompts` returned: the row EXISTS, and the server said so. Raise
    *  the inbox floor to at least one pending row, covering the gap between that
    *  response and the list query refetching — a `/turn` poll landing in that gap
@@ -136,10 +145,17 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       return { aborts: { ...state.aborts, [sessionId]: { ...current, settledAtMs: atMs } } };
     }),
 
-  noteInboxPending: (sessionId, pending, atMs, serverAtMs) =>
+  noteInboxPending: (sessionId, pending, atMs, serverAtMs, drainedAtMs) =>
     set((state) => {
       if (!sessionId) return state;
       const current = state.inbox[sessionId];
+      // A drain is a fact about the QUEUE, not about one HTTP response, so it
+      // outlives the reading that spotted it: the list polls every second while
+      // anything is believed pending, and without this the very next poll would
+      // erase the stamp one second into a wait for a `/turn` read that takes a
+      // round trip. It is dropped as soon as a row is pending again — then the
+      // inbox itself answers `working` and the floor has nothing left to do.
+      const carried = pending === 0 ? (drainedAtMs ?? current?.drainedAtMs) : undefined;
       // Readings settle in whatever order the network gives them; only the
       // newest OBSERVATION may stand, or a late older one would walk the
       // projection backwards. Server-stamped readings rank on the server's own
@@ -148,13 +164,15 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
         pending,
         atMs,
         ...(serverAtMs != null ? { serverAtMs } : {}),
+        ...(carried != null ? { drainedAtMs: carried } : {}),
       };
       if (!inboxObservationSupersedes(candidate, current)) return state;
       if (
         current &&
         current.atMs === atMs &&
         current.pending === pending &&
-        current.serverAtMs === candidate.serverAtMs
+        current.serverAtMs === candidate.serverAtMs &&
+        current.drainedAtMs === candidate.drainedAtMs
       ) {
         return state;
       }

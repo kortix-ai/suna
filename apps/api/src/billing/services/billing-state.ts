@@ -31,12 +31,7 @@
  * is cancelled.
  */
 
-import {
-  MINIMUM_CREDIT_FOR_RUN,
-  isCreditPlanAccount,
-  isPaidTier,
-  isPerSeatAccount,
-} from './tier-facts';
+import { MINIMUM_CREDIT_FOR_RUN, isPaidTier } from './tier-facts';
 
 export type BillingState =
   | 'active'
@@ -165,40 +160,39 @@ export function hasPayingSubscription(snapshot: BillingSnapshot): boolean {
 }
 
 /**
- * THE single answer to "may this account spend without a wallet floor?".
+ * NO ACCOUNT BYPASSES THE WALLET FLOOR. Deliberately not a function any more.
  *
- * Both `resolveBillingState` (the read model) and the billing gate (the write
- * path that takes the admission hold) call this — they cannot diverge on who is
- * exempt from the floor, which is the whole reason this module exists. The gate
- * previously asked `isPerSeatAccount && hasLiveSubscription` on its own; that
- * second, subtly different answer is what let non-paying subscriptions spend.
+ * There used to be a `subscriptionBypassesWalletFloor(snapshot)` here, called by
+ * both `resolveBillingState` and the billing gate, that let a paying per-seat /
+ * credit-plan / paid-tier account spend with NO floor at all. It was added to
+ * fix a COPY bug — a paying Team account with a $0.0099 wallet was being told
+ * "Your team isn't on a plan yet" — and it fixed that by exempting the account
+ * from metering entirely and permanently. That was the wrong lever.
  *
- * Two conditions, and BOTH are load-bearing.
+ * What it actually produced, measured on production 2026-09-01 on a 6-seat
+ * account:
  *
- * 1. A subscription Stripe is actively collecting on (allow-list:
- *    active/trialing, fails closed).
- * 2. A plan that is actually paid for: an explicit per-seat/credit billing
- *    model, or a paid tier.
+ *   - seat grant  `grantForSeats(6)` = 6 x $25 = $150/mo of included usage
+ *   - wallet      $0.00
+ *   - ledger      $588.81 spent this period
+ *   - gate        admitted every create / start / wake / prompt / gateway call
  *
- * Condition 2 used to be `isPerSeatAccount(billingModel)` ALONE, and that
- * 402'd every paying LEGACY customer: legacy tiers grant no monthly credits,
- * so a $40/mo machine-subscription account sat at a $0 wallet and every run
- * blocked on the one-cent admission hold — paying monthly for an account that
- * could not run anything. Widening it to any paid tier fixes them.
+ * Past $0 the only thing still enforcing anything was `atomic_use_credits`
+ * refusing to go negative — so the last line of defence stopped the BOOKKEEPING
+ * rather than the spending, and `credit_ledger` (which is what "Spent this
+ * period" sums) silently stopped moving while compute kept burning.
  *
- * Condition 2 cannot be dropped entirely, which is the trap here: the FREE
- * tier carries a real $0 Stripe subscription whose status is `active`
- * (226,931 such rows on production as of 2026-08-20). Bypassing on condition 1
- * alone would therefore hand every free account an unmetered wallet. Keep both.
+ * The floor is now universal: an account may run when its wallet covers
+ * MINIMUM_CREDIT_FOR_RUN, and not otherwise. The original copy bug does NOT
+ * come back, because a drained paying account falls to `hasPlan` below and
+ * resolves as `out_of_credits` ("Top up — your plan and seats are unaffected"),
+ * never as `no_subscription` ("Subscribe"). Fixing the copy is what should have
+ * happened the first time.
+ *
+ * `hasPayingSubscription` above is retained: it is still the right predicate for
+ * "is Stripe collecting", which the webhook layer and `payment_failed` need. It
+ * simply no longer grants anyone a blank cheque.
  */
-export function subscriptionBypassesWalletFloor(snapshot: BillingSnapshot): boolean {
-  if (!hasPayingSubscription(snapshot)) return false;
-  return (
-    isPerSeatAccount(snapshot.billingModel) ||
-    isCreditPlanAccount(snapshot.billingModel) ||
-    isPaidTier(snapshot.tier ?? 'none')
-  );
-}
 
 /**
  * "Is this account on a plan?" — the single question every surface used to
@@ -225,19 +219,25 @@ export function walletCoversRun(snapshot: BillingSnapshot): boolean {
 }
 
 /**
- * The account's billing state. Ordering matters: a PAYING subscription
- * short-circuits BEFORE the wallet floor, because a subscription Stripe is
- * collecting on is not wallet-gated — that is exactly the case
- * (`active` sub + $0.0099 wallet) that used to render "Subscribe to
- * start sessions" while the account was paying $40/mo.
+ * The account's billing state. Ordering matters, and the wallet floor is now
+ * the FIRST thing asked of every account — nobody is exempt (see the
+ * NO ACCOUNT BYPASSES THE WALLET FLOOR note above).
  *
- * A subscription that is NOT paying falls through to the same wallet
- * floor as everyone else, and then to `payment_failed` — it keeps running on
- * whatever credit it has, and asks for a card update once that runs out.
+ * The ordering below is what keeps the removed bypass's original copy bug dead.
+ * A paying Team account whose wallet has drained resolves as:
+ *
+ *   walletCoversRun  false  ->  paymentIsFailing false  ->  hasPlan TRUE
+ *   => `out_of_credits`  ("Top up — your plan and seats are unaffected")
+ *
+ * NOT `no_subscription` ("Subscribe to a plan"), which is the mislabel that the
+ * bypass was mistakenly introduced to fix. `hasPlan` is what carries that, so
+ * it must stay ABOVE the `no_subscription` fallthrough.
+ *
+ * A subscription Stripe is failing to collect on resolves to `payment_failed`
+ * once its wallet is dry — "update your card", never "you have no plan".
  */
 export function resolveBillingState(snapshot: BillingSnapshot): BillingState {
   if (!snapshot.exists) return 'no_account';
-  if (subscriptionBypassesWalletFloor(snapshot)) return 'active';
   if (walletCoversRun(snapshot)) return 'active';
   if (paymentIsFailing(snapshot)) return 'payment_failed';
   if (hasPlan(snapshot)) return 'out_of_credits';

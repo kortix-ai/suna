@@ -1,37 +1,22 @@
 import { Button } from '@/components/ui/button';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { useTranslations } from '@/i18n/use-translations';
 import { BookOpenIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
-import { projectSettingsSection } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-
 import { railItemForTab } from './rail';
+import { useSettingsRailChromeCopy, useSettingsRailItem } from './rail-copy-context';
 import type { SettingsTab } from './settings-tabs';
 
 /**
  * The heading copy for one pane id: title, one-line description, optional
- * docs link.
+ * docs link — from the overlay's rail (`rail.ts`), the one registry left.
  *
- * Two registries answer it, because the panes now live on two surfaces. The
- * settings overlay's rail (`rail.ts`) owns Profile, Preferences and Connected
- * accounts. Every project-configuration pane moved to the Customize bar's
- * Settings tab and its copy moved with it, into
- * `capabilities/project-settings/project-settings-sections.ts`. A pane
- * component does not know or care which host mounted it, so it names its id
- * and this resolves it.
- *
- * Rail first: an id that is a live settings tab can never also be a project
- * section, so the order is a tie-break that never fires — it just states which
- * registry is authoritative if one ever did.
+ * It used to consult a second registry, the config page's
+ * `project-settings-sections.ts`, for the panes that lived at
+ * `/projects/[id]/config`. That page was retired on 2026-09-02 and its panes
+ * are rail rows now, so one lookup answers for every pane.
  */
-function headerCopy(
-  tab: string,
-): { label: string; description?: string; docsHref?: string } | undefined {
-  // `railItemForTab` compares ids as strings, so a non-`SettingsTab` id simply
-  // finds nothing rather than misbehaving.
-  return railItemForTab(tab as SettingsTab) ?? projectSettingsSection(tab as never);
-}
-
 /**
  * The pane heading for one settings tab: title, description, and the action row.
  *
@@ -48,7 +33,11 @@ function headerCopy(
  * pane's id actually resolves.
  */
 export function SettingsTabHeader({ tab, action }: { tab: string; action?: React.ReactNode }) {
-  const item = headerCopy(tab);
+  const contextItem = useSettingsRailItem(tab as SettingsTab);
+  const tSettingsRail = useTranslations('settings.rail');
+  const item =
+    contextItem ?? railItemForTab(tab as SettingsTab, (key) => tSettingsRail(key as never));
+  const chrome = useSettingsRailChromeCopy();
   if (!item) return null;
 
   const docs = item.docsHref ? (
@@ -57,7 +46,7 @@ export function SettingsTabHeader({ tab, action }: { tab: string; action?: React
           in place would discard whatever the person was doing behind it. */}
       <Link href={item.docsHref} target="_blank" rel="noreferrer">
         <BookOpenIcon className="size-3.5 shrink-0" />
-        Docs
+        {chrome.docs}
       </Link>
     </Button>
   ) : null;

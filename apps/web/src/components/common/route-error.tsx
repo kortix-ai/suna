@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import * as Sentry from '@sentry/nextjs';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
 import { ErrorDetails } from './error-details';
 
@@ -49,7 +49,7 @@ export function RouteErrorFallback({
             if (typeof window !== 'undefined') window.location.reload();
           }}
         >
-          Reload
+          {tI18nHardcoded.raw('i18nComplete.textbdc090ec61e3')}
         </Button>
       </div>
     </div>

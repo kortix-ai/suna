@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   pendingSessionPromptFromMetadata,
   provisioningFailurePresentation,
@@ -10,11 +11,15 @@ import {
 describe('provisioningFailurePresentation', () => {
   test('shows a specific capacity title and the API-owned message', () => {
     expect(
-      provisioningFailurePresentation({
-        failureCategory: 'provider-capacity',
-        provisioningError: 'provider SDK text that must stay diagnostic-only',
-        errorMessage: 'The sandbox provider is at capacity right now. Try again in a minute.',
-      }),
+      provisioningFailurePresentation(
+        {
+          failureCategory: 'provider-capacity',
+          provisioningError: 'provider SDK text that must stay diagnostic-only',
+          errorMessage: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        },
+        undefined,
+        testUiTranslator,
+      ),
     ).toEqual({
       title: 'Sandbox capacity is full',
       message: 'The sandbox provider is at capacity right now. Try again in a minute.',
@@ -23,10 +28,14 @@ describe('provisioningFailurePresentation', () => {
   });
 
   test('shows Git failures as Git failures', () => {
-    const result = provisioningFailurePresentation({
-      failureCategory: 'git-auth',
-      errorMessage: 'Check the Git credentials.',
-    });
+    const result = provisioningFailurePresentation(
+      {
+        failureCategory: 'git-auth',
+        errorMessage: 'Check the Git credentials.',
+      },
+      undefined,
+      testUiTranslator,
+    );
 
     expect(result.title).toBe('Git access failed');
     expect(result.message).toBe('Check the Git credentials.');
@@ -34,7 +43,7 @@ describe('provisioningFailurePresentation', () => {
   });
 
   test('uses provider-neutral fallback copy', () => {
-    expect(provisioningFailurePresentation({}, 'Essentia runtime')).toEqual({
+    expect(provisioningFailurePresentation({}, 'Essentia runtime', testUiTranslator)).toEqual({
       title: "Couldn't start Essentia runtime",
       message: 'The sandbox provider could not start this session. Try again.',
       retryable: true,
@@ -61,10 +70,11 @@ describe('project session provider-failure recovery', () => {
   });
 
   test('shows the saved prompt and exposes one-click recovery controls', () => {
-    expect(recoverySource).toContain('Saved prompt');
+    expect(recoverySource).toContain("useTranslations('sessionUi.providerRecovery')");
+    expect(recoverySource).toContain("t('savedPrompt')");
     expect(recoverySource).toContain('{pendingPrompt.text}');
     expect(recoverySource).toContain('whitespace-pre-wrap');
-    expect(recoverySource).toContain('Copy prompt');
+    expect(recoverySource).toContain("t('copy')");
     expect(recoverySource).toContain('onClick={onRetry}');
     expect(recoverySource).toContain('onClick={onDelete}');
   });

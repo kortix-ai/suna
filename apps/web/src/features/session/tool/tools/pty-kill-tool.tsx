@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   isErrorOutput,
@@ -12,9 +13,11 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { stripMarkupForToolOutput } from '@/features/session/tool/tool-renderers-sanitization';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -29,7 +32,7 @@ export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
     <BasicTool
       icon={<Terminal className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Stopped process',
+        title: tI18nComplete.raw('text6336bd6d9945'),
         subtitle: ptyId || undefined,
       }}
       defaultOpen={defaultOpen}

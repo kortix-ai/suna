@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   type AdminConnector,
   type ConnectorAuthorizationStrategy,
@@ -46,16 +47,17 @@ export function ConnectorSettings({
   onAuthorizationStrategyChange,
   onRemoved,
 }: ConnectorSettingsProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isChannel = connector.provider === 'channel';
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const remove = useMutation({
     mutationFn: () => deleteConnector(projectId, connector.slug),
     onSuccess: () => {
-      successToast(`Removed ${displayName}`);
+      successToast(tI18nComplete('textffd34ade9168', { value0: displayName }));
       onRemoved();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to remove'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text1d0486014da5')),
   });
 
   return (
@@ -66,7 +68,7 @@ export function ConnectorSettings({
           row, and a second heading in a second vocabulary was the thing that
           made this tab read as noise. */}
       <section className="space-y-2">
-        <Label>Connects as</Label>
+        <Label>{tI18nComplete.raw('textfa065317dfc5')}</Label>
         <AuthorizationStrategyField
           idPrefix={`connector-${connector.slug}`}
           value={connector.authorizationStrategy}
@@ -79,7 +81,7 @@ export function ConnectorSettings({
           onChange={onAuthorizationStrategyChange}
           disabled={!canWrite || !connectorAuthorizationStrategyIsEditable(connector.provider)}
           pending={strategyUpdating}
-          lockedReason="Set when the connector was added. To change it, remove the connector and add it again — saved connections and tool rules are lost."
+          lockedReason={tI18nComplete.raw('text2c8a38c525f7')}
           hideLabel
         />
       </section>
@@ -92,9 +94,11 @@ export function ConnectorSettings({
         <div className="bg-popover rounded-md border px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-foreground text-sm font-medium">Remove connector</p>
+              <p className="text-foreground text-sm font-medium">
+                {tI18nComplete.raw('textbf30cc3b0697')}
+              </p>
               <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                Its assignments, saved connections, and tool rules are deleted too.
+                {tI18nComplete.raw('text460806f58b7b')}
               </p>
             </div>
             <Button
@@ -105,7 +109,7 @@ export function ConnectorSettings({
               disabled={strategyUpdating}
             >
               <TrashIcon className="size-3.5 shrink-0" />
-              Remove
+              {tI18nComplete.raw('textc3812fc4acb8')}
             </Button>
           </div>
         </div>
@@ -114,14 +118,15 @@ export function ConnectorSettings({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`Remove ${displayName}?`}
+        title={tI18nComplete('textbc43ab815937', { value0: displayName })}
         description={
           <>
-            This deletes <code className="font-mono">{connector.slug}</code>, its assignments, saved
-            connections, and tool rules. This can’t be undone.
+            {tI18nComplete.raw('text0c044575853f')}{' '}
+            <code className="font-mono">{connector.slug}</code>
+            {tI18nComplete.raw('text9627c3d54219')}
           </>
         }
-        confirmLabel="Remove connector"
+        confirmLabel={tI18nComplete.raw('textbf30cc3b0697')}
         confirmVariant="destructive"
         confirmIcon={<TrashIcon className="size-4 shrink-0" />}
         isPending={remove.isPending}

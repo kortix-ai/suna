@@ -1,5 +1,7 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
 
 type ModelContextTool = {
@@ -25,16 +27,24 @@ declare global {
 
 const KIND_VALUES = ['marketing', 'blog', 'docs', 'use-case'] as const;
 
-export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSignal) {
+export function registerWebMcpTools(
+  modelContext: ModelContext,
+  signal: AbortSignal,
+  tI18nComplete: UiTranslator,
+) {
   const options = { signal };
   const tools: ModelContextTool[] = [
     {
       name: 'search_kortix_public_content',
-      description: 'Search Kortix public documentation and product content.',
+      description: tI18nComplete.raw('text55c84320074b'),
       inputSchema: {
         type: 'object',
         properties: {
-          query: { type: 'string', minLength: 1, description: 'Words to match.' },
+          query: {
+            type: 'string',
+            minLength: 1,
+            description: tI18nComplete.raw('text416a977cfdba'),
+          },
           kind: { type: 'string', enum: KIND_VALUES },
         },
         required: ['query'],
@@ -61,23 +71,21 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
         const needle = String(query).trim().toLocaleLowerCase();
         return (body.data ?? [])
           .filter((item) =>
-            `${item.title ?? ''} ${item.description ?? ''}`
-              .toLocaleLowerCase()
-              .includes(needle),
+            `${item.title ?? ''} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle),
           )
           .slice(0, 10);
       },
     },
     {
       name: 'read_kortix_public_page',
-      description: 'Read a Kortix public page as Markdown.',
+      description: tI18nComplete.raw('textcaace11153c1'),
       inputSchema: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
             pattern: '^/(?!/)',
-            description: 'Kortix path from a search result.',
+            description: tI18nComplete.raw('text703f49b261e2'),
           },
         },
         required: ['path'],
@@ -102,17 +110,18 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
 }
 
 export function WebMcpTools() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useEffect(() => {
     const modelContext = navigator.modelContext ?? document.modelContext;
     if (!modelContext?.registerTool) return;
 
     const controller = new AbortController();
-    void registerWebMcpTools(modelContext, controller.signal).catch(() => {
+    void registerWebMcpTools(modelContext, controller.signal, tI18nComplete).catch(() => {
       controller.abort();
     });
 
     return () => controller.abort();
-  }, []);
+  }, [tI18nComplete]);
 
   return null;
 }

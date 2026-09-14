@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 import type { PendingSessionPrompt } from '@kortix/sdk';
 import { readStartStash } from '@kortix/sdk/react';
 
@@ -10,8 +11,10 @@ export interface ProvisioningFailurePresentation {
 /** Build stable error-card copy from API-owned sandbox failure metadata. */
 export function provisioningFailurePresentation(
   metadata: Record<string, unknown>,
-  sandboxLabel = 'session',
+  sandboxLabel: string | undefined,
+  tI18nComplete: UiTranslator,
 ): ProvisioningFailurePresentation {
+  const resolvedSandboxLabel = sandboxLabel ?? 'session';
   const category =
     typeof metadata.failureCategory === 'string' ? metadata.failureCategory : 'sandbox-provider';
   const message =
@@ -19,15 +22,15 @@ export function provisioningFailurePresentation(
     'The sandbox provider could not start this session. Try again.';
 
   if (category === 'provider-capacity') {
-    return { title: 'Sandbox capacity is full', message, retryable: true };
+    return { title: tI18nComplete.raw('textb3e53ad64339'), message, retryable: true };
   }
 
   if (category === 'git-auth') {
-    return { title: 'Git access failed', message, retryable: true };
+    return { title: tI18nComplete.raw('textd557bdc340e8'), message, retryable: true };
   }
 
   return {
-    title: `Couldn't start ${sandboxLabel}`,
+    title: tI18nComplete('text35e233062c2c', { value0: resolvedSandboxLabel }),
     message,
     retryable: true,
   };
@@ -116,5 +119,3 @@ export function pendingSessionPromptForRecovery(
     attachment_names: [],
   };
 }
-
-

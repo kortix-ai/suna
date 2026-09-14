@@ -250,10 +250,14 @@ COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
+# The daemon converges the CLI in place at /usr/local/bin/kortix (runtime-assets.ts
+# DEFAULT_CLI_PATH) and runs as kortix: the file must belong to that user or every
+# box reports `cli: failed` (EACCES) on its first convergence pass.
 RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral \
+    && chown kortix:kortix /usr/local/bin/kortix
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these

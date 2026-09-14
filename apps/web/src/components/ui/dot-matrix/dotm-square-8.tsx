@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { MATRIX_SIZE } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, MATRIX_SIZE } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare8Props = DotMatrixCommonProps;
 
@@ -39,19 +40,23 @@ function drainHeight(col: number, drainTick: number): number {
 
 export function DotmSquare8({
   speed = 1.4,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare8Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle" && SEQUENCE_LEN > 0,
+    active: !reducedMotion && matrixPhase !== 'idle' && SEQUENCE_LEN > 0,
     cycleMsBase: 2000,
     steps: SEQUENCE_LEN,
     speed,
@@ -60,10 +65,10 @@ export function DotmSquare8({
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         return { style: { opacity: BASE_OPACITY } };
       }
 
@@ -93,7 +98,7 @@ export function DotmSquare8({
 
       const isCap = row === topLitRow && height > 0 && height < ROWS;
       return {
-        style: { opacity: isCap ? CAP_OPACITY : SETTLED_OPACITY }
+        style: { opacity: isCap ? CAP_OPACITY : SETTLED_OPACITY },
       };
     };
   }, [reducedMotion, step]);

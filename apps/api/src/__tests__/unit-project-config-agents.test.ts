@@ -75,6 +75,10 @@ describe('project config agent discovery', () => {
         path: '.kortix/opencode/agents/kortix.md',
         description: 'Default Kortix agent',
         mode: 'primary',
+        // The roster carries the agent's model since #7083 — `null` here
+        // because neither the spec nor the native summary names one, and the
+        // resolver reads `native?.model ?? null`.
+        model: null,
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
@@ -85,6 +89,7 @@ describe('project config agent discovery', () => {
         path: '.kortix/opencode/agents/release-bot.md',
         description: 'Ships releases',
         mode: 'subagent',
+        model: null,
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,

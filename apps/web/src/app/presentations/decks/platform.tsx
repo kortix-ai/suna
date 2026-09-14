@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The Kortix deck — the complete story end to end, styled 1:1 with the marketing
  * site (home + /developers + /enterprise). Same components and vocabulary:
@@ -41,6 +41,7 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import type { SlideDef } from '../engine/deck';
 import {
   Bullets,
   Dim,
@@ -56,7 +57,6 @@ import {
   Slide,
   Terminal,
 } from '../engine/parts';
-import type { SlideDef } from '../engine/deck';
 
 // SlideDef is the engine's contract — see engine/deck.tsx.
 
@@ -82,7 +82,7 @@ function IconFeature({
     >
       <Icon className="text-foreground size-5" aria-hidden />
       <h3 className="text-foreground text-lg font-medium tracking-tight">{title}</h3>
-      <p className="text-muted-foreground text-[15px] leading-relaxed">{body}</p>
+      <p className="text-muted-foreground text-sm leading-relaxed">{body}</p>
     </div>
   );
 }
@@ -158,7 +158,7 @@ export function useSlides(): SlideDef[] {
     /* 1 — COVER ─────────────────────────────────────────────────────────── */
     {
       id: 'cover',
-      label: 'Cover',
+      label: tI18nHardcoded.raw('i18nComplete.textfa8d84566676'),
       node: (
         <Slide className="overflow-hidden">
           <LetterBg seed={3382} />
@@ -201,7 +201,10 @@ export function useSlides(): SlideDef[] {
                 </Button>
               </div>
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot
+              src={`${SHOT}/01-command-center.png`}
+              alt={tI18nHardcoded.raw('i18nComplete.text0cc8e13decfa')}
+            />
           </div>
         </Slide>
       ),
@@ -210,7 +213,7 @@ export function useSlides(): SlideDef[] {
     /* 2 — THE THESIS ────────────────────────────────────────────────────── */
     {
       id: 'thesis',
-      label: 'The thesis',
+      label: tI18nHardcoded.raw('i18nComplete.textdcd8874e25da'),
       node: (
         <Slide className="overflow-hidden">
           <LetterBg seed={1182} />
@@ -225,7 +228,7 @@ export function useSlides(): SlideDef[] {
             </h2>
             <Lead className="max-w-2xl text-lg">
               {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxTextNotAMetaphorLiterallyfe00d18c',
+                'autoAppPresentationSlidesPlatformJsxTextNotAMetaphorLiterally9692a187',
               )}
             </Lead>
             <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
@@ -260,7 +263,7 @@ export function useSlides(): SlideDef[] {
     /* 3 — THE PROBLEM ───────────────────────────────────────────────────── */
     {
       id: 'problem',
-      label: 'The problem',
+      label: tI18nHardcoded.raw('i18nComplete.texte01d77b4a0bd'),
       node: (
         <Slide>
           <SectionHead
@@ -271,7 +274,7 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleTheModelsGot3c57220a',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadYouCanHandbb3ac5b5',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadYouCanHandd5adb800',
             )}
           />
           <div className="mt-12 grid gap-4 md:grid-cols-3">
@@ -316,7 +319,7 @@ export function useSlides(): SlideDef[] {
     /* 4 — WHAT IT IS ────────────────────────────────────────────────────── */
     {
       id: 'what',
-      label: 'What it is',
+      label: tI18nHardcoded.raw('i18nComplete.text1f36becc3aa7'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -340,33 +343,36 @@ export function useSlides(): SlideDef[] {
               </h2>
               <Lead>
                 {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextOnePlaceWhereYourb6eb078d',
+                  'autoAppPresentationSlidesPlatformJsxTextOnePlaceWhereYour1521a0b5',
                 )}
               </Lead>
             </div>
             <Panel className="divide-border divide-y">
               {[
                 [
-                  'Open & yours',
-                  'Open source and self-hostable. Your data, your models, your infra.',
-                ],
-                ['A workforce, not one assistant', 'Org-scale specialists that run in parallel.'],
-                [
-                  'Real work, not chat',
-                  'Agents run on real computers and return finished deliverables.',
+                  tI18nHardcoded.raw('i18nComplete.text9f487c7a828e'),
+                  tI18nHardcoded.raw('i18nComplete.text92b8d535557e'),
                 ],
                 [
-                  'Everything is code',
-                  'Versioned, reviewable, portable — grep your entire company.',
+                  tI18nHardcoded.raw('i18nComplete.text3be3e0ad0943'),
+                  tI18nHardcoded.raw('i18nComplete.text4de44e09f00a'),
                 ],
                 [
-                  'Bring your own models',
-                  'Any provider, your keys, or the subscription you already pay for.',
+                  tI18nHardcoded.raw('i18nComplete.text97eed343805f'),
+                  tI18nHardcoded.raw('i18nComplete.text507d494d56bf'),
+                ],
+                [
+                  tI18nHardcoded.raw('i18nComplete.text37d340dd4340'),
+                  tI18nHardcoded.raw('i18nComplete.text3e79204a1f60'),
+                ],
+                [
+                  tI18nHardcoded.raw('i18nComplete.text011500bde6d0'),
+                  tI18nHardcoded.raw('i18nComplete.text407f9d9c939e'),
                 ],
               ].map(([t, b]) => (
                 <div key={t} className="flex flex-col gap-1 p-5">
                   <span className="text-foreground text-base font-medium">{t}</span>
-                  <span className="text-muted-foreground text-[15px] leading-relaxed">{b}</span>
+                  <span className="text-muted-foreground text-sm leading-relaxed">{b}</span>
                 </div>
               ))}
             </Panel>
@@ -378,7 +384,7 @@ export function useSlides(): SlideDef[] {
     /* 5 — ONE COMPANY, ONE REPO ─────────────────────────────────────────── */
     {
       id: 'repo',
-      label: 'One repo',
+      label: tI18nHardcoded.raw('i18nComplete.texta086ad00c629'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -397,7 +403,7 @@ export function useSlides(): SlideDef[] {
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextAKortixProjectIsa8e122a4',
                 )}
-                <em>is</em>{' '}
+                <em>{tI18nHardcoded.raw('i18nComplete.textfa51fd49abf6')}</em>{' '}
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextTheCompanyTheWhole7610bc22',
                 )}
@@ -405,37 +411,37 @@ export function useSlides(): SlideDef[] {
               <Bullets
                 items={[
                   <>
-                    <Mono>kortix.yaml</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.text1965f383021e')}</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheKortixLayerSandboxca190b4e',
                     )}
                   </>,
                   <>
-                    <Mono>.kortix/opencode/</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
                     )}
                   </>,
-                  'Every change versioned, reviewable, reversible',
-                  'Self-host on your cloud, VPC, or on-prem — no lock-in',
+                  tI18nHardcoded.raw('i18nComplete.textac4059cfd550'),
+                  tI18nHardcoded.raw('i18nComplete.textb5aad44ae08f'),
                 ]}
               />
             </div>
             <Terminal
-              title="kortix.yaml"
+              title={tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
               lines={[
-                { kind: 'comment', text: 'kortix_version: 2' },
+                { kind: 'comment', text: tI18nHardcoded.raw('i18nComplete.text61f28ba7b5a4') },
                 { kind: 'out', text: '' },
                 { kind: 'out', text: 'project:' },
-                { kind: 'out', text: '  name: acme' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.textff874fb0b49f') },
                 { kind: 'out', text: '' },
-                { kind: 'comment', text: '# a trigger runs itself, on a schedule' },
+                { kind: 'comment', text: tI18nHardcoded.raw('i18nComplete.text609079a06653') },
                 { kind: 'out', text: 'triggers:' },
-                { kind: 'out', text: '  - type: cron  agent: research' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.textdceafd500b4c') },
                 { kind: 'out', text: '' },
-                { kind: 'comment', text: '# connect a tool’s API as agent tools' },
+                { kind: 'comment', text: tI18nHardcoded.raw('i18nComplete.text31aa7515d0ce') },
                 { kind: 'out', text: 'connectors:' },
-                { kind: 'out', text: '  - slug: stripe  provider: http' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text3228c7f267a6') },
               ]}
             />
           </div>
@@ -446,7 +452,7 @@ export function useSlides(): SlideDef[] {
     /* 6 — THE LOOP ──────────────────────────────────────────────────────── */
     {
       id: 'loop',
-      label: 'The core loop',
+      label: tI18nHardcoded.raw('i18nComplete.textea7f71782388'),
       node: (
         <Slide>
           <SectionHead
@@ -462,11 +468,23 @@ export function useSlides(): SlideDef[] {
           />
           <div className="mt-12 flex flex-wrap items-stretch gap-3">
             {[
-              ['project', 'git repo', 'kortix.yaml + config'],
-              ['session', 'isolated sandbox', 'its own branch'],
-              ['agent', 'OpenCode', 'works · commits · pushes'],
-              ['change request', 'you review', 'approve to merge'],
-              ['main', 'always up', 'self-improves'],
+              [
+                'project',
+                tI18nHardcoded.raw('i18nComplete.textc684e335b50d'),
+                tI18nHardcoded.raw('i18nComplete.textf3503deebf69'),
+              ],
+              [
+                'session',
+                tI18nHardcoded.raw('i18nComplete.text9e796567bf87'),
+                tI18nHardcoded.raw('i18nComplete.textc5cd6589dcd7'),
+              ],
+              ['agent', 'OpenCode', tI18nHardcoded.raw('i18nComplete.text7f33545ae2eb')],
+              [
+                tI18nHardcoded.raw('i18nComplete.textb6e3ca291ec2'),
+                tI18nHardcoded.raw('i18nComplete.text3e032ee7d1dd'),
+                tI18nHardcoded.raw('i18nComplete.text591967ee7f66'),
+              ],
+              ['main', tI18nHardcoded.raw('i18nComplete.text6024f479d0dc'), 'self-improves'],
             ].map(([k, t, s], i, arr) => (
               <div key={k as string} className="flex items-center gap-3">
                 <Panel
@@ -477,7 +495,7 @@ export function useSlides(): SlideDef[] {
                 >
                   <span
                     className={cn(
-                      'font-mono text-xs tracking-wider uppercase',
+                      'font-mono text-xs',
                       k === 'change request' ? 'text-background/70' : 'text-muted-foreground',
                     )}
                   >
@@ -486,7 +504,7 @@ export function useSlides(): SlideDef[] {
                   <div className="mt-1 text-lg font-medium tracking-tight">{t}</div>
                   <div
                     className={cn(
-                      'text-[13px]',
+                      'text-xs',
                       k === 'change request' ? 'text-background/70' : 'text-muted-foreground',
                     )}
                   >
@@ -511,7 +529,7 @@ export function useSlides(): SlideDef[] {
     /* 7 — HOW A SESSION WORKS ───────────────────────────────────────────── */
     {
       id: 'session',
-      label: 'How a session works',
+      label: tI18nHardcoded.raw('i18nComplete.text090051628ce4'),
       node: (
         <Slide>
           <SectionHead
@@ -524,37 +542,29 @@ export function useSlides(): SlideDef[] {
           />
           <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
-              [
-                '01',
-                'Boot',
-                'A sandbox boots from one generic snapshot already running the kortix-sandbox-agent-server daemon.',
-              ],
-              [
-                '02',
-                'Materialize',
-                'The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml + OpenCode config into a live runtime.',
-              ],
+              ['01', 'Boot', tI18nHardcoded.raw('i18nComplete.text802370076d02')],
+              ['02', 'Materialize', tI18nHardcoded.raw('i18nComplete.text4c1f87ad0ffa')],
               [
                 '03',
-                'Work, walled off',
-                'The agent gets a ready machine and works — fully isolated. Run fifty and they never touch each other.',
+                tI18nHardcoded.raw('i18nComplete.textc6d640399b61'),
+                tI18nHardcoded.raw('i18nComplete.text351c94634971'),
               ],
               [
                 '04',
-                'Land it',
-                'To keep something, it commits and opens a change request toward main. A human decides whether it lands.',
+                tI18nHardcoded.raw('i18nComplete.textce7da5716908'),
+                tI18nHardcoded.raw('i18nComplete.text991d9a57288f'),
               ],
             ].map(([k, t, b]) => (
               <Panel key={k} className="flex flex-col gap-2 p-6">
                 <LabelChip>{k}</LabelChip>
                 <h3 className="text-foreground mt-1 text-lg font-medium tracking-tight">{t}</h3>
-                <p className="text-muted-foreground text-[15px] leading-relaxed">{b}</p>
+                <p className="text-muted-foreground text-sm leading-relaxed">{b}</p>
               </Panel>
             ))}
           </div>
           <Lead className="mt-10 max-w-3xl">
             {tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxTextASyncEngineMirrors849c4a89',
+              'autoAppPresentationSlidesPlatformJsxTextASyncEngineMirrors66aaf7a1',
             )}
           </Lead>
         </Slide>
@@ -564,7 +574,7 @@ export function useSlides(): SlideDef[] {
     /* 8 — PARALLELISM ───────────────────────────────────────────────────── */
     {
       id: 'parallel',
-      label: 'Parallelism',
+      label: tI18nHardcoded.raw('i18nComplete.text69585fb8aa14'),
       node: (
         <Slide className="overflow-hidden">
           <LetterBg seed={5521} />
@@ -586,20 +596,23 @@ export function useSlides(): SlideDef[] {
             </h2>
             <Lead className="max-w-2xl text-lg">
               {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxTextRunThousandsOfAgents14f1f102',
+                'autoAppPresentationSlidesPlatformJsxTextRunThousandsOfAgents9a3f93e4',
               )}
             </Lead>
             <div className="grid max-w-3xl gap-4 sm:grid-cols-3">
               {[
-                ['∞', 'parallel sessions, fully isolated'],
-                ['1', 'shared config they all run on'],
-                ['1 → main', 'reviewed change at a time'],
+                ['∞', tI18nHardcoded.raw('i18nComplete.text4debcf7369ac')],
+                ['1', tI18nHardcoded.raw('i18nComplete.text92553541af30')],
+                [
+                  tI18nHardcoded.raw('i18nComplete.text9408211c997f'),
+                  tI18nHardcoded.raw('i18nComplete.textc5c7cdb85034'),
+                ],
               ].map(([v, l]) => (
                 <Panel key={l} className="p-6">
                   <div className="text-foreground text-4xl font-medium tracking-tight tabular-nums">
                     {v}
                   </div>
-                  <div className="text-muted-foreground mt-2 text-[15px]">{l}</div>
+                  <div className="text-muted-foreground mt-2 text-sm">{l}</div>
                 </Panel>
               ))}
             </div>
@@ -614,7 +627,7 @@ export function useSlides(): SlideDef[] {
     /* 9 — COMMAND CENTER OVERVIEW ───────────────────────────────────────── */
     {
       id: 'command-center',
-      label: 'Command center',
+      label: tI18nHardcoded.raw('i18nComplete.text2522f9d16f3b'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -630,24 +643,31 @@ export function useSlides(): SlideDef[] {
               <div className="divide-border border-border bg-card divide-y rounded-sm border">
                 {(
                   [
-                    [Bot, 'Agents', 'Markdown personas with a scoped reach into tools.'],
-                    [Sparkles, 'Skills', 'Reusable know-how that rides into every session.'],
-                    [Plug, 'Connectors', '3,000+ apps through one scoped token.'],
-                    [KeyRound, 'Secrets', 'Encrypted, scoped per project and per agent grant.'],
-                    [MessagesSquare, 'Channels', 'Slack & chat surfaces, one click.'],
-                    [Clock, 'Triggers', 'Cron and signed webhooks spawn sessions.'],
-                    [Brain, 'Memory', 'A living company brain that compounds.'],
+                    [Bot, 'Agents', tI18nHardcoded.raw('i18nComplete.textd180271bed63')],
+                    [Sparkles, 'Skills', tI18nHardcoded.raw('i18nComplete.textbeff1e4ca7a0')],
+                    [Plug, 'Connectors', tI18nHardcoded.raw('i18nComplete.text7f8252af886d')],
+                    [KeyRound, 'Secrets', tI18nHardcoded.raw('i18nComplete.textd2acf4ac763b')],
+                    [
+                      MessagesSquare,
+                      'Channels',
+                      tI18nHardcoded.raw('i18nComplete.text4a1ca4f91111'),
+                    ],
+                    [Clock, 'Triggers', tI18nHardcoded.raw('i18nComplete.text276e88f0f37e')],
+                    [Brain, 'Memory', tI18nHardcoded.raw('i18nComplete.textf354ef2ee567')],
                   ] as [typeof Bot, string, string][]
                 ).map(([Icon, t, b]) => (
                   <div key={t} className="flex items-center gap-3 px-5 py-3">
                     <Icon className="text-foreground size-4 shrink-0" aria-hidden />
-                    <span className="text-foreground text-[15px] font-medium">{t}</span>
-                    <span className="text-muted-foreground text-[15px]">— {b}</span>
+                    <span className="text-foreground text-sm font-medium">{t}</span>
+                    <span className="text-muted-foreground text-sm">— {b}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot
+              src={`${SHOT}/01-command-center.png`}
+              alt={tI18nHardcoded.raw('i18nComplete.text0cc8e13decfa')}
+            />
           </div>
         </Slide>
       ),
@@ -656,20 +676,20 @@ export function useSlides(): SlideDef[] {
     /* 10 — AGENTS */
     {
       id: 'agents',
-      label: 'Agents',
+      label: tI18nHardcoded.raw('i18nComplete.text279b44d2ab4b'),
       node: (
         <FeatureSlide
           eyebrow={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterAgentse0677a55',
           )}
-          title="Agents"
+          title={tI18nHardcoded.raw('i18nComplete.text279b44d2ab4b')}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadMarkdownPersonasWithb049eae2',
+            'autoAppPresentationSlidesPlatformJsxAttrLeadMarkdownPersonasWith298b95be',
           )}
           bullets={[
-            'An OpenCode agent — markdown at the baseline, the full lifecycle open',
-            'Scoped permissions per agent — people and agents are principals',
-            'Any agent can edit its own config and propose the change',
+            tI18nHardcoded.raw('i18nComplete.textf08a83aac6c4'),
+            tI18nHardcoded.raw('i18nComplete.textb5ca3585c03b'),
+            tI18nHardcoded.raw('i18nComplete.textbe70d00c8928'),
           ]}
           shot={`${SHOT}/05-agents.png`}
         />
@@ -679,21 +699,21 @@ export function useSlides(): SlideDef[] {
     /* 11 — SKILLS */
     {
       id: 'skills',
-      label: 'Skills',
+      label: tI18nHardcoded.raw('i18nComplete.text66d0f523a379'),
       node: (
         <FeatureSlide
           reverse
           eyebrow={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrEyebrowCommandCenterSkillse923e1ca',
           )}
-          title="Skills"
+          title={tI18nHardcoded.raw('i18nComplete.text66d0f523a379')}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadThePartThate3f9d8d9',
+            'autoAppPresentationSlidesPlatformJsxAttrLeadThePartThat99be6c94',
           )}
           bullets={[
-            'Reusable know-how that lives in the repo',
-            'Rides into every session automatically',
-            'Skills and memory accumulate with every run',
+            tI18nHardcoded.raw('i18nComplete.text07331645370f'),
+            tI18nHardcoded.raw('i18nComplete.text9590cb5df0a8'),
+            tI18nHardcoded.raw('i18nComplete.textdbd9b1773511'),
           ]}
           shot={`${SHOT}/04-skills.png`}
         />
@@ -703,7 +723,7 @@ export function useSlides(): SlideDef[] {
     /* 12 — CONNECTORS */
     {
       id: 'connectors',
-      label: 'Connectors',
+      label: tI18nHardcoded.raw('i18nComplete.textc3d2e79ebdd0'),
       node: (
         <FeatureSlide
           eyebrow={tI18nHardcoded.raw(
@@ -713,12 +733,12 @@ export function useSlides(): SlideDef[] {
             'autoAppPresentationSlidesPlatformJsxAttrTitleConnectEverythingOnce90dc9225',
           )}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLead1ClickConnect89e2184c',
+            'autoAppPresentationSlidesPlatformJsxAttrLead1ClickConnectbd49b095',
           )}
           bullets={[
-            '3,000+ apps in a click',
-            'Bring any MCP, OpenAPI, GraphQL, or HTTP tool',
-            'Scoped per person, per agent, per team — and audited',
+            tI18nHardcoded.raw('i18nComplete.text449992e55737'),
+            tI18nHardcoded.raw('i18nComplete.text8ddaaf20bb7d'),
+            tI18nHardcoded.raw('i18nComplete.textb68f7b640d93'),
           ]}
           shot={`${SHOT}/03-connectors.png`}
         />
@@ -728,7 +748,7 @@ export function useSlides(): SlideDef[] {
     /* 13 — SECRETS */
     {
       id: 'secrets',
-      label: 'Secrets',
+      label: tI18nHardcoded.raw('i18nComplete.textd8707d411d99'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -745,20 +765,27 @@ export function useSlides(): SlideDef[] {
               </h2>
               <Lead>
                 {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextKeysOAuthAndModel515700d5',
+                  'autoAppPresentationSlidesPlatformJsxTextKeysOAuthAndModel44974f3c',
                 )}
               </Lead>
               <Bullets
                 items={[
-                  'Connector credentials never enter a sandbox',
-                  'Agents act through a single scoped Kortix token',
-                  'Allow, ask-first, or block — connector action rules you control',
+                  tI18nHardcoded.raw('i18nComplete.text5ebe32e1b916'),
+                  tI18nHardcoded.raw('i18nComplete.text2fea30b8d515'),
+                  tI18nHardcoded.raw('i18nComplete.text5731d8c0fb14'),
                 ]}
               />
             </div>
             <div className="flex flex-col items-center gap-5">
               <div className="flex flex-wrap justify-center gap-2">
-                {['STRIPE_…', 'GITHUB_…', 'OPENAI_…', 'SLACK_…', 'AWS_…', 'LINEAR_…'].map((k) => (
+                {[
+                  tI18nHardcoded.raw('i18nComplete.text9c05aa57c149'),
+                  tI18nHardcoded.raw('i18nComplete.text7ad1511cc614'),
+                  tI18nHardcoded.raw('i18nComplete.text5872277e15ce'),
+                  tI18nHardcoded.raw('i18nComplete.textee9c0bf3dfee'),
+                  tI18nHardcoded.raw('i18nComplete.text98dd14248eba'),
+                  tI18nHardcoded.raw('i18nComplete.text8128f44ac0d3'),
+                ].map((k) => (
                   <span
                     key={k}
                     className="border-border bg-card text-muted-foreground rounded-sm border px-3 py-1.5 font-mono text-xs line-through"
@@ -786,7 +813,7 @@ export function useSlides(): SlideDef[] {
     /* 14 — CHANNELS */
     {
       id: 'channels',
-      label: 'Channels',
+      label: tI18nHardcoded.raw('i18nComplete.text4c8906cf76f5'),
       node: (
         <FeatureSlide
           reverse
@@ -797,12 +824,12 @@ export function useSlides(): SlideDef[] {
             'autoAppPresentationSlidesPlatformJsxAttrTitleWhereYourPeople5a92eefb',
           )}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadSlackTeamsTelegram921f192a',
+            'autoAppPresentationSlidesPlatformJsxAttrLeadSlackTeamsTelegram3e7973c3',
           )}
           bullets={[
-            'One click stands up a bot in your workspace',
-            'It starts real sessions from a chat thread',
-            'A Slack message can turn into a shipped change request',
+            tI18nHardcoded.raw('i18nComplete.textcf885bfcd8a4'),
+            tI18nHardcoded.raw('i18nComplete.text009cb0fc376f'),
+            tI18nHardcoded.raw('i18nComplete.textbe0fce7637ce'),
           ]}
           shot={`${SHOT}/06-channels.png`}
         />
@@ -812,7 +839,7 @@ export function useSlides(): SlideDef[] {
     /* 15 — TRIGGERS */
     {
       id: 'triggers',
-      label: 'Triggers',
+      label: tI18nHardcoded.raw('i18nComplete.texte62f2148a64d'),
       node: (
         <Slide>
           <SectionHead
@@ -823,21 +850,28 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleItRunsWithout0222686a',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadCronAndSignedef829b40',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadCronAndSignedc7137017',
             )}
           />
           <div className="mt-10 grid gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <Pill>
-                <Clock className="size-3.5" /> Cron
+                <Clock className="size-3.5" /> {tI18nHardcoded.raw('i18nComplete.textdd9d24965dbe')}
               </Pill>
-              <Shot src={`${SHOT}/08-schedules.png`} alt="Scheduled triggers" />
+              <Shot
+                src={`${SHOT}/08-schedules.png`}
+                alt={tI18nHardcoded.raw('i18nComplete.textcfee87726b0a')}
+              />
             </div>
             <div className="space-y-3">
               <Pill>
-                <Webhook className="size-3.5" /> Webhook
+                <Webhook className="size-3.5" />{' '}
+                {tI18nHardcoded.raw('i18nComplete.text4814f62c108d')}
               </Pill>
-              <Shot src={`${SHOT}/09-webhooks.png`} alt="Webhook triggers" />
+              <Shot
+                src={`${SHOT}/09-webhooks.png`}
+                alt={tI18nHardcoded.raw('i18nComplete.text4f1601d68eb4')}
+              />
             </div>
           </div>
         </Slide>
@@ -847,7 +881,7 @@ export function useSlides(): SlideDef[] {
     /* 16 — CHANGE REQUESTS */
     {
       id: 'changes',
-      label: 'Change requests',
+      label: tI18nHardcoded.raw('i18nComplete.text91f850fa869b'),
       node: (
         <FeatureSlide
           eyebrow={tI18nHardcoded.raw(
@@ -857,12 +891,12 @@ export function useSlides(): SlideDef[] {
             'autoAppPresentationSlidesPlatformJsxAttrTitleChangeRequests6e5aad55',
           )}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadTheReviewedMerge6e1bf5c5',
+            'autoAppPresentationSlidesPlatformJsxAttrLeadTheReviewedMerge785e3799',
           )}
           bullets={[
-            'Nothing reaches main without a human approving it',
-            'Every change — human or agent — is a commit you can diff and revert',
-            'The audit trail isn’t bolted on; it’s the repo itself',
+            tI18nHardcoded.raw('i18nComplete.text9a1ffabd3658'),
+            tI18nHardcoded.raw('i18nComplete.text6d6fb78e4419'),
+            tI18nHardcoded.raw('i18nComplete.textb88cae951498'),
           ]}
           shot={`${SHOT}/07-changes.png`}
         />
@@ -872,7 +906,7 @@ export function useSlides(): SlideDef[] {
     /* 17 — MEMORY */
     {
       id: 'memory',
-      label: 'Memory',
+      label: tI18nHardcoded.raw('i18nComplete.textc3963aedaac6'),
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
@@ -889,28 +923,28 @@ export function useSlides(): SlideDef[] {
               </h2>
               <Lead>
                 {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextFilesForNowAnd3cce010d',
+                  'autoAppPresentationSlidesPlatformJsxTextFilesForNowAndf51cbec0',
                 )}
               </Lead>
               <Bullets
                 items={[
-                  'Plain files today — readable, diffable, versioned',
-                  'Compounds what it learns over every run',
-                  'The company gets smarter — and it’s all tracked',
+                  tI18nHardcoded.raw('i18nComplete.text90cc8430dca3'),
+                  tI18nHardcoded.raw('i18nComplete.text844d1616ac93'),
+                  tI18nHardcoded.raw('i18nComplete.textea94f48d89d0'),
                 ]}
               />
             </div>
             <Terminal
-              title="memory/customer-acme.md"
+              title={tI18nHardcoded.raw('i18nComplete.text2ea11daa7745')}
               lines={[
                 { kind: 'comment', text: '---' },
-                { kind: 'out', text: 'name: Acme Corp' },
-                { kind: 'out', text: 'plan: Enterprise' },
-                { kind: 'out', text: 'renewal: 2026-09-01' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text821fc05f30c8') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text5667e2fe3cb5') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text96f660c6ea36') },
                 { kind: 'comment', text: '---' },
                 { kind: 'out', text: '' },
-                { kind: 'out', text: 'Prefers async updates. Owner: Dana.' },
-                { kind: 'out', text: 'Flagged refund policy Q2 — resolved.' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text40223a3c6277') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text742ae8324623') },
               ]}
             />
           </div>
@@ -921,7 +955,7 @@ export function useSlides(): SlideDef[] {
     /* 18 — TEAM & PERMISSIONS */
     {
       id: 'team',
-      label: 'Team & permissions',
+      label: tI18nHardcoded.raw('i18nComplete.texta8aa23313d75'),
       node: (
         <FeatureSlide
           reverse
@@ -932,12 +966,12 @@ export function useSlides(): SlideDef[] {
             'autoAppPresentationSlidesPlatformJsxAttrTitleAWorkforceYou8e9267ec',
           )}
           lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadARealAccount68e2c515',
+            'autoAppPresentationSlidesPlatformJsxAttrLeadARealAccountc271c3da',
           )}
           bullets={[
-            'Per-resource permissions for every person and agent',
-            'SSO, RBAC, and groups that match your org',
-            'Sessions are owned by whoever — or whatever — started them',
+            tI18nHardcoded.raw('i18nComplete.textb9b2cc46e71e'),
+            tI18nHardcoded.raw('i18nComplete.textf7d76d648261'),
+            tI18nHardcoded.raw('i18nComplete.text2a462ba2ae5e'),
           ]}
           shot={`${SHOT}/02-team.png`}
         />
@@ -947,7 +981,7 @@ export function useSlides(): SlideDef[] {
     /* 19 — THREE WAYS WORK RUNS */
     {
       id: 'modes',
-      label: 'Three ways work runs',
+      label: tI18nHardcoded.raw('i18nComplete.text744b88e04bcc'),
       node: (
         <Slide>
           <SectionHead
@@ -962,18 +996,18 @@ export function useSlides(): SlideDef[] {
             {[
               [
                 'On-demand',
-                'Ask in chat, get it now.',
-                'You prompt a session and the agent returns the deliverable.',
+                tI18nHardcoded.raw('i18nComplete.textd8a321e980e7'),
+                tI18nHardcoded.raw('i18nComplete.texte5c56bc61eb0'),
               ],
               [
                 'Human-assisted',
-                'It works and checks in.',
-                'The agent does the work and pauses for the calls that matter.',
+                tI18nHardcoded.raw('i18nComplete.text1bf354f2b825'),
+                tI18nHardcoded.raw('i18nComplete.text9aef8ba99514'),
               ],
               [
                 'Automated',
-                'Runs end to end.',
-                'A schedule or trigger fires a session with no one watching.',
+                tI18nHardcoded.raw('i18nComplete.textbded910328ad'),
+                tI18nHardcoded.raw('i18nComplete.text043cf55ca745'),
               ],
             ].map(([t, lead, b], i) => (
               <Panel
@@ -994,7 +1028,7 @@ export function useSlides(): SlideDef[] {
                 <h3 className="mt-1 text-2xl font-medium tracking-tight">{t}</h3>
                 <p
                   className={cn(
-                    'text-[15px] font-medium',
+                    'text-sm font-medium',
                     i === 1 ? 'text-background' : 'text-foreground',
                   )}
                 >
@@ -1002,7 +1036,7 @@ export function useSlides(): SlideDef[] {
                 </p>
                 <p
                   className={cn(
-                    'text-[15px] leading-relaxed',
+                    'text-sm leading-relaxed',
                     i === 1 ? 'text-background/70' : 'text-muted-foreground',
                   )}
                 >
@@ -1023,7 +1057,7 @@ export function useSlides(): SlideDef[] {
     /* 20 — REAL DELIVERABLES */
     {
       id: 'deliverables',
-      label: 'Real deliverables',
+      label: tI18nHardcoded.raw('i18nComplete.textbab76032fb5d'),
       node: (
         <Slide>
           <SectionHead
@@ -1034,7 +1068,7 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleAgentsReturnFinished8d0f12c2',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadNotATranscriptb68e5a86',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadNotATranscript07b7fc10',
             )}
           />
           <div className="mt-12 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -1047,9 +1081,7 @@ export function useSlides(): SlideDef[] {
             ].map(([f, label]) => (
               <div key={f} className="space-y-2">
                 <Shot src={`${DELIV}/${f}.png`} alt={label} chrome={false} />
-                <p className="text-muted-foreground text-center font-mono text-xs tracking-wider uppercase">
-                  {label}
-                </p>
+                <p className="text-muted-foreground text-center font-mono text-xs">{label}</p>
               </div>
             ))}
           </div>
@@ -1060,7 +1092,7 @@ export function useSlides(): SlideDef[] {
     /* 21 — START WITH ONE AGENT */
     {
       id: 'use-cases',
-      label: 'Start with one agent',
+      label: tI18nHardcoded.raw('i18nComplete.text4d8f5abc42f5'),
       node: (
         <Slide>
           <SectionHead
@@ -1076,33 +1108,33 @@ export function useSlides(): SlideDef[] {
             {[
               [
                 'Support',
-                'A support agent that closes tickets.',
-                'Drafts a reply from your docs, flags refunds for approval.',
+                tI18nHardcoded.raw('i18nComplete.texta19b856c93ad'),
+                tI18nHardcoded.raw('i18nComplete.text2c93dc393e24'),
               ],
               [
                 'Engineering',
-                'An engineering agent that ships fixes.',
-                'Reviews the PR, opens a fix branch, submits a change request.',
+                tI18nHardcoded.raw('i18nComplete.text424dfcf4d7e8'),
+                tI18nHardcoded.raw('i18nComplete.textcda73ce6e6aa'),
               ],
               [
                 'Research',
-                'A research agent that briefs your team.',
-                'Gathers from approved sources and posts a brief before the call.',
+                tI18nHardcoded.raw('i18nComplete.textecaddb9a540f'),
+                tI18nHardcoded.raw('i18nComplete.textc9a4928a4d78'),
               ],
               [
                 'Finance',
-                'A finance agent that closes the month.',
-                'Reconciles transactions, flags exceptions, holds for sign-off.',
+                tI18nHardcoded.raw('i18nComplete.textf059fcbba4af'),
+                tI18nHardcoded.raw('i18nComplete.text8654b486889c'),
               ],
               [
                 'Marketing',
-                'A marketing agent that runs the brief.',
-                'Turns a brief into drafts, then routes them for review.',
+                tI18nHardcoded.raw('i18nComplete.text15e74e0985a0'),
+                tI18nHardcoded.raw('i18nComplete.text16a36eea2e4e'),
               ],
               [
                 'Operations',
-                'An operations agent that runs the SOP.',
-                'Runs each step in a sandbox, pausing at the approval gates you switch on.',
+                tI18nHardcoded.raw('i18nComplete.textfaa24cb6ca58'),
+                tI18nHardcoded.raw('i18nComplete.textbbbc664ba1ca'),
               ],
             ].map(([tag, title, body]) => (
               <MiniCard key={tag} label={tag} title={title} body={body} />
@@ -1115,7 +1147,7 @@ export function useSlides(): SlideDef[] {
     /* 22 — TWO WAYS IN */
     {
       id: 'two-ways',
-      label: 'Two ways in',
+      label: tI18nHardcoded.raw('i18nComplete.text12cef29dfa4d'),
       node: (
         <Slide>
           <SectionHead
@@ -1132,12 +1164,12 @@ export function useSlides(): SlideDef[] {
               <h3 className="text-foreground text-2xl font-medium tracking-tight">
                 {tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxTextForBuildersc84efc99')}
               </h3>
-              <p className="text-foreground text-[15px]">
+              <p className="text-foreground text-sm">
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextConfigureItLikeSoftwaredfe3974f',
                 )}
               </p>
-              <Lead className="text-[15px]">
+              <Lead className="text-sm">
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextDefineAgentsSkillsToolscf60a61c',
                 )}
@@ -1145,9 +1177,9 @@ export function useSlides(): SlideDef[] {
               <Bullets
                 index={1}
                 items={[
-                  'Your stack, your models, your keys',
-                  'Skills, tools & policies as code',
-                  'Self-host or managed cloud',
+                  tI18nHardcoded.raw('i18nComplete.textb78b4d8cdf7e'),
+                  tI18nHardcoded.raw('i18nComplete.texte65ac57c0c16'),
+                  tI18nHardcoded.raw('i18nComplete.textc92025bd3eeb'),
                 ]}
               />
             </Panel>
@@ -1156,21 +1188,21 @@ export function useSlides(): SlideDef[] {
               <h3 className="text-background text-2xl font-medium tracking-tight">
                 {tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxTextForTeams733bb9d9')}
               </h3>
-              <p className="text-background text-[15px]">
+              <p className="text-background text-sm">
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextUseItLikeChat53e3e05e',
                 )}
               </p>
-              <p className="text-background/70 text-[15px] leading-relaxed">
+              <p className="text-background/70 text-sm leading-relaxed">
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextGiveEveryTeamAgentsea166472',
                 )}
               </p>
-              <ul className="text-background/80 space-y-2 text-[15px] leading-relaxed">
+              <ul className="text-background/80 space-y-2 text-sm leading-relaxed">
                 {[
-                  'As easy as a chat app',
-                  'Approvals before agents act',
-                  'Your data and config stay yours',
+                  tI18nHardcoded.raw('i18nComplete.text602ff50f0ec1'),
+                  tI18nHardcoded.raw('i18nComplete.text88098ef371c2'),
+                  tI18nHardcoded.raw('i18nComplete.text4ee510d053d5'),
                 ].map((it) => (
                   <li key={it} className="flex gap-2">
                     <span className="bg-background/40 mt-2 size-1.5 shrink-0 rounded-full" />
@@ -1187,7 +1219,7 @@ export function useSlides(): SlideDef[] {
     /* 23 — EVERY SURFACE */
     {
       id: 'surfaces',
-      label: 'Every surface',
+      label: tI18nHardcoded.raw('i18nComplete.texteb7aa5b77168'),
       node: (
         <Slide>
           <SectionHead
@@ -1198,24 +1230,24 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleChatSlackTeams59488d51',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadYourTeamTalkse1fe3252',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadYourTeamTalkse4dd114d',
             )}
           />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              'Web workspace',
-              'Mobile app',
+              tI18nHardcoded.raw('i18nComplete.texta535409d22df'),
+              tI18nHardcoded.raw('i18nComplete.text429bbfa117e2'),
               'Slack',
-              'Microsoft Teams',
-              'API & SDK',
-              'Triggers (cron & webhook)',
+              tI18nHardcoded.raw('i18nComplete.texta7b52b269a23'),
+              tI18nHardcoded.raw('i18nComplete.texte27a31ed1d6f'),
+              tI18nHardcoded.raw('i18nComplete.text78f322ab2971'),
             ].map((s) => (
               <div
                 key={s}
                 className="border-border bg-card flex items-center gap-3 rounded-sm border px-6 py-5"
               >
                 <span className="bg-foreground size-2 rounded-full" />
-                <span className="text-foreground text-[15px] font-medium">{s}</span>
+                <span className="text-foreground text-sm font-medium">{s}</span>
               </div>
             ))}
           </div>
@@ -1226,7 +1258,7 @@ export function useSlides(): SlideDef[] {
     /* 24 — FOR DEVELOPERS */
     {
       id: 'developers',
-      label: 'For developers',
+      label: tI18nHardcoded.raw('i18nComplete.text6f79cf5c144a'),
       node: (
         <Slide>
           <SectionHead
@@ -1236,20 +1268,20 @@ export function useSlides(): SlideDef[] {
             title={tI18nHardcoded.raw(
               'autoAppPresentationSlidesPlatformJsxAttrTitleBuiltOnFiles64c977e2',
             )}
-            lead={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadNoSDKTo91b0c136')}
+            lead={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadNoSDKToca0b7d2f')}
           />
           <div className="mt-10 grid gap-4 lg:grid-cols-2">
             <Terminal
-              title="agent.md"
+              title={tI18nHardcoded.raw('i18nComplete.text6f37eb69ebc8')}
               lines={[
                 { kind: 'comment', text: '---' },
-                { kind: 'out', text: 'description: Acme’s support agent.' },
-                { kind: 'out', text: 'model: anthropic/claude-opus-4-8' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text5346918b32c0') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text035549be9e10') },
                 { kind: 'comment', text: '---' },
                 { kind: 'out', text: '' },
-                { kind: 'out', text: 'Resolve customer tickets end to end.' },
-                { kind: 'out', text: 'Issue refunds under $500 on your own.' },
-                { kind: 'out', text: 'Anything higher goes to a human.' },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text9c84074599b5') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text4a01fea7c629') },
+                { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.text14f1b7cb49a1') },
               ]}
             />
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1298,7 +1330,7 @@ export function useSlides(): SlideDef[] {
     /* 25 — SELF-HOST */
     {
       id: 'self-host',
-      label: 'Self-host',
+      label: tI18nHardcoded.raw('i18nComplete.text37a5d04181b5'),
       node: (
         <Slide>
           <SectionHead
@@ -1309,25 +1341,25 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleSameProductEverywhere41c9494d',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadRunKortixOn275c3486',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadRunKortixOn048c2e1e',
             )}
           />
           <div className="mt-10 grid items-center gap-6 lg:grid-cols-2">
             <Terminal
-              title="self-host"
+              title={tI18nHardcoded.raw('i18nComplete.text7859cc3ee2ae')}
               lines={[
-                { kind: 'cmd', text: 'kortix self-host start' },
-                { kind: 'cmd', text: 'kortix hosts use local   # ↔  cloud' },
-                { kind: 'comment', text: '# your data, your models, your keys' },
+                { kind: 'cmd', text: tI18nHardcoded.raw('i18nComplete.textdbef6cc84fef') },
+                { kind: 'cmd', text: tI18nHardcoded.raw('i18nComplete.text299438afe0c2') },
+                { kind: 'comment', text: tI18nHardcoded.raw('i18nComplete.texted9f27637609') },
               ]}
             />
             <div className="grid grid-cols-2 gap-4">
               {(
                 [
-                  [Server, 'Managed cloud'],
-                  [Building2, 'Your VPC'],
+                  [Server, tI18nHardcoded.raw('i18nComplete.textf513ed1619ec')],
+                  [Building2, tI18nHardcoded.raw('i18nComplete.text63a9ae000680')],
                   [Box, 'On-prem'],
-                  [Shield, 'Your own network'],
+                  [Shield, tI18nHardcoded.raw('i18nComplete.text1b00fe7ae5e3')],
                 ] as [typeof Server, string][]
               ).map(([Icon, h], i) => (
                 <div
@@ -1340,7 +1372,7 @@ export function useSlides(): SlideDef[] {
                   )}
                 >
                   <Icon className="size-4" />
-                  <span className="text-[15px] font-medium">{h}</span>
+                  <span className="text-sm font-medium">{h}</span>
                 </div>
               ))}
             </div>
@@ -1352,7 +1384,7 @@ export function useSlides(): SlideDef[] {
     /* 26 — ENTERPRISE & SECURITY */
     {
       id: 'enterprise',
-      label: 'Enterprise & security',
+      label: tI18nHardcoded.raw('i18nComplete.text6bcb11c1c5d8'),
       node: (
         <Slide>
           <SectionHead
@@ -1406,13 +1438,13 @@ export function useSlides(): SlideDef[] {
           </div>
           <div className="mt-6 flex flex-wrap gap-2">
             {[
-              'One isolated machine per session',
-              'SSO · RBAC · groups',
-              'Per-resource permissions',
-              'Secrets manager',
-              'Human approval gates',
-              'Full audit trail',
-              'On-prem / your own VPC / your own network',
+              tI18nHardcoded.raw('i18nComplete.text188fba3516ee'),
+              tI18nHardcoded.raw('i18nComplete.text60f41540d80e'),
+              tI18nHardcoded.raw('i18nComplete.textf23e2655e76b'),
+              tI18nHardcoded.raw('i18nComplete.text228d1d7e87d4'),
+              tI18nHardcoded.raw('i18nComplete.textf982a576e7c6'),
+              tI18nHardcoded.raw('i18nComplete.text2c4de2851235'),
+              tI18nHardcoded.raw('i18nComplete.text0f8c0eb8cc5e'),
             ].map((c) => (
               <Pill key={c}>{c}</Pill>
             ))}
@@ -1424,7 +1456,7 @@ export function useSlides(): SlideDef[] {
     /* 27 — WHO IT'S FOR */
     {
       id: 'audiences',
-      label: "Who it's for",
+      label: tI18nHardcoded.raw('i18nComplete.text60c3907ec269'),
       node: (
         <Slide>
           <SectionHead
@@ -1438,25 +1470,13 @@ export function useSlides(): SlideDef[] {
           <div className="mt-12 grid gap-4 md:grid-cols-2">
             {(
               [
-                [
-                  Code2,
-                  'Developers',
-                  'A managed cloud for your OpenCode agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.',
-                ],
-                [
-                  Users,
-                  'Companies',
-                  'A workforce they can actually manage — reached from web, Slack, or Teams — on infrastructure where the data, config, and model belong to the company, not a vendor.',
-                ],
-                [
-                  Shield,
-                  'Enterprise',
-                  'Built to survive a security review: one isolated machine per session, real members/groups/roles, per-resource permissions, a secrets manager, audit trail, approval gates.',
-                ],
+                [Code2, 'Developers', tI18nHardcoded.raw('i18nComplete.text474945c326bd')],
+                [Users, 'Companies', tI18nHardcoded.raw('i18nComplete.text82203da566c7')],
+                [Shield, 'Enterprise', tI18nHardcoded.raw('i18nComplete.text777e112466d3')],
                 [
                   Building2,
-                  'Agencies & consultancies',
-                  'One horizontal platform sold through verticalized partners with their own front ends and starter templates. A franchise for the part of the economy about to be rebuilt.',
+                  tI18nHardcoded.raw('i18nComplete.text827f9d2d8e74'),
+                  tI18nHardcoded.raw('i18nComplete.texta21221a2eef4'),
                 ],
               ] as [typeof Code2, string, string][]
             ).map(([Icon, t, b]) => (
@@ -1470,7 +1490,7 @@ export function useSlides(): SlideDef[] {
     /* 28 — THE BUSINESS */
     {
       id: 'business',
-      label: 'The business',
+      label: tI18nHardcoded.raw('i18nComplete.text507e19ce6f1b'),
       node: (
         <Slide>
           <SectionHead
@@ -1481,7 +1501,7 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleThePlatformIsfa2254a2',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur02b8fdeb',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur3a652ae7',
             )}
           />
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -1496,28 +1516,28 @@ export function useSlides(): SlideDef[] {
             />
             <IconFeature
               icon={Layers}
-              title="Cloud"
+              title={tI18nHardcoded.raw('i18nComplete.textb977b950c1ae')}
               body={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxAttrBodySeatsCompute61f703c9',
               )}
             />
             <IconFeature
               icon={Shield}
-              title="Single-tenant"
+              title={tI18nHardcoded.raw('i18nComplete.textf5828f35ad93')}
               body={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxAttrBodyRunItAnywhere9c8c4cd2',
               )}
             />
             <IconFeature
               icon={Store}
-              title="Marketplace"
+              title={tI18nHardcoded.raw('i18nComplete.textc608981d8d68')}
               body={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxAttrBodyAgentsSkillsWholedd8eefbc',
               )}
             />
             <IconFeature
               icon={Boxes}
-              title="Platinum.dev"
+              title={tI18nHardcoded.raw('i18nComplete.textfb791d3beeee')}
               body={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxAttrBodyTheComputeFloora3af4e83',
               )}
@@ -1533,7 +1553,7 @@ export function useSlides(): SlideDef[] {
     /* 29 — CLOSING */
     {
       id: 'closing',
-      label: 'Closing',
+      label: tI18nHardcoded.raw('i18nComplete.textf79ebae4aae3'),
       node: (
         <Slide className="overflow-hidden">
           <div className="pointer-events-none absolute inset-0 z-0 mask-y-from-80% mask-x-from-90% opacity-60">
@@ -1565,7 +1585,9 @@ export function useSlides(): SlideDef[] {
                   )}
                 </Link>
               </Button>
-              <span className="text-muted-foreground ml-1 font-mono text-sm">kortix.com</span>
+              <span className="text-muted-foreground ml-1 font-mono text-sm">
+                {tI18nHardcoded.raw('i18nComplete.text97eb27bdb657')}
+              </span>
             </div>
             <p className="text-muted-foreground font-mono text-xs tracking-wider">
               {tI18nHardcoded.raw(

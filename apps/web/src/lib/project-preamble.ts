@@ -62,17 +62,13 @@ export function buildSessionRef(s: SessionRefLike): string {
 
 // ─── Block builders ─────────────────────────────────────────────────────────
 
-export function buildFileRefsBlock(
-  files: ReadonlyArray<FileRefLike>,
-): string {
+export function buildFileRefsBlock(files: ReadonlyArray<FileRefLike>): string {
   if (!files.length) return '';
   const refs = files.map(buildFileRef).join('\n');
   return `Referenced files (the user has explicitly @-mentioned these — read them if relevant):\n${refs}`;
 }
 
-export function buildAgentRefsBlock(
-  agents: ReadonlyArray<AgentRefLike>,
-): string {
+export function buildAgentRefsBlock(agents: ReadonlyArray<AgentRefLike>): string {
   if (!agents.length) return '';
   const refs = agents.map(buildAgentRef).join('\n');
   return `Referenced agents (the user has @-mentioned these agents — delegate or hand off as appropriate):\n${refs}`;
@@ -80,19 +76,13 @@ export function buildAgentRefsBlock(
 
 // ─── Appenders (text-in, text-out) ──────────────────────────────────────────
 
-export function appendFileRefs(
-  text: string,
-  files: ReadonlyArray<FileRefLike>,
-): string {
+export function appendFileRefs(text: string, files: ReadonlyArray<FileRefLike>): string {
   const block = buildFileRefsBlock(files);
   if (!block) return text;
   return `${text}\n\n${block}`;
 }
 
-export function appendAgentRefs(
-  text: string,
-  agents: ReadonlyArray<AgentRefLike>,
-): string {
+export function appendAgentRefs(text: string, agents: ReadonlyArray<AgentRefLike>): string {
   const block = buildAgentRefsBlock(agents);
   if (!block) return text;
   return `${text}\n\n${block}`;

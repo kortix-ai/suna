@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import Loading from '@/components/ui/loading';
@@ -40,6 +41,7 @@ export function MarketplaceFileView({
   /** The already-loaded, SSR'd README/SKILL.md body (frontmatter already stripped). */
   readme: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The default doc's body is already loaded + SSR'd — don't refetch it.
   const useLoadedReadme = selected != null && selected === readmeTarget && readme != null;
   const fileQuery = useQuery({
@@ -66,7 +68,7 @@ export function MarketplaceFileView({
             <Loading />
           </div>
         ) : content == null ? (
-          <p className="text-muted-foreground text-sm">Couldn&rsquo;t load this file.</p>
+          <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text3fcb2c5a6ec8')}</p>
         ) : asMarkdown ? (
           <div className="prose-sm text-foreground/90 max-w-none">
             <UnifiedMarkdown

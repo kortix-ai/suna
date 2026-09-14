@@ -288,9 +288,9 @@ describe('sameActivityGroupStepProps', () => {
       false,
     );
     expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
-    expect(
-      sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b)),
-    ).toBe(false);
+    expect(sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b))).toBe(
+      false,
+    );
   });
 });
 
@@ -477,11 +477,7 @@ describe('ActivityBurst', () => {
 
   const renderBurst = (
     parts: Part[],
-    {
-      working = false,
-      isTrailing = false,
-      density = 'normal' as 'normal' | 'minimal',
-    } = {},
+    { working = false, isTrailing = false, density = 'normal' as 'normal' | 'minimal' } = {},
   ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
@@ -534,18 +530,14 @@ describe('ActivityBurst', () => {
     expect(markup).toContain('data-tone="failed"');
   });
 
-  test('a bare step KEEPS its leading glyph — the icon is what names the tool', () => {
-    // It used to be stripped, on the argument that the glyph only exists to
-    // anchor the chain rail and one row has no chain. That cost the row the
-    // only thing saying WHICH tool ran: a lone write rendered as a line of
-    // text with nothing on it. The tool's name is not always in the words —
-    // "Write" is, "Ran command" is not.
+  test('a bare step drops its leading glyph — the icon was the rail anchor', () => {
+    // The family icon holds the 16px gutter `ChainOfThought` runs its connector
+    // down (`left-2`). One row has no connector, so the glyph holds a column
+    // that does not exist and pushes the only words 28px off the turn's margin.
     const markup = renderBurst([done('1', 'bash', { command: 'pnpm build' })]);
-    // The hide rule is gone; the class arrives HTML-escaped in static markup,
-    // so match the escaped tail rather than the source string.
-    expect(markup).not.toContain('&gt;span:first-child]:hidden');
-    // `ToolHeaderRow`'s leading span, holding the terminal glyph.
-    expect(markup).toContain('<span class="text-muted-foreground size-4 shrink-0">');
+    // The class arrives HTML-escaped in static markup, so match the escaped
+    // tail rather than the source string.
+    expect(markup).toContain('&gt;span:first-child]:hidden');
     expect(markup).toContain('pnpm build');
   });
 
@@ -1120,10 +1112,10 @@ describe('step family glyphs', () => {
 
 describe('bare row alignment', () => {
   /**
-   * A bare row keeps its icon AND its rail, so the two have to agree about the
-   * same 28px lane: the rail hangs at `left-2`, and content flush to the margin
-   * puts that hairline 8px inside it — straight through the left edge of the
-   * file chip. The indent is what the rail runs in.
+   * A bare row hides its ICON but keeps its rail, so the two have to agree about
+   * the same 28px lane: the rail hangs at `left-2`, and content flush to the
+   * margin puts that hairline 8px inside it — straight through the left edge of
+   * the file chip. The indent is what the rail runs in.
    */
   const renderBare = (parts: Part[]) =>
     renderToStaticMarkup(
@@ -1160,10 +1152,9 @@ describe('bare row alignment', () => {
         time: { start: 1, end: 2 },
       }),
     ]);
-    // The icon stays…
-    expect(markup).not.toContain('&gt;span:first-child]:hidden');
-    expect(markup).toContain('<span class="text-muted-foreground size-4 shrink-0">');
-    // …and the card sits in the rail's lane, never at 0.
+    // The icon is hidden…
+    expect(markup).toContain('&gt;span:first-child]:hidden');
+    // …but the card still sits in the rail's lane, never at 0.
     expect(markup).toContain('[--tool-indent:1.75rem]');
     expect(markup).not.toContain('[--tool-indent:0rem]');
   });
@@ -1221,18 +1212,21 @@ describe('chain alignment', () => {
     expect(markup).toContain('[--tool-indent:1.75rem]');
   });
 
-  test('a lone row keeps both its icon and the card in the rail lane', () => {
-    // `ActivityStep` has no bare/not-bare rendering left: one row and twenty
-    // draw the same glyph in the same 28px lane, and the card follows it. The
-    // chain rail runs at `left-2`, so a card at the margin would have the
-    // hairline cutting through it.
+  test('a BARE row hides its icon but keeps the card in the rail lane', () => {
+    // The icon goes; the indent must not. The chain rail still runs at `left-2`,
+    // so a card at the margin would have the hairline cutting through it.
     const markup = wrap(
       <ChainOfThoughtStep>
-        <ActivityStep part={bashPart} sessionId="session-1" running={false} disableNavigation />
+        <ActivityStep
+          part={bashPart}
+          sessionId="session-1"
+          running={false}
+          bare
+          disableNavigation
+        />
       </ChainOfThoughtStep>,
     );
-    expect(markup).not.toContain('&gt;span:first-child]:hidden');
-    expect(markup).toContain('<span class="text-muted-foreground size-4 shrink-0">');
+    expect(markup).toContain('&gt;span:first-child]:hidden');
     expect(markup).toContain('[--tool-indent:1.75rem]');
     expect(markup).not.toContain('[--tool-indent:0rem]');
   });

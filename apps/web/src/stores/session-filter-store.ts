@@ -10,6 +10,7 @@ import {
   type SessionOrderMode,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 /**
  * Per-project session-list VIEW state — grouping, ordering, the two filter
@@ -283,3 +284,7 @@ export const useSessionFilterStore = create<State & Actions>()(
     },
   ),
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore(STORAGE_KEY, () => resetPersistedStore(useSessionFilterStore));

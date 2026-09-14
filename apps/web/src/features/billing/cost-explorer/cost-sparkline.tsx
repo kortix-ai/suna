@@ -1,3 +1,6 @@
+'use client';
+
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 /** Which way spend moved across the window the sparkline draws. */
@@ -125,6 +128,7 @@ export interface CostSparklineProps {
 }
 
 export function CostSparkline({ values, label }: CostSparklineProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Two points is the minimum that can show a direction. One point is a dot
   // pretending to be a trend — the spend chart applies the same floor.
   const path = sparklinePath(values);
@@ -141,8 +145,11 @@ export function CostSparkline({ values, label }: CostSparklineProps) {
       // tiles, so it gets a real accessible name. `role="img"` is what makes
       // `aria-label` reliably exposed here; on a bare element it is not.
       role="img"
-      aria-label={`${label} spend ${TREND_DESCRIPTION[trend]} over the selected range`}
-      className={cn('shrink-0 overflow-visible scale-125 origin-bottom-right', TREND_STROKE[trend])}
+      aria-label={tI18nComplete('text2e7e0f4e6458', {
+        value0: label,
+        value1: TREND_DESCRIPTION[trend],
+      })}
+      className={cn('shrink-0 origin-bottom-right scale-125 overflow-visible', TREND_STROKE[trend])}
       preserveAspectRatio="none"
     >
       <path

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   type AdminConnector,
   type ConnectorAuthorizationStrategy,
@@ -15,6 +16,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
@@ -130,11 +132,12 @@ export function ConnectorModal({
  * connector" is the honest answer during this window.
  */
 function ConnectorModalSkeleton() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <ModalHeader className="flex-row items-start gap-2.5 border-b pb-4">
         <VisuallyHidden>
-          <ModalTitle>Loading connector</ModalTitle>
+          <ModalTitle>{tI18nComplete.raw('text0c21b0363778')}</ModalTitle>
         </VisuallyHidden>
         <span className="p-1">
           <Skeleton className="size-10 rounded-md" />
@@ -177,6 +180,7 @@ function ConnectorModalBody({
   onChanged: () => void;
   onRemoved: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
@@ -255,18 +259,23 @@ function ConnectorModalBody({
     onSuccess: (result, next) => {
       const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
       if (syncError) {
-        warningToast(
-          `Authorization owner changed, but synchronization failed: ${syncError.error}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('textec7a4e3094f9', { value0: syncError.error }));
         onChanged();
         return;
       }
-      successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
+      successToast(
+        tI18nComplete('text67ccb61d5f27', {
+          value0:
+            next === tI18nComplete.raw('text244210e48437')
+              ? tI18nComplete.raw('text985959785319')
+              : tI18nComplete.raw('textb512d97e7cbf'),
+        }),
+      );
       onChanged();
     },
     onError: (error: Error) => {
       setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || 'Failed to update authorization owner');
+      errorToast(error.message || tI18nComplete.raw('texta743aa4452d3'));
     },
   });
   const strategyUpdating = connectorAuthorizationUpdateIsPending(
@@ -321,7 +330,7 @@ function ConnectorModalBody({
                 ) : (
                   <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                {isManagedProvider ? 'Connect' : 'Add credential'}
+                {isManagedProvider ? 'Connect' : tI18nComplete.raw('text2dcccf29ebf4')}
               </Button>
             ) : null}
             {showReconnectCta ? (
@@ -334,7 +343,7 @@ function ConnectorModalBody({
                   disabled={reconnect.isPending || strategyUpdating}
                 >
                   {reconnect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                  Reconnect
+                  {tI18nComplete.raw('textbf8a9eab9e7e')}
                 </Button>
               ) : (
                 <Button
@@ -345,7 +354,7 @@ function ConnectorModalBody({
                   disabled={strategyUpdating}
                 >
                   <KeyIcon className="size-4 shrink-0" />
-                  Replace credential
+                  {tI18nComplete.raw('text54483ce856e0')}
                 </Button>
               )
             ) : null}
@@ -355,7 +364,7 @@ function ConnectorModalBody({
               variant="secondary"
               size="icon"
               className="size-8 shrink-0 rounded-md"
-              aria-label="Close"
+              aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
             >
               <Close className="text-foreground size-4 stroke-1" />
             </Button>
@@ -363,11 +372,49 @@ function ConnectorModalBody({
         </div>
       </ModalHeader>
 
-      <ModalBody className="max-h-[70vh] overflow-hidden p-0">
+      <ModalBody className="flex max-h-[70vh] flex-col overflow-hidden p-0">
+        {/* Not connected is the one state a person opening this modal must not
+            miss — an agent granted this connector cannot use it until someone
+            acts (Marko, 2026-09-03: "if it isn't connected we should make it
+            very clear"). The header's status chip says it; this says what to do. */}
+        {!connected && !isChannel && !isComputer && connectionsQuery.isSuccess ? (
+          <InfoBanner
+            tone="warning"
+            title={tI18nComplete('text6506d9ea4341', { value0: displayName })}
+            className="shrink-0 rounded-none border-x-0 border-t-0"
+            action={
+              showConnectCta ? (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
+                  disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
+                >
+                  {isManagedProvider && reconnect.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : null}
+                  {isManagedProvider
+                    ? tI18nComplete.raw('textf5e732583fb2')
+                    : tI18nComplete.raw('text2dcccf29ebf4')}
+                </Button>
+              ) : !usesProjectAuthorization ? (
+                <Button size="sm" variant="outline" onClick={startPrivateSession}>
+                  {tI18nComplete.raw('text9676bdc9332f')}
+                </Button>
+              ) : undefined
+            }
+          >
+            {usesProjectAuthorization
+              ? canWrite
+                ? tI18nComplete.raw('text7acd4ac590c6')
+                : tI18nComplete.raw('text6a05ddf8cca1')
+              : tI18nComplete.raw('text607b97fdc5aa')}
+          </InfoBanner>
+        ) : null}
         <Tabs
           value={tab}
           onValueChange={(next) => setSelectedTab(next as ConnectorTab)}
-          className="flex min-h-0 flex-col gap-0 overflow-y-auto lg:h-[70vh] lg:flex-row lg:overflow-hidden"
+          className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto lg:flex-row lg:overflow-hidden"
         >
           <TabsList
             type="underline"
@@ -404,11 +451,11 @@ function ConnectorModalBody({
               {connectionsQuery.isError ? (
                 <ErrorState
                   size="sm"
-                  title="Couldn’t load connections"
+                  title={tI18nComplete.raw('textbda9de7688c0')}
                   description={
                     connectionsQuery.error instanceof Error
                       ? connectionsQuery.error.message
-                      : 'The accounts stored for this connector could not be read.'
+                      : tI18nComplete.raw('textd8eda34a089a')
                   }
                   action={
                     <Button
@@ -416,7 +463,7 @@ function ConnectorModalBody({
                       size="sm"
                       onClick={() => void connectionsQuery.refetch()}
                     >
-                      Retry
+                      {tI18nComplete.raw('text942087cc2d41')}
                     </Button>
                   }
                 />
@@ -504,6 +551,7 @@ function HeaderName({
   disabled: boolean;
   onChanged: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(displayName);
 
@@ -515,11 +563,11 @@ function HeaderName({
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, slug, draft.trim()),
     onSuccess: () => {
-      successToast('Renamed');
+      successToast(tI18nComplete.raw('text05487af3f074'));
       setEditing(false);
       onChanged();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text8fcf8ce07dcf')),
   });
 
   if (editing && canWrite) {
@@ -549,7 +597,7 @@ function HeaderName({
             size="icon-xs"
             variant="ghost"
             disabled={rename.isPending || disabled}
-            aria-label="Save name"
+            aria-label={tI18nComplete.raw('textb7297226fd1f')}
           >
             {rename.isPending ? (
               <Loading className="size-4 shrink-0" />
@@ -582,7 +630,7 @@ function HeaderName({
           type="button"
           onClick={() => !disabled && setEditing(true)}
           disabled={disabled}
-          aria-label="Rename"
+          aria-label={tI18nComplete.raw('text3064d79a295c')}
           className="text-muted-foreground hover:text-foreground"
         >
           <PencilSimpleIcon className="size-3.5 shrink-0" />

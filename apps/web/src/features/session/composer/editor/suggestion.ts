@@ -1,7 +1,11 @@
 import { Extension } from '@tiptap/core';
 import type { PluginKey } from '@tiptap/pm/state';
+import type {
+  SuggestionKeyDownProps,
+  SuggestionOptions,
+  SuggestionProps,
+} from '@tiptap/suggestion';
 import Suggestion from '@tiptap/suggestion';
-import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from '@tiptap/suggestion';
 
 /**
  * The render-callback shape both the `@` mention menu and the `/` slash menu

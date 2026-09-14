@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -57,7 +57,10 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
-import { shouldPaintFatalCard, shouldPaintTerminalCard } from '@/features/session/terminal-card-gate';
+import {
+  shouldPaintFatalCard,
+  shouldPaintTerminalCard,
+} from '@/features/session/terminal-card-gate';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
@@ -79,15 +82,16 @@ import {
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
+  clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isSessionFresh,
   listProjectSessions,
   sessionStartKey,
+  setActiveInstanceCookie,
   updateProjectSession,
   wakeProgressFingerprint,
 } from '@kortix/sdk';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
   clearStartStash,
@@ -148,10 +152,12 @@ export default function ProjectSessionPage() {
  * unrepresentable: switching sessions remounts, and a remount cannot half-apply.
  */
 function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Stable route-level owner. Runtime identity handoffs remount the chat, so a
   // poll timer inside chat produces overlapping audit schedules.
   useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tSessionPage = useTranslations('sessionPage');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -282,21 +288,25 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           }).catch(() => undefined);
         })
         .catch((error) => {
-          errorToast(error instanceof Error ? error.message : 'Could not queue the saved prompt');
+          errorToast(
+            error instanceof Error
+              ? error.message
+              : tI18nHardcoded.raw('i18nComplete.text4778a1377329'),
+          );
         });
     }
     handleRestart();
   };
   const copyPendingPrompt = async () => {
     if (!pendingPrompt) {
-      errorToast('No saved prompt is available.');
+      errorToast(tI18nHardcoded.raw('i18nComplete.text7ea05ee375a0'));
       return;
     }
     try {
       await navigator.clipboard.writeText(pendingPrompt.text);
-      successToast('Prompt copied');
+      successToast(tI18nHardcoded.raw('i18nComplete.text42cc4740d3d5'));
     } catch {
-      errorToast('Could not copy the prompt.');
+      errorToast(tI18nHardcoded.raw('i18nComplete.text231082dfe1a4'));
     }
   };
   // ── The wake escalation ladder ────────────────────────────────────────────
@@ -427,8 +437,17 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   useEffect(() => {
     if (!billingBlocked || billingGatedRef.current) return;
     billingGatedRef.current = true;
-    openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
-  }, [billingBlocked, billingState, accountState, openUpgradeDialog, projectAccountId]);
+    openUpgradeDialog(
+      billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+    );
+  }, [
+    billingBlocked,
+    billingState,
+    accountState,
+    openUpgradeDialog,
+    projectAccountId,
+    tI18nComplete,
+  ]);
 
   // ── Crossfade: the overlay fades out as the real chat fades in ────────────
   // The overlay (a fully-interactive new-session shell, or the boot loader for a
@@ -692,13 +711,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           errorMessage: session.failure.message,
         },
         sandboxLabel ?? 'session',
+        tI18nComplete,
       );
     }
     if (sandbox?.status === 'error') {
-      return provisioningFailurePresentation(metadata, sandboxLabel ?? 'session');
+      return provisioningFailurePresentation(metadata, sandboxLabel ?? 'session', tI18nComplete);
     }
     if (unmaterializedFailure) {
-      return provisioningFailurePresentation({}, sandboxLabel ?? 'session');
+      return provisioningFailurePresentation({}, sandboxLabel ?? 'session', tI18nComplete);
     }
     if (session.startError) {
       return provisioningFailurePresentation(
@@ -707,6 +727,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           errorMessage: session.startError.message,
         },
         sandboxLabel ?? 'session',
+        tI18nComplete,
       );
     }
     return null;
@@ -727,7 +748,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (gated) {
       const blockedState =
         billingState && billingState !== 'active' ? billingState : 'no_subscription';
-      const copy = billingGateCopy(blockedState);
+      const copy = billingGateCopy(blockedState, tI18nComplete);
       // The genuinely-no-plan copy keeps its translated strings; the states this
       // surface used to mislabel get their copy from the shared resolver.
       const isNoPlan = blockedState === 'no_subscription';
@@ -748,7 +769,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           action={
             <Button
               onClick={() =>
-                openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId))
+                openUpgradeDialog(
+                  billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+                )
               }
             >
               {isNoPlan
@@ -765,12 +788,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (sessionMissing) {
       return (
         <InlineSessionError
-          title="Couldn't start session"
-          message="This session is no longer available, or you do not have access to it."
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
           action={
             <Button asChild variant="outline" size="sm">
               <Link href={`/projects/${projectId}`} prefetch>
-                Back to project
+                {tSessionPage('backToProject')}
               </Link>
             </Button>
           }
@@ -835,15 +858,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
         return (
           <InlineSessionError
-            title="Legacy session"
-            message="This conversation was imported from Suna. Restore the session to load its chat history — its files are already in the project under legacy/."
+            title={tSessionPage('legacy.title')}
+            message={tSessionPage('legacy.message')}
             detail={restart.errorMessage ?? undefined}
             action={
               <RestartSessionButton
                 restart={restart}
                 onRestart={handleRestart}
-                label="Restore session"
-                pendingLabel="Restoring…"
+                label={tSessionPage('legacy.restore')}
+                pendingLabel={tSessionPage('legacy.restoring')}
               />
             }
           />
@@ -851,8 +874,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       }
       return (
         <InlineSessionError
-          title="This session is stopped"
-          message="Its computer was released. Restart the session to bring it back."
+          title={tSessionPage('stopped.title')}
+          message={tSessionPage('stopped.message')}
           detail={restart.errorMessage ?? undefined}
           action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
         />
@@ -873,12 +896,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (runtimeIdentityUnavailable) {
       return (
         <InlineSessionError
-          title="This session's computer was lost"
-          message="Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+          title={tSessionPage('lost.title')}
+          message={tSessionPage('lost.message')}
           detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
           action={
             <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
-              Delete session
+              {tSessionPage('delete')}
             </Button>
           }
         />
@@ -909,7 +932,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // Restart instead of forcing a manual browser refresh.
       return (
         <InlineSessionError
-          title={`${sandboxLabel ?? 'session'} is stopped`}
+          title={tI18nComplete('textb13c564cdf28', { value0: sandboxLabel ?? 'session' })}
           message={tI18nHardcoded.raw(
             'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
           )}
@@ -994,6 +1017,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 stage={authLoading || !user ? 'provisioning' : startStage}
                 boundAgentName={boundAgentName}
                 onSubmit={() => setSubmittedOnShell(true)}
+                // The chat underneath owns the prompt from here; the shell's
+                // copy would otherwise dissolve over it for the whole fade.
+                hasTranscript={hasTranscript}
               />
             ) : (
               <HeaderlessSessionSurface>
@@ -1034,7 +1060,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         projectId={projectId}
         sessionId={sessionId}
         sessionLabel={
-          currentProjectSession ? sessionDisplayLabel(currentProjectSession) : 'Failed session'
+          currentProjectSession
+            ? sessionDisplayLabel(currentProjectSession)
+            : tSessionPage('failedLabel')
         }
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
@@ -1062,14 +1090,15 @@ function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) 
 function RestartSessionButton({
   restart,
   onRestart,
-  label = 'Restart session',
-  pendingLabel = 'Restarting…',
+  label,
+  pendingLabel,
 }: {
   restart: { isPending: boolean };
   onRestart: () => void;
   label?: string;
   pendingLabel?: string;
 }) {
+  const t = useTranslations('sessionPage');
   return (
     <Button
       type="button"
@@ -1084,7 +1113,7 @@ function RestartSessionButton({
       ) : (
         <RotateCcw className="size-3.5 shrink-0" />
       )}
-      {restart.isPending ? pendingLabel : label}
+      {restart.isPending ? (pendingLabel ?? t('restart.pending')) : (label ?? t('restart.label'))}
     </Button>
   );
 }

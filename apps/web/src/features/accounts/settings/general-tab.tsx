@@ -8,6 +8,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -39,19 +41,18 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClockIcon as Clock,
   WarningIcon as DangerTriangleSolid,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -62,11 +63,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
   const accountId = selectedAccountId ?? accountsQuery.data?.[0]?.account_id ?? null;
 
   useEffect(() => {
@@ -151,11 +148,11 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        errorToast(t('profilePicture.invalidType'));
+        errorToast(tHardcodedUi.raw('i18nComplete.text13553d2cc867'));
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        errorToast(t('profilePicture.tooLarge'));
+        errorToast(tHardcodedUi.raw('i18nComplete.text92548af349d1'));
         return;
       }
       // Picking a second file before saving replaces avatarPreview without
@@ -372,10 +369,10 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
               <ItemActions>
                 <Button asChild variant="outline" size="sm">
                   {/* The anchor navigates; `onClose` only shuts the dialog. */}
-                  <Link href={`/accounts/${accountId}`} onClick={onClose}>
+                  <HubLink to={hubTarget(accountId)} onClick={onClose}>
                     {t('accountSettings.button')}
                     <ArrowUpRight className="size-3.5" />
-                  </Link>
+                  </HubLink>
                 </Button>
               </ItemActions>
             </Item>

@@ -7,6 +7,7 @@ import {
   CaretRightIcon as ChevronRight,
   FileTextIcon as FileText,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -90,10 +91,11 @@ function BundleMemberRow({
   type: string | null;
   description?: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
   // Prefer the member's own description; fall back to the type label (e.g. in a
   // flat bundle view where the type isn't already the section header).
-  const subtitle = description?.trim() || (type ? typeMeta(type).label : null);
+  const subtitle = description?.trim() || (type ? typeMeta(type, tI18nComplete).label : null);
   const body = (
     <>
       {type ? (
@@ -140,6 +142,7 @@ function ReadmeMarkdown({ content }: { content: string }) {
 
 /** Line-clamped description with a Show more/less toggle (the rail is narrow). */
 function ExpandableText({ text }: { text: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -183,7 +186,7 @@ function ExpandableText({ text }: { text: string }) {
           onClick={() => setExpanded((v) => !v)}
           className="text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
         >
-          {expanded ? 'Show less' : 'Show more'}
+          {expanded ? tI18nComplete.raw('text94ea9b1d33a0') : tI18nComplete.raw('textf5c9bd131486')}
         </button>
       ) : null}
     </div>
@@ -196,6 +199,7 @@ function ExpandableText({ text }: { text: string }) {
  *  instead. Adding is always an agent import now, so there's no deterministic
  *  "installed" state to track here and no Remove affordance. */
 function ItemActions({ data }: { data: MarketplaceItemDetail }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
   const { user, isLoading: authLoading } = useAuth();
 
@@ -208,7 +212,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
     return (
       <Button variant="default" className="w-full gap-1.5" asChild>
         <Link href={`/auth?redirect=${encodeURIComponent(redirectHref)}`}>
-          Sign in to add
+          {tI18nComplete.raw('texte0ae10b8f4e7')}
           <ArrowRight className="size-4" />
         </Link>
       </Button>
@@ -224,7 +228,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
           disabled={authLoading}
           onClick={() => setAddOpen(true)}
         >
-          Add to a project
+          {tI18nComplete.raw('text38d076d39951')}
         </Button>
       </div>
       <AddToProjectModal
@@ -254,8 +258,9 @@ function ItemSidebar({
   selectedFile: string | undefined;
   onSelectFile: (target: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const surface = useMarketplaceSurface();
-  const tm = typeMeta(data.type);
+  const tm = typeMeta(data.type, tI18nComplete);
   const isProject = data.type === 'registry:project';
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
   const sourceUrl = company?.sourceUrl ?? data.sourceUrl;
@@ -299,7 +304,7 @@ function ItemSidebar({
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
             >
               <Github className="size-3.5" />
-              View source
+              {tI18nComplete.raw('text6ee818aa2de3')}
             </Link>
           ) : null}
         </div>
@@ -307,7 +312,7 @@ function ItemSidebar({
 
       {data.partOfProject ? (
         <div>
-          <SectionLabel>Part of a project</SectionLabel>
+          <SectionLabel>{tI18nComplete.raw('textc41720e33d45')}</SectionLabel>
           {surface.variant === 'public' ? (
             <Link
               href={marketplaceItemHref(data.partOfProject.id)}
@@ -339,7 +344,9 @@ function ItemSidebar({
 
       {fileTargets.length > 0 ? (
         <div>
-          <SectionLabel count={fileTargets.length}>Files</SectionLabel>
+          <SectionLabel count={fileTargets.length}>
+            {tI18nComplete.raw('textabc7e9892806')}
+          </SectionLabel>
           <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
             <MarketplaceFileTree
               targets={fileTargets}
@@ -434,6 +441,7 @@ export function useDetailNav(
  * whatever dialog depth it's nested in instead of a fixed `z-40`.
  */
 function DetailPager({ nav }: { nav: DetailNav }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const depth = useDialogDepth();
   return (
     <Portal>
@@ -445,7 +453,7 @@ function DetailPager({ nav }: { nav: DetailNav }) {
           type="button"
           onClick={nav.onPrev}
           disabled={!nav.onPrev}
-          aria-label="Previous item"
+          aria-label={tI18nComplete.raw('text81b35f1b4332')}
           className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronLeft className="size-4" />
@@ -457,7 +465,7 @@ function DetailPager({ nav }: { nav: DetailNav }) {
           type="button"
           onClick={nav.onNext}
           disabled={!nav.onNext}
-          aria-label="Next item"
+          aria-label={tI18nComplete.raw('text1e47d4f7a1a3')}
           className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <ChevronRight className="size-4" />
@@ -489,6 +497,7 @@ export function MarketplaceDetail({
   /** Floating pager over the surrounding item list (← / → + position). */
   nav?: DetailNav;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onPrev = nav?.onPrev;
   const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
@@ -510,7 +519,7 @@ export function MarketplaceDetail({
     return () => window.removeEventListener('keydown', onKey);
   }, [onPrev, onNext]);
 
-  const capGroups = groupCapabilities(data.capabilities);
+  const capGroups = groupCapabilities(data.capabilities, tI18nComplete);
   const capCount = totalCapabilityCount(data.capabilities);
   const isProject = data.type === 'registry:project';
   const isBundle = data.type === 'registry:bundle' || isProject;
@@ -582,7 +591,7 @@ export function MarketplaceDetail({
     const groups: { label: string; items: MarketplaceItem[] }[] = [];
     if (data.projectAgents?.length) {
       groups.push({
-        label: 'Agents',
+        label: tI18nComplete.raw('text279b44d2ab4b'),
         items: data.projectAgents.map((a) =>
           toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', 'agent'),
         ),
@@ -590,14 +599,25 @@ export function MarketplaceDetail({
     }
     if (data.projectTriggers?.length) {
       groups.push({
-        label: 'Triggers',
+        label: tI18nComplete.raw('texte62f2148a64d'),
         items: data.projectTriggers.map((t) =>
           toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', 'trigger'),
         ),
       });
     }
     return groups;
-  }, [isProject, data]);
+  }, [
+    isProject,
+    data.projectAgents,
+    data.projectTriggers,
+    data.registry,
+    data.external,
+    data.marketplaceId,
+    data.marketplaceLabel,
+    data.owner,
+    data.sourceUrl,
+    tI18nComplete,
+  ]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -622,12 +642,12 @@ export function MarketplaceDetail({
     : null;
   const crumbs = onBack
     ? [
-        { label: 'Marketplace', onClick: onBack },
+        { label: tI18nComplete.raw('textc608981d8d68'), onClick: onBack },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
       ]
     : [
-        { label: 'Marketplace', href: '/marketplace' },
+        { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
@@ -652,7 +672,7 @@ export function MarketplaceDetail({
         <EmptyState
           icon={FileText}
           size="sm"
-          title="No files"
+          title={tI18nComplete.raw('textc219d96549eb')}
           description={emptyReadmeCopy(data.type)}
         />
       </section>
@@ -663,7 +683,9 @@ export function MarketplaceDetail({
   const membersSection =
     !isProject && isBundle && bundleMembers.length > 0 ? (
       <section>
-        <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
+        <SectionLabel count={bundleMembers.length}>
+          {tI18nComplete.raw('text17d89116b971')}
+        </SectionLabel>
         <RowPanel>
           {bundleMembers.map((member) => (
             <BundleMemberRow
@@ -739,7 +761,7 @@ export function MarketplaceDetail({
 
           {capCount > 0 ? (
             <section>
-              <SectionLabel count={capCount}>Requires</SectionLabel>
+              <SectionLabel count={capCount}>{tI18nComplete.raw('text143f0330d2de')}</SectionLabel>
               <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
                 {capGroups.map((group) => (
                   <div key={group.kind}>
@@ -764,7 +786,9 @@ export function MarketplaceDetail({
 
           {isProject && otherProjects.length > 0 ? (
             <section>
-              <SectionLabel count={otherProjects.length}>Other projects</SectionLabel>
+              <SectionLabel count={otherProjects.length}>
+                {tI18nComplete.raw('text7b4418d894c3')}
+              </SectionLabel>
               <div className="grid gap-3 sm:grid-cols-2">
                 {otherProjects.map((project) => (
                   <MarketplaceProjectCard key={project.id} item={project} />

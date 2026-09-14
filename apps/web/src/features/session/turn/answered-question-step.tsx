@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * An answered question as a row inside a burst.
  *
@@ -52,6 +53,7 @@ export function isAnsweredQuestionPart(part: Part): part is ToolPart {
 }
 
 function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const questions = readQuestions(part);
   const answers = readAnswers(part);
   const answeredCount = answers.filter((a) => a.length > 0).length;
@@ -69,8 +71,10 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
           )}
         >
           <ChatTeardropTextIcon className="text-muted-foreground size-4 flex-none" />
-          <span className="font-medium">Questions</span>
-          <span className="text-muted-foreground tabular-nums">{answeredCount} answered</span>
+          <span className="font-medium">{tI18nComplete.raw('text9a72221a2747')}</span>
+          <span className="text-muted-foreground tabular-nums">
+            {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
+          </span>
           <CaretRightIcon
             className={cn(
               'text-muted-foreground/40 size-3.5 flex-none',
@@ -83,7 +87,7 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
         <div className="mt-3 space-y-2 pl-7">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
-            const answerText = answer.join(', ') || 'No answer';
+            const answerText = answer.join(', ') || tI18nComplete.raw('text7e49c68db30e');
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">

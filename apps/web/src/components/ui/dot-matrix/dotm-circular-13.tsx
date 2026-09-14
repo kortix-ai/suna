@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular13Props = DotMatrixCommonProps;
 
@@ -24,13 +25,17 @@ export function DotmCircular13({
   ...rest
 }: DotmCircular13Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1750,
     steps: STEP_COUNT,
     speed,
@@ -39,12 +44,12 @@ export function DotmCircular13({
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ row, col, phase }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const x = col - 2;
       const y = row - 2;
-      const t = reducedMotion || phase === "idle" ? 0 : (step / STEP_COUNT) * Math.PI * 2;
+      const t = reducedMotion || phase === 'idle' ? 0 : (step / STEP_COUNT) * Math.PI * 2;
 
       const strandOffset = Math.sin(y * 1.35 + t * 1.3) * 1.15;
       const leftStrand = -strandOffset;
@@ -53,7 +58,8 @@ export function DotmCircular13({
       const rightDistance = Math.abs(x - rightStrand);
       const strandDistance = Math.min(leftDistance, rightDistance);
       const bridgeOn = Math.cos(y * 2 + t * 2.1) > 0.55;
-      const isBetweenStrands = x > Math.min(leftStrand, rightStrand) && x < Math.max(leftStrand, rightStrand);
+      const isBetweenStrands =
+        x > Math.min(leftStrand, rightStrand) && x < Math.max(leftStrand, rightStrand);
 
       let opacity = BASE_OPACITY;
       if (strandDistance < 0.34) {

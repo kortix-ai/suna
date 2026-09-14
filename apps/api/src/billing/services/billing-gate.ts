@@ -8,7 +8,6 @@ import {
   billingStateAllowsRun,
   hasSubscriptionRecord,
   resolveBillingState,
-  subscriptionBypassesWalletFloor,
 } from './billing-state';
 import { deductCredits } from './credits';
 import { ensureFreeTierAccountReady } from './free-tier';
@@ -18,13 +17,17 @@ type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_
 
 export interface BillingGateOk {
   ok: true;
-  // Set only on the pure-wallet (non-per-seat-active-sub, non-self-host)
-  // path, where this call ATOMICALLY reserved (deducted) this many dollars
-  // from the account as an admission hold — see the comment below. The
-  // caller (llm-gateway hooks) reconciles it against the real cost at
-  // settle time (recordGatewayUsage) instead of a flat post-hoc deduct.
-  // Absent when no hold was taken (billing disabled, or an active per-seat
-  // subscription bypasses the wallet floor entirely).
+  // Set on every billing-enabled admission: this call ATOMICALLY reserved
+  // (deducted) this many dollars from the account as an admission hold — see
+  // the comment below. The caller (llm-gateway hooks) reconciles it against
+  // the real cost at settle time (recordGatewayUsage) instead of a flat
+  // post-hoc deduct.
+  //
+  // Absent ONLY when billing is disabled for the whole deploy (self-host).
+  // It used to also be absent for a paying per-seat subscription, which
+  // bypassed the floor entirely — that bypass is gone, and with it the
+  // `billingHoldUsd == null` branch in hooks.ts that a bypassed account fell
+  // into and that silently discarded its spend.
   holdUsd?: number;
 }
 
@@ -114,26 +117,20 @@ export async function checkBillingActive(
 
   if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
 
-  // A PAYING subscription isn't wallet-gated at all — no admission hold, no
-  // floor, on ANY billing model. This is the branch that makes an `active`
-  // subscription + a $0.0099 wallet a RUNNABLE account (per-seat, credit
-  // plan, or a legacy machine sub alike), which is why `can_run` on
-  // account-state must be derived from this same state machine (see
-  // account-state.ts) rather than from a bare wallet-floor check that
-  // contradicts it.
+  // EVERY account now reaches the admission hold below. There used to be a
+  // `subscriptionBypassesWalletFloor(snapshot)` early return here that let a
+  // paying per-seat / credit-plan / paid-tier account through with no hold and
+  // no floor. See the NO ACCOUNT BYPASSES THE WALLET FLOOR note in
+  // billing-state.ts for what that cost ($588.81 spent against a $150 seat
+  // grant on a $0 wallet, with the ledger silently frozen).
   //
-  // It calls the SAME predicate `resolveBillingState` used above. This used to
-  // be a locally-written `isPerSeatAccount && hasLiveSubscription`, which
-  // treated `past_due` / `incomplete` as exempt and let subscriptions that had
-  // stopped paying spend with no floor whatsoever. A non-paying per-seat
-  // account now reaches the admission hold below like any other account: it
-  // keeps running while it has credit, and blocks as `payment_failed` when it
-  // does not.
-  if (subscriptionBypassesWalletFloor(snapshot)) {
-    return { ok: true };
-  }
+  // Consequence to keep in mind when reading the rest of this function: the
+  // hold is now the ONLY admission decision, so a drained paying account 402s
+  // here exactly like a drained free one. `blockedResult` is what keeps them
+  // distinguishable to the user — a paying account resolves `out_of_credits`
+  // ("Top up"), never `no_subscription` ("Subscribe").
 
-  // Pure-wallet path: this used to be a read-only `balance >= floor` check,
+  // Wallet path: this used to be a read-only `balance >= floor` check,
   // fully decoupled from the real per-request deduction that only happens
   // once the whole (possibly long-running, streaming) request settles —
   // BILLING-CORRECTNESS finding: N concurrent requests could all read the

@@ -1,6 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
@@ -615,6 +616,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 export default function DebugTurnPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [dark, setDark] = useState(true);
   const [activateCount, setActivateCount] = useState(0);
   // Stable identity: an inline arrow in `value` would re-render every
@@ -648,34 +650,34 @@ export default function DebugTurnPage() {
             onClick={() => setDark((d) => !d)}
             className="border-border text-muted-foreground mb-6 rounded-md border px-3 py-1.5 text-xs"
           >
-            theme: {dark ? 'dark' : 'light'}
+            {tI18nComplete.raw('textf15fd3df9642')} {dark ? 'dark' : 'light'}
           </button>
 
           <p id="activate-count" className="text-muted-foreground/60 mb-6 font-mono text-xs">
-            side-panel activations: {activateCount}
+            {tI18nComplete.raw('textb5cec06a6ef5')} {activateCount}
           </p>
 
-          <Section label="user message · no plan → bubble hugs its text, right-aligned">
+          <Section label={tI18nComplete.raw('text2f8af80f944f')}>
             <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
-          <Section label="user message · owns the plan → spans the column, PlanCard inside">
+          <Section label={tI18nComplete.raw('text1bf0f5e57c1f')}>
             <UserMessage message={userMessage} sessionId="ses_dbg" ownsPlan />
           </Section>
 
-          <Section label="user message · UPLOADING → every tile spins, name still readable">
+          <Section label={tI18nComplete.raw('text5984b7866ce4')}>
             <UserMessage message={uploadingMessage} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
-          <Section label="user message · 15 attachments → square tiles wrap 4-up, capped at 8 with +7">
+          <Section label={tI18nComplete.raw('textc6e9471a6ab2')}>
             <UserMessage message={manyAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
-          <Section label="user message · 2 attachments → same square tile, no cap">
+          <Section label={tI18nComplete.raw('text292117ca3ac2')}>
             <UserMessage message={fewAttachmentMessage} sessionId="ses_dbg" ownsPlan={false} />
           </Section>
 
-          <Section label="plan card · 2 of 5, in-progress row visible">
+          <Section label={tI18nComplete.raw('texte6ad8effaaed')}>
             <PlanCard sessionId="ses_dbg" />
           </Section>
 

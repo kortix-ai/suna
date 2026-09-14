@@ -1,6 +1,7 @@
 'use client';
 
 import { CheckIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
@@ -11,7 +12,7 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
 import { FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { CAPABILITY_REGISTRY } from '@/features/tunnel/types';
+import { CAPABILITY_REGISTRY, localizedCapabilityRegistry } from '@/features/tunnel/types';
 import {
   useApproveDeviceAuth,
   useDenyDeviceAuth,
@@ -34,6 +35,14 @@ export default function DeviceAuthorizePage() {
 }
 
 function DeviceAuthorize() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const grantableCapabilities = useMemo(
+    () =>
+      localizedCapabilityRegistry(tI18nComplete).filter((capability) =>
+        GRANTABLE_CAPABILITIES.some((grantable) => grantable.key === capability.key),
+      ),
+    [tI18nComplete],
+  );
   const params = useParams();
   const router = useRouter();
   const code = params.code as string;
@@ -105,8 +114,8 @@ function DeviceAuthorize() {
   if (error || !info) {
     return (
       <AuthStatusScreen
-        title="Request not found"
-        description="This authorization request doesn't exist or has already been used."
+        title={tI18nComplete.raw('textbb08e04092a7')}
+        description={tI18nComplete.raw('text8c78cadbcda5')}
       />
     );
   }
@@ -115,8 +124,8 @@ function DeviceAuthorize() {
   if (info.status === 'expired' || remaining <= 0) {
     return (
       <AuthStatusScreen
-        title="Request expired"
-        description="This authorization request has expired. Run the connect command again to get a fresh code."
+        title={tI18nComplete.raw('text0ff5e16d4eb0')}
+        description={tI18nComplete.raw('text98f76f3edf39')}
       />
     );
   }
@@ -126,11 +135,11 @@ function DeviceAuthorize() {
     const isApproved = done === 'approved' || info.status === 'approved';
     return (
       <AuthStatusScreen
-        title={isApproved ? 'Device authorized' : 'Request denied'}
+        title={
+          isApproved ? tI18nComplete.raw('text89ed0c271cc2') : tI18nComplete.raw('text1d01fc5159dc')
+        }
         description={
-          isApproved
-            ? 'The device is now connecting. You can close this tab.'
-            : 'The authorization request was denied.'
+          isApproved ? tI18nComplete.raw('textbc25c1f595c9') : tI18nComplete.raw('textf711673979b5')
         }
       />
     );
@@ -143,8 +152,8 @@ function DeviceAuthorize() {
     <AuthFrame>
       <Rise>
         <StepHeader
-          title="Authorize this device"
-          description="Check that the code below matches the one in your terminal."
+          title={tI18nComplete.raw('text864e61fd1bcd')}
+          description={tI18nComplete.raw('text0f8e295c7f7a')}
         />
       </Rise>
 
@@ -160,28 +169,30 @@ function DeviceAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
+            <FieldLabel htmlFor="connection-name">
+              {tI18nComplete.raw('text686d4d5d8ecd')}
+            </FieldLabel>
             <Input
               id="connection-name"
               type="text"
               size="md"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={info.machineHostname || 'Connection name'}
+              placeholder={info.machineHostname || tI18nComplete.raw('text686d4d5d8ecd')}
             />
           </div>
 
           <div className="space-y-3">
             <div className="space-y-1">
               <p className="text-muted-foreground text-sm font-medium">
-                Grant Kortix agents access to
+                {tI18nComplete.raw('text5db4167d9f88')}
               </p>
               <p className="text-muted-foreground/70 text-xs text-pretty">
-                Nothing is selected by default. Selected access remains active until you revoke it.
+                {tI18nComplete.raw('text7d899c8ca569')}
               </p>
             </div>
             <div className="border-border divide-border/60 divide-y overflow-hidden rounded-md border">
-              {GRANTABLE_CAPABILITIES.map((cap) => {
+              {grantableCapabilities.map((cap) => {
                 const CapIcon = cap.icon;
                 const selected = selectedCaps.has(cap.key);
                 return (
@@ -231,8 +242,7 @@ function DeviceAuthorize() {
           <div className="space-y-3">
             {selectedCaps.size === 0 ? (
               <p className="text-muted-foreground text-center text-xs">
-                Select at least one access to approve. A connection with no access cannot do
-                anything, and changing it later needs a new request.
+                {tI18nComplete.raw('text6588df7e32c9')}
               </p>
             ) : null}
             <Button
@@ -242,7 +252,7 @@ function DeviceAuthorize() {
               disabled={busy || selectedCaps.size === 0}
             >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Approve connection
+              {tI18nComplete.raw('textf4da86da1210')}
             </Button>
             <Button
               variant="outline"
@@ -252,7 +262,7 @@ function DeviceAuthorize() {
               disabled={busy}
             >
               {deny.isPending ? <Loading className="text-destructive! size-4 shrink-0" /> : null}
-              Deny request
+              {tI18nComplete.raw('texte7369074de00')}
             </Button>
           </div>
         </div>

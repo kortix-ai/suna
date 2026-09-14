@@ -123,6 +123,13 @@ mock.module('../store', () => ({
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
+  // The landing proof requeues a prompt the runtime never showed (fresh
+  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // store mock has to carry it or the engine import fails outright. Nothing in
+  // this file fails a landing.
+  requeueUnlandedPrompt: async () => {
+    throw new Error('not expected: this test never fails a landing proof');
+  },
   markCommandFailed: async () => {},
   markCommandQueued: async () => {},
   // Delivery of a row that carries a wire id closes through this now — see

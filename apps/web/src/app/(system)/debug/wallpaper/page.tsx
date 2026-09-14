@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
@@ -27,6 +28,7 @@ import { DEFAULT_WALLPAPER_ID, getWallpaperById, type Wallpaper } from '@/lib/wa
  * the exporter's cue to start waiting on the canvas.
  */
 function WallpaperCapture(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const params = useSearchParams();
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -51,7 +53,11 @@ function WallpaperCapture(): ReactNode {
   // Guard against a typo'd id silently exporting the default wallpaper.
   const wallpaper = getWallpaperById(id);
   if (wallpaper.id !== id) {
-    return <div className="bg-background text-foreground p-4 font-mono text-sm">unknown id</div>;
+    return (
+      <div className="bg-background text-foreground p-4 font-mono text-sm">
+        {tI18nComplete.raw('text663fde033460')}
+      </div>
+    );
   }
 
   return (

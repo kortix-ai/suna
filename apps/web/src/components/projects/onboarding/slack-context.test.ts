@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const onboardingDir = import.meta.dir;
@@ -18,15 +18,19 @@ describe('Slack onboarding context', () => {
   test('keeps the custom-only form flat and stacked in the decision lane', () => {
     expect(slackStep).not.toContain('StepContext');
     expect(slackStep).toContain('customOpen &&');
-    expect(connectorsView).toContain("!customOnly && 'border-border/60 bg-card rounded-2xl border p-4'");
-    expect(connectorsView).toContain("!customOnly && 'sm:flex-row sm:items-end sm:justify-between'");
+    expect(connectorsView).toContain(
+      "!customOnly && 'border-border/60 bg-card rounded-md border p-4'",
+    );
+    expect(connectorsView).toContain(
+      "!customOnly && 'sm:flex-row sm:items-end sm:justify-between'",
+    );
     expect(connectorsView).toContain("!customOnly && 'sm:grid-cols-2'");
   });
 
   test('announces OAuth progress and connection results in the decision lane', () => {
     expect(slackStep).toContain('aria-live="polite"');
-    expect(slackStep).toContain('Waiting for approval in Slack');
-    expect(slackStep).toContain('Connected to Slack');
-    expect(slackStep).toContain("skipLabel={connected ? undefined : 'Not now'}");
+    expect(slackStep).toContain("t('waiting')");
+    expect(slackStep).toContain("t('connected')");
+    expect(slackStep).toContain("skipLabel={connected ? undefined : t('notNow')}");
   });
 });

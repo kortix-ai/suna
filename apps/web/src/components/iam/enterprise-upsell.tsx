@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // Upsell state for the enterprise-gated IAM surfaces (Audit, SAML SSO +
 // SCIM). Non-entitled accounts keep the tab/section visible for
 // discoverability, but its content is this card: what the feature does, and a
@@ -20,6 +21,8 @@ import { CheckIcon as Check, LockIcon as Lock } from '@phosphor-icons/react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 
 // The marketing enterprise page. CTAs no longer navigate here — they open the
 // in-app demo-request modal — but keep the constant exported for any surface
@@ -83,7 +86,10 @@ interface EnterpriseUpsellProps {
 }
 
 export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
-  const copy = FEATURE_COPY[feature];
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const copy = localizeUiCatalog(FEATURE_COPY, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS)[
+    feature
+  ];
   const openDemo = useRequestDemo();
 
   return (
@@ -93,7 +99,7 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
           <h3 className="text-foreground text-sm font-medium">{copy.title}</h3>
           <Badge variant="kortix" size="sm">
             <Lock />
-            Enterprise
+            {tI18nComplete.raw('text3fbe5ed156f1')}
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-xl text-sm">{copy.blurb}</p>
@@ -107,15 +113,13 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
         </ul>
       </div>
       <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">
-          Talk to us about the Enterprise plan: SSO, SCIM, RBAC, audit, SLA, and DPA.
-        </p>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textc7bad0051b8a')}</p>
         <Button
           size="sm"
           className="shrink-0"
           onClick={() => openDemo({ source: `accounts-${feature}` })}
         >
-          Request a demo
+          {tI18nComplete.raw('text1af2ef8f1409')}
         </Button>
       </div>
     </section>

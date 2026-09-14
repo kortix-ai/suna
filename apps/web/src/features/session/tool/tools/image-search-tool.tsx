@@ -8,12 +8,12 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { ImageIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -110,7 +110,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
           {imageResults.length > 0 && (
             <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
               {isBatch ? `${batchCount}q, ` : ''}
-              {imageResults.length} images
+              {imageResults.length} {tHardcodedUi.raw('i18nComplete.text21b2eed1e328')}
             </span>
           )}
         </div>

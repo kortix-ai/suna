@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * One channel as an entity row — the shape that replaced the four-column
  * channel `<Table>` in `channels-view.tsx`.
@@ -61,6 +62,7 @@ export function ChannelRow({
   badge?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <li className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5">
       <span className="bg-muted/60 flex size-9 shrink-0 items-center justify-center rounded-sm">
@@ -76,7 +78,8 @@ export function ChannelRow({
           <ChannelStatusDot connected={connected} />
           {connected ? (
             <span className="max-w-[240px] truncate" title={detail ?? undefined}>
-              Connected{detail ? ` · ${detail}` : ''}
+              {tI18nComplete.raw('text22965568d22a')}
+              {detail ? ` · ${detail}` : ''}
             </span>
           ) : (
             <span className="truncate">{pitch}</span>
@@ -104,18 +107,14 @@ export function ChannelDisconnectButton({
   pending: boolean;
   onConfirm: (done: () => void) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [confirming, setConfirming] = useState(false);
 
   if (!confirming) {
     return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1.5"
-        onClick={() => setConfirming(true)}
-      >
+      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setConfirming(true)}>
         <XIcon className="size-3.5 shrink-0" />
-        Disconnect
+        {tI18nComplete.raw('textacfc5be785a9')}
       </Button>
     );
   }
@@ -123,7 +122,7 @@ export function ChannelDisconnectButton({
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-        Cancel
+        {tI18nComplete.raw('text19766ed6ccb2')}
       </Button>
       <Button
         variant="destructive"
@@ -133,7 +132,7 @@ export function ChannelDisconnectButton({
         onClick={() => onConfirm(() => setConfirming(false))}
       >
         {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-        Disconnect
+        {tI18nComplete.raw('textacfc5be785a9')}
       </Button>
     </>
   );

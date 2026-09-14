@@ -1,5 +1,5 @@
-import { describe, expect, it, test } from 'bun:test';
 import { PREVIEW_PROBE_TIMEOUT_MS } from '@kortix/sdk';
+import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
@@ -9,6 +9,7 @@ import {
   aspectChangedWidth,
   deriveIsRunning,
   fitSplitPercent,
+  focusIndexForCall,
   groupOutputsByKind,
   isWideDeliverable,
   neighborOutputs,
@@ -25,7 +26,6 @@ import {
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
   shouldKeepProbingPort,
-  focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
 
@@ -37,7 +37,13 @@ function output(overrides: Partial<FileOutputItem> = {}): FileOutputItem {
 }
 
 function appOutput(overrides: Partial<AppOutputItem> = {}): AppOutputItem {
-  return { callID: 'app-1', name: 'my-app', kind: 'app', url: 'http://localhost:5173', ...overrides };
+  return {
+    callID: 'app-1',
+    name: 'my-app',
+    kind: 'app',
+    url: 'http://localhost:5173',
+    ...overrides,
+  };
 }
 
 describe('outputKey', () => {
@@ -682,8 +688,11 @@ describe('quickBrowserOutput (header/palette "Open Browser")', () => {
     expect(quickBrowserOutput([]).url).toBe('');
   });
 
-  it('defaults to the first running app\'s url when several exist', () => {
-    const apps = [appOutput({ url: 'http://localhost:5173' }), appOutput({ callID: 'app-2', url: 'http://localhost:8080' })];
+  it("defaults to the first running app's url when several exist", () => {
+    const apps = [
+      appOutput({ url: 'http://localhost:5173' }),
+      appOutput({ callID: 'app-2', url: 'http://localhost:8080' }),
+    ];
     expect(quickBrowserOutput(apps).url).toBe('http://localhost:5173');
   });
 
@@ -727,7 +736,7 @@ describe('pathOutput', () => {
     expect(outputKey(pathOutput('/a/one.md'))).not.toBe(outputKey(pathOutput('/a/two.md')));
   });
 
-  it('never reports fresh — a path opened by click is not this run\'s deliverable', () => {
+  it("never reports fresh — a path opened by click is not this run's deliverable", () => {
     expect(pathOutput('/a/one.md').fresh).toBeUndefined();
   });
 });
@@ -765,13 +774,19 @@ describe('groupOutputsByKind (Task 9 — kind grouping for large mixed runs)', (
   // ─── the threshold — exactly 10 stays flat, 11 does not. ──
 
   it('does not group at exactly the threshold (10 mixed outputs)', () => {
-    const outputs = [...files(5), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    const outputs = [
+      ...files(5),
+      ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`)),
+    ];
     expect(outputs).toHaveLength(10);
     expect(groupOutputsByKind(outputs)).toBeNull();
   });
 
   it('groups the moment the list crosses the threshold (11 mixed outputs)', () => {
-    const outputs = [...files(6), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    const outputs = [
+      ...files(6),
+      ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`)),
+    ];
     expect(outputs).toHaveLength(11);
     const groups = groupOutputsByKind(outputs);
     expect(groups?.map((g) => g.kind)).toEqual(['file', 'image']);
@@ -852,9 +867,6 @@ describe('groupOutputsByKind (Task 9 — kind grouping for large mixed runs)', (
       'g4.md',
       'g5.md',
     ]);
-    expect(groups?.find((g) => g.kind === 'image')?.items.map((o) => o.name)).toEqual([
-      'i1',
-      'i2',
-    ]);
+    expect(groups?.find((g) => g.kind === 'image')?.items.map((o) => o.name)).toEqual(['i1', 'i2']);
   });
 });

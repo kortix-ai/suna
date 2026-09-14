@@ -19,8 +19,12 @@ function startMocks(
   getCompletedAt: () => number,
   turnStreamOk: () => boolean = () => true,
   getMessages?: () => unknown[],
+  getTurnStreamBody?: () => Record<string, unknown>,
+  getRootStatus: () => number = () => 200,
 ) {
   let turnStreamCalls = 0
+  let messageCalls = 0
+  let rootCalls = 0
   const turnStreamBodies: Array<Record<string, unknown>> = []
   const server = Bun.serve({
     port: 0,
@@ -33,10 +37,11 @@ function startMocks(
         // A non-ok response simulates a transient apps/api outage: the daemon
         // retries, then gives up WITHOUT recording the dedup signature.
         if (!turnStreamOk()) return new Response('boom', { status: 503 })
-        return Response.json({ ok: true })
+        return Response.json(getTurnStreamBody?.() ?? { ok: true })
       }
       // opencode: message list for the root turn — one completed assistant reply.
       if (url.pathname === `/session/${ROOT}/message`) {
+        messageCalls++
         return Response.json(
           getMessages?.() ?? [
             { info: { id: 'msg_turn_1', role: 'user' } },
@@ -52,6 +57,9 @@ function startMocks(
       }
       // opencode: session lookup — root has no parentID.
       if (url.pathname === `/session/${ROOT}`) {
+        rootCalls++
+        const status = getRootStatus()
+        if (status !== 200) return new Response('not ready', { status })
         return Response.json({ parentID: null })
       }
       return new Response('not found', { status: 404 })
@@ -60,6 +68,8 @@ function startMocks(
   return {
     baseUrl: `http://127.0.0.1:${server.port}`,
     calls: () => turnStreamCalls,
+    messageCalls: () => messageCalls,
+    rootCalls: () => rootCalls,
     bodies: () => turnStreamBodies,
     stop: () => server.stop(true),
   }
@@ -116,6 +126,57 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     try {
       await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
       expect(m.bodies()[0]?.turn_message_id).toBe('msg_turn_1')
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('an identity mismatch is re-read and retried before the turn is deduplicated', async () => {
+    let response = 0
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      undefined,
+      () => ({
+        ok: false,
+        turn_completion: {
+          outcome: ++response === 1 ? 'identity_mismatch' : 'closed',
+          active_turn_count: response === 1 ? 1 : 0,
+          closed_turn_count: response === 1 ? 0 : 1,
+        },
+      }),
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(2)
+      expect(m.messageCalls()).toBeGreaterThanOrEqual(2)
+
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(2)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('a transient root-session lookup failure is retried before dropping terminal evidence', async () => {
+    let rootAttempt = 0
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      undefined,
+      undefined,
+      () => (++rootAttempt === 1 ? 503 : 200),
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.rootCalls()).toBe(2)
+      expect(m.calls()).toBe(1)
     } finally {
       m.stop()
     }
@@ -311,6 +372,39 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
       // Now it's recorded on success → a third observation is a no-op.
       await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
       expect(m.calls()).toBe(afterFail + 1)
+    } finally {
+      m.stop()
+    }
+  }, 15_000)
+
+  test('an unresolved identity mismatch remains eligible for periodic reconciliation', async () => {
+    let settled = false
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      undefined,
+      () => ({
+        ok: settled,
+        turn_completion: {
+          outcome: settled ? 'closed' : 'identity_mismatch',
+          active_turn_count: settled ? 0 : 1,
+          closed_turn_count: settled ? 1 : 0,
+        },
+      }),
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(4)
+
+      settled = true
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(5)
+
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(5)
     } finally {
       m.stop()
     }

@@ -25,6 +25,7 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -132,6 +133,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
 }
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const {
     projectId,
     kind,
@@ -294,17 +296,24 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       ))}
     </div>
   ) : isForbidden ? (
-    <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />} title="Access required">
-      You don&apos;t have permission to read this repository.
+    <InfoBanner
+      tone="warning"
+      icon={<DangerTriangleSolid weight="fill" />}
+      title={tI18nComplete.raw('textd27df137f79b')}
+    >
+      {tI18nComplete.raw('text7f0a12c4fdbd')}
     </InfoBanner>
   ) : detailQuery.isError ? (
     <ErrorState
       size="sm"
-      title="Failed to load"
-      description={(detailQuery.error as Error)?.message ?? `Failed to load ${noun}s`}
+      title={tI18nComplete.raw('text3d2301d732a7')}
+      description={
+        (detailQuery.error as Error)?.message ??
+        tI18nComplete('text18658a31c8cc', { value0: noun })
+      }
       action={
         <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-          Retry
+          {tI18nComplete.raw('text942087cc2d41')}
         </Button>
       }
     />
@@ -328,13 +337,13 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               ) : (
                 <Plus className="size-3.5 shrink-0" />
               )}
-              Create {noun}
+              {tI18nComplete.raw('text4759498ac2a7')} {noun}
             </Button>
           ) : null}
           {emptyDocsHref ? (
             <Button asChild variant="ghost" size="sm" className="gap-1.5">
               <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
-                Docs
+                {tI18nComplete.raw('text7af023c43013')}
               </a>
             </Button>
           ) : null}
@@ -345,7 +354,8 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
 
   const noMatches = (
     <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-      No matches for <span className="text-foreground font-mono">{query}</span>.
+      {tI18nComplete.raw('texta8897de42124')}{' '}
+      <span className="text-foreground font-mono">{query}</span>.
     </p>
   );
 
@@ -472,7 +482,8 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
             <div className="flex flex-col items-center justify-center gap-3 px-6 py-24 text-center lg:h-full">
               <EmptyIcon className="text-muted-foreground/30 size-8" />
               <p className="text-muted-foreground/60 text-sm">
-                Pick {noun === 'agent' ? 'an' : 'a'} {noun} on the left to preview it.
+                {tI18nComplete.raw('text831a9d52a9c3')} {noun === 'agent' ? 'an' : 'a'} {noun}{' '}
+                {tI18nComplete.raw('text613188648d33')}
               </p>
             </div>
           )}
@@ -541,7 +552,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
             onClick={() => setSelectedPath(null)}
           >
             <ChevronRight className="size-3.5 rotate-180" />
-            All {noun}s
+            {tI18nComplete.raw('texta52ace420f21')} {noun}s
           </Button>
           <EntityDetail
             key={gridSelected.path}
@@ -632,7 +643,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               ) : (
                 <Plus className="size-4" />
               )}
-              New
+              {tI18nComplete.raw('text18fdd549b2ed')}
             </Button>
           ) : null}
         </div>
@@ -738,6 +749,7 @@ function EntityDetail<T extends ConfigEntity>({
   canWrite,
   split,
 }: EntityDetailProps<T>) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const configure = useConfigureThread(projectId);
   // A platform-managed entity (e.g. the meta coordinator) declares an
   // absolute sandbox path — its source lives in the sandbox image, not the
@@ -754,9 +766,9 @@ function EntityDetail<T extends ConfigEntity>({
     if (!fileQuery.data?.content) return;
     try {
       await navigator.clipboard.writeText(fileQuery.data.content);
-      successToast('Source copied');
+      successToast(tI18nComplete.raw('textd7b465b5df33'));
     } catch {
-      errorToast('Copy failed');
+      errorToast(tI18nComplete.raw('textbc55e2d2f3ed'));
     }
   };
 
@@ -772,7 +784,8 @@ function EntityDetail<T extends ConfigEntity>({
 
   const source = platformSource ? (
     <p className="text-muted-foreground/60 text-sm italic">
-      Managed by the platform — the source ships inside the session sandbox ({entity.path}).
+      {tI18nComplete.raw('texted3666829e21')}
+      {entity.path}).
     </p>
   ) : fileQuery.isLoading ? (
     <div className="space-y-2.5">
@@ -784,14 +797,14 @@ function EntityDetail<T extends ConfigEntity>({
   ) : fileQuery.isError ? (
     <InfoBanner
       tone="destructive"
-      title="Couldn't load source"
+      title={tI18nComplete.raw('text336a3211e842')}
       action={
         <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
-          Retry
+          {tI18nComplete.raw('text942087cc2d41')}
         </Button>
       }
     >
-      {(fileQuery.error as Error)?.message ?? 'Failed to read source'}
+      {(fileQuery.error as Error)?.message ?? tI18nComplete.raw('text2a9d55fd8c0f')}
     </InfoBanner>
   ) : body.trim() ? (
     <UnifiedMarkdown content={body} />
@@ -857,22 +870,29 @@ function DetailToolbarActions({
   copyDisabled: boolean;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <ButtonGroup className="shrink-0">
       {canWrite ? (
-        <Hint label="Edit" side="bottom">
+        <Hint label={tI18nComplete.raw('text464c4ffd019e')} side="bottom">
           <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
             {editing ? (
               <Loading className="size-3.5 shrink-0" />
             ) : (
               <PencilSimpleIcon className="size-3.5 shrink-0" />
             )}
-            Edit
+            {tI18nComplete.raw('text464c4ffd019e')}
           </Button>
         </Hint>
       ) : null}
-      <Hint label="Copy source">
-        <Button variant="outline" size="icon" className='size-8' onClick={onCopy} disabled={copyDisabled}>
+      <Hint label={tI18nComplete.raw('text9ea1fed5d2c1')}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={onCopy}
+          disabled={copyDisabled}
+        >
           <Copy className="size-3.5 shrink-0" />
         </Button>
       </Hint>

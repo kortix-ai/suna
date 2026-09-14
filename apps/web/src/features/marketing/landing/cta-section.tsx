@@ -1,14 +1,15 @@
 'use client';
 
-import { Button } from '@/components/ui/marketing/button';
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { Button } from '@/components/ui/marketing/button';
 import { DitherShader } from '@/components/ui/wallpaper-shaders';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { cta } from '@/features/marketing/landing/content';
+import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { ArrowRightIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 /**
@@ -16,6 +17,8 @@ import { useEffect, useState } from 'react';
  * bundle, matching the rest of the rebuilt landing page.
  */
 export function CtaSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { cta } = getLocalizedLandingContent(tI18nComplete);
   const { user } = useAuth();
   const openDemo = useRequestDemo();
 
