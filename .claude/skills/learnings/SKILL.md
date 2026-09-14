@@ -6378,3 +6378,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** a real Pi rewind returned four messages from the worker, but the browser restored two discarded messages from the PostgreSQL transcript mirror. Captures retain older rows, so a smaller worker transcript does not remove them.
 **Rule:** apply the durable hidden message IDs to mirror reads before counting and pagination. Preserve archived rows for restore. Read mirror metadata, history controls, and message rows from one repeatable-read snapshot. A known empty rewind is available, not a missing mirror.
 **Enforcer:** `SESS-33` reproduces the four-versus-two mismatch through HTTP and PostgreSQL. It checks stage, restore, replacement prompts, pagination, and an empty rewind. Preview browser verification asserts discarded messages remain absent after reload.
+
+### Bind workspace history to persisted identity across provider resume (2026-09-14)
+
+**Incident:** the Pi preview file test resumed the same Daytona environment and received `workspace history identity changed`. The original checkpoint binding required stable filesystem device and inode numbers. The history check also blocked ordinary file RPCs.
+**Rule:** store a workspace generation marker with the files and validate it against external checkpoint state. Do not require stable mount numbers after provider resume. Reject missing, altered, or symlinked markers. Failed checkpoint identity must not disable ordinary tools when no file move is pending.
+**Enforcer:** `workspace-history.test.ts` remaps a preserved directory and tests marker corruption and replacement. `workspace-history-rpc.test.ts` proves an invalid history binding refuses rewind while ordinary writes and reads remain available.

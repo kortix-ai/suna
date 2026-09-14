@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { getProvider } from '../providers';
 
-export const ENVIRONMENT_RUNTIME_VERSION = 4;
+export const ENVIRONMENT_RUNTIME_VERSION = 5;
 
 export async function ensureEnvironmentRuntimeStarted(externalId: string, reuseWorkspace = false): Promise<void> {
   const provider = getProvider('daytona');

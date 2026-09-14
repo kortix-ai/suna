@@ -139,7 +139,7 @@ attributes, and hard-link relationships are outside the checkpoint contract.
 
 Internal RPC access requires `KORTIX_ENVIRONMENT_HISTORY=1`, workload
 `environment`, `KORTIX_PROJECT_ID`, and `KORTIX_SESSION_ID`. The API enables this
-flag and upgrades existing environments to daemon contract version 4 while
+flag and upgrades existing environments to daemon contract version 5 while
 preserving their workspace. Storage defaults to
 `/opt/kortix/environment-runtime/workspace-history`; `KORTIX_AGENT_STATE_DIR`
 overrides the parent. Request arguments cannot change the workspace or scope.
@@ -407,3 +407,9 @@ and step guards. The worker remains the sole Pi process.
 
 See [Custom Pi agents](../../docs/PI_CUSTOM_AGENTS.md) for supported fields, authoring
 examples, callback deadlines, Stop, shutdown, and recovery semantics.
+
+Workspace checkpoints bind to the session and `/workspace/.kortix-workspace-id`.
+The marker survives provider stop/resume, which can change mount device and inode numbers.
+The history engine excludes this internal marker from snapshots. Preserve it with the workspace; do not commit it to Git.
+A missing or changed marker refuses rewind. Ordinary file tools remain available unless a file move is pending.
+Pre-marker checkpoints migrate only while the original directory identity still matches.

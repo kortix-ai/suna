@@ -378,7 +378,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         catch { before = null; }
       }
       if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
-      if (history && !historyOperation && await history.pending()) return await reply(err({ code: 'pending', message: 'workspace history recovery is pending' }));
+      if (!historyOperation && access?.pending()) return await reply(err({ code: 'pending', message: 'workspace history recovery is pending' }));
       if (historyOperation && !['historyAbort', 'historyPending'].includes(op) && access?.terminalActive()) return await reply(err({ code: 'busy', message: 'Close running terminals before rewinding workspace files.' }));
       switch (op) {
         case 'historyCapture':

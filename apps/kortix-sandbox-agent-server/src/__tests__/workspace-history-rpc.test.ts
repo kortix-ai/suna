@@ -100,3 +100,12 @@ test('a live streaming shell prevents a checkpoint until execution finishes', as
   while (!(await reader.read()).done) {}
   expect(await call('historyCapture', { captureId: crypto.randomUUID() })).toMatchObject({ ok: true });
 });
+
+test('invalid checkpoint identity refuses rewind without disabling ordinary environment tools', async () => {
+  const { workspace, call } = await fixture();
+  expect(await call('historyCapture', { captureId: crypto.randomUUID() })).toMatchObject({ ok: true });
+  await fs.rm(path.join(workspace, '.kortix-workspace-id'));
+  expect(await call('historyCapture', { captureId: crypto.randomUUID() })).toMatchObject({ ok: false, error: { code: 'identity' } });
+  expect(await call('writeFile', { path: 'a', content: 'preserved', __kortixHistoryOperation: crypto.randomUUID() })).toMatchObject({ ok: true, workspace: null });
+  expect(await call('readTextFile', { path: 'a' })).toMatchObject({ ok: true, value: 'preserved' });
+});

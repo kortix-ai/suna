@@ -9,6 +9,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
+const WORKSPACE_ID = '.kortix-workspace-id';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const digest = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
@@ -40,7 +41,7 @@ const statOrNull = (target: string) => fs.lstat(target).catch(error => {
 });
 const parents = (name: string) => name.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'));
 function validPath(name: string) {
-  return !!name && Buffer.byteLength(name) <= 4096 && !name.includes('\\') && !name.includes('\0') &&
+  return !!name && name.split('/')[0] !== WORKSPACE_ID && Buffer.byteLength(name) <= 4096 && !name.includes('\\') && !name.includes('\0') &&
     name.split('/').every(part => !!part && part !== '.' && part !== '..' && part !== '.git');
 }
 function assertUuid(id: string) { if (typeof id !== 'string' || !UUID.test(id)) fail('invalid', 'invalid operation identity'); }
@@ -113,15 +114,29 @@ export class WorkspaceHistory {
       }
       const workspaceStat = await fs.stat(this.workspace);
       const identityPath = path.join(this.state, 'identity.json');
-      let identity = await readRecord<{ scope: string; workspace: string; generation: string; device: number; inode: number }>(identityPath);
+      let identity = await readRecord<{ scope: string; workspace: string; generation: string; device: number; inode: number; binding?: string }>(identityPath);
       if (!identity) {
         identity = { scope: this.options.scope, workspace: this.workspace, generation: randomUUID(), device: workspaceStat.dev, inode: workspaceStat.ino };
         await writeRecord(identityPath, identity);
       }
-      if (identity.scope !== this.options.scope || identity.workspace !== this.workspace || identity.device !== workspaceStat.dev || identity.inode !== workspaceStat.ino || !UUID.test(identity.generation)) {
+      if (identity.scope !== this.options.scope || identity.workspace !== this.workspace || !UUID.test(identity.generation)) {
         fail('identity', 'workspace history identity changed');
       }
-      this.identity = digest(JSON.stringify(identity));
+      const markerPath = path.join(this.workspace, WORKSPACE_ID);
+      let marker = await readRecord<{ generation: string }>(markerPath);
+      if (identity.binding === undefined) {
+        if (!marker) {
+          if (identity.device !== workspaceStat.dev || identity.inode !== workspaceStat.ino) fail('identity', 'workspace history identity changed');
+          marker = { generation: identity.generation };
+          await writeRecord(markerPath, marker);
+        }
+        if (marker.generation !== identity.generation) fail('identity', 'workspace history identity changed');
+        identity.binding = 'marker-v1';
+        await writeRecord(identityPath, identity);
+      }
+      if (identity.binding !== 'marker-v1' || marker?.generation !== identity.generation) fail('identity', 'workspace history identity changed');
+      const { binding: _, ...checkpointIdentity } = identity;
+      this.identity = digest(JSON.stringify(checkpointIdentity));
       for (const directory of ['blobs', 'snapshots', 'captures', 'operations']) {
         const target = path.join(this.state, directory);
         await fs.mkdir(target, { mode: 0o700, recursive: true });
@@ -216,7 +231,7 @@ export class WorkspaceHistory {
       const walk = async (directory: string) => {
         for (const raw of await fs.readdir(path.join(this.workspace, directory), { encoding: 'buffer' })) {
           const name = new TextDecoder('utf-8', { fatal: true }).decode(raw);
-          if (name === '.git') continue;
+          if (name === '.git' || (!directory && name === WORKSPACE_ID)) continue;
           const relative = directory ? directory + '/' + name : name;
           if (++entries > (this.options.maxEntries ?? 50_000)) fail('limit', 'checkpoint entry count limit');
           if (relative.split('/').length > maxDepth) fail('limit', 'checkpoint depth limit');
@@ -228,7 +243,7 @@ export class WorkspaceHistory {
       };
       await walk('');
     }
-    names = [...new Set(names)].sort();
+    names = [...new Set(names)].filter(name => name !== WORKSPACE_ID).sort();
     if (names.length > this.maxFiles) fail('limit', 'checkpoint file count limit');
     if (names.some(name => name.split('/').length > maxDepth)) fail('limit', 'checkpoint depth limit');
     if (!names.every(validPath)) fail('invalid', 'unsupported checkpoint path');

@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename as fsRename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename as fsRename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { WorkspaceHistory } from '../workspace-history';
 
 const roots: string[] = [];
@@ -256,7 +257,7 @@ test('ordinary filenames cannot inherit object prototype entries', async () => {
   for (const name of ['__proto__', 'constructor', 'toString']) await writeFile(join(workspace, name), name);
   const after = await capture(history);
   await history.apply(move(after.snapshotId, before.snapshotId));
-  expect(await readdir(workspace)).toEqual([]);
+  expect(await readdir(workspace)).toEqual(['.kortix-workspace-id']);
   await history.apply(move(before.snapshotId, after.snapshotId));
   for (const name of ['__proto__', 'constructor', 'toString']) expect(await readFile(join(workspace, name), 'utf8')).toBe(name);
 });
@@ -281,9 +282,9 @@ test('a killed process leaves a known staging file that the next process recover
   const child = Bun.spawn([process.execPath, '-e', `import { WorkspaceHistory } from ${JSON.stringify(module)};
     await new WorkspaceHistory({...${JSON.stringify(config)},afterStaging:()=>process.kill(process.pid,'SIGKILL')}).apply(${JSON.stringify(request)});`], { stdout: 'pipe', stderr: 'pipe' });
   expect(await child.exited).not.toBe(0);
-  expect(await readdir(workspace)).toHaveLength(2);
+  expect(await readdir(workspace)).toHaveLength(3);
   expect(await history.apply(request)).toMatchObject({ status: 'complete' });
-  expect(await readdir(workspace)).toEqual(['a']);
+  expect(await readdir(workspace)).toEqual(['.kortix-workspace-id', 'a']);
   expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('before');
 });
 
@@ -293,6 +294,58 @@ test('a replaced workspace cannot reuse checkpoints from the old directory', asy
   await fsRename(workspace, workspace + '-old');
   await mkdir(workspace);
   await expect(capture(history)).rejects.toThrow(/identity changed/);
+});
+
+test('a preserved workspace can rewind after its provider remaps directory inodes', async () => {
+  const { workspace, config, history } = await fixture();
+  await writeFile(join(workspace, 'a'), 'before');
+  const before = await capture(history);
+  await writeFile(join(workspace, 'a'), 'after');
+  const after = await capture(history);
+  await fsRename(workspace, workspace + '-old');
+  await cp(workspace + '-old', workspace, { recursive: true });
+  expect((await stat(workspace)).ino).not.toBe((await stat(workspace + '-old')).ino);
+  const resumed = new WorkspaceHistory(config);
+  expect(await resumed.apply(move(after.snapshotId, before.snapshotId))).toMatchObject({ status: 'complete', changedPaths: ['a'] });
+  expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('before');
+  expect((await capture(resumed)).files).toBe(1);
+});
+
+test.each(['missing', 'different', 'symlink'])('a %s workspace marker cannot authorize saved checkpoints', async kind => {
+  const { workspace, root, history } = await fixture();
+  const before = await capture(history);
+  await writeFile(join(workspace, 'a'), 'after');
+  const after = await capture(history);
+  const marker = join(workspace, '.kortix-workspace-id');
+  const original = await readFile(marker);
+  await rm(marker);
+  if (kind === 'different') await writeFile(marker, crypto.randomUUID());
+  if (kind === 'symlink') {
+    await writeFile(join(root, 'foreign-marker'), original);
+    await symlink(join(root, 'foreign-marker'), marker);
+  }
+  await expect(history.apply(move(after.snapshotId, before.snapshotId))).rejects.toThrow(/identity|integrity|invalid history record/);
+  expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('after');
+});
+
+test('legacy checkpoint identity migrates only while the original directory still matches', async () => {
+  const { workspace, state, config, history } = await fixture();
+  const before = await capture(history);
+  await writeFile(join(workspace, 'a'), 'after');
+  const after = await capture(history);
+  const identityPath = join(state, 'identity.json');
+  const record = JSON.parse(await readFile(identityPath, 'utf8'));
+  delete record.value.binding;
+  record.sha256 = createHash('sha256').update(JSON.stringify(record.value)).digest('hex');
+  const legacy = JSON.stringify(record);
+  await writeFile(identityPath, legacy);
+  await rm(join(workspace, '.kortix-workspace-id'));
+  expect(await new WorkspaceHistory(config).apply(move(after.snapshotId, before.snapshotId))).toMatchObject({ status: 'complete' });
+  expect(await Bun.file(join(workspace, '.kortix-workspace-id')).exists()).toBe(true);
+  await writeFile(identityPath, legacy);
+  await fsRename(workspace, workspace + '-old');
+  await mkdir(workspace);
+  await expect(capture(new WorkspaceHistory(config))).rejects.toThrow(/identity/);
 });
 
 test('stored history is bounded across captures and deduplicates unchanged file bytes', async () => {
