@@ -19225,6 +19225,10 @@
     }
   },
   "modelAccess": {
+    "filterProvider": "按提供商筛选",
+    "allProviders": "所有提供商",
+    "connectToManage": "连接 {name} 以管理其模型。",
+    "openProviders": "设置提供商",
     "manageProvider": "{name} 设置",
     "enableProviderAction": "启用提供商",
     "disableProviderAction": "禁用提供商",

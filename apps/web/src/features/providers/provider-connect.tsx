@@ -85,7 +85,6 @@ import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/secti
 import {
   ProviderAccessMenu,
 } from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
-import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
   useLiveLlmProviderCatalog,
@@ -100,7 +99,6 @@ import {
 } from '@/features/workspace/customize/sections/llm-provider/utils';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
 import {
@@ -125,11 +123,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
  */
 export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
 
-/**
- * The DOM id of one credential input. Defined once because two places must
- * agree on it: the row that renders the field, and `ProviderDetail`'s Connect
- * button, which closes the detail and focuses that field.
- */
+/** Stable DOM id shared by a credential input and its label. */
 export function providerKeyFieldId(providerId: string, envVar: string): string {
   return `provider-connect-${providerId}-${envVar}`;
 }
@@ -211,14 +205,8 @@ export interface ProviderConnectViewProps {
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
   accessSlots?: Record<string, ReactNode>;
-  /**
-   * "Browse before you connect". When set, `detailSlot` REPLACES the list —
-   * the one capability the deleted `CatalogTab` drill-down had that an inline
-   * row does not.
-   */
-  detailProviderId?: string | null;
-  onOpenDetail?: (providerId: string | null) => void;
-  detailSlot?: ReactNode;
+  /** Open the shared Models tab, filtered to this provider. */
+  onOpenModels?: (providerId: string) => void;
   className?: string;
 }
 
@@ -518,7 +506,7 @@ function ProviderRow({
   onRemoveKey,
   subscriptionSlot,
   accessSlot,
-  onOpenDetail,
+  onOpenModels,
 }: {
   row: ProviderConnectRow;
   values: Record<string, string>;
@@ -532,7 +520,7 @@ function ProviderRow({
   onRemoveKey?: ProviderConnectViewProps['onRemoveKey'];
   subscriptionSlot?: ReactNode;
   accessSlot?: ReactNode;
-  onOpenDetail?: (providerId: string) => void;
+  onOpenModels?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const identity = (
@@ -556,10 +544,10 @@ function ProviderRow({
           {accessSlot}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {onOpenDetail && row.modelCount > 0 && (
+          {onOpenModels && row.modelCount > 0 && (
             <button
               type="button"
-              onClick={() => onOpenDetail(row.id)}
+              onClick={() => onOpenModels(row.id)}
               className="text-muted-foreground hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
             >
               {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
@@ -668,16 +656,10 @@ export function ProviderConnectView({
   onSearchChange,
   subscriptionSlots,
   accessSlots,
-  detailProviderId = null,
-  onOpenDetail,
-  detailSlot,
+  onOpenModels,
   className,
 }: ProviderConnectViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (detailProviderId && detailSlot) {
-    return <div className={cn('px-5 py-5', className)}>{detailSlot}</div>;
-  }
-
   return (
     <div className={cn('flex flex-col gap-4 px-5 py-5', className)}>
       <InputGroupSearch data-provider-search="">
@@ -723,7 +705,7 @@ export function ProviderConnectView({
               onRemoveKey={onRemoveKey}
               subscriptionSlot={subscriptionSlots?.[row.id]}
               accessSlot={accessSlots?.[row.id]}
-              onOpenDetail={onOpenDetail}
+              onOpenModels={onOpenModels}
             />
           ))}
         </div>
@@ -792,6 +774,7 @@ export interface ProviderConnectProps {
   canWrite?: boolean;
   /** Set while this surface is visible; drives the underlying queries. */
   enabled?: boolean;
+  onOpenModels?: (providerId: string) => void;
   className?: string;
 }
 
@@ -799,6 +782,7 @@ export function ProviderConnect({
   projectId,
   canWrite = false,
   enabled = true,
+  onOpenModels,
   className,
 }: ProviderConnectProps) {
   const access = useModelAccess(enabled ? projectId : null);
@@ -851,9 +835,6 @@ export function ProviderConnect({
   // `setState` in an effect body is what `react-hooks/set-state-in-effect`
   // flags, and it cost an extra render too.
   const [pendingRequest, setPendingRequest] = useState<string | null>(null);
-  const [detailProviderId, setDetailProviderId] = useState<string | null>(null);
-  const detailEntry = detailProviderId === 'kortix' ? managedProvider
-    : detailProviderId ? (LLM_PROVIDER_BY_ID.get(detailProviderId) ?? null) : null;
 
   const connectedIds = useMemo(
     () => new Set(connectedProviders.map((provider) => provider.id)),
@@ -1153,33 +1134,7 @@ export function ProviderConnect({
               }
             : undefined
         }
-        detailProviderId={detailProviderId}
-        onOpenDetail={setDetailProviderId}
-        detailSlot={
-          detailEntry ? (
-            <ProviderDetail
-              provider={detailEntry}
-              isConnected={connectedIds.has(detailEntry.id)}
-              canWrite={canWrite && detailEntry.id !== 'kortix'}
-              onBack={() => setDetailProviderId(null)}
-              // The credential field lives on the row BEHIND this detail, so
-              // Connect closes the detail and puts the caret in it. A button
-              // labelled "Connect" that only closes a panel is worse than none.
-              // `focusWithoutScroll` per repo convention — the field sits inside
-              // the panel's overflow-hidden scroller.
-              onConnect={() => {
-                const envVar = detailEntry.envVars[0];
-                setDetailProviderId(null);
-                if (!envVar) return;
-                requestAnimationFrame(() =>
-                  focusWithoutScroll(
-                    document.getElementById(providerKeyFieldId(detailEntry.id, envVar)),
-                  ),
-                );
-              }}
-            />
-          ) : undefined
-        }
+        onOpenModels={onOpenModels}
       />
 
       {/* The one destructive action on this screen. `ConfirmDialog` is mandatory

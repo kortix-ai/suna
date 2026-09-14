@@ -19225,6 +19225,10 @@
     }
   },
   "modelAccess": {
+    "filterProvider": "Filtra per provider",
+    "allProviders": "Tutti i provider",
+    "connectToManage": "Collega {name} per gestire i suoi modelli.",
+    "openProviders": "Configura provider",
     "manageProvider": "Impostazioni di {name}",
     "enableProviderAction": "Abilita provider",
     "disableProviderAction": "Disabilita provider",

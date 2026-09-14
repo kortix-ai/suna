@@ -19225,6 +19225,10 @@
     }
   },
   "modelAccess": {
+    "filterProvider": "プロバイダーで絞り込む",
+    "allProviders": "すべてのプロバイダー",
+    "connectToManage": "{name}を接続してモデルを管理します。",
+    "openProviders": "プロバイダーを設定",
     "manageProvider": "{name}の設定",
     "enableProviderAction": "プロバイダーを有効にする",
     "disableProviderAction": "プロバイダーを無効にする",

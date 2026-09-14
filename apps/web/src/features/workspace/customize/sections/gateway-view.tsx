@@ -311,6 +311,7 @@ export function LlmSections({
   /** Gates the provider list's fetch. False while the host is closed. */
   enabled: boolean;
 }) {
+  const [modelProvider, setModelProvider] = useState<string | null>(null);
   const modelDefaults = useModelDefaults(projectId);
 
   return (
@@ -324,13 +325,25 @@ export function LlmSections({
           projectId={projectId}
           canWrite={canWrite}
           enabled={enabled}
+          onOpenModels={(providerId) => {
+            setModelProvider(providerId);
+            onTabChange('models');
+          }}
           className="gap-4 p-0"
         />
       )}
       {/* The model-visibility list used to sit one level deeper, inside the
           provider modal's own "Models" tab. Flattened to a sibling here so it
           keeps a home now that `ProviderConnect` has no tabs of its own. */}
-      {tab === 'models' && <ModelsTab projectId={projectId} canWrite={canWrite} />}
+      {tab === 'models' && (
+        <ModelsTab
+          projectId={projectId}
+          canWrite={canWrite}
+          providerId={modelProvider}
+          onProviderChange={setModelProvider}
+          onConnectProvider={() => onTabChange('providers')}
+        />
+      )}
       {/* A saved custom provider gets a key like any other and a row on the
           provider list, so a "Done" that leaves you on the form you just
           submitted is not done. */}

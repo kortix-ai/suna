@@ -113,7 +113,7 @@ describe('ModelsTab offers both default scopes', () => {
 
   /**
    * The row shows the same real numbers as the "Add provider" catalog
-   * (`provider-detail.tsx`) — context window, price per 1M, capability icons
+   * — context window, price per 1M, capability icons
    * — instead of a prose paraphrase. One catalog, one set of facts.
    */
   test('the row shows real catalog figures, not a paraphrase', () => {

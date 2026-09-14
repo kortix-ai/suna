@@ -19225,6 +19225,10 @@
     }
   },
   "modelAccess": {
+    "filterProvider": "Filtrer par fournisseur",
+    "allProviders": "Tous les fournisseurs",
+    "connectToManage": "Connectez {name} pour gérer ses modèles.",
+    "openProviders": "Configurer le fournisseur",
     "manageProvider": "Paramètres de {name}",
     "enableProviderAction": "Activer le fournisseur",
     "disableProviderAction": "Désactiver le fournisseur",

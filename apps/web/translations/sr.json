@@ -19225,6 +19225,10 @@
     }
   },
   "modelAccess": {
+    "filterProvider": "Filtriraj po provajderu",
+    "allProviders": "Svi provajderi",
+    "connectToManage": "Povežite {name} da biste upravljali njegovim modelima.",
+    "openProviders": "Podesi provajdera",
     "manageProvider": "Podešavanja za {name}",
     "enableProviderAction": "Omogući provajdera",
     "disableProviderAction": "Onemogući provajdera",
