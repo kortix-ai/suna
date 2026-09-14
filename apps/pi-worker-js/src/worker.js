@@ -50,10 +50,12 @@ import { STATIC_PREFIX, staticAnswer } from "./cell-static.js";
 import { executionEnvFor, piTools, piToolsCell, piToolsOver, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
 import { workspaceConfigDir } from "./manifest.js";
-import { attachEnvironment, readCached as readEnvironment, ENVIRONMENT_TABLE_SQL } from "./environment.js";
+import { attachEnvironment, readCached as readEnvironment, waitForRepo, ENVIRONMENT_TABLE_SQL } from "./environment.js";
 import { envRpcExecutionEnv, mintUserContext } from "./execenv.envrpc.js";
 import { machineTool } from "./machine-tool.js";
 import { machineFs, machineGit } from "./machine-fs.js";
+import { loadPlugins, pluginsDirFor, pluginsSummary, toPiTool } from "./plugins.js";
+import { createNodeRuntime } from "./nodejs.js";
 // tools.platinum.js is retired for the worker: bash/read/write/list/grep go
 // through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
 // stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
@@ -166,7 +168,7 @@ function toolsFor(env, sessionId, sql, owner) {
     // the branch and pulled into the machine at attach (attachMachine). The
     // env is prepared on the prompt path (prepareMachine), because minting
     // its signed context is async and this chooser is not.
-    const extras = [...planTools(sql, owner), owner.machineTool(sessionId)];
+    const extras = [...planTools(sql, owner), owner.machineTool(sessionId), ...(owner.__pluginTools ?? [])];
     if (owner.__machineEnv) return piToolsOver(owner.__machineEnv, sql, extras);
     return piToolsCell(env, sessionId, sql, owner.cellFs, extras);
   }
@@ -670,6 +672,10 @@ export class AgentCell {
       // attached one in an earlier turn (or before an eviction) picks it up
       // here from the record in SQLite.
       await this.prepareMachine().catch(() => null);
+      // The project's own tools, from its checkout. Same moment as its skills:
+      // after the clone, before the agent is built.
+      const loadedPlugins = await this.plugins(sessionId).catch(() => null);
+      this.__pluginTools = (loadedPlugins?.tools ?? []).map((t) => toPiTool(t, { onError: (p, n, e) => this.broadcast({ type: "plugin", line: `${p}.${n} threw: ${e?.message ?? e}` }) }));
       // The checkout may have just ARRIVED, so a skills answer cached from
       // before it is stale by definition.
       const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
@@ -680,7 +686,7 @@ export class AgentCell {
       // without it because `agent.prompt(text)` adds it — twice would double
       // the user's words in the model's context.
       const echoed = !!next.message_id && this.sql.exec("SELECT COUNT(*) AS n FROM msgs WHERE wire_id = ? AND role = 'user'", next.message_id).toArray()[0].n > 0;
-      const agent = this.buildAgent(sessionId, script, withSkills(withSkills(this.systemPrompt(), instructions), block),
+      const agent = this.buildAgent(sessionId, script, withSkills(withSkills(withSkills(this.systemPrompt(), instructions), block), pluginsSummary(loadedPlugins ?? {})),
         this.wireSessionId(next, sessionId), echoed ? next.message_id : null);
       tMark("buildAgent");
       // TWO MARKS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
@@ -1162,6 +1168,49 @@ export class AgentCell {
     return result;
   }
 
+  /**
+   * THE PROJECT'S OWN TOOLS. Loaded from `<config_dir>/plugins` in the
+   * checkout, evaluated in the cell's own JavaScript runtime, and cached per
+   * cell the way skills are — the files can only change with a commit, and
+   * this runs on the prompt path.
+   */
+  async plugins(sessionId, { reload = false } = {}) {
+    if (this.__plugins && !reload) return this.__plugins;
+    const configDir = await this.configDir(sessionId);
+    const dir = pluginsDirFor(configDir ?? ".kortix/pi");
+    if (usesCellFilesystem(this.effectiveEnv())) this.cellFs ??= cellFs(this.sql);
+    const env = executionEnvFor(this.effectiveEnv(), sessionId, "plugins", undefined, this.cellFs ?? null);
+    const loaded = await loadPlugins({
+      dir,
+      readDir: async (d) => {
+        const r = await env.listDir(d);
+        if (!r?.ok) throw new Error(r?.error?.message ?? "no such directory");
+        return (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name);
+      },
+      readFile: async (p) => {
+        const r = await env.readTextFile(p);
+        if (!r?.ok) throw new Error(r?.error?.message ?? "unreadable");
+        return r.value;
+      },
+      // ONE RUNTIME PER PLUGIN: a plugin that scribbles on its globals cannot
+      // reach its neighbours, and a plugin that throws on load takes only
+      // itself down.
+      runtimeFor: () => {
+        const rt = createNodeRuntime({ fs: null, cwd: CELL_CWD, fetch: (...a) => this.cellFs?.net?.(...a) ?? fetch(...a) });
+        rt.pluginContext = {
+          project: this.effectiveEnv().KORTIX_PROJECT_ID ?? null,
+          session: sessionId,
+          cwd: CELL_CWD,
+          log: (...m) => this.broadcast({ type: "plugin", line: m.map(String).join(" ") }),
+        };
+        return rt;
+      },
+      onProgress: (line) => this.broadcast({ type: "plugin", line }),
+    }).catch(() => ({ tools: [], plugins: [], diagnostics: [] }));
+    this.__plugins = loaded;
+    return loaded;
+  }
+
   /** What this session set for itself through `PUT /env/:key`. */
   userEnv() {
     const out = {};
@@ -1454,36 +1503,83 @@ export class AgentCell {
    * machine pulls — one fetch, fast-forward only — before the switch.
    */
   async attachMachine() {
+    // EVERY LEG TIMED, because the first reading of this attach was 24 s
+    // against a 6.2 s control-plane floor and nothing said where the rest
+    // went (2026-09-12). The marks ride the same progress channel the tool
+    // already reports on, so a slow attach names its own slow part.
+    const t0 = Date.now();
+    const marks = [];
+    const mark = (label) => { marks.push(`${label}=${Date.now() - t0}ms`); this.broadcast({ type: "machine", line: `attach ${marks.join(" ")}` }); };
     const r = await attachEnvironment({
       env: this.effectiveEnv(),
       sql: this.sql,
       onProgress: (line) => this.broadcast({ type: "machine", line }),
     });
+    mark("ensure");
     if (!r.ok) return r;
     const env = await this.machineEnv();
     const e = this.effectiveEnv();
     const branch = typeof e.KORTIX_BRANCH_NAME === "string" && e.KORTIX_BRANCH_NAME.trim() ? e.KORTIX_BRANCH_NAME.trim() : null;
+    // THE CLONE IS NOT WAITED FOR HERE. The machine is usable the moment its
+    // daemon answers, and the first thing a session runs on it usually needs
+    // no files. Only the legs below that touch git wait, and only when there
+    // is something for them to do.
+    this.__machineRepoReady = r.repoReady === true;
     try {
       this.cellFs ??= cellFs(this.sql);
       const dirty = branch && (await isCheckedOut(this.cellFs.fs)) && (await workingStatus(this.cellFs)).length > 0;
+      mark(dirty ? "status(dirty)" : "status(clean)");
+      // Only a cell with UNPUSHED work has to block on the machine's checkout:
+      // it is about to push to the branch the machine is cloning.
+      if (dirty && !this.__machineRepoReady) {
+        const w = await waitForRepo(r.edge);
+        this.__machineRepoReady = w.ok;
+        mark(`repo(${w.ok ? "ready" : "timeout"})`);
+      }
       if (dirty) {
         const pushed = await commitAndPush({ cell: this.cellFs, url: e.KORTIX_REPO_URL, token: e.KORTIX_TOKEN, branch, message: "Work from the session before its machine was attached" });
         this.broadcast({ type: "machine", line: pushed.ok ? `pushed the session tree to ${branch}` : `could not push the session tree: ${pushed.error}` });
+        mark("push");
       }
-      if (branch) {
+      // THE PULL IS SKIPPED WHEN THERE IS NOTHING TO PULL. The box clones the
+      // session branch on boot, so a freshly attached machine is already on
+      // it; fetching again cost 1.7 s of a 14 s attach for no change
+      // (measured 2026-09-12). It still runs whenever the cell had work to
+      // push, or when the box reports a different branch than this session's.
+      if (branch && (dirty || r.branch !== branch)) {
         const pulled = await machineGit(env).pull(branch);
         this.broadcast({ type: "machine", line: pulled.ok ? "machine checkout is current" : `machine pull: ${pulled.output}` });
+        mark("pull");
       }
     } catch (err) {
       this.broadcast({ type: "machine", line: `sync skipped: ${String(err?.message ?? err)}` });
     }
+    mark("done");
+    this.__attachMarks = marks.join(" ");
     this.wire?.publish([{ type: "file.edited", properties: { file: CELL_CWD } }]);
     return r;
   }
 
   /** The tree the routes answer about: the machine's when attached, else the cell's. */
+  /**
+   * THE MACHINE'S CHECKOUT, WAITED FOR ONCE. Every surface that answers about
+   * FILES — the panel, the viewer, search, git — needs the clone; the model's
+   * `machine run` does not. This is where that wait is paid, at most once per
+   * cell, by whoever asks first.
+   */
+  async machineRepoReady() {
+    if (this.__machineRepoReady) return true;
+    const record = this.machineRecord();
+    if (!record) return false;
+    const w = await waitForRepo(record.edge);
+    this.__machineRepoReady = w.ok;
+    if (w.ok && w.waitedMs > 200) this.broadcast({ type: "machine", line: `waited ${w.waitedMs} ms for the machine's checkout` });
+    return w.ok;
+  }
+
   async workspaceFs() {
     const env = await this.machineEnv();
+    if (env) await this.machineRepoReady();
     // The file and static routes take the CELL-SHAPED object — `{fs, ready,
     // persist}` — so the machine is handed over in that shape: its fs is the
     // adapter, it is always ready, and there is nothing to persist because the
@@ -2012,6 +2108,11 @@ export class AgentCell {
     // diagnostics from reading them; the client does not know that route
     // exists and got `unknown route`, so a project's skills were loaded into
     // every prompt and shown in the UI as none.
+    // `GET /plugins` — what the project ships, what loaded, and what did not.
+    if (path === "/plugins" && req.method === "GET") {
+      const p = await this.plugins(sessionId, { reload: url.searchParams.get("reload") === "1" });
+      return Response.json({ dir: pluginsDirFor(await this.configDir(sessionId)), plugins: p.plugins, tools: p.tools.map((t) => t.name), diagnostics: p.diagnostics });
+    }
     if (path === "/skill" && req.method === "GET") {
       const { skills } = await this.skills(sessionId, { reload: url.searchParams.get("reload") === "1" });
       return Response.json(skills.map((sk) => ({
@@ -2096,7 +2197,7 @@ export class AgentCell {
         this.cellFs ??= cellFs(this.sql);
         await this.ensureCheckout().catch(() => null);
         const menv = await this.machineEnv();
-        if (menv) return Response.json(await machineGit(menv).fileDiffs().catch(() => []));
+        if (menv) { await this.machineRepoReady(); return Response.json(await machineGit(menv).fileDiffs().catch(() => [])); }
         return Response.json(await fileDiffs(this.cellFs).catch(() => []));
       }
       // ONE MESSAGE, AND THE TWO DELETES THE CONTROL PLANE USES TO CANCEL A
@@ -2588,6 +2689,7 @@ export class AgentCell {
         await this.ensureCheckout().catch(() => null);
         const menv = await this.machineEnv();
         if (menv) {
+          await this.machineRepoReady();
           const per = await machineGit(menv).fileDiffs().catch(() => []);
           return Response.json({ files: per.map((f) => ({ path: f.file, status: f.status, added: f.additions, removed: f.deletions })), patch: per.map((f) => f.patch).join("") });
         }
@@ -2657,6 +2759,7 @@ export class AgentCell {
           // session whose model said "I ran it on the machine" can be checked
           // against a box that exists.
           environment: this.machineRecord()?.externalId ?? null,
+          attach_marks: this.__attachMarks ?? null,
           workspace: this.machineRecord() ? "machine" : "cell",
           model: normalizeModelEnv(this.modelEnv()).MODEL_ID ?? null,
           terminals: [...(this.terminals?.values() ?? [])].length,
@@ -2676,6 +2779,7 @@ export class AgentCell {
         this.cellFs ??= cellFs(this.sql);
         if (this.__commitPush) return Response.json({ error: "commit-push already running" }, { status: 409 });
         const menv = await this.machineEnv();
+        if (menv) await this.machineRepoReady();
         this.__commitPush = menv
           ? machineGit(menv).commitAndPush({ branch: e.KORTIX_BRANCH_NAME, message: typeof body?.message === "string" ? body.message : undefined })
           : commitAndPush({
@@ -3021,7 +3125,7 @@ export class AgentCell {
       // `/file/status` is git's answer once there is a checkout (cell-git.js).
       const tree = await this.workspaceFs();
       if (path === "/file/status" && req.method === "GET") {
-        if (tree.kind === "machine") return Response.json(await machineGit(await this.machineEnv()).status().catch(() => []));
+        if (tree.kind === "machine") { await this.machineRepoReady(); return Response.json(await machineGit(await this.machineEnv()).status().catch(() => [])); }
         return Response.json(await workingStatus(this.cellFs).catch(() => []));
       }
       const answered = await filesAnswer(req, path, url, tree);
@@ -3132,25 +3236,41 @@ export default {
     // Measured on dev 2026-09-07 for the record kept in the comparison: from
     // outside, subtracting two readings over the identical path, the spawn was
     // 67 ms. This says what it is with nothing subtracted.
-    // WHAT A CELL CANNOT RUN, established 2026-09-07 and recorded rather than
-    // re-probed.
+    // WHAT A CELL CANNOT RUN — MEASURED TWICE, AND THE SECOND READING
+    // OVERTURNED HALF THE FIRST.
     //
-    // A /bench/can endpoint asked this isolate three questions and each one
-    // dropped the connection — HTTP 000, with the cell still answering /health
-    // afterwards. Not a catchable error: a refusal below the language.
+    // 2026-09-07, a /bench/can endpoint asked this isolate three questions and
+    // each one dropped the connection — HTTP 000, the cell still answering
+    // /health afterwards. Not a catchable error: a refusal below the language.
     //
     //   `await import("node:child_process")`   dropped
     //   `eval("1+1")`                          dropped
     //   `new WebAssembly.Module(<bytes>)`      dropped
     //
-    // The last one is the interesting one. A Workers-style runtime takes
-    // WebAssembly as a BUNDLED module, never as bytes compiled at runtime, and
-    // compiled-tools-loaded-at-runtime is exactly how agentOS ships its tools.
-    // Together with a kernel that lives in a sidecar PROCESS owning a virtual
-    // filesystem, process table, PTYs and a network stack, that settles it:
-    // agentOS cannot run INSIDE a cell. Not because a cell is single-threaded —
-    // it is, and that was never the obstacle — but because a cell has no
-    // processes, no native addons, and no runtime codegen.
+    // The conclusion drawn then was that a cell has no runtime codegen, and
+    // therefore that compiled-tools-loaded-at-runtime — how agentOS ships its
+    // tools — could never work here.
+    //
+    // 2026-09-12, THE SAME THREE QUESTIONS, asked of a live cell through a
+    // probe route on this worker:
+    //
+    //   `new Function("return 1+1")()`                    -> 2
+    //   `eval("2+3")`                                     -> 5
+    //   `new WebAssembly.Instance(new WebAssembly.Module(bytes)).exports.f()` -> 7
+    //
+    // and the same WebAssembly call again from INSIDE the cell's own `node`
+    // (nodejs.js), through the shell, on a session with no machine: `wasm 7`.
+    // So runtime codegen and runtime-compiled WebAssembly are both available,
+    // and `node` in a cell needs no interpreter — it compiles the script in
+    // the engine that is already running.
+    //
+    // WHAT STILL HOLDS, and it is the part that actually settles the question:
+    // a cell has no processes, no native addons, no sockets and no second
+    // thread. agentOS's kernel is a sidecar PROCESS owning a virtual
+    // filesystem, a process table, PTYs and a network stack. None of those can
+    // exist here, whatever the engine will compile. The line is drawn by the
+    // absence of processes, not by codegen — which is the correction this
+    // paragraph exists to record.
     //
     // The endpoint is gone because an endpoint that kills its own request has
     // no business shipping. The answer is here.
