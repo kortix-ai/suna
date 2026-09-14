@@ -1134,7 +1134,7 @@ export function ProviderConnect({
               }
             : undefined
         }
-        onOpenModels={onOpenModels}
+        onOpenModels={access.data?.enforced ? onOpenModels : undefined}
       />
 
       {/* The one destructive action on this screen. `ConfirmDialog` is mandatory
