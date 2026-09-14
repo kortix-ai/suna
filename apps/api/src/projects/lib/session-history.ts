@@ -1,0 +1,31 @@
+import { sessionWorkerLog, type Database } from '@kortix/db';
+import { and, asc, eq, sql } from 'drizzle-orm';
+
+export async function readSessionHistoryItems(
+  database: Pick<Database, 'select'>,
+  sessionId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await database
+    .select({ item: sql<Record<string, unknown>>`CASE
+      WHEN ${sessionWorkerLog.item}->>'kind' = 'history' THEN ${sessionWorkerLog.item}
+      ELSE jsonb_build_object(
+        'kind', 'journal', 'stream', 'kortix.pi.turn-admission.v1',
+        'record', jsonb_strip_nulls(jsonb_build_object(
+          'type', ${sessionWorkerLog.item}->'record'->>'type',
+          'messageId', ${sessionWorkerLog.item}->'record'->>'messageId',
+          'historyRevision', ${sessionWorkerLog.item}->'record'->'historyRevision',
+          'turn', jsonb_build_object('messageId', ${sessionWorkerLog.item}->'record'->'turn'->>'messageId')
+        ))
+      ) END` })
+    .from(sessionWorkerLog)
+    .where(and(
+      eq(sessionWorkerLog.sessionId, sessionId),
+      sql`(${sessionWorkerLog.item}->>'kind' = 'history' OR (
+        ${sessionWorkerLog.item}->>'kind' = 'journal' AND
+        ${sessionWorkerLog.item}->>'stream' = 'kortix.pi.turn-admission.v1' AND
+        ${sessionWorkerLog.item}->'record'->>'type' IN ('accepted', 'completed', 'cancelled')
+      ))`,
+    ))
+    .orderBy(asc(sessionWorkerLog.id));
+  return rows.map(row => row.item);
+}

@@ -55,9 +55,11 @@
  */
 
 import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
-import { count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, notInArray, sql } from 'drizzle-orm';
 
+import { projectPiHistory } from '../../../../../packages/shared/src/pi-history';
 import { db } from '../../shared/db';
+import { readSessionHistoryItems } from './session-history';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -87,7 +89,7 @@ export interface MirrorMessage {
 export interface MirrorSnapshot {
   opencode_session_id: string | null;
   captured_at: string;
-  /** Every message the mirror holds for this session, not just this window. */
+  /** Every visible message the mirror holds for this session, not just this window. */
   total: number;
   /** The mirror has PROVEN it holds the session's first message. */
   head_complete: boolean;
@@ -208,48 +210,58 @@ export async function readSessionTranscriptMirror(input: {
   sessionId: string;
   limit: number;
 }): Promise<MirrorSnapshot | null> {
-  const [state] = await db
-    .select({
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-    .limit(1);
-  if (!state) return null;
+  return db.transaction(async tx => {
+    const [state] = await tx
+      .select({
+        opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+        headComplete: sessionTranscriptMirrors.headComplete,
+        capturedAt: sessionTranscriptMirrors.capturedAt,
+      })
+      .from(sessionTranscriptMirrors)
+      .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
+      .limit(1);
+    if (!state) return null;
 
-  const [totals] = await db
-    .select({ total: count() })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
-  const total = totals?.total ?? 0;
-  if (total === 0) return null;
+    const history = projectPiHistory(await readSessionHistoryItems(tx, input.sessionId));
+    const visible = and(
+      eq(sessionTranscriptMessages.sessionId, input.sessionId),
+      history.hiddenMessageIds.size > 0
+        ? notInArray(sessionTranscriptMessages.messageId, [...history.hiddenMessageIds])
+        : undefined,
+    );
 
-  // Newest `limit` rows, then flipped back into transcript order. Ordering is
-  // (message_created_at, message_id) — the order OpenCode's own
-  // `MessageV2.page()` uses, so the mirror and the live read never disagree.
-  const tail = await db
-    .select({
-      info: sessionTranscriptMessages.info,
-      parts: sessionTranscriptMessages.parts,
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId))
-    .orderBy(
-      sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
-      sql`${sessionTranscriptMessages.messageId} DESC`,
-    )
-    .limit(input.limit);
+    const [totals] = await tx
+      .select({ total: count() })
+      .from(sessionTranscriptMessages)
+      .where(visible);
+    const total = totals?.total ?? 0;
+    if (total === 0 && history.hiddenMessageIds.size === 0) return null;
 
-  return {
-    opencode_session_id: state.opencodeSessionId ?? null,
-    captured_at: new Date(state.capturedAt).toISOString(),
-    total,
-    head_complete: state.headComplete,
-    messages: tail.reverse().map((row) => ({
-      info: (row.info ?? {}) as Record<string, unknown>,
-      parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
-    })),
-  };
+    // Newest `limit` rows, then flipped back into transcript order. Ordering is
+    // (message_created_at, message_id) — the order OpenCode's own
+    // `MessageV2.page()` uses, so the mirror and the live read never disagree.
+    const tail = await tx
+      .select({
+        info: sessionTranscriptMessages.info,
+        parts: sessionTranscriptMessages.parts,
+      })
+      .from(sessionTranscriptMessages)
+      .where(visible)
+      .orderBy(
+        sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
+        sql`${sessionTranscriptMessages.messageId} DESC`,
+      )
+      .limit(input.limit);
+
+    return {
+      opencode_session_id: state.opencodeSessionId ?? null,
+      captured_at: new Date(state.capturedAt).toISOString(),
+      total,
+      head_complete: state.headComplete,
+      messages: tail.reverse().map((row) => ({
+        info: (row.info ?? {}) as Record<string, unknown>,
+        parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
+      })),
+    };
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }

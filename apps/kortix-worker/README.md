@@ -67,9 +67,14 @@ append once. After a history transition, old workers that omit the admission
 revision receive `409`. Native replay rejects missing targets, non-ancestor
 rewinds, open operations, and branch drift.
 
+PostgreSQL transcript reads apply the same hidden message IDs before counting
+and pagination. Mirror rows remain archived for restore. A rewind that hides
+all captured rows returns a known empty transcript. Mirror metadata, history,
+and messages are read from one database snapshot.
+
 This is internal preparation. Raw `revert`/`unrevert` still return `501`.
-Workspace rollback, its recovery protocol, transcript-mirror updates, SSE
-transitions, and the existing UI controls remain to be connected. Direct log
+Workspace rollback, its recovery protocol, SSE transitions, and the existing
+UI controls remain to be connected. Direct log
 writes do not undo files, commands, or external API effects.
 
 ## Config precedence

@@ -72,7 +72,7 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| Rewind and restore | Durable branch replay, exact hidden message IDs, and atomic prompt/history revision fencing are implemented. Raw revert/unrevert still returns 501 | Workspace rollback and recovery, stopped-history mirror updates, SSE transitions, and SDK/UI verification |
+| Rewind and restore | Durable branch replay, exact hidden message IDs, atomic prompt/history revision fencing, and PostgreSQL mirror visibility are implemented. Raw revert/unrevert still returns 501 | Workspace rollback and recovery, SSE transitions, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | Native Pi tools use the existing remote MCP connector gateway. Resource and prompt operations pass preview verification at `48e1acb70f` | Stdio placement, subscriptions, and complete discovery UI remain open. `30bff99179` verifies recovered permission authority and stale completion rejection. `278b28f42c` verifies embedded MCP image resources, exact private bytes, native rendering, and replay |

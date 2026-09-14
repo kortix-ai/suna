@@ -6372,3 +6372,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** report retrieval for PR #6998 requested a 298,383,589-byte archive in one Platinum call. The provider rejected it at its 268,435,456-byte request limit. This was separate from the superseded-SHA deployment failure.
 **Rule:** download large artifacts in bounded ranges. Write a private temporary file and replace the previous archive only after all bytes arrive. Reject truncation or a changed source. Preserve the reports in the sandbox.
 **Enforcer:** `tests/unit/platinum-ci.test.ts` covers an archive above 256 MiB, truncation, source changes, and read failure. The real preview archive downloads in 8 MiB ranges with matching SHA-256 `8959be466ff21074fae3fb92dcdcd05f3a3a352dc497a2a709bfa7bbd717b10d`.
+
+### Apply durable history visibility before transcript pagination (2026-09-14)
+
+**Incident:** a real Pi rewind returned four messages from the worker, but the browser restored two discarded messages from the PostgreSQL transcript mirror. Captures retain older rows, so a smaller worker transcript does not remove them.
+**Rule:** apply the durable hidden message IDs to mirror reads before counting and pagination. Preserve archived rows for restore. Read mirror metadata, history controls, and message rows from one repeatable-read snapshot. A known empty rewind is available, not a missing mirror.
+**Enforcer:** `SESS-33` reproduces the four-versus-two mismatch through HTTP and PostgreSQL. It checks stage, restore, replacement prompts, pagination, and an empty rewind. Preview browser verification asserts discarded messages remain absent after reload.

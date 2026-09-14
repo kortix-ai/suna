@@ -17,7 +17,7 @@
  * a response lost after commit can be retried without duplicating a mutation.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt } from 'drizzle-orm';
 import { projectSessions, sessionWorkerLog } from '@kortix/db';
 import { isDeepStrictEqual } from 'node:util';
 import { HTTPException } from 'hono/http-exception';
@@ -27,6 +27,7 @@ import { db } from '../../shared/db';
 import { authorizeSessionStorageCall as authorizeLogCall } from '../lib/session-storage-access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
+import { readSessionHistoryItems } from '../lib/session-history';
 import { PI_STATE_STREAM } from '../../../../../packages/sdk/src/core/pi/state';
 import {
   isPiHistoryControlItem,
@@ -120,29 +121,8 @@ projectsApp.openapi(
               return;
             }
           }
-          const rows = await tx
-            .select({ item: sql<Record<string, unknown>>`CASE
-              WHEN ${sessionWorkerLog.item}->>'kind' = 'history' THEN ${sessionWorkerLog.item}
-              ELSE jsonb_build_object(
-                'kind', 'journal', 'stream', 'kortix.pi.turn-admission.v1',
-                'record', jsonb_strip_nulls(jsonb_build_object(
-                  'type', ${sessionWorkerLog.item}->'record'->>'type',
-                  'messageId', ${sessionWorkerLog.item}->'record'->>'messageId',
-                  'historyRevision', ${sessionWorkerLog.item}->'record'->'historyRevision',
-                  'turn', jsonb_build_object('messageId', ${sessionWorkerLog.item}->'record'->'turn'->>'messageId')
-                ))
-              ) END` })
-            .from(sessionWorkerLog)
-            .where(and(
-              eq(sessionWorkerLog.sessionId, gate.sessionId),
-              sql`(${sessionWorkerLog.item}->>'kind' = 'history' OR (
-                ${sessionWorkerLog.item}->>'kind' = 'journal' AND
-                ${sessionWorkerLog.item}->>'stream' = 'kortix.pi.turn-admission.v1' AND
-                ${sessionWorkerLog.item}->'record'->>'type' IN ('accepted', 'completed', 'cancelled')
-              ))`,
-            ))
-            .orderBy(asc(sessionWorkerLog.id));
-          validatePiHistoryControlAppend(rows.map(row => row.item), item);
+          const history = await readSessionHistoryItems(tx, gate.sessionId);
+          validatePiHistoryControlAppend(history, item);
           const inserted = await tx.insert(sessionWorkerLog)
             .values({ sessionId: gate.sessionId, appendId, item })
             .onConflictDoNothing({ target: [sessionWorkerLog.sessionId, sessionWorkerLog.appendId] })
