@@ -256,7 +256,7 @@ variable "project_snapshot_bucket_arn" {
     ARN of the environment's project-snapshot bucket (modules/project-snapshots-bucket).
     Grants the TASK role s3:PutObject + s3:GetObject on its objects: the API's
     leader worker publishes snapshots and presigns short-lived GETs for
-    sandboxes. Nothing else (no ListBucket, no Delete). Used only when project_snapshots_enabled.
+    sandboxes, plus s3:ListBucket on the bucket so a missing key is a 404. No Delete. Used only when project_snapshots_enabled.
   EOT
   type        = string
   default     = ""
