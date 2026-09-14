@@ -24,7 +24,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,6 +40,15 @@ function need(name: string): string {
   const v = arg(name);
   if (!v) {
     console.error(`--${name} is required`);
+    process.exit(2);
+  }
+  return v;
+}
+/** `--project` is interpolated into SQL and a log-matching regex below: accept a UUID only. */
+function projectIdArg(): string {
+  const v = need('project').toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v)) {
+    console.error('--project must be a project UUID');
     process.exit(2);
   }
   return v;
@@ -105,7 +114,9 @@ async function setup(): Promise<void> {
   const pat = await api(base, jwt, '/accounts/tokens', { method: 'POST', body: JSON.stringify({ name: `bench-${name}` }) });
   if (pat.status !== 201) throw new Error(`pat mint failed ${pat.status}: ${JSON.stringify(pat.body).slice(0, 300)}`);
   const secret: string = pat.body.secret_key;
-  const work = join(tmpdir(), `kortix-bench-${name}`);
+  // A private, unpredictable directory (mkdtemp, mode 0700): the clone below
+  // carries the project token in its remote URL until it is cleaned up.
+  const work = join(mkdtempSync(join(tmpdir(), 'kortix-bench-')), name);
   const authed = originUrl.replace('://', `://x-access-token:${encodeURIComponent(secret)}@`);
   const git = (...a: string[]) => execFileSync('git', a, { cwd: existsSync(work) ? work : undefined, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).trim();
   execFileSync('git', ['clone', '-q', authed, work], { encoding: 'utf8' });
@@ -129,7 +140,7 @@ async function setup(): Promise<void> {
 async function waitReady(): Promise<void> {
   const base = need('api');
   const pat = need('pat');
-  const projectId = need('project');
+  const projectId = projectIdArg();
   const sha = need('sha');
   const deadline = Date.now() + Number(arg('timeout-s', '600')) * 1000;
   while (Date.now() < deadline) {
@@ -338,7 +349,10 @@ interface GitProxyRequest {
  */
 function listGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date, readyAt: Date): GitProxyRequest[] {
   if (!existsSync(logPath)) return [];
-  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${projectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
+  // The id is validated as a UUID at the argument boundary (projectIdArg) and
+  // escaped here regardless, so a CLI value can never alter the pattern.
+  const safeProjectId = projectId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${safeProjectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
   const seen: GitProxyRequest[] = [];
   for (const line of readFileSync(logPath, 'utf8').split('\n')) {
     const m = line.match(re);
@@ -353,7 +367,7 @@ function listGitProxyRequests(logPath: string, projectId: string, from: Date, to
 
 async function run(): Promise<void> {
   const jwt = need('jwt');
-  const projectId = need('project');
+  const projectId = projectIdArg();
   const rounds = Number(arg('rounds', '1'));
   const arms = parseArms(need('arms'));
   const out = arg('out', join(tmpdir(), 'project-snapshot-bench.jsonl'))!;

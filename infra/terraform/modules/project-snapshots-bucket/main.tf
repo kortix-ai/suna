@@ -15,6 +15,8 @@
 
 #trivy:ignore:AVD-AWS-0089 Derived, short-lived snapshot objects; access is presigned GETs minted by the API task role, not worth a second log bucket.
 resource "aws_s3_bucket" "this" {
+  #checkov:skip=CKV_AWS_19:Encryption at rest is configured on aws_s3_bucket_server_side_encryption_configuration.this (SSE-S3, or SSE-KMS when kms_key_arn is set); the legacy inline-block check cannot see the split resource.
+  #checkov:skip=CKV_AWS_145:SSE-S3 by default so presigned sandbox downloads need no KMS context; kms_key_arn switches the bucket to a customer-managed key and the API task role is granted use of it (modules/ecs-api).
   #checkov:skip=CKV_AWS_18:Server access logging is not required for derived, short-lived project snapshots; every access is a presigned GET minted by the API task role and logged by CloudTrail data events when enabled.
   #checkov:skip=CKV_AWS_144:Snapshots are regional derived data rebuilt from Git on demand; cross-region replication is not required.
   #checkov:skip=CKV2_AWS_62:Snapshot objects have no event consumer; readiness lives in the API's ledger table.
