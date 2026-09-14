@@ -197,6 +197,7 @@ export function buildPiWorkerSessionEnvVars(input: {
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_AGENT: input.agentName,
     KORTIX_API_URL: input.apiUrl,
+    KORTIX_MODEL_CONFIG_URL: `${input.apiUrl.replace(/\/+$/, '')}/projects/${input.projectId}/sessions/${input.sessionId}/model`,
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // No repo checkout exists on a worker box.
     KORTIX_PROJECT_AUTO_CLONE: '0',

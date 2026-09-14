@@ -83,7 +83,8 @@ It throws `RuntimeNotReadyError` while a Pi environment is pending. It never
 sends workspace requests to the Pi worker. Project and Git query caches use the
 workspace identity, so replacing an environment cannot reuse another workspace's data.
 
-Pi workers use the agent and model compiled into their artifact. The React
+Pi workers keep the agent compiled into their artifact. The saved session model
+is captured for each newly accepted prompt. The React
 `useSession().sendParts()` path removes per-prompt model, agent, and
 directory overrides for Pi. It rejects non-text prompt parts before transport.
 OpenCode sessions retain their existing prompt options and attachment contract.
@@ -232,8 +233,13 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-Pi sessions use the compiled agent and model instead of injecting stored
-OpenCode defaults. `await s.send("Review the change", { variant: "high" })`
+Pi sessions keep their compiled agent. Use `await s.changeModel("kortix/<model-id>")`
+to persist a model for new prompts. The response contains `applies_to: "next_prompt"`.
+Active and queued prompts retain their accepted model, including question or
+permission recovery after worker replacement. No runtime restart occurs.
+The agent source SHA, custom tools, hooks, resources and permissions stay unchanged.
+Older live workers return 409 until they advertise this capability.
+Pi sends omit stale OpenCode defaults. `await s.send("Review the change", { variant: "high" })`
 selects reasoning for that prompt only. Pi validates the effort against the
 selected model. The worker persists the choice across queued delivery and
 question recovery. Omit `variant` to use the compiled default.

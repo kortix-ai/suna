@@ -108,6 +108,7 @@ export async function PUT(req: NextRequest) {
     return Response.json({
       model: result.opencode_model,
       appliedLive: result.applied_live,
+      ...(result.applies_to ? { appliesTo: result.applies_to } : {}),
       ...(result.push_failed ? { pushFailed: true } : {}),
       ...(result.detail ? { detail: result.detail } : {}),
     });

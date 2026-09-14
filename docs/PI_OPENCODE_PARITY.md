@@ -1,6 +1,6 @@
 # Pi runtime parity audit
 
-Updated: 2026-09-09. Canonical branch: `pi-worker`.
+Updated: 2026-09-14. Canonical branch: `pi-worker`.
 Draft PR: [#6998](https://github.com/kortix-ai/suna/pull/6998).
 Preview: [pi.kortix.com](https://pi.kortix.com).
 
@@ -76,7 +76,8 @@ extensions. The native Pi lifecycle surface is documented in
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | Native Pi tools use the existing remote MCP connector gateway. Resource and prompt operations pass preview verification at `48e1acb70f` | Stdio placement, subscriptions, and complete discovery UI remain open. `30bff99179` verifies recovered permission authority and stale completion rejection. `278b28f42c` verifies embedded MCP image resources, exact private bytes, native rendering, and replay |
-| Live model and agent switching | Config is fixed; API and host controls reject unsupported changes | Explicit runtime reconfiguration preserving history and grants, or an accepted product divergence |
+| Live model switching | Session model changes apply to new durable prompt admissions; accepted turns retain their model, including queues and interaction recovery | Local HTTP, SDK, CLI, main composer, and white-label checks pass. Exact-SHA preview verification is pending |
+| Live agent switching | Agent identity, source commit, tools, hooks, resources, and permissions remain fixed | Explicit agent reconfiguration preserving history and grants, or an accepted product divergence |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |
 | Multiple named environments | One lazy environment per session | Target selection, permissions, lifecycle, and billing |

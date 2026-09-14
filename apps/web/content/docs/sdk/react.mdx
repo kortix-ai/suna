@@ -85,6 +85,7 @@ integrations should use the session-scoped SDK methods and hooks above.
 | `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
 | `rewindPending` | `boolean` | A rewind or restore request is in progress. |
 | `rewindError` | `KortixSendError \| null` | The last rewind or restore failure. |
+| `changeModel(model)`, `isChangingModel` | — | Persist a model. Pi applies it to new prompts and preserves accepted turns. OpenCode retains its runtime restart behavior. |
 | `models`, `agents`, `defaultAgent`, `commands` | — | Selectable models, selectable agents, the default agent, and slash commands. Available before the runtime starts. |
 | `retry` | `() => void` | Force a re-check of `/start`. |
 

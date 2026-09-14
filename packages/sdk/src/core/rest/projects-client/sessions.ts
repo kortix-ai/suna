@@ -1444,6 +1444,8 @@ export async function setProjectSessionScope(
 
 export interface SessionModelChangeResult {
   opencode_model: string;
+  /** Pi snapshots this model when accepting new prompts; accepted turns keep their model. */
+  applies_to?: 'next_prompt';
   /** True only when a LIVE sandbox took the new model. */
   applied_live: boolean;
   /**

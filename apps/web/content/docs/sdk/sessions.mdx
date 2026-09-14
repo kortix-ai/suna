@@ -137,7 +137,7 @@ For OpenCode REST sessions, the first `send()` on a handle reads the model and
 agent persisted on the Kortix session. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults.
 
-Pi sessions use their compiled agent and model. They do not inject the stored
+Pi sessions keep their compiled agent and use their saved model for new prompts. They do not inject the stored
 OpenCode defaults. Set a per-prompt reasoning effort with
 `await s.send('Review the change', { variant: 'high' })`. The Pi worker validates
 the effort for its selected model and preserves it during question recovery.
@@ -186,15 +186,27 @@ handle. To **persist** a new model for a running session server-side, use
 `changeModel`:
 
 ```ts
-const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
+const result = await s.changeModel('kortix/gpt-5.6-luna');
 ```
 
-Restarting the runtime is how the change takes effect, so an in-flight turn ends.
-`applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner, or a caller with project-manager
-permissions, may change the model; anyone else gets `403`.
-Pi sessions return `409 SESSION_MODEL_FIXED_AT_START` without changing metadata.
-Start a new Pi session to select another model.
+For Pi, the response contains `applies_to: 'next_prompt'`. Each accepted prompt
+stores its model and capabilities. Active turns, queued prompts, and turns
+waiting for a question or permission retain that selection through worker replacement.
+The next prompt uses the new model. The worker does not restart, and the compiled
+agent, source SHA, tools, lifecycle hooks, resources and permissions remain unchanged.
+The API validates model access and capability limits before saving the selection.
+A worker unable to read this configuration rejects a new prompt with 503 before admission.
+An older live worker returns `409 SESSION_MODEL_FIXED_AT_START`; stop and resume it
+with the current worker before changing its model.
+
+OpenCode keeps its existing restart behavior. `applied_live` reports whether that
+restart succeeded. Check `push_failed` before reporting success. Only the session
+owner or a project manager can change the model. Other callers receive 403.
+
+React hosts can use `useSession(projectId, sessionId).changeModel(model)`.
+`useSessionModelSelection({ projectSessionId, ...options }).model.change(modelKey)`
+also refreshes the session row and runtime capability display. `projectSessionId`
+is the Kortix session ID, not the native conversation ID.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.

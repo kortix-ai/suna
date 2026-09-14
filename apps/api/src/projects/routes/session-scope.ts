@@ -8,8 +8,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { connectors, projectSessions, projectSessionConnectorBindings, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -28,6 +28,11 @@ import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
+import { sessionMetadataClaimsPiWorker } from '../lib/session-sandbox-metadata';
+import { authorizeSessionStorageCall } from '../lib/session-storage-access';
+import { piModelLimits } from '../../git-proxy/pi-model-limits';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { piModelSelectionSupported } from '../lib/pi-model-selection-probe';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -578,6 +583,44 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/model',
+    tags: ['sessions'],
+    summary: 'Read the model for new Pi prompts without starting compute',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: {
+      200: json(z.object({
+        opencode_model: z.string().nullable(),
+        limits: z.object({
+          model: z.string(), context: z.number(), output: z.number(),
+          reasoning: z.boolean().optional(), images: z.boolean().optional(),
+          reasoningEfforts: z.array(z.string()).optional(),
+        }).nullable(),
+      }), 'Model selection and gateway capabilities'),
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const gate = await authorizeSessionStorageCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    if (gate.kind === 'error') return gate.response;
+    const loaded = await loadProjectForUser(c, c.req.param('projectId'), 'read');
+    if (!loaded || !await loadVisibleSession(loaded, gate.sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      return c.json({ error: 'Not found' }, 404);
+    const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, gate.sessionId), eq(projectSessions.projectId, c.req.param('projectId')))).limit(1);
+    if (!row || (row.metadata as any)?.deletedAt) return c.json({ error: 'Not found' }, 404);
+    if (!sessionMetadataClaimsPiWorker(row.metadata)) return c.json({ error: 'Model configuration requires a Pi session' }, 409);
+    const selected = (row.metadata as Record<string, unknown>)?.opencode_model;
+    const model = typeof selected === 'string' ? selected : null;
+    const limits = piModelLimits(c.req.param('projectId'), model);
+    if (model && !limits) return c.json({ error: 'Selected model capabilities are unavailable' }, 409);
+    return c.json({ opencode_model: model, limits: limits ?? null });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
     method: 'put',
     path: '/{projectId}/sessions/{sessionId}/model',
     tags: ['sessions'],
@@ -597,7 +640,8 @@ projectsApp.openapi(
       200: json(
         z.object({
           opencode_model: z.string(),
-          /** True when a live sandbox took it; false when it applies at next boot. */
+          applies_to: z.literal('next_prompt').optional(),
+          /** OpenCode live push result. Pi uses applies_to: next_prompt. */
           applied_live: z.boolean(),
           /**
            * Present only when a live push was REQUIRED and FAILED — the row is
@@ -655,7 +699,8 @@ projectsApp.openapi(
     // OFF: OpenCode owns the catalog, so only the native `provider/model`
     // shape is enforced and the pin is stored verbatim.
     const trimmed = requested.trim();
-    const llmGatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
+    const piWorker = sessionMetadataClaimsPiWorker(visible.row.metadata);
+    const llmGatewayEnabled = piWorker || projectLlmGatewayEnabled(loaded.row.metadata);
     let nextModel: string;
     if (!llmGatewayEnabled) {
       const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
@@ -686,6 +731,34 @@ projectsApp.openapi(
     // The session model lives in metadata, not a column (sessions.ts:1102) —
     // which is precisely why the PATCH metadata back door was dangerous.
     const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+    if (piWorker) {
+      if (!piModelLimits(projectId, nextModel))
+        return c.json({ error: 'Selected model capabilities are unavailable', code: 'INVALID_SESSION_MODEL' }, 400);
+      if (!['queued', 'stopped'].includes(visible.row.status)) {
+        const [sandbox] = await db.select({ externalId: sessionSandboxes.externalId })
+          .from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
+        let supported = false;
+        if (sandbox?.externalId) {
+          try {
+            const ingress = await resolveSandboxIngress(sandbox.externalId, { port: 8000, transport: 'http' });
+            supported = await piModelSelectionSupported(ingress.url, ingress.headers);
+          } catch {}
+        }
+        if (!supported) return c.json({ code: 'SESSION_MODEL_FIXED_AT_START',
+          error: 'This worker does not advertise live model selection. Stop and resume the session with the current worker before changing its model.' }, 409);
+      }
+      const updated = await db.update(projectSessions).set({
+        metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({ opencode_model: nextModel, opencode_model_source: 'explicit' })}::jsonb`,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId),
+        sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        sql`${projectSessions.status} not in ('failed', 'completed')`,
+      )).returning({ sessionId: projectSessions.sessionId });
+      if (!updated.length) return c.json({ error: 'Session is no longer available for model changes' }, 409);
+      return c.json({ opencode_model: nextModel, applied_live: false, applies_to: 'next_prompt',
+        detail: 'Saved for new prompts. Accepted prompts keep their selected model.' });
+    }
     const currentModel =
       typeof currentMetadata.opencode_model === 'string' ? currentMetadata.opencode_model : null;
     const needsPush = modelChangeNeedsLivePush({

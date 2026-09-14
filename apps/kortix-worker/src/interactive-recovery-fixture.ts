@@ -32,11 +32,13 @@ export async function fixture(
     permission?: 'primary' | 'external' | 'doom';
     modelId?: string;
     modelLimits?: WorkerModelLimits;
+    selectableModel?: boolean;
     pauseReadAfterCompletion?: boolean;
     turnRecovery?: 'pause' | 'reject';
   } = {},
 ) {
   const items: SessionLogItem[] = [];
+  let selectedModel = options.modelId ?? 'openai/gpt-4.1';
   const byKey = new Map<string, SessionLogItem>();
   const providerRequests: any[] = [];
   const effects: string[] = [];
@@ -57,6 +59,10 @@ export async function fixture(
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === '/model') return Response.json({
+        opencode_model: `kortix/${selectedModel}`,
+        limits: { model: selectedModel, context: 32768, output: 2048, reasoning: false, images: false },
+      });
       if (path.endsWith('/turn-stream')) {
         const body = await request.json() as any;
         controlRequests.push(body);
@@ -223,6 +229,7 @@ export async function fixture(
     providerId: 'openrouter',
     modelId: options.modelId ?? 'openai/gpt-4.1',
     modelLimits: options.modelLimits,
+    ...(options.selectableModel ? { modelConfigUrl: server.url + 'model' } : {}),
     gatewayUrl: server.url + 'v1',
     apiKey: 'fixture',
     sessionId,
@@ -282,6 +289,7 @@ export async function fixture(
     );
   };
   return {
+    selectModel: (model: string) => { selectedModel = model; },
     items,
     controlRequests,
     releaseTurnResume,

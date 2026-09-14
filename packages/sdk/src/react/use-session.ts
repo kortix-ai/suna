@@ -82,6 +82,7 @@ import { useProjectModels } from './use-project-models';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
+import { useSessionModelChange } from './use-session-model-change';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -1156,6 +1157,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const agents = useVisibleAgents({ projectId });
   const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
+  const modelChange = useSessionModelChange(projectId, sessionId);
 
   // 8. Mutations.
   const sendMutation = useSendOpenCodeMessage();
@@ -1521,6 +1523,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     picks,
 
     // actions
+    changeModel: modelChange.mutateAsync,
+    isChangingModel: modelChange.isPending,
     send,
     sendParts,
     rewind,

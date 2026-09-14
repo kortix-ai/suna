@@ -91,10 +91,10 @@ describe('scopeControl', () => {
     expect(scopeControl('model').live).toBe(true);
   });
 
-  test('Pi model and agent controls are fixed while mutable scope remains live', () => {
+  test('Pi model changes apply to new prompts while its agent remains fixed', () => {
     expect(scopeControl('model', true)).toMatchObject({
-      live: false,
-      badge: 'Fixed at start',
+      live: true,
+      badge: 'New prompts',
     });
     expect(scopeControl('agent', true)).toMatchObject({
       live: false,

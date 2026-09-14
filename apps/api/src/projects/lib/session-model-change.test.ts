@@ -32,9 +32,9 @@ describe('canChangeSessionModel', () => {
     { sandbox_slug: 'pi-worker' },
     { pi_worker_sha: 'a'.repeat(40) },
     { runtimeArtifact: { runtimeProfile: 'pi-worker' } },
-  ])('refuses a model mutation for a fixed Pi identity %j', (metadata) => {
+  ])('allows Pi model selection for new prompts without changing completed sessions %j', (metadata) => {
     for (const status of ['running', 'provisioning', 'queued', 'branching', 'stopped']) {
-      expect(canChangeSessionModel(status, metadata)?.code).toBe('SESSION_MODEL_FIXED_AT_START');
+      expect(canChangeSessionModel(status, metadata)).toBeNull();
     }
   });
 

@@ -78,12 +78,7 @@ export function validateNativeOpencodeModelRef(requested: string): ModelChangeRe
  * refused — nothing would consume the value.
  */
 export function canChangeSessionModel(status: string, metadata?: unknown): ModelChangeRejection | null {
-  if (sessionMetadataClaimsPiWorker(metadata)) {
-    return {
-      code: 'SESSION_MODEL_FIXED_AT_START',
-      message: 'The model is fixed for this session. Start a new session to use another model.',
-    };
-  }
+  if (sessionMetadataClaimsPiWorker(metadata) && status === 'stopped') return null;
   if (UNCHANGEABLE_STATUSES.has(status)) {
     return {
       code: 'SESSION_NOT_RUNNING',
@@ -111,6 +106,7 @@ export function modelChangeNeedsLivePush(input: {
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
   opencode_model: string;
+  applies_to?: 'next_prompt';
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
   /**

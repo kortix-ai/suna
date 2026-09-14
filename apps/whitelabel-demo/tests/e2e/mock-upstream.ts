@@ -314,9 +314,12 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           body && typeof body === 'object'
             ? (body as Record<string, unknown>).opencode_model
             : null;
+        const row = sessions.get(`${sessionModelMatch[1]}/${sessionModelMatch[2]}`);
+        const pi = (row?.metadata as Record<string, unknown> | undefined)?.pi_worker_boot === true;
         return Response.json({
           opencode_model: requested,
-          applied_live: true,
+          applied_live: !pi,
+          ...(pi ? { applies_to: 'next_prompt' } : {}),
         });
       }
 

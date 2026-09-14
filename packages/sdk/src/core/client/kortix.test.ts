@@ -1003,6 +1003,28 @@ test('changeModel surfaces push_failed so a half-applied change is not read as s
   expect(result.detail).toContain('502 upstream-closed-before-headers');
 });
 
+test('a persisted Pi model change removes a stale handle override without changing its agent', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const text = request ? await request.clone().text() : String(init?.body ?? '');
+    calls.push({ url, method: request?.method ?? init?.method ?? 'GET', body: text ? JSON.parse(text) : undefined });
+    if (url.endsWith('/model')) return jsonResponse({ opencode_model: 'kortix/new-model', applied_live: false, applies_to: 'next_prompt' });
+    if (url.includes('/sessions/PI-MODEL/start')) return jsonResponse(sessionStartPayload('sb-pi-model', 'pi-root'));
+    if (url.endsWith('/projects/PROJ/sessions/PI-MODEL')) return jsonResponse({ session_id: 'PI-MODEL', agent_name: 'build', metadata: { pi_worker_boot: true, opencode_model: 'kortix/new-model' } });
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const handle = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }).session('PROJ', 'PI-MODEL');
+  handle.setModel({ providerID: 'kortix', modelID: 'old-model' });
+  const changed = await handle.changeModel('kortix/new-model');
+  expect(changed.applies_to).toBe('next_prompt');
+  await handle.send('After selection.');
+  const prompt = calls.find(call => call.method === 'POST' && call.url.endsWith('/message'));
+  expect(prompt?.body).toBeDefined();
+  expect((prompt?.body as any).model).toBeUndefined();
+  expect((prompt?.body as any).agent).toBeUndefined();
+});
+
 test('per-call and handle prompt choices override persisted session defaults', async () => {
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
     const url = requestUrl(input);

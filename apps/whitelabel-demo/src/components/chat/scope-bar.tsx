@@ -606,7 +606,7 @@ export function ScopeBar({
       <ScopeChip
         icon={<Cpu className="size-3" />}
         label="Model"
-        value={compiledRuntime ? 'Fixed at start' : model.data?.model ?? 'Project default'}
+        value={model.data?.model ?? 'Project default'}
         title="Model"
         badge={scopeControl('model', compiledRuntime).badge}
         note={scopeControl('model', compiledRuntime).note}

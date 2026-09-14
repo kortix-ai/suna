@@ -1279,12 +1279,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * running sandbox. Distinct from `setModel`, which only chooses what the
        * NEXT local `send` asks for and never leaves this handle.
        *
-       * Restarting the runtime is how the change takes effect, so an in-flight
-       * turn ends. `applied_live` reports whether a running session took it now
-       * or whether it applies at next start.
+       * OpenCode restarts its runtime. Pi reports `applies_to: 'next_prompt'`
+       * and preserves accepted turns, the agent, and its compiled configuration.
        */
       changeModel: async (model: string) => {
         const result = await P.setProjectSessionModel(projectId, sessionId, model);
+        if (result.applies_to === 'next_prompt') _model = undefined;
         _persistedPromptDefaults = null;
         return result;
       },

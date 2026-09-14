@@ -96,3 +96,11 @@ describe('classifyModelChange — a stored-but-not-pushed model is not a success
     expect(outcome.kind).not.toBe('stored');
   });
 });
+
+
+test('Pi model changes describe newly admitted prompts without claiming a restart', () => {
+  const result = classifyModelChange({ model: 'kortix/model-b', appliedLive: false, appliesTo: 'next_prompt' });
+  expect(result.kind).toBe('stored');
+  expect(result.message).toContain('new prompts');
+  expect(result.message).toContain('Accepted prompts keep their model');
+});

@@ -346,22 +346,6 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 
-  if (ctx.compiledRuntime) {
-    return {
-      id: 'session.model',
-      title: 'Model fixed at session start',
-      summary: 'A compiled session does not support a live model change.',
-      sdk: '// No live model mutation is available.\n// Start a new session after changing the project configuration.',
-      http: {
-        kind: 'runtime',
-        summary: 'No request is sent for a compiled session.',
-      },
-      serverInjected: [],
-      notes: [
-        'The model belongs to the immutable compiled bundle. The current session keeps it for its full lifetime.',
-      ],
-    };
-  }
 
   return {
     id: 'session.model',
@@ -388,8 +372,8 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'The upstream body field is named after the session runtime; `changeModel()` writes it for you. This app never spells it in client code (scripts/sdk-boundary.mjs keeps provider terminology out of the browser bundle) — the real field name is in `src/app/api/session-model/route.ts`.',
-      'The reply carries `applied_live`. False means the model was stored and applies at the NEXT start; telling someone the model changed when their next answer comes from the old one is a lie worth avoiding.',
-      'A live change restarts the runtime, which ends any in-flight turn.',
+      'When `applies_to` is `next_prompt`, active and queued prompts retain their accepted model. The compiled agent, source SHA and permissions stay unchanged.',
+      'Otherwise, `applied_live` reports a runtime restart. Check `push_failed` before reporting success. A stored change without `applies_to` applies at the next start.',
     ],
   };
 }

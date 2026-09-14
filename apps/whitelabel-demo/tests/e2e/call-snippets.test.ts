@@ -172,16 +172,15 @@ describe('the other calls', () => {
     expect(text).toContain('compiled');
   });
 
-  test('a Pi model snippet exposes no live mutation request', () => {
+  test('a Pi model snippet exposes the persisted model mutation', () => {
     const snippet = callSnippet('session.model', {
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
       compiledRuntime: true,
     });
 
-    expect(isCopyableHttp(snippet.http)).toBe(false);
-    expect(snippet.sdk).not.toContain('.changeModel(');
-    expect(snippet.sdk).toContain('Start a new session');
+    expect(isCopyableHttp(snippet.http)).toBe(true);
+    expect(snippet.sdk).toContain('.changeModel(');
   });
 
   test('the model change shows both hops and neither spells the runtime field', () => {

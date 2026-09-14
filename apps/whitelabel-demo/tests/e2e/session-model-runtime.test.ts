@@ -35,20 +35,22 @@ describe('session model runtime gate', () => {
     resetUsersStore();
   });
 
-  test('rejects a Pi model change before the mutation reaches Kortix', async () => {
+  test('delegates Pi model changes to the authoritative Kortix API', async () => {
     upstream.seedSession(projectId, SESSION_ID, { pi_worker_boot: true });
     upstream.reset();
 
     const response = await changeModel('kortix/model-a');
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      code: 'SESSION_MODEL_FIXED_AT_START',
+      model: 'kortix/model-a',
+      appliedLive: false,
+      appliesTo: 'next_prompt',
     });
     expect(
       upstream.requests.filter(
         (request) => request.method === 'PUT' && request.path.endsWith('/model'),
       ),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   test('keeps live model changes for a mutable session', async () => {

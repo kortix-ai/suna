@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { AuthProvider } from '@/features/providers/auth-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { FlatModel } from '../model-flatten';
 import { ComposerToolbar } from './composer-toolbar';
@@ -51,7 +52,7 @@ function render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <TooltipProvider>
+        <AuthProvider><TooltipProvider>
           <ComposerToolbar
             models={models}
             selectedModel={runtimeControls ? models[0] : null}
@@ -77,13 +78,18 @@ function render(
             agentUnavailable={send?.agentUnavailable}
             onSubmit={noop}
           />
-        </TooltipProvider>
+        </TooltipProvider></AuthProvider>
       </QueryClientProvider>
     </NextIntlClientProvider>,
   );
 }
 
 describe('ComposerToolbar fixed runtime model', () => {
+  test('renders model selection when the host persists Pi model changes', () => {
+    const html = render(undefined, undefined, undefined, { modelEditable: true, variantEditable: true });
+    expect(html).toContain('Claude Sonnet 4.5');
+    expect(html).toContain('aria-label="Thinking effort"');
+  });
   test('renders the reasoning selector when the host can apply a variant', () => {
     const html = render(undefined, undefined, undefined, {
       modelEditable: false,

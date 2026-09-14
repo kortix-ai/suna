@@ -67,6 +67,7 @@ export type ModelChangeOutcome =
 export function classifyModelChange(result: {
   model?: string | null;
   appliedLive?: boolean;
+  appliesTo?: 'next_prompt';
   pushFailed?: boolean;
   detail?: string;
 }): ModelChangeOutcome {
@@ -78,6 +79,7 @@ export function classifyModelChange(result: {
       ...(result.detail ? { detail: result.detail } : {}),
     };
   }
+  if (result.appliesTo === 'next_prompt') return { kind: 'stored', message: `${model} saved for new prompts. Accepted prompts keep their model.` };
   if (result.appliedLive) return { kind: 'applied', message: `Now running ${model}` };
   return { kind: 'stored', message: `${model} saved — applies when this session next starts` };
 }

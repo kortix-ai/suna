@@ -69,6 +69,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
       const body = (await res.json()) as {
         model?: string;
         appliedLive?: boolean;
+        appliesTo?: 'next_prompt';
         pushFailed?: boolean;
         detail?: string;
         error?: string;

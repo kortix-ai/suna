@@ -524,6 +524,7 @@ interface RestoredTranscriptMessage {
   usage?: unknown;
   stopReason?: string;
   errorMessage?: string;
+  kortixWireModel?: { providerID: string; modelID: string };
   kortixWireMessageId?: string;
   kortixParentMessageId?: string;
   kortixCompactionSummary?: boolean;
@@ -764,7 +765,11 @@ export class RuntimeSurface {
       }
 
       const resolvedModel =
-        this.opts.resolvedModel ??
+        message.kortixWireModel ??
+        (role === 'assistant' && typeof message.model === 'string' ? {
+          providerID: this.opts.resolvedModel?.providerID ?? message.provider ?? fallbackModel.providerID,
+          modelID: message.model,
+        } : null) ?? this.opts.resolvedModel ??
         ({
           providerID: message.provider ?? fallbackModel.providerID,
           modelID: message.model ?? fallbackModel.modelID,
@@ -1158,6 +1163,12 @@ export class RuntimeSurface {
       url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM) ??
       undefined;
     return verifyUserContext(header, token);
+  }
+
+  setModelSelection(model: { providerID: string; modelID: string }, variants: string[], images: boolean): void {
+    this.opts.resolvedModel = { ...model };
+    this.opts.reasoningVariants = variants;
+    this.opts.imageAttachments = images;
   }
 
   private sessionProjection() {

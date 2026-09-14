@@ -8,6 +8,6 @@ export function runtimeAllowsPromptOverrides(metadata: unknown): boolean {
   return !isCompiledSessionRuntime(metadata);
 }
 
-export function runtimeAllowsLiveModelChange(metadata: unknown): boolean {
-  return !isCompiledSessionRuntime(metadata);
+export function runtimeAllowsLiveModelChange(_metadata: unknown): boolean {
+  return true;
 }

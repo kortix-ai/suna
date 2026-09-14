@@ -1263,6 +1263,8 @@ flow(
     requires: ['database'],
     routes: [
       'PUT /v1/projects/:projectId/sessions/:sessionId/model',
+      'GET /v1/projects/:projectId/sessions/:sessionId/model',
+      'POST /v1/projects/:projectId/secrets',
       'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
@@ -1274,7 +1276,7 @@ flow(
       pi_worker_boot: true,
       pi_worker_ref: 'main',
       pi_worker_sha: 'a'.repeat(40),
-      opencode_model: 'kortix/gpt-5.6-luna',
+      opencode_model: 'kortix/openai/gpt-4.1',
     };
     const piId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
@@ -1293,17 +1295,41 @@ flow(
         response.status(status);
       }
     });
-    await ctx.step('A Pi model change returns 409 and preserves the complete stored metadata', async () => {
-      const before = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
-      before.status(200);
+    await ctx.step('Prepare an owned BYOK model selection without calling its provider', async () => {
+      const saved = await owner.post('/v1/projects/:projectId/secrets',
+        { name: 'OPENAI_API_KEY', value: 'ke2e-selection-fixture-no-provider-request', strategy: 'broker', consumer: 'llm_gateway' },
+        { params: { projectId: project.id } });
+      saved.status(200);
+    });
+    await ctx.step('A queued Pi session saves the next model and preserves its compiled configuration', async () => {
       const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model',
-        { opencode_model: 'openai/gpt-4.1' }, { params });
-      changed.status(409).body().has('$.code', 'SESSION_MODEL_FIXED_AT_START');
+        { opencode_model: 'openai/gpt-4.1-mini' }, { params });
+      changed.status(200).body().has('$.applies_to', 'next_prompt').has('$.applied_live', false)
+        .has('$.opencode_model', 'kortix/openai/gpt-4.1-mini');
       const after = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
       after.status(200);
-      if (!isDeepStrictEqual(before.json<any>().metadata, after.json<any>().metadata)) {
-        throw new Error('Rejected Pi model change modified session metadata');
+      const saved = after.json<any>().metadata;
+      for (const [key, value] of Object.entries(metadata)) {
+        if (key !== 'opencode_model' && !isDeepStrictEqual(saved[key], value)) throw new Error(`Model change modified ${key}`);
       }
+      if (saved.opencode_model !== 'kortix/openai/gpt-4.1-mini') throw new Error('Model selection did not persist');
+      const selected = await owner.get('/v1/projects/:projectId/sessions/:sessionId/model', { params });
+      selected.status(200).body().has('$.opencode_model', saved.opencode_model).has('$.limits.model', 'openai/gpt-4.1-mini');
+      if (!(selected.json<any>().limits.context > 0) || !(selected.json<any>().limits.output > 0)) throw new Error('Model limits are missing');
+    });
+    await ctx.step('Rejected models cannot replace the saved selection', async () => {
+      for (const model of ['no-such-provider/no-model', 'kortix/auto', 'bad model']) {
+        (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', { opencode_model: model }, { params })).status(400);
+      }
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/model', { params })).status(200)
+        .body().has('$.opencode_model', 'kortix/openai/gpt-4.1-mini');
+    });
+    await ctx.step('Model configuration reads enforce authentication and project boundaries', async () => {
+      for (const [principal, status] of [[ctx.P.ANON, 401], [ctx.P.NONMEMBER, 403]] as const) {
+        (await ctx.client.as(principal).get('/v1/projects/:projectId/sessions/:sessionId/model', { params })).status(status);
+      }
+      const other = await ctx.fixtures.project();
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/model', { params: { ...params, projectId: other.id } })).status(404);
     });
     await ctx.step('A queued OpenCode session stores its next model and reports that it is not applied live', async () => {
       const sessionId = await createDatabaseSession(ctx.env, {
@@ -1317,6 +1343,7 @@ flow(
       changed.status(200).body().has('$.opencode_model', 'openai/gpt-4.1').has('$.applied_live', false);
       const saved = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
       saved.status(200).body().has('$.metadata.opencode_model', 'openai/gpt-4.1');
+      (await owner.get('/v1/projects/:projectId/sessions/:sessionId/model', { params })).status(409);
     });
   },
 );

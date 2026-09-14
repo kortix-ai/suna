@@ -63,8 +63,8 @@ const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
 
 const COMPILED_COPY: Partial<Record<ScopeControlKey, { badge: string; note: string }>> = {
   model: {
-    badge: 'Fixed at start',
-    note: 'The model is fixed for this session. Start a new session to use another model.',
+    badge: 'New prompts',
+    note: 'The saved model applies to newly accepted prompts. Active and queued prompts keep their model. The compiled agent stays the same.',
   },
   agent: {
     badge: 'Fixed at start',
@@ -74,7 +74,7 @@ const COMPILED_COPY: Partial<Record<ScopeControlKey, { badge: string; note: stri
 
 export function scopeControl(key: ScopeControlKey, compiledRuntime = false): ScopeControl {
   const compiled = compiledRuntime ? COMPILED_COPY[key] : undefined;
-  if (compiled) return { key, live: false, ...compiled };
+  if (compiled) return { key, live: key === 'model', ...compiled };
   return { key, live: !isFixedAtStart(key), ...COPY[key] };
 }
 

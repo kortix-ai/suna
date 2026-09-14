@@ -14,6 +14,12 @@ const BASE_INPUT = {
   apiUrl: 'https://api.kortix.test/v1',
 };
 
+test('only Pi workers receive the session model configuration endpoint', () => {
+  expect(buildPiWorkerSessionEnvVars({ ...BASE_INPUT, apiUrl: `${BASE_INPUT.apiUrl}/` }).KORTIX_MODEL_CONFIG_URL)
+    .toBe('https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/model');
+  expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_MODEL_CONFIG_URL');
+});
+
 describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
   test('never injects the prompt or turn-ledger identity', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
@@ -408,6 +414,7 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       // P1.8: the durable transcript log the worker write-throughs to.
       KORTIX_STORE_URL: 'https://api.kortix.test/v1/projects/proj-1',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
+      KORTIX_MODEL_CONFIG_URL: 'https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/model',
       KORTIX_FRONTEND_URL: 'https://kortix.test',
       KORTIX_PROJECT_AUTO_CLONE: '0',
       KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',

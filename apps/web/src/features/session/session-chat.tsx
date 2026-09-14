@@ -2260,7 +2260,7 @@ export function SessionChat({
     return settlement;
   }, [sessionId, projectSessionId, sessionState, abortSession]);
 
-  // Pi compiles one model into the worker. Model changes require OpenCode.
+  // Pi keeps its compiled agent and snapshots the saved model for each prompt.
   // Reasoning choices come from the selected worker through the SDK.
   // The sandbox projection is a second fail-closed signal for a stale row.
   const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
@@ -2272,6 +2272,7 @@ export function SessionChat({
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
+    projectSessionId: projectSessionId ?? undefined,
     runtime: isPiWorkerSession ? 'pi-worker' : 'opencode',
     agents,
     providers,
@@ -4891,8 +4892,14 @@ export function SessionChat({
   );
 
   const handleModelChange = useCallback(
-    (m: ModelKey | null) => local.model.set(m ?? undefined, { recent: true }),
-    [local.model],
+    (m: ModelKey | null) => {
+      if (!isPiWorkerSession) { local.model.set(m ?? undefined, { recent: true }); return; }
+      if (!m || local.model.isChanging) return;
+      void local.model.change(m).then(() => {
+        infoToast('Model saved for new prompts. Accepted prompts keep their model.');
+      }).catch((error: Error) => errorToast(error.message || 'Could not change the model'));
+    },
+    [isPiWorkerSession, local.model],
   );
 
   // Only the ACCOUNT default is settable from the picker now — it is the one
@@ -5909,6 +5916,7 @@ export function SessionChat({
           {!readOnly && (
             <>
               <SessionChatInput
+                disabled={local.model.isChanging}
                 // `undefined`, not `true`, once released: the composer's own
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
@@ -5947,7 +5955,7 @@ export function SessionChat({
                 onCommand={handleCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
-                onModelChange={runtimePromptOverridesAllowed ? handleModelChange : undefined}
+                onModelChange={runtimePromptOverridesAllowed || isPiWorkerSession ? handleModelChange : undefined}
                 modelDefaultControls={
                   runtimePromptOverridesAllowed ? chatModelDefaultControls : undefined
                 }

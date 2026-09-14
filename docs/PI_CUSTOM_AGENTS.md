@@ -482,6 +482,28 @@ and the existing image viewer. Reload and worker replacement preserve the asset
 URLs and exact bytes. Images produced in the worker do not start an environment.
 The native `read` tool reads workspace images through the execution environment.
 
+## Change the session model
+
+Use the chat model picker, `session.changeModel("kortix/<model>")` in the SDK,
+or `kortix sessions model <session-id> <model>` in the CLI. The API validates the
+model against the project's gateway and the account's access.
+
+The model applies when the worker accepts a new prompt. Running, queued, and
+question/permission-paused prompts keep their accepted model. Their snapshot
+includes context, output, image, and reasoning limits. Worker replacement
+restores that snapshot. Retrying the same message ID keeps the original selection.
+
+Changing the model does not rerun custom initialization or replace the compiled
+agent. Source commit, instructions, hooks, tools, resources, state, permissions,
+and environment remain unchanged. The next prompt uses the selected model's
+capabilities. Unsupported reasoning and new image attachments fail before admission.
+Manual compaction and commands use the same selection rules. A command with an
+explicit model must match the saved session model.
+
+The API returns `applies_to: "next_prompt"`. A configuration read failure returns
+`503` before accepting a new prompt. An older running worker returns `409` until
+it is upgraded. Live agent switching remains unsupported.
+
 ## Provider context overflow
 
 When an ordinary provider request rejects an existing conversation for context

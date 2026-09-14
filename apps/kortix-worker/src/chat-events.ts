@@ -171,7 +171,7 @@ export class ChatEventAdapter {
   private readonly mint?: () => string;
   private readonly fixedMessageId?: () => string;
   private readonly parent?: () => string | null;
-  private readonly model: { providerID: string; modelID: string } | null;
+  private model: { providerID: string; modelID: string } | null;
   private readonly agent: string;
   private readonly mode: string;
   private readonly workspace: string;
@@ -214,6 +214,10 @@ export class ChatEventAdapter {
   toolContext(toolCallId: string): { messageID: string; callID: string } | undefined {
     const tool = this.toolIndex.get(toolCallId);
     return tool ? { messageID: this.currentMessageId, callID: tool.partId } : undefined;
+  }
+
+  setModel(model: { providerID: string; modelID: string }): void {
+    this.model = { ...model };
   }
 
   translate(event: any): Wire[] {

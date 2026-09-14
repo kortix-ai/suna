@@ -26,10 +26,10 @@ describe('session runtime policy', () => {
     expect(runtimeAllowsLiveModelChange({})).toBe(true);
   });
 
-  test('disables mutable prompt options and live model changes for Pi sessions', () => {
+  test('keeps Pi prompt overrides fixed and enables persisted model changes', () => {
     const metadata = { pi_worker_boot: true };
     expect(runtimeAllowsPromptOverrides(metadata)).toBe(false);
-    expect(runtimeAllowsLiveModelChange(metadata)).toBe(false);
+    expect(runtimeAllowsLiveModelChange(metadata)).toBe(true);
   });
 
   test('every in-session model and agent control applies the runtime policy', () => {

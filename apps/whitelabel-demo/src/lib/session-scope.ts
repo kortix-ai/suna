@@ -109,12 +109,12 @@ export function sessionScopeRows(
     {
       key: 'model',
       label: 'Model',
-      badge: compiledRuntime ? 'Fixed at start' : 'Changeable now',
-      value: compiledRuntime ? 'Compiled bundle' : null,
+      badge: compiledRuntime ? 'New prompts' : 'Changeable now',
+      value: null,
       detail: compiledRuntime
-        ? 'This session runs the model from its compiled bundle. Change the project configuration, then start a new session to use another model.'
+        ? 'The saved model applies to newly accepted prompts. Active and queued prompts keep their model. The compiled agent stays the same.'
         : 'Switching restarts the runtime, which ends the in-flight turn. If it cannot be applied live the change is saved and takes effect the next time this session starts — the switcher says which happened.',
-      control: compiledRuntime ? null : 'model',
+      control: 'model',
     },
     {
       key: 'agent',
@@ -162,7 +162,7 @@ export function isFixedAtStart(
   key: keyof typeof MID_SESSION_CAPABILITIES,
   compiledRuntime = false,
 ): boolean {
-  if (compiledRuntime && (key === 'model' || key === 'agent')) return true;
+  if (compiledRuntime && key === 'agent') return true;
   // Derived from the capability table, with no hardcoded exception. `connections`
   // used to be forced true here even though the table had no entry for it — so
   // the badge and the behaviour could disagree, and did the moment the /scope

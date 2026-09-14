@@ -212,6 +212,7 @@ function startServer(): string {
       }
       if (method === 'PUT' && path === `${session}/model`) {
         const model = (body as { opencode_model: string }).opencode_model;
+        if (model === 'kortix/pi-next') return Response.json({ opencode_model: model, applied_live: false, applies_to: 'next_prompt' });
         if (model === 'kortix/wedged') {
           return Response.json({
             opencode_model: model,
@@ -671,6 +672,15 @@ describe('kortix sessions chat --queue', () => {
 });
 
 describe('kortix sessions model', () => {
+  test('reports that Pi model selection preserves accepted prompts', async () => {
+    const result = await runCli(['sessions', 'model', SESSION, 'kortix/pi-next', ...P], config);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('new prompts');
+    expect(result.stdout).not.toContain('next starts');
+    const json = await runCli(['sessions', 'model', SESSION, 'kortix/pi-next', '--json', ...P], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout).applies_to).toBe('next_prompt');
+  });
   test('PUTs the model and reports the live application', async () => {
     const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
     expect(r.code).toBe(0);

@@ -73,9 +73,9 @@ export function expandCommandTemplate(template: string, argumentsText: string): 
 /**
  * Produce the single text prompt Pi admits for this command.
  *
- * Pi sessions are compiled for one agent and one model. Agent/model overrides
- * that change the compiled selection and child-session commands fail. Explicit
- * selections matching the compiled runtime keep their normal command behavior.
+ * Pi sessions keep one compiled agent. Model and variant validation occurs at
+ * prompt admission when session model selection is enabled. Fixed workers
+ * validate against their compiled model. Child-session commands fail.
  * Shell interpolation and file references require the environment and the same
  * permission boundary as normal tools.
  */
@@ -90,10 +90,10 @@ export function preparePiCommand(
   const runtimeModel = runtime.model
     ? `${runtime.model.providerID}/${runtime.model.modelID}`
     : null;
-  if (command.model !== undefined && (!command.model || command.model !== runtimeModel)) {
+  if (!runtime.selectableModel && command.model !== undefined && (!command.model || command.model !== runtimeModel)) {
     throw new PiCommandUnsupportedError('model overrides', command.name);
   }
-  if (command.variant !== undefined && !runtime.variants?.includes(command.variant)) {
+  if (!runtime.selectableModel && command.variant !== undefined && !runtime.variants?.includes(command.variant)) {
     throw new PiCommandUnsupportedError('variant unsupported by the selected model', command.name);
   }
   if (command.subtask) throw new PiCommandUnsupportedError('subtask execution', command.name);

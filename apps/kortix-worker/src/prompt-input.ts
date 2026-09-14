@@ -7,6 +7,7 @@ export interface CompiledPromptRuntime {
   agent?: string | null;
   model?: { providerID: string; modelID: string } | null;
   variants?: string[];
+  selectableModel?: boolean;
 }
 
 export interface PromptInput {
@@ -18,6 +19,7 @@ export interface PromptInput {
   variant?: string;
   format?: OutputFormat;
   files?: PromptAttachment[];
+  model?: { providerID: string; modelID: string };
 }
 
 export type PromptInputResult = { ok: true; value: PromptInput } | { ok: false; error: string };
@@ -60,7 +62,7 @@ export function parsePromptInput(
     catch (error) { return { ok: false, error: (error as Error).message }; }
   }
 
-  if (own(body, 'variant') && (typeof body.variant !== 'string' || !runtime.variants?.includes(body.variant))) {
+  if (own(body, 'variant') && (typeof body.variant !== 'string' || (!runtime.selectableModel && !runtime.variants?.includes(body.variant)))) {
     return { ok: false, error: 'reasoning variant is not supported by the selected model' };
   }
 
@@ -104,11 +106,11 @@ export function parsePromptInput(
       return { ok: false, error: 'model must contain providerID and modelID strings' };
     }
     const requested = `${model.providerID}/${model.modelID}`;
-    if (
+    if (!runtime.selectableModel && (
       !runtime.model ||
       model.providerID !== runtime.model.providerID ||
       model.modelID !== runtime.model.modelID
-    ) {
+    )) {
       return {
         ok: false,
         error: `model "${requested}" is not available in this compiled worker`,
@@ -173,6 +175,7 @@ export function parsePromptInput(
     value: {
       ...(typeof body.messageID === 'string' ? { messageID: body.messageID } : {}),
       text: text.join(''),
+      ...(runtime.selectableModel && own(body, 'model') ? { model: body.model as { providerID: string; modelID: string } } : {}),
       ...(files.length ? { files } : {}),
       ...(typeof body.system === 'string' ? { system: body.system } : {}),
       ...(typeof body.noReply === 'boolean' ? { noReply: body.noReply } : {}),

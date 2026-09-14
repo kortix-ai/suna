@@ -1,5 +1,6 @@
 import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, type PromptAttachment } from './session-attachments.ts';
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
+import { applySessionModelLimits, parseSessionModelSelection, readSessionModelSelection, type SessionModelSelection } from './session-model';
 import { installCustomAgent } from './custom-agent.ts';
 import { applyGenerationSettings, applyReasoningVariant, supportedReasoningVariants } from './generation-settings.ts';
 import { applyAgentSteps } from './agent-steps.ts';
@@ -464,6 +465,7 @@ export interface WorkerConfig {
   providerId?: string;
   modelId?: string;
   modelLimits?: WorkerModelLimits;
+  modelConfigUrl?: string;
   apiKey?: string;
   gatewayUrl?: string;
   /** Durable session store. Absent = in-memory only (conversation dies with the process). */
@@ -517,6 +519,7 @@ export function configFromEnv(): WorkerConfig {
     providerId: process.env.KORTIX_PROVIDER ?? 'openrouter',
     modelId: process.env.KORTIX_MODEL,
     modelLimits: parseWorkerModelLimits(process.env.KORTIX_MODEL_LIMITS),
+    modelConfigUrl: process.env.KORTIX_MODEL_CONFIG_URL,
     fauxScript: mode === 'faux' ? parseFauxScript(process.env.KORTIX_FAUX_SCRIPT) : undefined,
     // The platform injects the session credential and the gateway base under
     // its OWN names (KORTIX_TOKEN / KORTIX_LLM_BASE_URL, see
@@ -944,7 +947,8 @@ export async function buildHarness(cfg: WorkerConfig) {
           ...(admission.options.compaction === true ? { kortixCompactionSummary: true } : {}),
           api: model.api,
           provider: model.provider,
-          model: model.id,
+          model: (admission.options.modelSelection as unknown as SessionModelSelection | undefined)?.model.modelID ?? model.id,
+          kortixWireModel: admission.wireUserMessage.info.model,
           usage: {
             input: 0,
             output: 0,
@@ -1312,9 +1316,19 @@ export async function buildHarness(cfg: WorkerConfig) {
   // exist at runtime — every turn answered `lazy is not defined`.
   return {
     agent,
+    lazy,
+    resolveSessionModel: (selection: SessionModelSelection) => {
+      if (!cfg.gatewayUrl || cfg.providerId !== 'openrouter') throw new Error('Model switching requires the Kortix gateway');
+      const native = models.getModel('openrouter', selection.model.modelID) ?? {
+        id: selection.model.modelID, name: selection.model.modelID,
+        api: 'openai-completions', provider: 'openrouter',
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      };
+      return applySessionModelLimits({ ...native, baseUrl: cfg.gatewayUrl }, selection);
+    },
+    setActiveModel: (next: any) => { model = next; agent.state.model = next; },
     customAgent,
     env,
-    lazy,
     faux,
     models,
     timing,
@@ -1397,6 +1411,8 @@ export async function startWorker(cfg = configFromEnv()) {
 async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (handler: RequestListener) => void) {
   const {
     agent,
+    resolveSessionModel,
+    setActiveModel,
     customAgent,
     env,
     lazy,
@@ -1497,7 +1513,10 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   const selectedAgentConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent];
   const configuredVariant = selectedAgentConfig?.variant || undefined;
   applyGenerationSettings(agent, selectedAgentConfig);
+  const configuredThinkingLevel = agent.state.thinkingLevel;
+  const configuredModel = agent.state.model;
   effectiveRuntime.variants = supportedReasoningVariants(agent);
+  effectiveRuntime.selectableModel = !!cfg.modelConfigUrl;
   const resumeAgentSteps = applyAgentSteps(agent, selectedAgentConfig?.steps);
   const permissions = new PermissionBroker({
     sessionId: mintRootId(cfg.sessionId ?? 'session-local'),
@@ -1738,6 +1757,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
   };
+  let activeWireModel = effectiveRuntime.model ?? resolvedModel;
   const wireAdapter = new ChatEventAdapter({
     registerAttachment: attachments.registerPart,
     sessionID: surface.rootId,
@@ -1772,7 +1792,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           sessionID: surface.rootId,
           summary: true,
           time: { created: Date.now() },
-          ...(effectiveRuntime.model ?? resolvedModel),
+          ...activeWireModel,
           ...assistantContractFields(undefined, {
             agent: runtimeAgent,
             mode: runtimeAgent,
@@ -1800,6 +1820,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       timestamp: Date.now(),
       kortixWireMessageId: surface.mintMessageId(),
       kortixCompactionAuto: true,
+      kortixWireModel: activeWireModel,
     };
     const compactInfo = {
       id: compactUser.kortixWireMessageId,
@@ -1807,7 +1828,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       sessionID: surface.rootId,
       time: { created: compactUser.timestamp },
       agent: runtimeAgent,
-      model: effectiveRuntime.model ?? resolvedModel,
+      model: activeWireModel,
     };
     surface.publishWire({
       type: "message.updated",
@@ -1871,14 +1892,23 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     }
   };
 
-  type PromptOptions = { files?: PromptAttachment[]; system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; format?: OutputFormat; compaction?: boolean; compactionAuto?: boolean };
+  type PromptOptions = { model?: { providerID: string; modelID: string }; modelSelection?: SessionModelSelection; files?: PromptAttachment[]; system?: string; noReply?: boolean; tools?: Record<string, boolean>; variant?: string; format?: OutputFormat; compaction?: boolean; compactionAuto?: boolean };
+  const selectedVariant = (options: PromptOptions) => {
+    if (options.variant !== undefined) return options.variant;
+    if (!options.modelSelection) return configuredVariant;
+    const selected = resolveSessionModel(options.modelSelection);
+    const desired = configuredVariant ?? (configuredThinkingLevel === 'off' ? 'none' : configuredThinkingLevel);
+    return supportedReasoningVariants({ state: { model: selected } } as Agent).includes(desired)
+      ? desired : undefined;
+  };
   const admissionOptions = (options: PromptOptions): JsonObject => ({
     ...(options.files?.length ? { files: options.files as unknown as JsonObject[] } : {}),
     ...(effectiveRuntime.agent ? { agent: effectiveRuntime.agent } : {}),
-    ...(effectiveRuntime.model ? { model: effectiveRuntime.model } : {}),
+    ...((options.modelSelection?.model ?? effectiveRuntime.model) ? { model: (options.modelSelection?.model ?? effectiveRuntime.model)! } : {}),
+    ...(options.modelSelection ? { modelSelection: options.modelSelection as unknown as JsonObject } : {}),
     ...(options.system === undefined ? {} : { system: options.system }),
     ...(options.format === undefined ? {} : { format: options.format as unknown as JsonObject }),
-    ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
+    ...(selectedVariant(options) === undefined ? {} : { variant: selectedVariant(options)! }),
     ...(options.noReply === true ? { noReply: true } : {}),
     ...(options.compaction === true ? { compaction: true, compactionAuto: options.compactionAuto === true } : {}),
     ...(options.tools === undefined
@@ -2072,6 +2102,8 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
       let completedDurably = false;
       const originalSystemPrompt = agent.state.systemPrompt;
       const originalThinkingLevel = agent.state.thinkingLevel;
+      const originalModel = agent.state.model;
+      const originalWireModel = activeWireModel;
       const originalTools = agent.state.tools;
       let toolReplay: ReturnType<typeof installToolReplay> | null = null;
       if (typeof turn.options.system === 'string' && turn.options.system) {
@@ -2080,6 +2112,13 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           .join('\n');
       }
       try {
+        if (turn.options.modelSelection) {
+          const selected = parseSessionModelSelection(turn.options.modelSelection);
+          setActiveModel(resolveSessionModel(selected));
+          activeWireModel = selected.model;
+          wireAdapter.setModel(selected.model);
+          agent.state.thinkingLevel = 'off';
+        }
         if (typeof turn.options.variant === 'string') applyReasoningVariant(agent, turn.options.variant);
         await permissionApprovals.refresh();
         if (closing) return 'interrupted';
@@ -2099,6 +2138,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           // Persisted with Pi's own message entry. The restore projection uses
           // it instead of inventing a different wire id after every restart.
           kortixWireMessageId: turn.messageId,
+          kortixWireModel: turn.wireUserMessage.info.model,
           ...(turn.options.format === undefined ? {} : { kortixOutputFormat: turn.options.format }),
           ...(turn.options.compaction ? { kortixCompactionAuto: turn.options.compactionAuto === true } : {}),
         };
@@ -2233,6 +2273,9 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
         permissions.restoreCheckpoints([]);
         agent.state.systemPrompt = originalSystemPrompt;
         agent.state.thinkingLevel = originalThinkingLevel;
+        setActiveModel(originalModel);
+        activeWireModel = originalWireModel;
+        wireAdapter.setModel(originalWireModel);
         agent.state.tools = originalTools;
         settling = true;
         clearTimeout(leaseTimer);
@@ -2349,10 +2392,10 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           sessionID: surface.rootId,
           time: { created },
           agent: runtimeAgent,
-          model: effectiveRuntime.model ?? resolvedModel,
+          model: options.modelSelection?.model ?? effectiveRuntime.model ?? resolvedModel,
           ...(options.system === undefined ? {} : { system: options.system }),
           ...(options.format === undefined ? {} : { format: options.format as unknown as JsonObject }),
-          ...((options.variant ?? configuredVariant) === undefined ? {} : { variant: (options.variant ?? configuredVariant)! }),
+          ...(selectedVariant(options) === undefined ? {} : { variant: selectedVariant(options)! }),
           ...(options.tools === undefined ? {} : { tools: options.tools }),
         },
         parts: [
@@ -2376,7 +2419,11 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   };
   const admissionFlights = new Map<string, Promise<AdmittedTurn>>();
   const assertSameAdmission = (admission: TurnAdmission, text: string, options: PromptOptions): void => {
-    if (admission.text !== text || !isDeepStrictEqual(admission.options, admissionOptions(options))) {
+    const snapshot = admission.options.modelSelection
+      ? parseSessionModelSelection(admission.options.modelSelection) : undefined;
+    if (options.model && snapshot && !isDeepStrictEqual(options.model, snapshot.model))
+      throw new AttachmentInputError('The requested model differs from the admitted model.');
+    if (admission.text !== text || !isDeepStrictEqual(admission.options, admissionOptions({ ...options, modelSelection: snapshot }))) {
       throw new TurnAdmissionConflictError(admission.messageId);
     }
   };
@@ -2398,6 +2445,22 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     // into a conflicting admission. Different content under one identity fails
     // closed instead of executing two logical inputs as one message.
     const persisted = explicitId ? turnJournal.admission(explicitId) : null;
+    if (cfg.modelConfigUrl) {
+      const selection = persisted?.options.modelSelection
+        ? parseSessionModelSelection(persisted.options.modelSelection)
+        : persisted ? null : await readSessionModelSelection(cfg.modelConfigUrl, cfg.kortixToken ?? '', signal);
+      if (selection) {
+        options = { ...options, modelSelection: selection };
+      }
+      const selected = selection ? resolveSessionModel(selection) : configuredModel;
+      const identity = selection?.model ?? effectiveRuntime.model ?? resolvedModel;
+      if (options.model && !isDeepStrictEqual(options.model, identity))
+        throw new AttachmentInputError('The requested model differs from the saved session model. Change the session model before sending.');
+      const variants = supportedReasoningVariants({ state: { model: selected } } as Agent);
+      if (options.variant !== undefined && !variants.includes(options.variant))
+        throw new AttachmentInputError('reasoning variant is not supported by the selected model');
+      if (!persisted) surface.setModelSelection(identity, variants, selection ? selection.limits.images === true : selected?.input.includes('image') === true);
+    }
     if (persisted) {
       assertSameAdmission(persisted, text, options);
       const state = turnJournal.state(persisted.messageId);
@@ -2419,7 +2482,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     }
 
     if (options.files?.length) {
-      if (!agent.state.model?.input.includes('image')) throw new AttachmentInputError('the selected model does not accept image attachments');
+      if (!(options.modelSelection ? options.modelSelection.limits.images : agent.state.model?.input.includes('image'))) throw new AttachmentInputError('the selected model does not accept image attachments');
       await attachments.validate(options.files, signal);
     }
     signal.throwIfAborted();
@@ -2563,6 +2626,18 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   activate(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
+    if (cfg.modelConfigUrl && req.method === 'GET' && ['/config', '/global/config', '/agent'].includes(url.pathname)) {
+      if (!surface.authorize(req, url)) { res.writeHead(401).end(); return; }
+      try {
+        const selected = await readSessionModelSelection(cfg.modelConfigUrl, cfg.kortixToken ?? '');
+        if (selected) surface.setModelSelection(selected.model,
+          supportedReasoningVariants({ state: { model: resolveSessionModel(selected) } } as Agent),
+          selected.limits.images === true);
+      } catch {
+        res.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Session model configuration unavailable' }));
+        return;
+      }
+    }
     if (url.pathname.startsWith('/kortix/part/') && req.method === 'GET') {
       if (!surface.authorize(req, url)) { res.writeHead(401).end(); return; }
       const match = url.pathname.match(/^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/);
@@ -2622,7 +2697,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           if (Object.keys(input).some(key => !['providerID', 'modelID', 'auto', 'messageID'].includes(key)))
             throw new RequestBodyValidationError('unsupported compaction option');
           const identity = effectiveRuntime.model ?? resolvedModel;
-          if (input.providerID !== identity.providerID || input.modelID !== identity.modelID)
+          if (!cfg.modelConfigUrl && (input.providerID !== identity.providerID || input.modelID !== identity.modelID))
             throw new RequestBodyValidationError('compaction must use the configured session model');
           if (input.auto !== undefined && typeof input.auto !== 'boolean')
             throw new RequestBodyValidationError('auto must be a boolean');
@@ -2637,7 +2712,10 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
               .end(JSON.stringify({ error: modelError ?? 'context compaction requires durable session storage' }));
             return;
           }
-          const admitted = await admitTurn('Compact conversation context.', input.messageID, { compaction: true, compactionAuto: input.auto === true });
+          const admitted = await admitTurn('Compact conversation context.', input.messageID, {
+            compaction: true, compactionAuto: input.auto === true,
+            model: { providerID: input.providerID, modelID: input.modelID },
+          });
           await admitted.done;
           const completed = turnJournal.completionStatus(admitted.admission.messageId);
           if (completed !== 'idle') {
@@ -2648,7 +2726,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           res.writeHead(200, { 'content-type': 'application/json', ...promptCompletionHeaders(admitted.admission.messageId) }).end('true');
         } catch (error) {
           const code = error instanceof RequestBodyTooLargeError ? 413
-            : error instanceof SyntaxError || error instanceof RequestBodyValidationError ? 400
+            : error instanceof SyntaxError || error instanceof RequestBodyValidationError || error instanceof AttachmentInputError ? 400
             : error instanceof TurnAdmissionConflictError || error instanceof TurnMessageOrderError ? 409 : 503;
           res.writeHead(code, { 'content-type': 'application/json' })
             .end(JSON.stringify({ error: String((error as Error)?.message ?? error) }));
@@ -2719,9 +2797,10 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
               input.agent &&
               input.agent === effectiveRuntime.agent
             ) continue;
-            if (field === 'model' && runtimeModel && input.model === runtimeModel) continue;
+            if (field === 'model' && typeof input.model === 'string' &&
+              (cfg.modelConfigUrl ? /^kortix\/.+/.test(input.model) : input.model === runtimeModel)) continue;
             if (field === 'variant' && typeof input.variant === 'string' &&
-              effectiveRuntime.variants?.includes(input.variant)) continue;
+              (cfg.modelConfigUrl || effectiveRuntime.variants?.includes(input.variant))) continue;
             res.writeHead(409, { 'content-type': 'application/json' }).end(
               JSON.stringify({
                 code: 'PI_COMMAND_RUNTIME_OVERRIDE_UNSUPPORTED',
@@ -2753,10 +2832,12 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           }
           const selectedCommand = {
             ...command,
+            ...(typeof input.model === 'string' ? { model: input.model } : {}),
             ...(typeof input.variant === 'string' ? { variant: input.variant } : {}),
           };
           const prompt = preparePiCommand(selectedCommand, argumentsText, effectiveRuntime);
           const admitted = await admitTurn(prompt, input.messageID as string | undefined, {
+            ...(selectedCommand.model ? { model: { providerID: selectedCommand.model.split('/')[0]!, modelID: selectedCommand.model.slice(selectedCommand.model.indexOf('/') + 1) } } : {}),
             ...(selectedCommand.variant !== undefined ? { variant: selectedCommand.variant } : {}),
           });
           const completion = await admitted.done;
@@ -2801,7 +2882,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           const tooLarge =
             error instanceof RequestBodyTooLargeError || error instanceof SessionLogItemTooLargeError;
           const invalid =
-            error instanceof SyntaxError || error instanceof RequestBodyValidationError;
+            error instanceof SyntaxError || error instanceof RequestBodyValidationError || error instanceof AttachmentInputError;
           res
             .writeHead(unsupported ? 422 : conflict ? 409 : tooLarge ? 413 : invalid ? 400 : 503, {
               'content-type': 'application/json',
@@ -2915,6 +2996,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
           }
           try {
             const admitted = await admitTurn(parsed.value.text, parsed.value.messageID, {
+              model: parsed.value.model,
               system: parsed.value.system,
               noReply: parsed.value.noReply,
               tools: parsed.value.tools,
@@ -3027,6 +3109,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
         workload: 'session',
         opencode: activeStoreError ? 'error' : 'ok',
         engine: 'pi',
+        session_model_selection: cfg.modelConfigUrl ? 'next-prompt-v1' : null,
         uptime_s: Math.floor((Date.now() - BOOT_T0) / 1000),
         repo_required: false,
         repo_ready: true,
