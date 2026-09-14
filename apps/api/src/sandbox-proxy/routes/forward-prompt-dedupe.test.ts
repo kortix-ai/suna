@@ -401,6 +401,74 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
 });
 
 
+describe('durable admission retries after preview prompt delivery failure', () => {
+  test.each([false, true])('retries an explicit key with the same wire ID, placed=%s', async (placed) => {
+    const messageID = 'msg_ffffffffffffabcdefghijklmn';
+    const transcript = () => new Response('[]', {
+      headers: { 'x-kortix-prompt-admission': 'durable-message-id-v1' },
+    });
+    const requests: Array<{ method: string; body: unknown }> = [];
+    const replies = [
+      ...(placed ? [] : [transcript()]),
+      new Response('temporarily unavailable', { status: 503 }),
+      transcript(),
+      new Response(null, { status: 204 }),
+      transcript(),
+      new Response('conflicting payload', { status: 409 }),
+    ];
+    globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+      requests.push({ method: init.method!, body: init.body ? JSON.parse(new TextDecoder().decode(init.body as ArrayBuffer)) : null });
+      const response = replies.shift();
+      if (!response) throw new Error('unexpected upstream request');
+      return response;
+    }) as typeof fetch;
+    const send = (text: string) => forwardToSandbox('sb-1', 8000, {
+      kind: 'principal', userId: 'u1', callerSessionId: null,
+      boundCredentialSessionId: null, sandboxAuthored: false,
+    }, 'POST', '/session/sess-1/prompt_async', '', jsonHeaders({
+      'idempotency-key': 'preview-retry', ...(placed ? { 'X-Kortix-Wire-Id-Placed': '1' } : {}),
+    }), new TextEncoder().encode(JSON.stringify({ messageID, parts: [{ type: 'text', text }] })).buffer, 'http://app.local');
+    expect((await send('input')).status).toBe(503);
+    expect((await send('input')).status).toBe(204);
+    expect((await send('changed')).status).toBe(409);
+    const posted = requests.filter(request => request.method === 'POST').map(request => request.body as any);
+    expect(posted).toHaveLength(3);
+    expect(posted[1]).toEqual(posted[0]);
+    expect(posted.map(body => body.messageID)).toEqual([messageID, messageID, messageID]);
+    expect(replies).toHaveLength(0);
+  });
+
+  test('an explicit key cannot authorize a different message ID on retry', async () => {
+    queueFetch(new Response(null, { status: 204 }));
+    const send = (messageID: string) => forwardToSandbox('sb-1', 8000, {
+      kind: 'principal', userId: 'u1', callerSessionId: null,
+      boundCredentialSessionId: null, sandboxAuthored: false,
+    }, 'POST', '/session/sess-1/prompt_async', '', jsonHeaders({
+      'idempotency-key': 'same-key-different-message', 'X-Kortix-Wire-Id-Placed': '1',
+    }), new TextEncoder().encode(JSON.stringify({ messageID, parts: [{ type: 'text', text: 'input' }] })).buffer, 'http://app.local');
+    expect((await send('msg_fffffffffff0abcdefghijklmn')).status).toBe(204);
+    const retry = await send('msg_fffffffffff1abcdefghijklmn');
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('an unreadable admission capability does not report a duplicate as delivered', async () => {
+    const body = new TextEncoder().encode(JSON.stringify({ messageID: 'msg_ffffffffffffabcdefghijklmn', parts: [{ type: 'text', text: 'input' }] })).buffer;
+    queueFetch(new Response('unavailable', { status: 503 }), new Response('unavailable', { status: 503 }));
+    const send = () => forwardToSandbox('sb-1', 8000, {
+      kind: 'principal', userId: 'u1', callerSessionId: null,
+      boundCredentialSessionId: null, sandboxAuthored: false,
+    }, 'POST', '/session/sess-1/prompt_async', '', jsonHeaders({
+      'idempotency-key': 'preview-unreadable', 'X-Kortix-Wire-Id-Placed': '1',
+    }), body, 'http://app.local');
+    expect((await send()).status).toBe(503);
+    const retry = await send();
+    expect(retry.status).toBe(503);
+    expect(await retry.json()).toMatchObject({ code: 'prompt_admission_unavailable', retry: true });
+    expect(fetchCalls).toBe(2);
+  });
+});
+
 describe('durable prompt completion receipts', () => {
   const messageID = 'msg_01990f4ca012abcdefghijklmn';
   const receipt = {

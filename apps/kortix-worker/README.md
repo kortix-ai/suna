@@ -413,3 +413,9 @@ The marker survives provider stop/resume, which can change mount device and inod
 The history engine excludes this internal marker from snapshots. Preserve it with the workspace; do not commit it to Git.
 A missing or changed marker refuses rewind. Ordinary file tools remain available unless a file move is pending.
 Pre-marker checkpoints migrate only while the original directory identity still matches.
+
+Prompt retries retain the same `messageID`, including when the caller supplies an
+`Idempotency-Key`. The proxy reads Pi's durable admission capability before
+forwarding a duplicate. Pi returns the saved admission or a content conflict.
+An unavailable capability read returns 503 instead of reporting delivery.
+The key cannot authorize another message ID while its proxy claim remains live.

@@ -6396,3 +6396,10 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** the Pi preview restored files correctly, but an open file preview kept deleted content. Host hooks had separate `runtime-files` keys while the SDK invalidated `opencode-files`. Restored message events also painted a false Thinking state.
 **Rule:** hosts import the SDK's file cache keys. A completed history move publishes current idle status after replay, only while no turn is unfinished or executing.
 **Enforcer:** `file-cache-keys.test.ts` checks each hook's actual query key against the SDK. `session-history-routes.test.ts` checks the real SSE stream ends replay with idle. `sync-store.test.ts` verifies that a fresh idle settles intervening content, while an old idle and repeated idle without new content keep their prior timestamps.
+
+### Let durable runtimes resolve exact prompt retries (2026-09-14)
+
+**When:** forwarding a prompt with both `messageID` and `Idempotency-Key`.
+**Incident:** preview Edit received an upstream 503, then a cached duplicate 200. No Pi admission existed, but the API retained an active turn.
+**Rule:** bind the key to its original message ID. On retry, read the runtime admission capability and forward that same ID when supported. An unreadable capability is retryable, not proof of delivery. Preserve legacy duplicate protection.
+**Enforcer:** `forward-prompt-dedupe.test.ts` covers 503 recovery, placed IDs, changed input, changed IDs, and unavailable capability. `RUN-2` tests both keyed and keyless retries.

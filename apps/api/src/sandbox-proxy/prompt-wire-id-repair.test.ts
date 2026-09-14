@@ -48,6 +48,7 @@ describe('readPromptTranscript', () => {
     expect(result).toEqual({
       newestKnownTime: null,
       durableMessageIds: durable,
+      available: status === 200 && body === '[]',
     });
   });
 
@@ -59,7 +60,7 @@ describe('readPromptTranscript', () => {
         throw new Error('connection reset');
       }) as unknown as typeof fetch,
     });
-    expect(result).toEqual({ newestKnownTime: null, durableMessageIds: false });
+    expect(result).toEqual({ newestKnownTime: null, durableMessageIds: false, available: false });
   });
 });
 

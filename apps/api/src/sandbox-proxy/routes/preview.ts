@@ -75,6 +75,7 @@ import {
   claimPromptDelivery,
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
+  promptDeliveryMatchesMessage,
   releasePromptDelivery,
   shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
@@ -1027,11 +1028,11 @@ export async function forwardToSandbox(
   let promptDedupeKey: string | null = null;
   const idempotencyKey = incomingHeaders.get('idempotency-key');
   let duplicatePrompt = false;
+  const claimedMessageId = promptBodyMessageId(requestBody);
   const canUseDurableMessageAdmission =
     promptDelivery &&
     isPromptWireIdRepairPath(remainingPath) &&
-    promptBodyMessageId(requestBody) !== null &&
-    !idempotencyKey?.trim();
+    claimedMessageId !== null;
   // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
   // is short-circuited) are DIFFERENT guarantees — see
   // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
@@ -1043,8 +1044,8 @@ export async function forwardToSandbox(
       sessionId: record.sessionId,
       body: requestBody,
     });
-    if (!claimPromptDelivery(promptDedupeKey)) {
-      if (!canUseDurableMessageAdmission) {
+    if (!claimPromptDelivery(promptDedupeKey, Date.now(), claimedMessageId)) {
+      if (!canUseDurableMessageAdmission || !promptDeliveryMatchesMessage(promptDedupeKey, claimedMessageId!)) {
         return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
       }
       duplicatePrompt = true;
@@ -1288,7 +1289,7 @@ export async function forwardToSandbox(
         promptDelivery &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
-        (canUseDurableMessageAdmission ||
+        ((canUseDurableMessageAdmission && (duplicatePrompt || !idempotencyKey?.trim())) ||
           (!sandboxAuthored && incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1')) &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
@@ -1302,6 +1303,12 @@ export async function forwardToSandbox(
           headers: authHeaders,
         });
         ptl.mark('wire-id-read');
+        if (duplicatePrompt && !transcript.available) {
+          return jsonProxyError({
+            error: 'Runtime admission could not be verified. Retry the same message ID.',
+            code: 'prompt_admission_unavailable', retry: true,
+          }, 503, origin);
+        }
         const durableAdmission = canUseDurableMessageAdmission && transcript.durableMessageIds;
         if (duplicatePrompt && !durableAdmission) {
           return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);

@@ -106,12 +106,12 @@ export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boole
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
 
-const seen = new Map<string, number>(); // key -> expiresAt (ms epoch)
+const seen = new Map<string, { expiresAt: number; messageId: string | null }>();
 
 // Map preserves insertion order, so the oldest entries live at the front: trim
 // expired ones from the front, then cap total size by dropping the oldest.
 function evict(now: number): void {
-  for (const [key, expiresAt] of seen) {
+  for (const [key, { expiresAt }] of seen) {
     if (expiresAt > now) break;
     seen.delete(key);
   }
@@ -210,12 +210,17 @@ export function promptDeliveryKey(opts: {
 // circuit without re-POSTing). The claim is taken up-front — modelling the
 // delivery as "in-flight" — so a concurrent duplicate is deduped even before the
 // first attempt returns.
-export function claimPromptDelivery(key: string, now: number = Date.now()): boolean {
+export function claimPromptDelivery(key: string, now: number = Date.now(), messageId: string | null = null): boolean {
   evict(now);
-  const expiresAt = seen.get(key);
+  const expiresAt = seen.get(key)?.expiresAt;
   if (expiresAt !== undefined && expiresAt > now) return false;
-  seen.set(key, now + DEDUPE_TTL_MS);
+  seen.set(key, { expiresAt: now + DEDUPE_TTL_MS, messageId });
   return true;
+}
+
+export function promptDeliveryMatchesMessage(key: string, messageId: string, now: number = Date.now()): boolean {
+  const claim = seen.get(key);
+  return !!claim && claim.expiresAt > now && claim.messageId === messageId;
 }
 
 // Release a claim taken by claimPromptDelivery when the delivery PROVABLY never

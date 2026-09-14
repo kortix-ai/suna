@@ -150,9 +150,9 @@ export async function readPromptTranscript(input: {
   headers: Record<string, string>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-}): Promise<{ newestKnownTime: bigint | null; durableMessageIds: boolean }> {
+}): Promise<{ newestKnownTime: bigint | null; durableMessageIds: boolean; available: boolean }> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const unavailable = { newestKnownTime: null, durableMessageIds: false };
+  const unavailable = { newestKnownTime: null, durableMessageIds: false, available: false };
   try {
     const res = await fetchImpl(input.url, {
       method: 'GET',
@@ -169,6 +169,7 @@ export async function readPromptTranscript(input: {
         messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
       ),
       durableMessageIds: res.headers.get(PROMPT_ADMISSION_HEADER) === DURABLE_MESSAGE_ADMISSION,
+      available: true,
     };
   } catch {
     return unavailable;
