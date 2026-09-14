@@ -53,6 +53,25 @@ checkpoints. Existing entries remain unchanged. Subsequent messages use the
 normal durable admission path. Workers that already persist wire IDs do not
 need this checkpoint.
 
+## Durable history preparation
+
+The session log supports an internal versioned `history` transition. One append
+selects Pi's native conversation branch and the exact hidden message IDs.
+Restart replays both from that append. Restore reattaches the original branch.
+A new accepted prompt commits the staged branch; later restore cannot revive it.
+Archived messages retain their original IDs and remain excluded after restart.
+
+Prompt acceptance and history transitions compare the same revision under a
+PostgreSQL session lock. Rewind rejects unfinished turns. Identical retries
+append once. After a history transition, old workers that omit the admission
+revision receive `409`. Native replay rejects missing targets, non-ancestor
+rewinds, open operations, and branch drift.
+
+This is internal preparation. Raw `revert`/`unrevert` still return `501`.
+Workspace rollback, its recovery protocol, transcript-mirror updates, SSE
+transitions, and the existing UI controls remain to be connected. Direct log
+writes do not undo files, commands, or external API effects.
+
 ## Config precedence
 
 `main.ts` reads `globalThis.__KORTIX_COMPILED__` (the bake) and overlays env:

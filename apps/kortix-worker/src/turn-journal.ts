@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { sessionLogAppendId } from './session-log-id.ts';
+import { projectPiHistory, type PiHistoryProjection } from '../../../packages/shared/src/pi-history';
 
 import {
   type JournalLogItem,
@@ -62,7 +63,7 @@ export interface TurnJournalSnapshot {
 }
 
 type TurnJournalEvent =
-  | { type: 'accepted'; turn: TurnAdmission }
+  | { type: 'accepted'; turn: TurnAdmission; historyRevision?: number }
   | { type: 'started'; messageId: string; ownerId?: string; leaseVersion?: 1 }
   | { type: 'heartbeat'; messageId: string; ownerId: string }
   | {
@@ -136,6 +137,7 @@ interface ReducedJournal {
   wireOrder: OrderedWireMessage[];
   wireById: Map<string, WireMessageEnvelope>;
   wireFloorId: string | null;
+  history: PiHistoryProjection;
 }
 
 export class TurnJournalCorruptionError extends Error {
@@ -406,6 +408,7 @@ function emptyJournal(): ReducedJournal {
     wireOrder: [],
     wireById: new Map(),
     wireFloorId: null,
+    history: projectPiHistory([]),
   };
 }
 
@@ -452,6 +455,8 @@ function applyEvent(reduced: ReducedJournal, event: TurnJournalEvent): void {
       abortAcknowledged: false,
     });
     appendWireMessage(reduced, event.turn.messageId, event.turn.wireUserMessage);
+    reduced.history.revision++;
+    reduced.history.staged = null;
     return;
   }
 
@@ -631,6 +636,7 @@ function reduceItems(items: readonly SessionLogItem[]): ReducedJournal {
     const event = decodeEvent(item);
     if (event) applyEvent(reduced, event);
   }
+  reduced.history = projectPiHistory(items);
   return reduced;
 }
 
@@ -647,12 +653,15 @@ function snapshot(reduced: ReducedJournal): TurnJournalSnapshot {
     states[id] = turn.state;
     if (turn.state === 'pending') pending.push(structuredClone(turn.admission));
     if (turn.state === 'started') started.push(structuredClone(turn.admission));
-    if (turn.state === 'completed' && turn.relayStatus && !turn.relayed) {
+    if (turn.state === 'completed' && turn.relayStatus && !turn.relayed && !reduced.history.hiddenMessageIds.has(id)) {
       unrelayed.push({ messageId: id, status: turn.relayStatus });
     }
   }
   const wireMessages = reduced.wireOrder
-    .filter(({ turnMessageId }) => reduced.turns.get(turnMessageId)?.state !== 'cancelled')
+    .filter(({ turnMessageId, message }) =>
+      reduced.turns.get(turnMessageId)?.state !== 'cancelled' &&
+      !reduced.history.hiddenMessageIds.has(message.info.id),
+    )
     .map(({ message }) => structuredClone(message));
   return { pending, started, wireMessages, unrelayed, states };
 }
@@ -705,6 +714,7 @@ export class TurnAdmissionJournal {
   get toolControls(): Record<string, boolean> {
     for (let index = this.reduced.order.length - 1; index >= 0; index--) {
       const turn = this.reduced.turns.get(this.reduced.order[index]!);
+      if (turn && this.reduced.history.hiddenMessageIds.has(turn.admission.messageId)) continue;
       if (!turn || (turn.state !== 'started' && turn.state !== 'completed')) continue;
       const tools = turn.admission.options.tools;
       if (tools === undefined) continue;
@@ -782,7 +792,9 @@ export class TurnAdmissionJournal {
         if (floor !== null && normalized.messageId <= floor) {
           throw new TurnJournalMessageOrderError();
         }
-        const event: TurnJournalEvent = { type: 'accepted', turn: normalized };
+        const event: TurnJournalEvent = {
+          type: 'accepted', turn: normalized, historyRevision: this.reduced.history.revision,
+        };
         this.log.preflight?.(itemFor(event));
         try {
           // This is a compare-and-append chain. Two workers that observed the

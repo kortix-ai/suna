@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isDeepStrictEqual } from 'node:util';
+import { validatePiHistoryControlAppend } from '../../../packages/shared/src/pi-history';
 
 import {
   type SessionLog,
@@ -137,6 +138,58 @@ function completed(
 }
 
 describe('TurnAdmissionJournal', () => {
+  test('replayed rewind hides exact wire ids, preserves the admission floor, and restores original envelopes', async () => {
+    const first = turn('msg_01');
+    const second = turn('msg_03');
+    const log = new MemoryLog([
+      accepted(first), completed(first.messageId, [wireMessage('msg_02', 'assistant', 'first', first.messageId)]),
+      accepted(second), completed(second.messageId, [wireMessage('msg_04', 'assistant', 'second', second.messageId)]),
+    ]);
+    const original = (await TurnAdmissionJournal.open(log)).wireMessages;
+    await log.append({ kind: 'history', version: 1, revision: 2, action: 'stage', messageId: second.messageId, fromLeaf: 'e4', toLeaf: 'e2', hiddenMessageIds: ['msg_03', 'msg_04'] });
+    const journal = await TurnAdmissionJournal.open(log);
+    expect(journal.wireMessages).toEqual(original.slice(0, 2));
+    expect(journal.unrelayed).toEqual([{ messageId: 'msg_01', status: 'idle' }]);
+    expect(journal.state('msg_03')).toBe('completed');
+    await expect(journal.accept(turn('msg_025'))).rejects.toThrow('sort after');
+    await log.append({ kind: 'history', version: 1, revision: 3, action: 'restore' });
+    expect((await journal.refresh()).wireMessages).toEqual(original);
+  });
+
+  test('acceptance stores the history revision and commits the staged branch after a process replacement', async () => {
+    const log = new FencedMemoryLog([
+      accepted(turn('msg_01')), completed('msg_01', [wireMessage('msg_02', 'assistant', 'hidden', 'msg_01')]),
+      { kind: 'history', version: 1, revision: 1, action: 'stage', messageId: 'msg_01', fromLeaf: 'e2', toLeaf: null, hiddenMessageIds: ['msg_01', 'msg_02'] },
+    ]);
+    const journal = await TurnAdmissionJournal.open(log);
+    expect(await journal.accept(turn('msg_03'))).toBe(true);
+    expect(log.items.at(-1)).toMatchObject({ record: { type: 'accepted', historyRevision: 2 } });
+    expect((await TurnAdmissionJournal.open(log)).wireMessages.map(message => message.info.id)).toEqual(['msg_03']);
+  });
+
+  test('an admission that loses to rewind reloads the revision before retrying', async () => {
+    const log = new FencedMemoryLog([accepted(turn('msg_01')), completed('msg_01', [])]);
+    const append = log.append.bind(log);
+    let raced = false;
+    let attempts = 0;
+    log.append = async (item, options) => {
+      if (item.kind === 'journal' && item.record.type === 'accepted') {
+        if (++attempts > 3) throw new Error('admission did not converge');
+        if (!raced) {
+          raced = true;
+          log.items.push({ kind: 'history', version: 1, revision: 1, action: 'stage', messageId: 'msg_01', fromLeaf: 'e1', toLeaf: null, hiddenMessageIds: ['msg_01'] });
+        }
+        try { validatePiHistoryControlAppend(log.items, item); }
+        catch (error) { throw new SessionLogConflictError(String(error)); }
+      }
+      await append(item, options);
+    };
+    const journal = await TurnAdmissionJournal.open(log);
+    expect(await journal.accept(turn('msg_02'))).toBe(true);
+    expect(log.items.at(-1)).toMatchObject({ record: { historyRevision: 2 } });
+    expect(journal.wireMessages.map(message => message.info.id)).toEqual(['msg_02']);
+  });
+
   test('does not expose an acceptance until its append commits', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

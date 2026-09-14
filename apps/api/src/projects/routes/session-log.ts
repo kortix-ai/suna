@@ -17,9 +17,10 @@
  * a response lost after commit can be retried without duplicating a mutation.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, asc, eq, gt } from 'drizzle-orm';
-import { sessionWorkerLog } from '@kortix/db';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { projectSessions, sessionWorkerLog } from '@kortix/db';
 import { isDeepStrictEqual } from 'node:util';
+import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -27,6 +28,11 @@ import { authorizeSessionStorageCall as authorizeLogCall } from '../lib/session-
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import { PI_STATE_STREAM } from '../../../../../packages/sdk/src/core/pi/state';
+import {
+  isPiHistoryControlItem,
+  validatePiHistoryControlAppend,
+  PiHistoryTransitionError,
+} from '../../../../../packages/shared/src/pi-history';
 
 /**
  * The wire shape is the WORKER's, not ours: it POSTs the bare mutation and
@@ -70,7 +76,7 @@ projectsApp.openapi(
     responses: {
       204: { description: 'Appended' },
       ...errors(400, 401, 403, 404),
-      409: { description: 'Idempotency key was already used for different content' },
+      409: { description: 'Idempotency conflict, stale history revision, or unfinished turn' },
       413: { description: 'Item exceeds the per-append size limit' },
     },
   }),
@@ -86,6 +92,69 @@ projectsApp.openapi(
     }
     if (Buffer.byteLength(JSON.stringify(item), 'utf8') > MAX_ITEM_BYTES) {
       return c.json({ error: 'log item too large' }, 413);
+    }
+    if (item.kind === 'history' && (!appendId || item._kortixAppendId !== appendId)) {
+      return c.json({ error: 'history requires a matching UUID v4 idempotency key' }, 400);
+    }
+    if (isPiHistoryControlItem(item)) {
+      try {
+        await db.transaction(async tx => {
+          const [session] = await tx
+            .select({ metadata: projectSessions.metadata })
+            .from(projectSessions)
+            .where(eq(projectSessions.sessionId, gate.sessionId))
+            .for('no key update');
+          if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
+            throw new HTTPException(404, { message: 'Not found' });
+          }
+          if (appendId) {
+            const [existing] = await tx
+              .select({ item: sessionWorkerLog.item })
+              .from(sessionWorkerLog)
+              .where(and(eq(sessionWorkerLog.sessionId, gate.sessionId), eq(sessionWorkerLog.appendId, appendId)))
+              .limit(1);
+            if (existing) {
+              if (!isDeepStrictEqual(existing.item, item)) {
+                throw new PiHistoryTransitionError('idempotency key reused with different item');
+              }
+              return;
+            }
+          }
+          const rows = await tx
+            .select({ item: sql<Record<string, unknown>>`CASE
+              WHEN ${sessionWorkerLog.item}->>'kind' = 'history' THEN ${sessionWorkerLog.item}
+              ELSE jsonb_build_object(
+                'kind', 'journal', 'stream', 'kortix.pi.turn-admission.v1',
+                'record', jsonb_build_object(
+                  'type', ${sessionWorkerLog.item}->'record'->>'type',
+                  'messageId', ${sessionWorkerLog.item}->'record'->>'messageId',
+                  'turn', jsonb_build_object('messageId', ${sessionWorkerLog.item}->'record'->'turn'->>'messageId')
+                )
+              ) END` })
+            .from(sessionWorkerLog)
+            .where(and(
+              eq(sessionWorkerLog.sessionId, gate.sessionId),
+              sql`(${sessionWorkerLog.item}->>'kind' = 'history' OR (
+                ${sessionWorkerLog.item}->>'kind' = 'journal' AND
+                ${sessionWorkerLog.item}->>'stream' = 'kortix.pi.turn-admission.v1' AND
+                ${sessionWorkerLog.item}->'record'->>'type' IN ('accepted', 'completed', 'cancelled')
+              ))`,
+            ))
+            .orderBy(asc(sessionWorkerLog.id));
+          validatePiHistoryControlAppend(rows.map(row => row.item), item);
+          const inserted = await tx.insert(sessionWorkerLog)
+            .values({ sessionId: gate.sessionId, appendId, item })
+            .onConflictDoNothing({ target: [sessionWorkerLog.sessionId, sessionWorkerLog.appendId] })
+            .returning({ id: sessionWorkerLog.id });
+          if (!inserted.length) throw new PiHistoryTransitionError('history append lost its idempotency fence');
+        });
+      } catch (error) {
+        if (error instanceof PiHistoryTransitionError) {
+          return c.json({ error: error.message, code: 'PI_HISTORY_CONFLICT' }, error.status);
+        }
+        throw error;
+      }
+      return c.body(null, 204);
     }
     if (!appendId) {
       await db.insert(sessionWorkerLog).values({ sessionId: gate.sessionId, appendId: null, item });

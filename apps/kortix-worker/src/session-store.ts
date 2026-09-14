@@ -31,6 +31,11 @@ import { isDeepStrictEqual } from 'node:util';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
 import { applyLegacyWireIdentities } from './legacy-wire-identity.ts';
 import { PI_STATE_STREAM, PiStateConflictError } from '../../../packages/sdk/src/core/pi/state';
+import {
+  projectPiHistory,
+  PiHistoryTransitionError,
+  type PiHistoryTransition,
+} from '../../../packages/shared/src/pi-history';
 
 export interface SessionLogLeaseFence {
   stream: string;
@@ -62,7 +67,8 @@ export interface JournalLogItem {
   _kortixTurnLease?: SessionLogLeaseFence;
 }
 
-export type SessionLogItem = (StorageLogItem | JournalLogItem) & {
+export type SessionLogItem = (StorageLogItem | JournalLogItem | PiHistoryTransition) & {
+  _kortixTurnLease?: SessionLogLeaseFence;
   /** Persisted inside the item so a read can prove a timed-out append committed. */
   _kortixAppendId?: string;
 };
@@ -379,8 +385,33 @@ export class DurableSessionStorage {
     const inner = new InMemorySessionStorage(metadata);
     const durable = new DurableSessionStorage(inner, log, true);
     const items = await log.read();
-    for (const item of applyLegacyWireIdentities(items, metadata.id)) {
+    const history = projectPiHistory(items);
+    const moves = new Map(history.laneMoves.map(move => [move.index, move]));
+    for (const [index, item] of applyLegacyWireIdentities(items, metadata.id).entries()) {
       switch (item.kind) {
+        case 'history': {
+          const move = moves.get(index);
+          if (!move) break;
+          const current = (await inner.getLanes()).find(lane => lane.lane === 'main')?.leafId;
+          if (current !== move.from) {
+            throw new PiHistoryTransitionError('history no longer matches the current branch');
+          }
+          if ((await inner.findOpenOperations('main')).length > 0) {
+            throw new PiHistoryTransitionError('history has an unfinished native operation');
+          }
+          if (item.action === 'stage') {
+            let ancestor = current;
+            while (ancestor !== null && ancestor !== move.to) {
+              const entry = await inner.getEntry(ancestor);
+              ancestor = entry?.parentId ?? null;
+            }
+            if (ancestor !== move.to) {
+              throw new PiHistoryTransitionError('rewind target must be an ancestor of the current branch');
+            }
+          }
+          await inner.moveLane('main', move.to);
+          break;
+        }
         case 'lane_create':
           await inner.createLane(item.lane, item.at);
           break;
