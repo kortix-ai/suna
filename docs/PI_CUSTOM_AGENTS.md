@@ -502,13 +502,17 @@ explicit model must match the saved session model.
 
 The API returns `applies_to: "next_prompt"`. A configuration read failure returns
 `503` before accepting a new prompt. An older running worker returns `409` until
-it is upgraded. Live agent switching remains unsupported.
+it is upgraded. Stop/resume also upgrades workers created before the model
+endpoint existed. Live agent switching remains unsupported.
 
 ## Provider context overflow
 
 When an ordinary provider request rejects an existing conversation for context
-overflow, Pi can summarize and retry once per prompt. Recovery preserves completed
-tool results. It does not repeat the prompt or an executed tool. Custom context
+overflow, Pi can summarize and retry once per prompt. Recovery reuses recorded
+tool results. A completed current tool batch remains in native context when it
+fits within 16,000 estimated tokens and one quarter of the model context window.
+Larger batches become summary text. The model can then request another tool call;
+custom tools with external effects still need application-level idempotency. Custom context
 transforms and native image hydration also run for the replacement request.
 Stop cancels recovery. A visible partial response, repeated overflow, unrelated
 provider error, or oversized first input retains an error instead of retrying.

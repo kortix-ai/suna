@@ -681,6 +681,13 @@ describe('kortix sessions model', () => {
     expect(json.code).toBe(0);
     expect(JSON.parse(json.stdout).applies_to).toBe('next_prompt');
   });
+  test('the command list distinguishes Pi model saves from OpenCode restarts', async () => {
+    const r = await runCli(['sessions', '--help'], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Pi: save the model for new prompts.');
+    expect(r.stdout).toContain('OpenCode: restart a live runtime.');
+  });
+
   test('PUTs the model and reports the live application', async () => {
     const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
     expect(r.code).toBe(0);

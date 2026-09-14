@@ -6328,3 +6328,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** preview `1877cccc43` returned localized-page 502s during the browser suite. The frontend logged `Reached heap limit`; its container ceiling was 512 MiB.
 **Rule:** previews that enable the marketing site and test every locale reserve 2 GiB for the frontend. Set the Node heap ceiling to 1.5 GiB, leaving space for native allocations. Preserve the existing HTTP header limit.
 **Enforcer:** `tests/unit/preview-stack.test.ts` checks the preview overlay. Verify the complete locale census and container restart count on the deployed preview.
+
+### Preserve completed native tool batches during overflow recovery (2026-09-14)
+
+**Incident:** a real provider overflow on preview `1877cccc43` summarized a short conversation completely. The summary recorded counter `2`, but the replacement request called the counter again and returned `3`.
+**Rule:** automatic recovery retains the bounded active native tool batch. A summary alone does not tell the provider that the current tool request is already satisfied. Oversized batches still follow the storage and context limits; external side effects require application-level idempotency.
+**Enforcer:** `context-compaction.test.ts` checks active and oversized batches. `turn-routes.test.ts` checks the retried provider input. Preview `c0a4e666c4` returns `2 — ORCHID-47`, preserves eight messages across restart, and executes only two total tool calls.

@@ -180,8 +180,8 @@ Subcommands:
   warm                              Pre-create the session you are about to
                                     use, so the box is already up.
                                     --exclude <session-id>, --json.
-  model <session-id> <model-id>     Change the model a session runs. A live
-                                    box restarts, ending the turn in flight.
+  model <session-id> <model-id>     Pi: save the model for new prompts.
+                                    OpenCode: restart a live runtime.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it

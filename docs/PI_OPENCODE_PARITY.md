@@ -53,13 +53,14 @@ of each feature or the remaining parity matrix passed.
 | History while stopped | Durable transcript mirror and worker restoration | Full historical message identity preservation |
 | Public conversation while stopped | Sanitized worker transcript or PostgreSQL mirror | Preview: 24 messages preserved byte-for-byte as sanitized envelopes; anonymous HTTP 200, revoked HTTP 410 |
 | Worker/environment lifecycle | Distinct runtime principals, restore/stop/replacement, lease fencing, owner-bound recovered turn authority | PostgreSQL and process-death tests; preview `30bff99179` restores one active permission turn, rejects stale completion, executes once, and settles the queue |
-| Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI |
+| Context compaction | Manual and automatic checks before new prompts and between tool rounds; bounded retention and complete display history | HTTP threshold, Stop, retry, queue, replacement, oversize, and crash tests; real Luna with an 8,192-token fixture window, one tool execution, saved summary, exact restart, and recall; preview manual-compaction UI. Preview `c0a4e666c4`: real provider overflow, two total tool calls, remembered code, 14 text deltas, and exact eight-message restart |
 | Native tool images | PostgreSQL assets, native provider and hook hydration, authenticated tiles and image viewer | Preview `cc5a217ef2`: custom capture and native environment read, exact bytes, 243 deltas, 73 visible states, 11-message exact restart, execution-only environment |
-| Native user images | Immutable PostgreSQL references, native provider hydration, session-scoped SDK upload, composer picker, and authenticated image viewer | Preview `1186af73`: 4,687-byte PNG, 50 text deltas, nine visible streaming states, Stop/next prompt, exact stop/resume history, image zoom/close, and absent environment |
+| Native user images | Immutable PostgreSQL references, native provider hydration, session-scoped SDK upload, composer picker, and authenticated image viewer | Preview `1186af73`: 4,687-byte PNG, 50 text deltas, nine visible streaming states, Stop/next prompt, exact stop/resume history, image zoom/close, and absent environment. Preview `1877cccc43`: a 7,682,253-byte PNG reaches real vision; exact bytes and history survive stop/resume |
 | Prompt controls | `system`, `noReply`, tool controls | Parser, durable replay, and HTTP tests |
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 | Structured output | Prompt-scoped JSON Schema, `info.structured`, validation retries, terminal errors, and SDK `send(..., { format })` | Draft 7/2020-12 object schemas and local references through real Luna; HTTP validation, queue, cancellation, lifecycle, crash, and question-recovery tests |
 | Remote MCP resources and prompts | Capability-based resource/template discovery, resource reads, prompt discovery/retrieval, native image content, and existing connector policies | Preview `48e1acb70f`: all five operations through SDK and real CLI; catalog upgrade, pagination, errors, block/approval, PostgreSQL audit, Pi prompt/image UI, 47 text deltas, exact 63-message restart, denied-agent isolation, and absent environments |
+| Live model switching | Saved session model and capability snapshot for each newly accepted prompt; accepted turns keep their model | Preview `c0a4e666c4`: Luna → DeepSeek, unchanged custom resources and initialization, exact history after restart, legacy worker upgrade, real CLI and main model picker. HTTP recovery, SDK, and white-label route tests pass |
 | Pi terminal | `connect` and interactive `chat` use a Kortix terminal over SDK transport; numbered questions, permission details, Stop, reconnect, and durable messages | Real CLI against preview `b918ca0b199`: two PTYs, 783 text deltas, once/reject, preserved pending permission, Ctrl-C/next prompt, standalone queue after history, exact 26-message restart, and no environment. OpenCode sessions retain their TUI |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
@@ -70,13 +71,10 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| File/image attachments | Immutable PostgreSQL assets, native Pi image conversion/replay, SDK image submission, existing-session composer, atomic first-prompt image admission, and bounded public HTTPS image ingestion at durable prompt admission | Preview `b918ca0b199`: real vision, expired-source viewer, retries without redownload, redirect/MIME/size failures, 20.3-second timeout, exact six-message restart, and absent environment. Full large-upload provider verification remains open. First-prompt UI passes separately at `d8fa198f49` |
-| Provider context-overflow recovery | Threshold and segmented summary compaction; one ordinary provider rejection can compact and retry before visible output, without repeating completed tools | Ordinary recovery passes real Luna fault injection locally; preview proof and full-size ingress verification remain open. An oversized first input returns the provider error without truncation |
 | Rewind and restore | Raw revert/unrevert returns 501 | Atomic conversation branch change plus file-effect semantics, recovery, and SDK/UI verification |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |
 | MCP configuration | Native Pi tools use the existing remote MCP connector gateway. Resource and prompt operations pass preview verification at `48e1acb70f` | Stdio placement, subscriptions, and complete discovery UI remain open. `30bff99179` verifies recovered permission authority and stale completion rejection. `278b28f42c` verifies embedded MCP image resources, exact private bytes, native rendering, and replay |
-| Live model switching | Session model changes apply to new durable prompt admissions; accepted turns retain their model, including queues and interaction recovery | Local HTTP, SDK, CLI, main composer, and white-label checks pass. Exact-SHA preview verification is pending |
 | Live agent switching | Agent identity, source commit, tools, hooks, resources, and permissions remain fixed | Explicit agent reconfiguration preserving history and grants, or an accepted product divergence |
 | Historical message/part mutations | Only queued message deletion is implemented | Atomic durable edits/deletes and event projection |
 | LSP and formatters | No Pi product adapter | Environment services and SDK discovery/status consumers |
@@ -85,21 +83,19 @@ extensions. The native Pi lifecycle surface is documented in
 
 First-party host checks remain separate. SDK transport is shared, but web,
 white-label, CLI, and mobile require their own user-input/output verification.
-White-label fixed agent/model controls and real incremental streaming passed
-against the preview API. The saved reply, empty turn queue, and absent environment
-match the browser. These controls do not implement live reconfiguration.
+Main web model selection and real CLI model changes are verified. White-label
+model route checks pass against its production Next server. Its full browser
+model-change flow and mobile model controls remain unverified.
 
-The complete preview run at `8e52bd100e` passes 456 of 464 REST/CLI flows,
-with five failures and three existing skips. The browser lane passes: 21 tests
-pass initially and two pass after retrying gateway 502 responses. The complete
-language sweep passes in 41.1 minutes. Billing passes in 40.8 seconds.
-Four Git shipping failures occur at Platinum ingress. SEC-J ran before the
-sensitive-path routing reload; it passes separately after reloading current host
-bytes through stdin. SESS-29 passes exact attachment bytes and compressed ETags.
-The controller incorrectly reports an earlier exit file; the actual current
-remote suite completes and writes its own benchmark.
-Large-context upload proof remains blocked by the ingress failure.
-See the verification log for exact probes.
+The full preview suite at `1877cccc43` passes 464 of 468 REST/CLI flows.
+SEC-J fails because the main-branch preview bootstrap overwrites the branch's
+sensitive-path rule. Applying the branch Caddy configuration restores a plain
+nine-byte 404. Three existing skips remain. The browser lane fails its locale
+census when the 512 MiB frontend exhausts its Node heap. The branch preview
+overlay now allocates 2 GiB with a 1.5 GiB heap. A full rerun is required.
+
+See [model selection verification](./PI_MODEL_SELECTION_VERIFICATION.md) for
+exact fixtures, regression cases, and manual testing steps.
 
 ## Benchmarks
 
