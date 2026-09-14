@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Validate the destination against an exact-file permission, not its parent (2026-09-14)
+
+**When:** validating Computer Tunnel writes. Resolve both the destination and
+missing allowlist paths through their nearest existing ancestor. Compare the full
+resolved destination with the allowlist. An approved file does not grant its parent.
+*Incident:* XLSX follow-up CI exposed rejected exact-file approvals; macOS also
+compared `/var` with `/private/var` for missing files. *Enforcers:*
+`filesystem-integrity.test.ts` and `TUN-6` with an exact-file permission.
+
 ### Transfer opaque bytes programmatically and verify the destination digest (2026-09-14)
 
 **When:** sending binary artifacts through Computer Tunnel. Never transcribe base64

@@ -78,7 +78,7 @@ flow('TUN-6', {
       assert.equal(await Bun.file(path).exists(), false);
     });
     await ctx.step('grant scoped filesystem write permission and run the real fs_upload CLI', async () => {
-      const r = await client.post('/v1/tunnel/permissions/:tunnelId', { capability: 'filesystem', scope: { paths: [root], operations: ['write'] } }, { params: { tunnelId } }); r.status(201);
+      const r = await client.post('/v1/tunnel/permissions/:tunnelId', { capability: 'filesystem', scope: { paths: [path], operations: ['write'] } }, { params: { tunnelId } }); r.status(201);
       assert.equal(ctx.P.OWNER.auth.mode, 'bearer');
       if (ctx.P.OWNER.auth.mode !== 'bearer') throw new Error('OWNER bearer required');
       const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, '../../../packages/agent-tunnel/src/client/cli.ts'), 'fs_upload', JSON.stringify({ source, path })], {
