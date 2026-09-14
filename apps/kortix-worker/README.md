@@ -73,9 +73,44 @@ all captured rows returns a known empty transcript. Mirror metadata, history,
 and messages are read from one database snapshot.
 
 This is internal preparation. Raw `revert`/`unrevert` still return `501`.
-Workspace rollback, its recovery protocol, SSE transitions, and the existing
-UI controls remain to be connected. Direct log
-writes do not undo files, commands, or external API effects.
+The environment now has a tested checkpoint component, described below. Automatic
+checkpoint capture, PostgreSQL/file coordination, SSE transitions, and the
+existing UI controls remain to be connected. Direct log writes do not undo files,
+commands, or external API effects.
+
+### Environment workspace checkpoints
+
+`WorkspaceHistory` stores content-addressed file bytes and manifests outside the
+workspace, on the environment's own disk. It does not use Durable Objects or run
+Pi in the environment. These checkpoints do not survive deletion of that disk.
+They are not the persistent attachment/archive storage required for old sessions.
+
+Capture includes Git-visible tracked and untracked files. Without a Git root,
+it walks the workspace. It preserves raw bytes, executable modes, and symlinks.
+Gitignored files, empty directories, Git HEAD, and Git index state are not rolled
+back. Submodules and special files fail capture rather than producing an
+incomplete checkpoint. Capture limits are 10,000 files, 128 MiB, 64 path levels,
+and 50,000 scanned entries. Total stored history is limited to 512 MiB. There is
+no automatic eviction: reaching the limit rejects new writes. Failed captures
+can leave deduplicated blobs within that limit; garbage collection remains open.
+
+Apply takes an operation UUID and two checkpoint hashes. It changes only paths
+whose entries differ. It preflights every affected path and blob before changing
+files. A conflicting manual edit rejects the operation. Unrelated edits remain.
+The environment records a pending receipt before changing files. After a crash,
+the same operation resumes from that receipt. A completed retry returns its
+receipt without overwriting later edits. A pending operation blocks another
+capture or apply. Scope, directory identity, and content hashes reject stale or
+corrupt checkpoints. SQLite supplies an OS-released operation lock only; file
+history lives in the manifests and blobs.
+
+The component requires a quiescent workspace. Its lock excludes other history
+operations; it does not control external processes, terminals, or filesystem
+clients. Individual replacements are atomic, but a multi-file apply is resumable,
+not one atomic filesystem transaction. Commands, network effects, ACLs, extended
+attributes, and hard-link relationships are outside the checkpoint contract.
+The future rewind coordinator must gate writers and recover a pending file move
+before accepting another prompt or publishing a conversation-history transition.
 
 ## Config precedence
 
