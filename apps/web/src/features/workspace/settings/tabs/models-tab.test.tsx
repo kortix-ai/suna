@@ -327,7 +327,6 @@ describe('Models page — the seven tabs', () => {
 
   test('the model-visibility list kept a home as a sibling sub-section', () => {
     expect(gatewaySource).toContain("{ id: 'models', label: 'Models' }");
-    expect(gatewaySource).toContain('providerId={modelProvider}');
-    expect(gatewaySource).toContain('onProviderChange={setModelProvider}');
+    expect(gatewaySource).toContain('<ModelsTab projectId={projectId} canWrite={canWrite} />');
   });
 });

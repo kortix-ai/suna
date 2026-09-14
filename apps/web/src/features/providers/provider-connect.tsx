@@ -205,7 +205,7 @@ export interface ProviderConnectViewProps {
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
   accessSlots?: Record<string, ReactNode>;
-  /** Open the shared Models tab, filtered to this provider. */
+  /** Open the shared Models tab with all provider groups. */
   onOpenModels?: (providerId: string) => void;
   className?: string;
 }

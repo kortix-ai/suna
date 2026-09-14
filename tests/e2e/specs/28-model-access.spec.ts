@@ -57,16 +57,10 @@ test('provider and model access persists, keeps credentials, and updates control
 
     await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
     await expect(page.locator('button[role=tab]').filter({ hasText: /^Models$/ })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveText('OpenAI');
-    await expect(page.locator('[data-model-id]').first()).toBeVisible();
-    await expect(page.locator('[data-model-id^="codex/"]')).toHaveCount(0);
-    await page.getByRole('combobox', { name: 'Filter by provider' }).click();
-    await page.getByRole('option', { name: 'All providers', exact: true }).click();
-    await expect(page.locator('[data-model-id^="codex/"]').first()).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
+    await expect(page.locator('[data-model-id^="openai/"]').first()).toBeVisible();
+    await expect(page.locator('[data-model-id^="codex/"]').first()).toBeAttached();
     await page.getByRole('tab', { name: 'Providers', exact: true }).click();
-    await page.locator('[data-provider-row="anthropic"]').getByRole('button', { name: /models$/ }).click();
-    await expect(page.getByText('Connect Anthropic to manage its models.', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Set up provider', exact: true }).click();
     await expect(page.getByRole('switch')).toHaveCount(0);
     await expect(page.getByText('Enabled', { exact: true })).toHaveCount(0);
     async function expectProtectedProvider(name: string) {
@@ -84,7 +78,7 @@ test('provider and model access persists, keeps credentials, and updates control
     expect(await api(session.access_token, 'GET', `${base}/secrets`)).toEqual(beforeSecrets);
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: true });
     await page.locator('[data-provider-row="openai"]').getByRole('button', { name: /models$/ }).click();
-    await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveText('OpenAI');
+    await expect(page.getByRole('combobox', { name: 'Filter by provider' })).toHaveCount(0);
     const hiddenRow = page.locator('[data-model-id="openai/gpt-4o-mini"]');
     await expect(hiddenRow.getByText('Hidden from picker', { exact: true })).toBeVisible();
     await hiddenRow.getByRole('button', { name: 'Default settings for GPT-4o mini', exact: true }).click();

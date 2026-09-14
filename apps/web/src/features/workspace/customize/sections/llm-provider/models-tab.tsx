@@ -14,14 +14,12 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * A row is the model's name, its capability icons (reasoning / tool calling /
  * vision), its default tags, and the catalog's own figures — context window
- * and price per 1M tokens. Provider links open this same view with a filter.
+ * and price per 1M tokens. Provider links open this same grouped list.
  * The wire id keeps its use in configuration and
  * lives in a "Copy model ID" item in the row's own menu: one click for the
  * few who need it, no line for everyone who does not.
  */
 
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -77,16 +75,10 @@ export function ModelsTab({
   projectId,
   search: hostSearch,
   canWrite = false,
-  providerId = null,
-  onProviderChange,
-  onConnectProvider,
 }: {
   projectId: string;
   search?: string;
   canWrite?: boolean;
-  providerId?: string | null;
-  onProviderChange?: (providerId: string | null) => void;
-  onConnectProvider?: () => void;
 }) {
   const tAccess = useTranslations('modelAccess');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -114,17 +106,10 @@ export function ModelsTab({
   // this tab is where the scopes are actually managed.
   const defaults = useModelDefaults(projectId);
 
-  const allGroups = useMemo(() => buildModelGroups(models), [models]);
-  const groups = useMemo(
-    () => buildModelGroups(models, search).filter((group) => !providerId || group.providerID === providerId),
-    [models, search, providerId],
-  );
-  const providerName = providerId === 'kortix' ? 'Kortix'
-    : providerId ? LLM_PROVIDER_BY_ID.get(providerId)?.label ?? providerId : '';
-  const providerHasModels = !providerId || allGroups.some((group) => group.providerID === providerId);
+  const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
   const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
 
-  if (models.length === 0 && !providerId) {
+  if (models.length === 0) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center">
         <p className="text-foreground text-sm">{tI18nComplete.raw('textc7a9aa43558f')}</p>
@@ -140,20 +125,6 @@ export function ModelsTab({
   // that selects it.
   return (
     <div className="pb-4">
-      {onProviderChange && (
-        <div className="mb-3 flex items-center gap-2">
-          <Select value={providerId ?? 'all'} onValueChange={(value) => onProviderChange(value === 'all' ? null : value)}>
-            <SelectTrigger className="w-auto min-w-40" aria-label={tAccess('filterProvider')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{tAccess('allProviders')}</SelectItem>
-              {providerId && !providerHasModels && <SelectItem value={providerId}>{providerName}</SelectItem>}
-              {allGroups.map((group) => <SelectItem key={group.providerID} value={group.providerID}>{group.providerName}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
       {/*
         The search field and "Start over" share ONE row, and that row's height
         never changes.
@@ -216,12 +187,7 @@ export function ModelsTab({
           matched nothing unmounted the input and its clear button: the string
           survived in `ownSearch`, nothing on screen could change it, and the
           tab stayed on "Nothing matches" until it was remounted. */}
-      {!providerHasModels ? (
-        <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-          <p className="text-muted-foreground text-sm">{tAccess('connectToManage', { name: providerName })}</p>
-          {onConnectProvider && <Button variant="outline" size="sm" onClick={onConnectProvider}>{tAccess('openProviders')}</Button>}
-        </div>
-      ) : groups.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
           <p className="text-muted-foreground text-xs">
             {search
