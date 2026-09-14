@@ -361,6 +361,19 @@ kortix self-host update --tag 0.9.84
 tag to the concrete version it currently points to, via Docker Hub) and
 whether a newer release is available.
 
+AWS Systems Manager shells can omit `HOME`. When updating the CLI there, set
+`KORTIX_HOME` to its existing installation directory. For a root installation:
+
+```bash
+KORTIX_HOME=/root/.kortix KORTIX_VERSION=0.13.13 /usr/local/bin/kortix update
+```
+
+Run multi-step maintenance from a script file or `bash -c`. Do not feed the
+maintenance script through the same stdin that child commands can read.
+Require a final verification marker after checking the installed CLI, running
+image digests, container health, and persisted configuration. Exit `0` alone
+does not prove those checks ran.
+
 > **Release-flow contract this depends on:** the self-host default channel is
 > `stable`. A prod release (`deploy-prod.yml` → GitHub Release) retags
 > `:latest` and the exact `:X.Y.Z` on all three app images (`kortix-api`,
