@@ -452,6 +452,60 @@ any earlier session create); the local API must presign for an endpoint the
 laptop reaches (`KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT`). `--scaffold
 /nonexistent` measures the clone route.
 
+## Presign at create + no HEAD on the boot path (PR #7242), 2026-09-15
+
+Same local topology and fixtures as the v2 run (Daytona, laptop API and MinIO
+behind two quick tunnels), 20 rounds per arm on the representative project,
+daemon rebuilt from the branch (fresh image), arms alternating, 1 warm-up
+discarded. The change under test: the session env carries the presigned
+descriptor (`KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR`), so an S3 boot's first
+attempt is one GET from the store; the object `HEAD` checks left the create
+and descriptor paths.
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 20 / 0 / 0 | 1,111 / 1,273 ms | 1,151 / 1,309 ms | 6,393 / 7,903 ms | — |
+| **New S3 provider v2 + presign** (`prefer-s3`) | 20 S3 attempts / 1 failed acquisition / 1 fallback (19 served by S3) | **971 / 3,340 ms** (927 / 2,731 in-guest `s3_acquire`) | 1,036 / 3,374 ms | 6,529 / 10,080 ms | env 16, proxy 3 |
+
+Against the v2 run on the same topology (30 rounds, 2026-09-13): S3
+acquisition 1,383 → **971 ms** at p50 (−30 %), Git 1,181 → 1,111 ms (noise).
+S3 is now 13 % under Git at the median on this topology; `repo-materialized`
+1,036 vs 1,151 ms. The removed leg — descriptor round trip through the tunnel
+plus the API's object checks — was worth ~400 ms here.
+
+Git proxy before readiness, S3 arm: `GET project-snapshot 200` ×7, all on the
+four retry rounds (2, 5, 8, 18 — the design: a retry asks the proxy for fresh
+URLs), `GET fast-boot-bundle` ×1 (the fallback round). The 16 clean rounds made
+**no proxy request at all** before readiness. Retries and the fallback are the
+MinIO quick-tunnel leg (`unavailable` at `download`) as in every run on this
+topology; they are the S3 arm's p95. Hydration `ok` 19/19 (import p50 534 ms,
+in-guest `hydrate:ok` at 1,617 ms vs `opencode-ready` at 2,296 ms).
+
+Compat gate on the branch (Daytona, 5,000-file project): **23/23**, the S3
+boot with `s3_acquire: 1186 ms`, stop/resume `adoptedWarm`.
+
+### Where the sandboxes are: S3 first byte from a Daytona box
+
+A plain Daytona box in the `us` target (New York, Latitude.sh) timing the
+regional S3 endpoints with `curl` (4 samples each, all within a few ms):
+
+| Region | TCP connect | TLS done | First byte |
+|---|---|---|---|
+| us-east-1 | 9 ms | 23 ms | **32 ms** |
+| us-east-2 | 21 ms | 43 ms | 65 ms |
+| us-west-2 (the dev bucket, and the API) | 62 ms | 127 ms | 189 ms |
+| us-west-1 | 66 ms | 130 ms | 193 ms |
+| eu-west-2 | 73 ms | 148 ms | 220 ms |
+| eu-central-1 | 89 ms | 178 ms | 264 ms |
+
+A bucket in us-east-1 would cut ~160 ms per request from the box — one
+request on the boot path, one for hydration — on top of the presign gain. The
+Git bundle GET crosses the same distance to the us-west-2 API behind
+Cloudflare, so moving only the bucket is a gain Git cannot match without moving
+the API. Not done in #7242 (decision pending); the shape is a second bucket via
+a provider alias plus `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION` in the deploy
+workflow — see the main runbook's AWS section.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
