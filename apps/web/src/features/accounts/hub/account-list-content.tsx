@@ -13,55 +13,39 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { forgetPushedEntry, hubTarget } from '@/stores/account-panel-store';
+import { useCreateAccountFlow } from '@/features/accounts/use-create-account-flow';
+import { hubTarget } from '@/stores/account-panel-store';
 
 import { HubLink } from './account-hub-location';
 import { AccountPane } from './account-pane';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type KortixAccount } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon as ChevronRight,
   PlusIcon as Plus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 export function AccountListContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // A brand-new account gets a brand-new project, which is a real page. The
-  // `router.replace` overwrites the entry the modal pushed, so it both closes
-  // the modal and leaves Back pointing where the person started.
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
-  const [createOpen, setCreateOpen] = useState(false);
-  const { data: adminRole } = useAdminRole();
-  // Self-host: hide "New account" affordances for non-admins when account
-  // creation is restricted — admins are exempt from the gate (see
-  // isAccountCreationRestricted()/KORTIX_RESTRICT_ACCOUNT_CREATION). The
-  // backend 403 (account_creation_restricted) is the authoritative gate;
-  // this only avoids showing an affordance a non-admin can't use.
-  const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
+  const { selectedAccountId } = useCurrentAccountStore();
+  // Inside the hub: the create lands on `/new` by replacing the entry the
+  // modal pushed, so Back points where the person started.
+  const { canCreateAccount, openCreateAccount, createAccountDialog } = useCreateAccountFlow({
+    insideHub: true,
+  });
 
   useSignedOutRedirect();
 
   const accountsQuery = useAccountsList();
-  // The exact key `accountsQuery` reads, for the create-account seed below.
-  const accountsQueryKey = useAccountsQueryKey();
 
   const sortedAccounts = useMemo(() => {
     const accounts = accountsQuery.data ?? [];
@@ -83,7 +67,7 @@ export function AccountListContent() {
               size="sm"
               variant="secondary"
               className="gap-1.5"
-              onClick={() => setCreateOpen(true)}
+              onClick={openCreateAccount}
             >
               <Plus className="size-4" />
               {tI18nComplete.raw('textb8773d75259e')}
@@ -120,7 +104,7 @@ export function AccountListContent() {
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
-                  onClick={() => setCreateOpen(true)}
+                  onClick={openCreateAccount}
                 >
                   <Plus className="size-3.5" />
                   {tI18nComplete.raw('textb8773d75259e')}
@@ -141,42 +125,7 @@ export function AccountListContent() {
         )}
       </AccountPane>
 
-      <CreateAccountModal
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={(account) => {
-          // The reader's OWN key, not a hand-built one: writer and reader
-          // on different keys is silent — the create appears to succeed and
-          // the list never changes.
-          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
-            const current = accounts ?? [];
-            return current.some((item) => item.account_id === account.account_id)
-              ? current.map((item) => (item.account_id === account.account_id ? account : item))
-              : [account, ...current];
-          });
-          // `scope()`, not `list(userId)`: this is the "the account list
-          // changed" prefix, and it provably reaches the only slot that can
-          // be live without a callback having to re-derive whose slot it is.
-          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-          setSelectedAccountId(account.account_id);
-          // qk.projects.scope(): reaches every account's list (and the
-          // accountless slot), the same reach the old bare projects-literal
-          // prefix match had. Account creation is rare — over-invalidating
-          // costs nothing measurable.
-          void queryClient.invalidateQueries({
-            queryKey: qk.projects.scope(),
-          });
-          // `/new` scoped to the account just created — NOT the landing door.
-          // The door opens the first project found in ANY account
-          // (`resolve-landing-destination.ts`), so a brand-new empty account
-          // falls through to some other account's project, and
-          // `projects/start/page.tsx` then heals the persisted selection to
-          // THAT account — undoing the switch above. Same destination the
-          // sidebar's create row uses, so both paths land in one place.
-          forgetPushedEntry();
-          router.replace(newWorkspacePathForAccount(account.account_id));
-        }}
-      />
+      {createAccountDialog}
     </>
   );
 }

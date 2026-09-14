@@ -20,6 +20,7 @@ import {
   ArrowLeftIcon,
   BookOpenIcon,
   MagnifyingGlassIcon,
+  PlusIcon,
   QuestionIcon,
   type Icon,
 } from '@phosphor-icons/react';
@@ -41,6 +42,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCreateAccountFlow } from '@/features/accounts/use-create-account-flow';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
@@ -138,6 +140,9 @@ function SettingsNav() {
   const accountsQuery = useAccountsList();
   const { sectionVisible, activeSection, canReadMembers } = useAccountHubSection(accountId);
   const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const { canCreateAccount, openCreateAccount, createAccountDialog } = useCreateAccountFlow({
+    insideHub: true,
+  });
 
   const accounts = useMemo(() => {
     const list = accountsQuery.data ?? [];
@@ -219,9 +224,28 @@ function SettingsNav() {
                 </Fragment>
               );
             })}
+            {/* The one live create-account control inside the hub. The
+                account-list pane has its own, but it renders only for
+                `hubTarget(null)`, and every entry point opens the hub ON an
+                account — so without this row the hub offered no way to make
+                one. Last in the list, after the accounts it adds to. */}
+            {canCreateAccount ? (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className={cn(ROW_CLASS, 'gap-2 px-2.5 py-1 transition-none has-[>svg]:px-2.5')}
+                  onClick={openCreateAccount}
+                >
+                  <PlusIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {tI18nComplete.raw('textb8773d75259e')}
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ) : null}
           </SidebarMenu>
         )}
       </SidebarGroup>
+      {createAccountDialog}
     </>
   );
 }

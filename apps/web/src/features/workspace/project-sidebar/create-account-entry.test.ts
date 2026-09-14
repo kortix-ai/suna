@@ -2,22 +2,22 @@
  * The product must always offer a LIVE, discoverable way to create an account.
  *
  * It stopped offering one. Every affordance still existed in the tree and none
- * of them rendered:
- *
- * - `features/layout/account-switcher.tsx` carries a "New account" row and
- *   mounts `CreateAccountModal`, but its only render site is
- *   `features/layout/app-header.tsx`, and `AppHeader` has no render site at
- *   all — the accounts layout was replaced by `AccountSettingsShell`, which
- *   never mounts it. Dead code cannot be an entry point.
- * - `features/accounts/hub/account-list-content.tsx` carries the other one. It
- *   renders only for `hubTarget(null)` (`?accountId=` with no value), and every
- *   live caller opens the hub ON an account, so the list pane was reachable
- *   only by opening Account settings and clicking the hub's root breadcrumb.
+ * of them rendered: `features/layout/account-switcher.tsx` is mounted only by
+ * the dead `AppHeader`, and the hub's account-list pane renders only for
+ * `hubTarget(null)`, which no live caller opens.
  *
  * So the guard cannot be "the string exists somewhere" — that was true the
- * whole time it was broken. It has to be pinned to a surface that provably
- * renders: the project sidebar's workspace switcher, which `ProjectSidebar`
- * mounts on every `/projects/[id]` route.
+ * whole time it was broken. It is pinned to surfaces that provably render:
+ *
+ * - the project sidebar's switcher, which `ProjectSidebar` mounts on every
+ *   `/projects/[id]` route;
+ * - the account hub's sidebar, which `AccountSettingsShell` mounts whenever the
+ *   hub is open on an account — the view a person is in when they manage
+ *   accounts.
+ *
+ * All of them run ONE success path, `useCreateAccountFlow`. Three hand-copied
+ * `onCreated` blocks are how the landing bug below shipped on one path at a
+ * time.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -26,83 +26,107 @@ import { join } from 'node:path';
 
 import en from '../../../../translations/en.json';
 
-const switcher = readFileSync(join(import.meta.dir, 'workspace-switcher.tsx'), 'utf8');
+const read = (relative: string) => readFileSync(join(import.meta.dir, relative), 'utf8');
 
-describe('create-account entry point', () => {
-  test('the workspace switcher mounts CreateAccountModal', () => {
+const flow = read('../../accounts/use-create-account-flow.tsx');
+const switcher = read('workspace-switcher.tsx');
+const hubSidebar = read('../../accounts/hub/account-settings-sidebar.tsx');
+const hubList = read('../../accounts/hub/account-list-content.tsx');
+
+const CALLERS = [
+  ['workspace-switcher.tsx', switcher, false],
+  ['account-settings-sidebar.tsx', hubSidebar, true],
+  ['account-list-content.tsx', hubList, true],
+] as const;
+
+describe('useCreateAccountFlow — the one success path', () => {
+  test('mounts CreateAccountModal and hands its create to onCreated', () => {
     // `<CreateAccountModal`, not the bare identifier: a comment or an unused
     // import mentioning it must not satisfy this.
-    expect(switcher).toContain('<CreateAccountModal');
-    expect(switcher).toContain("from '@/features/accounts/create-account-modal'");
+    expect(flow).toContain('<CreateAccountModal');
+    expect(flow).toContain('onCreated={onCreated}');
+    expect(flow).toContain("from '@/features/accounts/create-account-modal'");
   });
 
-  test('it renders a row that opens the modal', () => {
-    expect(switcher).toContain("t('workspace.createAccount')");
-    expect(switcher).toContain('setCreateAccountOpen(true)');
-  });
-
-  test('the row is gated on the account-creation restriction, not hidden outright', () => {
+  test('the affordance is gated on the account-creation restriction', () => {
     // Self-host sets KORTIX_RESTRICT_ACCOUNT_CREATION; admins stay exempt. The
     // backend 403 is authoritative either way — this only avoids offering an
     // affordance the person cannot use.
-    expect(switcher).toContain('canCreateAccount');
-    expect(switcher).toContain(
+    expect(flow).toContain(
       'const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);',
     );
   });
 
-  test('the row sits beside the workspace-create row, in the account-grouped menu', () => {
-    // Both live inside the "Switch Workspace" submenu, which is the one view
-    // already grouped BY account (`workspace-menu-section.tsx`).
-    const createWorkspace = switcher.indexOf("t('workspace.create')");
-    const createAccount = switcher.indexOf("t('workspace.createAccount')");
-    expect(createWorkspace).toBeGreaterThan(-1);
-    expect(createAccount).toBeGreaterThan(createWorkspace);
-    const submenuEnd = switcher.indexOf('</DropdownMenuSubContent>');
-    expect(createAccount).toBeLessThan(submenuEnd);
-  });
-
-  test('the copy is a real translation key, not a hardcoded string', () => {
-    expect(en.sidebar.workspace.createAccount).toBeTruthy();
+  test('seeds the reader key and selects the new account', () => {
+    expect(flow).toContain('queryClient.setQueryData<KortixAccount[]>(accountsQueryKey');
+    expect(flow).toContain('setSelectedAccountId(account.account_id);');
   });
 
   /**
    * Creating an account used to end on the landing door, which opens the first
    * project found in ANY account — so a brand-new empty account fell through to
    * another account's project, and `projects/start/page.tsx` then healed the
-   * persisted selection to THAT account. The create switched you into the new
-   * account and the navigation switched you straight back out, which is why it
-   * looked like nothing had happened.
+   * persisted selection to THAT account. It looked like nothing had happened.
    */
-  test('both create-account paths land in the NEW account, not the landing door', () => {
-    const hub = readFileSync(
-      join(import.meta.dir, '../../accounts/hub/account-list-content.tsx'),
-      'utf8',
-    );
-
-    for (const [name, code] of [
-      ['workspace-switcher.tsx', switcher],
-      ['account-list-content.tsx', hub],
-    ] as const) {
-      expect({ file: name, scoped: code.includes('newWorkspacePathForAccount(account.account_id)') })
-        .toEqual({ file: name, scoped: true });
-      // The door is what made the create look like a no-op. It must not come
-      // back on either path.
-      expect({ file: name, usesDoor: code.includes('PROJECT_LANDING_PATH') }).toEqual({
-        file: name,
-        usesDoor: false,
-      });
-    }
+  test('lands in the NEW account on /new, never the landing door', () => {
+    expect(flow).toContain('newWorkspacePathForAccount(account.account_id)');
+    expect(flow).not.toContain('PROJECT_LANDING_PATH');
   });
 
-  test('/new seeds the picked account from the url', () => {
-    const page = readFileSync(
-      join(import.meta.dir, '../new/new-workspace-page.tsx'),
-      'utf8',
-    );
-    expect(page).toContain('readAccountParam');
-    // Seeded into INITIAL state, like `?source=` — a later param change must
-    // never fight the user's own Select.
-    expect(page).toContain('...(initialAccountId ? { accountId: initialAccountId } : {})');
+  test('inside the hub it forgets the pushed entry, then replaces', () => {
+    const forget = flow.indexOf('forgetPushedEntry();');
+    const replace = flow.indexOf('router.replace(destination);');
+    const push = flow.indexOf('router.push(destination);');
+    expect(forget).toBeGreaterThan(flow.indexOf('if (insideHub) {'));
+    expect(replace).toBeGreaterThan(forget);
+    // The push path sits after the hub branch returned.
+    expect(push).toBeGreaterThan(replace);
   });
+});
+
+describe('create-account callers', () => {
+  for (const [name, code, insideHub] of CALLERS) {
+    test(`${name} runs the shared flow with insideHub: ${insideHub}`, () => {
+      expect(code).toContain("from '@/features/accounts/use-create-account-flow'");
+      expect(code).toContain(`insideHub: ${insideHub},`);
+      expect(code).toContain('{createAccountDialog}');
+    });
+
+    test(`${name} does not mount its own CreateAccountModal`, () => {
+      expect(code).not.toContain('<CreateAccountModal');
+    });
+  }
+
+  test('the switcher row opens the flow, beside the create-project row', () => {
+    expect(switcher).toContain('deferAfterClose(openCreateAccount)');
+    // Both live inside the switch submenu, the one view grouped BY account
+    // (`workspace-menu-section.tsx`).
+    const createProject = switcher.indexOf("t('workspace.create')");
+    const createAccount = switcher.indexOf("t('workspace.createAccount')");
+    expect(createProject).toBeGreaterThan(-1);
+    expect(createAccount).toBeGreaterThan(createProject);
+    expect(createAccount).toBeLessThan(switcher.indexOf('</DropdownMenuSubContent>'));
+    expect(en.sidebar.workspace.createAccount).toBeTruthy();
+  });
+
+  test('the hub sidebar row sits in the Accounts menu, after the accounts', () => {
+    const accountRows = hubSidebar.indexOf('{accounts.map((account) => {');
+    const row = hubSidebar.indexOf('onClick={openCreateAccount}');
+    const menuEnd = hubSidebar.indexOf('</SidebarMenu>', accountRows);
+    expect(accountRows).toBeGreaterThan(-1);
+    expect(row).toBeGreaterThan(accountRows);
+    expect(row).toBeLessThan(menuEnd);
+    // Gated, and labelled with the existing "New account" copy.
+    expect(hubSidebar).toContain('{canCreateAccount ? (');
+    expect(hubSidebar).toContain("tI18nComplete.raw('textb8773d75259e')");
+    expect(en.hardcodedUi.i18nComplete.textb8773d75259e).toBe('New account');
+  });
+});
+
+test('/new seeds the picked account from the url', () => {
+  const page = read('../new/new-workspace-page.tsx');
+  expect(page).toContain('readAccountParam');
+  // Seeded into INITIAL state, like `?source=` — a later param change must
+  // never fight the user's own Select.
+  expect(page).toContain('...(initialAccountId ? { accountId: initialAccountId } : {})');
 });
