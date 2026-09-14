@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 const LOADER_DELAY_MS = 100;
 /**
  * How long we sit in the backend `starting` stage before softly advancing from
- * "Loading your workspace" to "Waking the agent". Both happen within that one
+ * "Loading your project" to "Waking the agent". Both happen within that one
  * backend stage (clone → OpenCode boot), so the advance reflects real order.
  */
 const STARTING_SUBSTEP_MS = 5_000;
@@ -54,7 +54,7 @@ type BootStepVariant = 'stepper' | 'compact';
 /** Copy is deliberately parallel, so stage changes read as one continuous task. */
 export const STEPS: Step[] = [
   { label: 'Reserving your computer' },
-  { label: 'Loading your workspace' },
+  { label: 'Loading your project' },
   { label: 'Waking the agent' },
   { label: 'Connecting' },
 ];

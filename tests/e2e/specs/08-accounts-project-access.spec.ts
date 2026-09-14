@@ -620,7 +620,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     );
     await dismissOnboarding(page);
     await expect(
-      page.getByRole("button", { name: "Switch workspace" }),
+      page.getByRole("button", { name: "Switch project" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "New session" }).first(),
@@ -833,7 +833,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
         { timeout: IAM_PROPAGATION_MS },
       )
       .toMatch(/\/projects\/start/);
-    await expect(page.getByText("No workspace yet")).toBeVisible();
+    await expect(page.getByText("No project yet")).toBeVisible();
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);

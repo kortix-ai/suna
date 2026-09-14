@@ -99,7 +99,7 @@ export default function ProjectStartPage() {
     try {
       // Every membership is a candidate, not just the remembered/first one: a
       // stale persisted selection (a team where the user is a plain member
-      // with zero grants) used to end here as a false "No workspace yet"
+      // with zero grants) used to end here as a false "No project yet"
       // while the personal account, in the same list, held their projects.
       //
       // `isAccountSuppressed` is passed straight through, NOT pre-reduced to
@@ -217,7 +217,7 @@ export default function ProjectStartPage() {
 
 /**
  * Both stuck states on this route (terminal and error) used to be dead ends:
- * no app chrome renders here, so a user parked on "No workspace yet" had no
+ * no app chrome renders here, so a user parked on "No project yet" had no
  * way to sign out and try another account. `performSignOut` clears every piece
  * of persisted client state — including the stale account selection that used
  * to cause the false terminal — and then leaves on a document load.

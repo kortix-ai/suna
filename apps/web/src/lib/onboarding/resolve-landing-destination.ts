@@ -88,7 +88,7 @@ export async function resolveLandingDestination(input: {
   // account — the selected workspace when it is still a membership, else the
   // first account the user owns. Reaching across from an explicitly selected
   // member workspace is forbidden by the flow-08 contract: a member whose
-  // project access was just revoked must see the "No workspace yet" terminal,
+  // project access was just revoked must see the "No project yet" terminal,
   // not a surprise project minted in their personal account (which on a
   // self-host without managed git would be a guaranteed 503 anyway).
   const primary = candidates[0];

@@ -131,7 +131,7 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
 
   test('messageFor gives 502 the retryable generic message, unchanged', () => {
     expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
-      'Could not create the workspace. Try again.',
+      'Could not create the project. Try again.',
     );
   });
 
@@ -139,7 +139,7 @@ describe('/new failure states: 503 gets its own message and no retry', () => {
     const msg = messageFor(
       new ApiError('Managed git is not configured on this server', { status: 503 }),
     );
-    expect(msg).not.toBe('Could not create the workspace. Try again.');
+    expect(msg).not.toBe('Could not create the project. Try again.');
     expect(msg).not.toContain('Try again');
     expect(msg).toContain("isn't set up on this server");
   });

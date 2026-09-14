@@ -49,7 +49,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
   {
     messageKey: 'personal',
     // "Personal", not "You" (Jay, 2026-09-02): the group names the scope the
-    // same way "Workspace" and "Account" do.
+    // same way "Project" and "Account" do.
     label: 'Personal',
     items: [
       {
@@ -125,7 +125,7 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
   {
     tab: 'workspace',
     label: 'General',
-    description: 'Name and icon for this workspace.',
+    description: 'Name and icon for this project.',
     icon: SquaresFour,
   },
   {
@@ -150,7 +150,7 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
     tab: 'upgrades',
     label: 'Upgrades',
     description:
-      'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
+      'Changes an agent makes to this project. Every run opens a change request for you to review — nothing merges on its own.',
     icon: ArrowUpCircle,
   },
   // Connected accounts listed the ACCOUNT's GitHub App installations — the

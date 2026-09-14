@@ -181,7 +181,7 @@ for (const runtime of runtimes) {
           );
 
         const switcher = page.getByRole("button", {
-          name: "Switch workspace",
+          name: "Switch project",
           exact: true,
         });
         await expect(switcher).toBeVisible();
@@ -268,7 +268,7 @@ for (const runtime of runtimes) {
           "Project actions",
           "Model",
           "Tools",
-          "Workspace",
+          "Sandbox",
           "Overview",
         ]) {
           const tab = page

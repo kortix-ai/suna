@@ -18,7 +18,7 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * The project-configuration sections of `/projects/[id]/config` — the
  * "Settings" tab of the Customize bar.
  *
- * These six sections used to be part of the `Workspace` and `Agent` groups of
+ * These six sections used to be part of the `Project` and `Agent` groups of
  * the Settings overlay's rail (`features/workspace/settings/rail.ts`), plus
  * its pinned Upgrades row and its `experimental` row. All of them configure a
  * PROJECT, and every one of them is reachable by exactly the people who can
@@ -57,7 +57,7 @@ export type ProjectSettingsSectionKey =
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
- * group labels — `Workspace`, `Agent`, `Advanced` — over six to eight rows.
+ * group labels — `Project`, `Agent`, `Advanced` — over six to eight rows.
  * Jay's call (2026-08-17): "you don't need the categories … make sure it's
  * just a regular settings thing". Three headings over six rows is more
  * chrome than list, and the grouping told a reader nothing the row labels did
@@ -96,7 +96,7 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     key: 'git',
     label: 'Git repo',
     icon: GitBranch,
-    description: 'The repository this workspace runs from, and who can reach it.',
+    description: 'The repository this project runs from, and who can reach it.',
     gate: 'settings',
   },
   {
@@ -131,7 +131,7 @@ const UPGRADES_SECTION: ProjectSettingsSection = {
   key: 'upgrades',
   label: 'Upgrades',
   description:
-    'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
+    'Changes an agent makes to this project. Every run opens a change request for you to review — nothing merges on its own.',
   icon: ArrowUpCircle,
   gate: 'upgrade',
 };

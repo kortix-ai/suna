@@ -33,7 +33,7 @@ describe('ProjectStartEmpty', () => {
   test('suppressed: renders a surface, names the archive, links to /new', () => {
     const html = renderEmpty('suppressed');
 
-    expect(html).toContain('Your last workspace is archived');
+    expect(html).toContain('Your last project is archived');
     expect(html).toContain('href="/new"');
     expect(html).not.toContain('href="/projects"');
   });
@@ -41,7 +41,7 @@ describe('ProjectStartEmpty', () => {
   test('no-permission: renders a surface, offers no create control', () => {
     const html = renderEmpty('no-permission');
 
-    expect(html).toContain('No workspace yet');
+    expect(html).toContain('No project yet');
     expect(html).toContain('owner or admin');
     // No button at all in this case — not just "no /new button" but no <a>/
     // <button> whose click could 403, matching the brief's "a create control
@@ -53,7 +53,7 @@ describe('ProjectStartEmpty', () => {
   test('blocked: renders a surface, links to /new, does not claim an archive happened', () => {
     const html = renderEmpty('blocked');
 
-    expect(html).toContain('No workspace open');
+    expect(html).toContain('No project open');
     expect(html).toContain('href="/new"');
     expect(html).not.toContain('archived');
   });

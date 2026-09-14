@@ -27,7 +27,7 @@ describe('escalation note reaches the pixels', () => {
 
   test('without a note the banner keeps the ordinary phase label', () => {
     const html = render(<SessionConnectingBanner stage="starting" />);
-    expect(html).toContain('Loading your workspace');
+    expect(html).toContain('Loading your project');
     expect(html).not.toContain('Still waking');
   });
 
@@ -51,7 +51,7 @@ describe('session starting loader treatment', () => {
 
     expect(html).toContain('Starting your session');
     expect(html).toContain('role="progressbar"');
-    expect(html).toContain('aria-valuetext="Step 2 of 4: Loading your workspace"');
+    expect(html).toContain('aria-valuetext="Step 2 of 4: Loading your project"');
     expect(html).not.toContain('data-uidotsh-pick');
     expect(html).not.toContain('animate-pulse');
     expect(html).not.toContain('This usually takes a few seconds.');

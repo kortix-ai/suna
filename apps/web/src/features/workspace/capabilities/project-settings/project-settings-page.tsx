@@ -62,7 +62,7 @@ import {
  * enough to earn its own top-level Customize tab.
  *
  * These six sections used to live in the Settings overlay behind the
- * sidebar's gear icon, in its `Workspace` and `Agent` rail groups plus the
+ * sidebar's gear icon, in its `Project` and `Agent` rail groups plus the
  * pinned Upgrades row and the `experimental` row. They configure a project, and
  * the person allowed to change them is already the person who can open
  * Customize — a second overlay with a second rail and a second keyboard
@@ -78,7 +78,7 @@ import {
  *
  * **The rail is one flat list of sections**, in the order
  * `projectSettingsSections()` returns them — no group HEADINGS. The three
- * rail headings that came along from the overlay (`Workspace` / `Agent` /
+ * rail headings that came along from the overlay (`Project` / `Agent` /
  * `Advanced`) are gone; see `project-settings-sections.ts`'s "One flat list,
  * no headings". Do not reintroduce those headings.
  *

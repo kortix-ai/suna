@@ -166,9 +166,9 @@ export function contextToolTrigger(
     case 'session_start_background':
       return { title: tI18nComplete.raw('texta67b04cd5c49'), subtitle: sub };
     case 'project_select':
-      return { title: tI18nComplete.raw('text87bb59ba2f92'), subtitle: sub };
+      return { title: tI18nComplete.raw('text985959785319'), subtitle: sub };
     case 'project_list':
-      return { title: tI18nComplete.raw('text87bb59ba2f92'), subtitle: sub };
+      return { title: tI18nComplete.raw('text985959785319'), subtitle: sub };
     default: {
       const display = n.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       return { title: display, subtitle: sub };

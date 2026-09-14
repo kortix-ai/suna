@@ -266,7 +266,7 @@ const PALETTE_PREFETCH_LIMIT = 8;
 /**
  * The rows the palette offers before anything is typed.
  *
- * "Switch workspace" is PINNED to the front, then the registry's own order,
+ * "Switch project" is PINNED to the front, then the registry's own order,
  * then the cap. Unpinned it sits at index 11 of the actions+navigation list
  * and the cap is {@link ROOT_SUGGESTION_LIMIT} — so opening ⌘K and typing
  * nothing showed eight session and terminal actions and no way to change
@@ -1540,7 +1540,7 @@ export function CommandPalette() {
     if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
   }, [open, page, projectId, router]);
 
-  // "Invite members" and "Workspace members". The account id arrives from
+  // "Invite members" and "Project members". The account id arrives from
   // `paletteProjectDetail`, whose query only runs once the palette opens, so
   // warm the common branch the moment it resolves. The `/projects/<id>/members`
   // fallback stays cold on purpose: it exists only for the window before that.
@@ -1795,7 +1795,7 @@ export function CommandPalette() {
   }, [close, projectId, inviteMembersAccountId, router]);
 
   /**
-   * "Workspace members" — the same destination `handleInviteMembers` reaches,
+   * "Project members" — the same destination `handleInviteMembers` reaches,
    * from the other half of the vocabulary. The account hub's Access pane
    * scoped to this workspace IS the workspace roster: `/projects/<id>/members`
    * exists only to redirect here (see that route), so linking it directly
@@ -2493,11 +2493,11 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {/* Shown whether or not a workspace is open. The old
+                    {/* Shown whether or not a project is open. The old
                         version returned no rows at all while one was, which
                         is the entire time the palette is used. */}
                     {hasWorkspaceResults && (
-                      <CommandGroup heading="Workspaces" forceMount>
+                      <CommandGroup heading="Projects" forceMount>
                         {rootWorkspaceRows.map((row) => (
                           <WorkspaceCommandItem
                             key={row.workspace.project_id}
@@ -2804,7 +2804,7 @@ export function CommandPalette() {
                       <FolderGit2 className="text-muted-foreground/30 size-5" />
                       <span className="text-muted-foreground/60 text-sm">
                         {/* Same two strings the sidebar's empty state uses.
-                            "No workspaces yet" over a list that simply has not
+                            "No projects yet" over a list that simply has not
                             arrived is a lie the sidebar already learned not to
                             tell — hence the loading branch above. */}
                         {query

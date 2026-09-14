@@ -248,7 +248,7 @@ describe('messageFor', () => {
   test('maps a 403 to an owner/admin explanation', () => {
     const err = new ApiError('Owner or admin role required', { status: 403 });
     expect(messageFor(err)).toBe(
-      'You need owner or admin access in this account to create a workspace.',
+      'You need owner or admin access in this account to create a project.',
     );
   });
 
@@ -259,12 +259,12 @@ describe('messageFor', () => {
 
   test('falls back to a generic message for a 400 with no message text', () => {
     const err = new ApiError('', { status: 400 });
-    expect(messageFor(err)).toBe('Check the workspace name and try again.');
+    expect(messageFor(err)).toBe('Check the project name and try again.');
   });
 
   test('maps 502 to a retry hint, not the raw server text', () => {
     expect(messageFor(new ApiError('Bad Gateway', { status: 502 }))).toBe(
-      'Could not create the workspace. Try again.',
+      'Could not create the project. Try again.',
     );
   });
 
@@ -274,10 +274,10 @@ describe('messageFor', () => {
   // get the retry-hint message: nothing the user does changes the outcome.
   test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
     const msg = messageFor(new ApiError('Service Unavailable', { status: 503 }));
-    expect(msg).not.toBe('Could not create the workspace. Try again.');
+    expect(msg).not.toBe('Could not create the project. Try again.');
     expect(msg).not.toContain('Try again');
     expect(msg).toBe(
-      "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.",
+      "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before projects can be created.",
     );
   });
 
@@ -286,7 +286,7 @@ describe('messageFor', () => {
   });
 
   test('falls back to the generic message for a non-Error throw', () => {
-    expect(messageFor('not even an Error')).toBe('Could not create the workspace. Try again.');
+    expect(messageFor('not even an Error')).toBe('Could not create the project. Try again.');
   });
 
   // ── Final-review FIX 1 ───────────────────────────────────────────────────
@@ -306,7 +306,7 @@ describe('messageFor', () => {
     const msg = messageFor(err);
     expect(msg).not.toContain('idempotency_key');
     expect(msg).toBe(
-      'Another attempt to create this workspace is already in progress. Please wait a moment and try again.',
+      'Another attempt to create this project is already in progress. Please wait a moment and try again.',
     );
   });
 
@@ -324,7 +324,7 @@ describe('messageFor', () => {
       { status: 403, code: 'project_limit_reached' },
     );
     const msg = messageFor(err);
-    expect(msg).not.toBe('You need owner or admin access in this account to create a workspace.');
+    expect(msg).not.toBe('You need owner or admin access in this account to create a project.');
     expect(msg).toBe(
       'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
     );
@@ -333,7 +333,7 @@ describe('messageFor', () => {
   test('FIX 2: a plain 403 with no quota code still gets the owner/admin explanation', () => {
     const err = new ApiError('Owner or admin role required', { status: 403 });
     expect(messageFor(err)).toBe(
-      'You need owner or admin access in this account to create a workspace.',
+      'You need owner or admin access in this account to create a project.',
     );
   });
 });

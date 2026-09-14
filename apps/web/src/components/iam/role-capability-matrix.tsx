@@ -68,7 +68,7 @@ export interface AreaDef {
 const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }> = {
   project: { label: 'Project', hint: 'The project itself — open it, rename it, delete it.' },
   sessions: { label: 'Sessions', hint: 'Read transcripts, start and stop runs.' },
-  files: { label: 'Files', hint: 'The project workspace tree.' },
+  files: { label: 'Files', hint: 'The project file tree.' },
   customize: {
     label: 'Customize',
     hint: 'Agents, skills, connectors, commands, secrets, models, settings.',

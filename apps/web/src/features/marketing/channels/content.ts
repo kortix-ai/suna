@@ -248,7 +248,7 @@ export const commands = {
     { cmd: 'login, logout', v: 'Link or unlink your chat identity to your Kortix account' },
     { cmd: 'switch, unbind', v: 'Rebind this channel to a different project, or unbind it' },
     { cmd: 'projects', v: 'List the projects you can bind this channel to' },
-    { cmd: 'sessions', v: 'List the recent sessions started from this workspace' },
+    { cmd: 'sessions', v: 'List the recent sessions started from this project' },
     { cmd: 'agent <name>, model <id>', v: 'Set the agent and the model this channel uses' },
     { cmd: 'policy <mode>', v: 'Set who may start a session here' },
     { cmd: 'whoami', v: 'Show the panel: project, agent, model, policy, linked identity' },

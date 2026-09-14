@@ -9,7 +9,7 @@ import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/c
 /**
  * /projects/[id]/config — the Customize bar's "Settings" tab: every
  * project-scoped configuration surface that used to sit in the Settings
- * overlay's `Workspace` and `Agent` rail groups, plus Feature flags and
+ * overlay's `Project` and `Agent` rail groups, plus Feature flags and
  * Upgrades. See
  * `features/workspace/capabilities/project-settings/project-settings-page.tsx`
  * for the page body and why the move happened.

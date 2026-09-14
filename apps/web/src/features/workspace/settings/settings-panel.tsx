@@ -104,7 +104,7 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
   // makes `isSettingsTabAllowed` hide them — and with them the whole
-  // `Workspace` rail group — on `/settings` and under `/accounts/[id]`, where
+  // `Project` rail group — on `/settings` and under `/accounts/[id]`, where
   // there is no project to name.
 ];
 

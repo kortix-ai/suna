@@ -223,17 +223,25 @@ describe('queries return the rows they name', () => {
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns the two rows that say the word, not every project-scoped row', () => {
-    // `account-access-projects` is the account hub's "Projects" pane — the
-    // word is its own label, which is exactly the bar this file sets. Ten
-    // `proj-*` rows used to answer this by their ids.
-    expect(hits('project').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+  test('"project" returns the rows that say the word, not every project-scoped row', () => {
+    // Each carries the word in its own label, which is exactly the bar this
+    // file sets: the account hub's "Projects" pane, "Switch project", and
+    // "Project members". Ten `proj-*` rows used to answer this by their ids.
+    expect(hits('project').sort()).toEqual([
+      'nav:account-access-projects',
+      'nav:nav-projects',
+      'nav:proj-members',
+    ]);
   });
 
   test('"proj" matches nothing by id', () => {
-    // Ten `proj-*` rows used to answer this. The two that survive both carry
-    // "Projects" as visible label text.
-    expect(hits('proj').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+    // Ten `proj-*` rows used to answer this. The three that survive all carry
+    // "Project" in their visible label text.
+    expect(hits('proj').sort()).toEqual([
+      'nav:account-access-projects',
+      'nav:nav-projects',
+      'nav:proj-members',
+    ]);
   });
 
   test('"nav" and "pref" are not queries at all', () => {

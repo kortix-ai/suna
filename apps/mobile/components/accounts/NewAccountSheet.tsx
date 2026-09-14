@@ -1,6 +1,6 @@
 /**
- * NewAccountSheet — bottom-sheet form for creating a new account (team
- * workspace). Replaces the native Alert.prompt with branded mobile UI: a live
+ * NewAccountSheet — bottom-sheet form for creating a new account (a team:
+ * its members, projects and billing). Replaces the native Alert.prompt with branded mobile UI: a live
  * initials-avatar preview, rounded input, and a primary action. Controlled via
  * `open`; calls `onCreated` with the fresh account so callers can select +
  * navigate.
@@ -103,7 +103,7 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
               {preview || 'Your account name'}
             </Text>
             <Text style={{ fontSize: 12.5, lineHeight: 17, color: c.muted, marginTop: 2 }}>
-              A shared workspace for your team and projects.
+              One account for your team, its projects and billing.
             </Text>
           </View>
         </View>

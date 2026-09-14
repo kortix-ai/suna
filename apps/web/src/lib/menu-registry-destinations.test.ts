@@ -251,7 +251,7 @@ describe('the two rows that answer in-palette instead of navigating', () => {
 });
 
 describe('the destinations that need a resolved id at runtime', () => {
-  test('"Workspace members" is an action, because its account id is a network read', () => {
+  test('"Project members" is an action, because its account id is a network read', () => {
     // `/projects/<id>/members` only redirects; the real destination is the
     // OWNING account's Access pane scoped back to the workspace, and that
     // account id lives on the project detail. A `kind: 'navigate'` row cannot

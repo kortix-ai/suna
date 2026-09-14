@@ -89,7 +89,7 @@ export type SettingsTab =
   // The id is `workspace`, not `general`: `general` is already spent on a
   // GRADUATED redirect to `/projects/<id>/config` (see the map below), and a
   // live tab sharing that key would shadow every bookmark pointing at it. The
-  // rail row is still LABELLED "General" under a "Workspace" group, which is
+  // rail row is still LABELLED "General" under a "Project" group, which is
   // what it was called before it graduated — see `rail.ts`.
   //
   // It renders `tabs/general-tab.tsx`. That component had two mounts while

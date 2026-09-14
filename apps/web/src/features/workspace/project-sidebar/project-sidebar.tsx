@@ -135,7 +135,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             dropdowns. The link is gone, because a control that is half
             navigation and half disclosure makes you guess which half you are
             pointing at. The workspace directory is now a second VIEW of this
-            menu, behind "Switch Workspace", which is why there is no footer
+            menu, behind "Switch Project", which is why there is no footer
             control below any more. */}
         <div className="flex w-full items-center gap-1">
           <div className="min-w-0">

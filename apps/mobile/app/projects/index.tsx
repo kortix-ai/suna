@@ -199,7 +199,7 @@ export default function ProjectsScreen() {
           Projects
         </Text>
         <Text className="mt-1 font-roobert text-[14px] text-muted-foreground">
-          Your workspaces in one place. Pick up where you left off.
+          Your projects in one place. Pick up where you left off.
         </Text>
 
         {/* Search — only once there's enough to search */}

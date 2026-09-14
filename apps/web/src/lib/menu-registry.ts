@@ -409,13 +409,11 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'nav-projects',
-    // "Switch workspace", not "Projects". The product retired the noun
-    // (`features/workspace/workspace-vocabulary.test.ts`) everywhere except
-    // here, so the palette was the one surface still answering a question the
-    // rest of the app had stopped asking — and a bare noun does not say the
-    // row DOES anything, which is why it read as a list rather than as the
-    // switcher it opens.
-    label: 'Switch workspace',
+    // "Switch project", not "Projects": a bare noun does not say the row DOES
+    // anything, so it read as a list rather than as the switcher it opens.
+    // The product's one word for this is Project
+    // (`features/workspace/project-vocabulary.test.ts`).
+    label: 'Switch project',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -427,10 +425,8 @@ export const menuRegistry: MenuItemDef[] = [
     // fallback if that map ever loses the id.
     href: PROJECT_LANDING_PATH,
     shortcut: 'Ctrl+O',
-    // `project`/`projects` stay in the bag deliberately. It is the word the
-    // product used until recently, the word the URL still uses
-    // (`/projects/<id>`), and the word anyone arriving from the API or the
-    // CLI will type. Dropping it would make the rename cost users a search.
+    // `workspace`/`workspaces` stay in the bag deliberately: the web app used
+    // that word for projects until 2026-09, and people will still type it.
     keywords: 'switch workspace workspaces project projects change move open all list',
   },
   {
@@ -697,13 +693,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-members',
-    label: 'Workspace members',
+    label: 'Project members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'action',
     // An ACTION, not a navigate row: the destination is the OWNING account's
-    // Access pane scoped back to this workspace
+    // Access pane scoped back to this project
     // (`/accounts/<acct>?tab=access-projects&project=<id>`), and the account
     // id is a field on the project detail — a network read the registry
     // cannot do. `openProjectMembers` in command-palette.tsx resolves it, the

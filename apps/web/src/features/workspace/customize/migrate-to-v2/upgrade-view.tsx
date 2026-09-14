@@ -104,9 +104,9 @@ export interface UpgradesCopy {
 
 export const DEFAULT_UPGRADES_COPY: UpgradesCopy = {
   available: 'Available upgrades',
-  readOnly: 'Read-only — running an upgrade needs write access to this workspace.',
+  readOnly: 'Read-only — running an upgrade needs write access to this project.',
   none: 'No upgrades available',
-  upToDateDescription: 'This workspace is already up to date.',
+  upToDateDescription: 'This project is already up to date.',
   upToDate: 'Up to date',
   run: 'Run',
   oneOff: 'One-off upgrade',

@@ -52,7 +52,7 @@ describe('WorkspaceHandoff', () => {
     // empty. The workspace exists by then — this is always window 2.
     const html = render({ workspaceName: '', projectId: 'proj-1' });
     const text = stripTags(html);
-    expect(text).toContain('Opening your workspace');
+    expect(text).toContain('Opening your project');
     expect(text).not.toContain('Creating ');
   });
 

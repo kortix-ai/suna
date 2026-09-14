@@ -21,7 +21,7 @@ export const STAGE_PROGRESS: Record<string, { progress: number; message: string 
   cloud_init_done: { progress: 60, message: 'Configuration complete, starting services...' },
   services_starting: { progress: 80, message: 'Services booting...' },
   services_ready: { progress: 95, message: 'Almost ready...' },
-  connecting: { progress: 98, message: 'Connecting to workspace...' },
+  connecting: { progress: 98, message: 'Connecting to project...' },
 } as const;
 
 /** Shorter labels for the circular progress UI (instances/[id] page) */
@@ -30,8 +30,8 @@ export const STAGE_LABELS: Record<string, string> = {
   server_created: 'Machine ready, configuring',
   cloud_init_running: 'Installing dependencies',
   cloud_init_done: 'Environment configured',
-  services_starting: 'Starting workspace services',
+  services_starting: 'Starting project services',
   services_ready: 'Waiting for services to come online',
-  connecting: 'Connecting to workspace',
-  verifying_opencode: 'Verifying workspace is ready',
+  connecting: 'Connecting to project',
+  verifying_opencode: 'Verifying project is ready',
 } as const;

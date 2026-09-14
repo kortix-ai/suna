@@ -40,16 +40,16 @@ export function classifyLandingTerminal(input: {
 
 const COPY: Record<TerminalReason, { heading: string; body: string }> = {
   suppressed: {
-    heading: 'Your last workspace is archived',
+    heading: 'Your last project is archived',
     body: 'Nothing opened automatically because you just archived it. Create a new one to keep going.',
   },
   'no-permission': {
-    heading: 'No workspace yet',
-    body: 'Ask an owner or admin to add you to a workspace.',
+    heading: 'No project yet',
+    body: 'Ask an owner or admin to add you to a project.',
   },
   blocked: {
-    heading: 'No workspace open',
-    body: 'Create a workspace to get started.',
+    heading: 'No project open',
+    body: 'Create a project to get started.',
   },
 };
 

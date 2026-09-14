@@ -23,7 +23,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * navigate to `/settings/<tab>` instead. `main` authored this row against the
  * deleted `SidePanelUserSettings` modal; this branch replaced that modal with
  * the panel (JAY-498), so the row was repointed rather than dropped.
- * Account settings (`/accounts/:id`) is reached from the "Switch Workspace"
+ * Account settings (`/accounts/:id`) is reached from the "Switch Project"
  * submenu, at the top of it, above the workspace list — see
  * `workspace-menu-section.tsx`. That is the one view in this menu already
  * grouped BY account, so it is the only place where "which account" is not a

@@ -128,7 +128,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
   list: 'List directory contents.',
   bash: 'Run shell commands.',
   task: 'Launch a subagent to run a task.',
-  external_directory: 'Access paths outside this project workspace.',
+  external_directory: 'Access paths outside the project directory.',
   lsp: 'Use language-server tooling — go-to-definition, diagnostics.',
   todowrite: "Maintain the session's todo list.",
   question: 'Ask the user a clarifying question mid-run.',

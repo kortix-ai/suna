@@ -352,9 +352,9 @@ export interface OnboardingKickoffCopy {
 
 const ENGLISH_KICKOFF_COPY: OnboardingKickoffCopy = {
   noDomain: (toolsClause) =>
-    `I just finished setting up my workspace.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`,
+    `I just finished setting up my project.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`,
   withDomain: (domain, toolsClause) =>
-    `I just finished setting up my workspace for ${domain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`,
+    `I just finished setting up my project for ${domain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`,
   tools: (count) =>
     ` I also connected ${count} ${count === 1 ? 'tool' : 'tools'} — use ${count === 1 ? 'it' : 'them'} if it helps.`,
 };

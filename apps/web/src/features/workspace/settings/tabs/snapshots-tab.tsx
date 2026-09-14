@@ -158,7 +158,7 @@ export const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
  */
 export const CATEGORY_HELP: Record<SnapshotErrorCategory, string> = {
   quota:
-    'This workspace has stored as many prepared machines as its plan allows. Delete a sandbox template you no longer use, or raise the limit, then build again.',
+    'This project has stored as many prepared machines as its plan allows. Delete a sandbox template you no longer use, or raise the limit, then build again.',
   dockerfile:
     'A command in this project’s Dockerfile returned an error. The log below ends on the command that failed.',
   layer:

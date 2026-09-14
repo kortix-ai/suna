@@ -67,7 +67,7 @@ export const COMPANY_OS_SECTIONS_TRANSLATION_KEYS: Readonly<Record<string, strin
   '- Ship the fix, write the postmortem': 'text0b3dbab0c668',
   '- Skills live under each function as SKILL.md': 'text1c460e25b6ff',
   '- Stand up a preview, run the tests': 'textce697c2f098d',
-  '- Stand up their workspace from the template': 'text09851ae4a654',
+  '- Stand up their project from the template': 'text09851ae4a654',
   '- Surface upsell signals for the AM': 'text96c86360a9ed',
   '- The metrics we watch and our targets': 'text78c16a9a433d',
   '- What we learn lands in /memory': 'text2ea9450e2a01',

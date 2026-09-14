@@ -183,7 +183,7 @@ describe('Slack connect card — the payoff renders before the commitment', () =
   });
 
   test('read-only members get an explanation instead of a dead button', () => {
-    expect(connectCardSource).toContain('Ask a workspace admin to connect Slack');
+    expect(connectCardSource).toContain('Ask someone who manages this project to connect Slack');
   });
 });
 

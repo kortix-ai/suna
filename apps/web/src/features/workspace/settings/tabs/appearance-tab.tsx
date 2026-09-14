@@ -69,7 +69,7 @@ export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
   conversationDensityDescription:
     'How much detail the agent shows in the conversation while it works.',
   wallpaper: 'Wallpaper',
-  wallpaperDescription: 'The background behind your workspace.',
+  wallpaperDescription: 'The background behind your projects.',
   defaultWallpaper: 'Default',
   themes: { light: 'Light', dark: 'Dark', system: 'System' },
   densities: {

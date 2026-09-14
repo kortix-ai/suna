@@ -38,7 +38,7 @@ describe('OptimisticTurn', () => {
     // None of the boot checklist's step labels may reach the thread.
     for (const label of [
       'Reserving your computer',
-      'Loading your workspace',
+      'Loading your project',
       'Waking the agent',
       'Connecting',
     ]) {

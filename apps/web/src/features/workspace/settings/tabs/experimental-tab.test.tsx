@@ -192,9 +192,9 @@ describe('ExperimentalTabView', () => {
     expect(probing).not.toContain('customize-write permission');
   });
 
-  test('does not render General-tab markers — the sandbox-provider pin and Delete workspace live there instead', () => {
+  test('does not render General-tab markers — the sandbox-provider pin and Delete project live there instead', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
-    expect(out).not.toContain('Delete workspace');
+    expect(out).not.toContain('Delete project');
     expect(out).not.toContain('Sandbox provider');
   });
 });

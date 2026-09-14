@@ -193,10 +193,10 @@ const GENERAL_TAB_ACTIONS = [
  *    would panic about and the one thing that is false.
  */
 export const DELETE_WORKSPACE_CONSEQUENCES = [
-  'Every session in this workspace, with its files, history, and outputs',
+  'Every session in this project, with its files, history, and outputs',
   'All scheduled runs and triggers — they stop firing straight away',
-  'Every connected integration, secret, and API key scoped to this workspace',
-  'Access for everyone on the team — nobody can reach this workspace again',
+  'Every connected integration, secret, and API key scoped to this project',
+  'Access for everyone on the team — nobody can reach this project again',
 ] as const;
 
 /** Stated because it is true and because its absence would be read as a
@@ -266,16 +266,16 @@ const DEFAULT_GENERAL_COPY: GeneralTabCopy = {
   loadFailed: 'Failed to load project',
   retry: 'Retry',
   dangerZone: 'Danger zone',
-  deleteWorkspace: 'Delete workspace',
+  deleteWorkspace: 'Delete project',
   deleteDescription:
-    'Removes this workspace and everything inside it, for every member. This cannot be undone.',
-  deleteTitle: 'Delete workspace?',
+    'Removes this project and everything inside it, for every member. This cannot be undone.',
+  deleteTitle: 'Delete project?',
   deleteDialog: (name) =>
     `This deletes ${name} for everyone with access to it. It cannot be undone.`,
   consequencesTitle: 'You immediately lose:',
   consequences: DELETE_WORKSPACE_CONSEQUENCES,
   reassurance: DELETE_WORKSPACE_REASSURANCE,
-  keepWorkspace: 'Keep workspace',
+  keepWorkspace: 'Keep project',
 };
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase

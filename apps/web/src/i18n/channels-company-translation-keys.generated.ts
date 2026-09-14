@@ -254,7 +254,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'launch-note.md · +64 −0': 'textbbd67a03b342',
   'Link or unlink your chat identity to your Kortix account': 'textc562664bad32',
   'List the projects you can bind this channel to': 'text095830453d5a',
-  'List the recent sessions started from this workspace': 'text61715eaa9236',
+  'List the recent sessions started from this project': 'text61715eaa9236',
   Live: 'textb64ac05f17e6',
   'Live session state': 'text76aee83bb47b',
   'Live today': 'text623d982415d0',

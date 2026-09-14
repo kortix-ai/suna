@@ -68,7 +68,7 @@ describe('UpgradesViewContent — per-state rendering', () => {
     expect(html).toContain('Upgrades');
     expect(html).toContain('Migrate manifest to v2');
     // …and the reason the controls are missing is said once, at the top.
-    expect(html).toContain('needs write access to this workspace');
+    expect(html).toContain('needs write access to this project');
     // …but nothing that mutates renders: not the row's Run, and not the
     // one-off composer, which is a control and nothing else.
     expect(html).not.toContain('Run upgrade');

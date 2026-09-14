@@ -124,7 +124,7 @@ export function describeSandboxTemplate(tpl: SandboxTemplate): {
 } {
   const Icon = tpl.is_default ? ShippingContainerIcon : tpl.has_image ? PackageIcon : FileCodeIcon;
   const subtitle = tpl.is_default
-    ? 'Platform default · clones workspace at boot'
+    ? 'Platform default · clones the project at boot'
     : tpl.has_image
       ? `Image: ${tpl.image}`
       : `Dockerfile: ${tpl.dockerfile_path}`;

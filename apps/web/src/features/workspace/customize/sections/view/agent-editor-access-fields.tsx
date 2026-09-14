@@ -291,7 +291,7 @@ export function WorkspaceSection({
   const PinnedIcon = pinned ? describeSandboxTemplate(pinned).Icon : CubeIcon;
   return (
     <EditorSection
-      title={tI18nComplete.raw('text87bb59ba2f92')}
+      title={tI18nComplete.raw('text67fc62497e85')}
       description={tI18nComplete.raw('text76a5e5a39b4a')}
     >
       <SettingRow

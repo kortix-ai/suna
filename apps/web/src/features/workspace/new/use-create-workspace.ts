@@ -140,7 +140,7 @@ export function resolveTargetAccountId(
 ): string | undefined {
   if (isForeignAccountList(creatableAccounts, userId)) {
     throw new Error(
-      'Could not verify the target account for this workspace. Refresh and try again.',
+      'Could not verify the target account for this project. Refresh and try again.',
     );
   }
   const resolved =
@@ -149,7 +149,7 @@ export function resolveTargetAccountId(
   const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
   if (!isCreatable) {
     throw new Error(
-      'Could not verify the target account for this workspace. Refresh and try again.',
+      'Could not verify the target account for this project. Refresh and try again.',
     );
   }
   return resolved;
@@ -226,7 +226,7 @@ export function buildGitHubImportPayload(
  * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
  * plus `ensureFirstProject` auto-provisioning every account's first project
- * means EVERY free-tier user who clicks "Create a workspace…" hits this —
+ * means EVERY free-tier user who clicks "Create a project…" hits this —
  * not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
@@ -248,15 +248,15 @@ export function messageFor(error: unknown): string {
   const message = error instanceof Error ? error.message : undefined;
   if (isProjectLimitError(error)) {
     return (
-      message || "This account has reached its plan's workspace limit. Upgrade to create another."
+      message || "This account has reached its plan's project limit. Upgrade to create another."
     );
   }
   if (status === 403) {
-    return 'You need owner or admin access in this account to create a workspace.';
+    return 'You need owner or admin access in this account to create a project.';
   }
-  if (status === 400) return message || 'Check the workspace name and try again.';
+  if (status === 400) return message || 'Check the project name and try again.';
   if (isManagedGitUnavailableError(error)) {
-    return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
+    return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before projects can be created.";
   }
   if (status === 409) {
     // Two different 409s reach here now, and they must not share a message.
@@ -270,12 +270,12 @@ export function messageFor(error: unknown): string {
     // them.
     const code = (error as { code?: string } | null | undefined)?.code;
     if (code === PROVISION_IN_FLIGHT_CODE) {
-      return 'Another attempt to create this workspace is already in progress. Please wait a moment and try again.';
+      return 'Another attempt to create this project is already in progress. Please wait a moment and try again.';
     }
-    return message || 'Could not create the workspace. Try again.';
+    return message || 'Could not create the project. Try again.';
   }
-  if (status === 502) return 'Could not create the workspace. Try again.';
-  return message || 'Could not create the workspace. Try again.';
+  if (status === 502) return 'Could not create the project. Try again.';
+  return message || 'Could not create the project. Try again.';
 }
 
 /**

@@ -196,7 +196,7 @@ const FILES: Record<string, RepoFile> = {
       'Get a new customer to first value in week one.',
       '',
       '## Steps',
-      '- Stand up their workspace from the template',
+      '- Stand up their project from the template',
       '- Book kickoff, share the rollout plan',
       '- Check activation daily, nudge where stuck',
     ],

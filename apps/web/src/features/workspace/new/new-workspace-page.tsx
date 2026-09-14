@@ -339,7 +339,7 @@ export function NewWorkspacePage() {
           list resolved first, Enter fired a SECOND `runCreate`.
 
           The header lives INSIDE the form branch, not above the swap. It is
-          the form's title — "Create a workspace" above a screen that is already
+          the form's title — "Create a project" above a screen that is already
           creating one is stale, and leaving it mounted would make the swap two
           motions (a block fading while a heading holds still) instead of the
           page turning over as one thing. */}

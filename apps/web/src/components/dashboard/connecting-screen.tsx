@@ -177,7 +177,7 @@ export interface ConnectingScreenProps {
   forceConnecting?: boolean;
   /** Pin the stage label (Auth / Routing / Reaching / Restoring). */
   overrideStage?: Stage;
-  /** Override the screen headline (e.g. "Provisioning workspace"). */
+  /** Override the screen headline (e.g. "Provisioning project"). */
   title?: string;
   /** Override the workspace label when the server store is not populated yet. */
   labelOverride?: string;
@@ -238,7 +238,7 @@ export type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
 const STAGE_COPY: Record<Stage, string> = {
   auth: 'Authenticating',
   routing: 'Connecting',
-  reaching: 'Reaching workspace',
+  reaching: 'Reaching project',
   restoring: 'Restoring session',
 };
 
@@ -326,7 +326,7 @@ function ProvisioningView({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pct = Math.max(0, Math.min(100, progress));
   const rawStageText =
-    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing workspace';
+    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing project';
   const stageText = translateUiCatalogText(
     rawStageText,
     tI18nComplete,

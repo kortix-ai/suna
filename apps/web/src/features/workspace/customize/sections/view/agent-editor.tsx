@@ -296,7 +296,7 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'actions', label: 'Project actions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
   { key: 'tools', label: 'Tools', group: 'Runtime' },
-  { key: 'workspace', label: 'Workspace', group: 'Runtime' },
+  { key: 'workspace', label: 'Sandbox', group: 'Runtime' },
 ] as const satisfies readonly { key: string; label: string; group: AgentConfigSectionGroup }[];
 
 export function useLocalizedAgentConfigCatalog() {

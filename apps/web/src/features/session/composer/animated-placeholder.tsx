@@ -69,7 +69,7 @@ export interface ComposerPlaceholderCopy {
 const ENGLISH_PLACEHOLDER_COPY: ComposerPlaceholderCopy = {
   skills: 'Type / for skills, commands, and files',
   mentions: 'Type @ to mention files and agents',
-  workspaceFile: 'Ask about any file in your workspace',
+  workspaceFile: 'Ask about any file in your project',
   commandPalette: (modifier) => `Press ${modifier}K to open the command palette`,
   switchAgents: 'Press Tab to switch agents',
   attachFiles: 'Drag and drop files to attach them',

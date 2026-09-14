@@ -15,7 +15,7 @@
  * The second is not a hidden gesture — it is the row that carries the account
  * you are in, and the first row teaches the destination.
  *
- * Reached from "Switch Workspace" in that menu — a `DropdownMenuSub`, the same
+ * Reached from "Switch Project" in that menu — a `DropdownMenuSub`, the same
  * shape as Theme and Help, so all three read as one family. Radix owns opening,
  * closing and the return path; this file is only what goes inside.
  *
@@ -95,7 +95,7 @@ export function WorkspaceMenuSection() {
   // Loading until accounts themselves are known AND every account's workspaces
   // are in. Without `accountsQuery.isLoading` this is `false` while accounts are
   // still in flight (`workspaceQueries` starts as `[]`, and `[].some(...)` is
-  // `false` by definition) — the view would paint "No workspaces yet" before it
+  // `false` by definition) — the view would paint "No projects yet" before it
   // had even asked how many accounts exist.
   const workspacesLoading = accountsQuery.isLoading || workspaceQueries.some((q) => q.isLoading);
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
@@ -135,7 +135,7 @@ export function WorkspaceMenuSection() {
 
   // A failed account never appears in `groups` (it has zero workspaces, and
   // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
-  // either — that would show "No workspaces yet" over an account we simply failed
+  // either — that would show "No projects yet" over an account we simply failed
   // to load, instead of that account's own retry row.
   const isEmpty = visibleGroups.length === 0 && failedAccounts.length === 0;
 

@@ -11,7 +11,7 @@ import {
  * merge — only the import path changed. `main` added these with the archive
  * handler it moved out of the deleted `/projects` list page; this branch
  * deletes `settings-view.tsx`, so both the functions and their tests moved to
- * the tab that now owns Delete workspace.
+ * the tab that now owns Delete project.
  *
  * `runProjectArchive` is the archive mutation's real side effects, extracted
  * so this test can inject a plain fake instead of
