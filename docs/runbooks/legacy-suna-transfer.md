@@ -94,6 +94,33 @@ Only its documented read-only POST operation is permitted.
   workspaces or raw conversations in a shared repository and assume private
   session flags protect them.
 
+## Ownership through the Management API
+
+A missing PostgREST schema does not mean its tables are absent. When a source PAT
+has database read permission, the dedicated Management API endpoint can inspect
+ownership without a direct PostgreSQL connection or changing exposed schemas:
+
+`POST /v1/projects/{approved-dev-ref}/database/query/read-only`
+
+This endpoint runs as `supabase_read_only_user`. Use schema-qualified, bounded
+SELECT statements against `basejump.accounts` and `basejump.account_user`.
+Keep the same source allowlist and save the returned ownership evidence privately.
+Do not substitute the general SQL execution endpoint or change API schema exposure.
+The preparation CLI does not implement this optional ownership endpoint yet.
+
+For personal accounts, verify all three records: the account's primary owner,
+its owner membership, and the corresponding Auth user. Record original user ID,
+source account ID, destination user ID, and the evidence for the mapping.
+
+Creating a missing destination Auth user through the admin API does not send an
+invitation. Preserve the source email confirmation state; do not assign a password
+or copy session tokens. Add the already-existing user to the destination account
+and grant the intended project and agent. Assert the membership endpoint reports
+`added`, not `invited`. A personal-account owner does not automatically become an
+owner of the combined destination account.
+
+Reference: https://supabase.com/docs/reference/api/v1-read-only-query
+
 ## Local native projection
 
 After `export-thread`, create a native import file and row-disposition audit:
@@ -295,3 +322,106 @@ symlinks, permission bits, and timestamps. Extended attributes are not captured.
 Two matching inventories detect observed changes but do not establish a snapshot.
 Home directories and files outside `/workspace` require separate capture. These
 limits prevent classifying the prototype as a complete machine transfer.
+
+
+## Development evidence — 2026-09-14
+
+**Gate: NOT READY. Production execution remains unauthorized.**
+
+The bounded experiment uses source `cwefmhtthmguktqcysag` and the dev API.
+Three source threads map to three private destination sessions under two verified
+legacy owners. The first two workspaces contain no regular files. The third
+provides the file-restoration test. No source sandbox in the cached production
+overlap set is started. All three selected source sandboxes return to `archived`.
+
+| Check | Observed result |
+| --- | --- |
+| Ownership inventory | 60 personal accounts and 60 owner memberships; all owners resolve to source Auth users |
+| Selected raw messages | 17 + 69 + 648 = 734 rows retained in private SQLite ledgers and sandbox archives |
+| Native historical messages | 3 + 11 + 99 = 113 messages; IDs, parts and original message timestamps checked |
+| Account boundaries | Two real mapped owners; owner session/runtime requests return 200; cross-owner requests return 404/403 |
+| Workspace capture | Third archive contains 63 entries, including 55 regular files and 352,442,542 uncompressed file bytes |
+| Workspace integrity | Downloaded archive SHA-256 matches; all 55 restored file hashes and recorded modes/mtime match |
+| File API | Largest file (48,213,189 bytes) and PNG (135,505 bytes) return 200 and match source hashes |
+| Git exclusion | Each restored UUID folder passes `git check-ignore`; raw archives stay outside `/workspace` |
+| Restart | Third session: restart 202, start ready, same sandbox/native IDs, all 99 messages and 55 file hashes retained |
+| Continuation | Explicit dev model produces `MIGRATION_DEV_OK`; historical messages remain unchanged |
+| Completed request replay | Same client request returns 200 and the same prompt ID; successful reply count remains one |
+| Browser | Owner sends through the real composer: POST prompts 202, visible `MIGRATION_UI_OK`, then idle |
+| File browser | Restored PNG renders at 850 × 1100; file requests use the dev API |
+| Titles | Three original source thread names restored through authenticated PATCH requests |
+
+The new dev account initially has no managed-model entitlement. A one-day dev
+trial and a $2 internal credit grant enable the continuation checks. The final
+trial uses `pro`, which includes managed models. `team` does not include that
+entitlement. No Stripe subscription or purchase is created. Trial expiry and
+credit usage belong in the private experiment record.
+
+### Remaining failures and fidelity limits
+
+- Five historical image blocks reference production Supabase Storage. No request
+  fetches those URLs during this dev-only experiment. Three similarly named PNGs
+  exist in the captured workspace, but filename similarity does not prove byte
+  identity. Two referenced filenames do not exist in that workspace.
+- The third projection reports six unresolved items: those five image blocks and
+  one empty assistant row. Native text placeholders and retained raw JSON are not
+  equivalent to native image rendering. Do not waive these for a 1:1 transfer.
+- The first continuation attempt crosses a runtime restart failure and exhausts
+  abandoned-delivery retries. Four user rows appear for that original attempt.
+  Later successful-request replay passes; interrupted delivery remains a separate
+  failed gate. Do not call the whole retry path idempotent.
+- A second-session restart initially fails with `runtime_unreachable_timeout`.
+  Manual dev provider start and a subsequent UI restart recover it. The third
+  session's normal restart passes without that workaround. This does not erase
+  the earlier failure.
+- Original thread timestamps are retained in metadata and raw archives. The
+  destination session index still displays migration creation time. Import into
+  an existing native session does not restore all original native session metadata.
+- Original model, token and cost fields require an explicit semantic mapping.
+  Historical projection placeholders are not verified accounting equivalence.
+- Same-sandbox restart is verified. Lost-sandbox recovery from a durable destination
+  checkpoint is not implemented or verified. A box-local archive is not enough.
+- Source homes, environment configuration, processes, extended attributes, and
+  external Storage dependencies are outside the workspace-only capture proof.
+- The bounded restore accepts directories and regular files. Symlink/hardlink,
+  interruption, rollback and post-continuation replay require separate coverage.
+- The reusable CLI remains preparation-only. Private bounded execution scripts do
+  not constitute an approved or interruption-safe production apply implementation.
+
+### Evidence and verification status
+
+Detailed identities, source content, native transcripts, manifests, browser HARs,
+checksums and operation IDs remain under ignored `.legacy-transfer/`. HARs and
+browser state contain credentials; keep them private and never attach them to a PR.
+
+Relevant private experiment commands, run with the dev environment, include
+`verify-real-owner-isolation.ts`, `verify-third-restart.ts`,
+`verify-dev-file-api.ts`, and `verify-continuation-proof.ts`. Browser assertions
+check both DOM state and captured authenticated HTTP requests. Every command
+pins the dev API and destination Supabase host before access.
+
+Repository validation at commit `bcd844344c`:
+
+- `bun test apps/api/src/scripts/legacy-transfer`: 18 passed, 0 failed, 46 assertions.
+- `pnpm --dir apps/api exec tsc --noEmit`: exit 0.
+- Latest `pnpm test`: 389/391 REST/CLI flows; two sandbox timeout failures and one
+  SDK timing assertion fail the overall run. Targeted reruns pass: SBX-3/SBX-5
+  2/2; turns tests 57/57. Do not report the latest full run as green.
+- Draft PR #7231 passes its API typecheck. Preview verification fails gateway
+  routing checks (gateway health identifies `kortix-api`, and expected gateway
+  routes return 404). Preview E2E is not green. The CI packages lane also fails one web test.
+  No merge or deployment is claimed.
+
+### Checkpoint discipline
+
+Only one process may mutate an experiment ledger at a time. Persist stable
+source/destination/native IDs separately from the latest start response: a stopped
+response can contain null runtime fields. Record operation IDs before polling.
+Never replace the entire ledger from a stale in-memory copy. Production apply
+requires transactional checkpoints and a per-run writer lease before it exists.
+
+A dev near-miss exposed this rule: concurrent isolation and restart scripts wrote
+the same JSON ledger and lost restart-response fields. No source rows or imported
+messages were lost. Server metadata reconstructed runtime state, but missing
+operation IDs cannot be claimed as captured evidence. Later operations run
+serially and record their own proof files.

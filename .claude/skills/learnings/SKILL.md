@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Serialize migration checkpoint writers and preserve immutable runtime IDs (2026-09-14)
+
+**When:** bounded migration scripts share a progress ledger. Allow one writer;
+store stable IDs separately from transient start responses and append operation
+proof before polling. A whole-file save from stale memory can lose another step.
+*Near-miss:* Suna-dev rehearsal lost restart-response fields during concurrent
+JSON saves; source and imported data remained intact. Later checks run serially.
+*Enforcer:* preparation CLI exposes no apply command; manual single-writer rule
+in `docs/runbooks/legacy-suna-transfer.md`. TODO: transactional apply lease/checkpoints.
+
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
