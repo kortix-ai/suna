@@ -2,6 +2,7 @@ import type { Database } from '@kortix/db';
 import { config } from '../config';
 import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity';
 import { db } from './db';
+import { errorSqlstate } from './error-cause';
 
 /**
  * The dedicated audit-write pool.
@@ -154,12 +155,13 @@ const AUDIT_TRANSIENT_DRIVER_CODES = new Set([
  * NUL byte in jsonb all look identical. Mirrors `isAuditContentionError`'s walk
  * so the two always agree about which error they are describing.
  */
+/**
+ * Kept as the audit-facing name; the walk itself lives in `error-cause` so the
+ * database-free `audit-queue` can use the same rule without importing this
+ * module (it pulls in `./db`, and the queue's tests depend on not doing that).
+ */
 export function auditErrorSqlstate(error: unknown): string | null {
-  if (!error || typeof error !== 'object') return null;
-  const code = (error as { code?: unknown }).code;
-  if (typeof code === 'string' && code.length > 0) return code;
-  const cause = (error as { cause?: unknown }).cause;
-  return cause != null && cause !== error ? auditErrorSqlstate(cause) : null;
+  return errorSqlstate(error);
 }
 
 export function isAuditContentionError(error: unknown): boolean {
