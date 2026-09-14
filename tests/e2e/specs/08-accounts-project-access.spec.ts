@@ -620,7 +620,7 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     );
     await dismissOnboarding(page);
     await expect(
-      page.getByRole("button", { name: "Switch workspace" }),
+      page.getByRole("button", { name: "Switch project" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "New session" }).first(),

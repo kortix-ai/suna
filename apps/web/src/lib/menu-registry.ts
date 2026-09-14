@@ -701,7 +701,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-members',
-    label: 'Workspace members',
+    label: 'Project members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
