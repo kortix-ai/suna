@@ -59,9 +59,7 @@ export function connectorStatusLine(connector: AdminConnector, providerLabel: st
  */
 export type ConnectorStatusTone = 'ok' | 'attention' | 'error' | 'neutral';
 
-export function connectorStatusTone(
-  status: ConnectorSetupStatus,
-): ConnectorStatusTone {
+export function connectorStatusTone(status: ConnectorSetupStatus): ConnectorStatusTone {
   switch (status) {
     case 'connected':
       return 'ok';
@@ -80,10 +78,7 @@ export function connectorStatusTone(
  * status the badge only names. This is the answer to "what state am I in",
  * written so the next click is obvious.
  */
-export function connectorStatusStatement(
-  connector: AdminConnector,
-  displayName: string,
-): string {
+export function connectorStatusStatement(connector: AdminConnector, displayName: string): string {
   const status = connectorSetupStatus(connector);
   switch (status) {
     case 'connected':
@@ -97,4 +92,32 @@ export function connectorStatusStatement(
     case 'error':
       return `The ${displayName} connection is failing. Reconnect it or check the credential.`;
   }
+}
+
+/**
+ * Translate a stored sync failure (`AdminConnector.lastError`) into the next
+ * action, in plain words. Returns `null` when the text matches no known
+ * shape — the caller then shows the raw reason alone instead of a wrong
+ * guess. Ordered most-specific first; the raw text always renders beside
+ * this, so a miss loses politeness, never information.
+ */
+export function connectorErrorExplanation(lastError: string | null | undefined): string | null {
+  if (!lastError) return null;
+  if (/unexpected token '<'|<!doctype|<html|text\/html/i.test(lastError))
+    return 'The URL answered a web page, not an API. Point the endpoint at the API itself, not its documentation.';
+  if (/introspection/i.test(lastError))
+    return 'The GraphQL server refused schema introspection, so its tools cannot be discovered.';
+  if (/401|unauthoriz|unauthenticated/i.test(lastError))
+    return 'The service refused our sign-in. Connect an account or fix the credential, then try again.';
+  if (/403|forbidden/i.test(lastError))
+    return 'The service recognized the credential but refused access. Check its permissions or scopes.';
+  if (/404|not found/i.test(lastError))
+    return 'The endpoint answered “not found” — the URL is probably wrong. Check it under Settings.';
+  if (/429|rate limit/i.test(lastError))
+    return 'The service is rate-limiting us. Wait a little and try again.';
+  if (/timeout|timed out|etimedout|aborted/i.test(lastError))
+    return 'The service took too long to answer. It may be down — try again in a minute.';
+  if (/enotfound|getaddrinfo|econnrefused|dns/i.test(lastError))
+    return 'The address could not be reached. Check the URL for typos.';
+  return null;
 }

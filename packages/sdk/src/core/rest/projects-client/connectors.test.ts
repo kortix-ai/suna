@@ -354,7 +354,7 @@ test('listConnectors GETs the project connectors list', async () => {
           slug: 'signed-api',
           name: 'Signed API',
           provider: 'http',
-          status: 'active',
+          status: 'error',
           credentialMode: 'shared',
           authorizationStrategy: 'user',
           requestAuthType: 'hmac',
@@ -362,6 +362,7 @@ test('listConnectors GETs the project connectors list', async () => {
           actions: [],
           authSecret: 'credential',
           secretSet: false,
+          lastError: 'MCP tools/list failed: HTTP 401',
         },
       ],
     },
@@ -370,6 +371,8 @@ test('listConnectors GETs the project connectors list', async () => {
   expect(last().url).toContain('/connectors/projects/P1/connectors');
   expect(last().method).toBe('GET');
   expect(result.connectors[0]?.requestAuthType).toBe('hmac');
+  // Why the last sync failed rides the record — the UI's error panel reads it.
+  expect(result.connectors[0]?.lastError).toBe('MCP tools/list failed: HTTP 401');
 });
 
 test('listConnectors throws on a failed response', async () => {

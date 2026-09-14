@@ -63,7 +63,7 @@ const ComputersAddFlow = dynamic(
 function CatalogDetailIcon({ entry }: { entry: CatalogEntry }) {
   if (entry.icon) {
     return (
-      <span className="bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md">
+      <span className="bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border">
         <Image
           src={entry.icon}
           alt=""

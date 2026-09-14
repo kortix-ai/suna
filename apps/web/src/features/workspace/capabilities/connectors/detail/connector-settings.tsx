@@ -93,8 +93,11 @@ export function ConnectorSettings({
           a name is one deliberate change, not a live field. */}
       <section className="space-y-2">
         <Label htmlFor={`connector-${connector.slug}-name`}>Name</Label>
+        {/* A bare field under its label — the design-system form dialect. The
+            input carries its own border; wrapping it in a second bordered
+            card read as a box inside a box (Jay, 2026-09-14). */}
         <form
-          className="bg-popover flex flex-wrap items-center gap-2 rounded-md border px-4 py-3"
+          className="flex flex-wrap items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (nameDirty && !rename.isPending) rename.mutate();

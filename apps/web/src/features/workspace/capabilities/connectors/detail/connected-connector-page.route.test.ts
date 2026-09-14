@@ -78,6 +78,17 @@ describe('connected connector route', () => {
     expect(page).toContain("params.delete('connect')");
   });
 
+  test('a failing connector says WHY, not just ERROR', () => {
+    const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // The primary panel owns the failure: a translated next step as its
+    // description, and the sync engine's stored reason verbatim below it.
+    // Without both, the page shows a red badge and a panel talking about
+    // member connections — two contradictory messages (Jay, 2026-09-14).
+    expect(page).toContain("const failing = connector.status === 'error'");
+    expect(page).toContain('connectorErrorExplanation(connector.lastError)');
+    expect(page).toContain('{connector.lastError}');
+  });
+
   test('names the credential source and links the curated documentation', () => {
     const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
     // The two-way Secrets link: a connector whose credential is a bound

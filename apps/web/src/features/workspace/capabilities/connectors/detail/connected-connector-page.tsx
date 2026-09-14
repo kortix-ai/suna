@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
@@ -35,13 +36,10 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
-import { connectorDisplayName, connectorSummary } from '../connector-filter';
+import { connectorDisplayName } from '../connector-filter';
 import { ConnectorAppIcon, ConnectorStatusBadge } from '../connector-identity';
-import {
-  composioConnectionIsAuthorized,
-  isManagedConnectorProvider,
-  providerLabel,
-} from '../provider-label';
+import { connectorErrorExplanation } from '../connector-status-line';
+import { composioConnectionIsAuthorized, isManagedConnectorProvider } from '../provider-label';
 import { ConnectorCredentialRow } from './connector-credential-row';
 import { connectorConnectionIsReady } from './connector-detail-copy';
 import {
@@ -50,6 +48,7 @@ import {
   ConnectorDocumentationLinks,
 } from './connector-detail-layout';
 import { connectorDocLinks } from './connector-doc-links';
+import { ConnectorSetupSteps } from './connector-setup-steps';
 import { CONNECTOR_TAB_LABEL, connectorTabs, type ConnectorTab } from './connector-tabs';
 
 const ConnectorAccounts = dynamic(
@@ -91,6 +90,7 @@ export function ConnectedConnectorPage({
   backHref,
   hideBackButton = false,
   hideDocumentation = false,
+  closeAction,
 }: {
   projectId: string;
   slug: string;
@@ -102,6 +102,10 @@ export function ConnectedConnectorPage({
   /** Also the right pane: the app page beside it already carries the same
    *  documentation links, so the pane skips its copy. */
   hideDocumentation?: boolean;
+  /** The split view's X, rendered at this page's own top right — hidden
+   *  while the credential column is open so its header X stays the only
+   *  close on screen. */
+  closeAction?: ReactNode;
 }) {
   const resolvedBackHref =
     backHref ?? `/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`;
@@ -221,6 +225,7 @@ export function ConnectedConnectorPage({
       canManageConnections={canManageConnections}
       invalidate={invalidate}
       autoConnectRequested={search?.get('connect') === '1'}
+      closeAction={closeAction}
     />
   );
 }
@@ -235,6 +240,7 @@ function ConnectedConnectorContent({
   canManageConnections,
   invalidate,
   autoConnectRequested = false,
+  closeAction,
 }: {
   backHref: string;
   layoutBackHref: string | null;
@@ -247,8 +253,11 @@ function ConnectedConnectorContent({
   /** `?connect=1` — an add flow just landed here; open the connect dialog if
    *  a credential is still needed so adding flows straight into connecting. */
   autoConnectRequested?: boolean;
+  /** The split view's X — see the page-level prop of the same name. */
+  closeAction?: ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const displayName = connectorDisplayName(connector);
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isChannel = connector.provider === 'channel';
@@ -411,18 +420,49 @@ function ConnectedConnectorContent({
     </Button>
   ) : undefined;
 
-  const primaryTitle = connected
-    ? 'Connection active'
-    : usesProjectAuthorization
-      ? 'Project connection required'
-      : 'Member connection required';
-  const primaryDescription = connected
-    ? usesProjectAuthorization
-      ? 'Sessions in this project use the shared connected account.'
-      : 'Your private sessions use your connected account.'
-    : usesProjectAuthorization
-      ? 'Connect one account or credential that every authorized project session can use.'
-      : 'Each member connects a separate account from the Accounts tab.';
+  // A failing connector's panel owns the FAILURE — the badge said ERROR while
+  // the panel talked about member connections, two contradictory messages on
+  // one screen (Jay, 2026-09-14). `lastError` is the sync engine's stored
+  // reason. Everything lives in ONE card: the translated reason, the next
+  // step, and the raw reported text — a mono line floating under the card
+  // read as page debris.
+  const failing = connector.status === 'error';
+  // The fix action: project-scoped credential/managed connectors already get
+  // the Connect / Replace-credential button beside this text. A user-scoped
+  // connector has no shared credential to fix — its fix is each member's own
+  // account, one tab below — so the text carries the pointer instead.
+  const failingNextStep =
+    failing && !showConnectCta && !showReconnectCta && !usesProjectAuthorization
+      ? ' Connect your own account under Accounts, below.'
+      : '';
+  const primaryTitle = failing
+    ? 'Not working'
+    : connected
+      ? 'Connection active'
+      : usesProjectAuthorization
+        ? 'Project connection required'
+        : 'Member connection required';
+  const primaryDescription = failing ? (
+    <>
+      <span className="block">
+        {(connectorErrorExplanation(connector.lastError) ?? 'The last synchronization failed.') +
+          failingNextStep}
+      </span>
+      {connector.lastError ? (
+        <span className="mt-1.5 block font-mono text-xs break-words">{connector.lastError}</span>
+      ) : null}
+    </>
+  ) : connected ? (
+    usesProjectAuthorization ? (
+      'Sessions in this project use the shared connected account.'
+    ) : (
+      'Your private sessions use your connected account.'
+    )
+  ) : usesProjectAuthorization ? (
+    'Connect one account or credential that every authorized project session can use.'
+  ) : (
+    'Each member connects a separate account from the Accounts tab.'
+  );
 
   // Curated: the Kortix guide anchored to this provider's section, the app's
   // own developer docs when we know them (that is where the API key or server
@@ -433,11 +473,15 @@ function ConnectedConnectorContent({
       ? [{ label: 'Official connector URL', href: configQuery.data.url, external: true }]
       : []),
   ];
-  // Removal must invalidate BEFORE navigating: in the split view the app page
-  // (left pane) stays mounted on `qk.project.connectors` — without the
-  // invalidation its "In this project" list keeps showing the deleted slug.
-  const returnToConnected = () => {
+  // Removal AWAITS the connectors refetch, then navigates — soft, no page
+  // reload. The await matters when the deleted connector's slug equals its
+  // app's slug ("canva"): landing on `/connectors/canva` with the stale
+  // cache made the resolver find the just-deleted record and forward
+  // straight back to a dead page — "Connector not found" (Jay, 2026-09-14).
+  // The `isFetching` skeleton guard covers this page during the await.
+  const returnToConnected = async () => {
     invalidate();
+    await queryClient.refetchQueries({ queryKey: qk.project.connectors(projectId) });
     router.replace(backHref);
   };
 
@@ -449,28 +493,23 @@ function ConnectedConnectorContent({
       <SplitSheetMain className="flex flex-col">
         <ConnectorDetailLayout
           backHref={layoutBackHref}
+          closeAction={credOpen ? null : closeAction}
           // `lg` (size-10) — the SAME tile the catalogue app page renders, so
           // the split view's two headers mirror each other. Renaming moved to
           // the Settings tab; the header is identity only.
           icon={<ConnectorAppIcon connector={connector} size="lg" />}
           title={displayName}
-          // ONE header row, like the app page beside it — the summary rides
-          // inline after the badge instead of adding a second line, so the
-          // split view's first cards start at the same y (Jay, 2026-09-14:
-          // "all the components parallel in the alignment").
+          // ONE header row, badge only — no tool count, no provider label
+          // (Jay, 2026-09-14): the header is identity + state, the details
+          // live in the tabs.
           status={
-            <>
-              {connected ? (
-                <Badge variant="success" size="sm">
-                  Connected
-                </Badge>
-              ) : (
-                <ConnectorStatusBadge connector={connector} />
-              )}
-              <span className="text-muted-foreground text-sm">
-                {connectorSummary(connector, providerLabel(connector.provider))}
-              </span>
-            </>
+            connected ? (
+              <Badge variant="success" size="sm">
+                Connected
+              </Badge>
+            ) : (
+              <ConnectorStatusBadge connector={connector} />
+            )
           }
           headerAction={
             // The page-level verb: a session that starts with THIS connector
@@ -493,6 +532,19 @@ function ConnectedConnectorContent({
           primaryDescription={primaryDescription}
           primaryAction={primaryAction}
         >
+          {/* What now? The live checklist for a connector that is not ready
+              yet — the "Needs setup" badge alone answered nothing (Jay,
+              2026-09-14). Channels and computers have their own flows. */}
+          {!connected && !isChannel && !isComputer ? (
+            <ConnectorSetupSteps
+              connector={connector}
+              displayName={displayName}
+              usesProjectAuthorization={usesProjectAuthorization}
+              isManagedProvider={isManagedProvider}
+              hasStrategyConnection={hasStrategyConnection}
+            />
+          ) : null}
+
           {/* Where the credential actually lives, and the two-way door to the
           Secrets page. Directly under the primary Connection panel — before
           any tab — because "is this a pasted value or the project secret

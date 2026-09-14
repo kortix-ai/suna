@@ -2,6 +2,7 @@ import type { AdminConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
+  connectorErrorExplanation,
   connectorStatusLine,
   connectorStatusShort,
   connectorStatusStatement,
@@ -153,5 +154,32 @@ describe('connectorStatusStatement is a full sentence with the next move in it',
 
   test('error points at the fix', () => {
     expect(connectorStatusStatement(conn({ status: 'error' }), 'Linear')).toContain('Reconnect');
+  });
+});
+
+describe('connectorErrorExplanation translates the stored reason into a next step', () => {
+  test('an auth refusal says to connect or fix the credential', () => {
+    expect(connectorErrorExplanation('MCP tools/list failed: HTTP 401')).toContain(
+      'Connect an account or fix the credential',
+    );
+    expect(connectorErrorExplanation('Unauthorized')).toContain('refused our sign-in');
+  });
+
+  test('an HTML answer says the URL points at a page, not an API', () => {
+    expect(
+      connectorErrorExplanation('Unexpected token \'<\', "<!DOCTYPE " is not valid JSON'),
+    ).toContain('a web page, not an API');
+  });
+
+  test('refused introspection is named as such', () => {
+    expect(connectorErrorExplanation('GraphQL introspection is disabled')).toContain(
+      'refused schema introspection',
+    );
+  });
+
+  test('an unknown shape returns null so the caller shows the raw text alone', () => {
+    expect(connectorErrorExplanation('some entirely novel failure')).toBeNull();
+    expect(connectorErrorExplanation(null)).toBeNull();
+    expect(connectorErrorExplanation(undefined)).toBeNull();
   });
 });

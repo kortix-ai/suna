@@ -6,10 +6,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { catalogAppForConnector } from '../catalog/catalog-entry';
 import { appConnectorHref, catalogSourceFromSearch } from '../connector-routes';
 import { isManagedConnectorProvider } from '../provider-label';
-import { Skeleton } from '@/components/ui/skeleton';
 
 import { CatalogConnectorPage } from './catalog-connector-page';
 import { ConnectedConnectorPage } from './connected-connector-page';
@@ -28,16 +28,20 @@ function SplitResolveSkeleton() {
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <ConnectorDetailSkeleton />
       </div>
-      <div className="border-border hidden w-2/5 shrink-0 flex-col gap-4 border-l px-5 py-6 lg:flex">
+      {/* Mirrors `ConnectorDetailSkeleton`'s rhythm — same pt-14 top, same
+          icon row, same card bar — so the two columns' bars sit LEVEL. A
+          shallower right pane made the panes load at different heights
+          (Jay, 2026-09-14). */}
+      <div className="border-border hidden w-2/5 shrink-0 flex-col gap-6 border-l px-4 pt-14 pb-20 lg:flex">
         <div className="flex items-center gap-3">
           <Skeleton className="size-10 shrink-0 rounded-md" />
-          <Skeleton className="h-5 w-40 max-w-full rounded-sm" />
+          <Skeleton className="h-6 w-40 max-w-full rounded-sm" />
         </div>
-        <Skeleton className="h-14 rounded-md" />
+        <Skeleton className="h-16 rounded-md" />
         <div className="space-y-2">
           <Skeleton className="h-4 w-24 rounded-sm" />
-          <Skeleton className="h-10 rounded-md" />
-          <Skeleton className="h-10 rounded-md" />
+          <Skeleton className="h-11 rounded-md" />
+          <Skeleton className="h-11 rounded-md" />
         </div>
       </div>
     </div>
@@ -95,8 +99,7 @@ export function ConnectorSlugPage({ projectId, slug }: { projectId: string; slug
   const record =
     connectorsQuery.data?.connectors.find((connector) => connector.slug === slug) ?? null;
   const managed = record !== null && isManagedConnectorProvider(record.provider);
-  const resolvable =
-    record !== null && (managed || DISCOVER_PROVIDERS.has(record.provider));
+  const resolvable = record !== null && (managed || DISCOVER_PROVIDERS.has(record.provider));
 
   const appQuery = useQuery({
     queryKey: ['connector-app-resolution', projectId, slug],

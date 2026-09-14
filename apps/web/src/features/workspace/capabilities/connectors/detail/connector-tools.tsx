@@ -16,7 +16,6 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   TrashIcon,
-  WrenchIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -24,7 +23,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,7 +49,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
 import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
@@ -138,9 +135,9 @@ export interface ConnectorToolsProps {
  *    and wins (`resolveEffectiveAction`, connectors/policy.ts:342), so those rows
  *    are disabled and say where the rule actually lives.
  *
- * Everything else — the `sensitive` toggle and the pattern-rule editor — is
- * folded into **Advanced**. Both are real capabilities carried over from the
- * shipped panel; they are just not the common case.
+ * The `sensitive` toggle and the pattern-rule editor render PLAINLY below
+ * the list — they lived behind an "Advanced" disclosure until 2026-09-14
+ * (Jay: the fold hid the one control a failing connector's owner wants).
  */
 export function ConnectorTools({
   projectId,
@@ -292,19 +289,6 @@ export function ConnectorTools({
   const draftSignature = signPatternRules(draftToRules(draft));
   const advancedDirty = draftSignature !== advancedSignature;
 
-  const [advancedOpen, setAdvancedOpen] = useState(connector.actions.length === 0);
-  // Reveal existing pattern rules ONCE, when they first arrive from the policies
-  // query — not on every change to their count. Keyed on the count alone, this
-  // re-fired whenever a rule was added or removed, so the panel sprang back open
-  // moments after the user collapsed it, which read as the disclosure opening by
-  // itself. After the first reveal the panel is the user's to control.
-  const revealedExistingRules = useRef(false);
-  useEffect(() => {
-    if (revealedExistingRules.current || advancedRules.length === 0) return;
-    revealedExistingRules.current = true;
-    setAdvancedOpen(true);
-  }, [advancedRules.length]);
-
   const savePatternRules = () =>
     writePolicies.mutate({ rules: [...toolRules, ...draftToRules(draft)] });
 
@@ -321,30 +305,34 @@ export function ConnectorTools({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
-          <h3 className="text-foreground text-lg font-semibold text-balance">
-            {tI18nComplete.raw('textea93d6a262ec')}
-          </h3>
-          <p className="text-muted-foreground text-sm text-pretty">
-            {describeDefault(connector.sensitive === true, policiesQuery.data?.default_mode)}
-          </p>
+      {/* The whole tools header disappears with the tools: a heading and a
+          per-tool default statement over an empty list is noise. */}
+      {connector.actions.length > 0 ? (
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <h3 className="text-foreground text-lg font-semibold text-balance">
+              {tI18nComplete.raw('textea93d6a262ec')}
+            </h3>
+            <p className="text-muted-foreground text-sm text-pretty">
+              {describeDefault(connector.sensitive === true, policiesQuery.data?.default_mode)}
+            </p>
+          </div>
+          {connector.actions.length > SEARCH_THRESHOLD ? (
+            <InputGroupSearch className="w-full sm:max-w-64">
+              <InputGroupSearchIcon>
+                <MagnifyingGlassIcon />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                placeholder={tI18nComplete.raw('textfbd165231fa1')}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                variant="popover"
+              />
+              <InputGroupSearchClear onClick={() => setQuery('')} />
+            </InputGroupSearch>
+          ) : null}
         </div>
-        {connector.actions.length > SEARCH_THRESHOLD ? (
-          <InputGroupSearch className="w-full sm:max-w-64">
-            <InputGroupSearchIcon>
-              <MagnifyingGlassIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              placeholder={tI18nComplete.raw('textfbd165231fa1')}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              variant="popover"
-            />
-            <InputGroupSearchClear onClick={() => setQuery('')} />
-          </InputGroupSearch>
-        ) : null}
-      </div>
+      ) : null}
 
       {projectLockedCount > 0 ? (
         <InfoBanner
@@ -383,17 +371,12 @@ export function ConnectorTools({
             </Button>
           }
         />
-      ) : connector.actions.length === 0 ? (
-        // The connector exists but has reported no tools — a failed or pending
-        // sync. That is a different statement from "nothing matched your
-        // search", and it must not render as a blank panel.
-        <EmptyState
-          icon={WrenchIcon}
-          size="sm"
-          title={tI18nComplete.raw('text99dd86336467')}
-          description={tI18nComplete('text0679d5053dda', { value0: displayName })}
-        />
-      ) : groups.length === 0 ? (
+      ) : connector.actions.length ===
+        0 ? // No tools reported (failed or pending sync): show NOTHING here — the
+      // header above is already hidden too. The connection panel on this
+      // page explains the failure; a wrench illustration restating "no
+      // tools" bought nothing (Jay, 2026-09-14).
+      null : groups.length === 0 ? (
         // The same line the four catalogs render, from the same component.
         // What was searched is unambiguous here — the box above says "Search
         // 19 tools" — so a second wording for one outcome bought nothing.
@@ -477,164 +460,147 @@ export function ConnectorTools({
         ))
       )}
 
-      <Disclosure
-        variant="outline"
-        className="overflow-hidden"
-        open={advancedOpen}
-        onOpenChange={setAdvancedOpen}
-      >
-        <DisclosureTrigger variant="outline">
-          <Button variant="popover">
-            {tI18nComplete.raw('text9f088dbebd6c')}
-            {advancedRules.length > 0 ? (
-              <Badge variant="secondary" size="sm">
-                {advancedRules.length}
-              </Badge>
-            ) : null}
-            <span className="text-muted-foreground ml-auto text-xs font-normal">
-              {tI18nComplete.raw('text59da2efb2423')}
-            </span>
-          </Button>
-        </DisclosureTrigger>
-        <DisclosureContent variant="outline" contentClassName="border-border border-t">
-          <div className="space-y-5 px-4 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-foreground text-sm font-medium">
-                  {tI18nComplete.raw('text594bdd4c19b2')}
-                </p>
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                  {tI18nComplete.raw('textf900377c2048')}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {sensitiveMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                <Switch
-                  checked={connector.sensitive === true}
-                  onCheckedChange={(next) => sensitiveMutation.mutate(next)}
-                  disabled={frozen || sensitiveMutation.isPending}
-                  aria-label={tI18nComplete.raw('text594bdd4c19b2')}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>{tI18nComplete.raw('text380c0b05bcfc')}</Label>
-              <p className="text-muted-foreground text-xs text-pretty">
-                {tI18nComplete.raw('textde00adeaf21b')}
-                <code className="font-mono">delete_*</code>
-                {tI18nComplete.raw('text3a13855164e7')}
-                <code className="font-mono">/^send/i</code>
-                {tI18nComplete.raw('texte45481e75a5e')}
+      {/* Ask-before-every-use and pattern rules render PLAINLY — they were
+          folded behind an "Advanced" disclosure, which hid the one control a
+          failing connector's owner actually wants (Jay, 2026-09-14). */}
+      <div className="bg-popover rounded-md border">
+        <div className="space-y-5 px-4 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-foreground text-sm font-medium">
+                {tI18nComplete.raw('text594bdd4c19b2')}
               </p>
-              {draft.map((row) => (
-                <div key={row.id} className="flex items-center gap-2">
-                  <Input
-                    value={row.match}
-                    placeholder={tI18nComplete.raw('text74ad536dca05')}
-                    variant="popover"
-                    size="xs"
-                    className="flex-1 font-mono"
-                    aria-label={tI18nComplete.raw('text5c9c672f4cd3')}
-                    disabled={frozen}
-                    onChange={(event) =>
-                      setDraft((rows) =>
-                        rows.map((candidate) =>
-                          candidate.id === row.id
-                            ? { ...candidate, match: event.target.value }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  />
-                  <Select
-                    value={row.action}
-                    disabled={frozen}
-                    onValueChange={(next) =>
-                      setDraft((rows) =>
-                        rows.map((candidate) =>
-                          candidate.id === row.id
-                            ? { ...candidate, action: next as ConnectorPolicyAction }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-[104px] shrink-0 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    {/* Three, not four: a stored rule always names an action.
-                        "Default" for a pattern means deleting it, which is
-                        what the trash button beside this does. */}
-                    <SelectContent className="rounded-lg">
-                      {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
-                        (action) => (
-                          <SelectItem key={action} value={action} className="text-xs">
-                            {POLICY_CHOICE_LABEL[action]}
-                          </SelectItem>
-                        ),
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="hover:text-destructive size-8 shrink-0"
-                    aria-label={tI18nComplete('texte2cbd4618228', {
-                      value0: row.match || '(empty)',
-                    })}
-                    disabled={frozen}
-                    onClick={() =>
-                      setDraft((rows) => rows.filter((candidate) => candidate.id !== row.id))
-                    }
-                  >
-                    <TrashIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1.5 text-xs"
-                  disabled={frozen}
-                  onClick={() =>
-                    setDraft((rows) => [
-                      ...rows,
-                      { id: nextPatternRowId(), match: '', action: 'require_approval' },
-                    ])
-                  }
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {tI18nComplete.raw('texta27cff51a2e0')}
-                </Button>
-                {advancedDirty ? (
-                  <div className="ml-auto flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline-ghost"
-                      className="h-8 text-xs"
-                      disabled={busy}
-                      onClick={() => setDraft(seedPatternDraft(advancedRules, nextPatternRowId))}
-                    >
-                      {tI18nComplete.raw('texteb1a70e39274')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                      disabled={frozen || busy}
-                      onClick={savePatternRules}
-                    >
-                      {writePolicies.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                      {tI18nComplete.raw('texte5dbdffb8816')}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
+              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                {tI18nComplete.raw('textf900377c2048')}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {sensitiveMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              <Switch
+                checked={connector.sensitive === true}
+                onCheckedChange={(next) => sensitiveMutation.mutate(next)}
+                disabled={frozen || sensitiveMutation.isPending}
+                aria-label={tI18nComplete.raw('text594bdd4c19b2')}
+              />
             </div>
           </div>
-        </DisclosureContent>
-      </Disclosure>
+
+          <div className="space-y-2">
+            <Label>{tI18nComplete.raw('text380c0b05bcfc')}</Label>
+            <p className="text-muted-foreground text-xs text-pretty">
+              {tI18nComplete.raw('textde00adeaf21b')}
+              <code className="font-mono">delete_*</code>
+              {tI18nComplete.raw('text3a13855164e7')}
+              <code className="font-mono">/^send/i</code>
+              {tI18nComplete.raw('texte45481e75a5e')}
+            </p>
+            {draft.map((row) => (
+              <div key={row.id} className="flex items-center gap-2">
+                <Input
+                  value={row.match}
+                  placeholder={tI18nComplete.raw('text74ad536dca05')}
+                  variant="popover"
+                  size="xs"
+                  className="flex-1 font-mono"
+                  aria-label={tI18nComplete.raw('text5c9c672f4cd3')}
+                  disabled={frozen}
+                  onChange={(event) =>
+                    setDraft((rows) =>
+                      rows.map((candidate) =>
+                        candidate.id === row.id
+                          ? { ...candidate, match: event.target.value }
+                          : candidate,
+                      ),
+                    )
+                  }
+                />
+                <Select
+                  value={row.action}
+                  disabled={frozen}
+                  onValueChange={(next) =>
+                    setDraft((rows) =>
+                      rows.map((candidate) =>
+                        candidate.id === row.id
+                          ? { ...candidate, action: next as ConnectorPolicyAction }
+                          : candidate,
+                      ),
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[104px] shrink-0 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  {/* Three, not four: a stored rule always names an action.
+                        "Default" for a pattern means deleting it, which is
+                        what the trash button beside this does. */}
+                  <SelectContent className="rounded-lg">
+                    {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
+                      (action) => (
+                        <SelectItem key={action} value={action} className="text-xs">
+                          {POLICY_CHOICE_LABEL[action]}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="hover:text-destructive size-8 shrink-0"
+                  aria-label={tI18nComplete('texte2cbd4618228', {
+                    value0: row.match || '(empty)',
+                  })}
+                  disabled={frozen}
+                  onClick={() =>
+                    setDraft((rows) => rows.filter((candidate) => candidate.id !== row.id))
+                  }
+                >
+                  <TrashIcon className="size-3.5 shrink-0" />
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
+                disabled={frozen}
+                onClick={() =>
+                  setDraft((rows) => [
+                    ...rows,
+                    { id: nextPatternRowId(), match: '', action: 'require_approval' },
+                  ])
+                }
+              >
+                <PlusIcon className="size-3.5 shrink-0" />
+                {tI18nComplete.raw('texta27cff51a2e0')}
+              </Button>
+              {advancedDirty ? (
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline-ghost"
+                    className="h-8 text-xs"
+                    disabled={busy}
+                    onClick={() => setDraft(seedPatternDraft(advancedRules, nextPatternRowId))}
+                  >
+                    {tI18nComplete.raw('texteb1a70e39274')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    disabled={frozen || busy}
+                    onClick={savePatternRules}
+                  >
+                    {writePolicies.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                    {tI18nComplete.raw('texte5dbdffb8816')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <ConfirmDialog
         open={bulk !== null}

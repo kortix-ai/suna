@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowSquareOutIcon, CaretLeft } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BookOpenIcon, CaretLeft } from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -21,6 +21,7 @@ export function ConnectorDetailLayout({
   title,
   status,
   headerAction,
+  closeAction,
   primaryTitle,
   primaryDescription,
   primaryAction,
@@ -36,10 +37,16 @@ export function ConnectorDetailLayout({
   /** Rendered at the right end of the icon+title row — the page-level verb
    *  (start a session with this connector). */
   headerAction?: ReactNode;
+  /** Absolute at the pane's extreme top RIGHT — the split view's close (X).
+   *  Lives here, scoped to THIS page's column, so it can never stack on top
+   *  of a nested column's own header X (Jay, 2026-09-14: double X). */
+  closeAction?: ReactNode;
   /** Omit BOTH primary props to skip the primary panel entirely — the
    *  catalogue app page renders its own Linear-style meta card instead. */
   primaryTitle?: string;
-  primaryDescription?: string;
+  /** A node so the error state can stack its translated reason and the raw
+   *  reported text inside ONE card instead of floating prose below it. */
+  primaryDescription?: ReactNode;
   primaryAction?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -65,6 +72,7 @@ export function ConnectorDetailLayout({
           </Button>
         </div>
       ) : null}
+      {closeAction ? <div className="absolute top-4 right-4 z-10">{closeAction}</div> : null}
       <main className={cn('mx-auto w-full max-w-3xl space-y-6 px-4 pt-14 pb-20', className)}>
         {/* ONE centered row, and only one — icon, title, status, action.
             There is deliberately no description slot: prose lives in each
@@ -173,15 +181,23 @@ export function ConnectorDocumentationLinks({
             // No border-0 here: `divide-y` draws its hairline ON the child
             // rows (border-bottom via a zero-specificity :where), so any
             // border-width utility on the row would erase the divider.
-            className="w-full group justify-between rounded-none"
+            className="group h-fit w-full justify-between rounded-none py-2"
           >
             {link.external ? (
               <Link href={link.href} target="_blank" rel="noreferrer">
-                {link.label}
-                <ArrowSquareOutIcon className="text-muted-foreground group-hover:opacity-100 opacity-0 size-3.5 shrink-0" />
+                <span className="flex min-w-0 items-center gap-2">
+                  <BookOpenIcon className="text-muted-foreground size-3.5 shrink-0" />
+                  <span className="truncate">{link.label}</span>
+                </span>
+                <ArrowSquareOutIcon className="text-muted-foreground size-3.5 shrink-0 opacity-0 group-hover:opacity-100" />
               </Link>
             ) : (
-              <Link href={link.href}>{link.label}</Link>
+              <Link href={link.href}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <BookOpenIcon className="text-muted-foreground size-3.5 shrink-0" />
+                  <span className="truncate">{link.label}</span>
+                </span>
+              </Link>
             )}
           </Button>
         ))}
