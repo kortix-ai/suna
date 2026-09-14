@@ -132,7 +132,11 @@ function detectEmbeddedFailure(outputParsed: unknown): string | undefined {
 
 function classifyToolState(tool: string, state: ToolState): ToolView {
   const liveTitle = 'title' in state ? state.title : undefined;
-  const rawOutput = state.status === 'completed' ? state.output : undefined;
+  const rawOutput = state.status === 'completed'
+    ? state.output
+    : state.status === 'running' && typeof state.metadata?.output === 'string'
+      ? state.metadata.output
+      : undefined;
   const { outputParsed, outputText } = parseToolOutput(rawOutput);
 
   let status = toolStatus(state);

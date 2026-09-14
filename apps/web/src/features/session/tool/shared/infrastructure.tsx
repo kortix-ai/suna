@@ -54,6 +54,7 @@ import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { type Diagnostic, getDiagnostics, type ToolPart, type TriggerTitle } from '@/ui';
+import { classifyPart } from '@kortix/sdk';
 
 export { StructuredOutput } from '@/features/session/tool/shared/structured-output';
 
@@ -519,12 +520,13 @@ export function partMetadata(part: ToolPart): Record<string, unknown> {
 const OUTPUT_CACHE = new WeakMap<ToolPart, { state: ToolPart['state']; output: string }>();
 
 export function partOutput(part: ToolPart): string {
-  if (part.state.status !== 'completed') return '';
+  if (part.state.status !== 'completed' && part.state.status !== 'running') return '';
 
   const cached = OUTPUT_CACHE.get(part);
   if (cached && cached.state === part.state) return cached.output;
 
-  const output = (part.state.output ?? '')
+  const classified = classifyPart(part);
+  const output = (classified.kind === 'tool' ? classified.tool.output ?? '' : '')
     .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();

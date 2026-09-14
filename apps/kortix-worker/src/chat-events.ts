@@ -378,11 +378,15 @@ export class ChatEventAdapter {
 
       case 'tool_execution_update': {
         const t = this.toolIndex.get(event.toolCallId);
-        if (!t) return [];
+        if (!t || t.endedAt !== undefined) return [];
         return [
           this.toolPart(t.partId, t.name, {
             status: 'running',
             input: t.input,
+            metadata: {
+              ...toolResultMetadata(event.partialResult?.details),
+              output: toolOutputText(event.partialResult),
+            },
             time: { start: t.startedAt },
           }),
         ];
