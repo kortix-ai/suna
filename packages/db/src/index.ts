@@ -38,6 +38,7 @@ export {
   projects,
   projectGitConnections,
   projectGitCredentials,
+  projectSnapshotArchives,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
