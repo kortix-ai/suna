@@ -65,4 +65,44 @@ describe('create-account entry point', () => {
   test('the copy is a real translation key, not a hardcoded string', () => {
     expect(en.sidebar.workspace.createAccount).toBeTruthy();
   });
+
+  /**
+   * Creating an account used to end on the landing door, which opens the first
+   * project found in ANY account — so a brand-new empty account fell through to
+   * another account's project, and `projects/start/page.tsx` then healed the
+   * persisted selection to THAT account. The create switched you into the new
+   * account and the navigation switched you straight back out, which is why it
+   * looked like nothing had happened.
+   */
+  test('both create-account paths land in the NEW account, not the landing door', () => {
+    const hub = readFileSync(
+      join(import.meta.dir, '../../accounts/hub/account-list-content.tsx'),
+      'utf8',
+    );
+
+    for (const [name, code] of [
+      ['workspace-switcher.tsx', switcher],
+      ['account-list-content.tsx', hub],
+    ] as const) {
+      expect({ file: name, scoped: code.includes('newWorkspacePathForAccount(account.account_id)') })
+        .toEqual({ file: name, scoped: true });
+      // The door is what made the create look like a no-op. It must not come
+      // back on either path.
+      expect({ file: name, usesDoor: code.includes('PROJECT_LANDING_PATH') }).toEqual({
+        file: name,
+        usesDoor: false,
+      });
+    }
+  });
+
+  test('/new seeds the picked account from the url', () => {
+    const page = readFileSync(
+      join(import.meta.dir, '../new/new-workspace-page.tsx'),
+      'utf8',
+    );
+    expect(page).toContain('readAccountParam');
+    // Seeded into INITIAL state, like `?source=` — a later param change must
+    // never fight the user's own Select.
+    expect(page).toContain('...(initialAccountId ? { accountId: initialAccountId } : {})');
+  });
 });

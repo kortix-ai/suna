@@ -61,6 +61,7 @@ import {
 } from '@/components/ui/sidebar';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
@@ -68,7 +69,6 @@ import { useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
@@ -333,9 +333,15 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
           setSelectedAccountId(account.account_id);
           void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-          // The landing door, NOT the remembered project: that cookie names a
-          // project in the account being left.
-          router.push(PROJECT_LANDING_PATH);
+          // `/new` scoped to the account just created — NOT the landing door.
+          // The door opens the first project found in ANY account
+          // (`resolve-landing-destination.ts`), so a brand-new empty account
+          // falls through to some other account's project, and
+          // `projects/start/page.tsx` then heals the persisted selection to
+          // THAT account — undoing the switch above and making the whole
+          // create look like it did nothing. A new account's honest next step
+          // is its first workspace.
+          router.push(newWorkspacePathForAccount(account.account_id));
         }}
       />
     </>
