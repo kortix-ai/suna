@@ -43,7 +43,7 @@ describe('execution-only environment', () => {
   test('reports ready without contacting or starting an agent runtime', async () => {
     const response = await app.request('/kortix/health?turn=1')
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ runtimeReady: true, workload: 'environment', opencode: 'disabled', opencode_pid: null, opencode_port: null })
+    expect(await response.json()).toMatchObject({ runtimeReady: true, environmentRuntimeVersion: 3, workload: 'environment', opencode: 'disabled', opencode_pid: null, opencode_port: null })
     for (const route of ['/session', '/kortix/opencode/state', '/kortix/part/message', '/kortix/abort']) {
       const response = await app.request(route, { headers })
       expect(response.status).toBe(409)
@@ -157,7 +157,7 @@ describe('execution-only environment', () => {
         } catch {}
         await Bun.sleep(50)
       }
-      expect(health).toMatchObject({ runtimeReady: true, workload: 'environment', opencode: 'disabled', opencode_pid: null, opencode_session_required: false })
+      expect(health).toMatchObject({ runtimeReady: true, environmentRuntimeVersion: 3, workload: 'environment', opencode: 'disabled', opencode_pid: null, opencode_session_required: false })
       const response = await fetch(`http://127.0.0.1:${port}/file/content?path=note.txt`, { headers })
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject({ content: 'before\n' })

@@ -204,7 +204,13 @@ The built-in Bash tool uses the same streaming path.
 
 Remote output is capped at 2 MiB per stream. Callbacks receive each accepted
 chunk once, followed by any truncation marker. Older daemons return buffered
-output at completion until upgraded. A lost connection fails the command;
+output at completion until upgraded.
+Environment ensure upgrades older daemons to runtime version 3 in the existing
+sandbox. The upgrade preserves working files and does not install Pi or OpenCode.
+An environment already attached to a running worker upgrades on its next ensure
+(for example, after reopening the stopped session).
+
+A lost connection fails the command;
 the worker does not repeat execution. Stop cancels the remote process group.
 Callback failures also cancel execution. Late updates cannot replace a terminal
 result. Final results persist in conversation history; intermediate snapshots
