@@ -552,7 +552,8 @@ creates no file. Denying it prevents approval of that same request (409). Concur
 approve/deny requests produce exactly one 200 and one 409. Grant a path-scoped write
 permission, then execute `agent-tunnel-cli fs_upload` with an XLSX source path. The
 process exits 0, stderr is empty, and stdout reports the source size and SHA-256.
-The destination bytes match the source. Same-length corrupted bytes with the source
+The destination bytes match the source. Repeat the write through a Computer Tunnel
+connector and assert its returned digest and persisted bytes. Same-length corrupted bytes with the source
 checksum fail without replacing the destination. Malformed base64 returns 400.
 Cleanup removes the connection and temporary files.
 

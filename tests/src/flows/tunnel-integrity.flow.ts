@@ -14,6 +14,7 @@ flow('TUN-6', {
     'GET /v1/tunnel/permission-requests', 'POST /v1/tunnel/permission-requests/:requestId/approve',
     'POST /v1/tunnel/permission-requests/:requestId/deny',
     'POST /v1/tunnel/permissions/:tunnelId',
+    'POST /v1/connectors/projects/:projectId/connectors', 'POST /v1/connectors/projects/:projectId/call',
   ],
 }, async ctx => {
   const root = await mkdtemp(join(tmpdir(), 'ke2e-tunnel-integrity-'));
@@ -88,6 +89,19 @@ flow('TUN-6', {
       assert.equal(exit, 0, stderr + stdout);
       assert.equal(stderr, '');
       assert.deepEqual(JSON.parse(stdout), { success: true, path, size: bytes.length, sha256 });
+      assert.deepEqual(await readFile(path), bytes);
+    });
+    await ctx.step('Computer Tunnel connector preserves the XLSX payload and returns its persisted digest', async () => {
+      const project = await ctx.fixtures.project();
+      const projectParams = { params: { projectId: project.id } };
+      const created = await client.post('/v1/connectors/projects/:projectId/connectors', {
+        slug: 'integrity-computer', name: 'Integrity computer', provider: 'computer', tunnel_ids: [tunnelId], create_only: true,
+      }, projectParams);
+      created.status(200);
+      const result = await client.post('/v1/connectors/projects/:projectId/call', {
+        connector: 'integrity-computer', action: 'fs.write', args: { path, content: bytes.toString('base64'), encoding: 'base64', sha256 },
+      }, projectParams);
+      result.status(200).body().has('$.ok', true).has('$.data.sha256', sha256).has('$.data.size', bytes.length);
       assert.deepEqual(await readFile(path), bytes);
     });
     await ctx.step('same-length corruption and malformed base64 fail without replacing the verified XLSX', async () => {
