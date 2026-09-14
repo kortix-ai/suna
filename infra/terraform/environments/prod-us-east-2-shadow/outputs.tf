@@ -45,3 +45,8 @@ output "dns_managed" {
   description = "The shadow stack never creates or changes DNS records."
   value       = false
 }
+
+output "project_snapshot_bucket" {
+  description = "Value for KORTIX_PROJECT_SNAPSHOT_S3_BUCKET in this environment's non-secret task env overrides."
+  value       = module.project_snapshots.bucket_name
+}

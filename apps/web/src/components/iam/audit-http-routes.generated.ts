@@ -278,6 +278,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|git|:project|git-receive-pack",
   "POST|v1|git|:project|git-upload-pack",
   "GET|v1|git|:project|info|refs",
+  "GET|v1|git|:project|project-snapshot",
   "GET|v1|health",
   "GET|v1|health|live",
   "GET|v1|health|ready",

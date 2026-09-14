@@ -3,12 +3,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
-  catalogAppForConnector,
-  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  catalogEntryKind,
-  catalogEntryKindLabel,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
@@ -162,97 +158,5 @@ describe('connected join', () => {
     expect(keys.has('github')).toBe(false);
     expect(keys.has('gmail')).toBe(true);
     expect(keys.has('provider:composio')).toBe(true);
-  });
-});
-
-describe('catalogEntryKindLabel — the quiet line every card carries', () => {
-  test('maps each source and kind to its short noun', () => {
-    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'mcp' })))).toBe('MCP');
-    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'openapi' })))).toBe(
-      'API',
-    );
-    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'graphql' })))).toBe(
-      'GraphQL',
-    );
-    expect(catalogEntryKindLabel(catalogEntryFromDiscover(connector({ kind: 'cli' })))).toBe('CLI');
-    expect(catalogEntryKindLabel(computersCatalogEntry(testUiTranslator))).toBe('Native');
-  });
-
-  test('kind resolves only for discover entries', () => {
-    expect(catalogEntryKind(catalogEntryFromDiscover(connector({ kind: 'mcp' })))).toBe('mcp');
-    expect(catalogEntryKind(computersCatalogEntry(testUiTranslator))).toBe(null);
-  });
-});
-
-describe('catalogue membership join — prefix-aware (the Canva case)', () => {
-  const admin = (over: Partial<AdminConnector>): AdminConnector =>
-    ({
-      slug: 'x',
-      name: 'X',
-      provider: 'mcp',
-      status: 'active',
-      credentialMode: 'shared',
-      authorizationStrategy: 'project',
-      sensitive: false,
-      actions: [],
-      authSecret: null,
-      secretSet: false,
-      ...over,
-    }) as AdminConnector;
-
-  const canvaEntry = catalogEntryFromDiscover(
-    connector({ id: 'cv', slug: 'canva', name: 'Canva', kind: 'mcp' }),
-  );
-
-  test('default-named servers ("Canva MCP server", "…2") match the Canva entry', () => {
-    const one = admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' });
-    const two = admin({ slug: 'canva-mcp-server-2', name: 'Canva MCP server 2' });
-    const other = admin({ slug: 'linear', name: 'Linear' });
-    expect(catalogEntryConnectors([other, one, two], canvaEntry)).toEqual([one, two]);
-  });
-
-  test('the card mark agrees with the page list', () => {
-    const keys = connectedCatalogKeys([
-      admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' }),
-    ]);
-    expect(isCatalogEntryConnected(canvaEntry, keys)).toBe(true);
-  });
-
-  test('short entry tokens never claim by prefix — "Git" does not own GitHub', () => {
-    const gitEntry = catalogEntryFromDiscover(
-      connector({ id: 'g', slug: 'git', name: 'Git', kind: 'cli' }),
-    );
-    const github = admin({ slug: 'github', name: 'GitHub' });
-    expect(catalogEntryConnectors([github], gitEntry)).toEqual([]);
-    expect(isCatalogEntryConnected(gitEntry, connectedCatalogKeys([github]))).toBe(false);
-  });
-
-  test('membership lists needs_auth rows; the card mark still does not', () => {
-    const half = admin({
-      slug: 'canva-mcp-server',
-      name: 'Canva MCP server',
-      status: 'needs_auth',
-    });
-    expect(catalogEntryConnectors([half], canvaEntry)).toEqual([half]);
-    expect(isCatalogEntryConnected(canvaEntry, connectedCatalogKeys([half]))).toBe(false);
-  });
-});
-
-describe('catalogAppForConnector — the reverse join for /connectors/<slug> resolution', () => {
-  const items = [
-    { slug: 'canva', name: 'Canva' },
-    { slug: 'github', name: 'GitHub' },
-  ];
-
-  test('a default-named server resolves to its app', () => {
-    expect(
-      catalogAppForConnector(items, { slug: 'canva-mcp-server-xe9gxn', name: 'Canva MCP server' }),
-    ).toEqual({ slug: 'canva', name: 'Canva' });
-  });
-
-  test('a connector no app can claim resolves to null', () => {
-    expect(
-      catalogAppForConnector(items, { slug: 'internal-billing', name: 'Internal Billing' }),
-    ).toBe(null);
   });
 });

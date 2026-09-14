@@ -1,20 +1,14 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import type { AdminConnector } from '@kortix/sdk';
-import { CaretDownIcon, GlobeIcon, MonitorIcon } from '@phosphor-icons/react';
-import { useRouter } from 'next/navigation';
-import { memo } from 'react';
+import { ArrowLeftIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
+import { memo, useCallback } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useCapabilityScrollRoot } from '@/features/workspace/capabilities/shared/capability-scroll-root';
 
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
@@ -22,72 +16,38 @@ import {
   CatalogCardSkeleton,
   CatalogGrid,
 } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { DENSE_GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
+import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { cn } from '@/lib/utils';
-import { catalogEntryConnectors, catalogEntryKindLabel, type CatalogEntry } from './catalog-entry';
+import { isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
-import type { CatalogState } from './use-catalog';
+import { CategoryIcon } from './category-icon';
+import { ALL_CATEGORIES, OTHER } from './connector-categories';
+import type { CatalogSection, CatalogState } from './use-catalog';
 import { useCatalogAutoload } from './use-catalog-autoload';
 
 /**
- * The card's one action: Install, with its scope decided up front (the Clerk
- * reference). The button is ALWAYS present — installed state lives inside the
- * menu, where the done scope reads "Installed" and disables while the other
- * stays one click away.
+ * The connected marker on a catalogue card.
+ *
+ * A labelled badge, not a bare glyph. It was a 16px green check in the trailing
+ * slot, which asked the user to decode a symbol whose only context was its
+ * colour — reported as "the connected state is a bit too hidden". A word costs
+ * one badge's width and needs no decoding.
  */
-function CatalogAffordance({
-  entry,
-  connectors,
-  installHref,
-}: {
-  entry: CatalogEntry;
-  connectors: readonly AdminConnector[];
-  installHref: string;
-}) {
-  const router = useRouter();
+function CatalogAffordance({ connected }: { connected: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // Which scopes this entry is ALREADY installed for. The button never
-  // disappears (the Clerk reference): an installed scope just reads
-  // "Installed" and disables; the other stays one click away. Adding another
-  // of an installed scope remains possible from the app page.
-  const matches = catalogEntryConnectors(connectors, entry);
-  const projectInstalled = matches.some((match) => match.authorizationStrategy === 'project');
-  const userInstalled = matches.some((match) => match.authorizationStrategy === 'user');
-  const installedHint = (
-    <span className="text-muted-foreground ml-auto pl-4 text-xs">
-      {tI18nComplete.raw('textf8b32f4e92bd')}
-    </span>
-  );
-  // `installHref` may already carry `?src=` (easy-connect / computer apps).
-  const installWith = (scope: 'project' | 'me') =>
-    `${installHref}${installHref.includes('?') ? '&' : '?'}add=1&for=${scope}`;
+  if (connected) {
+    return (
+      <Badge variant="success" size="sm" data-testid="catalog-connected">
+        {tI18nComplete.raw('text22965568d22a')}
+      </Badge>
+    );
+  }
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1 rounded-full"
-          data-testid="catalog-add"
-        >
-          {tI18nComplete.raw('text569ca49f4aaf')}
-          <CaretDownIcon className="size-3.5 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={projectInstalled}
-          onClick={() => router.push(installWith('project'))}
-        >
-          {tI18nComplete.raw('textd319702d1c2f')}
-          {projectInstalled ? installedHint : null}
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={userInstalled} onClick={() => router.push(installWith('me'))}>
-          {tI18nComplete.raw('textafcbf5878dc9')}
-          {userInstalled ? installedHint : null}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <PlusIcon
+      aria-hidden
+      className="text-muted-foreground/80 group-hover:text-foreground size-4 shrink-0 transition-colors duration-150 ease-out"
+      data-testid="catalog-add"
+    />
   );
 }
 
@@ -140,32 +100,20 @@ function ConnectorIcon({ icon, computer = false }: { icon: string | null; comput
  */
 const CatalogEntryCard = memo(function CatalogEntryCard({
   entry,
-  connectors,
-  getHref,
+  connectedKeys,
+  onSelect,
 }: {
   entry: CatalogEntry;
-  connectors: readonly AdminConnector[];
-  getHref: (entry: CatalogEntry) => string;
+  connectedKeys: ReadonlySet<string>;
+  onSelect: (entry: CatalogEntry) => void;
 }) {
   return (
-    // Minimal card by request: icon and title on the bare page — no border,
-    // no description. The one thing worth a mark is the promoted kind
-    // (COR-17), emphasized on its own row under the title; every other kind
-    // stays unlabelled — a chip on every card is a taxonomy, not a signal.
     <CatalogCard
-      variant="plain"
       leading={<ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />}
       title={entry.name}
-      subtitle={
-        // Plain muted text, per the reference card ("1 MCP") — a quiet fact
-        // line on EVERY card: how the entry connects.
-        <span className="text-muted-foreground text-xs">{catalogEntryKindLabel(entry)}</span>
-      }
-      trailing={
-        <CatalogAffordance entry={entry} connectors={connectors} installHref={getHref(entry)} />
-      }
-      trailingInteractive
-      href={getHref(entry)}
+      description={entry.description}
+      trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
+      onClick={() => onSelect(entry)}
     />
   );
 });
@@ -174,6 +122,142 @@ const CatalogEntryCard = memo(function CatalogEntryCard({
  *  two full rows of the widest layout — so the placeholder block is the same
  *  shape as the batch about to replace it. */
 const LOADING_MORE_SKELETONS = 6;
+
+/**
+ * One category section on the browse page: a heading, its true size, a fixed
+ * slice of it, and one way in.
+ *
+ * **The section does not grow.** Its cards are a fixed top slice the server
+ * chose from the complete category, and `total` is that category's real count.
+ * Previously a section was a client-side bucketing of whatever pages had
+ * loaded, so it gained cards while the user was reading it and reflowed the
+ * page under them — Marko's "you keep adding stuff to the different categories
+ * and expanding them so it's quite weird".
+ *
+ * **The count is on the heading now.** It was deliberately omitted before,
+ * because the only number available described the loaded pages rather than the
+ * catalogue, and got less true the more you loaded. `total` is the catalogue's
+ * own count, so the heading can state it.
+ *
+ * **"View all" opens the category; it does not expand the section.** Opening it
+ * puts a real server-side filter in front of the grid, so the label means what
+ * it says even for a 348-app category.
+ */
+function CategorySection({
+  section,
+  connectedKeys,
+  onSelect,
+  onViewAll,
+}: {
+  section: CatalogSection;
+  connectedKeys: ReadonlySet<string>;
+  onSelect: (entry: CatalogEntry) => void;
+  onViewAll: (category: string) => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-sm font-medium">
+          <CategoryIcon category={section.key} className="size-4 shrink-0" />
+          <span className="truncate">{section.label}</span>
+          {/* `tabular-nums` so the figure does not jitter the heading's width
+              if the catalogue count changes between refreshes. */}
+          <span className="text-muted-foreground/40" aria-hidden>
+            {tI18nComplete.raw('text3b9453dad42b')}
+          </span>
+          <span className="text-muted-foreground/70 tabular-nums">
+            {section.total.toLocaleString()}
+          </span>
+        </h2>
+        {/* `Other` is synthesised for entries the catalogue gave no category, so
+            no provider can serve it as a filter — opening it fetched zero and
+            painted "Catalogue unavailable" over a populated page. It stays a
+            readable section, without the control that would empty the grid. */}
+        {section.key !== OTHER && section.total > section.items.length ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={tI18nComplete('text2a3cae7cc0a7', { value0: section.label })}
+            onClick={() => onViewAll(section.key)}
+            // `size="sm"` is `h-8` — 29.44px at this repo's `--spacing: 0.23rem`,
+            // under the 40px minimum hit area. `-inset-y-1.5` adds 5.52px top
+            // and bottom for 40.48px. Vertical only: the label already makes
+            // the control ~64px wide, and widening it would push the target
+            // toward the heading it sits opposite.
+            className="relative shrink-0 transition-transform duration-150 ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
+          >
+            {tI18nComplete.raw('text30a64216eaea')}
+          </Button>
+        ) : null}
+      </div>
+      <div className={GRID_CLASSNAME}>
+        {section.items.map((entry) => (
+          <CatalogEntryCard
+            key={entry.key}
+            entry={entry}
+            connectedKeys={connectedKeys}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The heading of an open category: where you are, and one control back.
+ *
+ * Deliberately NOT a persistent filter strip. A row of every category sitting
+ * above the catalogue at all times is a second navigation layer on a page that
+ * already has tabs, and it turns a place you go into a switch you have to
+ * notice is flipped. This appears only while a category is open.
+ *
+ * `ArrowLeftIcon`, not `CaretLeftIcon`: a caret pair reads as paging through a
+ * sequence, which is exactly the gesture this catalogue does not have.
+ */
+function CategoryViewHeader({
+  category,
+  label,
+  total,
+  onBack,
+}: {
+  category: string;
+  label: string;
+  total: number | null;
+  onBack: () => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onBack}
+        aria-label={tI18nComplete.raw('text74fc2cf3bb54')}
+        // `-inset-1.5` on all sides here, unlike the section buttons: this
+        // control sits at the row's left edge with nothing to its left.
+        className="text-muted-foreground hover:text-foreground relative -ml-2 transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
+      >
+        <ArrowLeftIcon className="size-3.5" />
+        {tI18nComplete.raw('text76900f1bfd16')}
+      </Button>
+      <span aria-hidden className="bg-border h-4 w-px shrink-0" />
+      <h2 className="text-foreground flex min-w-0 items-center gap-1.5 text-sm font-medium">
+        <CategoryIcon category={category} className="size-4 shrink-0" />
+        <span className="truncate">{label}</span>
+        {total !== null ? (
+          <>
+            <span className="text-muted-foreground/40" aria-hidden>
+              {tI18nComplete.raw('text3b9453dad42b')}
+            </span>
+            <span className="text-muted-foreground/70 tabular-nums">{total.toLocaleString()}</span>
+          </>
+        ) : null}
+      </h2>
+    </div>
+  );
+}
 
 /**
  * The foot of the catalogue: how much is on screen, and how to get more.
@@ -211,7 +295,7 @@ function CatalogFoot({
           variant="outline"
           size="sm"
           onClick={loadMore}
-          className="duration-normal transition-transform ease-out active:scale-[0.96]"
+          className="transition-transform duration-150 ease-out active:scale-[0.96]"
         >
           {tI18nComplete.raw('textac8991ef0101')}
         </Button>
@@ -235,12 +319,16 @@ function CatalogFoot({
 }
 
 /**
- * The catalogue body: one flat, paginated, searchable grid.
+ * The catalogue body, in one of two shapes.
  *
- * The sectioned browse shape (the Discovery tab's curated category slices)
- * was removed with that tab (2026-09-13, Jay) — the dense grid plus
- * server-side search covers the same ground without a second presentation of
- * the same list.
+ * `sectioned` (the Discovery tab) is the browse page: a fixed top slice of each
+ * of the largest categories, each stating its true size. `flat` (the All tab, a
+ * search, and any open category) is one paginated grid.
+ *
+ * A text search always collapses to flat: the search runs server-side across
+ * the whole catalogue, so category headings would fragment a result set the
+ * user asked to see as one list. An open category collapses to flat for the
+ * same reason — the heading would restate what the header already says.
  *
  * **One paging mechanism.** Scrolling to the foot fetches the next page, and so
  * does the button beside it. Nothing else fetches: no eager first-paint budget,
@@ -250,21 +338,54 @@ function CatalogFoot({
  */
 export function ConnectorBrowse({
   state,
-  connectors,
-  getHref,
+  connectedKeys,
+  mode,
+  category,
+  onCategoryChange,
+  onSelect,
   emptyTitle,
   emptyDescription,
 }: {
   state: CatalogState;
-  connectors: readonly AdminConnector[];
-  getHref: (entry: CatalogEntry) => string;
+  connectedKeys: ReadonlySet<string>;
+  mode: 'sectioned' | 'flat';
+  /** The open category, or `ALL_CATEGORIES` while browsing everything. */
+  category: string;
+  onCategoryChange: (category: string) => void;
+  onSelect: (entry: CatalogEntry) => void;
   emptyTitle: string;
   emptyDescription: string;
 }) {
-  const { activeQuery, entries, total } = state;
+  const { activeQuery, entries, total, sections } = state;
   const searching = activeQuery.length > 0;
+  // A search hides the category header and ignores the filter, so a category
+  // must not survive into a searching render as an invisible constraint.
+  const activeCategory = searching ? ALL_CATEGORIES : category;
+  const openCategoryFacet = state.categories.find((facet) => facet.key === activeCategory) ?? null;
 
-  const hasMore = state.hasMore;
+  const scrollRootRef = useCapabilityScrollRoot();
+  // Opening a category replaces the browse page with one grid, and going Back
+  // replaces it again. Without this the user keeps their scroll offset into
+  // content that no longer exists, landing mid-grid on a view they just
+  // arrived at the top of.
+  const openCategory = useCallback(
+    (next: string) => {
+      onCategoryChange(next);
+      scrollRootRef.current?.scrollTo({
+        top: 0,
+        behavior:
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+            ? 'auto'
+            : 'smooth',
+      });
+    },
+    [onCategoryChange, scrollRootRef],
+  );
+
+  const showSections = mode === 'sectioned' && !searching && activeCategory === ALL_CATEGORIES;
+
+  const hasMore = !showSections && state.hasMore;
   // Depends on `state.loadMore`, NOT on `state`. `useCatalog` returns a fresh
   // object every render, so closing over `state` would give this a new identity
   // every render, and `useCatalogAutoload` lists it in its observer effect's
@@ -277,7 +398,7 @@ export function ConnectorBrowse({
     loadMore,
   });
 
-  const isEmpty = entries.length === 0;
+  const isEmpty = showSections ? sections.length === 0 : entries.length === 0;
 
   // Loading, error and "nothing to show" are `CatalogGrid`'s contract in its
   // documented order; only the *content* branch differs between the sectioned
@@ -309,15 +430,18 @@ export function ConnectorBrowse({
     );
   }
 
-  const summary = catalogFootSummary({
-    shown: entries.length,
-    loaded: entries.length,
-    total,
-    categoryLabel: null,
-    searching,
-    hasMore,
-    isLoadingMore: state.isLoadingMore,
-  });
+  const summary = showSections
+    ? null
+    : catalogFootSummary({
+        shown: entries.length,
+        loaded: entries.length,
+        total,
+        categoryLabel:
+          activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
+        searching,
+        hasMore,
+        isLoadingMore: state.isLoadingMore,
+      });
 
   return (
     <div
@@ -328,28 +452,52 @@ export function ConnectorBrowse({
       // about to be replaced by a different one in the same position.
       aria-busy={state.isRefreshing || undefined}
       className={cn(
-        'duration-normal space-y-6 transition-opacity ease-out',
+        'space-y-6 transition-opacity duration-150 ease-out',
         state.isRefreshing && 'pointer-events-none opacity-60',
       )}
     >
-      <div className={DENSE_GRID_CLASSNAME}>
-        {entries.map((entry) => (
-          <CatalogEntryCard
-            key={entry.key}
-            entry={entry}
-            connectors={connectors}
-            getHref={getHref}
+      {/* Only while a category is open. There is no persistent filter strip
+          above the catalogue — the page is the catalogue, and a category is a
+          place you go rather than a switch you leave flipped. */}
+      {!searching && activeCategory !== ALL_CATEGORIES ? (
+        <CategoryViewHeader
+          category={activeCategory}
+          label={openCategoryFacet?.label ?? activeCategory}
+          total={openCategoryFacet?.count ?? null}
+          onBack={() => openCategory(ALL_CATEGORIES)}
+        />
+      ) : null}
+
+      {showSections ? (
+        sections.map((section) => (
+          <CategorySection
+            key={section.key}
+            section={section}
+            connectedKeys={connectedKeys}
+            onSelect={onSelect}
+            onViewAll={openCategory}
           />
-        ))}
-        {/* Inside the grid, not under it, so the next page's cards land
-            exactly where these sit and the row does not reflow when they
-            swap. */}
-        {state.isLoadingMore
-          ? Array.from({ length: LOADING_MORE_SKELETONS }, (_, index) => (
-              <CatalogCardSkeleton key={`loading-${index}`} />
-            ))
-          : null}
-      </div>
+        ))
+      ) : (
+        <div className={GRID_CLASSNAME}>
+          {entries.map((entry) => (
+            <CatalogEntryCard
+              key={entry.key}
+              entry={entry}
+              connectedKeys={connectedKeys}
+              onSelect={onSelect}
+            />
+          ))}
+          {/* Inside the grid, not under it, so the next page's cards land
+              exactly where these sit and the row does not reflow when they
+              swap. */}
+          {state.isLoadingMore
+            ? Array.from({ length: LOADING_MORE_SKELETONS }, (_, index) => (
+                <CatalogCardSkeleton key={`loading-${index}`} />
+              ))
+            : null}
+        </div>
+      )}
 
       {/* The scroll trigger. Zero-height and empty: it is a position, not a
           thing to look at, and `useCatalogAutoload` gives it 400px of lead so

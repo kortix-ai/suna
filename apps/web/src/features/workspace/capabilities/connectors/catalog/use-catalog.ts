@@ -2,9 +2,13 @@
 
 import {
   getConnectStatus,
+  listConnectSections,
   listConnectToolkits,
   listDiscoverConnectors,
+  listDiscoverSections,
   listPipedreamApps,
+  listPipedreamSections,
+  type PipedreamCategory,
 } from '@kortix/sdk';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -13,30 +17,66 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 import { useTranslations } from '@/i18n/use-translations';
 import {
+  browseSections,
+  connectToolkitApp,
+  sectionsPageFromConnect,
+  sectionsPageFromDiscover,
+  sectionsPageFromPipedream,
+  type BrowseSectionsPage,
+} from './browse-sections';
+import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
+import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
  *  scroll-triggered fetch is felt as the grid growing rather than as a jump. */
 const CATALOG_PAGE_SIZE = 48;
 
+/** Cards per section on the browse page, and how many sections it shows.
+ *  `CATEGORY_ROW_CAP` is two rows of `xl:grid-cols-3`; 12 sections is a browse
+ *  page you can scan without it becoming a directory of headings. */
+const SECTION_CARD_COUNT = CATEGORY_ROW_CAP;
+const SECTION_COUNT = 12;
+
+/**
+ * One browse section: a category, a fixed slice of it, and its true size.
+ *
+ * `total` is the catalogue's count for the category, not `items.length`. That
+ * separation is the whole point — it is what lets a heading say
+ * "Marketing · 207" over six cards without lying, and what stops the section
+ * from having to grow to justify its own label.
+ */
+export interface CatalogSection {
+  key: string;
+  label: string;
+  total: number;
+  items: CatalogEntry[];
+}
+
 export interface CatalogState {
-  /** The pages loaded for the current query, flattened. */
+  /** The pages loaded for the current query and category, flattened. */
   entries: CatalogEntry[];
-  /** The catalogue's size for the current query. */
+  /** The catalogue's size for the current query and category. */
   total: number;
   /** The debounced query actually in flight, trimmed. Empty when browsing. */
   activeQuery: string;
   /** Which catalogue answered. Decides the add flow a card opens. */
   source: CatalogSource;
+  /** Categories the user can filter by, each with its true count. Empty for
+   *  the Discover source and while the Easy Connect index is still building. */
+  categories: PipedreamCategory[];
   /** Apps matching the query that publish no actions, so the catalogue does
    *  not offer them. Lets the no-match state say why instead of implying the
    *  app does not exist — `q=SAP` is exactly this case. */
   excludedNoActions: number;
+  /** The browse page. Empty while searching or inside a category — both are
+   *  one flat result set by definition. */
+  sections: CatalogSection[];
   isLoading: boolean;
   /**
    * Results for a PREVIOUS query are on screen while the current one is in
@@ -142,19 +182,8 @@ export async function listConnectCatalogPage(input: {
   }
   const page = await listConnectToolkits(input.projectId, query);
   return {
-    apps: page.toolkits.map((toolkit) => ({
-      slug: toolkit.slug,
-      name: toolkit.name,
-      description: toolkit.description ?? null,
-      imgSrc: toolkit.logo,
-      authType: toolkit.isNoAuth ? 'none' : 'oauth',
-      categories: toolkit.categories ?? [],
-      hasActions: true,
-      hasTriggers: false,
-      featuredWeight: 0,
-      provider: 'composio' as const,
-    })),
-    categories: [],
+    apps: page.toolkits.map(connectToolkitApp),
+    categories: [] as PipedreamCategory[],
     total: page.total,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
@@ -200,11 +229,15 @@ export function useCatalog(
   opts: {
     enabled: boolean;
     discoverEnabled: boolean;
+    /** The category the grid is filtered to, or `null` for everything. */
+    focusCategory?: string | null;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
+  const category = opts.focusCategory ?? null;
+  const searching = activeQuery.length > 0;
 
   // Probed whenever Easy Connect is the source, whether or not the catalogue is
   // `enabled`. `ConnectorsPage` turns Discovery and All OFF when this answers
@@ -221,9 +254,18 @@ export function useCatalog(
   const easyConnectProvider = connectStatus.provider ?? 'composio';
 
   const discoverQuery = useInfiniteQuery({
-    queryKey: ['discover-connectors', projectId, activeQuery],
+    // An open category is a server-side filter, so it is part of the key. The
+    // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
+    queryKey:
+      category === null
+        ? ['discover-connectors', projectId, activeQuery]
+        : ['discover-connectors', projectId, activeQuery, category],
     queryFn: ({ pageParam }) =>
-      listDiscoverConnectors(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listDiscoverConnectors(projectId, {
+        q: activeQuery || undefined,
+        cursor: pageParam as string | undefined,
+        category: category ?? undefined,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
@@ -232,13 +274,14 @@ export function useCatalog(
   });
 
   const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery],
+    queryKey: ['easy-connect-apps', projectId, activeQuery, category],
     queryFn: ({ pageParam }) =>
       listConnectCatalogPage({
         projectId,
         provider: easyConnectProvider,
         q: activeQuery || undefined,
         cursor: pageParam as string | undefined,
+        category: category ?? undefined,
         limit: CATALOG_PAGE_SIZE,
       }),
     initialPageParam: undefined as string | undefined,
@@ -248,6 +291,36 @@ export function useCatalog(
     placeholderData: keepPreviousData,
   });
 
+  // The browse page, in one request, from whichever catalogue this project
+  // uses. Every one answers with each category's TRUE size, so a heading never
+  // reports how many cards one loaded page happened to hold.
+  //
+  // Fetched while browsing. Discover and Composio also keep it while a category
+  // is open: their paged endpoints publish no category facet, and this
+  // response's facet is what lets the open category's header state its name
+  // and size. Same key, so opening a category from the browse page costs no
+  // request. Pipedream's paged endpoint carries its own facet.
+  const sectionsCatalogue = source === 'discover' ? 'discover' : easyConnectProvider;
+  const sectionsQuery = useQuery({
+    queryKey: ['catalog-sections', projectId, sectionsCatalogue],
+    queryFn: async (): Promise<BrowseSectionsPage> => {
+      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
+      if (sectionsCatalogue === 'discover') {
+        return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
+      }
+      if (sectionsCatalogue === 'pipedream') {
+        return sectionsPageFromPipedream(await listPipedreamSections(projectId, limits));
+      }
+      return sectionsPageFromConnect(await listConnectSections(projectId, limits));
+    },
+    staleTime: 5 * 60_000,
+    enabled:
+      opts.enabled &&
+      (source === 'discover' || easyConnectRunnable) &&
+      !searching &&
+      (category === null || sectionsCatalogue !== 'pipedream'),
+  });
+
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(() => {
@@ -255,10 +328,11 @@ export function useCatalog(
     // The native Computers card is ours, not the catalogue's, so it is matched
     // locally and hidden inside a category it does not claim.
     const includeComputers =
-      !activeQuery ||
-      `${native.name} ${native.description ?? ''}`
-        .toLowerCase()
-        .includes(activeQuery.toLowerCase());
+      category === null &&
+      (!activeQuery ||
+        `${native.name} ${native.description ?? ''}`
+          .toLowerCase()
+          .includes(activeQuery.toLowerCase()));
     const nativeEntries = includeComputers ? [native] : [];
     if (source === 'discover') {
       return nativeEntries.concat(
@@ -272,7 +346,14 @@ export function useCatalog(
         page.apps.map(catalogEntryFromEasyConnect),
       ),
     );
-  }, [tI18nComplete, activeQuery, source, easyConnectQuery.data?.pages, discoverQuery.data?.pages]);
+  }, [
+    tI18nComplete,
+    category,
+    activeQuery,
+    source,
+    easyConnectQuery.data?.pages,
+    discoverQuery.data?.pages,
+  ]);
 
   const {
     fetchNextPage,
@@ -290,9 +371,44 @@ export function useCatalog(
     void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, isPlaceholderData, fetchNextPage]);
 
-  const refetch = useCallback(() => void activeRefetch(), [activeRefetch]);
+  // The browse page is loading until its own request lands — the paged query
+  // behind it says nothing about whether the sections are ready.
+  const showingSections = !searching && category === null;
+  const { refetch: sectionsRefetch } = sectionsQuery;
+
+  // Retry refetches the sections too: on the browse page they are what failed.
+  const refetch = useCallback(() => {
+    void activeRefetch();
+    if (showingSections) void sectionsRefetch();
+  }, [activeRefetch, sectionsRefetch, showingSections]);
+
+  /**
+   * The browse sections, normalised across every catalogue so `ConnectorBrowse`
+   * renders one shape.
+   *
+   * All of them come from the server, complete and fixed, with each section's
+   * true total. A section key is exactly what the catalogue's category filter
+   * accepts, so "View all" asks the server for the set the heading counted.
+   */
+  const sections = useMemo<CatalogSection[]>(() => {
+    if (searching || category !== null || !sectionsQuery.data) return [];
+    return browseSections(sectionsQuery.data, {
+      native: computersCatalogEntry(tI18nComplete),
+      cardCount: SECTION_CARD_COUNT,
+      title: (label) => localizedSectionTitle(label, tI18nComplete),
+    });
+  }, [searching, category, sectionsQuery.data, tI18nComplete]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
+  const categories = useMemo<PipedreamCategory[]>(() => {
+    if (source === 'easy-connect' && easyConnectProvider === 'pipedream') {
+      return easyConnectPage?.categories ?? [];
+    }
+    return (sectionsQuery.data?.categories ?? []).map((facet) => ({
+      ...facet,
+      label: localizedSectionTitle(facet.label, tI18nComplete),
+    }));
+  }, [source, easyConnectProvider, easyConnectPage, sectionsQuery.data, tI18nComplete]);
 
   const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
 
@@ -301,12 +417,18 @@ export function useCatalog(
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
   const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
 
+  // A failed sections request on the browse page is an error, not an empty
+  // catalogue — without this the grid would say "no connectors" over an outage.
+  const sectionsFailed = showingSections && sectionsQuery.isError;
+
   return {
     entries,
     total,
     activeQuery,
     source,
+    categories,
     excludedNoActions,
+    sections,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
     // so the grid dims instead of blanking to skeletons.
@@ -315,10 +437,14 @@ export function useCatalog(
     // until the deployment probe answers, and a disabled query reports neither
     // loading nor data — without this the grid would render "no results" for a
     // round trip before the real request had started.
-    isLoading: opts.enabled && (connectStatus.state === 'asking' || active.isLoading),
+    isLoading:
+      opts.enabled &&
+      (connectStatus.state === 'asking' ||
+        active.isLoading ||
+        (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,
-    isError: active.isError,
-    error: active.error,
+    isError: active.isError || sectionsFailed,
+    error: active.isError ? active.error : sectionsFailed ? sectionsQuery.error : null,
     hasMore: opts.enabled && hasNextPage && !isPlaceholderData,
     isLoadingMore: isFetchingNextPage,
     loadMore,

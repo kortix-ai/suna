@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 639,
+  "count": 640,
   "routes": [
     {
       "method": "GET",
@@ -1105,6 +1105,10 @@
     {
       "method": "GET",
       "path": "/v1/git/:project/info/refs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/project-snapshot"
     },
     {
       "method": "GET",

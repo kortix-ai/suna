@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
@@ -12,6 +11,7 @@ import {
   PlugIcon as Plug,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 
 import { Badge } from '@/components/ui/badge';
@@ -46,8 +46,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   computer: Monitor,
 };
 
-function appIconTileClass(size: 'sm' | 'lg' | 'xl'): string {
-  if (size === 'xl') return 'size-14 rounded-md';
+function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
 }
 
@@ -56,8 +55,7 @@ export function ConnectorAppIcon({
   size = 'lg',
 }: {
   connector: AdminConnector;
-  /** `xl` is the detail-page header tile; grids stay on `lg`/`sm`. */
-  size?: 'sm' | 'lg' | 'xl';
+  size?: 'sm' | 'lg';
 }) {
   const imgSrc = connector.iconUrl ?? null;
 
@@ -75,7 +73,7 @@ export function ConnectorAppIcon({
           alt=""
           referrerPolicy="no-referrer"
           fill
-          sizes={size === 'xl' ? '56px' : size === 'lg' ? '40px' : '28px'}
+          sizes={size === 'lg' ? '40px' : '28px'}
           className="object-contain"
           unoptimized
         />

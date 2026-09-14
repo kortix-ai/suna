@@ -31,12 +31,35 @@ flow(
       "GET /v1/git/:project/compiled-checkout",
       "GET /v1/git/:project/compiled-runtime",
       "GET /v1/git/:project/compiled-pi-runtime",
+      "GET /v1/git/:project/project-snapshot",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step("project snapshot descriptor without git auth → 401/403, never a URL", async () => {
+      // Same boundary as a clone: the descriptor hands out a presigned
+      // download URL, so an anonymous caller must be refused before storage
+      // configuration or readiness is consulted.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/project-snapshot", {
+          params: { project: p.id },
+          query: { sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+      if (r.text().includes("X-Amz-")) throw new Error("refused descriptor leaked a presigned URL");
+    });
+    await ctx.step("project snapshot descriptor with a malformed sha → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/project-snapshot", {
+          params: { project: p.id },
+          query: { sha: "not-a-sha" },
+        });
+      r.status(400);
+    });
     await ctx.step("info/refs without git auth header → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
