@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 /**

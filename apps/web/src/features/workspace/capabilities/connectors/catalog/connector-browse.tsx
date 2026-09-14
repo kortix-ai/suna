@@ -1,8 +1,8 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { CaretDownIcon, GlobeIcon, MonitorIcon } from '@phosphor-icons/react';
 import type { AdminConnector } from '@kortix/sdk';
+import { CaretDownIcon, GlobeIcon, MonitorIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { memo } from 'react';
 
@@ -45,6 +45,7 @@ function CatalogAffordance({
   installHref: string;
 }) {
   const router = useRouter();
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Which scopes this entry is ALREADY installed for. The button never
   // disappears (the Clerk reference): an installed scope just reads
   // "Installed" and disables; the other stays one click away. Adding another
@@ -53,7 +54,9 @@ function CatalogAffordance({
   const projectInstalled = matches.some((match) => match.authorizationStrategy === 'project');
   const userInstalled = matches.some((match) => match.authorizationStrategy === 'user');
   const installedHint = (
-    <span className="text-muted-foreground ml-auto pl-4 text-xs">Installed</span>
+    <span className="text-muted-foreground ml-auto pl-4 text-xs">
+      {tI18nComplete.raw('textf8b32f4e92bd')}
+    </span>
   );
   // `installHref` may already carry `?src=` (easy-connect / computer apps).
   const installWith = (scope: 'project' | 'me') =>
@@ -61,8 +64,13 @@ function CatalogAffordance({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-1 rounded-full" data-testid="catalog-add">
-          Install
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 rounded-full"
+          data-testid="catalog-add"
+        >
+          {tI18nComplete.raw('text569ca49f4aaf')}
           <CaretDownIcon className="size-3.5 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
@@ -71,14 +79,11 @@ function CatalogAffordance({
           disabled={projectInstalled}
           onClick={() => router.push(installWith('project'))}
         >
-          For the whole project
+          {tI18nComplete.raw('textd319702d1c2f')}
           {projectInstalled ? installedHint : null}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={userInstalled}
-          onClick={() => router.push(installWith('me'))}
-        >
-          Just for me
+        <DropdownMenuItem disabled={userInstalled} onClick={() => router.push(installWith('me'))}>
+          {tI18nComplete.raw('textafcbf5878dc9')}
           {userInstalled ? installedHint : null}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -206,7 +211,7 @@ function CatalogFoot({
           variant="outline"
           size="sm"
           onClick={loadMore}
-          className="transition-transform duration-normal ease-out active:scale-[0.96]"
+          className="duration-normal transition-transform ease-out active:scale-[0.96]"
         >
           {tI18nComplete.raw('textac8991ef0101')}
         </Button>
@@ -323,7 +328,7 @@ export function ConnectorBrowse({
       // about to be replaced by a different one in the same position.
       aria-busy={state.isRefreshing || undefined}
       className={cn(
-        'space-y-6 transition-opacity duration-normal ease-out',
+        'duration-normal space-y-6 transition-opacity ease-out',
         state.isRefreshing && 'pointer-events-none opacity-60',
       )}
     >

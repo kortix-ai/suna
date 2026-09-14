@@ -30,7 +30,9 @@ describe('catalogue connector detail route', () => {
     expect(page).toContain('computersCatalogEntry(tI18nComplete)');
     expect(page).toContain('<ConnectorDetailLayout');
     // Docs come from the curated per-app map shared with the connected page.
-    expect(page).toContain('connectorDocLinks({ provider, slug: entry.slug, name: entry.name })');
+    expect(page).toContain(
+      'connectorDocLinks({ provider, slug: entry.slug, name: entry.name }, tI18nComplete)',
+    );
     expect(page).not.toContain('ConnectorBrowse');
   });
 

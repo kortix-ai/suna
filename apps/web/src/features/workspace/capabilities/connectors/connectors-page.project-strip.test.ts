@@ -45,7 +45,7 @@ describe('connectors page "In this project" strip', () => {
     const slice = catalogActiveSlice(code(source));
     expect(slice).toContain('query.trim().length > 0 && filtered.length > 0');
     expect(slice).toContain('aria-labelledby="project-matches-title"');
-    expect(slice).toContain('In this project');
+    expect(slice).toContain("tI18nComplete.raw('text4ca06a005d29')");
   });
 
   test('the strip renders ConnectedConnectorCard', () => {

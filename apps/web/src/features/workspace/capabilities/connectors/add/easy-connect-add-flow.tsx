@@ -1,8 +1,8 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createConnector, type PipedreamApp } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
@@ -63,7 +63,7 @@ export function EasyConnectAddFlow({
     },
     onSuccess: (connection) => {
       if (connection.syncError) {
-        warningToast(`${connection.name} added — sign in to finish connecting.`);
+        warningToast(tI18nComplete('text33a484a069ac', { value0: connection.name }));
         // Sync failing does not undo the create — open the connector anyway
         // so its page (and connect dialog) can finish the job.
         onAdded(connection.slug);

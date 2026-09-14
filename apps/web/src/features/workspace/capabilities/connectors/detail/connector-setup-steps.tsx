@@ -3,6 +3,9 @@
 import type { AdminConnector } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+
 import {
   Stepper,
   StepperDescription,
@@ -24,16 +27,19 @@ interface SetupStep {
  * steps, always: added (a fact), connect (the one human step, worded for the
  * shape of the connector), sync (automatic, so its hint says so).
  */
-export function connectorSetupSteps(input: {
-  displayName: string;
-  managed: boolean;
-  requiresCredential: boolean;
-  usesProjectAuthorization: boolean;
-  credentialSet: boolean;
-  hasStrategyConnection: boolean;
-  toolCount: number;
-  failing: boolean;
-}): SetupStep[] {
+export function connectorSetupSteps(
+  input: {
+    displayName: string;
+    managed: boolean;
+    requiresCredential: boolean;
+    usesProjectAuthorization: boolean;
+    credentialSet: boolean;
+    hasStrategyConnection: boolean;
+    toolCount: number;
+    failing: boolean;
+  },
+  tI18nComplete: UiTranslator,
+): SetupStep[] {
   const connectDone = input.managed
     ? input.hasStrategyConnection
     : input.requiresCredential
@@ -43,7 +49,7 @@ export function connectorSetupSteps(input: {
       : true;
   const connect: SetupStep = input.managed
     ? {
-        title: `Sign in to ${input.displayName}`,
+        title: tI18nComplete('text2e300bb1c797', { value0: input.displayName }),
         hint: input.usesProjectAuthorization
           ? 'Use Connect above — one shared sign-in the whole project uses.'
           : 'Connect your own account under Accounts, below.',
@@ -51,20 +57,20 @@ export function connectorSetupSteps(input: {
       }
     : input.usesProjectAuthorization
       ? {
-          title: 'Add the credential',
-          hint: 'Use Connect above. Kortix stores it encrypted and attaches it to every call.',
+          title: tI18nComplete.raw('text71ec1c2e842f'),
+          hint: tI18nComplete.raw('textc4b8a965e9ef'),
           done: connectDone,
         }
       : {
-          title: 'Connect your account',
-          hint: 'Each member adds their own credential under Accounts, below.',
+          title: tI18nComplete.raw('text24fa20ced6cc'),
+          hint: tI18nComplete.raw('text9bbde51bfbd3'),
           done: connectDone,
         };
   return [
-    { title: 'Added to the project', hint: '', done: true },
+    { title: tI18nComplete.raw('text0668b6bceb30'), hint: '', done: true },
     connect,
     {
-      title: 'Tools sync',
+      title: tI18nComplete.raw('textae5bd6d7ed0b'),
       hint: input.failing
         ? 'The last sync failed — see the reason above. It retries once the connection works.'
         : input.toolCount > 0
@@ -95,16 +101,20 @@ export function ConnectorSetupSteps({
   isManagedProvider: boolean;
   hasStrategyConnection: boolean;
 }) {
-  const steps = connectorSetupSteps({
-    displayName,
-    managed: isManagedProvider,
-    requiresCredential: Boolean(connector.authSecret),
-    usesProjectAuthorization,
-    credentialSet: connector.secretSet,
-    hasStrategyConnection,
-    toolCount: connector.actions.length,
-    failing: connector.status === 'error',
-  });
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const steps = connectorSetupSteps(
+    {
+      displayName,
+      managed: isManagedProvider,
+      requiresCredential: Boolean(connector.authSecret),
+      usesProjectAuthorization,
+      credentialSet: connector.secretSet,
+      hasStrategyConnection,
+      toolCount: connector.actions.length,
+      failing: connector.status === 'error',
+    },
+    tI18nComplete,
+  );
   const active = steps.findIndex((step) => !step.done) + 1 || steps.length;
 
   return (
@@ -115,7 +125,7 @@ export function ConnectorSetupSteps({
       aria-labelledby="connector-setup-title"
     >
       <h2 id="connector-setup-title" className="text-foreground text-sm font-medium">
-        Finish setting up
+        {tI18nComplete.raw('text51eb40d78f0a')}
       </h2>
       <Stepper
         orientation="vertical"

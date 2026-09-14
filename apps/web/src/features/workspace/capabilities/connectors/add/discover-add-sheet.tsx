@@ -3,12 +3,14 @@
 import {
   createConnector,
   getDiscoverConnector,
-  type ConnectorDraftInput,
   type ConnectorAuthorizationStrategy,
+  type ConnectorDraftInput,
   type DiscoverConnector,
 } from '@kortix/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +19,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   SplitSheetBody,
   SplitSheetClose,
@@ -26,7 +29,6 @@ import {
   SplitSheetHeader,
   SplitSheetTitle,
 } from '@/components/ui/split-sheet';
-import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   connectorAuthorizationStrategyIsEditable,
@@ -71,6 +73,7 @@ export function DiscoverAddSheet({
    *  choice the user already made so the panel does not re-ask. */
   initialStrategy?: ConnectorAuthorizationStrategy;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const detailQuery = useQuery({
     // Same key the catalogue page uses — one fetch, shared cache.
     queryKey: ['discover-connector-detail', projectId, connector.id],
@@ -137,14 +140,14 @@ export function DiscoverAddSheet({
         // 401) is exactly what its page's connect dialog fixes. Hand the slug
         // over so the caller still opens it (Jay: "whatever slug is created,
         // it should open that slug").
-        warningToast(`${result.name} added — sign in to finish connecting.`);
+        warningToast(tI18nComplete('text33a484a069ac', { value0: result.name }));
         onAdded(result.slug);
         return;
       }
-      successToast(`${result.name} added`);
+      successToast(tI18nComplete('text08e6480e9b78', { value0: result.name }));
       onAdded(result.slug);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add the connector'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text37479e6422d0')),
   });
 
   const strategyEditable = selected?.connector
@@ -154,10 +157,10 @@ export function DiscoverAddSheet({
   return (
     <SplitSheetContent>
       <SplitSheetHeader>
-        <SplitSheetTitle>Add {connector.name}</SplitSheetTitle>
-        <SplitSheetDescription>
-          A connector can be added more than once — each connection gets its own name.
-        </SplitSheetDescription>
+        <SplitSheetTitle>
+          {tI18nComplete('text641cf33675f8', { value0: connector.name })}
+        </SplitSheetTitle>
+        <SplitSheetDescription>{tI18nComplete.raw('textee1ee9e008b4')}</SplitSheetDescription>
       </SplitSheetHeader>
 
       <SplitSheetBody className="space-y-5">
@@ -170,23 +173,25 @@ export function DiscoverAddSheet({
         ) : detailQuery.isError ? (
           <InfoBanner
             tone="destructive"
-            title="Couldn’t load the connection options"
+            title={tI18nComplete.raw('textc19b3005db37')}
             action={
               <Button variant="outline" size="sm" onClick={() => void detailQuery.refetch()}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           >
-            {(detailQuery.error as Error)?.message ?? 'The catalogue request failed.'}
+            {(detailQuery.error as Error)?.message ?? tI18nComplete.raw('textd157dd6a3627')}
           </InfoBanner>
         ) : addable.length === 0 ? (
-          <InfoBanner tone="neutral" title="Nothing addable">
-            This entry publishes documentation only — no surface Kortix can connect to.
+          <InfoBanner tone="neutral" title={tI18nComplete.raw('textf3c16c11f690')}>
+            {tI18nComplete.raw('text87f2fa0e1edc')}
           </InfoBanner>
         ) : (
           <>
             <Field>
-              <FieldLabel htmlFor="discover-add-name">Name</FieldLabel>
+              <FieldLabel htmlFor="discover-add-name">
+                {tI18nComplete.raw('textdcd1d5223f73')}
+              </FieldLabel>
               <Input
                 id="discover-add-name"
                 value={name}
@@ -195,7 +200,8 @@ export function DiscoverAddSheet({
                 disabled={add.isPending || !canWrite}
               />
               <FieldDescription>
-                Saved as <code className="font-mono">{slug || '…'}</code>.
+                {tI18nComplete.raw('text9cd2dee87dd6')}{' '}
+                <code className="font-mono">{slug || '…'}</code>.
               </FieldDescription>
             </Field>
 
@@ -203,7 +209,9 @@ export function DiscoverAddSheet({
                 addable surface = zero decisions on screen. */}
             {addable.length > 1 ? (
               <fieldset className="space-y-2">
-                <legend className="text-foreground text-sm font-medium">How it connects</legend>
+                <legend className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('texte0e9f2833427')}
+                </legend>
                 <RadioGroup
                   value={selected?.id ?? ''}
                   onValueChange={setPickedId}
@@ -228,7 +236,7 @@ export function DiscoverAddSheet({
                           </span>
                           {index === 0 ? (
                             <Badge variant="kortix" size="xs">
-                              Recommended
+                              {tI18nComplete.raw('textd70604e84304')}
                             </Badge>
                           ) : null}
                           <Badge variant="outline" size="xs">
@@ -237,8 +245,8 @@ export function DiscoverAddSheet({
                         </span>
                         <span className="text-muted-foreground block text-xs">
                           {variant.requiresAuth
-                            ? 'Needs a sign-in or credential after adding'
-                            : 'No sign-in needed'}
+                            ? tI18nComplete.raw('text2814edeb3957')
+                            : tI18nComplete.raw('text572ca3ee73f4')}
                         </span>
                       </span>
                     </label>
@@ -252,7 +260,9 @@ export function DiscoverAddSheet({
                 owners; the copy spells out exactly who gets access. */}
             {strategyEditable ? (
               <fieldset className="space-y-2">
-                <legend className="text-foreground text-sm font-medium">Install for</legend>
+                <legend className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('text83b1bc0429f4')}
+                </legend>
                 <RadioGroup
                   value={strategy}
                   onValueChange={(next) => setStrategy(next as ConnectorAuthorizationStrategy)}
@@ -270,12 +280,10 @@ export function DiscoverAddSheet({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="text-foreground block text-sm font-medium">
-                        The whole project
+                        {tI18nComplete.raw('textdf197888764d')}
                       </span>
                       <span className="text-muted-foreground block text-xs text-pretty">
-                        One shared connection. Every member of this project — and agents in their
-                        sessions — uses the same {connector.name} account. A project manager
-                        connects it once.
+                        {tI18nComplete('textd7957d7041c3', { value0: connector.name })}
                       </span>
                     </span>
                   </label>
@@ -290,10 +298,11 @@ export function DiscoverAddSheet({
                       disabled={add.isPending}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="text-foreground block text-sm font-medium">Just me</span>
+                      <span className="text-foreground block text-sm font-medium">
+                        {tI18nComplete.raw('text3a4b4df869c7')}
+                      </span>
                       <span className="text-muted-foreground block text-xs text-pretty">
-                        Your own connection, used only in sessions you start. Nothing is shared —
-                        each teammate who wants {connector.name} connects their own account here.
+                        {tI18nComplete('textcb9545359d92', { value0: connector.name })}
                       </span>
                     </span>
                   </label>
@@ -303,8 +312,7 @@ export function DiscoverAddSheet({
               // The provider fixes the owner — state it instead of rendering
               // a dead control.
               <p className="text-muted-foreground text-xs text-pretty">
-                Installs for the whole project: one shared connection that every member and their
-                agents use.
+                {tI18nComplete.raw('text7b2768da1390')}
               </p>
             )}
           </>
@@ -314,7 +322,7 @@ export function DiscoverAddSheet({
       <SplitSheetFooter className="justify-between">
         <SplitSheetClose asChild>
           <Button type="button" variant="outline-ghost" size="sm" disabled={add.isPending}>
-            Cancel
+            {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
         </SplitSheetClose>
         <Button
@@ -324,7 +332,7 @@ export function DiscoverAddSheet({
           disabled={!canWrite || add.isPending || !selected?.connector || !name.trim() || !slug}
         >
           {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Add connector
+          {tI18nComplete.raw('texta6ef2483d6fb')}
         </Button>
       </SplitSheetFooter>
     </SplitSheetContent>

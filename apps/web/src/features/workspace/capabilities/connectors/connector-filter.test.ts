@@ -76,9 +76,7 @@ describe('the landing tab is All, unconditionally', () => {
   });
 
   test('All writes no param, so the bare page URL stays bare', () => {
-    expect(page).toContain(
-      "next === 'all' ? params.delete('scope') : params.set('scope', next),",
-    );
+    expect(page).toContain("next === 'all' ? params.delete('scope') : params.set('scope', next),");
   });
 
   test('the helper is gone rather than left unused', () => {

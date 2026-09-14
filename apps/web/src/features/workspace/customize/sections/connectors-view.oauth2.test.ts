@@ -56,7 +56,7 @@ describe('Custom connector OAuth2 onboarding', () => {
     expect(connectorsSource).toContain('{showOAuth2Tabs ? (');
     // …and the hidden tab keeps a manual way in for servers that demand OAuth
     // without advertising it.
-    expect(connectorsSource).toContain('Use OAuth 2.0 instead');
+    expect(connectorsSource).toContain("tI18nHardcoded.raw('i18nComplete.textdee89ced3d79')");
     expect(connectorsSource).toContain('setOauth2Requested(true)');
   });
 

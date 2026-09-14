@@ -1,7 +1,7 @@
 'use client';
 
-import type { AdminConnector } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
+import type { AdminConnector } from '@kortix/sdk';
 
 import { Label } from '@/components/ui/label';
 import {

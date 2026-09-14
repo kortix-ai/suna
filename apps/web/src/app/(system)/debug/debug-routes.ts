@@ -70,6 +70,12 @@ export const DEBUG_ROUTES: DebugRoute[] = [
     description: 'The in-layout sheet in phone, tablet, and desktop frames, at every size.',
   },
   {
+    slug: 'modal-stack',
+    group: 'Components',
+    title: 'Modal stack',
+    description: 'Modals opened over open modals: portals, overlays, and ConfirmDialog nesting.',
+  },
+  {
     slug: 'sharing',
     group: 'Components',
     title: 'Sharing picker',

@@ -372,8 +372,7 @@ export function ConnectorTools({
           }
         />
       ) : connector.actions.length ===
-        0 ? // No tools reported (failed or pending sync): show NOTHING here — the
-      // header above is already hidden too. The connection panel on this
+        0 ? // header above is already hidden too. The connection panel on this // No tools reported (failed or pending sync): show NOTHING here — the
       // page explains the failure; a wrench illustration restating "no
       // tools" bought nothing (Jay, 2026-09-14).
       null : groups.length === 0 ? (

@@ -1,6 +1,7 @@
 import type { AdminConnector } from '@kortix/sdk';
 
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
+import type { UiTranslator } from '@/i18n/translator';
 
 export interface ConnectorDocLink {
   label: string;
@@ -102,18 +103,36 @@ function appDocsEntry(
  */
 export function connectorDocLinks(
   connector: Pick<AdminConnector, 'provider' | 'slug' | 'name'>,
+  tI18nComplete: UiTranslator,
 ): ConnectorDocLink[] {
   const links: ConnectorDocLink[] = [
-    { label: 'Kortix docs', href: kortixDocsHref(connector.provider), external: false },
+    {
+      label: tI18nComplete.raw('text97d8aa23aecf'),
+      href: kortixDocsHref(connector.provider),
+      external: false,
+    },
   ];
   const app = appDocsEntry(connector);
   if (app) {
     const name = connector.name?.trim() || connector.slug;
-    links.push({ label: `${name} API docs`, href: app.docs, external: true });
-    if (app.website) links.push({ label: 'Website', href: app.website, external: true });
+    links.push({
+      label: tI18nComplete('text26ef6803567d', { value0: name }),
+      href: app.docs,
+      external: true,
+    });
+    if (app.website)
+      links.push({
+        label: tI18nComplete.raw('textb5a229ac8bec'),
+        href: app.website,
+        external: true,
+      });
   }
   if (connector.provider === 'mcp') {
-    links.push({ label: 'MCP docs', href: 'https://modelcontextprotocol.io/docs', external: true });
+    links.push({
+      label: tI18nComplete.raw('text0c6c035d5429'),
+      href: 'https://modelcontextprotocol.io/docs',
+      external: true,
+    });
   }
   return links;
 }

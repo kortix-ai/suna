@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import type { AdminConnector } from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
@@ -11,7 +12,6 @@ import {
   PlugIcon as Plug,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 
 import { Badge } from '@/components/ui/badge';

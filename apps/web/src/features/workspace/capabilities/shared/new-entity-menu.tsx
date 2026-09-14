@@ -114,7 +114,7 @@ export function NewEntityMenu({
   const manualContent = (
     <OptionContent
       icon={GearSixIcon}
-      title={manual.label ?? 'Set up manually'}
+      title={manual.label ?? tI18nComplete.raw('text9ffc843f501a')}
       description={manual.description}
     />
   );

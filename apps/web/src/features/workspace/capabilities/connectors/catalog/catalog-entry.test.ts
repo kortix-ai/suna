@@ -7,11 +7,11 @@ import {
   catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  catalogEntryKind,
+  catalogEntryKindLabel,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
-  catalogEntryKind,
-  catalogEntryKindLabel,
 } from './catalog-entry';
 
 const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
@@ -212,7 +212,9 @@ describe('catalogue membership join — prefix-aware (the Canva case)', () => {
   });
 
   test('the card mark agrees with the page list', () => {
-    const keys = connectedCatalogKeys([admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' })]);
+    const keys = connectedCatalogKeys([
+      admin({ slug: 'canva-mcp-server', name: 'Canva MCP server' }),
+    ]);
     expect(isCatalogEntryConnected(canvaEntry, keys)).toBe(true);
   });
 
@@ -226,7 +228,11 @@ describe('catalogue membership join — prefix-aware (the Canva case)', () => {
   });
 
   test('membership lists needs_auth rows; the card mark still does not', () => {
-    const half = admin({ slug: 'canva-mcp-server', name: 'Canva MCP server', status: 'needs_auth' });
+    const half = admin({
+      slug: 'canva-mcp-server',
+      name: 'Canva MCP server',
+      status: 'needs_auth',
+    });
     expect(catalogEntryConnectors([half], canvaEntry)).toEqual([half]);
     expect(isCatalogEntryConnected(canvaEntry, connectedCatalogKeys([half]))).toBe(false);
   });

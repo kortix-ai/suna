@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SplitSheet, SplitSheetContent, SplitSheetMain } from '@/components/ui/split-sheet';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 
 import { CatalogConnectorPage } from './catalog-connector-page';
 import { ConnectedConnectorPage } from './connected-connector-page';
@@ -29,6 +30,7 @@ export function AppConnectorSplitPage({
   appSlug: string;
   connectorSlug: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const search = useSearchParams();
   // `?src=apps` = the app lives in the Easy Connect catalogue (managed OAuth
@@ -70,11 +72,11 @@ export function AppConnectorSplitPage({
           hideBackButton
           hideDocumentation
           closeAction={
-            <Hint label="Close" side="bottom" sideOffset={4}>
+            <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
               <Button
                 variant="ghost"
                 size="icon-base"
-                aria-label="Close"
+                aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
                 className="text-muted-foreground hover:text-foreground shrink-0"
                 onClick={() => router.push(appHref)}
               >

@@ -71,10 +71,10 @@ export function ConnectorSettings({
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, connector.slug, nameDraft.trim()),
     onSuccess: () => {
-      successToast('Renamed');
+      successToast(tI18nComplete.raw('text05487af3f074'));
       onChanged();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to rename'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text8fcf8ce07dcf')),
   });
   const nameDirty = nameDraft.trim().length > 0 && nameDraft.trim() !== displayName;
 
@@ -92,7 +92,9 @@ export function ConnectorSettings({
       {/* The connection's display name. Saved on submit, not per keystroke —
           a name is one deliberate change, not a live field. */}
       <section className="space-y-2">
-        <Label htmlFor={`connector-${connector.slug}-name`}>Name</Label>
+        <Label htmlFor={`connector-${connector.slug}-name`}>
+          {tI18nComplete.raw('textdcd1d5223f73')}
+        </Label>
         {/* A bare field under its label — the design-system form dialect. The
             input carries its own border; wrapping it in a second bordered
             card read as a box inside a box (Jay, 2026-09-14). */}
@@ -120,7 +122,7 @@ export function ConnectorSettings({
             disabled={!canWrite || strategyUpdating || rename.isPending || !nameDirty}
           >
             {rename.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Rename
+            {tI18nComplete.raw('text3064d79a295c')}
           </Button>
         </form>
       </section>

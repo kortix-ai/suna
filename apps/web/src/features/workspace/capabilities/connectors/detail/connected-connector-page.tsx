@@ -171,15 +171,15 @@ export function ConnectedConnectorPage({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
         <ErrorState
           size="sm"
-          title="Couldn’t load connector"
+          title={tI18nComplete.raw('text8626b5d27992')}
           description={
             connectorsQuery.error instanceof Error
               ? connectorsQuery.error.message
-              : 'The project connector list could not be read.'
+              : tI18nComplete.raw('text9720ba5a9ede')
           }
           action={
             <Button variant="outline" size="sm" onClick={() => void connectorsQuery.refetch()}>
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -202,11 +202,11 @@ export function ConnectedConnectorPage({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
         <ErrorState
           size="sm"
-          title="Connector not found"
-          description={`No connector with slug “${slug}” exists in this project.`}
+          title={tI18nComplete.raw('text1d35d664a8ba')}
+          description={tI18nComplete('textf91b7814f64d', { value0: slug })}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={resolvedBackHref}>Return to connectors</Link>
+              <Link href={resolvedBackHref}>{tI18nComplete.raw('textf09704dad946')}</Link>
             </Button>
           }
         />
@@ -256,6 +256,7 @@ function ConnectedConnectorContent({
   /** The split view's X — see the page-level prop of the same name. */
   closeAction?: ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
   const displayName = connectorDisplayName(connector);
@@ -355,15 +356,22 @@ function ConnectedConnectorContent({
     onSuccess: (result, next) => {
       const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
       if (syncError) {
-        warningToast(`${connector.name} saved — sign in to finish connecting.`);
+        warningToast(tI18nComplete('text691991176e63', { value0: connector.name }));
       } else {
-        successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
+        successToast(
+          tI18nComplete('text67ccb61d5f27', {
+            value0:
+              next === 'project'
+                ? tI18nComplete.raw('text985959785319')
+                : tI18nComplete.raw('textb512d97e7cbf'),
+          }),
+        );
       }
       invalidate();
     },
     onError: (error: Error) => {
       setAuthorizationStrategyAwaitingRefresh(null);
-      errorToast(error.message || 'Failed to update authorization owner');
+      errorToast(error.message || tI18nComplete.raw('texta743aa4452d3'));
     },
   });
   const strategyUpdating = connectorAuthorizationUpdateIsPending(
@@ -402,7 +410,7 @@ function ConnectedConnectorContent({
           (Marko: "every button had the same name"). The button connects; the
           dialog it opens does the naming of HOW (one-click OAuth, or the
           specific credential the server wants). */}
-      Connect
+      {tI18nComplete.raw('text1a2303ede074')}
     </Button>
   ) : showReconnectCta ? (
     <Button
@@ -416,7 +424,7 @@ function ConnectedConnectorContent({
       ) : isManagedProvider ? null : (
         <KeyIcon className="size-4 shrink-0" />
       )}
-      {isManagedProvider ? 'Reconnect' : 'Replace credential'}
+      {isManagedProvider ? 'Reconnect' : tI18nComplete.raw('text54483ce856e0')}
     </Button>
   ) : undefined;
 
@@ -445,7 +453,7 @@ function ConnectedConnectorContent({
   const primaryDescription = failing ? (
     <>
       <span className="block">
-        {(connectorErrorExplanation(connector.lastError) ?? 'The last synchronization failed.') +
+        {(connectorErrorExplanation(connector.lastError) ?? tI18nComplete.raw('texte72d6e4b58ed')) +
           failingNextStep}
       </span>
       {connector.lastError ? (
@@ -468,9 +476,15 @@ function ConnectedConnectorContent({
   // own developer docs when we know them (that is where the API key or server
   // URL comes from), plus whatever URL the connector config itself carries.
   const docsLinks = [
-    ...connectorDocLinks(connector),
+    ...connectorDocLinks(connector, tI18nComplete),
     ...(configQuery.data?.url?.startsWith('http')
-      ? [{ label: 'Official connector URL', href: configQuery.data.url, external: true }]
+      ? [
+          {
+            label: tI18nComplete.raw('text6f520bd876d2'),
+            href: configQuery.data.url,
+            external: true,
+          },
+        ]
       : []),
   ];
   // Removal AWAITS the connectors refetch, then navigates — soft, no page
@@ -505,7 +519,7 @@ function ConnectedConnectorContent({
           status={
             connected ? (
               <Badge variant="success" size="sm">
-                Connected
+                {tI18nComplete.raw('text22965568d22a')}
               </Badge>
             ) : (
               <ConnectorStatusBadge connector={connector} />
@@ -524,7 +538,7 @@ function ConnectedConnectorContent({
                 onClick={startPrivateSession}
               >
                 <PlusIcon className="size-4 shrink-0" />
-                New session
+                {tI18nComplete.raw('textcffdba22adf2')}
               </Button>
             ) : undefined
           }
@@ -649,6 +663,7 @@ function ConnectorManagementTabs({
   onSetCredential: () => void;
   onAuthorizationStrategyChange: (strategy: ConnectorAuthorizationStrategy) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <Tabs value={selectedTab} onValueChange={(next) => onTabChange(next as ConnectorTab)}>
       <TabsList
@@ -667,15 +682,15 @@ function ConnectorManagementTabs({
           {connectionsError ? (
             <ErrorState
               size="sm"
-              title="Couldn’t load connections"
+              title={tI18nComplete.raw('textbda9de7688c0')}
               description={
                 connectionsError instanceof Error
                   ? connectionsError.message
-                  : 'The accounts stored for this connector could not be read.'
+                  : tI18nComplete.raw('textd8eda34a089a')
               }
               action={
                 <Button variant="outline" size="sm" onClick={onRetryConnections}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />

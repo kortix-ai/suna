@@ -1,7 +1,6 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
-
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
  * add flow the card opens. A `discover` entry goes to `DiscoverAddFlow`
@@ -254,4 +253,3 @@ export function catalogEntryConnectors(
     ),
   );
 }
-

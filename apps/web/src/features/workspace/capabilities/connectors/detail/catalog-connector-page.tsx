@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SplitSheet, SplitSheetMain, SplitSheetTrigger } from '@/components/ui/split-sheet';
 import { ErrorState } from '@/features/layout/section/error-state';
+import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -210,8 +211,8 @@ export function CatalogConnectorPage({
     return (
       <CatalogNotFound
         projectId={projectId}
-        title="Catalogue source not found"
-        description={`“${sourceValue}” is not a supported connector catalogue.`}
+        title={tI18nComplete.raw('text00014a68c034')}
+        description={tI18nComplete('text698c933c2a68', { value0: sourceValue })}
       />
     );
   }
@@ -232,9 +233,9 @@ export function CatalogConnectorPage({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
         <ErrorState
           size="sm"
-          title="Couldn’t load connector"
+          title={tI18nComplete.raw('text8626b5d27992')}
           description={
-            entryError instanceof Error ? entryError.message : 'The catalogue request failed.'
+            entryError instanceof Error ? entryError.message : tI18nComplete.raw('textd157dd6a3627')
           }
           action={
             <Button
@@ -244,7 +245,7 @@ export function CatalogConnectorPage({
                 void (source === 'discover' ? discoverQuery.refetch() : easyConnectQuery.refetch())
               }
             >
-              Retry
+              {tI18nComplete.raw('text942087cc2d41')}
             </Button>
           }
         />
@@ -256,8 +257,8 @@ export function CatalogConnectorPage({
     return (
       <CatalogNotFound
         projectId={projectId}
-        title="Connector not found"
-        description={`No ${source} catalogue connector matches “${slug}”.`}
+        title={tI18nComplete.raw('text1d35d664a8ba')}
+        description={tI18nComplete('text370e8d05e760', { value0: source, value1: slug })}
       />
     );
   }
@@ -314,7 +315,12 @@ export function CatalogConnectorPage({
           ? 'none'
           : 'custom'
       : (firstVariant?.connector?.auth?.type ?? (firstVariant?.requiresAuth ? 'custom' : 'none'));
-  const documentationLinks = catalogDocumentationLinks(entry, discoverDetail, provider);
+  const documentationLinks = catalogDocumentationLinks(
+    entry,
+    discoverDetail,
+    provider,
+    tI18nComplete,
+  );
   // The meta card's labeled facts (the Linear-integration-page shape). The
   // first docs link (the Kortix guide) becomes the card's Docs column; the
   // official website gets its own column, so both leave the bottom list.
@@ -357,7 +363,9 @@ export function CatalogConnectorPage({
     )
   ) : alreadyAdded ? (
     <Button asChild variant="outline" className="max-sm:w-full">
-      <Link href={connectedConnectorHref(projectId, projectMatches[0].slug)}>Open connector</Link>
+      <Link href={connectedConnectorHref(projectId, projectMatches[0].slug)}>
+        {tI18nComplete.raw('textbdeb87e037ba')}
+      </Link>
     </Button>
   ) : undefined;
 
@@ -380,7 +388,9 @@ export function CatalogConnectorPage({
           status={
             alreadyAdded ? (
               <Badge variant="success" size="sm">
-                {projectMatches.length === 1 ? 'Added' : `Added ×${projectMatches.length}`}
+                {projectMatches.length === 1
+                  ? tI18nComplete.raw('text6b02e0d363a4')
+                  : tI18nComplete('text2fa7425980f8', { value0: projectMatches.length })}
               </Badge>
             ) : undefined
           }
@@ -392,7 +402,7 @@ export function CatalogConnectorPage({
           <section className="bg-popover rounded-md border px-4 py-3">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               {websiteUrl ? (
-                <CatalogMetaColumn label="Website">
+                <CatalogMetaColumn label={tI18nComplete.raw('textb5a229ac8bec')}>
                   <Link
                     href={websiteUrl}
                     target="_blank"
@@ -406,7 +416,7 @@ export function CatalogConnectorPage({
                 </CatalogMetaColumn>
               ) : null}
               {primaryDoc ? (
-                <CatalogMetaColumn label="Docs">
+                <CatalogMetaColumn label={tI18nComplete.raw('text7af023c43013')}>
                   {primaryDoc.external ? (
                     <Link
                       href={primaryDoc.href}
@@ -442,7 +452,7 @@ export function CatalogConnectorPage({
           {alreadyAdded ? (
             <section className="space-y-2" aria-labelledby="connector-matches-title">
               <h2 id="connector-matches-title" className="text-foreground text-sm font-medium">
-                In this project
+                {tI18nComplete.raw('text4ca06a005d29')}
               </h2>
               <ul className="space-y-2">
                 {projectMatches.map((match) => (
@@ -476,7 +486,7 @@ export function CatalogConnectorPage({
           {entry.description ? (
             <section className="space-y-2" aria-labelledby="connector-overview-title">
               <h2 id="connector-overview-title" className="text-foreground text-sm font-medium">
-                Overview
+                {tI18nComplete.raw('textd4b1ea5708dd')}
               </h2>
               {/* The full prose, unclamped — the header carries identity only. */}
               <p className="text-muted-foreground max-w-[64ch] text-sm text-pretty whitespace-pre-line">
@@ -553,24 +563,33 @@ function catalogDocumentationLinks(
   entry: CatalogEntry,
   detail: DiscoverConnectorDetail | null,
   provider: AdminConnector['provider'],
+  tI18nComplete: UiTranslator,
 ): ConnectorDocumentationLink[] {
   // Seeded from the curated map: the Kortix guide anchored to this provider's
   // section, plus the app's own developer docs when we know them — the same
   // links the connected page shows, so the story does not change after Add.
   const links: ConnectorDocumentationLink[] = [
-    ...connectorDocLinks({ provider, slug: entry.slug, name: entry.name }),
+    ...connectorDocLinks({ provider, slug: entry.slug, name: entry.name }, tI18nComplete),
   ];
   if (
     entry.source === 'discover' &&
     entry.connector.url?.startsWith('http') &&
     !links.some((link) => link.href === entry.connector.url)
   ) {
-    links.push({ label: 'Official website', href: entry.connector.url, external: true });
+    links.push({
+      label: tI18nComplete.raw('textb16446d4331a'),
+      href: entry.connector.url,
+      external: true,
+    });
   }
   for (const variant of detail?.variants ?? []) {
     if (!variant.docs?.startsWith('http')) continue;
     if (links.some((link) => link.href === variant.docs)) continue;
-    links.push({ label: `${variant.name} docs`, href: variant.docs, external: true });
+    links.push({
+      label: tI18nComplete('text66e83f905e7a', { value0: variant.name }),
+      href: variant.docs,
+      external: true,
+    });
   }
   return links.slice(0, 6);
 }
@@ -584,6 +603,7 @@ function CatalogNotFound({
   title: string;
   description: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-12">
       <ErrorState
@@ -593,7 +613,7 @@ function CatalogNotFound({
         action={
           <Button asChild variant="outline" size="sm">
             <Link href={`/projects/${encodeURIComponent(projectId)}/connectors`}>
-              Return to connectors
+              {tI18nComplete.raw('textf09704dad946')}
             </Link>
           </Button>
         }

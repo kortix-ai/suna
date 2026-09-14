@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   createConnector,
   getDiscoverConnector,
@@ -9,7 +10,6 @@ import {
 } from '@kortix/sdk';
 import { ArrowSquareOutIcon, CubeIcon, GlobeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { surfacesRecommendedFirst } from '@/features/workspace/capabilities/connectors/detail/connector-detail-copy';
 import {
   connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
@@ -34,7 +35,6 @@ import {
   type EasyConnectConnectionInput,
 } from '@/features/workspace/customize/sections/connector-connection-form';
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
-import { surfacesRecommendedFirst } from '@/features/workspace/capabilities/connectors/detail/connector-detail-copy';
 
 /**
  * Add one catalog connector to the project: pick a published surface, name
@@ -199,8 +199,7 @@ export function DiscoverAddFlow({
                     detail page, so the two pickers never disagree. */}
                 {surfacesRecommendedFirst(detailQuery.data.variants).map((variant, index) => {
                   const href = variant.docs ?? variant.url;
-                  const recommended =
-                    index === 0 && (detailQuery.data?.variants.length ?? 0) > 1;
+                  const recommended = index === 0 && (detailQuery.data?.variants.length ?? 0) > 1;
                   return (
                     <li
                       key={`${variant.kind}:${variant.id}`}
@@ -220,7 +219,7 @@ export function DiscoverAddFlow({
                         <div className="mt-1 flex items-center gap-1.5">
                           {recommended ? (
                             <Badge variant="kortix" size="xs">
-                              Recommended
+                              {tI18nComplete.raw('textd70604e84304')}
                             </Badge>
                           ) : null}
                           <Badge variant="outline" size="xs">

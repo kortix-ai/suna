@@ -26,9 +26,9 @@ export function connectorConnectionIsReady(
  * never wins over one that can. Falls back to the first addable surface,
  * then the first surface, preserving feed order.
  */
-export function recommendedSurfaceVariant<
-  V extends { kind: string; connector: unknown | null },
->(variants: readonly V[]): V | null {
+export function recommendedSurfaceVariant<V extends { kind: string; connector: unknown | null }>(
+  variants: readonly V[],
+): V | null {
   return (
     variants.find((variant) => variant.kind === 'mcp' && variant.connector) ??
     variants.find((variant) => variant.connector) ??
@@ -41,9 +41,9 @@ export function recommendedSurfaceVariant<
  * The full surface list with the recommended one first — a stable move-to-
  * front, so everything else keeps its feed order.
  */
-export function surfacesRecommendedFirst<
-  V extends { kind: string; connector: unknown | null },
->(variants: readonly V[]): V[] {
+export function surfacesRecommendedFirst<V extends { kind: string; connector: unknown | null }>(
+  variants: readonly V[],
+): V[] {
   const recommended = recommendedSurfaceVariant(variants);
   if (!recommended) return [...variants];
   return [recommended, ...variants.filter((variant) => variant !== recommended)];

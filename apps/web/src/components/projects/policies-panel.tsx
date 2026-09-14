@@ -321,7 +321,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
           <div className="space-y-1">
             <Label>{tI18nHardcoded.raw('i18nComplete.text4228aeb07c41')}</Label>
             <p className="text-muted-foreground text-xs text-pretty">
-              Pick a tool and choose what happens when an agent uses it.
+              {tI18nHardcoded.raw('i18nComplete.textda22b1af2010')}
             </p>
           </div>
           {/* The empty state owns the CTA when there is nothing to list, so the

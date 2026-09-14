@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 export interface ConnectorDocumentationLink {
@@ -51,6 +52,7 @@ export function ConnectorDetailLayout({
   children: ReactNode;
   className?: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="relative min-h-0 flex-1 overflow-y-auto">
       {/* Absolute at the pane's extreme top left, OUT of the flow: the header
@@ -67,7 +69,7 @@ export function ConnectorDetailLayout({
           >
             <Link href={backHref}>
               <CaretLeft className="size-3.5 shrink-0" />
-              Go back
+              {tI18nComplete.raw('text6aadac2f2b7a')}
             </Link>
           </Button>
         </div>
@@ -166,11 +168,12 @@ export function ConnectorDocumentationLinks({
 }: {
   links: readonly ConnectorDocumentationLink[];
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (links.length === 0) return null;
   return (
     <section className="space-y-3" aria-labelledby="connector-docs-title">
       <h2 id="connector-docs-title" className="text-foreground text-sm font-medium">
-        Documentation
+        {tI18nComplete.raw('textc205924de0fe')}
       </h2>
       <div className="bg-popover divide-y overflow-hidden rounded-md border">
         {links.map((link) => (

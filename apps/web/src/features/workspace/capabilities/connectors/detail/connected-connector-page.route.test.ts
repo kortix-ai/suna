@@ -96,6 +96,6 @@ describe('connected connector route', () => {
     // pasted value.
     expect(page).toContain('<ConnectorCredentialRow');
     // Docs come from the curated per-app map, not a single generic link.
-    expect(page).toContain('connectorDocLinks(connector)');
+    expect(page).toContain('connectorDocLinks(connector, tI18nComplete)');
   });
 });

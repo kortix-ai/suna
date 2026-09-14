@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 
 /**
  * Where the connector's server-side credential actually lives — and the
@@ -48,6 +49,7 @@ export function ConnectorCredentialRow({
   canWrite: boolean;
   onChanged: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = connector.credentialSource ?? (connector.secretSet ? 'stored' : 'none');
   const boundIdentifier = source === 'project_secret' ? (connector.secretIdentifier ?? null) : null;
   const [confirmUnbind, setConfirmUnbind] = useState(false);
@@ -77,13 +79,13 @@ export function ConnectorCredentialRow({
     onSuccess: (_result, identifier) => {
       successToast(
         identifier
-          ? `Credential now comes from the secret ${identifier}`
-          : 'Secret unbound — the connector keeps no credential until you add one',
+          ? tI18nComplete('textf75561ab0be6', { value0: identifier })
+          : tI18nComplete.raw('texteec42a6f22ad'),
       );
       setConfirmUnbind(false);
       onChanged();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update the binding'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text2ba8a1bcfc5c')),
   });
 
   // Nothing set AND nothing bindable = nothing to say. The Connect CTA and
@@ -92,27 +94,24 @@ export function ConnectorCredentialRow({
   if (source === 'none' && bindable.length === 0) return null;
 
   const statement =
-    source === 'project_secret' && boundIdentifier ? (
-      <>
-        Uses the project secret <code className="font-mono">{boundIdentifier}</code>. Rotate or
-        edit it on the Secrets page — this connector follows it.
-      </>
-    ) : source === 'stored' ? (
-      // Same rule the Secrets page states from its side: the server refuses a
-      // binding while a stored value exists.
-      'A value stored with this connector, encrypted. To switch to a project secret, disconnect the stored credential first.'
-    ) : source === 'platform' ? (
-      'Managed by Kortix for this deployment.'
-    ) : (
-      'Nothing set. Add a credential above, or bind an existing project secret.'
-    );
+    source === 'project_secret' && boundIdentifier
+      ? tI18nComplete('text86f0b18d6d8a', { value0: boundIdentifier })
+      : source === 'stored'
+        ? // Same rule the Secrets page states from its side: the server refuses a
+          // binding while a stored value exists.
+          'A value stored with this connector, encrypted. To switch to a project secret, disconnect the stored credential first.'
+        : source === 'platform'
+          ? 'Managed by Kortix for this deployment.'
+          : 'Nothing set. Add a credential above, or bind an existing project secret.';
 
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="text-foreground text-sm font-medium">Credential source</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('text221bee24f060')}
+            </p>
             <Button
               asChild
               variant="text"
@@ -120,7 +119,7 @@ export function ConnectorCredentialRow({
               className="text-muted-foreground h-auto gap-0.5 px-0 text-xs"
             >
               <Link href={`/projects/${projectId}/secrets`}>
-                Secrets
+                {tI18nComplete.raw('textd8707d411d99')}
                 <ArrowUpRightIcon className="size-3 shrink-0" />
               </Link>
             </Button>
@@ -131,8 +130,7 @@ export function ConnectorCredentialRow({
         {/* No picker while a stored value exists — the server 409s every bind
             in that state, and a control that can only error is worse than the
             sentence above explaining the order of operations. */}
-        {canWrite &&
-        (source === 'project_secret' || (source === 'none' && bindable.length > 0)) ? (
+        {canWrite && (source === 'project_secret' || (source === 'none' && bindable.length > 0)) ? (
           <div className="shrink-0">
             <Select
               // Driven by the live binding so a bind/unbind reflects with no
@@ -151,11 +149,11 @@ export function ConnectorCredentialRow({
               disabled={bind.isPending}
             >
               <SelectTrigger size="sm" className="w-full sm:w-56">
-                <SelectValue placeholder="Bind a project secret" />
+                <SelectValue placeholder={tI18nComplete.raw('textc769b970c58f')} />
               </SelectTrigger>
               <SelectContent>
                 {source === 'project_secret' ? (
-                  <SelectItem value="unbind">Stop using a secret</SelectItem>
+                  <SelectItem value="unbind">{tI18nComplete.raw('textda9e74dcdde6')}</SelectItem>
                 ) : null}
                 {bindable.map((row) => (
                   <SelectItem key={row.identifier} value={row.identifier}>
@@ -171,9 +169,11 @@ export function ConnectorCredentialRow({
       <ConfirmDialog
         open={confirmUnbind}
         onOpenChange={setConfirmUnbind}
-        title={`Stop using ${boundIdentifier ?? 'the bound secret'}?`}
-        description="The connector keeps no credential of its own, so calls fail until you add one or bind another secret. The secret itself is not touched."
-        confirmLabel="Unbind"
+        title={tI18nComplete('text4b29172693be', {
+          value0: boundIdentifier ?? tI18nComplete.raw('text650179ec8cbe'),
+        })}
+        description={tI18nComplete.raw('text618c9623e0f3')}
+        confirmLabel={tI18nComplete.raw('textdca68375fa4f')}
         confirmVariant="destructive"
         isPending={bind.isPending}
         onConfirm={() => bind.mutate(null)}

@@ -638,7 +638,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                     id="project-matches-title"
                     className="text-muted-foreground text-sm font-medium"
                   >
-                    In this project
+                    {tI18nComplete.raw('text4ca06a005d29')}
                   </h2>
                   <div className={DENSE_GRID_CLASSNAME}>
                     {filtered.slice(0, 4).map((connector) => (
