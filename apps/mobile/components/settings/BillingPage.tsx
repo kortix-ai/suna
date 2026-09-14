@@ -1,20 +1,44 @@
 /**
  * Billing Page Component
  *
- * Matches web's "Billing Status – Manage your credits and subscription" design
+ * Credits balance, credit breakdown, subscription, and purchase actions.
+ * Layout (apps/mobile/design.md → Billing): a `BillingHero` (gradient, centred
+ * header, balance, breakdown, one primary action) on `SettingsPage hero`, then
+ * borderless grouped rows on the page sheet — icon · label · trailing, no
+ * descriptions.
+ *
+ * Rendered by the `/billing` route. The header's back button uses the router
+ * (back, or /projects without history), which matches app/billing.tsx.
  */
 
-import React, { useState, useCallback } from 'react';
-import { View, ScrollView, Pressable, Platform, Alert } from 'react-native';
+import React, { useCallback } from 'react';
+import { Alert, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as Haptics from 'expo-haptics';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  AlertCircle,
+  Calendar,
+  CreditCard,
+  RotateCcw,
+  Settings,
+} from 'lucide-react-native';
+import { formatCredits } from '@kortix/shared';
+
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { SettingsHeader } from './SettingsHeader';
+import { Button } from '@/components/ui/button';
+import {
+  SettingsGroup,
+  SettingsHeader,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/kortix/settings-list';
+import { BillingHero, type BillingHeroRow } from '@/components/billing/BillingHero';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
+import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import {
   useAccountState,
-  accountStateSelectors,
   useSubscriptionCommitment,
   useScheduledChanges,
   billingKeys,
@@ -23,51 +47,28 @@ import {
   isRevenueCatInitialized,
   initializeRevenueCat,
 } from '@/lib/billing';
-import { useAuthContext } from '@/contexts';
-import { useLanguage } from '@/contexts';
-import { useQueryClient } from '@tanstack/react-query';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  FadeIn,
-} from 'react-native-reanimated';
-import {
-  ShoppingCart,
-  Lightbulb,
-  Clock,
-  Infinity,
-  Calendar,
-  CreditCard,
-  AlertCircle,
-  ArrowRight,
-  Settings,
-  RotateCcw,
-} from 'lucide-react-native';
-import { formatCredits } from '@kortix/shared';
-import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
+import { useAuthContext, useLanguage } from '@/contexts';
 import { log } from '@/lib/logger';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedView = Animated.createAnimatedComponent(View);
 
 interface BillingPageProps {
   visible: boolean;
+  /** Kept for API compatibility; the header's back button navigates via the router. */
   onClose: () => void;
   onChangePlan?: () => void;
 }
 
-export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps) {
+const formatDate = (dateValue: string | number, month: 'long' | 'short' = 'long') =>
+  // Numbers are Unix timestamps in seconds; strings are ISO dates.
+  new Date(typeof dateValue === 'number' ? dateValue * 1000 : dateValue).toLocaleDateString(
+    'en-US',
+    { year: 'numeric', month, day: 'numeric' }
+  );
+
+export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
   const { t } = useLanguage();
   const { user } = useAuthContext();
   const isAuthenticated = !!user;
   const queryClient = useQueryClient();
-  const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const {
     data: accountState,
@@ -78,26 +79,18 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     enabled: visible && isAuthenticated,
   });
 
-  const {
-    data: commitmentData,
-    refetch: refetchCommitment,
-  } = useSubscriptionCommitment(accountState?.subscription?.subscription_id || undefined, {
-    enabled: visible && !!accountState?.subscription?.subscription_id,
-  });
+  const { data: commitmentData, refetch: refetchCommitment } = useSubscriptionCommitment(
+    accountState?.subscription?.subscription_id || undefined,
+    {
+      enabled: visible && !!accountState?.subscription?.subscription_id,
+    }
+  );
 
-  const {
-    data: scheduledChangesData,
-    refetch: refetchScheduledChanges,
-  } = useScheduledChanges({
+  const { data: scheduledChangesData, refetch: refetchScheduledChanges } = useScheduledChanges({
     enabled: visible && isAuthenticated,
   });
 
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
-
-  const handleClose = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose();
-  }, [onClose]);
 
   const handleSubscriptionUpdate = useCallback(() => {
     refetchSubscription();
@@ -106,14 +99,14 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
   }, [refetchSubscription, refetchCommitment, refetchScheduledChanges, queryClient]);
 
-
   const handleCreditsExplained = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       // Use kortix.com for production, staging.kortix.com for staging
-      const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging'
-        ? 'https://staging.kortix.com'
-        : 'https://www.kortix.com';
+      const baseUrl =
+        process.env.EXPO_PUBLIC_ENV === 'staging'
+          ? 'https://staging.kortix.com'
+          : 'https://www.kortix.com';
       await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });
@@ -122,36 +115,21 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     }
   }, []);
 
-  const creditsButtonScale = useSharedValue(1);
-  const creditsLinkScale = useSharedValue(1);
-  const changePlanButtonScale = useSharedValue(1);
-  const customerInfoButtonScale = useSharedValue(1);
-  const restorePurchaseButtonScale = useSharedValue(1);
-
-  const creditsButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: creditsButtonScale.value }],
-  }));
-
-  const creditsLinkStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: creditsLinkScale.value }],
-  }));
-
-  const changePlanButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: changePlanButtonScale.value }],
-  }));
-
-  const customerInfoButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: customerInfoButtonScale.value }],
-  }));
-
-  const restorePurchaseButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: restorePurchaseButtonScale.value }],
-  }));
-
   const handleChangePlan = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChangePlan?.();
   }, [onChangePlan]);
+
+  const handleGetCredits = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Use RevenueCat paywall for credit purchases
+    if (useNativePaywall) {
+      log.log('📱 Using RevenueCat paywall for additional credits');
+      await presentUpgradePaywall();
+    } else {
+      log.warn('⚠️ RevenueCat not available, cannot purchase credits');
+    }
+  }, [useNativePaywall, presentUpgradePaywall]);
 
   const handleCustomerInfo = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -181,29 +159,34 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const handleRestorePurchase = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
-      t('billing.restorePurchase', 'Restore Purchase'),
+      t('billing.restorePurchase', 'Restore purchase'),
       t('billing.noPurchaseToRestore', 'No purchase to be restored'),
       [{ text: t('common.ok', 'OK') }]
     );
   }, [t]);
 
-  // Show button if RevenueCat should be used (iOS/Android only)
+  // Show RevenueCat actions on iOS/Android only
   const useRevenueCat = shouldUseRevenueCat();
 
-  // Debug logging to help diagnose button visibility
-
   if (!visible) return null;
+
+  const title = t('billing.title', 'Billing');
+  const helpLabel = t('billing.creditsExplained', 'Credits explained');
 
   if (isLoadingSubscription) {
     return (
       <View className="absolute inset-0 z-50 bg-background">
-        <SettingsHeader
-          title={t('billing.billingStatus', 'Billing Status')}
-          onClose={handleClose}
-        />
-        <View className="p-6">
-          <Text className="text-muted-foreground">{t('billing.loading', 'Loading billing information...')}</Text>
-        </View>
+        <SettingsPage
+          hero={
+            <BillingHero
+              title={title}
+              helpLabel={helpLabel}
+              onHelp={handleCreditsExplained}
+              loading
+            />
+          }>
+          {null}
+        </SettingsPage>
       </View>
     );
   }
@@ -211,25 +194,26 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   if (subscriptionError) {
     return (
       <View className="absolute inset-0 z-50 bg-background">
-        <SettingsHeader
-          title={t('billing.billingStatus', 'Billing Status')}
-          onClose={handleClose}
-        />
-        <View className="p-6">
-          <View className="bg-destructive/10 border border-destructive/20 rounded-[18px] p-4">
-            <View className="flex-row items-start gap-2">
-              <Icon as={AlertCircle} size={16} className="text-destructive" strokeWidth={2} />
-              <Text className="text-sm font-roobert-medium text-destructive flex-1">
-                {subscriptionError instanceof Error ? subscriptionError.message : t('billing.error', 'Failed to load billing information')}
-              </Text>
-            </View>
-          </View>
-        </View>
+        <SettingsHeader title={title} />
+        <SettingsPage>
+          <SettingsGroup>
+            <SettingsRow
+              icon={AlertCircle}
+              label={t('billing.error', 'Failed to load billing information')}
+              destructive
+            />
+            <SettingsRow
+              icon={RotateCcw}
+              label={t('common.tryAgain', 'Try again')}
+              onPress={() => refetchSubscription()}
+            />
+          </SettingsGroup>
+        </SettingsPage>
       </View>
     );
   }
 
-  // Get credits from AccountState
+  // Credits from AccountState
   const credits = accountState?.credits;
   const totalCredits = credits?.total || 0;
   const dailyCredits = credits?.daily || 0;
@@ -237,431 +221,148 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const extraCredits = credits?.extra || 0;
   const dailyRefreshInfo = credits?.daily_refresh;
 
-  // Calculate refresh time for daily credits
+  // Hours until daily credits refresh, e.g. "in 3h"
   const getDailyRefreshTime = (): string | null => {
     if (!dailyRefreshInfo?.enabled) return null;
 
     let hours: number;
-    let seconds: number | undefined;
-
     if (dailyRefreshInfo.seconds_until_refresh) {
-      seconds = dailyRefreshInfo.seconds_until_refresh;
-      hours = Math.ceil(seconds / 3600);
+      hours = Math.ceil(dailyRefreshInfo.seconds_until_refresh / 3600);
     } else if (dailyRefreshInfo.next_refresh_at) {
-      const nextRefresh = new Date(dailyRefreshInfo.next_refresh_at);
-      const now = new Date();
-      const diffMs = nextRefresh.getTime() - now.getTime();
-      seconds = Math.floor(diffMs / 1000);
+      const diffMs = new Date(dailyRefreshInfo.next_refresh_at).getTime() - Date.now();
       hours = Math.ceil(diffMs / (1000 * 60 * 60));
     } else {
-      log.log('⚠️ No refresh info available:', dailyRefreshInfo);
-      return null; // No refresh info available
+      return null;
     }
 
-    // Debug logging
-    log.log('🕐 Daily refresh calculation:', {
-      seconds_until_refresh: dailyRefreshInfo.seconds_until_refresh,
-      next_refresh_at: dailyRefreshInfo.next_refresh_at,
-      calculatedSeconds: seconds,
-      calculatedHours: hours,
-    });
-
-    // Handle edge cases
-    if (hours <= 0 || isNaN(hours)) {
-      log.log('⚠️ Invalid hours:', hours);
-      return null; // Invalid or past refresh time
-    }
-
-    if (hours === 1) {
-      return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
-    }
-
-    // Show actual hours
-    return `Refresh in ${hours}h`;
+    if (hours <= 0 || isNaN(hours)) return null;
+    return hours === 1 ? t('billing.in1Hour', 'in 1 hour') : `in ${hours}h`;
   };
 
-  // Calculate refresh time for monthly credits
-  const getMonthlyRefreshTime = (): string | null => {
-    // Monthly credits always show next billing date, NOT refresh time
-    // Even if daily refresh is enabled, monthly credits renew on billing cycle
-    if (nextBillingDate) {
-      return `Renews ${nextBillingDate}`;
-    }
-    return null;
-  };
-
-  // Calculate next billing date - matches frontend formatDateFlexible
-  const getNextBillingDate = (): string | null => {
-    if (!accountState?.subscription?.current_period_end) return null;
-
-    const formatDateFlexible = (dateValue: string | number): string => {
-      if (typeof dateValue === 'number') {
-        // Unix timestamp in seconds - convert to milliseconds
-        return new Date(dateValue * 1000).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
-      }
-      // ISO string
-      return new Date(dateValue).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-    };
-
-    return formatDateFlexible(accountState.subscription.current_period_end);
-  };
-
-  const nextBillingDate = getNextBillingDate();
-
-  const dailyRefreshTime = getDailyRefreshTime();
-  const monthlyRefreshTime = getMonthlyRefreshTime();
-  const hasCommitment = commitmentData?.has_commitment;
-  const commitmentEndDate = commitmentData?.commitment_end_date
-    ? new Date(commitmentData.commitment_end_date).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : null;
-
-  const scheduledChange = scheduledChangesData?.scheduled_change || accountState?.subscription?.scheduled_change;
   const subscription = accountState?.subscription;
+  const nextBillingDate = subscription?.current_period_end
+    ? formatDate(subscription.current_period_end)
+    : null;
+  const dailyRefreshTime = getDailyRefreshTime();
+  const commitmentEndDate =
+    commitmentData?.has_commitment && commitmentData?.commitment_end_date
+      ? formatDate(commitmentData.commitment_end_date, 'short')
+      : null;
+  const cancellationDate =
+    subscription?.is_cancelled && subscription.cancellation_effective_date
+      ? formatDate(subscription.cancellation_effective_date, 'short')
+      : null;
+
+  const scheduledChange = scheduledChangesData?.scheduled_change || subscription?.scheduled_change;
+  const canBuyCredits = !!subscription?.can_purchase_credits;
+
+  // Credit breakdown under the balance. Daily credits only exist when daily
+  // refresh is enabled; monthly shows unless daily replaces it and is empty.
+  const breakdown: BillingHeroRow[] = [
+    dailyRefreshInfo?.enabled
+      ? { label: t('billing.daily', 'Daily'), value: formatCredits(dailyCredits) }
+      : null,
+    dailyRefreshTime
+      ? { label: t('billing.nextDailyRefresh', 'Next daily refresh'), value: dailyRefreshTime }
+      : null,
+    !dailyRefreshInfo?.enabled || monthlyCredits > 0
+      ? { label: t('billing.monthly', 'Monthly'), value: formatCredits(monthlyCredits) }
+      : null,
+    { label: t('billing.extra', 'Extra'), value: formatCredits(extraCredits) },
+  ].filter((row): row is BillingHeroRow => row !== null);
+
+  // One primary action in the hero: buying credits when the plan allows it,
+  // otherwise changing plan. The other action stays on the sheet.
+  const heroAction = canBuyCredits
+    ? { label: t('billing.getAdditionalCredits', 'Get additional credits'), onPress: handleGetCredits }
+    : subscription && onChangePlan
+      ? { label: t('billing.changePlan', 'Change plan'), onPress: handleChangePlan }
+      : undefined;
+  const showChangePlanOnSheet = !!subscription && !!onChangePlan && canBuyCredits;
 
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingBottom: insets.bottom + 24,
-          }}
-        >
-        <SettingsHeader
-            title={t('billing.billingStatus', 'Billing Status')}
-          onClose={handleClose}
-        />
+    <View className="absolute inset-0 z-50 bg-background">
+      <SettingsPage
+        hero={
+          <BillingHero
+            title={title}
+            helpLabel={helpLabel}
+            onHelp={handleCreditsExplained}
+            balanceLabel={t('billing.totalCredits', 'Total available credits')}
+            balance={formatCredits(totalCredits)}
+            rows={breakdown}
+            action={heroAction}
+          />
+        }>
+        {scheduledChange && (
+          <ScheduledDowngradeCard
+            scheduledChange={scheduledChange}
+            onCancel={handleSubscriptionUpdate}
+          />
+        )}
 
-          {/* Subtitle */}
-          <AnimatedView
-            entering={FadeIn.duration(400).delay(100)}
-            className="px-6 mb-6"
-          >
-            <Text className="text-sm text-muted-foreground">
-              {t('billing.manageCredits', 'Manage your credits and subscription')}
-            </Text>
-          </AnimatedView>
-
-          {/* Scheduled Downgrade Alert */}
-          {scheduledChange && (
-            <AnimatedView
-              entering={FadeIn.duration(400).delay(150)}
-              className="px-6 mb-6"
-            >
-              <ScheduledDowngradeCard
-                scheduledChange={scheduledChange}
-                onCancel={handleSubscriptionUpdate}
-              />
-            </AnimatedView>
-          )}
-
-          {/* Total Available Credits Card */}
-          <AnimatedView
-            entering={FadeIn.duration(400).delay(200)}
-            className="px-6 mb-6"
-          >
-            <View className="bg-card border border-border rounded-[18px] p-6">
-              <Text className="text-sm font-roobert-medium text-muted-foreground mb-4 uppercase tracking-wider">
-                {t('billing.totalCredits', 'Total Available Credits')}
-              </Text>
-              <Text className="text-[48px] font-roobert-semibold text-foreground leading-none mb-2">
-                {formatCredits(totalCredits)}
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                {t('billing.allCredits', 'All credits')}
-              </Text>
-            </View>
-          </AnimatedView>
-
-          {/* Credit Breakdown */}
-          <AnimatedView
-            entering={FadeIn.duration(400).delay(300)}
-            className="px-6 mb-6"
-          >
-            <View className="gap-3">
-              {/* Daily Credits - Only show if daily refresh is enabled */}
-              {dailyRefreshInfo?.enabled && (
-                <View className="bg-card border border-kortix-blue/20 rounded-[18px] p-5">
-                  <View className="flex-row items-center gap-2 mb-3">
-                    <View className="w-8 h-8 rounded-full bg-kortix-blue/10 items-center justify-center">
-                      <Icon as={Clock} size={16} className="text-kortix-blue" strokeWidth={2} />
-                    </View>
-                    <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
-                      {t('billing.daily', 'Daily')}
-                    </Text>
-                  </View>
-                  <Text className="text-2xl font-roobert-semibold text-foreground mb-1">
-                    {formatCredits(dailyCredits)}
-                  </Text>
-                  {dailyRefreshTime && (
-                    <Text className="text-xs font-roobert-medium text-kortix-blue">
-                      {dailyRefreshTime}
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {/* Monthly Credits */}
-              {(!dailyRefreshInfo?.enabled || monthlyCredits > 0) && (
-                <View className="bg-card border border-kortix-orange/20 rounded-[18px] p-5">
-                  <View className="flex-row items-center gap-2 mb-3">
-                    <View className="w-8 h-8 rounded-full bg-kortix-orange/10 items-center justify-center">
-                      <Icon as={Clock} size={16} className="text-kortix-orange" strokeWidth={2} />
-                    </View>
-                    <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
-                      {t('billing.monthly', 'Monthly')}
-                    </Text>
-                  </View>
-                  <Text className="text-2xl font-roobert-semibold text-foreground mb-1">
-                    {formatCredits(monthlyCredits)}
-                  </Text>
-                  {monthlyRefreshTime && (
-                    <Text className="text-xs font-roobert-medium text-kortix-orange">
-                      {monthlyRefreshTime}
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {/* Extra Credits */}
-              <View className="bg-card border border-border rounded-[18px] p-5">
-                <View className="flex-row items-center gap-2 mb-3">
-                  <View className="w-8 h-8 rounded-full bg-kortix-blue/10 items-center justify-center">
-                    <Icon as={Infinity} size={16} className="text-kortix-blue" strokeWidth={2} />
-                  </View>
-                  <Text className="text-xs font-roobert-medium text-muted-foreground uppercase">
-                    {t('billing.extra', 'Extra')}
-                  </Text>
-                </View>
-                <Text className="text-2xl font-roobert-semibold text-foreground mb-1">
-                  {formatCredits(extraCredits)}
-                </Text>
-                <Text className="text-xs font-roobert-medium text-muted-foreground">
-                  {t('billing.nonExpiring', 'Non-expiring')}
-                </Text>
-              </View>
-            </View>
-          </AnimatedView>
-
-          {/* Subscription Info */}
-          {subscription && (
-            <AnimatedView
-              entering={FadeIn.duration(400).delay(400)}
-              className="px-6 mb-6"
-            >
-              <View className="bg-card border border-border rounded-[18px] p-6">
-                <Text className="text-lg font-roobert-semibold text-foreground mb-4">
-                  {t('billing.subscription', 'Subscription')}
-                </Text>
-
-                {/* Current Plan */}
-                <View className="flex-row items-center justify-between mb-4">
-                  <Text className="text-sm text-muted-foreground">
-                    {t('billing.currentPlan', 'Current Plan')}
-                  </Text>
+        {subscription && (
+          <View>
+            <SettingsGroup title={t('billing.subscription', 'Subscription')}>
+              <SettingsRow
+                label={t('billing.currentPlan', 'Current plan')}
+                right={
                   <PricingTierBadge
-                    planName={accountState?.subscription?.tier_display_name || accountState?.subscription?.tier_key || 'Basic'}
-                    size="lg"
+                    planName={subscription.tier_display_name || subscription.tier_key || 'Basic'}
+                    size="md"
                   />
-                </View>
-
-                {/* Next Billing */}
-                {nextBillingDate && (
-                  <View className="flex-row items-center justify-between mb-4">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={Calendar} size={16} className="text-muted-foreground" strokeWidth={2} />
-                      <Text className="text-sm text-muted-foreground">
-                        {t('billing.nextBilling', 'Next Billing')}
-                      </Text>
-                    </View>
-                    <Text className="text-sm font-roobert-medium text-foreground">
-                      {nextBillingDate}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Annual Commitment */}
-                {hasCommitment && commitmentEndDate && (
-                  <View className="flex-row items-center justify-between mb-4">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={CreditCard} size={16} className="text-muted-foreground" strokeWidth={2} />
-                      <Text className="text-sm text-muted-foreground">
-                        {t('billing.annualCommitment', 'Annual Commitment')}
-                      </Text>
-                    </View>
-                    <Text className="text-sm font-roobert-medium text-foreground">
-                      {t('billing.activeUntil', { defaultValue: 'Active until {date}', date: commitmentEndDate })}
-                    </Text>
-                  </View>
-                )}
-
-
-                {/* Cancelled Status */}
-                {subscription.is_cancelled && subscription.cancellation_effective_date && (
-                  <View className="bg-destructive/10 border border-destructive/20 rounded-xl p-4">
-                    <View className="flex-row items-start gap-2">
-                      <Icon as={AlertCircle} size={16} className="text-destructive" strokeWidth={2} />
-                      <View className="flex-1">
-                        <Text className="text-sm font-roobert-semibold text-destructive mb-1">
-                          {t('billing.subscriptionCancelled', 'Subscription Cancelled')}
-                        </Text>
-                        <Text className="text-xs text-destructive/80">
-                          {t('billing.subscriptionCancelledOn', {
-                            defaultValue: 'Your subscription will be cancelled on {date}',
-                            date: new Date(subscription.cancellation_effective_date).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            }),
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                )}
-              </View>
-            </AnimatedView>
-          )}
-
-          {/* Action Buttons */}
-          <AnimatedView
-            entering={FadeIn.duration(400).delay(500)}
-            className="px-6 mb-6"
-          >
-            <View className="gap-3">
-              {/* Change Plan Button */}
-              {onChangePlan && (
-                <AnimatedPressable
-                  onPress={handleChangePlan}
-                  onPressIn={() => {
-                    changePlanButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    changePlanButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
-                  style={changePlanButtonStyle}
-                  className="w-full h-12 bg-foreground rounded-full items-center justify-center flex-row gap-2"
-                >
-                  <Text className="text-sm font-roobert-semibold text-background">
-                    {t('billing.changePlan', 'Change Plan')}
-                  </Text>
-                  <Icon as={ArrowRight} size={18} className="text-background" strokeWidth={2} />
-                </AnimatedPressable>
+                }
+              />
+              {nextBillingDate && (
+                <SettingsRow
+                  icon={Calendar}
+                  label={t('billing.nextBilling', 'Next billing')}
+                  value={nextBillingDate}
+                />
               )}
-
-              {/* Get Additional Credits */}
-              {accountState?.subscription?.can_purchase_credits && (
-                <AnimatedPressable
-                  onPress={async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    // Use RevenueCat paywall for credit purchases
-                    if (useNativePaywall) {
-                      log.log('📱 Using RevenueCat paywall for additional credits');
-                      await presentUpgradePaywall();
-                    } else {
-                      log.warn('⚠️ RevenueCat not available, cannot purchase credits');
-                    }
-                  }}
-                  onPressIn={() => {
-                    creditsButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
-                  style={creditsButtonStyle}
-                  className="w-full h-12 bg-primary rounded-full items-center justify-center flex-row gap-2"
-                >
-                  <Icon as={ShoppingCart} size={18} className="text-primary-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-semibold text-primary-foreground">
-                    {t('billing.getAdditionalCredits', 'Get Additional Credits')}
-                  </Text>
-                </AnimatedPressable>
+              {commitmentEndDate && (
+                <SettingsRow
+                  icon={CreditCard}
+                  label={t('billing.annualCommitment', 'Annual commitment')}
+                  value={t('billing.activeUntil', {
+                    defaultValue: 'Until {date}',
+                    date: commitmentEndDate,
+                  })}
+                />
               )}
-
-              {/* RevenueCat Customer Info Portal */}
-              {useRevenueCat && (
-                <AnimatedPressable
-                  onPress={handleCustomerInfo}
-                  onPressIn={() => {
-                    customerInfoButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    customerInfoButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
-                  style={customerInfoButtonStyle}
-                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
-                >
-                  <Icon as={Settings} size={18} className="text-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-semibold text-foreground">
-                    {t('billing.customerInfo', 'Customer Info')}
-                  </Text>
-                </AnimatedPressable>
+              {cancellationDate && (
+                <SettingsRow
+                  icon={AlertCircle}
+                  label={t('billing.cancelsOn', 'Cancels on')}
+                  value={cancellationDate}
+                  destructive
+                />
               )}
+            </SettingsGroup>
 
-              {/* Restore Purchase Button */}
-              {useRevenueCat && (
-                <AnimatedPressable
-                  onPress={handleRestorePurchase}
-                  onPressIn={() => {
-                    restorePurchaseButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    restorePurchaseButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
-                  style={restorePurchaseButtonStyle}
-                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
-                >
-                  <Icon as={RotateCcw} size={18} className="text-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-semibold text-foreground">
-                    {t('billing.restorePurchase', 'Restore Purchase')}
-                  </Text>
-                </AnimatedPressable>
-              )}
+            {showChangePlanOnSheet && (
+              <Button size="lg" variant="secondary" className="mt-3 rounded-full" onPress={handleChangePlan}>
+                <Text>{t('billing.changePlan', 'Change plan')}</Text>
+              </Button>
+            )}
+          </View>
+        )}
 
-            </View>
-          </AnimatedView>
-
-          {/* Credits Explained Link */}
-          <AnimatedView
-            entering={FadeIn.duration(400).delay(600)}
-            className="px-6"
-          >
-            <AnimatedPressable
-              onPress={handleCreditsExplained}
-              onPressIn={() => {
-                creditsLinkScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                creditsLinkScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-          }}
-              style={creditsLinkStyle}
-              className="flex-row items-center justify-center gap-2 py-2"
-            >
-              <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
-              <Text className="text-xs font-roobert text-muted-foreground">
-                {t('billing.creditsExplained', 'Credits explained')}
-              </Text>
-            </AnimatedPressable>
-          </AnimatedView>
-        </ScrollView>
-      </View>
+        {useRevenueCat && (
+          <SettingsGroup title={t('billing.purchases', 'Purchases')}>
+            <SettingsRow
+              icon={Settings}
+              label={t('billing.customerInfo', 'Customer info')}
+              onPress={handleCustomerInfo}
+            />
+            <SettingsRow
+              icon={RotateCcw}
+              label={t('billing.restorePurchase', 'Restore purchase')}
+              onPress={handleRestorePurchase}
+            />
+          </SettingsGroup>
+        )}
+      </SettingsPage>
     </View>
   );
 }

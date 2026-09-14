@@ -1,10 +1,13 @@
 /**
- * FloatingTabBar — the root tab bar, in the dock's visual language.
+ * FloatingTabBar — the Android and web root tab bar. iOS uses the system tab
+ * bar instead (see `app/(tabs)/_layout.tsx`); this bar mirrors its look.
  *
- * One floating capsule for both platforms (bg-card + border, h-12 — the
- * ProjectDock's exact geometry), centered above the home indicator, with a
- * thumb that slides behind the active tab. Replaces the default iOS bar and
- * the old hardcoded-color Android pill.
+ * One floating capsule (60pt, `FLOATING_BAR_HEIGHT`), centred above the home
+ * indicator. Each tab stacks its icon over its label, and a pill thumb
+ * slides behind the active tab. The light capsule is `bg-background` with a
+ * soft shadow; the dark one is `bg-card` with a border, because a shadow does
+ * not read on a dark ground. Both tabs keep foreground icons and labels; the
+ * thumb alone marks the selection, as on iOS.
  *
  * Motion is deliberately minimal — tab switching is a high-frequency action:
  * a single 220ms ease-out-quint translateX on the thumb (transform-only,
@@ -14,7 +17,8 @@
  * Slides down behind the keyboard, same as the dock.
  *
  * Screens under this bar are full-height; pad their scroll content with
- * `useTabBarClearance()` so the last rows never sit under the capsule.
+ * `useTabBarClearance()` from `tab-bar-layout` so the last rows never sit
+ * under the capsule.
  */
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
@@ -32,13 +36,10 @@ import { useColorScheme } from 'nativewind';
 
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { FLOATING_BAR_GAP, FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 
 type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>>[0];
-
-/** h-12 — must stay equal to the dock's pill/circle height. */
-const BAR_HEIGHT = 48;
-/** Gap between the capsule and the home indicator — matches the dock. */
-const BAR_GAP = 8;
 
 // House motion tokens: the dock's ease-out-quint family, shortened for a
 // small on-screen move; press curves are the dock circle's exact values.
@@ -46,11 +47,8 @@ const SLIDE = { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 const PRESS_IN = { duration: 90, easing: Easing.out(Easing.quad) };
 const PRESS_OUT = { duration: 140, easing: Easing.out(Easing.quad) };
 
-/** Bottom padding for scroll content on tab screens, so lists clear the bar. */
-export function useTabBarClearance(): number {
-  const insets = useSafeAreaInsets();
-  return insets.bottom + BAR_GAP + BAR_HEIGHT + 24;
-}
+/** Soft lift for the light capsule, from the foreground token. */
+const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
 
 function TabItem({
   label,
@@ -90,10 +88,14 @@ function TabItem({
       accessibilityState={{ selected: focused }}
       accessibilityLabel={label}
       hitSlop={{ top: 8, bottom: 8 }}
-      className="h-full w-28 items-center justify-center rounded-full">
-      <Reanimated.View style={contentStyle} className="flex-row items-center justify-center gap-1.5">
+      className="h-full w-24 items-center justify-center rounded-full">
+      <Reanimated.View style={contentStyle} className="items-center justify-center gap-0.5">
         {icon}
-        <Text variant="small" className={focused ? 'text-foreground' : 'text-muted-foreground'}>
+        {/* 12px label, like the iOS tab bar. leading-4 (16px) stays above
+            Roobert's natural 1.264em line box (15.2px at 12px); below it iOS
+            keeps the descender and pushes the glyphs up, so the label drifts
+            off the icon's centre line. */}
+        <Text variant="small" className="text-xs leading-4 text-foreground">
           {label}
         </Text>
       </Reanimated.View>
@@ -135,16 +137,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
   return (
     <Reanimated.View
       pointerEvents="box-none"
-      style={[barStyle, { bottom: insets.bottom + BAR_GAP }]}
+      style={[barStyle, { bottom: insets.bottom + FLOATING_BAR_GAP }]}
       className="absolute inset-x-0 items-center">
-      <View className="h-12 rounded-full border border-border bg-card p-1">
+      <View
+        className={`rounded-full p-1 ${isDark ? 'border border-border bg-card' : 'bg-background'}`}
+        style={{ height: FLOATING_BAR_HEIGHT, boxShadow: isDark ? undefined : LIGHT_SHADOW }}>
         <View
           className="relative h-full flex-row"
           onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width / state.routes.length)}>
           {segmentWidth > 0 ? (
             <Reanimated.View
               style={[thumbStyle, { width: segmentWidth }]}
-              className={`absolute bottom-0 left-0 top-0 rounded-full border border-border/70 ${isDark ? 'bg-secondary' : 'bg-background'}`}
+              className="absolute bottom-0 left-0 top-0 rounded-full bg-secondary"
             />
           ) : null}
 
@@ -173,7 +177,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
               <TabItem
                 key={route.key}
                 label={label}
-                icon={options.tabBarIcon?.({ focused, color: '', size: 17 })}
+                icon={options.tabBarIcon?.({ focused, color: '', size: 20 })}
                 focused={focused}
                 reduced={reduced}
                 onPress={onPress}

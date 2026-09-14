@@ -3,7 +3,7 @@
  *
  * Lifted verbatim out of ProjectScreenLegacy.tsx (Task 6). It owns its own data
  * (project-sessions, kortix projects, OpenCode sessions, accounts) and mounts its
- * own two overlays (AccountMenuSheet + CommandPalette), so the screen that renders
+ * own overlay (CommandPalette), so the screen that renders
  * it can stay small. The three private helpers (AnimatedCollapsible, AnimatedChevron,
  * ProjectSessionListItem) and SessionStatusDot are intentional duplicates of the
  * legacy copies; the duplication is resolved when Task 12 deletes the legacy file.
@@ -13,14 +13,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import {
-  View,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Animated,
-  InteractionManager,
-} from 'react-native';
+import { View, ScrollView, ActivityIndicator, Animated } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { THEME } from '@/lib/utils/theme';
@@ -34,17 +27,14 @@ import { chalkColors } from '@kortix/shared';
 
 import { useAuthContext } from '@/contexts';
 import { useSessions } from '@/lib/platform/hooks';
-import { useProjectSessions, useAccounts } from '@/lib/projects/hooks';
+import { useProjectSessions } from '@/lib/projects/hooks';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useTabStore } from '@/stores/tab-store';
-import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
 import { CommandPalette } from '@/components/session/CommandPalette';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { haptics } from '@/lib/haptics';
-import { log } from '@/lib/logger';
 
 // ─── Animated collapsible wrapper ────────────────────────────────────────────
 
@@ -272,22 +262,15 @@ export function ProjectLeftDrawer({
   const [projectsExpanded, setProjectsExpanded] = useState(false);
 
   // ── Overlays this drawer mounts ──
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // ── User / account ──
   const hasUpdate = false;
-  const { user, signOut, isSigningOut } = useAuthContext();
+  const { user } = useAuthContext();
   const userEmail = user?.email || '';
   const userDisplayName = userEmail.split('@')[0] || 'User';
   const userChalk = useMemo(() => chalkColors(userDisplayName), [userDisplayName]);
   const planLabel = 'Self-Hosted';
-  const accountsQuery = useAccounts(!!user);
-  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const activeAccount =
-    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
-    accountsQuery.data?.[0] ??
-    null;
 
   // ── Handlers ──
   const handleOpenProjectSession = useCallback(
@@ -319,32 +302,13 @@ export function ProjectLeftDrawer({
     [onClose]
   );
 
+  // The user row opens user settings directly (appearance, docs, support,
+  // log out) — there is no account menu sheet.
   const handleUserMenuOpen = useCallback(() => {
+    haptics.tap();
     onClose();
-    InteractionManager.runAfterInteractions(() => {
-      setAccountMenuOpen(true);
-    });
-  }, [onClose]);
-
-  const handleSignOut = useCallback(() => {
-    if (isSigningOut) return;
-    Alert.alert('Sign out', 'Sign out of Kortix?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setAccountMenuOpen(false);
-            onClose();
-            await signOut();
-          } catch (err: any) {
-            log.error('❌ [Home] Sign out failed:', err?.message || err);
-          }
-        },
-      },
-    ]);
-  }, [signOut, isSigningOut, onClose]);
+    router.push('/(settings)');
+  }, [onClose, router]);
 
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
@@ -555,19 +519,6 @@ export function ProjectLeftDrawer({
         </View>
       </View>
 
-      {accountMenuOpen ? (
-        <AccountMenuSheet
-          open
-          name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
-          email={userEmail}
-          accountName={activeAccount?.name}
-          accountId={activeAccount?.account_id ?? null}
-          isSigningOut={isSigningOut}
-          onSignOut={handleSignOut}
-          onClose={() => setAccountMenuOpen(false)}
-        />
-      ) : null}
-
       <CommandPalette
         visible={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -576,7 +527,6 @@ export function ProjectLeftDrawer({
         onSessionSelect={(id) => useTabStore.getState().navigateToSession(id || null)}
         onPageSelect={(pageId) => useTabStore.getState().navigateToPage(pageId)}
         onSettings={() => {
-          setAccountMenuOpen(false);
           onClose();
           router.push('/(settings)');
         }}

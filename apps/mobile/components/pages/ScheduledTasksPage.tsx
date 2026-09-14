@@ -596,7 +596,7 @@ function TaskDetailSheet({
                     value={editName}
                     onChangeText={setEditName}
                     autoFocus
-                    className="h-auto rounded-none border-0 border-b border-primary bg-transparent p-0 shadow-none"
+                    className="h-auto rounded-none bg-transparent p-0"
                     style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}
                     placeholder="Trigger name"
                     placeholderTextColor={muted}

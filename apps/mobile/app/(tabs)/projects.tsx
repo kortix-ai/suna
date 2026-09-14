@@ -8,11 +8,11 @@
  */
 
 import * as React from 'react';
-import { Alert, Animated, FlatList, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, Sparkles, X } from 'lucide-react-native';
+import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, Sparkles } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -20,13 +20,17 @@ import { Avatar } from '@/components/kortix/avatar';
 import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { useToast } from '@/components/kortix/toast-provider';
 import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
 import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
-import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
-import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
+import { ProjectActions } from '@/components/projects/ProjectActions';
+import { PlatformButton } from '@/components/kortix/platform-button';
+import { SearchHeader } from '@/components/kortix/search-header';
+import {
+  TAB_SCROLL_INSET_ADJUSTMENT,
+  useTabBarClearance,
+} from '@/components/navigation/tab-bar-layout';
 import { useAuthContext } from '@/contexts';
-import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hooks';
+import { useAccounts, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useAccountState, accountStateSelectors } from '@/lib/billing/hooks';
@@ -55,20 +59,23 @@ export default function ProjectsTab() {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const toast = useToast();
-  const { user, signOut, isSigningOut } = useAuthContext();
+  const { user } = useAuthContext();
   const tabBarClearance = useTabBarClearance();
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const openUpgradeSheet = useUpgradeSheetStore((s) => s.openUpgradeSheet);
   const [query, setQuery] = React.useState('');
+  // Search mode swaps the header row for the search field + Cancel.
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const closeSearch = React.useCallback(() => {
+    setQuery('');
+    setSearchOpen(false);
+  }, []);
   const [accountSheetOpen, setAccountSheetOpen] = React.useState(false);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
 
   const accountsQuery = useAccounts(!!user);
-  const archive = useArchiveProject();
 
   // Keep the selected account valid — fall back to the first account if the
   // persisted selection no longer exists (e.g. removed, or first launch).
@@ -120,7 +127,6 @@ export default function ProjectsTab() {
   const showEmpty = !!activeAccountId && !loading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId && !loading && !projectsQuery.isError && total > 0 && filtered.length === 0;
-  const showSearch = total > 3;
 
   const openProject = React.useCallback(
     (p: KortixProject) => router.push(`/projects/${p.project_id}`),
@@ -131,44 +137,14 @@ export default function ProjectsTab() {
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
   const accountCount = accountsQuery.data?.length ?? 0;
 
-  const confirmArchive = React.useCallback(
-    (p: KortixProject) => {
-      Alert.alert('Archive project', `Archive "${p.name}"?`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              haptics.medium();
-              await archive.mutateAsync(p.project_id);
-              haptics.success();
-              toast.success('Project archived');
-            } catch (e: any) {
-              haptics.warning();
-              toast.error(e?.message || 'Failed to archive project');
-            }
-          },
-        },
-      ]);
-    },
-    [archive, toast],
-  );
-
-  // Row overflow menu — replaces the old long-press gesture (which doesn't
-  // compose cleanly with the shared ListRow's own Pressable) with a tap
-  // target that opens the same Open/Archive/Cancel action sheet.
-  const onRowMenu = React.useCallback(
-    (p: KortixProject) => {
-      const canManage = p.effective_project_role === 'manager' || !p.effective_project_role;
-      const buttons: any[] = [{ text: 'Open', onPress: () => openProject(p) }];
-      if (canManage) buttons.push({ text: 'Archive', style: 'destructive', onPress: () => confirmArchive(p) });
-      buttons.push({ text: 'Cancel', style: 'cancel' });
-      haptics.selection();
-      Alert.alert(p.name, undefined, buttons);
-    },
-    [openProject, confirmArchive],
-  );
+  // Row ⋯ menu: a bottom sheet of actions (Open, Archive) with an
+  // AlertDialog confirm for Archive. See components/projects/ProjectActions.
+  const [menuProject, setMenuProject] = React.useState<KortixProject | null>(null);
+  const onRowMenu = React.useCallback((p: KortixProject) => {
+    haptics.selection();
+    setMenuProject(p);
+  }, []);
+  const closeRowMenu = React.useCallback(() => setMenuProject(null), []);
 
   const handleCreated = React.useCallback(
     (project: KortixProject) => {
@@ -188,20 +164,6 @@ export default function ProjectsTab() {
       setRefreshing(false);
     }
   }, [accountsQuery, projectsQuery, activeAccountId]);
-
-  const handleSignOut = React.useCallback(() => {
-    Alert.alert('Sign out', 'Sign out of Kortix?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          setAccountMenuOpen(false);
-          await signOut();
-        },
-      },
-    ]);
-  }, [signOut]);
 
   const renderItem = React.useCallback(
     ({ item }: { item: KortixProject }) => {
@@ -243,7 +205,18 @@ export default function ProjectsTab() {
   return (
     <View className="flex-1 bg-background">
       <SafeAreaView edges={['top']} className="bg-background">
+        {/* Same row height in both modes (40pt controls + py-3.5), so the list
+            below never jumps when search opens or closes. */}
         <View className="flex-row items-center justify-between px-4 py-3.5">
+          {searchOpen ? (
+            <SearchHeader
+              value={query}
+              onChangeText={setQuery}
+              onCancel={closeSearch}
+              placeholder="Search projects"
+            />
+          ) : (
+          <>
           <View className="min-w-0 flex-1 flex-row items-center">
             <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
           </View>
@@ -255,59 +228,39 @@ export default function ProjectsTab() {
                 <Text className="font-medium text-sm">Upgrade</Text>
               </Button>
             )}
+            {/* Search: icon-size button that switches the header to search mode. */}
+            <PlatformButton
+              systemImage="magnifyingglass"
+              icon={Search}
+              fallbackVariant="secondary"
+              accessibilityLabel="Search projects"
+              onPress={() => {
+                haptics.selection();
+                setSearchOpen(true);
+              }}
+            />
+            {/* New: native SwiftUI button on iOS, design-system pill on Android. */}
             {canCreate && (
-              <Button
-                variant="default"
-                size="sm"
+              <PlatformButton
+                label="New"
+                systemImage="plus"
+                icon={Plus}
+                accessibilityLabel="New project"
                 onPress={() => {
                   haptics.selection();
                   setNewProjectOpen(true);
-                }}>
-                <Icon as={Plus} size={15} className="text-primary-foreground" strokeWidth={2.4} />
-                <Text className="font-medium text-sm">New</Text>
-              </Button>
+                }}
+              />
             )}
-            <Button
-              variant="secondary"
-              size="icon"
-              onPress={() => {
-                haptics.selection();
-                setAccountMenuOpen(true);
-              }}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              className="rounded-full">
-              <Text>
-                {(user?.email?.trim()?.[0] || '?').toUpperCase()}
-              </Text>
-            </Button>
           </View>
+          </>
+          )}
         </View>
       </SafeAreaView>
 
-      {showSearch && (
-        <View className="mx-4 mt-3 h-11 flex-row items-center rounded-md bg-foreground/[0.06] px-3">
-          <Icon as={Search} size={16} className="text-muted-foreground" strokeWidth={2.2} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search projects"
-            placeholderTextColor="hsl(var(--muted-foreground) / 0.6)"
-            className="ml-2 flex-1 text-foreground"
-            style={{ fontSize: 15 }}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <Icon as={X} size={16} className="text-muted-foreground" strokeWidth={2.2} />
-            </Pressable>
-          )}
-        </View>
-      )}
-
       {loading ? (
         <ScrollView
+          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
@@ -318,6 +271,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : projectsQuery.isError ? (
         <ScrollView
+          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
@@ -332,6 +286,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showEmpty ? (
         <ScrollView
+          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
@@ -353,6 +308,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showNoResults ? (
         <ScrollView
+          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
@@ -368,6 +324,7 @@ export default function ProjectsTab() {
           data={filtered}
           keyExtractor={(item) => item.project_id}
           renderItem={renderItem}
+          contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
           keyboardShouldPersistTaps="handled"
@@ -384,25 +341,14 @@ export default function ProjectsTab() {
         />
       ) : null}
 
+      <ProjectActions project={menuProject} onOpenProject={openProject} onClose={closeRowMenu} />
+
       {newProjectOpen ? (
         <NewProjectSheet
           open
           accountId={activeAccountId}
           onClose={() => setNewProjectOpen(false)}
           onCreated={handleCreated}
-        />
-      ) : null}
-
-      {accountMenuOpen ? (
-        <AccountMenuSheet
-          open
-          name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
-          email={user?.email}
-          accountName={activeAccount?.name}
-          accountId={activeAccountId}
-          isSigningOut={isSigningOut}
-          onSignOut={handleSignOut}
-          onClose={() => setAccountMenuOpen(false)}
         />
       ) : null}
     </View>

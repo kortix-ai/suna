@@ -406,7 +406,20 @@ documented deviation. Re-apply it after any `add --all --overwrite`.
 Consumers of `size="lg"`: `app/auth/index.tsx`, `components/settings/PlanPage.tsx`,
 `components/auth/EmailAuthDrawer.tsx` (zero importers).
 
-### input.tsx chrome — KEEP STOCK bordered / 16px
+### input.tsx chrome — DEVIATES (2026-09-14, supersedes the 2026-09-05 decision below)
+Jay: no input has a border, the placeholder was too small, and input text
+used a different font from the rest of the UI. Stock renders a bordered
+`bg-background` field in the platform system font (TextInput does not inherit
+`Text`'s `font-roobert`), with a 50%-opacity placeholder. Decision:
+`bg-secondary text-foreground font-roobert h-11 rounded-xl px-3.5 text-base`,
+no `border` / `shadow`, placeholder `text-muted-foreground`. Kept at 16px
+(`text-base`): the iOS body size and the size below which mobile browsers zoom
+a focused field. `PillInput`, `SheetTextInput`, `SearchHeader`, `SearchBar`
+and `SearchListHeader` use the same 16pt Roobert Regular
+(`INPUT_FONT_SIZE` / `INPUT_FONT_FAMILY` in `components/kortix/pill-input.tsx`).
+Re-apply after any `add --all --overwrite`.
+
+### input.tsx chrome — KEEP STOCK bordered / 16px (superseded 2026-09-14)
 The fork defaulted to a filled card surface at 14.4px. 3 call sites change.
 Decision: accept the change. Stock is also the better mobile default
 independently: iOS auto-zooms a focused text input whose font-size is below

@@ -1,5 +1,10 @@
 # Kortix Mobile — UI conventions (READ FIRST, ENFORCE ALWAYS)
 
+> **Also read `design.md` in this folder before building or restyling a
+> screen.** This file says which primitive to use; `design.md` says how a
+> screen looks — the settings-screen layout (`SettingsPage` / `SettingsGroup`
+> / `SettingsRow`), button placement, auth screens, and exact values.
+
 This app has a small, canonical set of UI primitives. Always use them. Never
 re-implement, wrap, or hand-roll their behavior, and never repeat their
 styling inline. If a primitive is missing a capability, extend the primitive
@@ -7,7 +12,7 @@ styling inline. If a primitive is missing a capability, extend the primitive
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
 32 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 20 files, built on top of `components/ui/`. **There is no
+Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
@@ -48,7 +53,7 @@ Kortix-specific: 20 files, built on top of `components/ui/`. **There is no
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 
-## Kortix-specific components — `components/kortix/` (20 files)
+## Kortix-specific components — `components/kortix/` (23 files)
 
 | File | Purpose |
 | --- | --- |
@@ -57,6 +62,9 @@ Kortix-specific: 20 files, built on top of `components/ui/`. **There is no
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
+| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, inline Light/Dark/System toggle. See `design.md` → Settings screens. |
+| `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
+| `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Falls back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
 | `SearchBar.tsx` | Standalone search input with clear button. |
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
@@ -132,8 +140,10 @@ change `buttonTextVariants` (and check every consumer), don't patch around it.
 
 ## Input / Textarea
 
-- `<Input>` — stock `TextInputProps`, **no `variant` prop**. Bordered,
-  `text-base` (16px), `rounded-md`, `h-10`. It is a plain function component,
+- `<Input>` — stock `TextInputProps`, **no `variant` prop**. Filled
+  `bg-secondary`, **no border**, `font-roobert text-base` (16px Roobert
+  Regular), `rounded-xl`, `h-11`, muted placeholder. No input in the app has
+  a border (Jay, 2026-09-14) — never add one back by class. It is a plain function component,
   **not `forwardRef`** — `ref.focus()` does not work. A screen that needs
   focus-chaining keeps a raw `TextInput` for that field and says why in a
   comment; do not silently drop the chaining.
@@ -294,13 +304,14 @@ that drops props silently breaks the screens that still pass them.
    The permanent record of what deviates is `scratchpad/rnr-fork-delta.md`,
    which IS tracked — that file, not the captures, is the source of truth.
 
-   Exactly three files may differ, all recorded in `rnr-fork-delta.md`:
+   Exactly four files may differ, all recorded in `rnr-fork-delta.md`:
    `text.tsx` (adds `font-roobert` to the base class — 164 importers depend on
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
-   `text-base font-semibold`, so no screen sets label or box size by class).
-   A fourth entry means someone forked a primitive.
+   `text-base font-semibold`, so no screen sets label or box size by class),
+   and `input.tsx` (borderless filled field in Roobert — no input has a
+   border). A fifth entry means someone forked a primitive.
 2. `global.css` is the single source of color (see **Color** above),
    pinned by `lib/utils/theme.test.ts`.
 3. Mobile spacing intentionally diverges from web's tighter scale (see
@@ -311,9 +322,8 @@ that drops props silently breaks the screens that still pass them.
 
 ## Tooling
 
-- Use `pnpm dlx @react-native-reusables/cli@latest`, **never `npx`**. `npx`
-  fails with `EOVERRIDE` because `package.json` overrides
-  `react-native-worklets` to `0.6.0` against a direct dependency of `0.5.1`.
+- Use `pnpm dlx @react-native-reusables/cli@latest`, not `npx`: this is a
+  pnpm workspace, and `npx` resolves against npm semantics instead.
 - **Never run `init`** — it scaffolds a new Expo project and destroys this app.
 - `doctor` reports three findings on this repo (2 Missing Files: Theme,
   Utils; 1 Misconfigured: Babel Config). All three are **false positives**:

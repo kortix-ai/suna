@@ -17,7 +17,7 @@ import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import { ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider } from 'expo-router/react-navigation';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
@@ -26,7 +26,8 @@ import {
   SandboxUpgradeGateListener,
 } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
-import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
+import { SplashScreen, useRouter, useSegments } from 'expo-router';
+import { AppStack, fadeTransition, usePushTransition } from '@/components/navigation/stack-transitions';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
@@ -86,6 +87,7 @@ SplashScreen.preventAutoHideAsync();
 export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
+  const pushTransition = usePushTransition();
   const { colorScheme, setColorScheme } = useColorScheme();
   const [i18nInitialized, setI18nInitialized] = useState(false);
   const router = useRouter();
@@ -605,56 +607,56 @@ export default function RootLayout() {
                                 />
                                 <View className="flex-1">
                                   <AuthProtection>
-                                    {/* One default for the whole app: pushing a screen
-                                        slides it in from the right, popping slides it
-                                        back out. `fade` is reserved for root swaps —
-                                        screens with no spatial relationship to each
-                                        other (auth ⇄ tabs, onboarding). */}
-                                    <Stack
+                                    {/* Push/pop transition for every stack: AppStack +
+                                        usePushTransition (components/navigation/stack-transitions).
+                                        iOS native push; Android layered card, mirrored on back.
+                                        `fadeTransition` is reserved for root swaps — screens with
+                                        no spatial relationship to each other (auth ⇄ tabs). */}
+                                    <AppStack
                                       screenOptions={{
                                         headerShown: false,
-                                        animation: 'slide_from_right',
                                         gestureEnabled: true,
+                                        ...pushTransition,
                                       }}>
-                                      <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                      <Stack.Screen
+                                      <AppStack.Screen name="index" options={{ animation: 'none' }} />
+                                      <AppStack.Screen
                                         name="(tabs)"
-                                        options={{ animation: 'fade', gestureEnabled: false }}
+                                        options={{ ...fadeTransition, gestureEnabled: false }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="auth"
-                                        options={{ animation: 'fade', gestureEnabled: false }}
+                                        options={{ ...fadeTransition, gestureEnabled: false }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="projects/[id]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="(settings)"
                                         options={{
                                           presentation: 'card',
                                           fullScreenGestureEnabled: true,
                                         }}
                                       />
-                                      <Stack.Screen name="plans" />
-                                      <Stack.Screen name="billing" />
-                                      <Stack.Screen
+                                      <AppStack.Screen name="plans" />
+                                      <AppStack.Screen name="billing" />
+                                      <AppStack.Screen
                                         name="accounts/index"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]/groups/[groupId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]/members/[userId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                    </Stack>
+                                    </AppStack>
                                   </AuthProtection>
                                 </View>
                                 <SandboxUpgradeGateListener />

@@ -36,7 +36,9 @@ export function SearchListHeader({
   // already provide the uniform 16pt gap below the title row.
   return (
     <View className="flex-row items-center gap-2.5 px-5 pb-2">
-      <View className="h-[42px] flex-1 flex-row items-center rounded-full bg-primary/5 px-4">
+      {/* Filled, borderless pill; the Input inside inherits the app-wide input
+          text (16pt Roobert Regular) and only drops its own surface. */}
+      <View className="h-10 flex-1 flex-row items-center rounded-full bg-secondary px-4">
         <Icon as={Search} size={16} className="text-muted-foreground" />
         <Input
           value={value}
@@ -46,7 +48,7 @@ export function SearchListHeader({
           autoCapitalize="none"
           returnKeyType="search"
           {...inputProps}
-          className="ml-2 h-full flex-1 rounded-none border-0 bg-transparent px-0 text-[15px] shadow-none"
+          className="ml-2 h-full flex-1 rounded-none bg-transparent px-0"
         />
         {value.length > 0 && (
           <Pressable onPress={() => onChangeText('')} hitSlop={10}>

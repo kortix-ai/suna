@@ -1,178 +1,228 @@
 import * as React from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { Linking, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bell,
+  BookOpen,
   Globe,
+  LifeBuoy,
   LogOut,
   Palette,
+  Trash2,
   User,
   Users,
+  Volume2,
   Wallet,
-  type LucideIcon,
 } from 'lucide-react-native';
+import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useAuthContext, useLanguage } from '@/contexts';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
 import { Avatar } from '@/components/kortix/avatar';
-import { ListRow } from '@/components/kortix/list-row';
+import {
+  AppearanceToggle,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/kortix/settings-list';
+import { getFrontendUrl } from '@/api/config';
 import { haptics } from '@/lib/haptics';
-import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
-
-interface AccountRow {
-  key: string;
-  icon: LucideIcon;
-  title: string;
-  subtitle: string;
-  route: string;
-}
-
-const ROWS: AccountRow[] = [
-  {
-    key: 'general',
-    icon: User,
-    title: 'General',
-    subtitle: 'Profile details and account controls',
-    route: '/(settings)/general',
-  },
-  {
-    key: 'appearance',
-    icon: Palette,
-    title: 'Appearance',
-    subtitle: 'Color mode, wallpaper, and palette',
-    route: '/(settings)/appearance',
-  },
-  {
-    key: 'notifications',
-    icon: Bell,
-    title: 'Notifications',
-    subtitle: 'Manage how you receive notifications',
-    route: '/(settings)/notifications',
-  },
-  {
-    key: 'language',
-    icon: Globe,
-    title: 'Language',
-    subtitle: 'App display language',
-    route: '/(settings)/language',
-  },
-  {
-    key: 'billing',
-    icon: Wallet,
-    title: 'Billing',
-    subtitle: 'Plans, usage, and payment methods',
-    route: '/billing',
-  },
-  {
-    key: 'accounts',
-    icon: Users,
-    title: 'Accounts',
-    subtitle: 'Switch or manage workspaces',
-    route: '/accounts',
-  },
-];
+import { useAccounts } from '@/lib/projects/hooks';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  TAB_SCROLL_INSET_ADJUSTMENT,
+  usesNativeTabBar,
+  useTabBarClearance,
+} from '@/components/navigation/tab-bar-layout';
 
 export default function AccountTab() {
   const { user, signOut, isSigningOut } = useAuthContext();
-  const { t } = useLanguage();
+  const { t, currentLanguage, availableLanguages } = useLanguage();
   const router = useRouter();
   const tabBarClearance = useTabBarClearance();
+  const insets = useSafeAreaInsets();
+  // No screen header on this tab. iOS scroll views inset the status bar
+  // themselves (contentInsetAdjustmentBehavior="automatic"); the Android
+  // floating tab bar screens pad for it here.
+  const profileTopPadding = usesNativeTabBar ? 12 : insets.top + 16;
 
-  const displayName =
-    user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const accountsQuery = useAccounts(!!user);
+  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const activeAccount =
+    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
+    accountsQuery.data?.[0] ??
+    null;
+
+  const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !!user });
+  // Hidden when the backend endpoint is unsupported (web parity).
+  const accountDeletionSupported = deletionStatus?.supported ?? true;
+
+  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const email = user?.email || '';
+  const languageName = availableLanguages.find((l) => l.code === currentLanguage)?.nativeName;
 
   const go = React.useCallback(
     (path: string) => {
       haptics.tap();
       router.push(path as any);
     },
-    [router],
+    [router]
   );
 
-  const handleSignOut = React.useCallback(() => {
+  // Docs and Support open kortix.com in the browser.
+  const openWebPage = React.useCallback((path: string) => {
+    haptics.tap();
+    const frontend = getFrontendUrl().replace(/\/$/, '');
+    void Linking.openURL(`${frontend}${path}`).catch(() => {});
+  }, []);
+
+  // Sign out confirms in an AlertDialog. The dialog stays open while signing
+  // out, so a failure is shown in place instead of in a second alert.
+  const [signOutOpen, setSignOutOpen] = React.useState(false);
+  const [signOutFailed, setSignOutFailed] = React.useState(false);
+
+  const openSignOut = React.useCallback(() => {
     if (isSigningOut) return;
     haptics.warning();
-    Alert.alert(
-      t('settings.signOut'),
-      t('auth.signOutConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('settings.signOut'),
-          style: 'destructive',
-          onPress: async () => {
-            haptics.medium();
-            const result = await signOut();
-            if (result?.success) {
-              haptics.success();
-              router.replace('/');
-            } else {
-              haptics.warning();
-              Alert.alert(t('common.error'), 'Failed to sign out. Please try again.');
-            }
-          },
-        },
-      ],
-      { cancelable: true },
-    );
-  }, [isSigningOut, router, signOut, t]);
+    setSignOutFailed(false);
+    setSignOutOpen(true);
+  }, [isSigningOut]);
+
+  const confirmSignOut = React.useCallback(async () => {
+    haptics.medium();
+    setSignOutFailed(false);
+    const result = await signOut();
+    if (result?.success) {
+      haptics.success();
+      setSignOutOpen(false);
+      router.replace('/');
+    } else {
+      haptics.warning();
+      setSignOutFailed(true);
+    }
+  }, [router, signOut]);
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-      <View className="flex-row items-center border-b border-border bg-sidebar px-4 py-3.5">
-        <Text className="font-roobert-semibold text-lg text-foreground">Account</Text>
-      </View>
-
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: tabBarClearance }}
-      >
-        <View className="items-center px-5 pb-6 pt-8">
-          <Avatar size={64} fallbackText={displayName} />
-          <Text className="mt-3 font-roobert-semibold text-lg text-foreground">
-            {displayName}
-          </Text>
-          {!!email && (
-            <Text className="mt-0.5 text-sm text-muted-foreground">{email}</Text>
-          )}
-        </View>
-
-        <View className="mx-4 overflow-hidden rounded-xl border border-border bg-card">
-          {ROWS.map((row, idx) => (
-            <ListRow
-              key={row.key}
-              title={row.title}
-              subtitle={row.subtitle}
-              left={
-                <Icon
-                  as={row.icon}
-                  size={18}
-                  className="text-foreground/80"
-                  strokeWidth={2.2}
-                />
-              }
-              onPress={() => go(row.route)}
-              divider={idx !== ROWS.length - 1}
-            />
-          ))}
-        </View>
-
-        <View className="mx-4 mt-5 overflow-hidden rounded-xl border border-border bg-card">
-          <ListRow
-            title={t('settings.signOut')}
-            left={
-              <Icon as={LogOut} size={18} className="text-destructive" strokeWidth={2.2} />
-            }
-            right={<View />}
-            onPress={isSigningOut ? undefined : handleSignOut}
-            divider={false}
-            className={isSigningOut ? 'opacity-50' : undefined}
+    <View className="flex-1 bg-background">
+      <SettingsPage
+        paddingBottom={tabBarClearance}
+        contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
+        header={
+          <View className="items-center pb-2" style={{ paddingTop: profileTopPadding }}>
+            <Avatar size={64} fallbackText={displayName} />
+            <Text variant="large" className="mt-3">
+              {displayName}
+            </Text>
+            {!!email && (
+              <Text variant="muted" className="mt-0.5">
+                {email}
+              </Text>
+            )}
+          </View>
+        }>
+        <SettingsGroup title="Preferences">
+          <SettingsRow icon={User} label="General" onPress={() => go('/(settings)/general')} />
+          <SettingsRow icon={Palette} label="Appearance" right={<AppearanceToggle />} />
+          <SettingsRow icon={Volume2} label="Sounds" onPress={() => go('/(settings)/sounds')} />
+          <SettingsRow
+            icon={Bell}
+            label={t('notifications.title', 'Notifications')}
+            onPress={() => go('/(settings)/notifications')}
           />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          <SettingsRow
+            icon={Globe}
+            label="Language"
+            value={languageName}
+            onPress={() => go('/(settings)/language')}
+          />
+        </SettingsGroup>
+
+        <SettingsGroup title="Workspace">
+          <SettingsRow
+            icon={Users}
+            label="Accounts"
+            value={activeAccount?.name}
+            onPress={() => go('/accounts')}
+          />
+          <SettingsRow icon={Wallet} label="Billing" onPress={() => go('/billing')} />
+        </SettingsGroup>
+
+        <SettingsGroup title="Help">
+          <SettingsRow icon={BookOpen} label="Docs" external onPress={() => openWebPage('/docs')} />
+          <SettingsRow icon={LifeBuoy} label="Support" external onPress={() => openWebPage('/support')} />
+        </SettingsGroup>
+
+        {/* Advanced lives here (moved from user settings): account deletion
+            and sign out, destructive, at the bottom. */}
+        {!!user && (
+          <SettingsGroup title="Advanced">
+            {accountDeletionSupported && (
+              <SettingsRow
+                icon={Trash2}
+                label={
+                  deletionStatus?.has_pending_deletion
+                    ? t('accountDeletion.deletionScheduled')
+                    : t('accountDeletion.deleteYourAccount')
+                }
+                badge={deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined}
+                destructive
+                onPress={() => go('/(settings)/account-deletion')}
+              />
+            )}
+            <SettingsRow
+              icon={LogOut}
+              label={t('settings.signOut')}
+              destructive
+              onPress={isSigningOut ? undefined : openSignOut}
+            />
+          </SettingsGroup>
+        )}
+      </SettingsPage>
+
+      <AlertDialog
+        open={signOutOpen}
+        onOpenChange={(open) => {
+          // Keep the dialog up until an in-flight sign out settles.
+          if (!isSigningOut) setSignOutOpen(open);
+        }}>
+        <AlertDialogContent className="rounded-3xl border-0">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.signOut')}</AlertDialogTitle>
+            <AlertDialogDescription className={signOutFailed ? 'text-destructive' : undefined}>
+              {signOutFailed
+                ? t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.')
+                : t('auth.signOutConfirm')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild disabled={isSigningOut}>
+              <Button variant="secondary" size="lg" className="rounded-full">
+                <Text>{t('common.cancel')}</Text>
+              </Button>
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              size="lg"
+              className="rounded-full"
+              disabled={isSigningOut}
+              onPress={confirmSignOut}>
+              <Text>
+                {isSigningOut ? t('auth.signingOut', 'Signing out…') : t('settings.signOut')}
+              </Text>
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </View>
   );
 }

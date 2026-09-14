@@ -40,7 +40,7 @@ export function SearchBar({
 
   return (
     <View
-      className={`bg-primary/5 rounded-full flex-row items-center px-4 h-12 ${className}`}
+      className={`bg-secondary rounded-full flex-row items-center px-4 h-11 ${className}`}
     >
       <Icon
         as={Search}
@@ -53,7 +53,7 @@ export function SearchBar({
         onChangeText={onChangeText}
         placeholder={placeholder}
         returnKeyType="search"
-        className="flex-1 mx-2 h-full rounded-none border-0 bg-transparent px-0 text-base shadow-none"
+        className="flex-1 mx-2 h-full rounded-none bg-transparent px-0"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
         accessibilityHint={`Type to search through your ${placeholder.toLowerCase()}`}
       />

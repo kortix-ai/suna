@@ -830,8 +830,8 @@ export function ProjectScreen() {
   // ── Presentation glue ──
 
   // The self-contained left drawer. It MUST mount through renderDrawerContent so
-  // its subtree (AccountMenuSheet + CommandPalette) stays alive while the drawer
-  // is visually closed — its rows call onClose() before opening those overlays.
+  // its subtree (CommandPalette) stays alive while the drawer is visually
+  // closed — its rows call onClose() before opening that overlay.
   const renderDrawer = useCallback(
     () => (
       <ProjectLeftDrawer

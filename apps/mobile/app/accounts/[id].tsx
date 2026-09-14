@@ -1,77 +1,59 @@
 /**
- * Account Settings screen (web parity: app/accounts/[id]/page.tsx).
+ * Account screen (web parity: app/accounts/[id]/page.tsx).
  *
- * Tabbed account management: Members · Groups · Git · Audit · Settings. Billing
- * is intentionally omitted on mobile. Tabs gate on IAM capabilities probed for
- * the current user. Mobile branding: custom header + scrollable tab bar.
+ * Native back header titled with the account name, a pill tab switcher
+ * (Members, Groups, Git, Audit, Settings), then the active tab. Every tab
+ * renders its own `SettingsPage`. Billing is intentionally omitted on mobile.
+ * Tabs gate on IAM capabilities probed for the current user.
  */
 
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { ScrollView, View } from 'react-native';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
+import { AlertCircle, RotateCw } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
-import { useThemeColors } from '@/lib/theme-colors';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import {
+  SettingsGroup,
+  SettingsHeader,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/kortix/settings-list';
 import { useAuthContext } from '@/contexts';
-import { useAccount, useAccountCapabilities } from '@/lib/accounts/hooks';
 import { haptics } from '@/lib/haptics';
+import { useEffectiveAccountCaps } from '@/components/accounts/account-shared';
 import { MembersTab } from '@/components/accounts/MembersTab';
 import { GroupsTab } from '@/components/accounts/GroupsTab';
 import { GitTab } from '@/components/accounts/GitTab';
 import { AuditTab } from '@/components/accounts/AuditTab';
 import { AccountSettingsTab } from '@/components/accounts/AccountSettingsTab';
-import { THEME, withAlpha } from '@/lib/utils/theme';
 
 type TabKey = 'members' | 'groups' | 'git' | 'audit' | 'settings';
 
 export default function AccountSettingsScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const accountId = params.id;
   const { user } = useAuthContext();
 
-  const accountQuery = useAccount(accountId ?? null);
-  const { can } = useAccountCapabilities(accountId ?? null, user?.id ?? null);
-  const account = accountQuery.data;
-
-  // Merge the IAM probe with the account role so owners/admins keep full access
-  // even if the probe is slow or unavailable (it can't *remove* a granted cap).
-  const isAdmin = account?.role === 'owner' || account?.role === 'admin';
-  const isOwner = account?.role === 'owner';
-  const effectiveCan = React.useMemo(() => ({
-    'account.write': can['account.write'] || isAdmin,
-    'account.delete': can['account.delete'] || isOwner,
-    'member.invite': can['member.invite'] || isAdmin,
-    'member.remove': can['member.remove'] || isAdmin,
-    'member.update': can['member.update'] || isAdmin,
-    'group.create': can['group.create'] || isAdmin,
-    'audit.read': can['audit.read'] || isAdmin,
-  }), [can, isAdmin, isOwner]);
+  const { accountQuery, account, can } = useEffectiveAccountCaps(accountId ?? null, user?.id ?? null);
 
   const [tab, setTab] = React.useState<TabKey>('members');
-
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
-  const bg = isDark ? THEME.dark.background : THEME.light.background;
-  const theme = useThemeColors();
 
   const tabs = React.useMemo(() => {
     const list: { key: TabKey; label: string; show: boolean }[] = [
       { key: 'members', label: 'Members', show: true },
       { key: 'groups', label: 'Groups', show: true },
-      { key: 'git', label: 'Git', show: effectiveCan['account.write'] },
-      { key: 'audit', label: 'Audit', show: effectiveCan['audit.read'] },
-      { key: 'settings', label: 'Settings', show: effectiveCan['account.write'] },
+      { key: 'git', label: 'Git', show: can['account.write'] },
+      { key: 'audit', label: 'Audit', show: can['audit.read'] },
+      { key: 'settings', label: 'Settings', show: can['account.write'] },
     ];
     return list.filter((t) => t.show);
-  }, [effectiveCan]);
+  }, [can]);
 
   // If the active tab becomes hidden (caps resolve), fall back to members.
   React.useEffect(() => {
@@ -79,77 +61,67 @@ export default function AccountSettingsScreen() {
   }, [tabs, tab]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: bg }}>
+    <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
+      <SettingsHeader title={account?.name ?? 'Account'} />
 
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <Pressable
-          onPress={() => { haptics.tap(); router.back(); }}
-          hitSlop={10}
-          className="active:opacity-70"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}
-        >
-          <ChevronLeft size={18} color={muted} />
-          <Text style={{ fontSize: 13.5, color: muted }}>Accounts</Text>
-        </Pressable>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06), alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Semibold', color: fg }}>{(account?.name?.trim()?.[0] ?? 'A').toUpperCase()}</Text>
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 21, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{account?.name ?? 'Account'}</Text>
-            <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>
-              {account ? `${account.member_count} member${account.member_count === 1 ? '' : 's'} · ${account.project_count} project${account.project_count === 1 ? '' : 's'}` : 'Account settings'}
-            </Text>
-          </View>
+      {tabs.length > 1 && (
+        <Tabs
+          value={tab}
+          onValueChange={(next) => {
+            haptics.selection();
+            setTab(next as TabKey);
+          }}
+          className="pb-2">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20 }}>
+            <TabsList className="rounded-full">
+              {tabs.map((t) => (
+                <TabsTrigger key={t.key} value={t.key} className="rounded-full px-3.5">
+                  <Text>{t.label}</Text>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </ScrollView>
+        </Tabs>
+      )}
+
+      {accountQuery.isError ? (
+        <SettingsPage>
+          <SettingsGroup>
+            <SettingsRow
+              icon={AlertCircle}
+              label={(accountQuery.error as Error)?.message || "Couldn't load this account"}
+              destructive
+            />
+            <SettingsRow
+              icon={RotateCw}
+              label="Try again"
+              onPress={() => {
+                haptics.tap();
+                void accountQuery.refetch();
+              }}
+            />
+          </SettingsGroup>
+        </SettingsPage>
+      ) : accountQuery.isLoading || !account ? (
+        <View className="items-center py-16">
+          <KortixLoader />
         </View>
-      </View>
-
-      {/* Tab bar */}
-      <View style={{ borderBottomWidth: 1, borderBottomColor: border }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
-          {tabs.map((t) => {
-            const on = tab === t.key;
-            return (
-              <Pressable
-                key={t.key}
-                onPress={() => { haptics.selection(); setTab(t.key); }}
-                className="active:opacity-70"
-                style={{ paddingHorizontal: 14, paddingVertical: 13, position: 'relative' }}
-              >
-                <Text style={{ fontSize: 14.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{t.label}</Text>
-                {on && <View style={{ position: 'absolute', left: 14, right: 14, bottom: -1, height: 2.5, borderTopLeftRadius: 2, borderTopRightRadius: 2, backgroundColor: theme.primary }} />}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* Content */}
-      {accountQuery.isLoading || !account ? (
-        accountQuery.isError ? (
-          <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.destructive : THEME.light.destructive, textAlign: 'center' }}>{(accountQuery.error as Error)?.message || 'Failed to load account'}</Text>
-            <Pressable onPress={() => { haptics.tap(); accountQuery.refetch(); }} className="active:opacity-80" style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={{ paddingVertical: 60, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-        )
       ) : (
-        <View style={{ flex: 1 }}>
+        <View className="flex-1">
           {tab === 'members' ? (
-            <MembersTab account={account} currentUserId={user?.id ?? ''} can={effectiveCan} isDark={isDark} />
+            <MembersTab account={account} currentUserId={user?.id ?? ''} can={can} isDark={isDark} />
           ) : tab === 'groups' ? (
-            <GroupsTab account={account} can={effectiveCan} isDark={isDark} />
+            <GroupsTab account={account} can={can} isDark={isDark} />
           ) : tab === 'git' ? (
-            <GitTab account={account} can={effectiveCan} isDark={isDark} />
+            <GitTab account={account} can={can} isDark={isDark} />
           ) : tab === 'audit' ? (
             <AuditTab account={account} isDark={isDark} />
           ) : (
-            <AccountSettingsTab account={account} can={effectiveCan} isDark={isDark} />
+            <AccountSettingsTab account={account} can={can} isDark={isDark} />
           )}
         </View>
       )}

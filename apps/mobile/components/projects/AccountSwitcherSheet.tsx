@@ -1,7 +1,7 @@
 /**
  * AccountSwitcherSheet — the top-left account switcher (web breadcrumb dropdown).
  * Account list (switch) + Account settings · All accounts · New account.
- * Same shared Icon/Avatar + NativeWind styling as AccountMenuSheet.
+ * Shared Icon/Avatar + NativeWind styling.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';

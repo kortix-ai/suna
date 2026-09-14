@@ -5,21 +5,22 @@ import { createRequire } from 'node:module';
 
 /**
  * `theme.ts` imports `DarkTheme`/`DefaultTheme`/`Theme` from
- * '@react-navigation/native'. That package's barrel re-exports
- * NavigationContainer/Link/etc., which import the real 'react-native'
- * package. react-native's runtime entry (index.js) contains Flow-only
- * syntax (`import typeof * as X from './index.js.flow'`) that Bun's
- * transpiler cannot parse — `bun test` crashes with "Unexpected typeof"
- * before any assertion runs, independent of anything in this test.
+ * 'expo-router/react-navigation' (SDK 56: expo-router vendors React
+ * Navigation). That barrel re-exports NavigationContainer/Link/etc., which
+ * import the real 'react-native' package. react-native's runtime entry
+ * (index.js) contains Flow-only syntax (`import typeof * as X from
+ * './index.js.flow'`) that Bun's transpiler cannot parse — `bun test`
+ * crashes with "Unexpected typeof" before any assertion runs, independent of
+ * anything in this test.
  *
- * Mock '@react-navigation/native' with the exact DefaultTheme/DarkTheme
- * values React Navigation ships (verified against
- * node_modules/@react-navigation/native/lib/module/theming/{Default,Dark}Theme.js)
+ * Mock 'expo-router/react-navigation' with the exact DefaultTheme/DarkTheme
+ * values it ships (verified against
+ * node_modules/expo-router/build/react-navigation/native/theming/{Default,Dark}Theme.js)
  * so theme.ts's `...DefaultTheme` / `...DarkTheme` spreads see real data,
  * without ever loading the unparsable 'react-native' module graph. This
  * only affects this test process; production code is untouched.
  */
-mock.module('@react-navigation/native', () => ({
+mock.module('expo-router/react-navigation', () => ({
   DefaultTheme: {
     dark: false,
     colors: {
@@ -49,12 +50,14 @@ mock.module('@react-navigation/native', () => ({
 let THEME: (typeof import('./theme'))['THEME'];
 let NAV_THEME: (typeof import('./theme'))['NAV_THEME'];
 let withAlpha: (typeof import('./theme'))['withAlpha'];
+let toHexColor: (typeof import('./theme'))['toHexColor'];
 
 beforeAll(async () => {
   const mod = await import('./theme');
   THEME = mod.THEME;
   NAV_THEME = mod.NAV_THEME;
   withAlpha = mod.withAlpha;
+  toHexColor = mod.toHexColor;
 });
 
 const css = readFileSync(join(__dirname, '../../global.css'), 'utf8');
@@ -460,5 +463,44 @@ describe('withAlpha emits a color React Native can parse', () => {
   it('throws on input that is not a THEME hsl string, instead of returning garbage', () => {
     expect(() => withAlpha('#ff0000', 0.5)).toThrow();
     expect(() => withAlpha('rgb(1,2,3)', 0.5)).toThrow();
+  });
+});
+
+/**
+ * `toHexColor` feeds native renderers that only read hex (`@expo/ui` SwiftUI
+ * modifiers). It must produce the SAME colour the real React Native parser
+ * produces for the hsl token — checked channel by channel against
+ * `normalizeColor`, allowing ±1 for rounding.
+ */
+describe('toHexColor matches the real parser for every THEME colour', () => {
+  const channels = (int: number) => [(int >>> 24) & 255, (int >>> 16) & 255, (int >>> 8) & 255];
+  const plainHsl = /^hsl\(\s*[\d.]+\s+[\d.]+%\s+[\d.]+%\s*\)$/;
+
+  it('converts known values exactly', () => {
+    expect(toHexColor('hsl(0 0% 96.1%)')).toBe('#f5f5f5');
+    expect(toHexColor('hsl(0 0% 14.9%)')).toBe('#262626');
+    expect(toHexColor('hsl(0 100% 50%)')).toBe('#ff0000');
+    expect(toHexColor('hsl(120 100% 25%)')).toBe('#008000');
+  });
+
+  it('agrees with normalizeColor on every plain-hsl token (±1 per channel)', () => {
+    const mismatched: string[] = [];
+    const scopes = [THEME.light, THEME.dark, THEME.accent] as Record<string, string>[];
+    for (const scope of scopes) {
+      for (const [name, value] of Object.entries(scope)) {
+        if (typeof value !== 'string' || !plainHsl.test(value)) continue;
+        const expected = channels(normalizeColor(value) as number);
+        const actual = channels(normalizeColor(toHexColor(value)) as number);
+        if (expected.some((c, i) => Math.abs(c - actual[i]) > 1)) {
+          mismatched.push(`${name} = ${value} → ${toHexColor(value)}`);
+        }
+      }
+    }
+    expect(mismatched).toEqual([]);
+  });
+
+  it('throws on input that is not a THEME hsl string', () => {
+    expect(() => toHexColor('#ff0000')).toThrow();
+    expect(() => toHexColor('hsla(0, 0%, 50%, 1)')).toThrow();
   });
 });

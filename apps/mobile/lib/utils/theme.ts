@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, type Theme } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, type Theme } from 'expo-router/react-navigation';
 
 /**
  * Adds an alpha channel to a THEME `hsl(H S% L%)` string, producing the
@@ -28,6 +28,49 @@ export function withAlpha(hslColor: string, alpha: number): string {
   }
   const [, h, s, l] = parts;
   return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
+}
+
+/**
+ * Converts a THEME `hsl(H S% L%)` string to `#rrggbb`.
+ *
+ * For native renderers that cannot read hsl: `@expo/ui` SwiftUI modifiers
+ * (`background`, `tint`, …) decode colours natively and drop both
+ * `hsl(...)` and UIKit semantic names like `secondarySystemFill` without an
+ * error — the view just renders unfilled (seen on PlatformButton). The token
+ * stays the source; this only changes its notation.
+ */
+export function toHexColor(hslColor: string): string {
+  const parts = HSL_PARTS.exec(hslColor.trim());
+  if (!parts) {
+    throw new Error(`toHexColor expects a THEME 'hsl(H S% L%)' string, received: ${hslColor}`);
+  }
+  const h = Number(parts[1]) / 360;
+  const s = Number(parts[2]) / 100;
+  const l = Number(parts[3]) / 100;
+
+  const hueToChannel = (p: number, q: number, tIn: number) => {
+    let t = tIn;
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  let r = l;
+  let g = l;
+  let b = l;
+  if (s !== 0) {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hueToChannel(p, q, h + 1 / 3);
+    g = hueToChannel(p, q, h);
+    b = hueToChannel(p, q, h - 1 / 3);
+  }
+
+  const channel = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
+  return `#${channel(r)}${channel(g)}${channel(b)}`;
 }
 
 /**

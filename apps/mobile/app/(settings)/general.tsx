@@ -1,11 +1,12 @@
 import * as React from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Camera, ChevronRight, Globe, Mail, Trash2, User } from 'lucide-react-native';
+import { Camera, Globe, Mail, Trash2, User } from 'lucide-react-native';
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { supabase } from '@/api/supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -153,85 +154,62 @@ export default function GeneralSettingsScreen() {
 
   return (
     <>
-      <ScrollView
-        className="flex-1 bg-background"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-      >
-        <View className="px-5 pt-1" style={{ gap: 18 }}>
-        <View className="items-center pt-1">
-          <Pressable
-            onPress={pickAndUploadAvatar}
-            disabled={isUploadingAvatar}
-            className="active:opacity-85"
-          >
-            <View>
-              <ProfilePicture
-                imageUrl={avatarUrl}
-                size={13}
-                fallbackText={displayName || user?.email?.split('@')[0] || 'U'}
-              />
-              <View className="absolute bottom-[-2px] right-[-2px] h-7 w-7 items-center justify-center rounded-full border border-border/50 bg-card">
-                <Icon as={Camera} size={12} className="text-foreground/70" strokeWidth={2.3} />
+      <SettingsPage
+        header={
+          <View className="items-center pt-1">
+            <Pressable
+              onPress={pickAndUploadAvatar}
+              disabled={isUploadingAvatar}
+              accessibilityLabel="Change profile photo"
+              className="active:opacity-85">
+              <View>
+                <ProfilePicture
+                  imageUrl={avatarUrl}
+                  size={13}
+                  fallbackText={displayName || user?.email?.split('@')[0] || 'U'}
+                />
+                <View className="absolute bottom-[-2px] right-[-2px] h-7 w-7 items-center justify-center rounded-full bg-card">
+                  <Icon as={Camera} size={12} className="text-foreground/70" strokeWidth={2.3} />
+                </View>
               </View>
-            </View>
-          </Pressable>
-          <Text className="mt-2 font-roobert-medium text-[18px] text-foreground">{displayName}</Text>
-          <Text className="mt-0.5 font-roobert text-[11px] text-muted-foreground">
-            Tap avatar to change photo
-          </Text>
-        </View>
-
-        <View className="px-1">
-          <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-            Profile
-          </Text>
-          <View>
-            <GeneralRow
-              icon={User}
-              title="Edit Profile"
-              description="Update your display name"
-              onPress={openEditProfileSheet}
-              showDivider
-            />
-            <GeneralRow
-              icon={Globe}
-              title="Language"
-              description="App display language"
-              onPress={() => { haptics.tap(); router.push('/(settings)/language'); }}
-              showDivider
-            />
-            <GeneralRow
-              icon={Mail}
-              title={t('nameEdit.emailAddress')}
-              description={user?.email || t('nameEdit.notAvailable')}
-              onPress={undefined}
-              hideChevron
-              showDivider={false}
-            />
+            </Pressable>
+            <Text variant="large" className="mt-2">
+              {displayName}
+            </Text>
           </View>
-        </View>
+        }>
+        <SettingsGroup title="Profile">
+          <SettingsRow icon={User} label="Edit profile" onPress={openEditProfileSheet} />
+          <SettingsRow
+            icon={Globe}
+            label="Language"
+            onPress={() => {
+              haptics.tap();
+              router.push('/(settings)/language');
+            }}
+          />
+          <SettingsRow
+            icon={Mail}
+            label="Email"
+            value={user?.email || t('nameEdit.notAvailable')}
+          />
+        </SettingsGroup>
 
         {(deletionStatus?.supported ?? true) && (
-          <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-              Account
-            </Text>
-            <GeneralRow
+          <SettingsGroup title="Account">
+            <SettingsRow
               icon={Trash2}
-              title={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
-              description={deletionStatus?.has_pending_deletion
-                ? 'Manage or cancel your scheduled deletion'
-                : 'Request account deletion and data removal'}
-              onPress={() => { haptics.tap(); router.push('/(settings)/account-deletion'); }}
-              destructive
+              label={deletionStatus?.has_pending_deletion ? 'Deletion scheduled' : 'Delete account'}
               badge={deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined}
-              showDivider={false}
+              destructive
+              onPress={() => {
+                haptics.tap();
+                router.push('/(settings)/account-deletion');
+              }}
             />
-          </View>
+          </SettingsGroup>
         )}
-        </View>
-      </ScrollView>
+      </SettingsPage>
 
       <BottomSheetModal
         ref={editProfileSheetRef}
@@ -331,51 +309,5 @@ export default function GeneralSettingsScreen() {
         </BottomSheetView>
       </BottomSheetModal>
     </>
-  );
-}
-
-function GeneralRow({
-  icon,
-  title,
-  description,
-  onPress,
-  destructive = false,
-  hideChevron = false,
-  badge,
-  showDivider = true,
-}: {
-  icon: typeof User;
-  title: string;
-  description: string;
-  onPress?: () => void;
-  destructive?: boolean;
-  hideChevron?: boolean;
-  badge?: string;
-  showDivider?: boolean;
-}) {
-  return (
-    <Pressable onPress={onPress} disabled={!onPress} className="active:opacity-85">
-      <View className="py-3.5">
-        <View className="flex-row items-center">
-          <Icon as={icon} size={18} className={destructive ? 'text-destructive' : 'text-foreground/80'} strokeWidth={2.2} />
-          <View className="ml-4 flex-1">
-            <View className="flex-row items-center">
-              <Text className={`font-roobert-medium text-[15px] ${destructive ? 'text-destructive' : 'text-foreground'}`}>
-                {title}
-              </Text>
-              {!!badge && (
-                <View className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5">
-                  <Text className="text-[10px] font-roobert-medium text-destructive">{badge}</Text>
-                </View>
-              )}
-            </View>
-            <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{description}</Text>
-          </View>
-          {!hideChevron && <Icon as={ChevronRight} size={16} className="text-muted-foreground/50" strokeWidth={2.2} />}
-        </View>
-      </View>
-
-      {showDivider && <View className="h-px bg-border/35" />}
-    </Pressable>
   );
 }

@@ -7,12 +7,6 @@
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -32,10 +26,29 @@
         "NSMicrophoneUsageDescription": "Kortix needs microphone access to record videos with audio for conversation attachments.",
         "NSUserTrackingUsageDescription": "Kortix uses analytics to improve your experience and understand how features are used. For example, we track which AI features are most helpful so we can make the app better for everyone."
       },
-      "appleTeamId": "T8G9J33433"
+      "appleTeamId": "T8G9J33433",
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1", "0A2A.1", "3B52.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1", "85F4.1"]
+          }
+        ]
+      }
     },
     "android": {
-      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -149,7 +162,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.3.0",
+    "runtimeVersion": "1.4.0",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",
