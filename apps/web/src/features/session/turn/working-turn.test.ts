@@ -1,6 +1,6 @@
 import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { resolveWorkingTurn } from './working-turn';
+import { freshSendHint, resolveWorkingTurn } from './working-turn';
 
 const turn = (id: string, ...assistant: Array<'open' | 'done'>) => ({
   userMessage: { info: { id } },
@@ -81,6 +81,39 @@ describe('resolveWorkingTurn', () => {
         turns: [turn('old', 'done'), turn('new')],
         hintMessageId: working.turnId,
         unrunTurnIds: new Set(['new']),
+      }),
+    ).toEqual({ workingTurnId: 'new', pendingTurnIds: [] });
+  });
+
+  test("an idle send stays the working turn when its OWN echo stamps activity — no queued flash", () => {
+    // The runtime echoes the user's prompt as `message.part.updated` before the
+    // assistant message exists. That frame stamps activity, and the activity
+    // branch of `projectWorking` names no turn — while the optimistic inbox row
+    // still reads `queued`. The fallback then made the just-sent turn PENDING
+    // for that window: the bubble dimmed, the scroll anchor fell back to the
+    // previous answer (the room collapsed, the viewport clamped down) and then
+    // re-anchored when the answer opened — the reported double jump on send.
+    const working = projectWorking({
+      optimistic: { messageId: 'new', turnId: 'new', atMs: 1_000, acceptedAtMs: null },
+      inbox: { pending: 1, atMs: 1_050 },
+      server: { turns: [], atMs: 900 },
+      stream: { type: 'idle', atMs: 900 },
+      activity: { atMs: 1_100 },
+      nowMs: 1_150,
+    });
+    expect(working.turnId).toBeNull();
+
+    const turns = [turn('old', 'done'), turn('new')];
+    const unrunTurnIds = new Set(['new']);
+    expect(resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })).toEqual({
+      workingTurnId: 'old',
+      pendingTurnIds: ['new'],
+    });
+    expect(
+      resolveWorkingTurn({
+        turns,
+        hintMessageId: working.turnId ?? freshSendHint(turns, (id) => id === 'new'),
+        unrunTurnIds,
       }),
     ).toEqual({ workingTurnId: 'new', pendingTurnIds: [] });
   });
@@ -178,6 +211,27 @@ describe('resolveWorkingTurn', () => {
     });
     expect(r.workingTurnId).toBe('p2');
     expect(r.pendingTurnIds).toEqual([]);
+  });
+});
+
+describe('freshSendHint — the idle send this tab just made', () => {
+  test('names the sent turn while it has no answer yet', () => {
+    expect(freshSendHint([turn('old', 'done'), turn('new')], (id) => id === 'new')).toBe('new');
+  });
+
+  test('answers with the CURRENT id when the echo re-minted it', () => {
+    // The predicate is the alias check (`optimisticOriginOf`); the hint must be
+    // the id `resolveWorkingTurn` can find in `turns`.
+    expect(freshSendHint([turn('old', 'done'), turn('echo')], (id) => id === 'echo')).toBe('echo');
+  });
+
+  test('retires itself once the turn has an answer — the transcript decides from there', () => {
+    expect(freshSendHint([turn('old', 'done'), turn('new', 'open')], (id) => id === 'new')).toBeNull();
+  });
+
+  test('nothing for a send whose bubble is gone (failed, rewound, other session)', () => {
+    expect(freshSendHint([turn('old', 'done')], (id) => id === 'new')).toBeNull();
+    expect(freshSendHint([], () => true)).toBeNull();
   });
 });
 
