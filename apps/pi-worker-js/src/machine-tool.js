@@ -61,7 +61,8 @@ export function machineTool({ attach, envFor, workspace, onProgress }) {
     name: "machine",
     label: "Machine",
     description: [
-      "A full Linux machine for this session: node, pnpm, bun, python, git, package installs, builds, dev servers — everything the workspace shell cannot do.",
+      "A full Linux machine for this session: pnpm, bun, python, git, npm installs, builds, dev servers — everything the workspace shell cannot do.",
+      "NOT for plain JavaScript: the workspace already runs `node` on its own (real JS, require, fs/path/os/crypto, and any package already in node_modules). Attaching a machine takes about ten seconds and costs a VM, so reach for it only when the task truly needs one.",
       "Attached on first use (about ten seconds) and kept for the session. The project is checked out on it at /workspace on this session's branch.",
       "action=run executes a shell command there (cwd defaults to /workspace). action=push copies files from the workspace into the machine; action=pull copies them back. action=status says whether a machine is attached.",
     ].join(" "),

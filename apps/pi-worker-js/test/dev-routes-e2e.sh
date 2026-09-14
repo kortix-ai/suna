@@ -366,9 +366,26 @@ if [ -n "$BRANCH" ] && [ -n "$HEAD" ]; then
   # visible to the next `ls-remote` through the proxy — measured 2026-09-11: the
   # first ask answered nothing and the ref was there when asked again, so a
   # single ask turned a working push into a failed claim.
+# ASK THE ORIGIN THROUGH THE API, NOT THROUGH A LOCAL git.
+#
+# `git ls-remote` over https makes git consult its credential helper, which on
+# macOS is `osxkeychain`: one "allow access to your keychain" dialog PER CALL,
+# and this suite asks up to four times per push. Suppressing the helper only
+# trades the dialog for a 401, because the git proxy wants a Kortix token and
+# not this session's bearer.
+#
+# `GET /v1/projects/:p/branches` answers the same question — what sha does the
+# ORIGIN have for this branch — with the token the suite is already holding, and
+# it is still the remote answering rather than the cell. No subprocess, no
+# credential lookup, no prompt.
+gitremote(){ # gitremote <branch> -> the sha the origin holds for it
+  B="$1" R="$(curl -s -m 60 "$BASE/v1/projects/$PROJ/branches" "${AH[@]}")" jq_ 'import json,os
+d=json.loads(os.environ["R"] or "{}")
+print(next((b.get("tip") or "" for b in (d.get("branches") or []) if b.get("name")==os.environ["B"]), ""))'
+}
   REMOTE=""
   for try in 1 2 3 4; do
-    REMOTE=$(GIT_TERMINAL_PROMPT=0 git ls-remote "$BASE/v1/git/$PROJ.git" "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
+    REMOTE=$(gitremote "$BRANCH")
     [ -n "$REMOTE" ] && break
     sleep 3
   done

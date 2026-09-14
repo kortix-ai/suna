@@ -619,6 +619,14 @@ async function provisionEnvironment(
   let credential: { tokenId: string; secretKey: string } | null = null;
   let credentialPublished = false;
   const rpcSecret = randomBytes(32).toString('base64url');
+  // EVERY PHASE NAMED. A session sandbox has had a provision timeline since
+  // the start; an environment had none, so "the attach takes 4 s" could not be
+  // attributed to anything. Measured 2026-09-12: the microVM itself is 1.0 s
+  // (three raw Platinum creates of this template: 1216, 1047, 1007 ms), so
+  // most of an environment provision is NOT the box.
+  const t0 = Date.now();
+  const marks: string[] = [];
+  const mark = (label: string) => marks.push(`${label}=+${Date.now() - t0}ms`);
   try {
     const [image, envVars] = await Promise.all([
       ensureSandboxImage(input.gitProject, { provider }),
@@ -639,6 +647,7 @@ async function provisionEnvironment(
         workspaceMode: input.workspaceMode,
       }),
     ]);
+    mark('image+env');
     credential = await mintSessionRuntimeToken({
       accountId: input.accountId,
       userId: input.userId,
@@ -649,6 +658,7 @@ async function provisionEnvironment(
       agentName: input.agentName,
       gitProject: input.gitProject,
     });
+    mark('token');
     const result = await getProvider(provider).create({
       accountId: input.accountId,
       userId: input.userId,
@@ -669,6 +679,7 @@ async function provisionEnvironment(
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);
+    mark('provider-create');
     const activated = await activateEnvironmentClaim({
       sessionId: input.sessionId,
       provisionAttemptId,
@@ -692,6 +703,8 @@ async function provisionEnvironment(
       return;
     }
     credentialPublished = true;
+    mark('row-active');
+    console.info(`[env-provision] ${input.sessionId.slice(0, 8)} total=${Date.now() - t0}ms ${marks.join(' ')}`);
     // Meter the environment AS PART OF THE PARENT SESSION: the compute row
     // carries the session's id, so its seconds and cost roll into that
     // session's line rather than appearing as a second, unattributed box.

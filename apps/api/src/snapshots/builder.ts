@@ -124,6 +124,40 @@ export async function findFirstActiveSnapshot(
 }
 
 const snapshotReusePreparations = new WeakMap<object, Map<string, Promise<void>>>();
+/**
+ * WHEN EACH SNAPSHOT WAS LAST PREPARED SUCCESSFULLY.
+ *
+ * `prepareSnapshotForReuse` was a single-flight, not a cache: its map entry is
+ * deleted in `.finally()`, so the NEXT provision re-ran the whole preparation.
+ * On Platinum that preparation is a template materialize, and it is not free —
+ * measured on dev 2026-09-12, one environment provision logged
+ * `materialize … elapsed_ms=1551` and `elapsed_ms=918` back to back, against a
+ * raw create of the same template that takes 1.0 s once it IS materialized.
+ *
+ * Materializing is idempotent and only makes the provider faster, so repeating
+ * it inside a few minutes buys nothing. Skipping it is safe in the other
+ * direction too: if the host has since evicted the template, the create
+ * materializes on demand and is merely as slow as it used to be.
+ */
+const snapshotPreparedAt = new WeakMap<object, Map<string, number>>();
+/** How long a successful preparation is trusted for. */
+export const SNAPSHOT_PREPARATION_TTL_MS = 10 * 60_000;
+
+export function __resetSnapshotPreparationCacheForTests(provider: object): void {
+  snapshotPreparedAt.delete(provider);
+  snapshotReusePreparations.delete(provider);
+}
+
+/** Was this snapshot prepared recently enough to skip preparing it again? */
+export function snapshotPreparationIsFresh(
+  provider: object,
+  snapshotName: string,
+  now = Date.now(),
+  ttlMs = SNAPSHOT_PREPARATION_TTL_MS,
+): boolean {
+  const at = snapshotPreparedAt.get(provider)?.get(snapshotName);
+  return at !== undefined && now - at < ttlMs;
+}
 
 export async function prepareSnapshotForReuse<T>(
   provider: Pick<SandboxProviderAdapter, 'id' | 'prepareSnapshot'>,
@@ -132,6 +166,7 @@ export async function prepareSnapshotForReuse<T>(
   opts: { blocking: boolean },
 ): Promise<T> {
   if (!provider.prepareSnapshot) return result;
+  if (snapshotPreparationIsFresh(provider, snapshotName)) return result;
   let bySnapshot = snapshotReusePreparations.get(provider);
   if (!bySnapshot) {
     bySnapshot = new Map();
@@ -143,6 +178,11 @@ export async function prepareSnapshotForReuse<T>(
     preparation = (async () => {
       try {
         await provider.prepareSnapshot?.(snapshotName);
+        // Remembered only on SUCCESS: a failed preparation must be retried by
+        // the next provision, not skipped for ten minutes.
+        let seen = snapshotPreparedAt.get(provider);
+        if (!seen) { seen = new Map(); snapshotPreparedAt.set(provider, seen); }
+        seen.set(snapshotName, Date.now());
       } catch (err) {
         console.warn(
           `[snapshots] ${provider.id} preparation failed for ${snapshotName}:`,

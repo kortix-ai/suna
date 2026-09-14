@@ -11,12 +11,12 @@
 //
 // Fake control plane, fake box, fake clock: every step is asserted without
 // a Platinum account.
-// EXPECTED_PASSES=24
+// EXPECTED_PASSES=30
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
-const { attachEnvironment, ensureUrl, usable, healthy, readCached, writeCached, clearCached, ENVIRONMENT_TABLE_SQL, ENSURE_POLL_MS } = await import("../src/environment.js");
+const { attachEnvironment, ensureUrl, usable, healthy, readCached, writeCached, clearCached, ENVIRONMENT_TABLE_SQL, ENSURE_POLL_MS, ENSURE_POLL_MAX_MS, pollDelay, waitForRepo } = await import("../src/environment.js");
 
 const makeSql = () => { const db = new DatabaseSync(":memory:"); return { exec(q, ...a) { const t = q.trim(); if (/^(CREATE|INSERT|UPDATE|DELETE)/i.test(t)) { const st = db.prepare(t); a.length ? st.run(...a) : st.run(); return { toArray: () => [], [Symbol.iterator]: function* () {} }; } const rows = db.prepare(t).all(...a); return { toArray: () => rows, [Symbol.iterator]: function* () { yield* rows; } }; } }; };
 const ENV = { KORTIX_API_URL: "https://api.example/v1", KORTIX_PROJECT_ID: "p1", KORTIX_SESSION_ID: "s1", KORTIX_TOKEN: "tok" };
@@ -53,8 +53,19 @@ check("an answer is usable only when active WITH an address AND a secret",
   const f = async (u) => json({ daemon: "ok", repo_ready: true, branch: "s1" });
   const h = await healthy("https://edge/", { fetch: f });
   check("health asks the edge's /kortix/health and reads the branch", h.ok && h.branch === "s1", JSON.stringify(h));
-  check("repo_ready=false is not healthy — the worker waits on exactly this flag",
-    (await healthy("https://edge", { fetch: async () => json({ repo_ready: false }) })).ok === false, "");
+  // THE DAEMON BEING UP AND THE REPO BEING CLONED ARE TWO FACTS. Reporting one
+  // number made every attach pay for the clone: measured 2026-09-12, Platinum
+  // creates the box in 1.0 s and the daemon answers 0.2 s later, while the
+  // clone takes another 3.4 s that `node --version` does not need.
+  {
+    const h = await healthy("https://edge", { fetch: async () => json({ daemon: "ok", repo_ready: false }) });
+    check("a daemon that is up with NO checkout yet is healthy, and says the repo is not ready",
+      h.ok === true && h.repoReady === false, JSON.stringify(h));
+    const h2 = await healthy("https://edge", { fetch: async () => json({ daemon: "ok", repo_ready: true, branch: "b" }) });
+    check("and once the checkout lands it says so, with the branch", h2.ok && h2.repoReady === true && h2.branch === "b", JSON.stringify(h2));
+    const h3 = await healthy("https://edge", { fetch: async () => json({ daemon: "ok" }) });
+    check("a daemon that reports no repo flag at all is treated as ready — an environment without a repo is not broken", h3.ok && h3.repoReady === true, JSON.stringify(h3));
+  }
   check("a non-200 is not healthy, with the status", /health 503/.test((await healthy("https://edge", { fetch: async () => json({}, 503) })).reason), "");
   check("an unreachable edge is not healthy, not a throw", (await healthy("https://edge", { fetch: async () => { throw new Error("ECONNREFUSED"); } })).ok === false, "");
 }
@@ -83,7 +94,8 @@ const provisioning = { status: "provisioning", external_id: null, preview_url: n
   check("the attach POSTs ensure with the session's token and polls until the machine is usable",
     r.ok && r.externalId === "sbx_1" && r.edge === "https://8000-1.sbx" && r.rpcSecret === "sec" && cp.asks.length === 3 && cp.asks[0].auth === "Bearer tok",
     JSON.stringify({ r: { ok: r.ok, id: r.externalId }, asks: cp.asks.length }));
-  check("at the worker's own cadence", t === 2 * ENSURE_POLL_MS, String(t));
+  check("and it asks OFTEN at the start — a 2 s grid spent up to 2 s of a 6 s attach asleep",
+    t === pollDelay(0) + pollDelay(1) && t < 1_000, `${t} ms of sleeping across two polls`);
   check("and reports each state it saw, so the tool can tell the user what it waited on", progress.some((p) => /provisioning/.test(p)) && progress.some((p) => /active/.test(p)), JSON.stringify(progress));
   check("the record is cached for the next turn", readCached(sql)?.externalId === "sbx_1", "");
   const again = await attachEnvironment({ env: ENV, sql, fetch: cp.fetch, sleep, now });
@@ -99,13 +111,27 @@ const provisioning = { status: "provisioning", external_id: null, preview_url: n
   check("active-without-an-address is not usable yet: it polls once more and takes the address when it comes", r.ok && cp.asks.length === 2, String(cp.asks.length));
 }
 {
-  // Up, but the repo is not checked out yet: not ready.
+  // Up, but the repo is not checked out yet: USABLE, and the attach says so.
   const sql = makeSql();
   const cp = controlPlane({ answers: [active], repoReady: false });
   let t = 0;
-  const r = await attachEnvironment({ env: ENV, sql, fetch: cp.fetch, sleep: async (ms) => { t += ms; }, now: () => t, maxMs: 3 * ENSURE_POLL_MS });
-  check("a machine that is up but has not checked the repo out is waited on, and given up on with the last status named",
-    r.ok === false && /did not become ready/.test(r.reason) && /active/.test(r.reason) && readCached(sql) === null, r.reason);
+  const r = await attachEnvironment({ env: ENV, sql, fetch: cp.fetch, sleep: async (ms) => { t += ms; }, now: () => t });
+  check("a machine whose daemon answers is ATTACHED even with no checkout yet — the clone is 3.4 s a `node -v` must not pay",
+    r.ok === true && r.repoReady === false && readCached(sql)?.externalId === "sbx_1", JSON.stringify({ ok: r.ok, repo: r.repoReady }));
+}
+{
+  // And the surfaces that DO need files wait for exactly that flag.
+  let calls = 0;
+  const f = async () => { calls++; return json({ daemon: "ok", repo_ready: calls >= 3, branch: "b1" }); };
+  let t = 0;
+  const w = await waitForRepo("https://edge", { fetch: f, sleep: async (ms) => { t += ms; }, now: () => t });
+  check("waitForRepo polls until the checkout lands, and reports the branch and how long it waited",
+    w.ok === true && w.branch === "b1" && calls === 3 && w.waitedMs === pollDelay(0) + pollDelay(1), JSON.stringify(w));
+  let t2 = 0;
+  const timedOut = await waitForRepo("https://edge", { fetch: async () => json({ daemon: "ok", repo_ready: false }), sleep: async (ms) => { t2 += ms; }, now: () => t2, maxMs: 2_000 });
+  check("and it gives up with a reason rather than waiting forever", timedOut.ok === false && /did not finish/.test(timedOut.reason), JSON.stringify(timedOut));
+  const gone = await waitForRepo("https://edge", { fetch: async () => { throw new Error("ECONNREFUSED"); }, sleep: async () => {}, now: () => 0, maxMs: 0 });
+  check("a machine that stopped answering is a failure with its reason, not a hang", gone.ok === false && /ECONNREFUSED/.test(gone.reason), JSON.stringify(gone));
 }
 {
   const sql = makeSql();
@@ -139,6 +165,12 @@ const provisioning = { status: "provisioning", external_id: null, preview_url: n
   check("a cached machine that no longer answers is re-asked for, and the new one replaces it",
     r.ok && r.externalId === "sbx_new" && r.resumed === true && healthCalls === 1 && readCached(sql).externalId === "sbx_new", JSON.stringify({ id: r.externalId, resumed: r.resumed }));
 }
+
+
+// ── the cadence itself ──
+check("the poll backs off from a fast first ask toward the worker's own cadence, and never past it",
+  pollDelay(0) === ENSURE_POLL_MS && pollDelay(1) > pollDelay(0) && pollDelay(20) === ENSURE_POLL_MAX_MS && pollDelay(0) < 500,
+  `${pollDelay(0)}, ${pollDelay(1)}, ${pollDelay(5)}, ${pollDelay(20)}`);
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");
 process.exit(bad ? 1 : 0);

@@ -24,9 +24,23 @@
 // through the same ensure call, which is why a cached answer is re-validated
 // against health before it is trusted again.
 
-/** Poll cadence and bounds — the worker's own (kortix-worker lazy-env.ts). */
-export const ENSURE_POLL_MS = 2_000;
+/**
+ * POLL CADENCE. The production worker asks every 2 s, which is right for a
+ * process with nothing else to do and wrong for a person waiting. A 2 s grid
+ * quantises a 1.5 s provision into a 2 s one. Measured on dev 2026-09-12: of a
+ * 6.2 s attach — 2.6 s to a running microVM, 3.4 s more for its repo clone —
+ * up to 2 s was this loop asleep rather than the box booting.
+ *
+ * So: ask often at the start, when the answer has most likely just arrived,
+ * and back off toward the worker's cadence for the long tail of a cold pull.
+ */
+export const ENSURE_POLL_MS = 300;
+export const ENSURE_POLL_MAX_MS = 2_000;
 export const ENSURE_MAX_MS = 180_000;
+
+/** The nth wait, backing off from `ENSURE_POLL_MS` toward the ceiling. */
+export const pollDelay = (attempt, base = ENSURE_POLL_MS, ceiling = ENSURE_POLL_MAX_MS) =>
+  Math.min(Math.round(base * 1.4 ** Math.max(0, attempt)), ceiling);
 
 export const ENVIRONMENT_TABLE_SQL = "CREATE TABLE IF NOT EXISTS environment (k TEXT PRIMARY KEY, v TEXT NOT NULL)";
 
@@ -55,11 +69,11 @@ export function readCached(sql) {
   const rows = [...sql.exec("SELECT k, v FROM environment")];
   const m = Object.fromEntries(rows.map((r) => [r.k, r.v]));
   if (!m.external_id || !m.edge || !m.rpc_secret) return null;
-  return { externalId: m.external_id, edge: m.edge, rpcSecret: m.rpc_secret, attachedAt: Number(m.attached_at ?? 0) };
+  return { externalId: m.external_id, edge: m.edge, rpcSecret: m.rpc_secret, attachedAt: Number(m.attached_at ?? 0), branch: m.branch || null };
 }
 
-export function writeCached(sql, { externalId, edge, rpcSecret, attachedAt = Date.now() }) {
-  for (const [k, v] of [["external_id", externalId], ["edge", edge], ["rpc_secret", rpcSecret], ["attached_at", String(attachedAt)]]) {
+export function writeCached(sql, { externalId, edge, rpcSecret, attachedAt = Date.now(), branch = null }) {
+  for (const [k, v] of [["external_id", externalId], ["edge", edge], ["rpc_secret", rpcSecret], ["attached_at", String(attachedAt)], ["branch", branch ?? ""]]) {
     sql.exec("INSERT INTO environment(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, v);
   }
 }
@@ -73,7 +87,7 @@ export function clearCached(sql) {
  * on the edge without auth, and `repo_ready` is what the worker waits on
  * before its first operation (lazy-env.ts).
  */
-export async function healthy(edge, { fetch: f = globalThis.fetch, timeoutMs = 8_000 } = {}) {
+export async function healthy(edge, { fetch: f = globalThis.fetch, timeoutMs = 2_000 } = {}) {
   try {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), timeoutMs);
@@ -81,10 +95,34 @@ export async function healthy(edge, { fetch: f = globalThis.fetch, timeoutMs = 8
     clearTimeout(t);
     if (!res.ok) return { ok: false, reason: `health ${res.status}` };
     const body = await res.json().catch(() => ({}));
-    if (body?.repo_ready === false) return { ok: false, reason: "repo not ready" };
-    return { ok: true, branch: body?.branch ?? null };
+    // THE DAEMON BEING UP AND THE REPO BEING CLONED ARE TWO DIFFERENT FACTS,
+    // and conflating them cost every attach the whole clone.
+    //
+    // Measured 2026-09-12: Platinum creates the microVM in 1.0 s (three raw
+    // creates of this template: 1216, 1047, 1007 ms). The daemon answers
+    // ~0.2 s later. The repo clone then takes another 3.4 s — more than the
+    // box itself — and `node --version`, the first thing most sessions run,
+    // needs none of it. So readiness is reported in two parts and the caller
+    // decides which one it is waiting for.
+    return { ok: true, repoReady: body?.repo_ready !== false, branch: body?.branch ?? null };
   } catch (e) {
     return { ok: false, reason: String(e?.message ?? e) };
+  }
+}
+
+/**
+ * Wait for the machine's checkout, for the operations that need it: the file
+ * routes, git, and anything reading the project. A command like `node -v` does
+ * not call this and does not pay for it.
+ */
+export async function waitForRepo(edge, { fetch: f = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, maxMs = 60_000 } = {}) {
+  const started = now();
+  let attempt = 0;
+  for (;;) {
+    const h = await healthy(edge, { fetch: f });
+    if (h.ok && h.repoReady) return { ok: true, branch: h.branch ?? null, waitedMs: now() - started };
+    if (now() - started >= maxMs) return { ok: false, reason: h.ok ? "the machine's checkout did not finish" : h.reason, waitedMs: now() - started };
+    await sleep(pollDelay(attempt++));
   }
 }
 
@@ -96,12 +134,12 @@ export async function healthy(edge, { fetch: f = globalThis.fetch, timeoutMs = 8
  * `{ ok: false, reason, status }` — never throws, because "there is no machine"
  * is an answer the tool has to give the model in words.
  */
-export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, maxMs = ENSURE_MAX_MS, pollMs = ENSURE_POLL_MS, onProgress } = {}) {
+export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, maxMs = ENSURE_MAX_MS, pollMs = null, onProgress } = {}) {
   sql.exec(ENVIRONMENT_TABLE_SQL);
   const cached = readCached(sql);
   if (cached) {
     const h = await healthy(cached.edge, { fetch: f });
-    if (h.ok) return { ok: true, ...cached, resumed: false };
+    if (h.ok) return { ok: true, ...cached, branch: h.branch ?? cached.branch, repoReady: !!h.repoReady, resumed: false };
     // The box is gone or asleep: the control plane's ensure knows how to
     // resume a stopped one and rebuild a removed one. Fall through.
     onProgress?.(`cached machine not answering (${h.reason}); asking again`);
@@ -112,6 +150,7 @@ export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch,
   if (!token) return { ok: false, reason: "this session holds no token to ask with", status: null };
   const started = now();
   let last = null;
+  let attempt = 0;
   while (now() - started < maxMs) {
     let res;
     try {
@@ -130,15 +169,20 @@ export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch,
     }
     if (usable(body)) {
       const edge = String(body.preview_url).replace(/\/+$/, "");
+      // A SHORT PROBE, RETRIED, NOT ONE LONG HANG. The edge for a box that
+      // was exposed a moment ago does not answer instantly, and an 8 s
+      // timeout spends all 8 on the first miss. Measured 2026-09-12: the
+      // attach's `ensure` leg read 12.6 s against a 6.2 s control-plane
+      // floor, and this was where the difference lived.
       const h = await healthy(edge, { fetch: f });
       if (h.ok) {
-        const record = { externalId: body.external_id, edge, rpcSecret: body.rpc_secret, attachedAt: now() };
+        const record = { externalId: body.external_id, edge, rpcSecret: body.rpc_secret, attachedAt: now(), branch: h.branch ?? null };
         writeCached(sql, record);
-        return { ok: true, ...record, resumed: !!cached };
+        return { ok: true, ...record, repoReady: !!h.repoReady, resumed: !!cached };
       }
       onProgress?.(`machine up, ${h.reason}`);
     }
-    await sleep(pollMs);
+    await sleep(pollMs ?? pollDelay(attempt++));
   }
   return { ok: false, reason: `the machine did not become ready within ${Math.round(maxMs / 1000)} s (last status: ${last?.status ?? "none"})`, status: last?.status ?? null };
 }
