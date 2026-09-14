@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   connectorStatusLine,
+  connectorStatusShort,
   connectorStatusStatement,
   connectorStatusTone,
 } from './connector-status-line';
@@ -22,31 +23,98 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
     ...over,
   }) as AdminConnector;
 
+describe('connectorStatusShort names the next action, not the wire state', () => {
+  test('error on a managed provider says to sign in', () => {
+    expect(connectorStatusShort(conn({ status: 'error', provider: 'composio' }))).toBe(
+      'Needs sign-in',
+    );
+  });
+
+  test('error with a declared, unset secret says to add a credential, regardless of provider', () => {
+    expect(
+      connectorStatusShort(conn({ status: 'error', secretSet: false, provider: 'composio' })),
+    ).toBe('Needs a credential');
+  });
+
+  test('error on a non-managed provider with no credential problem says the connection is not working', () => {
+    expect(connectorStatusShort(conn({ status: 'error' }))).toBe(
+      'Not working — check the connection',
+    );
+  });
+
+  test('needs_setup on a managed provider says to sign in', () => {
+    expect(connectorStatusShort(conn({ secretSet: false, provider: 'pipedream' }))).toBe(
+      'Needs sign-in',
+    );
+  });
+
+  test('needs_setup on a secret-based provider says to add a credential', () => {
+    expect(connectorStatusShort(conn({ secretSet: false }))).toBe('Needs a credential');
+  });
+
+  test('connected with tools synced reads as Connected', () => {
+    expect(connectorStatusShort(conn())).toBe('Connected');
+  });
+
+  test('connected with no tools yet reads as Syncing, not a broken 0-tools state', () => {
+    expect(connectorStatusShort(conn({ actions: [] }))).toBe('Syncing…');
+  });
+
+  test('no_auth with no tools yet also reads as Syncing', () => {
+    expect(connectorStatusShort(conn({ authSecret: null, actions: [] } as never))).toBe('Syncing…');
+  });
+
+  test('no_auth with tools synced reads as Ready', () => {
+    expect(connectorStatusShort(conn({ authSecret: null } as never))).toBe('Ready');
+  });
+
+  test('user_managed names who signs in', () => {
+    expect(connectorStatusShort(conn({ authorizationStrategy: 'user' }))).toBe(
+      'Each member signs in',
+    );
+  });
+});
+
 describe('connectorStatusLine leads with the state, keeps the searchable meta', () => {
   test('connected', () => {
     expect(connectorStatusLine(conn(), 'MCP')).toBe('Connected · 2 tools · MCP');
   });
 
-  test('needs_setup names the action, not the field', () => {
+  test('needs_setup names the credential, not the protocol', () => {
     expect(connectorStatusLine(conn({ secretSet: false }), 'MCP')).toBe(
-      'Needs setup — connect an account · 2 tools · MCP',
+      'Needs a credential · 2 tools · MCP',
     );
   });
 
   test('error wins over everything', () => {
-    expect(connectorStatusLine(conn({ status: 'error' }), 'MCP')).toStartWith('Error');
+    expect(connectorStatusLine(conn({ status: 'error' }), 'MCP')).toStartWith('Not working');
   });
 
   test('user_managed says whose account it runs as', () => {
     expect(connectorStatusLine(conn({ authorizationStrategy: 'user' }), 'App')).toBe(
-      'Each member connects their own account · 2 tools · App',
+      'Each member signs in · 2 tools · App',
     );
   });
 
   test('no declared credential reads as ready, and singular tool is singular', () => {
-    expect(connectorStatusLine(conn({ authSecret: null, actions: [{ path: 'a' }] } as never), 'HTTP')).toBe(
-      'Ready, no sign-in needed · 1 tool · HTTP',
-    );
+    expect(
+      connectorStatusLine(conn({ authSecret: null, actions: [{ path: 'a' }] } as never), 'HTTP'),
+    ).toBe('Ready · 1 tool · HTTP');
+  });
+
+  test('3 tools is named in the line', () => {
+    expect(
+      connectorStatusLine(
+        conn({ actions: [{ path: 'a' }, { path: 'b' }, { path: 'c' }] } as never),
+        'MCP',
+      ),
+    ).toContain('3 tools');
+  });
+
+  test('0 tools drops the count instead of printing a broken-looking "0 tools"', () => {
+    const line = connectorStatusLine(conn({ actions: [] }), 'MCP');
+    expect(line).not.toContain('0 tools');
+    expect(line).toBe('Syncing… · MCP');
   });
 
   test('the provider label survives in every variant — it is what search matches', () => {
@@ -55,7 +123,7 @@ describe('connectorStatusLine leads with the state, keeps the searchable meta', 
       conn({ secretSet: false }),
       conn({ status: 'error' }),
       conn({ authorizationStrategy: 'user' }),
-      conn({ authSecret: null }),
+      conn({ authSecret: null } as never),
     ]) {
       expect(connectorStatusLine(c, 'PROBE')).toEndWith('· PROBE');
     }

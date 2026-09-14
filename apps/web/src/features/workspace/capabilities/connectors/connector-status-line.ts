@@ -5,6 +5,36 @@ import {
   type ConnectorSetupStatus,
 } from '@/features/workspace/customize/sections/connector-connection-form';
 
+import { isManagedConnectorProvider } from './provider-label';
+
+/**
+ * The short, actionable status phrase — what to DO, not what the wire said.
+ * "Needs sign-in" for managed/OAuth providers, "Needs a credential" for
+ * secret-based ones (Jay, 2026-09-14: failure states must name the next
+ * action, never the protocol).
+ */
+export function connectorStatusShort(connector: AdminConnector): string {
+  const status = connectorSetupStatus(connector);
+  const managed = isManagedConnectorProvider(connector.provider);
+  switch (status) {
+    case 'connected':
+      // Credential satisfied but the first sync has not landed yet: the
+      // honest state is "working on it", not a broken-looking "0 tools".
+      return connector.actions.length === 0 ? 'Syncing…' : 'Connected';
+    case 'needs_setup':
+      return managed ? 'Needs sign-in' : 'Needs a credential';
+    case 'user_managed':
+      return 'Each member signs in';
+    case 'no_auth':
+      return connector.actions.length === 0 ? 'Syncing…' : 'Ready';
+    case 'error':
+      // The dominant real cause is missing/failed auth (e.g. MCP 401), and
+      // the fix is the connect dialog either way.
+      if (connector.authSecret && !connector.secretSet) return 'Needs a credential';
+      return managed ? 'Needs sign-in' : 'Not working — check the connection';
+  }
+}
+
 /**
  * The card's one-line description, in words a non-technical reader can act on.
  *
@@ -17,20 +47,9 @@ import {
  */
 export function connectorStatusLine(connector: AdminConnector, providerLabel: string): string {
   const count = connector.actions.length;
-  const meta = `${count} ${count === 1 ? 'tool' : 'tools'} · ${providerLabel}`;
-  const status = connectorSetupStatus(connector);
-  switch (status) {
-    case 'connected':
-      return `Connected · ${meta}`;
-    case 'needs_setup':
-      return `Needs setup — connect an account · ${meta}`;
-    case 'user_managed':
-      return `Each member connects their own account · ${meta}`;
-    case 'no_auth':
-      return `Ready, no sign-in needed · ${meta}`;
-    case 'error':
-      return `Error — the connection is failing · ${meta}`;
-  }
+  const meta =
+    count > 0 ? `${count} ${count === 1 ? 'tool' : 'tools'} · ${providerLabel}` : providerLabel;
+  return `${connectorStatusShort(connector)} · ${meta}`;
 }
 
 /**

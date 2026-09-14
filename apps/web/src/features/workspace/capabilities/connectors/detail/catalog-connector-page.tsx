@@ -1,5 +1,6 @@
 'use client';
 
+import { ExternalLink } from '@/features/icon/icons/external-link';
 import {
   getDiscoverConnector,
   listConnectors,
@@ -15,6 +16,7 @@ import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -37,13 +39,13 @@ import { appConnectorHref, connectedConnectorHref, parseCatalogSource } from '..
 import { connectorStatusLine } from '../connector-status-line';
 import { providerLabel } from '../provider-label';
 import { recommendedSurfaceVariant } from './connector-detail-copy';
-import { connectorDocLinks } from './connector-doc-links';
 import {
   ConnectorDetailLayout,
   ConnectorDetailSkeleton,
   ConnectorDocumentationLinks,
   type ConnectorDocumentationLink,
 } from './connector-detail-layout';
+import { connectorDocLinks } from './connector-doc-links';
 
 const DiscoverAddSheet = dynamic(
   () => import('../add/discover-add-sheet').then((module) => module.DiscoverAddSheet),
@@ -61,7 +63,7 @@ const ComputersAddFlow = dynamic(
 function CatalogDetailIcon({ entry }: { entry: CatalogEntry }) {
   if (entry.icon) {
     return (
-      <span className="border-border/60 bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border">
+      <span className="bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md">
         <Image
           src={entry.icon}
           alt=""
@@ -313,6 +315,15 @@ export function CatalogConnectorPage({
           : 'custom'
       : (firstVariant?.connector?.auth?.type ?? (firstVariant?.requiresAuth ? 'custom' : 'none'));
   const documentationLinks = catalogDocumentationLinks(entry, discoverDetail, provider);
+  // The meta card's labeled facts (the Linear-integration-page shape). The
+  // first docs link (the Kortix guide) becomes the card's Docs column; the
+  // official website gets its own column, so both leave the bottom list.
+  const websiteUrl =
+    entry.source === 'discover' && entry.connector.url?.startsWith('http')
+      ? entry.connector.url
+      : null;
+  const primaryDoc = documentationLinks[0] ?? null;
+  const remainingDocs = documentationLinks.slice(1).filter((link) => link.href !== websiteUrl);
 
   // Adding is ALWAYS on the table for writers — one app can back many
   // connections (Canva, Canva 2, …), so "already added" never hides the way
@@ -365,90 +376,142 @@ export function CatalogConnectorPage({
         <ConnectorDetailLayout
           backHref={`/projects/${encodeURIComponent(projectId)}/connectors`}
           icon={<CatalogDetailIcon entry={entry} />}
-      title={entry.name}
-      description={entry.description}
-      status={
-        alreadyAdded ? (
-          <Badge variant="success" size="sm">
-            {projectMatches.length === 1 ? 'Added' : `Added ×${projectMatches.length}`}
-          </Badge>
-        ) : undefined
-      }
-      primaryTitle={alreadyAdded ? 'Added to this project' : 'Add to this project'}
-      primaryDescription={
-        alreadyAdded
-          ? 'Open a connector below, or add another — each connection gets its own name.'
-          : canWrite
-            ? 'One click here, then connect it on its own page.'
-            : 'You can review this connector, but a project manager must add it.'
-      }
-      primaryAction={primaryAction}
-    >
-      {/* Direct links to every connector already created from this entry —
+          title={entry.name}
+          status={
+            alreadyAdded ? (
+              <Badge variant="success" size="sm">
+                {projectMatches.length === 1 ? 'Added' : `Added ×${projectMatches.length}`}
+              </Badge>
+            ) : undefined
+          }
+        >
+          {/* The Linear-integration-page shape (Jay, 2026-09-14): a meta card of
+          labeled facts — Website, Docs — with the one action at its right,
+          then the description as a real Overview section instead of clamped
+          header prose. */}
+          <section className="bg-popover rounded-md border px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+              {websiteUrl ? (
+                <CatalogMetaColumn label="Website">
+                  <Link
+                    href={websiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground flex items-center gap-1.5 text-sm font-medium hover:underline"
+                  >
+                    {/*<GlobeIcon className="text-muted-foreground size-4 shrink-0" />*/}
+                    {websiteHost(websiteUrl)}
+                    <ExternalLink className="text-muted-foreground size-3.5 shrink-0" />
+                  </Link>
+                </CatalogMetaColumn>
+              ) : null}
+              {primaryDoc ? (
+                <CatalogMetaColumn label="Docs">
+                  {primaryDoc.external ? (
+                    <Link
+                      href={primaryDoc.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-foreground flex items-center gap-1.5 text-sm font-medium hover:underline"
+                    >
+                      {/*<BookOpenIcon className="text-muted-foreground size-4 shrink-0" />*/}
+                      {primaryDoc.label}
+                      {/*<ArrowSquareOutIcon className="text-muted-foreground size-3.5 shrink-0" />*/}
+                    </Link>
+                  ) : (
+                    <Link
+                      href={primaryDoc.href}
+                      className="text-foreground flex items-center gap-1.5 text-sm font-medium hover:underline"
+                    >
+                      {/*<BookOpenIcon className="text-muted-foreground size-4 shrink-0" />*/}
+                      {primaryDoc.label}
+                    </Link>
+                  )}
+                </CatalogMetaColumn>
+              ) : null}
+              {primaryAction ? (
+                <div className="ml-auto shrink-0 max-sm:basis-full max-sm:*:w-full">
+                  {primaryAction}
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          {/* Direct links to every connector already created from this entry —
           the shortcut Jay asked for: card → its live page, no re-adding. */}
-      {alreadyAdded ? (
-        <section className="space-y-2" aria-labelledby="connector-matches-title">
-          <h2 id="connector-matches-title" className="text-foreground text-sm font-medium">
-            In this project
-          </h2>
-          <ul className="space-y-2">
-            {projectMatches.map((match) => (
-              <li key={match.slug}>
-                <Link
-                  href={
-                    entry.source === 'discover'
-                      ? appConnectorHref(projectId, entry.slug, match.slug)
-                      : entry.source === 'easy-connect'
-                        ? `${appConnectorHref(projectId, entry.slug, match.slug)}?src=apps`
-                        : connectedConnectorHref(projectId, match.slug)
-                  }
-                  className="group bg-popover hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-sm font-medium">
-                      {match.name?.trim() || match.slug}
-                    </span>
-                    <span className="text-muted-foreground block text-xs">
-                      {connectorStatusLine(match, providerLabel(match.provider))}
-                    </span>
-                  </span>
-                  <CaretRightIcon className="text-muted-foreground/60 size-4 shrink-0" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+          {alreadyAdded ? (
+            <section className="space-y-2" aria-labelledby="connector-matches-title">
+              <h2 id="connector-matches-title" className="text-foreground text-sm font-medium">
+                In this project
+              </h2>
+              <ul className="space-y-2">
+                {projectMatches.map((match) => (
+                  <li key={match.slug}>
+                    <Link
+                      href={
+                        entry.source === 'discover'
+                          ? appConnectorHref(projectId, entry.slug, match.slug)
+                          : entry.source === 'easy-connect'
+                            ? `${appConnectorHref(projectId, entry.slug, match.slug)}?src=apps`
+                            : connectedConnectorHref(projectId, match.slug)
+                      }
+                      className="group bg-popover hover:bg-accent flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="text-foreground block truncate text-sm font-medium">
+                          {match.name?.trim() || match.slug}
+                        </span>
+                        <span className="text-muted-foreground block text-xs">
+                          {connectorStatusLine(match, providerLabel(match.provider))}
+                        </span>
+                      </span>
+                      <CaretRightIcon className="text-muted-foreground/60 size-4 shrink-0" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
+          {entry.description ? (
+            <section className="space-y-2" aria-labelledby="connector-overview-title">
+              <h2 id="connector-overview-title" className="text-foreground text-sm font-medium">
+                Overview
+              </h2>
+              {/* The full prose, unclamped — the header carries identity only. */}
+              <p className="text-muted-foreground max-w-[64ch] text-sm text-pretty whitespace-pre-line">
+                {entry.description}
+              </p>
+            </section>
+          ) : null}
 
+          <ConnectorDocumentationLinks links={remainingDocs} />
 
-      <ConnectorDocumentationLinks links={documentationLinks} />
-
-      {/* Modal flows for the non-discover sources, mounted PERSISTENTLY with
+          {/* Modal flows for the non-discover sources, mounted PERSISTENTLY with
           open driven by props — never `{actionOpen ? <Flow/> : null}`. These
           flows hold multi-step internal state, and a conditional mount
           destroys it mid-hand-off (the "Add connector does nothing, no
           request" bug). Discover entries use the split column instead — see
           the DiscoverAddSheet sibling under <SplitSheet>. */}
-      {entry.source === 'easy-connect' ? (
-        <EasyConnectAddFlow
-          projectId={projectId}
-          app={actionOpen ? entry.app : null}
-          existingSlugs={existingSlugs}
-          canWrite={canWrite}
-          onClose={() => setActionOpen(false)}
-          onAdded={added}
-        />
-      ) : entry.source === 'computer' ? (
-        <ComputersAddFlow
-          projectId={projectId}
-          open={actionOpen}
-          existingSlugs={existingSlugs}
-          canWrite={canWrite}
-          onClose={() => setActionOpen(false)}
-          onAdded={added}
-        />
-      ) : null}
+          {entry.source === 'easy-connect' ? (
+            <EasyConnectAddFlow
+              projectId={projectId}
+              app={actionOpen ? entry.app : null}
+              existingSlugs={existingSlugs}
+              canWrite={canWrite}
+              onClose={() => setActionOpen(false)}
+              onAdded={added}
+            />
+          ) : entry.source === 'computer' ? (
+            <ComputersAddFlow
+              projectId={projectId}
+              open={actionOpen}
+              existingSlugs={existingSlugs}
+              canWrite={canWrite}
+              onClose={() => setActionOpen(false)}
+              onAdded={added}
+            />
+          ) : null}
         </ConnectorDetailLayout>
       </SplitSheetMain>
 
@@ -464,6 +527,26 @@ export function CatalogConnectorPage({
       ) : null}
     </SplitSheet>
   );
+}
+
+/** One labeled fact in the meta card — small-caps label over the value. */
+function CatalogMetaColumn({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <p className="text-muted-foreground text-xs font-medium">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+/** "https://www.canva.dev/docs" → "canva.dev" — the readable identity, not
+ *  the whole address. Falls back to the raw string on an unparsable URL. */
+function websiteHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
 }
 
 function catalogDocumentationLinks(

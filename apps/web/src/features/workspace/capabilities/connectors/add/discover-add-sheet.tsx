@@ -137,7 +137,7 @@ export function DiscoverAddSheet({
         // 401) is exactly what its page's connect dialog fixes. Hand the slug
         // over so the caller still opens it (Jay: "whatever slug is created,
         // it should open that slug").
-        warningToast(`${result.name} was added, but synchronization failed: ${result.syncError}`);
+        warningToast(`${result.name} added — sign in to finish connecting.`);
         onAdded(result.slug);
         return;
       }

@@ -50,7 +50,6 @@ import {
   ConnectorDocumentationLinks,
 } from './connector-detail-layout';
 import { connectorDocLinks } from './connector-doc-links';
-import { ConnectorHeaderName } from './connector-header-name';
 import { CONNECTOR_TAB_LABEL, connectorTabs, type ConnectorTab } from './connector-tabs';
 
 const ConnectorAccounts = dynamic(
@@ -83,7 +82,7 @@ function ConnectorSectionFallback() {
 }
 
 function ConnectedConnectorSkeleton() {
-  return <ConnectorDetailSkeleton iconClassName="size-14" />;
+  return <ConnectorDetailSkeleton />;
 }
 
 export function ConnectedConnectorPage({
@@ -203,9 +202,7 @@ export function ConnectedConnectorPage({
           description={`No connector with slug “${slug}” exists in this project.`}
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={resolvedBackHref}>
-                Return to connectors
-              </Link>
+              <Link href={resolvedBackHref}>Return to connectors</Link>
             </Button>
           }
         />
@@ -349,9 +346,7 @@ function ConnectedConnectorContent({
     onSuccess: (result, next) => {
       const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
       if (syncError) {
-        warningToast(
-          `Authorization owner changed, but synchronization failed: ${syncError.error}. Use Sync to retry.`,
-        );
+        warningToast(`${connector.name} saved — sign in to finish connecting.`);
       } else {
         successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
       }
@@ -454,26 +449,28 @@ function ConnectedConnectorContent({
       <SplitSheetMain className="flex flex-col">
         <ConnectorDetailLayout
           backHref={layoutBackHref}
-          icon={<ConnectorAppIcon connector={connector} size="xl" />}
-          title={
-            <ConnectorHeaderName
-              projectId={projectId}
-              slug={connector.slug}
-              displayName={displayName}
-              canWrite={canWrite}
-              disabled={strategyUpdating}
-              onChanged={invalidate}
-            />
-          }
-          description={connectorSummary(connector, providerLabel(connector.provider))}
+          // `lg` (size-10) — the SAME tile the catalogue app page renders, so
+          // the split view's two headers mirror each other. Renaming moved to
+          // the Settings tab; the header is identity only.
+          icon={<ConnectorAppIcon connector={connector} size="lg" />}
+          title={displayName}
+          // ONE header row, like the app page beside it — the summary rides
+          // inline after the badge instead of adding a second line, so the
+          // split view's first cards start at the same y (Jay, 2026-09-14:
+          // "all the components parallel in the alignment").
           status={
-            connected ? (
-              <Badge variant="success" size="sm">
-                Connected
-              </Badge>
-            ) : (
-              <ConnectorStatusBadge connector={connector} />
-            )
+            <>
+              {connected ? (
+                <Badge variant="success" size="sm">
+                  Connected
+                </Badge>
+              ) : (
+                <ConnectorStatusBadge connector={connector} />
+              )}
+              <span className="text-muted-foreground text-sm">
+                {connectorSummary(connector, providerLabel(connector.provider))}
+              </span>
+            </>
           }
           headerAction={
             // The page-level verb: a session that starts with THIS connector
@@ -515,7 +512,6 @@ function ConnectedConnectorContent({
             />
           ) : null}
 
-
           <ConnectorManagementTabs
             projectId={projectId}
             connector={connector}
@@ -539,7 +535,6 @@ function ConnectedConnectorContent({
             }}
           />
 
-    
           {hideDocumentation ? null : <ConnectorDocumentationLinks links={docsLinks} />}
         </ConnectorDetailLayout>
       </SplitSheetMain>
@@ -665,6 +660,7 @@ function ConnectorManagementTabs({
             canWrite={canWrite}
             strategyUpdating={strategyUpdating}
             onAuthorizationStrategyChange={onAuthorizationStrategyChange}
+            onChanged={onChanged}
             onRemoved={onRemoved}
           />
         </TabsContent>

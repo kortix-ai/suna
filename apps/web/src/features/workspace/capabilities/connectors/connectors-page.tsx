@@ -41,11 +41,7 @@ import {
 
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import {
-  ConnectorAppIcon,
-  ConnectorConnectedMark,
-  ConnectorStatusBadge,
-} from './connector-identity';
+import { ConnectorAppIcon, ConnectorConnectedMark } from './connector-identity';
 import { connectorKindLabel, providerLabel } from './provider-label';
 
 import { type CatalogEntry } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
@@ -62,7 +58,11 @@ import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/ca
 import { DENSE_GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { connectorDisplayName, filterConnectors, type ConnectorScope } from './connector-filter';
 import { catalogConnectorHref, connectedConnectorHref } from './connector-routes';
-import { connectorStatusLine } from './connector-status-line';
+import {
+  connectorStatusLine,
+  connectorStatusShort,
+  connectorStatusTone,
+} from './connector-status-line';
 
 /**
  * The custom-connector form is split out of this route's initial chunk.
@@ -198,6 +198,49 @@ function parseScope(value: string | null): ConnectorScope | null {
  * is the surface the user just asked for.
  */
 type SheetOccupant = 'rules' | 'add';
+
+/**
+ * The Connected-tab card and the "In this project" strip above All-tab search
+ * results render the exact same card — one source, so a connector's icon,
+ * title, status subtitle and connected mark can never drift between the two
+ * places it appears.
+ */
+function ConnectedConnectorCard({
+  projectId,
+  connector,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+}) {
+  return (
+    <CatalogCard
+      variant="plain"
+      leading={<ConnectorAppIcon connector={connector} size="lg" />}
+      title={connectorDisplayName(connector)}
+      subtitle={
+        <span className="text-muted-foreground text-xs">
+          {connectorKindLabel(connector.provider)}
+          {' · '}
+          <span
+            className={
+              connectorStatusTone(connectorSetupStatus(connector)) === 'error'
+                ? 'text-kortix-red'
+                : connectorStatusTone(connectorSetupStatus(connector)) === 'attention'
+                  ? 'text-kortix-orange'
+                  : undefined
+            }
+          >
+            {connectorStatusShort(connector)}
+          </span>
+        </span>
+      }
+      trailing={
+        connectorSetupStatus(connector) === 'connected' ? <ConnectorConnectedMark /> : undefined
+      }
+      href={connectedConnectorHref(projectId, connector.slug)}
+    />
+  );
+}
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalogue.
@@ -475,7 +518,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       onOpenChange={(open) => {
         if (!open) closeSheet();
       }}
-      size="md"
+      size={sheet === 'add' ? 'sm' : 'md'}
       className="min-h-0 flex-1"
     >
       <SplitSheetMain className="flex flex-col">
@@ -583,13 +626,39 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
-            <ConnectorBrowse
-              state={catalog}
-              connectors={connectors}
-              getHref={getCatalogHref}
-              emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-              emptyDescription={tI18nComplete.raw('textf652a621153e')}
-            />
+            <>
+              {/* A pointer back to what the project already has, not a second
+                  tab: only while a search is active, only while it matches,
+                  and capped at 4 — see `ConnectedConnectorCard` above for why
+                  this card can never say something different from the one on
+                  the Connected tab. */}
+              {query.trim().length > 0 && filtered.length > 0 ? (
+                <section className="mb-6 space-y-2" aria-labelledby="project-matches-title">
+                  <h2
+                    id="project-matches-title"
+                    className="text-muted-foreground text-sm font-medium"
+                  >
+                    In this project
+                  </h2>
+                  <div className={DENSE_GRID_CLASSNAME}>
+                    {filtered.slice(0, 4).map((connector) => (
+                      <ConnectedConnectorCard
+                        key={connector.slug}
+                        projectId={projectId}
+                        connector={connector}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              <ConnectorBrowse
+                state={catalog}
+                connectors={connectors}
+                getHref={getCatalogHref}
+                emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+                emptyDescription={tI18nComplete.raw('textf652a621153e')}
+              />
+            </>
           ) : (
             <CatalogGrid
               gridClassName={DENSE_GRID_CLASSNAME}
@@ -626,28 +695,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               {filtered.map((connector) => (
                 // Minimal card: icon and title, no border, no meta line. The row
                 // under the title carries only what needs acting on — the
-                // emphasized MCP mark and any problem-state badge. The full
-                // status line still feeds SEARCH via `describeConnector`, so
-                // typing what a card used to say keeps matching it.
-                <CatalogCard
+                // emphasized MCP mark and one tinted `connectorStatusShort` word.
+                // The full status line still feeds SEARCH via `describeConnector`,
+                // so typing what a card used to say keeps matching it. Same card
+                // the "In this project" strip renders above — see
+                // `ConnectedConnectorCard`.
+                <ConnectedConnectorCard
                   key={connector.slug}
-                  variant="plain"
-                  leading={<ConnectorAppIcon connector={connector} size="lg" />}
-                  title={connectorDisplayName(connector)}
-                  subtitle={
-                    <>
-                      <span className="text-muted-foreground text-xs">
-                        {connectorKindLabel(connector.provider)}
-                      </span>
-                      <ConnectorStatusBadge connector={connector} />
-                    </>
-                  }
-                  trailing={
-                    connectorSetupStatus(connector) === 'connected' ? (
-                      <ConnectorConnectedMark />
-                    ) : undefined
-                  }
-                  href={connectedConnectorHref(projectId, connector.slug)}
+                  projectId={projectId}
+                  connector={connector}
                 />
               ))}
             </CatalogGrid>

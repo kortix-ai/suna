@@ -63,12 +63,7 @@ export function EasyConnectAddFlow({
     },
     onSuccess: (connection) => {
       if (connection.syncError) {
-        warningToast(
-          tI18nComplete('textd6a135de3872', {
-            value0: connection.name,
-            value1: connection.syncError,
-          }),
-        );
+        warningToast(`${connection.name} added — sign in to finish connecting.`);
         // Sync failing does not undo the create — open the connector anyway
         // so its page (and connect dialog) can finish the job.
         onAdded(connection.slug);
