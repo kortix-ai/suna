@@ -18,6 +18,13 @@
 import { randomUUID } from 'node:crypto';
 import { Agent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
+import {
+  isRpcProgress,
+  readRpcResponse,
+  RpcStreamDecoder,
+  RPC_STREAM_CONTENT_TYPE,
+  type RpcProgress,
+} from '../../../packages/shared/src/env-rpc-stream';
 const RPC_CANCEL_TIMEOUT_MS = 5_000;
 // `ws` loads lazily: only the ws transport needs it, and keeping the top
 // level free of it lets other packages import these sources for tests.
@@ -42,7 +49,13 @@ interface WsConstructor {
 }
 
 export interface RpcTransport {
-  call(op: string, args: Record<string, unknown>, cwd: string, signal?: AbortSignal): Promise<any>;
+  call(
+    op: string,
+    args: Record<string, unknown>,
+    cwd: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
+  ): Promise<any>;
   close(): Promise<void>;
   readonly kind: string;
 }
@@ -76,7 +89,9 @@ function isUnauthorizedUpgrade(error: unknown): boolean {
 }
 
 function isUnauthorizedBody(body: unknown): body is { error: 'unauthorized'; reason?: unknown } {
-  return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'unauthorized';
+  return (
+    !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'unauthorized'
+  );
 }
 
 function abortError(signal?: AbortSignal): Error {
@@ -184,19 +199,25 @@ export class FetchTransport implements RpcTransport {
     private readonly baseUrl: string,
     private readonly headers: Record<string, string> = {},
   ) {}
-  async call(op: string, args: Record<string, unknown>, cwd: string, signal?: AbortSignal) {
+  async call(
+    op: string,
+    args: Record<string, unknown>,
+    cwd: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
+  ) {
     throwIfAborted(signal);
     const requestId = randomUUID();
     const requestController = new AbortController();
     const response = fetch(`${this.baseUrl}/rpc`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...this.headers },
-      body: JSON.stringify({ op, args, cwd, requestId }),
+      body: JSON.stringify({ op, args, cwd, requestId, ...(onProgress ? { stream: true } : {}) }),
       signal: requestController.signal,
     }).then(async (res) => {
       if (res.status === 401) throw new RpcUnauthorizedBeforeExecutionError();
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      return readRpcResponse(res, onProgress);
     });
     return withCancellation(response, signal, async () => {
       requestController.abort();
@@ -219,10 +240,22 @@ export class KeepAliveTransport implements RpcTransport {
     const opts = { keepAlive: true, maxSockets: 1, keepAliveMsecs: 30_000 };
     this.agent = this.url.protocol === 'https:' ? new HttpsAgent(opts) : new Agent(opts);
   }
-  call(op: string, args: Record<string, unknown>, cwd: string, signal?: AbortSignal): Promise<any> {
+  call(
+    op: string,
+    args: Record<string, unknown>,
+    cwd: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
+  ): Promise<any> {
     throwIfAborted(signal);
     const requestId = randomUUID();
-    const payload = JSON.stringify({ op, args, cwd, requestId });
+    const payload = JSON.stringify({
+      op,
+      args,
+      cwd,
+      requestId,
+      ...(onProgress ? { stream: true } : {}),
+    });
     let req: ReturnType<typeof httpRequest> | undefined;
     const response = new Promise<any>((resolve, reject) => {
       req = httpRequest(
@@ -241,8 +274,20 @@ export class KeepAliveTransport implements RpcTransport {
         },
         (res) => {
           let body = '';
+          const streaming = res.headers['content-type']?.includes(RPC_STREAM_CONTENT_TYPE);
+          const decoder = streaming ? new RpcStreamDecoder(onProgress) : undefined;
           res.setEncoding('utf8');
-          res.on('data', (c) => (body += c));
+          res.on('data', (c) => {
+            try {
+              if (decoder) decoder.push(c);
+              else body += c;
+            } catch (error) {
+              reject(error);
+              req?.destroy(error as Error);
+            }
+          });
+          res.on('error', reject);
+          res.on('aborted', () => reject(new Error('RPC response closed before completion')));
           res.on('end', () => {
             if (res.statusCode === 401) {
               reject(new RpcUnauthorizedBeforeExecutionError());
@@ -253,7 +298,7 @@ export class KeepAliveTransport implements RpcTransport {
               return;
             }
             try {
-              resolve(JSON.parse(body));
+              resolve(decoder ? decoder.finish() : JSON.parse(body));
             } catch (e) {
               reject(e);
             }
@@ -281,7 +326,11 @@ export class WebSocketTransport implements RpcTransport {
   private seq = 0;
   private readonly pending = new Map<
     number,
-    { resolve: (v: any) => void; reject: (e: any) => void }
+    {
+      resolve: (v: any) => void;
+      reject: (e: any) => void;
+      onProgress?: (progress: RpcProgress) => void;
+    }
   >();
 
   constructor(
@@ -318,6 +367,17 @@ export class WebSocketTransport implements RpcTransport {
           }
           const p = this.pending.get(msg.id);
           if (!p) return;
+          if (msg.type === 'progress') {
+            try {
+              if (!isRpcProgress(msg.progress)) throw new Error('Invalid RPC progress frame');
+              p.onProgress?.(msg.progress);
+            } catch (error) {
+              this.pending.delete(msg.id);
+              p.reject(error);
+              this.ws?.close();
+            }
+            return;
+          }
           this.pending.delete(msg.id);
           p.resolve(msg.body);
         });
@@ -331,10 +391,13 @@ export class WebSocketTransport implements RpcTransport {
     return this.ready;
   }
 
-  private sendFrame(frame: Record<string, unknown>): Promise<any> {
+  private sendFrame(
+    frame: Record<string, unknown>,
+    onProgress?: (progress: RpcProgress) => void,
+  ): Promise<any> {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, onProgress });
       try {
         this.ws!.send(JSON.stringify({ ...frame, id }));
       } catch (error) {
@@ -349,6 +412,7 @@ export class WebSocketTransport implements RpcTransport {
     args: Record<string, unknown>,
     cwd: string,
     signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
   ): Promise<any> {
     throwIfAborted(signal);
     try {
@@ -365,7 +429,10 @@ export class WebSocketTransport implements RpcTransport {
     }
     throwIfAborted(signal);
     const requestId = randomUUID();
-    const response = this.sendFrame({ type: 'call', op, args, cwd, requestId });
+    const response = this.sendFrame(
+      { type: 'call', op, args, cwd, requestId, ...(onProgress ? { stream: true } : {}) },
+      onProgress,
+    );
     const body = await withCancellation(response, signal, async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_resolve, reject) => {
@@ -430,10 +497,11 @@ export class NegotiatingTransport implements RpcTransport {
     args: Record<string, unknown>,
     cwd: string,
     signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
   ): Promise<any> {
-    if (this.fellBack) return this.fallback.call(op, args, cwd, signal);
+    if (this.fellBack) return this.fallback.call(op, args, cwd, signal, onProgress);
     try {
-      const result = await this.preferred.call(op, args, cwd, signal);
+      const result = await this.preferred.call(op, args, cwd, signal, onProgress);
       this.proven = true;
       return result;
     } catch (e) {
@@ -444,7 +512,7 @@ export class NegotiatingTransport implements RpcTransport {
       } catch {
         // nothing to release
       }
-      return this.fallback.call(op, args, cwd, signal);
+      return this.fallback.call(op, args, cwd, signal, onProgress);
     }
   }
 

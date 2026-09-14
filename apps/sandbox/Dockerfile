@@ -49,6 +49,7 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/manifest-schema /repo/packages/manifest-schema
+COPY packages/shared /repo/packages/shared
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \

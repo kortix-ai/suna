@@ -21,6 +21,13 @@ linked, not inlined.
 
 ## Register
 
+### Verify tool progress before remote execution exits (2026-09-14)
+
+**When:** changing the Pi execution transport or running tool display.
+**Incident:** the Pi preview discarded custom updates and buffered remote Bash output until exit.
+**Rule:** hold a real command open and assert output reaches the client before releasing it. Preserve Stop and old-daemon compatibility.
+**Enforcer:** `env-rpc-worker-integration.test.ts` covers four transports; `tool-progress-routes.test.ts` checks HTTP/SSE, Stop, late updates, and exact restored history. SDK classification and Bash-view tests require running output.
+
 ### Establish an SSE subscription before triggering its test event (2026-09-10)
 
 **When:** testing a transient question, permission, or message event.

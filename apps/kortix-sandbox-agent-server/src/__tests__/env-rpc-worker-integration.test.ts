@@ -89,7 +89,15 @@ async function buildRig(): Promise<Rig> {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'lazy-env-ws-'));
 
   const daemon = new Hono();
-  daemon.get('/kortix/health', (c) => c.json({ ok: true, repo_ready: true, workload: 'environment', opencode: 'disabled', runtimeReady: true }));
+  daemon.get('/kortix/health', (c) =>
+    c.json({
+      ok: true,
+      repo_ready: true,
+      workload: 'environment',
+      opencode: 'disabled',
+      runtimeReady: true,
+    }),
+  );
   daemon.route(
     '/kortix/env-rpc',
     createEnvRpcRouter({
@@ -143,6 +151,189 @@ afterEach(async () => {
 });
 
 describe('worker lazy environment ↔ daemon env-rpc', () => {
+  test.each(['fetch', 'keepalive', 'ws', 'auto'] as const)(
+    '%s cancels remote execution when an output callback fails',
+    async (transport) => {
+      const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-progress-failure-'));
+      const proxy = startProxy(proxyConfig(workspace), fakeOpencode(), Date.now());
+      const env = new KortixExecutionEnv({
+        baseUrl: `http://127.0.0.1:${proxy.port}/kortix/env-rpc`,
+        cwd: workspace,
+        headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-progress-failure') },
+        transport,
+      });
+      const chunks: string[] = [];
+      try {
+        const result = await env.exec(
+          "echo $$ > leader.pid; printf 'EARLY'; (sleep 0.5; touch forbidden; printf 'LATE') & wait",
+          {
+            onStdout: (chunk) => {
+              chunks.push(chunk);
+              throw new Error('consumer failed');
+            },
+          },
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.message).toContain('consumer failed');
+        const pid = Number(await fs.readFile(path.join(workspace, 'leader.pid'), 'utf8'));
+        expect(() => process.kill(pid, 0)).toThrow();
+        await Bun.sleep(600);
+        expect(await fs.stat(path.join(workspace, 'forbidden')).catch(() => null)).toBeNull();
+        expect(chunks).toEqual(['EARLY']);
+      } finally {
+        await env.cleanup();
+        proxy.stop();
+        await fs.rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test('WebSocket progress stays isolated when one of two concurrent commands stops', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-progress-concurrent-'));
+    const proxy = startProxy(proxyConfig(workspace), fakeOpencode(), Date.now());
+    const env = new KortixExecutionEnv({
+      baseUrl: `http://127.0.0.1:${proxy.port}/kortix/env-rpc`,
+      cwd: workspace,
+      headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-concurrent') },
+      transport: 'ws',
+    });
+    const controller = new AbortController();
+    const first: string[] = [];
+    const second: string[] = [];
+    const stopped = env.exec(
+      "printf 'FIRST'; while [ ! -f release ]; do sleep 0.01; done; touch forbidden",
+      {
+        abortSignal: controller.signal,
+        onStdout: (chunk) => {
+          first.push(chunk);
+        },
+      },
+    );
+    const completed = env.exec(
+      "printf 'SECOND'; while [ ! -f release ]; do sleep 0.01; done; printf ' DONE'; exit 7",
+      {
+        onStdout: (chunk) => {
+          second.push(chunk);
+        },
+      },
+    );
+    try {
+      await waitUntil(() => first.length > 0 && second.length > 0);
+      controller.abort();
+      const result = await stopped;
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('aborted');
+      await fs.writeFile(path.join(workspace, 'release'), '');
+      expect(await completed).toEqual({
+        ok: true,
+        value: { stdout: 'SECOND DONE', stderr: '', exitCode: 7 },
+      });
+      expect(first.join('')).toBe('FIRST');
+      expect(second.join('')).toBe('SECOND DONE');
+      expect(await fs.stat(path.join(workspace, 'forbidden')).catch(() => null)).toBeNull();
+    } finally {
+      controller.abort();
+      await fs.writeFile(path.join(workspace, 'release'), '');
+      await Promise.all([stopped, completed]);
+      await env.cleanup();
+      proxy.stop();
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('streamed output retains the existing cap and emits the truncation suffix once', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-progress-cap-'));
+    const proxy = startProxy(proxyConfig(workspace), fakeOpencode(), Date.now());
+    const env = new KortixExecutionEnv({
+      baseUrl: `http://127.0.0.1:${proxy.port}/kortix/env-rpc`,
+      cwd: workspace,
+      headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-cap') },
+      transport: 'fetch',
+    });
+    const chunks: string[] = [];
+    try {
+      const result = await env.exec("head -c 2097153 /dev/zero | tr '\\0' x", {
+        onStdout: (chunk) => {
+          chunks.push(chunk);
+        },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.stdout).toBe('x'.repeat(2097152) + '\n[output truncated at 2MiB]');
+        expect(chunks.join('')).toBe(result.value.stdout);
+      }
+    } finally {
+      await env.cleanup();
+      proxy.stop();
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test.each(['fetch', 'keepalive', 'ws', 'auto'] as const)(
+    '%s emits stdout and stderr before exit without duplicating final output',
+    async (transport) => {
+      const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-progress-'));
+      const proxy = startProxy(proxyConfig(workspace), fakeOpencode(), Date.now());
+      const env = new KortixExecutionEnv({
+        baseUrl: `http://127.0.0.1:${proxy.port}/kortix/env-rpc`,
+        cwd: workspace,
+        headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-progress') },
+        transport,
+      });
+      const controller = new AbortController();
+      let first!: () => void;
+      const early = new Promise<void>((resolve) => {
+        first = resolve;
+      });
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      let settled = false;
+      const operation = env
+        .exec(
+          "printf 'FIRST\\n'; printf 'ERR\\n' >&2; while [ ! -f release ]; do sleep 0.01; done; printf '\\360\\237'; sleep 0.02; printf '\\230\\200\\n'",
+          {
+            abortSignal: controller.signal,
+            onStdout: (value) => {
+              stdout.push(value);
+              first();
+            },
+            onStderr: (value) => {
+              stderr.push(value);
+            },
+          },
+        )
+        .then((result) => {
+          settled = true;
+          return result;
+        });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          early,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('No output before command exit')), 2000);
+          }),
+        ]);
+        expect(settled).toBe(false);
+        expect(stdout.join('')).toBe('FIRST\n');
+        await fs.writeFile(path.join(workspace, 'release'), '');
+        expect(await operation).toEqual({
+          ok: true,
+          value: { stdout: 'FIRST\n😀\n', stderr: 'ERR\n', exitCode: 0 },
+        });
+        expect(stdout.join('')).toBe('FIRST\n😀\n');
+        expect(stderr.join('')).toBe('ERR\n');
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+        await operation;
+        await env.cleanup();
+        proxy.stop();
+        await fs.rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
   for (const transport of ['fetch', 'keepalive', 'ws'] as const) {
     test(`Stop cancels a remote ${transport} command before delayed side effects`, async () => {
       const workspace = await fs.mkdtemp(path.join(os.tmpdir(), `worker-stop-${transport}-`));

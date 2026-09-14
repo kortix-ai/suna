@@ -53,6 +53,7 @@ RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/manifest-schema /repo/packages/manifest-schema
+COPY packages/shared /repo/packages/shared
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
@@ -116,6 +117,7 @@ COPY apps/kortix-worker/ ./
 COPY packages/manifest-schema /repo/packages/manifest-schema
 COPY packages/sdk /repo/packages/sdk
 COPY packages/llm-catalog /repo/packages/llm-catalog
+COPY packages/shared /repo/packages/shared
 # SDK source resolves the worker's pinned dependencies. No dependency is
 # downloaded at worker startup; both workspace packages are bundled here.
 RUN ln -s /repo/apps/kortix-worker/node_modules /repo/node_modules \

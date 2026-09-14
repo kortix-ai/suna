@@ -173,6 +173,43 @@ The checked examples are [reviewer](../packages/sdk/examples/12-pi-reviewer.ts) 
 into the matching project agent source. Replace the examples' relative SDK import
 with `@kortix/sdk/pi`. Both examples use native JSON tool schemas.
 
+## Running tool output
+
+A tool's fourth `execute` argument is Pi's `onUpdate` callback. Send the current
+text snapshot with it. Each update replaces the preceding snapshot. The SDK and
+chat display it while the tool runs. Return the final result normally.
+
+```ts
+async execute(_id, _params, signal, onUpdate) {
+  let output = '';
+  const result = await env.exec('npm test', {
+    abortSignal: signal,
+    onStdout(chunk) {
+      output += chunk;
+      onUpdate?.({ content: [{ type: 'text', text: output }], details: {} });
+    },
+    onStderr(chunk) {
+      output += chunk;
+      onUpdate?.({ content: [{ type: 'text', text: output }], details: {} });
+    },
+  });
+  if (!result.ok) throw result.error;
+  return { content: [{ type: 'text', text: output }], details: { exitCode: result.value.exitCode } };
+}
+```
+
+The command runs in the environment. The callback and formatting run in the
+worker. Pure JavaScript tools can use `onUpdate` without starting an environment.
+The built-in Bash tool uses the same streaming path.
+
+Remote output is capped at 2 MiB per stream. Callbacks receive each accepted
+chunk once, followed by any truncation marker. Older daemons return buffered
+output at completion until upgraded. A lost connection fails the command;
+the worker does not repeat execution. Stop cancels the remote process group.
+Callback failures also cancel execution. Late updates cannot replace a terminal
+result. Final results persist in conversation history; intermediate snapshots
+are live progress and are not a separate durable log.
+
 ## Files required by custom code
 
 Declare files separately from source imports. The compiler reads their bytes from

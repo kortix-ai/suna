@@ -18,6 +18,7 @@
  */
 
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
+import type { RpcProgress } from '../../../packages/shared/src/env-rpc-stream';
 import {
   makeTransport,
   RpcCancellationError,
@@ -167,6 +168,7 @@ export class KortixExecutionEnv {
     op: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
   ): Promise<Result<T, any>> {
     this.calls.push({ op, args });
     const operation = (async () => {
@@ -174,7 +176,7 @@ export class KortixExecutionEnv {
       // between calls is a transport artifact, not a tool failure. Mutations
       // cannot be replayed because the daemon may commit the side effect before
       // the response disappears.
-      const first = await this.rpcOnce<T>(op, args, signal);
+      const first = await this.rpcOnce<T>(op, args, signal, onProgress);
       if (first.ok) return first;
       const msg = String((first.error as any)?.message ?? '');
       if (
@@ -182,7 +184,7 @@ export class KortixExecutionEnv {
         REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
         /socket|ECONNRESET|closed|EPIPE/i.test(msg)
       ) {
-        return this.rpcOnce<T>(op, args, signal);
+        return this.rpcOnce<T>(op, args, signal, onProgress);
       }
       return first;
     })();
@@ -210,9 +212,12 @@ export class KortixExecutionEnv {
     op: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
+    onProgress?: (progress: RpcProgress) => void,
   ): Promise<Result<T, any>> {
     const operationController = new AbortController();
     let abortSource: 'caller' | 'timeout' | undefined;
+    let progressError: unknown;
+    let progressFailed = false;
     const abortFromCaller = () => {
       if (operationController.signal.aborted) return;
       abortSource = 'caller';
@@ -224,7 +229,24 @@ export class KortixExecutionEnv {
     let transportOperation: Promise<any>;
     try {
       transportOperation = Promise.resolve(
-        this.transport.call(op, args, this.cwd, operationController.signal),
+        this.transport.call(
+          op,
+          args,
+          this.cwd,
+          operationController.signal,
+          onProgress
+            ? (progress) => {
+                if (operationController.signal.aborted) return;
+                try {
+                  onProgress(progress);
+                } catch (error) {
+                  progressFailed = true;
+                  progressError = error;
+                  operationController.abort(error);
+                }
+              }
+            : undefined,
+        ),
       );
     } catch (error) {
       transportOperation = Promise.reject(error);
@@ -256,6 +278,7 @@ export class KortixExecutionEnv {
     });
     try {
       const body: any = await Promise.race([transportOperation, timer]);
+      if (progressFailed) throw progressError;
       if (body?.ok) return ok(body.value as T);
       return err(
         new FileErrorLike(
@@ -272,6 +295,10 @@ export class KortixExecutionEnv {
       if (e instanceof RpcUnauthorizedBeforeExecutionError) {
         return err(new FileErrorLike('rpc_unauthorized', e.message));
       }
+      if (progressFailed && !(e instanceof RpcCancellationError))
+        return err(
+          new FileErrorLike('unknown', String((progressError as Error)?.message ?? progressError)),
+        );
       return err(new FileErrorLike('unknown', String(e?.message ?? e)));
     } finally {
       if (timeout) clearTimeout(timeout);
@@ -374,6 +401,15 @@ export class KortixExecutionEnv {
     command: string,
     options?: ShellExecOptions,
   ): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, any>> {
+    const delivered = { stdout: '', stderr: '' };
+    const onProgress =
+      options?.onStdout || options?.onStderr
+        ? (progress: RpcProgress) => {
+            delivered[progress.stream] += progress.chunk;
+            if (progress.stream === 'stdout') options?.onStdout?.(progress.chunk);
+            else options?.onStderr?.(progress.chunk);
+          }
+        : undefined;
     const r = await this.rpc<{ stdout: string; stderr: string; exitCode: number }>(
       'exec',
       {
@@ -393,6 +429,7 @@ export class KortixExecutionEnv {
         timeout: toExecTimeoutMs(options?.timeout),
       },
       options?.abortSignal,
+      onProgress,
     );
     if (!r.ok)
       return err(
@@ -401,10 +438,19 @@ export class KortixExecutionEnv {
           String((r.error as any)?.message),
         ),
       );
-    // Streaming callbacks are honoured after the fact for the spike; the real
-    // implementation streams these over the multiplexed connection.
-    if (options?.onStdout && r.value.stdout) options.onStdout(r.value.stdout);
-    if (options?.onStderr && r.value.stderr) options.onStderr(r.value.stderr);
+    try {
+      for (const stream of ['stdout', 'stderr'] as const) {
+        if (!r.value[stream].startsWith(delivered[stream]))
+          throw new Error('RPC output differs from streamed progress');
+        const suffix = r.value[stream].slice(delivered[stream].length);
+        if (suffix && !options?.abortSignal?.aborted) {
+          if (stream === 'stdout') options?.onStdout?.(suffix);
+          else options?.onStderr?.(suffix);
+        }
+      }
+    } catch (error) {
+      return err(new ExecutionErrorLike('unknown', String((error as Error)?.message ?? error)));
+    }
     return r;
   }
 

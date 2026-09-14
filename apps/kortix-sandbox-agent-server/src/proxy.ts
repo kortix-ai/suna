@@ -23,6 +23,7 @@ import { OPENCODE_HOME } from './opencode';
 import { createAbortRouter } from './routes/abort';
 import { createEnvRouter } from './routes/env';
 import { createEnvRpcRouter, environmentRpcSecret } from './routes/env-rpc';
+import { readRpcResponse } from '../../../packages/shared/src/env-rpc-stream';
 import { createGitRouter } from './routes/git';
 import { createPortProxyRouter } from './routes/port-proxy';
 import { createFilesRouter } from './routes/files';
@@ -221,6 +222,7 @@ async function handleEnvRpcFrame(
       args?: unknown;
       cwd?: unknown;
       requestId?: unknown;
+      stream?: unknown;
     };
     id = frame.id;
     const headers: Record<string, string> = { 'content-type': 'application/json' };
@@ -257,13 +259,14 @@ async function handleEnvRpcFrame(
           args: frame.args,
           cwd: frame.cwd,
           requestId,
+          stream: frame.stream === true,
         }),
         signal: controller.signal,
       }),
     );
-    const body = await res
-      .json()
-      .catch(() => ({ ok: false, error: { code: 'unknown', message: 'bad rpc response' } }));
+    const body = await readRpcResponse(res, progress => {
+      ws.send(JSON.stringify({ id, type: 'progress', progress }));
+    });
     ws.send(JSON.stringify({ id, body }));
   } catch (e) {
     try {

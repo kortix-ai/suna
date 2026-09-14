@@ -2,7 +2,13 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { Hono, type Context } from 'hono';
+import { stream } from 'hono/streaming';
+import {
+  RPC_STREAM_CONTENT_TYPE,
+  type RpcProgress,
+} from '../../../../packages/shared/src/env-rpc-stream';
 
 import type { Config } from '../config';
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context';
@@ -157,6 +163,7 @@ async function runExec(input: {
   env?: Record<string, string>;
   timeoutMs: number;
   signal: AbortSignal;
+  onProgress?: (progress: RpcProgress) => void;
 }): Promise<{ stdout: string; stderr: string; exitCode: number; aborted: boolean }> {
   if (input.signal.aborted) {
     return { stdout: '', stderr: 'aborted', exitCode: 130, aborted: true };
@@ -177,6 +184,11 @@ async function runExec(input: {
     let truncatedErr = false;
     let aborted = false;
     let settled = false;
+    const outDecoder = new StringDecoder('utf8');
+    const errDecoder = new StringDecoder('utf8');
+    const progress = (stream: RpcProgress['stream'], chunk: string) => {
+      if (chunk && !settled && !input.signal.aborted) input.onProgress?.({ stream, chunk });
+    };
     const cap = (buf: Buffer, chunk: Buffer, markTruncated: () => void): Buffer => {
       if (buf.length >= EXEC_OUTPUT_CAP_BYTES) {
         markTruncated();
@@ -187,14 +199,18 @@ async function runExec(input: {
       return Buffer.concat([buf, chunk.subarray(0, room)]);
     };
     child.stdout.on('data', (c: Buffer) => {
+      const previous = stdout.length;
       stdout = cap(stdout, c, () => {
         truncatedOut = true;
       });
+      progress('stdout', outDecoder.write(stdout.subarray(previous)));
     });
     child.stderr.on('data', (c: Buffer) => {
+      const previous = stderr.length;
       stderr = cap(stderr, c, () => {
         truncatedErr = true;
       });
+      progress('stderr', errDecoder.write(stderr.subarray(previous)));
     });
     const killGroup = () => {
       if (process.platform !== 'win32' && child.pid) {
@@ -227,6 +243,8 @@ async function runExec(input: {
       resolve(result);
     };
     child.on('close', (code, signal) => {
+      progress('stdout', outDecoder.end());
+      progress('stderr', errDecoder.end());
       const suffix = (t: boolean) => (t ? '\n[output truncated at 2MiB]' : '');
       finish({
         stdout: stdout.toString('utf8') + suffix(truncatedOut),
@@ -284,7 +302,13 @@ export function createEnvRpcRouter(cfg: Config): Hono {
   });
 
   const handler = async (c: Context) => {
-    let body: { op?: unknown; args?: unknown; cwd?: unknown; requestId?: unknown };
+    let body: {
+      op?: unknown;
+      args?: unknown;
+      cwd?: unknown;
+      requestId?: unknown;
+      stream?: unknown;
+    };
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
@@ -314,6 +338,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
     const p = (key = 'path') => resolveIn(cwd, String(args[key] ?? ''));
     const execution = cancellations.begin(requestId, c.req.raw.signal);
     const signal = execution.controller.signal;
+    let streamingExecution = false;
 
     try {
       if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
@@ -463,13 +488,42 @@ export function createEnvRpcRouter(cfg: Config): Hono {
               : EXEC_TIMEOUT_DEFAULT_MS,
             EXEC_TIMEOUT_MAX_MS,
           );
-          const result = await runExec({
+          const input = {
             command,
             cwd: typeof args.cwd === 'string' && args.cwd ? resolveIn(cwd, args.cwd) : cwd,
             env: (args.env as Record<string, string>) ?? undefined,
             timeoutMs,
             signal,
-          });
+          };
+          if (body.stream === true) {
+            streamingExecution = true;
+            c.header('Content-Type', RPC_STREAM_CONTENT_TYPE);
+            c.header('Cache-Control', 'no-store');
+            c.header('X-Accel-Buffering', 'no');
+            return stream(c, async (output) => {
+              output.onAbort(() => execution.controller.abort());
+              let writes = Promise.resolve();
+              try {
+                const result = await runExec({
+                  ...input,
+                  onProgress: (progress) => {
+                    writes = writes.then(async () => {
+                      await output.write(JSON.stringify({ type: 'progress', progress }) + '\n');
+                    });
+                    void writes.catch(() => execution.controller.abort());
+                  },
+                });
+                await writes;
+                const { aborted, ...value } = result;
+                const body = aborted ? err({ code: 'ABORT_ERR', message: 'aborted' }) : ok(value);
+                await output.write(JSON.stringify({ type: 'result', body }) + '\n');
+              } finally {
+                execution.controller.abort();
+                execution.finish();
+              }
+            });
+          }
+          const result = await runExec(input);
           if (result.aborted) {
             return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
           }
@@ -487,7 +541,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
       logger.error('[env-rpc] unexpected failure', e);
       return c.json(fsError(e));
     } finally {
-      execution.finish();
+      if (!streamingExecution) execution.finish();
     }
   };
 

@@ -37,7 +37,7 @@ of each feature or the remaining parity matrix passed.
 | Capability | Implementation | Verification |
 |---|---|---|
 | Text, streamed responses, status, Stop, next prompt | Durable admission, turn ownership, wire events, and SDK transport | HTTP recovery suites; browser incremental rendering and Stop |
-| Tool progress | Running output uses the existing tool metadata contract and SDK classification; terminal results replace progress | Authenticated HTTP/SSE custom-tool tests cover early output, Stop, late updates, and exact final history after restart. Remote Bash transport streaming is the next step |
+| Tool progress | Bash and custom tools expose running output through the existing SDK and chat contract; terminal results replace progress | Authenticated HTTP/SSE tests cover early output, Stop, late updates, and exact final history after restart. Real daemon tests cover all four transports, concurrent commands, Unicode, output caps, callback failures, and old-daemon compatibility |
 | Questions | Native tool, existing web cards, reply/reject, durable checkpoints | Reply failure, reload, worker replacement, dismissal, multi-question browser journeys |
 | Permissions | Tool policy, URL/path patterns, once/always/reject, durable checkpoints | Policy, persistence failures, replacement, closed-boundary and browser tests |
 | Per-agent behavior | Prompt, session model selection, generation settings, step limit, permission policy | Compiler, HTTP, and distinct reviewer/operator live sessions |
