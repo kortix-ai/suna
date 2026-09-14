@@ -1243,7 +1243,22 @@ app.onError((err, c) => {
     // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
     // so a long upstream message cannot shard the grouping without limit.
     const reason = (err.message ?? '').slice(0, 200);
-    appLogger.error(
+    // SEVERITY FOLLOWS THE CAUSE. A 4xx here is the gate working: an expired
+    // token, a project-scoped token refused a cross-project read, an agent
+    // without `project.session.start` in its kortix.yaml. The branch above
+    // already says so — only 5xx is captured to Sentry, "4xx are expected" —
+    // but every one of them was still written at ERROR level.
+    //
+    // PROD, 24h to 2026-09-13: 288 error-level lines, of which ~123 (43%) were
+    // 4xx denials of exactly that kind. Real faults were the minority of the
+    // error log, which is how a real fault gets missed.
+    //
+    // `warn` keeps every one of them queryable and grouped on the same message
+    // — the reason stays in the string, so the 403-shape work that motivated it
+    // is untouched — while `level = error` goes back to meaning the platform
+    // failed. Same line, same fields, same grouping; only the severity moves.
+    const level = err.status >= 500 ? 'error' : 'warn';
+    appLogger[level](
       `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`,
       {
         status: err.status,
