@@ -1,5 +1,9 @@
 /** Local preparation only. No destination client and no migration/apply command. */
 import { parseArgs } from 'node:util';
+import { assertPreparationScope } from './scope';
+import { constants, openSync, closeSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { projectThread } from './projection';
 import { Ledger, digest } from './ledger';
 import { LegacySource, type JsonRow } from './source';
 
@@ -7,15 +11,40 @@ const TABLES = ['projects', 'threads', 'messages', 'resources', 'agents', 'agent
 
 export async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
-    'source-ref': { type: 'string' }, 'key-env': { type: 'string' }, out: { type: 'string' },
+    'scope-file': { type: 'string', default: '.legacy-transfer/scope.json' }, 'source-ref': { type: 'string' }, 'key-env': { type: 'string' }, out: { type: 'string' },
     table: { type: 'string' }, pk: { type: 'string' }, schema: { type: 'string', default: 'public' },
-    'thread-id': { type: 'string' }, 'page-size': { type: 'string', default: '250' }, help: { type: 'boolean' },
+    'thread-id': { type: 'string' }, 'runtime-version': { type: 'string' }, 'page-size': { type: 'string', default: '250' }, help: { type: 'boolean' },
   } });
   const command = positionals[0];
   if (values.help) {
-    console.log('Read-only: inspect | storage | export-table | export-thread\nRequired: --source-ref REF --key-env ENV_NAME\nExports: --out /path/.legacy-transfer/REF [--table TABLE --pk COLUMN --schema public]\nThread: --thread-id UUID. No apply command exists.'); return;
+    console.log('Read-only: inspect | storage | export-table | export-thread | project-thread (local only)\nRequired: --source-ref REF --key-env ENV_NAME\nExports: --out /path/.legacy-transfer/REF [--table TABLE --pk COLUMN --schema public]\nThread: --thread-id UUID. No apply command exists.'); return;
   }
-  if (!command || positionals.length !== 1 || !['inspect', 'storage', 'export-table', 'export-thread'].includes(command)) throw new Error('Unknown command; remote writes are disabled');
+  if (!command || positionals.length !== 1 || !['inspect', 'storage', 'export-table', 'export-thread', 'project-thread'].includes(command)) throw new Error('Unknown command; remote writes are disabled');
+  if (!values['source-ref']) throw new Error('--source-ref is required');
+  const scope = await Bun.file(values['scope-file']).json();
+  assertPreparationScope(scope, values['source-ref']);
+  if (command === 'project-thread') {
+    if (!values['source-ref'] || !values['thread-id'] || !values['runtime-version'] || !values.out) throw new Error('Local projection requires --source-ref, --thread-id, --runtime-version, and --out');
+    if (!/^[0-9a-f-]{36}$/.test(values['thread-id'])) throw new Error('Invalid thread UUID');
+    const ledger = new Ledger(values.out);
+    try {
+      const ref = values['source-ref']; const threadId = values['thread-id'];
+      const saved = ledger.db.query('SELECT json FROM records WHERE source_ref=? AND source_table=? AND source_id=?').get(ref, 'public.threads', threadId) as { json: string } | null;
+      if (!saved) throw new Error('Export the thread metadata first');
+      const scope = JSON.stringify({ thread_id: `eq.${threadId}` });
+      const exported = ledger.db.query("SELECT status,actual FROM exports WHERE source_ref=? AND source_table='public.messages' AND scope=?").get(ref, scope) as { status: string; actual: number } | null;
+      if (exported?.status !== 'count-matched') throw new Error('A complete thread export is required');
+      const records = ledger.db.query("SELECT r.json FROM records r JOIN export_records e USING(source_ref,source_table,source_id) WHERE e.source_ref=? AND e.source_table='public.messages' AND e.scope=?").all(ref, scope) as Array<{ json: string }>;
+      if (records.length !== exported.actual) throw new Error('Export membership does not match its recorded count');
+      const result = projectThread({ ref, thread: JSON.parse(saved.json), rows: records.map(r => JSON.parse(r.json)), runtimeVersion: values['runtime-version'] });
+      for (const [suffix, data] of [['native', result.runtime], ['audit', result.audit]] as const) {
+        const fd = openSync(join(values.out, threadId + '.' + suffix + '.json'), constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
+        try { writeFileSync(fd, JSON.stringify(data, null, 2)); } finally { closeSync(fd); }
+      }
+      console.log(JSON.stringify({ source_rows: result.audit.source_rows, native_messages: result.audit.native_messages, unresolved: result.audit.unresolved.length, ready_for_apply: false }));
+    } finally { ledger.close(); }
+    return;
+  }
   if (!values['source-ref'] || !values['key-env']) throw new Error('--source-ref and --key-env are required');
   const ref = values['source-ref'];
   const source = new LegacySource(ref, process.env[values['key-env']] ?? '');
@@ -54,10 +83,17 @@ export async function main(argv: string[]): Promise<void> {
     }
     const thread = values['thread-id'];
     if (command === 'export-thread' && (!thread || !/^[0-9a-f-]{36}$/.test(thread))) throw new Error('--thread-id must be a UUID');
+    if (command === 'export-thread') {
+      let found = 0;
+      for await (const rows of source.rows('threads', 'thread_id', { filters: { and: `(thread_id.eq.${thread})` } })) {
+        ledger.save(ref, 'public.threads', 'thread_id', rows); found += rows.length;
+      }
+      if (found !== 1) throw new Error('Expected exactly one source thread');
+    }
     const table = command === 'export-thread' ? 'messages' : values.table;
     const pk = command === 'export-thread' ? 'message_id' : values.pk;
     if (!table || !pk) throw new Error('--table and --pk are required');
-    const filters = command === 'export-thread' ? { thread_id: `eq.${thread}` } : {};
+    const filters: Record<string, string> = command === 'export-thread' ? { thread_id: `eq.${thread}` } : {};
     const scope = JSON.stringify(filters);
     const expected = await source.count(table, values.schema, filters);
     ledger.begin(ref, `${values.schema}.${table}`, scope, expected);

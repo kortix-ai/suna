@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LegacySource, resolveSandbox } from './source';
 import { Ledger, mappedId } from './ledger';
+import { assertPreparationScope } from './scope';
 
 const ref = 'abcdefghijklmnopqrst';
 function fake(responses: Response[], calls: Array<{ url: string; init?: RequestInit }> = []): typeof fetch {
@@ -97,4 +98,12 @@ describe('source identity and preservation', () => {
   test('refuses output outside the ignored source-data directory', () => {
     expect(() => new Ledger('/tmp/unsafe-export')).toThrow('.legacy-transfer');
   });
+});
+
+ test('development scope rejects unapproved sources and remote write flags', () => {
+  const scope = { mode: 'development-only', source_refs: [ref], allow_source_lifecycle: false, allow_destination_writes: false };
+  expect(() => assertPreparationScope(scope, ref)).not.toThrow();
+  expect(() => assertPreparationScope(scope, 'zyxwvutsrqponmlkjihg')).toThrow('outside');
+  expect(() => assertPreparationScope({ ...scope, allow_source_lifecycle: true }, ref)).toThrow('remote writes disabled');
+  expect(() => assertPreparationScope({ ...scope, allow_destination_writes: true }, ref)).toThrow('remote writes disabled');
 });
