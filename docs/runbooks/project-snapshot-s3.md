@@ -254,15 +254,18 @@ what the presigned URLs point at), no KMS context unless you opt in.
 | Bucket module | `infra/terraform/modules/project-snapshots-bucket` — private (all public access blocked, `BucketOwnerEnforced`), SSE-S3 by default (`kms_key_arn` switches to SSE-KMS), versioning on with 7-day noncurrent expiry, objects expire after `expiration_days` (default 30; 0 disables), incomplete multipart uploads aborted after 1 day, TLS-only bucket policy |
 | Task-role grant | `modules/ecs-api` `project_snapshot_bucket_arn` (+ `project_snapshot_kms_key_arn`): `s3:PutObject` + `s3:GetObject` on `<bucket>/*`, nothing on the bucket itself, no delete |
 | Wiring | `infra/terraform/environments/{dev,staging,prod,prod-us-east-2-shadow}/main.tf`: `module "project_snapshots"` named `kortix-<env>-project-snapshots`, passed into `module "api"`; output `project_snapshot_bucket` |
-| Env | `KORTIX_ECS_ENV_OVERRIDES` in `.github/workflows/deploy-<env>.yml`: `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` = the bucket name, `KORTIX_PROJECT_SNAPSHOT_S3_REGION` = the root's `aws_region`. Set for **staging only** as of this branch; dev and prod get the bucket and the grant from Terraform but stay idle until their workflows name it |
+| Env | `KORTIX_ECS_ENV_OVERRIDES` in `.github/workflows/deploy-<env>.yml`: `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` = the bucket name, `KORTIX_PROJECT_SNAPSHOT_S3_REGION` = the root's `aws_region`. Set for **dev and staging** (`kortix-dev-project-snapshots`, `kortix-staging-project-snapshots`; prod and the shadow root have the bucket but no env yet) as of this branch; dev and prod get the bucket and the grant from Terraform but stay idle until their workflows name it |
 
-Bringing staging up:
+Bringing an environment up (dev first — `main` auto-deploys it — then staging;
+the steps are the same with `dev` in place of `staging`):
 
-1. Apply `infra/terraform/environments/staging` (the usual `terraform-apply.yml`
+1. Apply `infra/terraform/environments/<env>` (the usual `terraform-apply.yml`
    dispatch for that root). Plan shows: one bucket + its five sub-resources,
-   one `aws_iam_role_policy` on `kortix-staging-task`, one output. Nothing
-   touches the running service.
-2. Deploy staging (`deploy-staging.yml`). `ecs-deploy.sh` merges the two new
+   one `aws_iam_role_policy` on `kortix-<env>-task`, one output. Nothing
+   touches the running service. Order does not matter: a deploy that names a
+   bucket which does not exist yet leaves the worker logging failed uploads
+   and every session on the Git path until the apply lands.
+2. Deploy (`deploy-<env>.yml`). `ecs-deploy.sh` merges the two new
    keys into the task env; the API validates them at boot and the leader's
    snapshot worker starts polling. `GET /v1/git/<project>.git/project-snapshot`
    answers 404 `not_prepared` instead of 503 from here on.
