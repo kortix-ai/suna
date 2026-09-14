@@ -144,7 +144,7 @@ describe('ephemeral self-host preview stack', () => {
   // repos, and `/tmp/kortix/git-cache` was simply gone.
   it('budgets the full locale census within the preview frontend memory ceiling', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
-    expect(overlay).toContain('  frontend:\n    mem_limit: 2048m');
+    expect(overlay).toContain('  frontend:\n    mem_limit: 4096m');
     expect(overlay).toContain('NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1536"');
   });
 

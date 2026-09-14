@@ -5,16 +5,20 @@ Preview: [pi.kortix.com](https://pi.kortix.com). No production merge.
 
 ## Contract
 
-A model change applies to prompts accepted after the save completes. Running,
-queued, and question/permission-paused prompts retain their accepted model.
+The worker snapshots the saved model when it accepts a new prompt.
+Running, queued, and question/permission-paused prompts retain that snapshot.
+A later model save does not change an already accepted prompt.
 The agent, source commit, custom tools/hooks, resources, state, permissions, and
 environment remain unchanged. Stop/resume preserves the selection and history.
 
 ## Real preview checks
 
-Code revision: `c0a4e666c4f5c4f362befa219262b8179fc64657`.
-Deployment: [34839124700](https://github.com/kortix-ai/suna/actions/runs/34839124700).
+Model behavior revision: `6bfb41b6dcfa38f1b867e9cc0f5dd1243727a528`.
+Deployment: [34841293285](https://github.com/kortix-ai/suna/actions/runs/34841293285).
 API health, checkout, and API/gateway/frontend image tags match this revision.
+The custom-tool and provider-recovery checks below ran at `c0a4e666c4`.
+The final revision adds selected-model refresh to the canonical reload snapshot.
+Both model pickers are verified again at the final revision.
 
 - The custom resource agent switches Luna → DeepSeek without rerunning initialization.
   Agent name, source SHA, worker identity, resource bytes, and denied undeclared
@@ -25,8 +29,14 @@ API health, checkout, and API/gateway/frontend image tags match this revision.
   Nine historical message envelopes survive byte-for-byte before the next prompt.
 - The real CLI saves Luna, exits `0`, reports “for new prompts”, and leaves the
   session running. The session row contains `kortix/gpt-5.6-luna`.
-- The main browser model picker changes the selection and keeps the agent locked.
-  DeepSeek removes the image attachment control. Reload retains the selection.
+- The main browser switches Luna ↔ DeepSeek and keeps the agent locked.
+  Each actual PUT contains the selected model and returns `200` with
+  `applies_to: next_prompt`. The row stays running. Reload retains the selection.
+  Luna shows image attachments; DeepSeek hides them, including after reload.
+- The local production white-label UI uses the final preview API through its
+  wrapper. Its model picker sends `{model: kortix/gpt-5.6-luna}`, receives `200`
+  with `appliesTo: next_prompt`, shows the confirmation, and survives reload.
+  Its temporary user store is isolated. The server and owned test workers are stopped.
 - A native provider context rejection recovers and answers `2 — ORCHID-47`.
   Two total tool calls include the baseline call. The active call is not repeated.
   Eight message envelopes survive restart. The response emits 14 text deltas.
@@ -54,8 +64,25 @@ while saving. The SDK suite passes 2,947 tests. Typecheck and installed-package
 verification pass. White-label production HTTP checks pass both model route cases.
 The CLI parity suite passes 56 real-process tests.
 
-Full-suite failures are recorded in [the parity audit](./PI_OPENCODE_PARITY.md).
-These focused results do not certify all OpenCode parity or every host UI.
+The complete package lane passes: `pnpm test -- --packages-only` (365.2 seconds).
+It includes 9,420 API tests and 9,636 web tests; 82 existing API skips remain.
+The final worker change also passes all 866 worker tests and its typecheck.
+
+The final preview REST/CLI lane passes 465 of 468 flows, with zero failures.
+Three existing skips remain: `CHN-6` has no connected Slack workspace;
+`CONN-26` and `SESS-23` are quarantined upstream. SEC-J now passes.
+The initial full command finds Chromium in the wrong cache directory and fails
+its browser lane before navigation. The complete browser lane then starts with the installed cache path, but Docker
+kills the frontend at its 2 GiB limit during the locale census. A healthy response
+after its automatic restart does not count as a passing run.
+
+The preview overlay now reserves 4 GiB and retains the 1.5 GiB Node heap ceiling.
+Run the full target suite with
+`PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright` in provider exec.
+The PR records the final deployed SHA, full rerun results, and restart counters.
+
+These results do not certify all OpenCode parity or mobile model controls.
+See [the parity audit](./PI_OPENCODE_PARITY.md) for remaining capabilities.
 
 ## Manual test
 

@@ -16,19 +16,10 @@ import { Check, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
- * Change the model mid-session.
- *
- * A session's model used to be fixed at creation — the runtime read it once at
- * start, so a live session kept it forever. Changing it now re-points the
- * running runtime, which RESTARTS it and therefore ends any in-flight turn.
- * That is why this is a deliberate choice rather than a silent setting.
- *
- * Goes through `/api/session-model` rather than the SDK directly: the upstream
- * field is named after the runtime, and reference-app client code stays
- * provider-neutral (scripts/sdk-boundary.mjs). The route reports whether the
- * change took effect NOW or applies at next start, and we say which — a user
- * told the model changed, whose next answer comes from the old one, has been
- * lied to.
+ * Save the session model through the provider-neutral wrapper route.
+ * Pi applies the selection to newly accepted prompts without restarting.
+ * OpenCode can restart its runtime. The response identifies which behavior
+ * occurred, including a persisted change that failed to reach the runtime.
  */
 export function ModelSwitcher({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const qc = useQueryClient();

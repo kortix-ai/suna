@@ -39,7 +39,7 @@ of each feature or the remaining parity matrix passed.
 | Text, streamed responses, status, Stop, next prompt | Durable admission, turn ownership, wire events, and SDK transport | HTTP recovery suites; browser incremental rendering and Stop |
 | Questions | Native tool, existing web cards, reply/reject, durable checkpoints | Reply failure, reload, worker replacement, dismissal, multi-question browser journeys |
 | Permissions | Tool policy, URL/path patterns, once/always/reject, durable checkpoints | Policy, persistence failures, replacement, closed-boundary and browser tests |
-| Per-agent behavior | Prompt, model at session creation, generation settings, step limit, permission policy | Compiler, HTTP, and distinct reviewer/operator live sessions |
+| Per-agent behavior | Prompt, session model selection, generation settings, step limit, permission policy | Compiler, HTTP, and distinct reviewer/operator live sessions |
 | Custom Pi code | Static module and pinned dependencies in the immutable bundle | Real compiled artifact, custom tools, initialize/cancel/shutdown and native lifecycle hooks |
 | Custom code resources | Per-agent JSON, text, and binary resources in the bundle; declared environment seeds and helper scripts | Preview `3cf1324e2a`: agent isolation, pinned releases, invalid JSON, edited/deleted seeds across restart, helper cancellation, Files and Terminal, and immediate ingress reconnection |
 | Durable custom state | Versioned state through the session log; conditional writes, quotas, deletion, and initialization recovery | Real compiled SDK errors, HTTP conflicts, crash recovery, and the custom-state preview verification record |
@@ -60,7 +60,7 @@ of each feature or the remaining parity matrix passed.
 | Reasoning variants | Compiled defaults, per-prompt/command settings, worker capability projection, session-scoped React selection | Eight live SDK calls; preview UI High/None/Auto payloads and provider results; reload, nine-message stop/resume, and question recovery |
 | Structured output | Prompt-scoped JSON Schema, `info.structured`, validation retries, terminal errors, and SDK `send(..., { format })` | Draft 7/2020-12 object schemas and local references through real Luna; HTTP validation, queue, cancellation, lifecycle, crash, and question-recovery tests |
 | Remote MCP resources and prompts | Capability-based resource/template discovery, resource reads, prompt discovery/retrieval, native image content, and existing connector policies | Preview `48e1acb70f`: all five operations through SDK and real CLI; catalog upgrade, pagination, errors, block/approval, PostgreSQL audit, Pi prompt/image UI, 47 text deltas, exact 63-message restart, denied-agent isolation, and absent environments |
-| Live model switching | Saved session model and capability snapshot for each newly accepted prompt; accepted turns keep their model | Preview `c0a4e666c4`: Luna → DeepSeek, unchanged custom resources and initialization, exact history after restart, legacy worker upgrade, real CLI and main model picker. HTTP recovery, SDK, and white-label route tests pass |
+| Live model switching | Saved session model and capability snapshot for each newly accepted prompt; accepted turns keep their model | Preview `c0a4e666c4`: unchanged custom resources/initialization, exact restart history, legacy worker upgrade, and real CLI. Final `6bfb41b6dc`: main and white-label model pickers, persisted selection, reload, and correct image capability |
 | Pi terminal | `connect` and interactive `chat` use a Kortix terminal over SDK transport; numbered questions, permission details, Stop, reconnect, and durable messages | Real CLI against preview `b918ca0b199`: two PTYs, 783 text deltas, once/reject, preserved pending permission, Ctrl-C/next prompt, standalone queue after history, exact 26-message restart, and no environment. OpenCode sessions retain their TUI |
 
 Custom Pi modules are supported. OpenCode plugins are not automatically Pi
@@ -83,16 +83,24 @@ extensions. The native Pi lifecycle surface is documented in
 
 First-party host checks remain separate. SDK transport is shared, but web,
 white-label, CLI, and mobile require their own user-input/output verification.
-Main web model selection and real CLI model changes are verified. White-label
-model route checks pass against its production Next server. Its full browser
-model-change flow and mobile model controls remain unverified.
+Main web and white-label model pickers pass real browser save/reload checks.
+The white-label production server uses the preview API through its wrapper.
+Real CLI model changes also pass. Mobile model controls remain unverified.
 
-The full preview suite at `1877cccc43` passes 464 of 468 REST/CLI flows.
-SEC-J fails because the main-branch preview bootstrap overwrites the branch's
-sensitive-path rule. Applying the branch Caddy configuration restores a plain
-nine-byte 404. Three existing skips remain. The browser lane fails its locale
-census when the 512 MiB frontend exhausts its Node heap. The branch preview
-overlay now allocates 2 GiB with a 1.5 GiB heap. A full rerun is required.
+At `6bfb41b6dc`, the complete deployed REST/CLI lane passes 465 of 468 flows,
+with zero failures. Three existing skips remain: `CHN-6` requires a connected
+Slack workspace; `CONN-26` and `SESS-23` are quarantined upstream. SEC-J passes
+after applying the branch Caddy configuration.
+
+The preview frontend now uses 4 GiB memory and a 1.5 GiB Node heap.
+The previous 2 GiB container was OOM-killed during the complete locale census;
+automatic recovery left a healthy frontend but invalidated that verification. The main-branch
+bootstrap still overwrites branch preview configuration; this verification
+explicitly reapplies the branch Caddy and Compose overlay after deployment.
+The initial full command fails browser startup because Chromium is installed in
+`/root/.cache/ms-playwright`, while provider exec resolves the default cache under
+`/`. The full rerun requires the explicit cache path and the updated memory budget.
+The PR records the final deployed SHA, suite results, and container restart count.
 
 See [model selection verification](./PI_MODEL_SELECTION_VERIFICATION.md) for
 exact fixtures, regression cases, and manual testing steps.

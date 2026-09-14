@@ -6346,3 +6346,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** the main browser showed the saved model name but could initially hide the image attachment control after reload. `/kortix/opencode/state` still advertised the worker startup model until a separate configuration read refreshed it.
 **Rule:** every authoritative configuration surface reads the saved model selection, including the initial runtime snapshot. Do not depend on a later legacy config request to repair it. An unavailable selection endpoint fails the snapshot explicitly.
 **Enforcer:** `model-switching.test.ts` checks both canonical snapshot paths, legacy config reads, capability values, an unchanged active model, and selection-service failure.
+
+### Reserve native memory outside the preview Node heap (2026-09-14)
+
+**Incident:** the full locale census at `6bfb41b6dc` exceeded the frontend's 2 GiB container limit. Docker recorded `OOMKilled=true` and one restart. The logs did not report a V8 heap-limit failure.
+**Rule:** the 1.5 GiB JavaScript heap is not the process memory ceiling. The full preview reserves 4 GiB for the frontend and retains the 1.5 GiB heap limit. This replaces the earlier 2 GiB preview budget. Inspect Docker OOM and restart counters across the complete census; a health check after automatic restart does not prove the run stayed healthy.
+**Enforcer:** `tests/unit/preview-stack.test.ts` checks both ceilings and the HTTP header limit. Record complete deployed browser results and restart counters in PR #6998.
