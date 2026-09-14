@@ -318,6 +318,8 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      # OIDC for the project-snapshot bucket credentials (see the assume step).
+      id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -431,6 +433,23 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
           jq -n '{state:"in_progress",description:"Building the self-host preview"}' | \
             gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --input - >/dev/null
+      - name: Assume the preview AWS role for the project-snapshot bucket (12 h)
+        # The preview API has no AWS identity of its own. These TEMPORARY
+        # credentials travel into it through the runtime-secret allowlist
+        # (tests/src/core/preview-stack.ts) so its snapshot worker can write
+        # kortix-preview-project-snapshots and presign sandbox downloads
+        # (infra/terraform/environments/preview/project-snapshots.tf). They
+        # expire with this session — 12 h, the role's maximum — after which the
+        # API falls back to the Git path until the preview is redeployed.
+        # continue-on-error: a preview without S3 is still a complete preview
+        # (the stack leaves the bucket unset when no credentials are present).
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
+          aws-region: us-west-2
+          role-duration-seconds: 43200
+          role-session-name: preview-pr-${{ needs.authorize.outputs.pr_number }}
       - name: Deploy sandbox and run pnpm test -- --target-full
         id: preview
         continue-on-error: true

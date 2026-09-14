@@ -512,6 +512,11 @@ data "aws_iam_openid_connect_provider" "github" {
 
 resource "aws_iam_role" "github_preview_deploy" {
   name = "kortix-gha-preview-deploy"
+  # 12 h: the deploy job forwards this role's temporary credentials into the
+  # preview API for the project-snapshot bucket (project-snapshots.tf), and a
+  # preview is used for hours, not minutes. The default 1 h would strand the
+  # producer almost immediately after every deploy.
+  max_session_duration = 43200
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

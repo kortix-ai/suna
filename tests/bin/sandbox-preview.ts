@@ -42,7 +42,13 @@ function provider(): SandboxPreviewProvider {
 
 function runtimeSecrets(): PreviewRuntimeSecrets {
   return {
+    // Present only when the workflow's assume-role step succeeded (12 h
+    // temporary credentials for the project-snapshot bucket).
+    AWS_ACCESS_KEY_ID: value('AWS_ACCESS_KEY_ID'),
+    AWS_SECRET_ACCESS_KEY: value('AWS_SECRET_ACCESS_KEY'),
+    AWS_SESSION_TOKEN: value('AWS_SESSION_TOKEN'),
     DAYTONA_API_KEY: value('DAYTONA_API_KEY'),
+    PLATINUM_API_KEY: value('PLATINUM_API_KEY'),
     KE2E_STRIPE_SECRET_KEY: value('KE2E_STRIPE_SECRET_KEY'),
     KE2E_STRIPE_WEBHOOK_SECRET: value('KE2E_STRIPE_WEBHOOK_SECRET'),
     KORTIX_GITHUB_APP_ID: value('KORTIX_GITHUB_APP_ID'),

@@ -81,6 +81,10 @@ describe('ephemeral self-host preview stack', () => {
 
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
+      // Temporary OIDC credentials for the project-snapshot bucket (12 h), never a long-lived key.
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_SESSION_TOKEN',
       'DAYTONA_API_KEY',
       'KE2E_STRIPE_SECRET_KEY',
       'KE2E_STRIPE_WEBHOOK_SECRET',
@@ -91,6 +95,7 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
+      'PLATINUM_API_KEY',
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
@@ -137,6 +142,64 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres');
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+  });
+
+  it('wires the project-snapshot bucket and Platinum only when their credentials are present', () => {
+    const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
+    const input = {
+      origin: 'https://preview.example',
+      sha: SHA,
+      apiImage: `kortix/kortix-api:pr-${SHA}`,
+      gatewayImage: `kortix/kortix-gateway:pr-${SHA}`,
+      frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
+    };
+    const secrets = {
+      DAYTONA_API_KEY: 'daytona',
+      KORTIX_GITHUB_APP_ID: '12345',
+      KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
+      KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
+      MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
+      MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
+    };
+
+    // Without the assume-role step and without a Platinum key: exactly the old posture.
+    const plain = applyPreviewEnvironment(base, input, secrets);
+    expect(plain.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona\n');
+    expect(plain.runtimeEnv).not.toContain('PLATINUM_API_KEY');
+    expect(plain.runtimeEnv).not.toContain('KORTIX_PROJECT_SNAPSHOT_S3_BUCKET');
+    expect(plain.runtimeEnv).not.toContain('AWS_ACCESS_KEY_ID');
+    expect(plain.testEnv).toContain('KE2E_CAP_PLATINUM=0');
+    expect(plain.testEnv).toContain('KE2E_CAP_PROJECT_SNAPSHOTS=0');
+
+    // With both: temporary AWS credentials forwarded as-is (the SDK default
+    // chain reads them), the Terraform bucket named, a per-PR prefix, and
+    // Platinum offered SECOND so Daytona stays the default for unpinned sessions.
+    const wired = applyPreviewEnvironment(
+      base,
+      { ...input, prNumber: 7221, platinumApiUrl: 'https://api.platinum.dev' },
+      {
+        ...secrets,
+        AWS_ACCESS_KEY_ID: 'ASIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'secret',
+        AWS_SESSION_TOKEN: 'token',
+        PLATINUM_API_KEY: 'pt_live_example',
+      },
+    );
+    expect(wired.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona,platinum\n');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
+    expect(wired.runtimeEnv).toContain('AWS_ACCESS_KEY_ID=ASIAEXAMPLE');
+    expect(wired.runtimeEnv).toContain('AWS_SESSION_TOKEN=token');
+    expect(wired.runtimeEnv).toContain('KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=kortix-preview-project-snapshots');
+    expect(wired.runtimeEnv).toContain('KORTIX_PROJECT_SNAPSHOT_S3_REGION=us-west-2');
+    expect(wired.runtimeEnv).toContain('KORTIX_PROJECT_SNAPSHOT_S3_PREFIX=pr-7221');
+    // The mode is never set here: consumption is opted into per project.
+    expect(wired.runtimeEnv).not.toContain('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(wired.testEnv).toContain('KE2E_CAP_PLATINUM=1');
+    expect(wired.testEnv).toContain('KE2E_CAP_PROJECT_SNAPSHOTS=1');
+    // A session token without an access key is not a credential set.
+    const partial = applyPreviewEnvironment(base, input, { ...secrets, AWS_SESSION_TOKEN: 'token' });
+    expect(partial.runtimeEnv).not.toContain('KORTIX_PROJECT_SNAPSHOT_S3_BUCKET');
   });
 
   it('fails before boot when managed GitHub cannot run every target flow', () => {
