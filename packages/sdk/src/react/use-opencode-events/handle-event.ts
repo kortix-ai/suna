@@ -113,6 +113,12 @@ export function createEventHandler(deps: {
     // assertion below just widens past that one extra union member.
     applySyncEvent(event as OpenCodeSdkEvent);
 
+    if (event.type === 'session.next.revert.staged' || event.type === 'session.next.revert.cleared' || event.type === 'session.next.revert.committed') {
+      for (const queryKey of [fileListKeys.all, fileContentKeys.all, gitStatusKeys.all, opencodeKeys.vcsDiffAll()]) {
+        void queryClient.invalidateQueries({ queryKey, type: 'active' });
+      }
+    }
+
     switch (event.type) {
       // ---- Message events — handled by sync store only ----
       case 'message.updated': {

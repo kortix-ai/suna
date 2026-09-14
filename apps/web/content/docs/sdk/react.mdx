@@ -120,6 +120,10 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
 
+Rewind and restore events refresh active file lists, file contents, and Git diffs.
+Pi requires complete tool records and the original environment's file checkpoints.
+Conflicting edits refuse rewind. These checkpoints do not survive environment deletion.
+
 `rewind(messageId)` never creates a session. It uses the canonical session from
 `POST /start`. The runtime restores file state and keeps the removed transcript
 path recoverable. The next accepted prompt commits the replacement path.
