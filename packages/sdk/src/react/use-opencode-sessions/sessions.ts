@@ -5,6 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import { isOpenCodeConfigInvalidError } from '../../core/http/opencode-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
+import { useSyncStore } from '../../browser/stores/sync-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
@@ -59,8 +60,13 @@ export function useOpenCodeSession(sessionId: string) {
     queryKey: opencodeKeys.runtimeSession(sessionId),
     queryFn: async () => {
       const client = getClient();
+      const rewindBeforeRead = useSyncStore.getState().sessionRevert[sessionId];
       const result = await client.session.get({ sessionID: sessionId });
-      return unwrap(result);
+      const session = unwrap(result);
+      if (session.id === sessionId && useSyncStore.getState().sessionRevert[sessionId] === rewindBeforeRead) {
+        useSyncStore.getState().syncSessionRevertFromInfo(sessionId, session.revert);
+      }
+      return session;
     },
     enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,

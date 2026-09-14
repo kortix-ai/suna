@@ -227,6 +227,7 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
+Session reads recover a saved rewind after reload, without requiring its earlier SSE event.
 Rewind and restore events refresh active file views and Git diffs through the SDK.
 Pi restores recorded file changes from the original environment's checkpoints.
 Missing checkpoints, incomplete tool records, and conflicting edits refuse rewind.

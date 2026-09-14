@@ -284,7 +284,7 @@ test('a killed process leaves a known staging file that the next process recover
   expect(await child.exited).not.toBe(0);
   expect(await readdir(workspace)).toHaveLength(3);
   expect(await history.apply(request)).toMatchObject({ status: 'complete' });
-  expect(await readdir(workspace)).toEqual(['.kortix-workspace-id', 'a']);
+  expect((await readdir(workspace)).sort()).toEqual(['.kortix-workspace-id', 'a']);
   expect(await readFile(join(workspace, 'a'), 'utf8')).toBe('before');
 });
 

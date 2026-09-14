@@ -6384,3 +6384,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** the Pi preview file test resumed the same Daytona environment and received `workspace history identity changed`. The original checkpoint binding required stable filesystem device and inode numbers. The history check also blocked ordinary file RPCs.
 **Rule:** store a workspace generation marker with the files and validate it against external checkpoint state. Do not require stable mount numbers after provider resume. Reject missing, altered, or symlinked markers. Failed checkpoint identity must not disable ordinary tools when no file move is pending.
 **Enforcer:** `workspace-history.test.ts` remaps a preserved directory and tests marker corruption and replacement. `workspace-history-rpc.test.ts` proves an invalid history binding refuses rewind while ordinary writes and reads remain available.
+
+### Recover rewind state from the session read after reload (2026-09-14)
+
+**Incident:** the Pi worker returned a saved rewind pointer, but a fresh browser page showed no Restore control. The SDK only hydrated that pointer from session events emitted before the page connected.
+**Rule:** hydrate saved rewind state from the canonical session read. A read for another identity or a read superseded by an event cannot update it. Compare exact file sets without depending on filesystem directory enumeration order.
+**Enforcer:** `session-rewind-read.test.ts` covers cold reads, foreign identities, commit races, and newer staging events. The Linux process-death checkpoint test sorts the returned names before checking the exact set.
