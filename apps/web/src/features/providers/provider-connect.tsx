@@ -1111,6 +1111,14 @@ export function ProviderConnect({
                 // has no OAuth anywhere — see this file's header comment.
                 openai: (
                   <ChatGptSubscriptionConnect
+                    accessSlot={
+                      <ProviderAccessSwitch
+                        access={access}
+                        providerId="codex"
+                        name="ChatGPT subscription"
+                        canWrite={canWrite}
+                      />
+                    }
                     projectId={projectId}
                     onConnected={setPendingRequest}
                   />

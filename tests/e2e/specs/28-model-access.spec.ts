@@ -32,6 +32,8 @@ test('provider and model access persists, keeps credentials, and updates control
     await selectAccountForUi(page, account.account_id);
     await page.goto(`${base}/models`);
     await dismissOnboarding(page);
+    const dismissWelcome = page.getByRole('button', { name: 'Dismiss', exact: true });
+    if (await dismissWelcome.isVisible()) await dismissWelcome.click();
     await expect(page.getByRole('heading', { name: 'Models', exact: true })).toBeVisible();
 
     async function toggle(name: string, expected: { target: string; id: string; enabled: boolean }) {
@@ -43,6 +45,7 @@ test('provider and model access persists, keeps credentials, and updates control
       await expect(page.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', String(expected.enabled));
     }
 
+    await expect(page.getByRole('switch', { name: 'Enable ChatGPT subscription', exact: true })).toBeDisabled();
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: false });
     await toggle('Enable OpenAI', { target: 'provider', id: 'openai', enabled: false });
     await page.reload();
@@ -69,6 +72,9 @@ test('provider and model access persists, keeps credentials, and updates control
     await expect(page.getByRole('switch', { name: "GPT-5.5 is this project's default model and cannot be turned off", exact: true })).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('model-access.png'), fullPage: true });
     await page.getByRole('tab', { name: 'Providers', exact: true }).click();
+    await expect(page.getByRole('switch', { name: 'Enable ChatGPT subscription', exact: true })).toBeEnabled();
+    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: false });
+    await toggle('Enable ChatGPT subscription', { target: 'provider', id: 'codex', enabled: true });
     await toggle('Enable Kortix Managed Models', { target: 'provider', id: 'kortix', enabled: true });
     await page.screenshot({ path: testInfo.outputPath('provider-access.png'), fullPage: true });
   } finally {
