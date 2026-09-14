@@ -5,11 +5,11 @@
  * differently, which is exactly the sort of thing a reference app should make
  * legible rather than let people discover in production:
  *
- * - MODEL — changeable. Pi saves the selection for newly accepted prompts.
- *   OpenCode can restart its runtime, which ends the in-flight turn.
- * - AGENT — OpenCode can change agents per prompt. The proxy re-scopes secret
- *   delivery and connector/Kortix-CLI grants before forwarding the prompt.
- *   Pi keeps the compiled agent fixed for the session.
+ * - MODEL — changeable. The runtime can save the selection for new prompts
+ *   or restart, which ends the in-flight turn.
+ * - AGENT — a runtime can support agent changes per prompt. The proxy re-scopes
+ *   secret delivery and connector/Kortix-CLI grants before forwarding the prompt.
+ *   A compiled-agent runtime keeps the agent fixed for the session.
  * - SECRETS and CONNECTOR BINDINGS — changeable, with SET semantics:
  *   `PUT /projects/{id}/sessions/{sid}/scope` REPLACES the list with the one
  *   sent, and it takes effect from the next prompt (the per-prompt env sync
@@ -51,9 +51,9 @@ export type ModelChangeOutcome =
 /**
  * Classify what a model change actually achieved.
  *
- * Pi reports `appliesTo: 'next_prompt'` after saving the selection.
- * OpenCode writes the row and then pushes to the live sandbox. For OpenCode,
- * `appliedLive: false` covers two outcomes:
+ * `appliesTo: 'next_prompt'` confirms a selection saved for new prompts.
+ * A runtime can instead write the row and push to the live sandbox.
+ * In that case, `appliedLive: false` covers two outcomes:
  *
  * - no live sandbox to push to: the stored value IS the mechanism, and the next
  *   start reads it. A success.

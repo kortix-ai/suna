@@ -17,9 +17,8 @@ import { toast } from 'sonner';
 
 /**
  * Save the session model through the provider-neutral wrapper route.
- * Pi applies the selection to newly accepted prompts without restarting.
- * OpenCode can restart its runtime. The response identifies which behavior
- * occurred, including a persisted change that failed to reach the runtime.
+ * The runtime can apply the selection to new prompts or require a restart.
+ * The response identifies the behavior and any failure to reach the runtime.
  */
 export function ModelSwitcher({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const qc = useQueryClient();
