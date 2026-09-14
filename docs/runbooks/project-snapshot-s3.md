@@ -14,13 +14,15 @@ push / import / merge / session-create miss      boot → config-provider coordi
   → build from the Git mirror at ONE sha           mode prefer-s3  → warm adoption → S3 → fallback Git
   → S3: <owner>/<repo>/<sha>/<repo-id>/            mode require-s3 → warm adoption → S3, fail closed
        project-snapshot-v2/
-         <sha256>.tree.tar.gz   (boot object)    S3 = descriptor (Git proxy, KORTIX_TOKEN)
-         <sha256>.blobs.pack    (hydration)          → presigned GET of the tree object (no credential)
-       (If-None-Match, both) then manifest.json      → sha256 + header guard on the stream → stage file
-  → row ready                                        → native tar → verify → activate (partial clone)
-session create: ready row → env pin                  → runtime spawns; repo-materialized
-  KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes       → OFF the boot path: index refresh, then
-  (identity of the tree object)                        presigned GET of the blob pack → git index-pack
+         <sha256>.tree.tar.gz   (boot object)    S3 = descriptor from the session env (presigned
+         <sha256>.blobs.pack    (hydration)          at create; the Git-proxy route is the fallback)
+       (If-None-Match, both) then manifest.json      → ONE GET of the tree object (no credential)
+  → row ready                                        → sha256 + header guard on the stream → stage file
+session create: ready row → env pin + descriptor     → native tar → verify → activate (partial clone)
+  KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes       → runtime spawns; repo-materialized
+  KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=base64 JSON     → OFF the boot path: index refresh, then
+  (both objects presigned, 15 min; object checks       presigned GET of the blob pack → git index-pack
+   run in the background, never on this path)
 ```
 
 **Why two objects.** v1 shipped one tar.gz holding the working tree AND a full
@@ -80,13 +82,13 @@ sequenceDiagram
     participant S3 as S3 / MinIO
 
     C->>API: POST /projects/:id/sessions
-    API->>API: mode = env or project metadata<br/>ledger: ready row for the base sha?
-    API->>P: create sandbox, env = KORTIX_TOKEN, KORTIX_REPO_URL (proxy),<br/>KORTIX_PROJECT_SNAPSHOT_MODE, KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes
+    API->>API: mode = env or project metadata<br/>ledger: ready row for the base sha? → presign both objects (local signing)<br/>object check → background (re-queues the row for the NEXT session if gone)
+    API->>P: create sandbox, env = KORTIX_TOKEN, KORTIX_REPO_URL (proxy),<br/>KORTIX_PROJECT_SNAPSHOT_MODE, KORTIX_PROJECT_SNAPSHOT_PIN=sha:sha256:bytes,<br/>KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=base64 {tree, blobs: presigned URL, sha256, bytes, expires_at}
     P-->>D: VM boots, daemon starts
     D->>D: warm check: baked /workspace already at the base sha? (no)
     D->>D: eligible: fresh session, base sha, pin present, pin sha == base sha
-    D->>GP: GET /v1/git/<project>.git/project-snapshot?sha=<pin sha><br/>(Authorization: KORTIX_TOKEN)
-    GP-->>D: 200 {tree: {presigned URL, sha256, bytes, entries}, blobs: {presigned URL, sha256, bytes}}
+    D->>D: descriptor from the env: names the pin sha, ≥ 30 s of lifetime left → use it (first attempt only)
+    Note over D,GP: only on a retry, an expired or refused (403) URL, or a missing env descriptor:<br/>GET /v1/git/<project>.git/project-snapshot?sha=<pin sha> (Authorization: KORTIX_TOKEN) → 200 {tree, blobs}
     D->>S3: GET tree object (presigned)
     S3-->>D: tar.gz stream
     D->>D: stream → stage FILE: sha256 + byte cap + inactivity watchdog;<br/>tar headers guarded on a tee (nothing written to the tree yet)
@@ -116,7 +118,7 @@ flowchart TD
     SK --> G2{require-s3 and reason != not-fresh?}
     G2 -- yes --> F[boot error]
     G2 -- no --> G
-    E -- yes --> DSC[GET descriptor]
+    E -- yes --> DSC[descriptor: from the env on the first attempt, else GET from the proxy]
     DSC --> DL[stream download → verify → activate]
     DL -- ok --> S[provider = s3, history backfill deferred to readiness]
     DL -- failed --> CL{class}
@@ -158,6 +160,7 @@ API (`apps/api/.env*` via dotenvx, or the deployment's secret blob):
 | Variable | Meaning |
 | --- | --- |
 | `KORTIX_PROJECT_SNAPSHOT_MODE` | `git` (default; rollback) / `prefer-s3` / `require-s3` (acceptance only) |
+| `KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR` (sandbox env, set by the API) | base64 JSON of the proxy's descriptor body, presigned at session create (`KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS`, 900). The daemon uses it for its first attempt; a retry, an expired or refused URL, or a malformed value falls back to the proxy route. Health shows which one served: `config_provider.s3_descriptor: env \| proxy` |
 | `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET` | bucket; unset = producer idle, no S3 anywhere |
 | `KORTIX_PROJECT_SNAPSHOT_S3_REGION` | region (falls back to `AWS_REGION`) |
 | `KORTIX_PROJECT_SNAPSHOT_S3_PREFIX` | optional key prefix, e.g. `dev/` when environments share a bucket |

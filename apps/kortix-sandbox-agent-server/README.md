@@ -171,6 +171,7 @@ KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_COMPILED_BOOT_MODE=off
 KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/config-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
+KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
 KORTIX_COMPILED_RUNTIME_FORMAT=
 KORTIX_COMPILED_RUNTIME_SOURCE_SHA=
 KORTIX_REPO_URL=

@@ -217,15 +217,56 @@ export async function fetchProjectSnapshotDescriptor(
   } catch (err) {
     throw new ConfigProviderError('descriptor', 'malformed', 'descriptor is not valid JSON', 0, { cause: err })
   }
-  if (
-    body?.format !== PROJECT_SNAPSHOT_FORMAT ||
-    body.commit_sha !== sha ||
-    !objectRefOk(body.tree) ||
-    !Number.isInteger(body.tree?.entries) ||
-    !objectRefOk(body.blobs) ||
-    typeof body.repository?.external_id !== 'string'
-  ) {
+  if (!describesSnapshot(body, sha)) {
     throw new ConfigProviderError('descriptor', 'malformed', 'descriptor does not describe the expected snapshot objects')
+  }
+  return body
+}
+
+function describesSnapshot(body: ProjectSnapshotDescriptor | undefined, sha: string): body is ProjectSnapshotDescriptor {
+  return (
+    body?.format === PROJECT_SNAPSHOT_FORMAT &&
+    body.commit_sha === sha &&
+    objectRefOk(body.tree) &&
+    Number.isInteger(body.tree?.entries) &&
+    objectRefOk(body.blobs) &&
+    typeof body.repository?.external_id === 'string'
+  )
+}
+
+/**
+ * A URL that will die within this margin is not worth starting a transfer on:
+ * a slow provider create already ate into the descriptor's lifetime.
+ */
+const ENV_DESCRIPTOR_EXPIRY_MARGIN_MS = 30_000
+
+/**
+ * The descriptor the API presigned at session create
+ * (KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR, base64 JSON of the proxy's body). Used
+ * for the FIRST attempt only, and only when it names the pinned sha and both
+ * URLs have the margin left; anything else → null, and the proxy is asked as
+ * before. Never fatal: a bad env value costs one round trip, not the boot.
+ */
+export function parseEnvProjectSnapshotDescriptor(cfg: Config, sha: string): ProjectSnapshotDescriptor | null {
+  const raw = cfg.projectSnapshotDescriptor
+  if (!raw) return null
+  let body: ProjectSnapshotDescriptor | undefined
+  try {
+    body = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as ProjectSnapshotDescriptor
+  } catch {
+    logger.warn('[config-provider] env descriptor is not base64 JSON; asking the proxy')
+    return null
+  }
+  if (!describesSnapshot(body, sha)) {
+    logger.warn('[config-provider] env descriptor does not describe the pinned snapshot; asking the proxy')
+    return null
+  }
+  const soonest = Math.min(Date.parse(body.tree.expires_at), Date.parse(body.blobs.expires_at))
+  if (!Number.isFinite(soonest) || soonest - Date.now() < ENV_DESCRIPTOR_EXPIRY_MARGIN_MS) {
+    logger.info('[config-provider] env descriptor expired or about to; asking the proxy', {
+      expiresAt: Number.isFinite(soonest) ? new Date(soonest).toISOString() : null,
+    })
+    return null
   }
   return body
 }
@@ -756,6 +797,10 @@ export async function materializeFromS3(
   options: S3ProviderOptions = {},
 ): Promise<S3Acquisition> {
   const { sha, pin } = checkS3Eligibility(req)
+  // The descriptor the API presigned at create serves the FIRST attempt only
+  // (one direct GET from the store, no proxy round trip); every retry asks the
+  // proxy for fresh URLs.
+  let envDescriptor = parseEnvProjectSnapshotDescriptor(req.cfg, sha)
   const deadline = Date.now() + req.deadlineMs
   let attempts = 0
   let lastError: ConfigProviderError | null = null
@@ -767,9 +812,17 @@ export async function materializeFromS3(
     }
     if (req.signal?.aborted) throw new ConfigProviderError('download', 'cancelled', 'acquisition cancelled', attempts - 1)
     const stage = await createStagePath(req.target, 'snapshot')
+    let descriptorSource: 'env' | 'proxy' = 'proxy'
     try {
       const t0 = Date.now()
-      const descriptor = await fetchProjectSnapshotDescriptor(req.cfg, sha, { fetchImpl: options.fetchImpl, signal: req.signal })
+      let descriptor: ProjectSnapshotDescriptor
+      if (envDescriptor) {
+        descriptor = envDescriptor
+        envDescriptor = null
+        descriptorSource = 'env'
+      } else {
+        descriptor = await fetchProjectSnapshotDescriptor(req.cfg, sha, { fetchImpl: options.fetchImpl, signal: req.signal })
+      }
       const descriptorMs = Date.now() - t0
       if (descriptor.tree.sha256 !== pin.sha256 || descriptor.tree.bytes !== pin.bytes) {
         throw new ConfigProviderError('descriptor', 'revision-mismatch', 'descriptor names a different boot object than the session pin')
@@ -795,6 +848,7 @@ export async function materializeFromS3(
           extractMs: downloaded.extractMs,
           verifyMs: Date.now() - v0,
           extractor: downloaded.extractor,
+          descriptorSource,
         },
       }
     } catch (err) {
@@ -805,7 +859,11 @@ export async function materializeFromS3(
           ? err
           : new ConfigProviderError('extract', 'unavailable', errorMessage(err), attempts, { cause: err })
       lastError = new ConfigProviderError(failure.stage, failure.reason, failure.message, attempts, { cause: failure.cause ?? failure })
-      if (!failure.retryable || attempts >= S3_MAX_ATTEMPTS) throw lastError
+      // A URL presigned at create that the store refuses (clock skew, a slow
+      // provider create) is a stale descriptor, not a denial: the next attempt
+      // asks the proxy for a fresh one instead of falling back to Git.
+      const staleEnvUrl = descriptorSource === 'env' && failure.reason === 'expired-authorization'
+      if (!(failure.retryable || staleEnvUrl) || attempts >= S3_MAX_ATTEMPTS) throw lastError
       const backoff = Math.min(300 * 2 ** (attempts - 1) + Math.floor(Math.random() * 250), Math.max(0, deadline - Date.now()))
       logger.warn('[config-provider] s3 attempt failed; retrying', {
         attempt: attempts,

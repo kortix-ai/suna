@@ -420,6 +420,38 @@ describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
     expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).not.toMatch(/https?:|X-Amz-/);
   });
 
+  test('a presigned descriptor rides along with the pin, and never without it', () => {
+    const descriptor = Buffer.from(JSON.stringify({ format: 'project-snapshot-v2', tree: { url: 'https://s3/x?X-Amz-Signature=1' } })).toString('base64');
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: PIN,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).toBe(PIN);
+    expect(env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR).toBe(descriptor);
+    // A descriptor without a pin is meaningless (the daemon checks the pin first).
+    const noPin = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: null,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(noPin).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR');
+    // And a resumed session receives neither.
+    const resumed = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: false,
+      restoreSessionBranch: true,
+      projectSnapshotMode: 'prefer-s3',
+      projectSnapshotPin: PIN,
+      projectSnapshotDescriptor: descriptor,
+    });
+    expect(resumed).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR');
+  });
+
   test('a cache miss carries the mode without a pin (the daemon records the miss and boots from Git)', () => {
     const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: null });
     expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');

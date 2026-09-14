@@ -50,6 +50,15 @@ export interface SessionRuntimeEnvInput {
    * the short-lived download descriptor from the Git proxy with KORTIX_TOKEN.
    */
   projectSnapshotPin?: string | null;
+  /**
+   * The download descriptor for that archive, presigned at session create
+   * (base64 JSON of the same body `GET …/project-snapshot` serves: object
+   * URLs, digests, sizes, expiry). Short-lived and read-only, like the
+   * KORTIX_TOKEN next to it. With it the daemon's first attempt is one direct
+   * GET from the object store; without it (or once it expires) the daemon
+   * fetches a fresh descriptor from the Git proxy.
+   */
+  projectSnapshotDescriptor?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -143,6 +152,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
       ? {
           KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
           ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
+          ...(input.projectSnapshotPin && input.projectSnapshotDescriptor
+            ? { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: input.projectSnapshotDescriptor }
+            : {}),
         }
       : {};
   return {

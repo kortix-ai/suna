@@ -205,6 +205,8 @@ interface Round {
   /** ms from create until the hydration report was observed settled (null = still pending at the poll cap). */
   hydration_settled_ms: number | null;
   s3_extractor: string | null;
+  /** On an S3 boot: `env` (presigned at create, no proxy call) or `proxy` (descriptor route). */
+  s3_descriptor: string | null;
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -240,6 +242,7 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     hydration: null,
     hydration_settled_ms: null,
     s3_extractor: null,
+    s3_descriptor: null,
   };
   if (created.status !== 201 || !sessionId) {
     result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
@@ -284,6 +287,7 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
                 ? 'branch-final'
                 : 'branch-early';
         result.s3_extractor = h.body.config_provider?.s3_extractor ?? null;
+        result.s3_descriptor = h.body.config_provider?.s3_descriptor ?? null;
         for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
         break;
       }
@@ -480,6 +484,12 @@ function report(): void {
       }, {}),
       extractors: ok.reduce<Record<string, number>>((acc, r) => {
         if (r.s3_extractor) acc[r.s3_extractor] = (acc[r.s3_extractor] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // Where the S3 boots got their descriptor: presigned in the env at
+      // create (no proxy call on the boot path) or fetched from the proxy.
+      descriptors: ok.reduce<Record<string, number>>((acc, r) => {
+        if (r.s3_descriptor) acc[r.s3_descriptor] = (acc[r.s3_descriptor] ?? 0) + 1;
         return acc;
       }, {}),
       // v2 hydration (blob-pack import after readiness): outcome counts, the
