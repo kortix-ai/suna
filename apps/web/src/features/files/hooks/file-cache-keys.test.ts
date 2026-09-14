@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test';
-import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../../../../../../packages/sdk/src/react/file-keys';
+const { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } = await import('@kortix/sdk/react');
 
 mock.module('@kortix/sdk/react', () => ({
   binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys,
