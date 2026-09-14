@@ -5,7 +5,7 @@
  * even though the server already validates permissions.
  */
 
-import { open, readFile, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
+import { open, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
 import { createHash } from 'node:crypto';
 import { validateFilesystemParams } from '../../shared/filesystem-validation';
 import { join, dirname } from 'path';
@@ -163,16 +163,20 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
 
     await writeFile(path, bytes);
     validateFilesystemPath(path, config, params);
-    const stats = await stat(path);
+    const handle = await open(path, 'r');
+    try {
+      const stats = await handle.stat();
+      const persistedHash = createHash('sha256').update(await handle.readFile()).digest('hex');
+      if (persistedHash !== expectedHash) throw new Error('SHA-256 mismatch after write; destination verification failed');
 
-    const persistedHash = createHash('sha256').update(await readFile(path)).digest('hex');
-    if (persistedHash !== expectedHash) throw new Error('SHA-256 mismatch after write; destination verification failed');
-
-    return {
-      sha256: persistedHash,
-      size: stats.size,
-      path,
-    };
+      return {
+        sha256: persistedHash,
+        size: stats.size,
+        path,
+      };
+    } finally {
+      await handle.close();
+    }
   });
 
   methods.set('fs.list', async (params) => {
