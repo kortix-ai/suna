@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -471,6 +472,35 @@ function buildFinalPlanBlocks(
 // the sandbox's opencode session.idle/error watcher (`end`). They own the live
 // in-thread message lifecycle, so they live with the rest of it here in turn.ts.
 
+/**
+ * Why a relay did NOT reach the thread. Returned to the sandbox verbatim so
+ * `slack step` / `slack send` can say what happened instead of `ok: true,
+ * relayed: false` (INC-2026-09-08-CONNECTOR-GATEWAY, S3): an agent that cannot
+ * tell "no Slack turn is open" from "Slack is down" cannot escalate either.
+ */
+export type TurnRelayReason =
+  /** No live turn row: this turn was not started from Slack (a web prompt on a
+   *  Slack-born session), or the row was already closed and deleted. */
+  | 'no_open_turn'
+  /** The turn was closed with its answer already; a duplicate `slack send`,
+   *  or a step after the answer. */
+  | 'turn_finalized'
+  /** Slack refused the message that opens the live plan block. */
+  | 'stream_open_failed'
+  /** A late `session.idle` closed the turn first; nothing more can be posted
+   *  into it. */
+  | 'finalize_lost_race'
+  /** The session has no Slack thread to fall back to. */
+  | 'no_slack_thread'
+  /** The same answer was already rescued into the thread. */
+  | 'answer_already_posted'
+  /** Slack rejected the post itself. */
+  | 'post_failed'
+  /** A platform relay (Teams) that reports no finer reason. */
+  | 'not_relayed';
+
+export type TurnRelayResult = { ok: true } | { ok: false; reason: TurnRelayReason };
+
 export async function relayTurnStep(
   sessionId: string,
   title: string,
@@ -480,22 +510,31 @@ export async function relayTurnStep(
     sourcesForPrev?: Array<{ url: string; text: string }>;
   } = {},
 ): Promise<boolean> {
+  return (await relayTurnStepDetailed(sessionId, title, opts)).ok;
+}
+
+export async function relayTurnStepDetailed(
+  sessionId: string,
+  title: string,
+  opts: {
+    detail?: string;
+    outputForPrev?: string;
+    sourcesForPrev?: Array<{ url: string; text: string }>;
+  } = {},
+): Promise<TurnRelayResult> {
   const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) {
-    // A FINALIZED turn is the expected, benign tail: the agent emitted a `slack
-    // step` after `slack send` (or session.idle/error) had already closed the
-    // turn. Drop it silently — this used to flood the logs whenever duplicate
-    // concurrent runs raced, which the inbound-message exactly-once gate now
-    // prevents. A MISSING row is the only genuinely-interesting case (a step
-    // arrived with no turn ever opened), so keep a quiet signal just for that.
-    if (!handle) {
-      console.warn('[slack-webhook] turn-stream step dropped — no open turn for session', {
-        sessionId,
-        title: title.slice(0, 80),
-      });
-    }
-    return false;
+  if (!handle) {
+    // A MISSING row is the genuinely interesting case (a step arrived with no
+    // turn ever opened, or the turn was closed and deleted under the run);
+    // keep a quiet signal for it. A FINALIZED turn is the expected, benign
+    // tail — a `slack step` after `slack send` — and stays silent.
+    console.warn('[slack-webhook] turn-stream step dropped — no open turn for session', {
+      sessionId,
+      title: title.slice(0, 80),
+    });
+    return { ok: false, reason: 'no_open_turn' };
   }
+  if (handle.finalized) return { ok: false, reason: 'turn_finalized' };
 
   // First `slack step` → create the plan-checklist message.
   if (!handle.ts) {
@@ -507,10 +546,10 @@ export async function relayTurnStep(
     };
     if (opts.detail) firstStep.details = markdownToMrkdwn(opts.detail).slice(0, 500);
     const opened = await openPlanMessage(handle, firstStep);
-    if (!opened) return false;
+    if (!opened) return { ok: false, reason: 'stream_open_failed' };
     handle.expiry = Date.now() + STREAM_TTL_MS;
     await saveTurn(handle);
-    return true;
+    return { ok: true };
   }
 
   // Subsequent step → mark the previous one complete (with its output/sources),
@@ -538,7 +577,7 @@ export async function relayTurnStep(
   handle.expiry = Date.now() + STREAM_TTL_MS;
   await repaintLivePlan(handle);
   await saveTurn(handle);
-  return true;
+  return { ok: true };
 }
 
 export async function relayTurnAnswer(
@@ -546,21 +585,29 @@ export async function relayTurnAnswer(
   text: string,
   blocks?: unknown[],
 ): Promise<boolean> {
+  return (await relayTurnAnswerDetailed(sessionId, text, blocks)).ok;
+}
+
+export async function relayTurnAnswerDetailed(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<TurnRelayResult> {
   const handle = await loadTurn(sessionId);
   // NO ROW AT ALL → the turn was closed and deleted (the 30-minute GC sweep)
   // while the run was still going. The answer is real and the thread is still
   // waiting for it, so deliver it anyway instead of returning false into an HTTP
   // 200 the agent reads as "sent". See postAnswerWithoutTurn.
-  if (!handle) return postAnswerWithoutTurn(sessionId, text, blocks);
+  if (!handle) return postAnswerWithoutTurnDetailed(sessionId, text, blocks);
   // A FINALIZED row is a turn already closed WITH its reply — a duplicate
   // `slack send`, or a `session.idle` that won the race. Stay quiet.
-  if (handle.finalized) return false;
+  if (handle.finalized) return { ok: false, reason: 'turn_finalized' };
   // Win the finalize race against a late session.idle/error relay (or a duplicate
   // send) so the turn is closed exactly once.
-  if (!(await claimFinalize(sessionId))) return false;
+  if (!(await claimFinalize(sessionId))) return { ok: false, reason: 'finalize_lost_race' };
   await finalizeTurn(handle, { answer: markdownToMrkdwn(text), blocks });
   await deleteTurn(sessionId);
-  return true;
+  return { ok: true };
 }
 
 // ── Last-resort answer delivery, with no turn row left ────────────────────────
@@ -582,12 +629,19 @@ const ANSWER_RESCUE_TTL_MS = STREAM_TTL_MS;
 // answer twice. The window is safe: a row must live at least STREAM_TTL_MS
 // before anything can reap it, so two genuine rescues are always further apart
 // than this claim.
-async function claimAnswerRescue(sessionId: string): Promise<boolean> {
+// One rescue per DISTINCT answer per session per TTL: a duplicate `slack send`
+// of the same text cannot post twice, while a genuinely new answer — the next
+// turn's, in a persistent Slack session whose turn row is gone again — still
+// reaches the thread. It was one rescue per session per TTL, which silenced
+// every answer after the first within 15 minutes: the "No active Slack turn
+// to answer" an agent saw on its second turn (INC-2026-09-08-CONNECTOR-GATEWAY).
+async function claimAnswerRescue(sessionId: string, text: string): Promise<boolean> {
+  const digest = createHash('sha256').update(text).digest('hex').slice(0, 16);
   try {
     const inserted = await db
       .insert(chatEventDedup)
       .values({
-        eventId: `slack:answerrescue:${sessionId}`,
+        eventId: `slack:answerrescue:${sessionId}:${digest}`,
         expiresAt: new Date(Date.now() + ANSWER_RESCUE_TTL_MS),
       })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
@@ -610,19 +664,27 @@ export async function postAnswerWithoutTurn(
   text: string,
   blocks?: unknown[],
 ): Promise<boolean> {
+  return (await postAnswerWithoutTurnDetailed(sessionId, text, blocks)).ok;
+}
+
+export async function postAnswerWithoutTurnDetailed(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<TurnRelayResult> {
   const [row] = await db
     .select({ projectId: projectSessions.projectId, metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  if (!row) return false;
+  if (!row) return { ok: false, reason: 'no_slack_thread' };
   const slack = (row.metadata as { slack?: { channel?: string; thread_ts?: string } } | null)?.slack;
   const channel = slack?.channel;
   const threadTs = slack?.thread_ts;
-  if (!channel || !threadTs) return false; // not a Slack-started session
+  if (!channel || !threadTs) return { ok: false, reason: 'no_slack_thread' }; // not a Slack-started session
   const token = await loadSlackTokenForProject(row.projectId);
-  if (!token) return false;
-  if (!(await claimAnswerRescue(sessionId))) return false;
+  if (!token) return { ok: false, reason: 'no_slack_thread' };
+  if (!(await claimAnswerRescue(sessionId, text))) return { ok: false, reason: 'answer_already_posted' };
 
   const rendered = markdownToMrkdwn(text);
   const truncated = rendered.length > MAX_BODY;
@@ -633,10 +695,10 @@ export async function postAnswerWithoutTurn(
     blocks && blocks.length > 0 ? [...blocks, footer] : [...toSectionBlocks(body, truncated), footer];
 
   const ts = await postBlocks(token, channel, body, finalBlocks, threadTs);
-  if (ts) return true;
+  if (ts) return { ok: true };
   // Block render rejected (a section caps at 3000 chars) — never lose the answer.
   const fallback = await postMessage(token, channel, `${body}\n\n<${url}|Open session in Kortix ↗>`, threadTs);
-  return fallback != null;
+  return fallback != null ? { ok: true } : { ok: false, reason: 'post_failed' };
 }
 
 // Called when the agent's turn ends — opencode `session.idle` (finished) or
@@ -647,10 +709,29 @@ export async function postAnswerWithoutTurn(
 // real turn's idle and leave the ⏳ spinning forever. If the agent already
 // replied via `slack send`, claimFinalize makes this a no-op. Idle closes
 // silently (finalizeTurn's silent path); error surfaces an honest failure line.
+/**
+ * A `session.idle` that arrives within this window of the turn's last
+ * activity is DEFERRED, not applied. A runtime that wakes for a follow-up can
+ * replay the previous turn's idle within seconds of the new turn's row being
+ * written; applying it closed and deleted the fresh row, and every `slack
+ * step` and the final `slack send` of the run that then started found "no
+ * open turn" (INC-2026-09-08-CONNECTOR-GATEWAY, S2/S3). A real end that lands
+ * this early is re-checked after the window and applied then, if the turn is
+ * still open and nothing moved.
+ */
+const IDLE_END_GRACE_MS = Number(process.env.KORTIX_SLACK_IDLE_END_GRACE_MS || 20_000);
+
+function turnLastActivityAt(handle: LiveTurn): number {
+  // `expiry` is written as now + STREAM_TTL_MS at creation and on every step,
+  // so it is the only clock the row keeps of its own activity.
+  return handle.expiry - STREAM_TTL_MS;
+}
+
 export async function relayTurnEnd(
   sessionId: string,
   status: 'idle' | 'error' = 'idle',
   errorInfo?: TurnErrorInfo,
+  opts: { deferred?: boolean } = {},
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle) {
@@ -663,6 +744,20 @@ export async function relayTurnEnd(
     return false;
   }
   if (handle.finalized) return false;
+  const sinceActivity = Date.now() - turnLastActivityAt(handle);
+  if (status === 'idle' && sinceActivity < IDLE_END_GRACE_MS) {
+    console.info('[slack-webhook] turn-end deferred — turn is younger than the idle grace window', {
+      sessionId,
+      sinceActivityMs: sinceActivity,
+      deferred: opts.deferred === true,
+    });
+    setTimeout(() => {
+      void relayTurnEnd(sessionId, status, errorInfo, { deferred: true }).catch((err) =>
+        console.warn('[slack-webhook] deferred turn-end failed', { sessionId, err }),
+      );
+    }, IDLE_END_GRACE_MS - sinceActivity + 250).unref();
+    return true;
+  }
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
     // Turn the opencode error into honest, specific copy (out of credits /

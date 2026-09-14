@@ -82,6 +82,44 @@ describe('resolveFirstPromptHandover', () => {
     ).toEqual({ showStandIn: false, handOverToRealTurn: false, released: true });
   });
 
+  // The blank thread (2026-09-06, on video). The prompt's bubble on a fresh
+  // session comes from its INBOX ROW (a synthetic turn), and the row is gone
+  // the moment the server hands the prompt to the runtime — a beat before the
+  // runtime echoes it. For that beat there is no turn at all, so the latch's
+  // promise ("the real turn owns the prompt now") names something that does not
+  // exist, and neither surface draws.
+  test('an empty transcript brings the stand-in back — there is no real turn yet', () => {
+    const out = resolveFirstPromptHandover({
+      ...base,
+      transcriptShowsText: false,
+      releasedBefore: true,
+      transcriptEmpty: true,
+    });
+    expect(out.showStandIn).toBe(true);
+    expect(out.released).toBe(true);
+  });
+
+  test('an emptied bubble is still a turn, so the latch holds there', () => {
+    // The distinction that keeps the fix above from re-opening the glitch the
+    // latch was written for: a user message whose parts have not landed yet is
+    // a turn, so the transcript is not empty and the stand-in stays away.
+    expect(
+      resolveFirstPromptHandover({
+        ...base,
+        transcriptShowsText: false,
+        releasedBefore: true,
+        transcriptEmpty: false,
+      }).showStandIn,
+    ).toBe(false);
+  });
+
+  test('a caller that does not track the transcript keeps the pure latch', () => {
+    expect(
+      resolveFirstPromptHandover({ ...base, transcriptShowsText: false, releasedBefore: true })
+        .showStandIn,
+    ).toBe(false);
+  });
+
   test('no preview, nothing to hand over', () => {
     expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).showStandIn).toBe(false);
     expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).handOverToRealTurn).toBe(false);

@@ -10,7 +10,7 @@ const sandboxStateSource = readFileSync(
   join(import.meta.dir, 'footer/sandbox-alert-state.ts'),
   'utf8',
 );
-const changeRequestSource = readFileSync(
+const reviewPillSource = readFileSync(
   join(import.meta.dir, 'footer/project-change-requests-nav.tsx'),
   'utf8',
 );
@@ -23,7 +23,10 @@ describe('project sidebar polling', () => {
   test('healthy background queries use low-frequency polling', () => {
     expect(sandboxSource).toContain('sandboxHealthRefetchInterval(query.state.data)');
     expect(sandboxStateSource).toContain('return 120_000;');
-    expect(changeRequestSource).toContain("useChangeRequests('open', { refetchInterval: 60_000 })");
+    // The footer Review pill reads the shared inbox summary (polled at 60s) and
+    // runs no change-request poll of its own.
+    expect(reviewPillSource).toContain('useReviewSessionSummary(projectId)');
+    expect(reviewPillSource).not.toContain('useChangeRequests');
     expect(reviewSource).toContain('refetchInterval: enabled ? 60_000 : false');
   });
 

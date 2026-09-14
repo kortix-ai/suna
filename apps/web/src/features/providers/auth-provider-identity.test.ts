@@ -71,7 +71,7 @@ describe('the reset decision is the shared one, at BOTH entry points', () => {
     // that event, and it arrives before `getInitialSession()` finishes its
     // `getUser()` round trip. Without a case here the new user is published
     // while the previous one's caches are still mounted.
-    const listener = slice('supabase.auth.onAuthStateChange(', 'setIsLoading((prev)');
+    const listener = slice('supabase.auth.onAuthStateChange(', 'switch (event)');
     expect(listener).toContain("event === 'INITIAL_SESSION'");
     expect(listener).toContain("event === 'SIGNED_IN'");
 
@@ -80,9 +80,27 @@ describe('the reset decision is the shared one, at BOTH entry points', () => {
     expect(adopt).toBeGreaterThan(-1);
     expect(publish).toBeGreaterThan(adopt);
   });
+
+  test('initial auth events cannot declare readiness before bootstrap validation finishes', () => {
+    const listener = slice('supabase.auth.onAuthStateChange(', 'return () =>');
+    expect(listener).not.toContain('setIsLoading(');
+    const bootstrap = slice('const getInitialSession = async ()', 'getInitialSession();');
+    expect(bootstrap).toContain('setIsLoading(false);');
+  });
 });
 
 describe('the marker is held per-document as well as in origin-wide storage', () => {
+  test('cross-user adoption fences token reads before asynchronous cleanup, without requiring SIGNED_OUT', () => {
+    const adopt = slice('const adoptUser = async (', 'const getInitialSession');
+    const resetBranch = adopt.slice(adopt.indexOf('if (mustReset)'));
+    const bootstrapClear = resetBranch.indexOf('setBootstrapAuthToken(null);');
+    const cacheClear = resetBranch.indexOf('setCachedAuthToken(null);');
+    const cleanup = resetBranch.indexOf('await resetClientState();');
+    expect(bootstrapClear).toBeGreaterThan(-1);
+    expect(cacheClear).toBeGreaterThan(bootstrapClear);
+    expect(cleanup).toBeGreaterThan(cacheClear);
+  });
+
   test('a useRef carries the in-document half', () => {
     // One origin-wide localStorage key cannot describe several tabs: two tabs
     // signed into two accounts overwrite each other's marker while each keeps

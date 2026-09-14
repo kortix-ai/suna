@@ -41,7 +41,7 @@ import { REAP_CONCURRENCY } from '../reaper-constants';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
-import { turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
+import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
 import {
   PROMPT_NEVER_RAN_END_REASONS,
   requeueAbandonedPrompt,
@@ -336,6 +336,18 @@ export async function reapAndReconcileSandboxes(
           // cannot create a record or select its token.
           const turns = storedSandboxTurns(row.metadata);
           const observedActiveTokens: string[] = [];
+          // A turn record may not renew a box for ever — see
+          // `turnAbsoluteMaxMs` for the incident. A wedged turn answers every
+          // probe `active`, so observation alone can never end it. The ceiling
+          // is applied BEFORE the probe, so neither the renew path nor the
+          // unconfirmed drip ever sees the record: `clearSandboxTurn` pulls the
+          // deadline in to the idle grace and the ordinary expiry path takes
+          // the box on this pass or the next.
+          //
+          // The queued-prompt release is deliberately NOT called here. A prompt
+          // that has waited behind a wedged turn for days must not be re-run by
+          // a maintenance sweep; the session's own next prompt is the trigger.
+          const expiredTurnCeilingMs = turnAbsoluteMaxMs();
           // Records this pass PROBED and the daemon answered with nothing
           // readable. Counted, not inferred: the drip below needs `every record
           // answered unknown`, which is a statement about answers, not about
@@ -352,6 +364,28 @@ export async function reapAndReconcileSandboxes(
           let answeredProbes = 0;
           if (turns.length > 0) {
             for (const turn of turns) {
+              const recordAgeMs =
+                turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
+              if (recordAgeMs !== null && recordAgeMs >= expiredTurnCeilingMs) {
+                console.error('[reaper] settling a turn record past the absolute ceiling', {
+                  sandboxId: row.sandboxId,
+                  externalId: row.externalId,
+                  provider: row.provider,
+                  sessionId: row.sessionId,
+                  turnToken: turn.token,
+                  state: turn.state,
+                  startedAt: new Date(turn.startedAtMs as number).toISOString(),
+                  ageHours: Math.round((recordAgeMs / 3_600_000) * 10) / 10,
+                  ceilingHours: expiredTurnCeilingMs / 3_600_000,
+                });
+                // `unknown` is the honest reason: the turn was accepted, it was
+                // never reported ended, and nothing here observed how it
+                // finished. `runtime_gone` would claim the runtime went away
+                // and `completed` would claim it worked.
+                await dependencies.clearSandboxTurn(row.sandboxId, turn.token, undefined, 'unknown');
+                result.turnsSettled += 1;
+                continue;
+              }
               // A delivering record can precede OpenCode persistence by a few
               // seconds, so inside its delivery grace `turn_in_flight === false`
               // proves nothing — the prompt may simply not have landed yet.

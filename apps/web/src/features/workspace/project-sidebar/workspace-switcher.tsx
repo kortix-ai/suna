@@ -245,7 +245,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   `headers()` and has no `loading.tsx`, so the default `auto`
                   intent would cache nothing for a dynamic route. */}
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                <Link href="/download" prefetch>
+                <Link href="/download" prefetch data-desktop-hidden>
                   <DownloadSimple />
                   {t('workspace.downloadApp')}
                 </Link>

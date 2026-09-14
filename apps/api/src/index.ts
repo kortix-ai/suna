@@ -1235,12 +1235,24 @@ app.onError((err, c) => {
     if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
       captureException(err, { method, path, status: err.status });
     }
-    appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
-      status: err.status,
-      message: err.message,
-      path,
-      method,
-    });
+    // The REASON belongs in the message, not only in the structured context.
+    // Better Stack groups on the message string, so `-> 403 [HTTPException]`
+    // collapsed every possible denial into one unactionable bucket: 2,338
+    // boot-timeline 403s over 7 days never revealed that the rejecting branch
+    // was `enforceTokenProjectScope`'s default-deny (see
+    // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
+    // so a long upstream message cannot shard the grouping without limit.
+    const reason = (err.message ?? '').slice(0, 200);
+    appLogger.error(
+      `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`,
+      {
+        status: err.status,
+        message: err.message,
+        reason,
+        path,
+        method,
+      },
+    );
 
     // An HTTPException built with an explicit `res` carries a machine-readable
     // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`

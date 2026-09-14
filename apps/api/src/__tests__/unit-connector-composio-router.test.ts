@@ -110,6 +110,44 @@ describe('connector router provider-neutral connect routes', () => {
     expect(await res.json()).toEqual({ provider: 'composio', projectId: PROJECT, input: { q: 'remote', category: 'productivity', cursor: 'next', limit: 25 } });
   });
 
+  test('toolkit sections forward their limits and require project admin', async () => {
+    const seen: unknown[] = [];
+    const app = createConnectorRouter(
+      deps({
+        listConnectSections: async (projectId, input) => {
+          seen.push({ projectId, input });
+          return { provider: 'composio', sections: [], categories: [] };
+        },
+      }),
+    );
+    const res = await request(
+      app,
+      `/projects/${PROJECT}/connect/sections?perCategory=6&maxCategories=12`,
+      { headers: ADMIN },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ provider: 'composio', sections: [], categories: [] });
+    expect(seen).toEqual([{ projectId: PROJECT, input: { perCategory: 6, maxCategories: 12 } }]);
+
+    const forbidden = await request(app, `/projects/${PROJECT}/connect/sections`);
+    expect(forbidden.status).toBe(403);
+    expect(seen).toHaveLength(1);
+  });
+
+  test('toolkit sections fail closed when no connect provider serves them', async () => {
+    const unwired = await request(createConnectorRouter(deps({})), `/projects/${PROJECT}/connect/sections`, {
+      headers: ADMIN,
+    });
+    expect(unwired.status).toBe(501);
+
+    const unconfigured = await request(
+      createConnectorRouter(deps({ listConnectSections: async () => null })),
+      `/projects/${PROJECT}/connect/sections`,
+      { headers: ADMIN },
+    );
+    expect(unconfigured.status).toBe(501);
+  });
+
   test('connect and finalize call provider-neutral deps with connection selector', async () => {
     const calls: string[] = [];
     const connectionId = '11111111-1111-4111-8111-111111111111';

@@ -3,8 +3,62 @@
  * Trigger create commits the project manifest (a real git commit).
  */
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+
+type TriggerRow = { slug: string; model: string | null };
+
+/**
+ * A managed-repo project is seeded from the starter by default (4da295e50b),
+ * and the starter ships a `harness-reflector` cron with no model. So the
+ * trigger a flow just wrote is NOT `triggers[0]`; find it by slug.
+ */
+function triggerBySlug(
+  body: { triggers: TriggerRow[] },
+  slug: string,
+): TriggerRow {
+  const row = body.triggers.find((trigger) => trigger.slug === slug);
+  if (!row) {
+    throw new Error(
+      `trigger "${slug}" missing from response; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`,
+    );
+  }
+  return row;
+}
+
+function expectTriggerModel(body: { triggers: TriggerRow[] }, slug: string, model: string): void {
+  const row = triggerBySlug(body, slug);
+  if (row.model !== model) {
+    throw new Error(`triggers["${slug}"].model === ${JSON.stringify(model)} — got ${JSON.stringify(row.model)}`);
+  }
+}
+
+type ManifestCommit = { hash: string; message?: string };
+
+/**
+ * `kortix.yaml` history on a deployed target lags its writes: the starter seed
+ * and the trigger commit land through the managed-git mirror seconds after the
+ * API answered. Read until two consecutive reads agree, so a comparison
+ * against a later read counts only commits made in between.
+ */
+async function settledManifestHistory(
+  read: () => Promise<ManifestCommit[]>,
+): Promise<ManifestCommit[]> {
+  let previous: string | null = null;
+  const commits = await waitFor(read, {
+    until: (value) => {
+      const key = JSON.stringify(value.map((commit) => commit.hash));
+      const settled = previous === key;
+      previous = key;
+      return settled;
+    },
+    timeoutMs: 90_000,
+    intervalMs: 3_000,
+    description: 'kortix.yaml history settles',
+  });
+  return commits;
+}
 
 flow(
   'TRG-1',
@@ -56,7 +110,8 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(201).body().has('triggers[0].model', 'anthropic/claude-sonnet-4-6');
+      r.status(201);
+      expectTriggerModel(r.json<{ triggers: TriggerRow[] }>(), 'nightly', 'anthropic/claude-sonnet-4-6');
     });
     await ctx.step('duplicate slug → 409', async () => {
       const r = await ctx.client
@@ -115,7 +170,8 @@ flow(
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
-      r.status(200).body().has('triggers[0].model', 'openai/gpt-5');
+      r.status(200);
+      expectTriggerModel(r.json<{ triggers: TriggerRow[] }>(), 'toggle-me', 'openai/gpt-5');
     });
   },
 );
@@ -755,14 +811,15 @@ flow(
       ) {
         throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
       }
-      const history = await owner.get('/v1/projects/:projectId/files/history', {
-        params: { projectId: project.id },
-        query: { path: 'kortix.yaml' },
-      });
-      history.status(200);
-      manifestCommitHashes = history
-        .json<{ commits: Array<{ hash: string }> }>()
-        .commits.map((commit) => commit.hash);
+      const readHistory = async (): Promise<ManifestCommit[]> => {
+        const history = await owner.get('/v1/projects/:projectId/files/history', {
+          params: { projectId: project.id },
+          query: { path: 'kortix.yaml' },
+        });
+        history.status(200);
+        return history.json<{ commits: ManifestCommit[] }>().commits;
+      };
+      manifestCommitHashes = (await settledManifestHistory(readHistory)).map((commit) => commit.hash);
     });
 
     await ctx.step(
@@ -844,16 +901,21 @@ flow(
         ) {
           throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
         }
-        const history = await owner.get('/v1/projects/:projectId/files/history', {
-          params: { projectId: project.id },
-          query: { path: 'kortix.yaml' },
+        const current = await settledManifestHistory(async () => {
+          const history = await owner.get('/v1/projects/:projectId/files/history', {
+            params: { projectId: project.id },
+            query: { path: 'kortix.yaml' },
+          });
+          history.status(200);
+          return history.json<{ commits: ManifestCommit[] }>().commits;
         });
-        history.status(200);
-        const currentHashes = history
-          .json<{ commits: Array<{ hash: string }> }>()
-          .commits.map((commit) => commit.hash);
-        if (JSON.stringify(currentHashes) !== JSON.stringify(manifestCommitHashes)) {
-          throw new Error('policy-only PATCH created a kortix.yaml commit');
+        const added = current.filter((commit) => !manifestCommitHashes.includes(commit.hash));
+        if (added.length > 0 || current.length !== manifestCommitHashes.length) {
+          throw new Error(
+            `policy-only PATCH created a kortix.yaml commit: ${JSON.stringify(
+              added.map((commit) => `${commit.hash.slice(0, 8)} ${commit.message ?? ''}`),
+            )}`,
+          );
         }
       },
     );

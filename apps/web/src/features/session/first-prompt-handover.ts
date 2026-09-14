@@ -81,6 +81,24 @@ export interface FirstPromptHandoverInput {
   transcriptCarriesFiles: boolean;
   /** The stand-in already stepped aside on an earlier frame. */
   releasedBefore: boolean;
+  /**
+   * The transcript has NO turns at all right now.
+   *
+   * The latch below is what a release means, and it is right for the frames it
+   * was written for: the message is on screen and briefly loses its parts, so a
+   * turn still exists and the real turn owns the prompt. It is wrong for the
+   * one frame where the message is not on screen at all — between the server
+   * taking the prompt off the queue (its synthetic bubble goes with the row)
+   * and the runtime echoing it. The transcript is then empty, the latch says
+   * "the real turn has this", and nothing draws anything: the whole thread
+   * blanks with Stop still showing (dev, 2026-09-06, on video).
+   *
+   * Safe against the glitch the latch exists for: a user message with zero
+   * parts is still a turn, so an emptied bubble leaves this false.
+   *
+   * Optional — a caller that does not track it keeps the pure latch.
+   */
+  transcriptEmpty?: boolean;
 }
 
 export interface FirstPromptHandover {
@@ -96,7 +114,9 @@ export function resolveFirstPromptHandover(input: FirstPromptHandoverInput): Fir
   if (!input.hasPreview) return { showStandIn: false, handOverToRealTurn: false, released: true };
   const released = input.releasedBefore || input.transcriptShowsText;
   return {
-    showStandIn: !released,
+    // A release is a latch, EXCEPT over an empty transcript: there is no real
+    // turn to have handed the prompt to. See `transcriptEmpty`.
+    showStandIn: !released || !!input.transcriptEmpty,
     handOverToRealTurn: released && !input.transcriptCarriesFiles,
     released,
   };

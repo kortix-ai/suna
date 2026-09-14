@@ -50,6 +50,8 @@ let bootstrapToken: string | null = null;
  * identity must never land its answer on top of whatever replaced it.
  */
 let authEpoch = 0;
+/** A clear fences requests from the previous identity, even after another sign-in. */
+let lastClearEpoch = 0;
 
 // ── Inflight deduplication ──
 let inflight: Promise<string | null> | null = null;
@@ -118,12 +120,12 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
   try {
     const token = await pending;
     if (authEpoch !== epochAtStart) {
-      // Invalidated (or reseeded) mid-flight. This result's provenance
-      // can't be trusted against whichever identity is current now —
-      // never commit it to the cache, and never hand it back either.
-      // Applies to EVERY caller waiting on this fetch, not just the
-      // one that started it.
-      return null;
+      // Discard this fetch's result. Hydration can publish a valid token
+      // while callers wait; use that publication unless a clear intervened.
+      // A request from before sign-out must never inherit the next identity.
+      if (lastClearEpoch > epochAtStart) return null;
+      if (bootstrapToken) return bootstrapToken;
+      return cachedToken && Date.now() - cachedAt < TOKEN_CACHE_TTL ? cachedToken : null;
     }
     cachedToken = token;
     cachedAt = Date.now();
@@ -188,6 +190,7 @@ export function setCachedAuthToken(token: string | null): void {
   cachedToken = token;
   cachedAt = token ? Date.now() : 0;
   if (!token) {
+    lastClearEpoch = authEpoch;
     inflight = null;
   }
 }
@@ -224,6 +227,7 @@ export function __resetAuthTokenCacheForTests(): void {
   cachedAt = 0;
   bootstrapToken = null;
   authEpoch = 0;
+  lastClearEpoch = 0;
   inflight = null;
   inflightEpoch = 0;
   fetchTokenImpl = () => fetchToken();

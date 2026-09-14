@@ -3880,3 +3880,130 @@ describe("a committed revert deletes the captured set, not a string range", () =
 		expect(state.parts.msg_b).toBeUndefined();
 	});
 });
+
+/**
+ * A PART frame can arrive before the message frame it belongs to, and the
+ * store's safety net used to answer that by inventing an assistant message.
+ *
+ * For an assistant's own reply that guess is right. For the ECHO of a prompt
+ * this tab just sent it is wrong twice over: the runtime re-mints a queued
+ * prompt's wire id at delivery, so the echo arrives under an id the tab has
+ * never seen, and its first part carries the USER's text. The invented message
+ * therefore painted the user's own words a second time, in the agent's voice,
+ * beside the bubble they were already looking at — until the real
+ * `message.updated` landed a moment later and corrected both.
+ *
+ * Reported 2026-09-08: "I send the prompt, I see it dimmed with the X and the
+ * working row, then after milliseconds I see that same prompt duplicated, then
+ * it goes back to a single prompt and starts."
+ */
+describe("a part frame that beats its message frame never invents a role", () => {
+	const S = "ses_echo";
+	const WIRE = "msg_wire0000001";
+	const REMINT = "msg_remint000001";
+	const TEXT = "ok just testing to show weird behavior";
+
+	const rolesById = () =>
+		(useSyncStore.getState().messages[S] ?? []).map((m) => `${m.role}:${m.id}`);
+
+	const partFrame = (messageID: string) => ({
+		type: "message.part.updated",
+		properties: {
+			part: {
+				id: "prt_server_1",
+				messageID,
+				sessionID: S,
+				type: "text",
+				text: TEXT,
+			},
+		},
+	});
+
+	const infoFrame = (id: string) => ({
+		type: "message.updated",
+		properties: { info: { id, sessionID: S, role: "user", time: { created: 2 } } },
+	});
+
+	function sendOptimistically() {
+		useSyncStore
+			.getState()
+			.optimisticAdd(
+				S,
+				{ id: WIRE, sessionID: S, role: "user", time: {} } as unknown as Message,
+				[{ id: "prt_local_1", messageID: WIRE, sessionID: S, type: "text", text: TEXT } as Part],
+			);
+		useSyncStore.getState().markOptimisticDispatched(S, WIRE);
+		useSyncStore.getState().markOptimisticInboxBacked(S, WIRE);
+	}
+
+	beforeEach(() => {
+		useSyncStore.getState().reset();
+	});
+
+	test("the re-minted echo's part does not paint the prompt a second time", () => {
+		sendOptimistically();
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// The part frame wins the race. Before: a message appeared here as
+		// `assistant:msg_remint000001` carrying the user's own text.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`]);
+
+		// …and the text is not lost: the info frame places the message and the
+		// part it already holds comes with it, as one user bubble.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("an id the store already knows to be an echo is never an assistant either", () => {
+		sendOptimistically();
+		useSyncStore.getState().registerOptimisticEcho(S, WIRE, REMINT);
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById().some((entry) => entry.startsWith("assistant:"))).toBe(false);
+	});
+
+	test("with no send in flight the safety net still creates the assistant stub", () => {
+		// The net exists for a real assistant part that outran its own message
+		// frame, and that case is untouched: nothing here is waiting for an
+		// echo, so there is nothing the part could be mistaken for.
+		//
+		// A user message has to exist first. An assistant part is a REPLY, so a
+		// session with nothing to reply to cannot be what this net is for — see
+		// the empty-session test below.
+		useSyncStore.getState().applyEvent(infoFrame("msg_user00000001") as never);
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0001") as never);
+		expect(rolesById()).toEqual(["user:msg_user00000001", "assistant:msg_assistant0001"]);
+	});
+
+	test("a part for an unknown message never opens a session with an assistant", () => {
+		// The project-home route: the prompt is a server-created inbox row, so
+		// this tab paints no optimistic message and `awaitsUserEcho` has nothing
+		// to see. The transcript is EMPTY, and the first thing to arrive is a
+		// part of the re-minted echo — carrying the USER's text. Inventing an
+		// assistant for it put the prompt on screen in the agent's voice beside
+		// its own queued bubble.
+		//
+		// A session cannot begin with an assistant turn. `message.part.delta`
+		// has guarded on exactly this since it was written ("only if the session
+		// already has a user message"); this is the same rule on the frame that
+		// actually creates the message.
+		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
+		expect(rolesById()).toEqual([]);
+
+		// Not lost — the part is stored, and the info frame brings it in.
+		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		expect(rolesById()).toEqual([`user:${REMINT}`]);
+		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
+		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);
+	});
+
+	test("a send already confirmed does not keep suppressing the net", () => {
+		sendOptimistically();
+		useSyncStore.getState().applyEvent(infoFrame(WIRE) as never);
+		// The echo landed under the id we painted, so nothing is outstanding.
+		useSyncStore.getState().applyEvent(partFrame("msg_assistant0002") as never);
+		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
+	});
+});

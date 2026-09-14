@@ -70,7 +70,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
   const copyEmail = async () => {
     try {
       await navigator.clipboard.writeText(MARKO_EMAIL);
-      successToast(tI18nHardcoded.raw('i18nComplete.text982aa9d2037b'));
+      successToast(t('emailCopied'));
     } catch {
       window.location.href = `mailto:${MARKO_EMAIL}`;
     }

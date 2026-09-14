@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 
 import {
   __resetAuthTokenCacheForTests,
   __setFetchTokenForTests,
   getSupabaseAccessToken,
+  setBootstrapAuthToken,
   setCachedAuthToken,
 } from './auth-token';
 
@@ -25,6 +26,59 @@ import {
 
 afterEach(() => {
   __resetAuthTokenCacheForTests();
+});
+
+describe('token publication during session hydration', () => {
+  test('all waiting requests receive the published session token', async () => {
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+    const first = getSupabaseAccessToken();
+    const second = getSupabaseAccessToken();
+
+    // AuthProvider publishes the validated session, then exits bootstrap mode.
+    setCachedAuthToken('current-session');
+    setBootstrapAuthToken(null);
+    fetch.resolve('superseded-read');
+
+    expect(await Promise.all([first, second])).toEqual(['current-session', 'current-session']);
+    expect(await getSupabaseAccessToken()).toBe('current-session');
+  });
+
+  test('a bootstrap token replaces an in-flight empty session read', async () => {
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+    const pending = getSupabaseAccessToken();
+    setBootstrapAuthToken('bootstrap-session');
+    fetch.resolve(null);
+    expect(await pending).toBe('bootstrap-session');
+  });
+
+  test('requests from before sign-out never receive the next signed-in token', async () => {
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+    const first = getSupabaseAccessToken();
+    const second = getSupabaseAccessToken();
+    setCachedAuthToken(null);
+    setCachedAuthToken('next-user-session');
+    fetch.resolve('previous-user-session');
+    expect(await Promise.all([first, second])).toEqual([null, null]);
+    expect(await getSupabaseAccessToken()).toBe('next-user-session');
+  });
+
+  test('a delayed read cannot return a publication older than the cache lifetime', async () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(1_000);
+    try {
+      const fetch = deferred<string | null>();
+      __setFetchTokenForTests(() => fetch.promise);
+      const pending = getSupabaseAccessToken();
+      setCachedAuthToken('expired-publication');
+      clock.mockReturnValue(31_000);
+      fetch.resolve('superseded-read');
+      expect(await pending).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+  });
 });
 
 /** A promise this test can resolve/reject on its own schedule. */

@@ -356,3 +356,22 @@ describe('FileViewer — markdown frontmatter', () => {
     expect(FILE_VIEWER_SOURCE).toContain('MarkdownFrontmatterCard');
   });
 });
+
+describe('FileViewer — source pane inset', () => {
+  // The detail layer opens a file with `padded: false` (the viewer owns its
+  // toolbar), so each view inside `FileBody` supplies its own inset. Markdown
+  // did (`p-6`); the code pane rendered `pb-4` only and the text sat flush
+  // against the panel's left edge under a padded toolbar.
+  test('the code pane is inset on every side, the same 4-step the toolbar uses', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(/class="[^"]*\bp-4\b[^"]*\[&amp;_code\]:text-\[13px\]/);
+    expect(txt).not.toMatch(/class="[^"]*\bpb-4 \[&amp;_code\]/);
+  });
+
+  test('the inset survives a horizontal scroll — the wrapper grows with its longest line', () => {
+    const txt = render('notes.txt', 'hi');
+    expect(txt).toMatch(
+      /class="[^"]*\bw-fit\b[^"]*\bmin-w-full\b[^"]*\[&amp;_code\]:text-\[13px\]/,
+    );
+  });
+});

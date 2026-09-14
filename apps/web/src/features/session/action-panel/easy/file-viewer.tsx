@@ -331,11 +331,18 @@ function FileBody({
   // CodeMirror editor still carries its own Pierre-derived theme and does NOT
   // match — a known, accepted gap, not an oversight.
   //
-  // Only the horizontal padding is dropped, not the vertical: the pane's own
-  // background should run edge to edge, so the code is inset from the bottom
-  // but flush to the sides.
+  // Inset on every side: the detail layer opens a file with `padded: false`
+  // (the viewer owns its toolbar), so this view supplies its own frame, the
+  // same 4-step the toolbar and the rest of the panel use. Markdown gets its
+  // `p-6` above; without this the code sat flush against the panel's left
+  // edge under a padded toolbar.
+  //
+  // `w-fit min-w-full`: the scroller is the parent. Padding on a block child
+  // ends where the viewport ends, so a long line scrolled to its end would
+  // touch the right edge. Sized to its content, the wrapper carries its own
+  // right inset to the end of the scroll.
   return (
-    <div className="pb-4 [&_code]:text-[13px]">
+    <div className="w-fit min-w-full p-4 [&_code]:text-[13px]">
       <HighlightedCode code={content} language={languageFor(fileName)} />
     </div>
   );

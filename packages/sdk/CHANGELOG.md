@@ -30,6 +30,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
   `KortixMasterProject`. The platform's `KortixProject` (from the root) is
   unchanged and keeps its name.
+- The `review_center` member of `FeatureFlagKey`. Review Center graduated out
+  of the flag system and is on for every project. The key still typechecks, and
+  `useFeatureFlag(id, 'review_center')` reports `enabled: true`. The API no
+  longer lists, resolves, or accepts it, so it is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `updateFeatureFlag(id, 'review_center', …)` answers `400`. Removed in the next
+  major.
 
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a

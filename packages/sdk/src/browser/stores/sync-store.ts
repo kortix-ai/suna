@@ -655,6 +655,42 @@ const isOptimistic = (sessionID: string, messageID: string) =>
 	hasTrackedId(optimisticIds, sessionID, messageID);
 const isDispatched = (sessionID: string, messageID: string) =>
 	hasTrackedId(dispatchedOptimisticIds, sessionID, messageID);
+
+/**
+ * Could a part for `messageID` belong to the ECHO of a prompt this tab has
+ * sent and not yet seen come back?
+ *
+ * Asked in one place: the safety net in `message.part.updated` that invents a
+ * message when a part outruns its own `message.updated`. That net has to guess
+ * a role, and it guesses `assistant` — right for an assistant's reply, and
+ * wrong for a user echo in a way the user can see. The control plane re-mints a
+ * queued prompt's wire id when it delivers it, so the echo arrives under an id
+ * this tab has never seen, and its first part carries the USER's own text: the
+ * net painted the prompt a second time, in the agent's voice, beside the bubble
+ * it was already in (reported 2026-09-08 — "the same prompt duplicated, then it
+ * goes back to single and starts").
+ *
+ * Two ways to know, both already recorded here:
+ *  - the pairing is known (`registerOptimisticEcho` ran, from the inbox row's
+ *    two ids), so the id IS a user message;
+ *  - a send is outstanding whose echo this could be — the same test
+ *    `message.updated` calls `eligible`: dispatched, and with no other echo
+ *    already claimed.
+ *
+ * Answering yes only suppresses the GUESS. The part is still stored, and the
+ * `message.updated` that follows creates the message and picks it up.
+ */
+const awaitsUserEcho = (sessionID: string, messageID: string): boolean => {
+	if (optimisticOrigins.get(sessionID)?.has(messageID)) return true;
+	const pending = optimisticIds.get(sessionID);
+	if (!pending) return false;
+	for (const id of pending) {
+		if (!isDispatched(sessionID, id)) continue;
+		if (optimisticEchoes.get(sessionID)?.get(id)) continue;
+		return true;
+	}
+	return false;
+};
 // Track message IDs where optimistic parts were bridged to the real message,
 // keyed by session — same shape and same reason as optimisticIds above. When
 // the first real part arrives for a bridged message, the bridged parts are
@@ -2469,7 +2505,30 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// to sit beside it as a first disjunct could only agree with it or
 				// miss on a list that is not id-sorted.
 				const exists = existingMsgs?.some((m) => m.id === part.messageID);
-				if (!exists && resolvedSessionID) {
+				// The net for a part that outran its own message frame — but never
+				// over a send still waiting for its echo, and never as the FIRST
+				// message of a session. `role: "assistant"` is a guess, and for the
+				// echo of a re-minted prompt it is a guess that puts the user's own
+				// words on screen twice, the second time in the agent's voice.
+				//
+				// `awaitsUserEcho` catches that when this tab painted the prompt.
+				// It cannot on the project-home route, where the prompt is a
+				// server-created inbox row and there is no optimistic message to
+				// see — so the second condition carries it: an assistant part is a
+				// REPLY, and a session with nothing to reply to yet is not what
+				// this net is for. `message.part.delta` below has guarded on
+				// exactly this since it was written; this is the same rule on the
+				// frame that actually creates the message.
+				//
+				// The part is stored either way; only the invented message waits
+				// for the frame that knows.
+				const sessionHasUserMessage = existingMsgs?.some((m) => m.role === "user") ?? false;
+				if (
+					!exists &&
+					resolvedSessionID &&
+					sessionHasUserMessage &&
+					!awaitsUserEcho(resolvedSessionID, part.messageID)
+				) {
 					store.upsertMessage(resolvedSessionID, {
 						id: part.messageID,
 						sessionID: resolvedSessionID,

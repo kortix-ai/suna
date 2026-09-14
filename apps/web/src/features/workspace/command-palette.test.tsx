@@ -439,7 +439,11 @@ describe('the registry no longer carries palette settings destinations', () => {
    * rail any more. Each must point at `/accounts/{accountId}`, never at a
    * `/settings/<tab>` segment `parseSettingsTab` would reject.
    */
-  test('every account section is a navigate row on the account page', () => {
+  // `kind: 'account'`, not `navigate`: the hub has no route, so these rows
+  // open a modal over the current page rather than pushing a URL. A row left
+  // on `navigate` would push an href that 404s — which is exactly the defect
+  // this file exists to catch, one surface later.
+  test('every account section is an account row, with no href to navigate to', () => {
     const ids = [
       'account-general',
       'account-members',
@@ -454,9 +458,9 @@ describe('the registry no longer carries palette settings destinations', () => {
     for (const id of ids) {
       const item = paletteItems.find((entry) => entry.id === id);
       expect(item).toBeDefined();
-      expect(item?.kind).toBe('navigate');
-      expect(item?.href?.startsWith('/accounts/{accountId}?tab=')).toBe(true);
-      expect(resolveSettingsOverlayHref(item!.href!).opensOverlay).toBe(false);
+      expect(item?.kind).toBe('account');
+      expect(typeof item?.accountTab).toBe('string');
+      expect(item?.href).toBeUndefined();
     }
   });
 });

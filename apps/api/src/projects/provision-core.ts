@@ -38,6 +38,7 @@ import {
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
 import { config } from '../config';
+import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -326,7 +327,21 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       isPrivate: true,
     });
   } catch (error) {
-    return { status: 502, body: { error: (error as Error).message || 'Failed to provision managed repo' } };
+    // Loud, structured, and BEFORE the 502: this was silent from 2026-08-30 to
+    // 2026-09-07 while every prod provision died here (a rotated managed-git
+    // PAT without Administration:write → GitHub 403). Only the response body
+    // carried the reason, and the edge worker of the day replaced that body
+    // with a maintenance page. The log line is what Better Stack alerts on.
+    const message = (error as Error).message || 'Failed to provision managed repo';
+    appLogger.error('[projects] provision create_repo failed', {
+      stage: 'create_repo',
+      provider,
+      projectId,
+      accountId: scope.accountId,
+      slug: repoSlug,
+      message,
+    });
+    return { status: 502, body: { error: message } };
   }
 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';

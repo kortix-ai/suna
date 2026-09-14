@@ -21,7 +21,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
@@ -276,7 +276,7 @@ async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
-  assertAllowedSourceAddress(endpoint);
+  assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
     provider === 'mcp' || provider === 'graphql'
@@ -939,7 +939,7 @@ export async function resolveCatalog(
         };
       }
       case 'mcp': {
-        assertAllowedSourceAddress(spec.url!);
+        assertAllowedEndpointUrl(spec.url!);
         const tools = await listMcpTools({
           url: spec.url!,
           auth: spec.auth,
@@ -1169,7 +1169,7 @@ async function loadHttpRoutes(
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {
-  assertAllowedSourceAddress(endpoint);
+  assertAllowedEndpointUrl(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
   const res = await safeEgressFetch(endpoint, {
     method: 'POST',

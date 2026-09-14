@@ -73,6 +73,7 @@ describe('secrets-registry pure helpers', () => {
 
     expect(servicesForKeys(['NOT_A_REAL_KEY'])).toEqual(['kortix-api']);
     expect(servicesForKeys(['COMPOSIO_API_KEY'])).toEqual(['kortix-api']);
+    expect(servicesForKeys(['KORTIX_FRONTEND_MEMORY_LIMIT'])).toEqual(['frontend']);
     expect(servicesForKeys([])).toEqual([]);
   });
 

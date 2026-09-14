@@ -12,7 +12,8 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import type { AgentGrant } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -740,7 +741,20 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow; principal: GitPrincipal }
+  | {
+      ok: true;
+      project: ProjectRow;
+      principal: GitPrincipal;
+      /**
+       * The resolved agent grant for a session principal (null otherwise). The
+       * receive-pack route places this on the request context so the ref-scope
+       * resolver can honor `project.gitops.ref.any` / `kortix_cli: all` for the
+       * session pushing. Without it a session is default-denied beyond its own
+       * branch no matter what its manifest grants — the exact failure behind the
+       * 2026-09-07 monitoring-metadata persistence incident.
+       */
+      agentGrant: AgentGrant | null;
+    }
   | { ok: false; status: number; message: string };
 
 /**
@@ -902,6 +916,8 @@ async function authorizeGitProxyUncached(
         kind: 'session',
         sessionId: sessionRow.sessionId,
         branch: sessionRow.branchName,
+        userId: result.userId ?? null,
+        tokenId: result.tokenId ?? null,
       };
     }
     if (result.accountId !== project.accountId) {
@@ -920,6 +936,10 @@ async function authorizeGitProxyUncached(
           userId: result.userId ?? null,
           tokenId: result.tokenId ?? null,
         },
+      // A session-scoped PAT already carries the resolved grant on the token row
+      // (`validateAccountToken` returns it). Only meaningful for the session
+      // principal; null for the laptop-CLI-PAT user principal.
+      agentGrant: sessionPrincipal ? (result.agentGrant ?? null) : null,
     };
   }
 
@@ -966,7 +986,9 @@ async function authorizeGitProxyUncached(
           accountId: result.accountId,
           sandboxId: result.sandboxId,
         });
-        if (monitorBox) return { ok: true, project, principal: { kind: 'monitor' } };
+        if (monitorBox) {
+          return { ok: true, project, principal: { kind: 'monitor' }, agentGrant: null };
+        }
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
@@ -979,6 +1001,27 @@ async function authorizeGitProxyUncached(
       if (!sandbox.branchName) {
         return { ok: false, status: 403, message: 'session has no branch to push' };
       }
+      // Resolve the session's agent grant so the ref-scope resolver can widen a
+      // session that deliberately holds `project.gitops.ref.any` / `kortix_cli:
+      // all`. The grant lives on the session's connector token(s) in
+      // `account_tokens`; a sandbox key carries no grant of its own. Missing row
+      // (or a project with no per-agent governance) reads null = default-deny.
+      const [grantRow] = await db
+        .select({
+          agentGrant: accountTokens.agentGrant,
+          userId: accountTokens.userId,
+          tokenId: accountTokens.tokenId,
+        })
+        .from(accountTokens)
+        .where(
+          and(
+            eq(accountTokens.sessionId, sandbox.sessionId),
+            eq(accountTokens.accountId, result.accountId),
+            eq(accountTokens.status, 'active'),
+            isNull(accountTokens.revokedAt),
+          ),
+        )
+        .limit(1);
       return {
         ok: true,
         project,
@@ -986,7 +1029,10 @@ async function authorizeGitProxyUncached(
           kind: 'session',
           sessionId: sandbox.sessionId,
           branch: sandbox.branchName,
+          userId: grantRow?.userId ?? null,
+          tokenId: grantRow?.tokenId ?? null,
         },
+        agentGrant: grantRow?.agentGrant ?? null,
       };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
@@ -995,7 +1041,7 @@ async function authorizeGitProxyUncached(
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
-    return { ok: true, project, principal: { kind: 'user', userId: null } };
+    return { ok: true, project, principal: { kind: 'user', userId: null }, agentGrant: null };
   }
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };

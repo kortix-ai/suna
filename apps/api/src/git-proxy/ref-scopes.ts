@@ -35,7 +35,7 @@ import type { GitPrincipal, GitRefScope } from './ref-policy';
 /**
  * True when the principal holds `scope`.
  *
- * A SESSION reads its agent grant; a PERSON is asked of the IAM engine, the
+ * A SESSION intersects its agent grant with IAM; a PERSON uses IAM, the
  * same way every other project route asks. `project.gitops.push` authorizes
  * *a* push, not every destructive shape of one: deleting a ref is not
  * recoverable from the client that issued it, and a branch is frequently
@@ -75,8 +75,18 @@ export async function principalHoldsRefScope(
     case 'session': {
       const grant = getAgentGrant(c);
       if (!grant) return false; // Default-deny — see the header note.
-      if (grant.kortixCli === 'all') return true;
-      return grant.kortixCli.includes(scope);
+      if (grant.kortixCli !== 'all' && !grant.kortixCli.includes(scope)) return false;
+      if (!principal.userId || !principal.tokenId) return false;
+      // actorForToken selects the activated service account or launcher. The
+      // manifest can narrow that identity's role; it cannot widen it.
+      const verdict = await authorize(
+        await actorForToken(principal.userId, project.accountId, principal.tokenId, {
+          ctx: deriveRequestContext(c),
+        }),
+        scope,
+        { type: 'project', id: project.projectId },
+      );
+      return verdict.allowed;
     }
   }
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // Guided identity setup — Vercel-style wizards for SAML SSO and Directory
 // Sync (SCIM). Screen 1 picks the identity provider; screen 2 walks the
@@ -461,9 +463,9 @@ function ProviderSelect({
             title={tI18nComplete.raw('text65716e73a7c3')}
             action={
               <Button asChild variant="outline" size="sm">
-                <Link href={`/accounts/${accountId}/sso-setup`}>
+                <HubLink to={hubTarget(accountId, { tab: 'identity', setup: 'sso' })}>
                   {tI18nComplete.raw('text8bf926d1ef32')}
-                </Link>
+                </HubLink>
               </Button>
             }
           >
@@ -1605,7 +1607,12 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
         flow={flow}
         accountId={accountId}
         ssoConnected={!!providerQuery.data}
-        onPick={(id) => router.replace(`/accounts/${accountId}/${config.route}?provider=${id}`)}
+        // The wizard is a pane of the hub's Identity section, so picking a
+        // provider is a move INSIDE the modal: it replaces the one history
+        // entry the hub pushed rather than adding a navigation.
+        onPick={(id) =>
+          openAccountPanel(hubTarget(accountId, { tab: 'identity', setup: flow, provider: id }))
+        }
       />
     );
   }
@@ -1647,15 +1654,15 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     setActiveStep(0);
   };
 
-  const changeProviderRoute = `/accounts/${accountId}/${config.route}`;
+  // Back to the provider picker: the same wizard pane with no `provider`.
   const goChangeProvider = () => {
     clearCurrentProgress();
-    router.push(changeProviderRoute);
+    openAccountPanel(hubTarget(accountId, { tab: 'identity', setup: flow }));
   };
 
   const finish = () => {
     markDone(guide.steps[guide.steps.length - 1]?.id);
-    router.push(`/accounts/${accountId}?tab=identity`);
+    openAccountPanel(hubTarget(accountId, { tab: 'identity' }));
   };
 
   // biome-ignore lint/style/noNonNullAssertion: guide.steps is always non-empty (guide is checked above) and the index is clamped into range.

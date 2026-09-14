@@ -1,3 +1,4 @@
+import { hubTarget } from '@/stores/account-panel-store';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -172,11 +173,14 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={2}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect([...out.matchAll(/<button/g)]).toHaveLength(1);
-    expect(out).toContain('href="/accounts/acc_1?tab=git"');
+    // The account hub has no route: the link carries the hub's params, and
+    // with no router context it renders the query-only relative form, which a
+    // browser resolves against whatever page the tab is open on.
+    expect(out).toContain('href="?accountId=acc_1&amp;accountTab=git"');
     expect(out).toMatch(/\+2 more installations/);
   });
 
@@ -187,7 +191,7 @@ describe('ConnectedAccountsTabView', () => {
         githubStatus="connected"
         githubInstallationName="github.com/acme"
         githubOtherInstallationsCount={0}
-        githubManageAllHref="/accounts/acc_1?tab=git"
+        githubManageAllTo={hubTarget('acc_1', { tab: 'git' })}
       />,
     );
     expect(out).not.toContain('manage all');

@@ -13,6 +13,7 @@
 import { resolve } from 'node:path';
 import { writeCatalog } from '../src/core/catalog';
 import { describeEnv, loadEnv } from '../src/core/env';
+import { exitOnceDecided } from '../src/core/exit-once-decided';
 import { allFlows } from '../src/core/flow';
 import { localEnvironmentOverrides, localRunExitCode } from '../src/core/local-profile';
 import {
@@ -325,9 +326,9 @@ async function gitShaLocal(): Promise<string | null> {
 
 main()
   .then((code) => {
-    process.exitCode = code;
+    exitOnceDecided(code);
   })
   .catch((err) => {
     log.error(String(err?.stack ?? err));
-    process.exitCode = 2;
+    exitOnceDecided(2);
   });

@@ -64,7 +64,9 @@ describe('access help page', () => {
   });
 
   test('the custom-roles section links to the Roles tab with a real accountId', () => {
-    expect(flat).toContain('href={`/accounts/${accountId}?tab=roles`}');
+    // A `HubLink` naming a hub target, not an href: the hub has no route, so
+    // the URL is `?accountId=` on whatever page this pane is open over.
+    expect(flat).toContain("to={hubTarget(accountId, { tab: 'roles' })}");
   });
 
   test('it is a page, not a popover', () => {

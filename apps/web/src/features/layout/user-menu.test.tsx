@@ -139,13 +139,12 @@ describe('user menu settings entry points', () => {
     const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
     expect(tabs).toContain('profile');
     // Billing no longer goes through `openUserSettings`: it is an ACCOUNT
-    // setting, it left the overlay for `/accounts/[id]`, and
-    // `parseSettingsTab('billing')` returns `null` — so `/settings/billing`
-    // would have fallen back to the default tab. The row builds the account
-    // URL directly. Both halves are asserted so a revert to the old href
-    // fails here.
+    // setting, it lives in the account hub, and `parseSettingsTab('billing')`
+    // returns `null` — so `/settings/billing` would have fallen back to the
+    // default tab. The row opens the hub's Billing pane over the current page
+    // instead. Both halves are asserted so a revert to the old href fails here.
     expect(tabs).not.toContain('billing');
-    expect(code).toContain('?tab=billing');
+    expect(code).toContain("hubTarget(currentAccount.account_id, { tab: 'billing' })");
     expect(code).not.toContain('/settings/billing');
   });
 

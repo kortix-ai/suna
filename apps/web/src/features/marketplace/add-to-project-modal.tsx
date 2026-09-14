@@ -2,6 +2,8 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -201,16 +203,15 @@ export function AddToProjectModal({
             ? {
                 button: (
                   <Button size="sm" asChild>
-                    {/* An anchor, so the destination is prefetched while the
-                        toast is on screen and the click cannot fall back to a
-                        full document load. */}
-                    <Link
-                      href={`/accounts/${gitSettingsAccountId}?tab=git`}
-                      prefetch
+                    {/* Still an anchor, but the destination is a modal over
+                        this page — so the click costs a render, not a
+                        navigation, and the chunk is warm from the hover. */}
+                    <HubLink
+                      to={hubTarget(gitSettingsAccountId, { tab: 'git' })}
                       onClick={() => onOpenChange(false)}
                     >
                       {tI18nComplete.raw('textef2ec2a16945')}
-                    </Link>
+                    </HubLink>
                   </Button>
                 ),
               }

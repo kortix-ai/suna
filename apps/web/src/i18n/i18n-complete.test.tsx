@@ -122,4 +122,37 @@ describe('complete UI localization', () => {
       for (const key of keys) expect(english[key], `${file}:${key}`).toBeDefined();
     }
   });
+  test('never ships a translation-key reference as a catalog value', () => {
+    // A broken re-key pass once wrote `i18nComplete.text…` and bare `text…` ids
+    // into the value slot. `.raw()` returns those verbatim, so users read a key
+    // id out of a toast instead of a sentence.
+    const keyReference = /^(?:i18nComplete\.)?text[0-9a-f]{12}$/;
+
+    for (const [locale, catalog] of Object.entries(localeCatalogs)) {
+      const messages = catalog.hardcodedUi.i18nComplete as Record<string, string>;
+      for (const [key, value] of Object.entries(messages)) {
+        expect(keyReference.test(value), `${locale}:${key} = ${value}`).toBe(false);
+      }
+    }
+  });
+
+  test('resolves every i18nComplete key the app reads at runtime', () => {
+    const english = en.hardcodedUi.i18nComplete as Record<string, string>;
+    const sourceRoot = join(import.meta.dir, '..');
+    const callSite =
+      /(?:tI18nHardcoded|tHardcodedUi|tI18nComplete)(?:\.raw)?\(\s*'(?:i18nComplete\.)?(text[0-9a-f]{12})'/g;
+    const sources = readdirSync(sourceRoot, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'));
+
+    let referenced = 0;
+    for (const file of sources) {
+      const source = readFileSync(join(sourceRoot, file), 'utf8');
+      for (const match of source.matchAll(callSite)) {
+        referenced += 1;
+        expect(english[match[1]], `${file}:${match[1]}`).toBeDefined();
+      }
+    }
+    expect(referenced).toBeGreaterThan(1000);
+  });
 });

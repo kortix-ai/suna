@@ -861,16 +861,24 @@ export function resolveInstallationOwnerType(
 /**
  * Pure precedence rule behind `GET /status`'s `source` field — split out so
  * it's testable without a Hono context/DB (see unit-github-app-pat.test.ts).
- * Mirrors the accessors' own resolution order: App-DB > App-env > PAT.
+ *
+ * Mirrors what the git backend ACTUALLY does, not the order the config is
+ * stored in: `managedGithubToken()` (a PAT, DB or env) short-circuits the App
+ * path in `managedAdminAuth` and `mintManagedWriteToken`
+ * (git-backends/github.ts), so when a PAT exists every managed-repo call uses
+ * it and the App is inert. Until 2026-09-07 this reported App-DB > App-env >
+ * PAT, so an operator who had just stored a PAT via POST /pat (prod, during the
+ * provisioning outage) read `source: "env"` and could not tell whether the
+ * token they stored was in use.
  */
 export function resolveManagedGitSource(input: {
   dbAppConfigured: boolean;
   envAppConfigured: boolean;
   patConfigured: boolean;
 }): ManagedGitSource {
+  if (input.patConfigured) return 'pat';
   if (input.dbAppConfigured) return 'db';
   if (input.envAppConfigured) return 'env';
-  if (input.patConfigured) return 'pat';
   return 'none';
 }
 
@@ -1131,6 +1139,93 @@ githubAppSetupRouter.openapi(
   },
 );
 
+/**
+ * Prove a managed-git token can do the ONE thing managed git needs it for:
+ * create (and delete) a repository under `owner`. A `GET /user` 200 proves
+ * only that the token exists — the exact check that admitted a fine-grained
+ * PAT without `Administration: write` into production on 2026-08-30 and killed
+ * every project creation for 8 days (`Resource not accessible by personal
+ * access token` on `POST /orgs/managed-kortix/repos`). The probe repo is
+ * private, empty, named `kortix-credential-probe-<random>`, and deleted in the
+ * same call; a delete failure is reported so an operator can remove it by hand.
+ *
+ * Pure over `fetchImpl` so unit tests drive it without the network
+ * (unit-github-app-pat.test.ts).
+ */
+export async function verifyRepoAdminToken(
+  token: string,
+  owner: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'User-Agent': 'kortix-api',
+    'Content-Type': 'application/json',
+  };
+  const call = (path: string, init: RequestInit = {}) =>
+    fetchImpl(`https://api.github.com${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers ?? {}) },
+      signal: AbortSignal.timeout(15_000),
+    });
+  const detail = async (res: Response): Promise<string> => {
+    const text = await res.text().catch(() => '');
+    try {
+      const parsed = JSON.parse(text) as { message?: string };
+      if (parsed?.message) return parsed.message;
+    } catch {
+      /* not JSON */
+    }
+    return text || res.statusText;
+  };
+
+  const me = await call('/user');
+  if (!me.ok) {
+    return {
+      ok: false,
+      message:
+        me.status === 401
+          ? 'GitHub rejected that token — check it was copied correctly and has not expired'
+          : `GitHub rejected the token (${me.status}): ${await detail(me)}`,
+    };
+  }
+
+  const account = await call(`/users/${encodeURIComponent(owner)}`);
+  if (!account.ok) {
+    return {
+      ok: false,
+      message: `GitHub does not know the owner "${owner}" (${account.status}): ${await detail(account)}`,
+    };
+  }
+  const accountType = ((await account.json().catch(() => ({}))) as { type?: string }).type;
+  const isOrg = accountType !== 'User';
+
+  const name = `kortix-credential-probe-${randomBytes(6).toString('hex')}`;
+  const created = await call(isOrg ? `/orgs/${encodeURIComponent(owner)}/repos` : '/user/repos', {
+    method: 'POST',
+    body: JSON.stringify({ name, private: true, auto_init: false, description: 'Kortix managed-git credential probe — safe to delete' }),
+  });
+  if (created.status !== 201) {
+    return {
+      ok: false,
+      message:
+        `This token cannot create repositories under "${owner}" (GitHub ${created.status}: ${await detail(created)}). ` +
+        'Managed git needs Administration: read/write (fine-grained token) or the repo + delete_repo scopes (classic token) on that owner.',
+    };
+  }
+  const deleted = await call(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  if (deleted.status !== 204) {
+    return {
+      ok: false,
+      message:
+        `This token created ${owner}/${name} but cannot delete it (GitHub ${deleted.status}: ${await detail(deleted)}). ` +
+        'Managed git needs delete permission too (rollback of a failed provision deletes the repo). Remove the probe repository by hand.',
+    };
+  }
+  return { ok: true };
+}
+
 // ─── POST /pat ────────────────────────────────────────────────────────────────
 // "Use a token" — the quickest managed-git setup, but deliberately framed
 // (here and in the web UI) as a dedicated fine-grained token scoped to the
@@ -1170,28 +1265,11 @@ githubAppSetupRouter.openapi(
       return c.json({ error: true, message: 'token and owner are required', status: 400 }, 400);
     }
 
+    // Verify with the WRITE managed git exists for — create + delete a probe
+    // repo — not with a read. See verifyRepoAdminToken.
+    let verdict: Awaited<ReturnType<typeof verifyRepoAdminToken>>;
     try {
-      const res = await fetch('https://api.github.com/user', {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'kortix-api',
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) {
-        return c.json(
-          {
-            error: true,
-            message:
-              res.status === 401
-                ? 'GitHub rejected that token — check it was copied correctly and has not expired'
-                : `GitHub rejected the token (${res.status})`,
-            status: 400,
-          },
-          400,
-        );
-      }
+      verdict = await verifyRepoAdminToken(token, owner);
     } catch (err) {
       return c.json(
         {
@@ -1201,6 +1279,9 @@ githubAppSetupRouter.openapi(
         },
         400,
       );
+    }
+    if (!verdict.ok) {
+      return c.json({ error: true, message: verdict.message, status: 400 }, 400);
     }
 
     await updateManagedGithubAppConfig({

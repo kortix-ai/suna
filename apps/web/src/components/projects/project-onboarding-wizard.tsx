@@ -102,7 +102,6 @@ export function ProjectOnboardingWizard({
    */
   onSkip?: () => void;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('projectOnboarding');
   const contactTier = usePersonalContactTier();
   const showFounderStep = contactTier === 'personal';
@@ -156,12 +155,12 @@ export function ProjectOnboardingWizard({
       .then(() => resetFn())
       .then(() => {
         setIndex(0);
-        successToast(tI18nComplete('text9f875cecd1c5'));
+        successToast(t('resetSuccess'));
       })
       .catch((err) => errorToast(err instanceof Error ? err.message : String(err)));
     url.searchParams.delete('onboarding-reset');
     window.history.replaceState(null, '', url.toString());
-  }, [resetHydrated, resetFn, t, tI18nComplete]);
+  }, [resetHydrated, resetFn, t]);
 
   // Who this wizard is FOR: someone who can set the project up. Every step
   // writes something a plain project member cannot — the company domain and

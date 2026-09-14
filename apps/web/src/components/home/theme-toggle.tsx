@@ -27,6 +27,7 @@ const THEME_OPTIONS = [
         height="24px"
         viewBox="0 0 24 24"
         fill="none"
+        className="size-4"
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
@@ -77,6 +78,7 @@ const THEME_OPTIONS = [
         width="24px"
         height="24px"
         viewBox="0 0 24 24"
+        className="size-4"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -97,6 +99,7 @@ const THEME_OPTIONS = [
         height="24px"
         viewBox="0 0 24 24"
         fill="none"
+        className="size-4"
         xmlns="http://www.w3.org/2000/svg"
       >
         <path d="M6 3C3.79 3 2 4.79 2 7V12H22V7C22 4.79 20.21 3 18 3H6Z" fill="currentColor"></path>

@@ -83,6 +83,7 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   resolveFirstPromptHandover,
   transcriptCarriesFirstPrompt,
@@ -1328,9 +1329,21 @@ function SessionTurnImpl({
   const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
+  // A turn the agent has not started has no status to report, and
+  // `getTurnStatus` says so with its fallback phrase — "Figuring out what's
+  // next…", which is a claim about a turn already under way. On a turn with no
+  // assistant message at all it is simply untrue, and the 2.5s throttle below
+  // then swaps the waiting row's honest "Thinking" for it while the prompt is
+  // still queued at the server (dev, 2026-09-06, on video).
+  //
+  // Gated at the SOURCE, not at the prop: the throttle ignores an empty status
+  // (`if (!newStatus) return`), so `throttledStatus` stays '' — the row keeps
+  // the default word AND grows no elapsed clock — until real content arrives,
+  // and the first real status then applies immediately.
+  const hasAssistantContent = turn.assistantMessages.length > 0;
   const rawStatus = useMemo(
-    () => getTurnStatus(allParts, childMessages),
-    [allParts, childMessages],
+    () => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : ''),
+    [allParts, childMessages, hasAssistantContent],
   );
   const [throttledStatus, setThrottledStatus] = useState('');
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
@@ -2831,6 +2844,65 @@ export function SessionChat({
     }
     return ids;
   }, [messages, sessionId, promptInbox.prompts]);
+  /**
+   * The transcript's ONE user message, when there is exactly one and this tab
+   * did not paint it — the only shape in which a row can be claimed by
+   * elimination. See `claimFirstTurnRow`.
+   *
+   * Whether it has been ANSWERED does not matter, and briefly requiring that it
+   * had not was wrong: the stale cached row this exists for outlives the start
+   * of the answer by exactly the window the user can see (the row is gone from
+   * the server the moment the turn is accepted; the tab learns that one poll
+   * later), so the claim has to hold through the first tokens.
+   */
+  const onlyUserMessage = useMemo(() => {
+    const store = useSessionStateStore.getState();
+    let only: { id: string; text: string } | null = null;
+    let users = 0;
+    for (const message of messages ?? []) {
+      if (message.info.role !== 'user') continue;
+      users += 1;
+      if (store.isOptimisticMessage(sessionId, message.info.id)) {
+        only = null;
+        continue;
+      }
+      // The bubble's own words: the non-synthetic text parts, joined.
+      const text = message.parts
+        .filter((part) => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+        .map((part) => (part as { text?: string }).text ?? '')
+        .join('\n');
+      only = { id: message.info.id, text };
+    }
+    return users === 1 ? only : null;
+  }, [messages, sessionId]);
+  /**
+   * The row whose message is on screen under an id the row has not reported
+   * yet — the re-mint window. Claimed by elimination, never by id; every
+   * refusal is documented in `claimFirstTurnRow`.
+   */
+  const firstTurnClaim = useMemo(
+    () =>
+      claimFirstTurnRow({
+        prompts: promptInbox.prompts,
+        onlyUserMessage,
+        claimedIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, onlyUserMessage, transcriptUserMessageIds],
+  );
+  /**
+   * The claim's row ids folded into the SAME set every id-matching consumer
+   * reads, so one decision reaches all of them: `queuedSyntheticMessages` stops
+   * minting a second bubble, and `projectQueueRows` stops listing the row.
+   * Nothing downstream needed changing.
+   */
+  const transcriptClaimedIds = useMemo(() => {
+    if (!firstTurnClaim) return transcriptUserMessageIds;
+    const ids = new Set(transcriptUserMessageIds);
+    ids.add(firstTurnClaim.rowMessageId);
+    if (firstTurnClaim.rowWireMessageId) ids.add(firstTurnClaim.rowWireMessageId);
+    if (firstTurnClaim.rowClientMessageId) ids.add(firstTurnClaim.rowClientMessageId);
+    return ids;
+  }, [transcriptUserMessageIds, firstTurnClaim]);
   // The row names the re-minted id, and it is the ONLY thing that does: the
   // runtime's echo carries no client id, and this tab strips the part ids that
   // would otherwise correlate it. So every prompt in the inbox announces its
@@ -2868,20 +2940,27 @@ export function SessionChat({
         if (wireEcho) byId.set(wireEcho, prompt);
       }
     }
+    // The bubble claimed by elimination carries its row's chrome too — the X,
+    // send-now, retry and any error. Hiding the duplicate must not cost the
+    // surviving copy the controls the row is the only source of.
+    if (firstTurnClaim) {
+      const claimed = promptInbox.prompts.find((p) => p.prompt_id === firstTurnClaim.promptId);
+      if (claimed) byId.set(firstTurnClaim.messageId, claimed);
+    }
     return byId;
     // `messages` is a dependency because the aliases this reads are registered
     // by the effect above, i.e. AFTER the render that first sees a row. The
     // store write that follows changes `messages`, which is what brings this
     // map back for the ids the alias just added.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptInbox.prompts, sessionId, messages]);
+  }, [promptInbox.prompts, sessionId, messages, firstTurnClaim]);
   const queueRows = useMemo(
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
-        transcriptMessageIds: transcriptUserMessageIds,
+        transcriptMessageIds: transcriptClaimedIds,
       }),
-    [promptInbox.prompts, transcriptUserMessageIds],
+    [promptInbox.prompts, transcriptClaimedIds],
   );
   const queuedMessages = queueRows.queued;
   const failedQueuedMessages = queueRows.failed;
@@ -3226,8 +3305,8 @@ export function SessionChat({
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed') continue;
       if (!prompt.text.trim()) continue;
-      if (prompt.message_id && transcriptUserMessageIds.has(prompt.message_id)) continue;
-      if (prompt.wire_message_id && transcriptUserMessageIds.has(prompt.wire_message_id)) continue;
+      if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
+      if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;
       if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
       const id = prompt.message_id || `queued-${prompt.prompt_id}`;
       const sentAt =
@@ -3255,7 +3334,7 @@ export function SessionChat({
       } as unknown as NonNullable<typeof messages>[number]);
     }
     return out;
-  }, [promptInbox.prompts, transcriptUserMessageIds, sessionId]);
+  }, [promptInbox.prompts, transcriptClaimedIds, sessionId]);
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
@@ -3350,35 +3429,77 @@ export function SessionChat({
   // Once released, the real turn owns the prompt — see
   // `resolveFirstPromptHandover`.
   const [firstPromptReleased, setFirstPromptReleased] = useState(false);
+  /**
+   * THIS COMPONENT'S OWN COPY of the first prompt, kept past the store's.
+   *
+   * Two things read `useFirstPromptPreviewStore`, and they need it for
+   * different lengths of time. The BOOT SHELL (and the route, which pins the
+   * shell while a preview exists) needs it only until the transcript shows the
+   * prompt — one frame longer and the shell's copy dissolves over the real
+   * bubble during the crossfade, two bubbles for the length of the fade
+   * (measured 2026-09-08: both stand-ins at full opacity, ~200 ms). This
+   * component needs the TEXT for longer: the runtime's echo arrives as an info
+   * frame with its text part following separately, and on the project-home
+   * path nothing bridges the two (the producer POSTed a durable row, not an
+   * optimistic message), so the bubble drew nothing for that gap — the blank
+   * thread on the 2026-09-06 recording.
+   *
+   * So the store keeps its original, short life — cleared the frame the
+   * transcript carries the prompt — and the longer life is local: a snapshot
+   * this component holds until the prompt is SETTLED (answered, or the session
+   * is finished with it: idle, nothing left in the inbox). Local state cannot
+   * pin the route's shell, cannot outlive a navigation, and is invisible to
+   * every other reader of the store.
+   */
+  // SETTLED: answered, or the session is finished with it (idle, nothing left
+  // in the inbox — Stop, a failure, a delivery that never ran).
+  const firstPromptSettled =
+    turns.length > 0 &&
+    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));
+  // Guarded render-phase updates, the same shape as `contentPainted` below:
+  // mirror the store's copy while the prompt is live, drop it once settled. The
+  // mirror is suppressed once settled, or the two would re-adopt and re-drop
+  // each other on every render.
+  const [firstPromptKeep, setFirstPromptKeep] = useState<typeof firstPromptPreview>(null);
+  if (firstPromptSettled) {
+    if (firstPromptKeep) setFirstPromptKeep(null);
+  } else if (firstPromptPreview && firstPromptKeep !== firstPromptPreview) {
+    setFirstPromptKeep(firstPromptPreview);
+  }
+  const firstPromptSource = firstPromptPreview ?? firstPromptKeep;
   const handover = resolveFirstPromptHandover({
-    hasPreview: !!firstPromptPreview,
+    hasPreview: !!firstPromptSource,
     transcriptShowsText: transcriptShowsFirstPrompt,
     transcriptCarriesFiles: transcriptCarriesFirstPromptFiles,
     releasedBefore: firstPromptReleased,
+    transcriptEmpty: turns.length === 0,
   });
   useEffect(() => {
     if (handover.released && !firstPromptReleased) setFirstPromptReleased(true);
   }, [handover.released, firstPromptReleased]);
   const showFirstPromptPreview = handover.showStandIn;
+  // The STORE's copy is forgotten the frame the transcript carries the prompt —
+  // the original rule, and the one the shell's crossfade depends on.
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
   }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
    *  streaming. Nothing once the transcript carries the files itself. */
   const firstTurnHandover = useMemo(
     (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
-      if (!firstPromptPreview || !handover.handOverToRealTurn) return undefined;
-      const attachments = firstPromptPreview.files.map((file) =>
+      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+      const attachments = firstPromptSource.files.map((file) =>
         file.kind === 'local'
           ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
           : { filename: file.filename, mime: file.mime },
       );
-      return { text: firstPromptPreview.text, attachments };
+      return { text: firstPromptSource.text, attachments };
     },
-    [firstPromptPreview, handover.handOverToRealTurn],
+    [firstPromptSource, handover.handOverToRealTurn],
   );
 
   /**
@@ -3423,8 +3544,11 @@ export function SessionChat({
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
     }
+    // …and the id the claimed row is actually on screen under, or the surviving
+    // bubble would read as running while the server still holds the prompt.
+    if (firstTurnClaim) ids.add(firstTurnClaim.messageId);
     return ids;
-  }, [promptInbox.prompts]);
+  }, [promptInbox.prompts, firstTurnClaim]);
   const workingTurn = useMemo(
     () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
     [turns, working.turnId, unrunTurnIds],
@@ -3452,6 +3576,30 @@ export function SessionChat({
     const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
     return !!(newest.info as { time?: { completed?: number } }).time?.completed;
   }, [turns, workingTurn]);
+  /**
+   * Is ANY turn going to draw the waiting row?
+   *
+   * `resolveWorkingTurn` deliberately declines to name a turn in two states,
+   * and both are states in which the session is very much working:
+   *
+   *  - every prompt on screen is still held by the server AND no turn has
+   *    assistant content yet — the fresh-session case, where rule 4 has no
+   *    "newest turn with content" to fall back to and returns null;
+   *  - the fallback landed on a turn whose answer is COMPLETE while queued
+   *    prompts wait below it (`suppressWorkingTurnBusy`).
+   *
+   * Neither is wrong: the shimmer must not sit on a prompt the agent has not
+   * reached, nor on a finished answer. But nothing else drew the row either,
+   * so the whole surface read as idle while the composer showed Stop — the
+   * user's session going INACTIVE with their prompt in flight (dev,
+   * 2026-09-06, on video: ~11s of it on the first prompt, ~1s on the second).
+   *
+   * The row below is that missing fallback. It is the same element and the
+   * same wording every other surface uses, and it is already what a session
+   * with no turns at all shows.
+   */
+  const someTurnDrawsBusyRow =
+    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;
   /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
@@ -5349,12 +5497,12 @@ export function SessionChat({
                         were crossfading into each other. The waiting row is suppressed
                         only when a turn is already drawing its own. */}
                         {showFirstPromptPreview &&
-                          firstPromptPreview &&
+                          firstPromptSource &&
                           queuedMessages.length === 0 && (
                             <OptimisticTurn
                               text={buildOptimisticPromptTextWithUploads(
-                                firstPromptPreview.text,
-                                firstPromptPreview.files,
+                                firstPromptSource.text,
+                                firstPromptSource.files,
                               )}
                               // The bytes are still being written to the box
                               // chunk by chunk; without this the strip's
@@ -5601,10 +5749,33 @@ export function SessionChat({
                       onSendNow={handleQueueSendNow}
                       onRetry={handleRetryQueuedMessage}
                     />
-                    {/* Busy with no turn to attach it to yet — the same waiting row
+                    {/* Busy with no turn to attach it to — the same waiting row
                         the optimistic turn and every live turn use, so it never
-                        changes shape as the first turn materialises. */}
-                    {isBusy && turns.length === 0 && <SessionBusyIndicator sessionId={sessionId} />}
+                        changes shape as the first turn materialises.
+
+                        "No turn to attach it to" is not only the empty
+                        transcript. A prompt the SERVER still holds is never the
+                        working turn (`resolveWorkingTurn`), and neither is a
+                        finished answer with queued prompts under it
+                        (`suppressWorkingTurnBusy`) — so on a fresh session the
+                        row vanished the moment the first bubble appeared and
+                        stayed gone until the agent answered, with Stop showing
+                        the whole time. See `someTurnDrawsBusyRow`.
+
+                        Not drawn when the boot stand-in is drawing its own row
+                        (`OptimisticTurn busy`), or the two would stack. */}
+                    {isBusy &&
+                      !someTurnDrawsBusyRow &&
+                      !(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0) && (
+                        <SessionBusyIndicator
+                          sessionId={sessionId}
+                          // Matches the stand-in's row spacing under a bubble
+                          // (`OptimisticTurn`), so the crossfade into the real
+                          // transcript does not move it. Nothing above it when
+                          // the transcript is empty, so no margin there.
+                          className={turns.length === 0 ? undefined : 'mt-6'}
+                        />
+                      )}
                   </div>
                   {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn

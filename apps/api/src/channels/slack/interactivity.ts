@@ -1,3 +1,4 @@
+import { TURN_INSTRUCTIONS } from './session';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -53,12 +54,40 @@ async function handleAgentClick(
       eq(chatThreads.threadId, threadTs),
     ))
     .limit(1);
-  if (!thread) return;
+  if (!thread) {
+    // The button lives on a message with no session thread behind it —
+    // typically an actions block the agent posted top-level with
+    // `slack send --channel` and no `--thread`. The user already saw "On it";
+    // dropping silently here is how a click turned into nothing.
+    console.warn('[slack-webhook] button click dropped — no session thread for message', {
+      teamId,
+      channelId,
+      threadTs,
+      actionId: action.action_id,
+    });
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: "This button isn't attached to a Kortix thread, so nothing can pick it up. Reply in the session's thread instead.",
+    });
+    return;
+  }
 
-  const lines = [`[Button click] The user clicked *${label || action.action_id}*.`];
+  // A click is a full turn: it gets the same channel/thread header and the
+  // same working instructions a message turn gets, so the agent knows it must
+  // stream progress with `slack step` and close the turn with `slack send`.
+  const lines = [
+    "You're answering a button click on Slack as a teammate.",
+    '',
+    `Workspace:  ${teamId}`,
+    `Channel:    ${channelId}`,
+    `User:       ${userId}`,
+    `Thread ts:  ${threadTs}`,
+    '',
+    `[Button click] The user clicked *${label || action.action_id}*.`,
+  ];
   if (action.action_id) lines.push(`action_id: \`${action.action_id}\``);
   if (value) lines.push(`value: \`${value}\``);
-  lines.push('', 'Continue the turn based on this choice.');
+  lines.push('', 'Continue the turn based on this choice.', '', TURN_INSTRUCTIONS);
 
   const event: SlackEvent = {
     type: 'message',

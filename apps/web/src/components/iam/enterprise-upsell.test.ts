@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 const dir = import.meta.dir;
 const upsellSource = readFileSync(join(dir, 'enterprise-upsell.tsx'), 'utf8');
-const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
+const pageSource = readFileSync(join(dir, '../../features/accounts/hub/account-hub-content.tsx'), 'utf8');
 
 describe('EnterpriseUpsell component', () => {
   test('CTA opens the in-app demo-request modal', () => {

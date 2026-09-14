@@ -92,7 +92,10 @@ export default function InvitePage() {
       return { kind: 'account' as const };
     },
     onSuccess: () => {
-      router.replace('/accounts');
+      // `/accounts` was a page; it is a modal (`?accountId=`) now, and a
+      // declined invite is not a reason to open it. The landing door is where
+      // a signed-in user with nothing else to do belongs.
+      router.replace(PROJECT_LANDING_PATH);
     },
   });
 

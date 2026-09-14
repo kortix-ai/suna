@@ -411,10 +411,19 @@ describe('HTTP call validation', () => {
     });
 
     expect(response.status).toBe(403);
+    // The denial names the agent, what it holds, and where that came from —
+    // the stable `reason` stays; the rest is what an agent needs to fix it.
     expect(await response.json()).toEqual({
       ok: false,
       status: 'denied',
       reason: 'connector_not_assigned',
+      connector: 'other',
+      action: 'get',
+      agent: 'test-agent',
+      granted: ['echo', 'kortix_email'],
+      manifest_revision: null,
+      manifest_commit: null,
+      hint: expect.stringContaining('agents.test-agent.connectors'),
     });
   });
 });
@@ -474,10 +483,13 @@ describe('Project-explicit gateway face (the local-connector unlock)', () => {
       });
 
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({
+      expect(await response.json()).toMatchObject({
         ok: false,
         status: 'denied',
         reason: 'connector_not_assigned',
+        connector: 'kortix_email',
+        agent: 'test-agent',
+        granted: [],
       });
     }
     expect(world.attachmentUploads).toEqual([]);

@@ -1,5 +1,9 @@
 // Generated from user-visible product registries. Keys are SHA-256(message)[0:12].
 export const PRODUCT_CATALOG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Anyone with the password, plus your team': 'text4fb2abecc0a6',
+  'Anyone with the URL, plus your team': 'text36d8691ae566',
+  'You, and anyone who can manage this project': 'textff5bd8333c4e',
+  'Just you': 'textaeed20a96ee3',
   Waiting: 'text6e293a8c009e',
   'Checking files': 'textc2ec18f03397',
   Building: 'text87c5912f2cef',

@@ -971,6 +971,47 @@ export function assertAllowedSourceAddress(address: string): void {
   throw new AllowedSourceValidationError("This source type is not allowed.");
 }
 
+/**
+ * Throw with a clear reason if a CONNECTOR ENDPOINT (MCP server URL, GraphQL
+ * endpoint, HTTP base URL) isn't a safe absolute https URL on a public host.
+ *
+ * Distinct from {@link assertAllowedSourceAddress}: a registry SOURCE address
+ * may be GitHub shorthand (`owner/repo`), so that guard lets anything that is
+ * not `http://`/`https://` through as a repo reference. A connector endpoint
+ * is never shorthand — it is fetched verbatim — so `HTTP://host`, `ws://host`,
+ * `localhost:3000/mcp` and `my server/mcp` all slipped past the source guard,
+ * reached `safeEgressFetch`, and died as an unhandled `UnsafeEgressError`
+ * (500 + Sentry: Better Stack API prod 2026-09-07 "url must be https",
+ * "invalid url"). Parse with WHATWG `URL`, which normalises the scheme case,
+ * and reject everything that is not https on a public host as the typed
+ * {@link AllowedSourceValidationError} the routes already turn into a 400.
+ */
+export function assertAllowedEndpointUrl(address: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(address.trim());
+  } catch {
+    throw new AllowedSourceValidationError(
+      `Connector endpoint must be an absolute https URL: "${address}"`,
+    );
+  }
+  if (parsed.protocol !== "https:") {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must use https on a public host.",
+    );
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must use https on a public host.",
+    );
+  }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must not embed credentials.",
+    );
+  }
+}
+
 /** Start (or join) a build of the external catalog — resolves when every source
  *  is in. Sets `building`/`partial` SYNCHRONOUSLY so progressive readers see the
  *  loading state on the very first call. */

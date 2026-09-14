@@ -24,10 +24,7 @@ import { cn } from '@/lib/utils';
  */
 export function SessionTitle({ title, className }: { title: string; className?: string }) {
   return (
-    <span
-      title={title}
-      className={cn('text-foreground block truncate text-sm leading-5', className)}
-    >
+    <span className={cn('text-foreground block truncate text-sm leading-5', className)}>
       {title}
     </span>
   );

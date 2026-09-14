@@ -3,16 +3,15 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 /**
- * The account hub's section catalog — the ONE list of what `/accounts/[id]`
- * can show, and what each section is called.
+ * The account hub's section catalog — the ONE list of what the hub can show,
+ * and what each section is called. A section id is the `?accountTab=` value.
  *
- * Shared by the page (`app/(app)/accounts/[id]/page.tsx`, which renders the
- * pane) and the settings shell (`account-settings-shell.tsx`, which renders
- * the sidebar nav and the breadcrumb). It used to live inside `page.tsx`; the
- * sidebar moved out to `accounts/layout.tsx` so every `/accounts/**` route
- * sits in the same frame, and a layout cannot read a page's module-level
- * constants. Nothing here fetches — it is names, icons, and order.
+ * Shared by the hub body (`account-hub-content.tsx`, which renders the pane)
+ * and the settings shell (`account-settings-shell.tsx`, which renders the
+ * sidebar nav and the breadcrumb). Nothing here fetches — it is names, icons,
+ * and order.
  */
+import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
 import type { Icon } from '@phosphor-icons/react';
 import {
   CoinsIcon,
@@ -206,8 +205,8 @@ export function sectionLabel(section: AccountSection, tI18nComplete?: UiTranslat
 
 export interface HubCrumb {
   label: string;
-  /** Absent on the last crumb — the page you are on is not a link. */
-  href?: string;
+  /** Absent on the last crumb — where you are is not a link. */
+  to?: HubTarget;
   /** The account crumb before its record has loaded: render a placeholder, not "Account". */
   pending?: boolean;
   /**
@@ -218,58 +217,58 @@ export interface HubCrumb {
   kind?: 'account';
 }
 
+export interface HubCrumbInput {
+  /** `undefined` is the account list. */
+  accountId: string | undefined;
+  activeSection: AccountSection;
+  /** `sso` | `scim` while a guided wizard has taken over the Identity pane. */
+  setup?: string | null;
+  accountName?: string | null;
+}
+
 /**
- * The breadcrumb for a `/accounts/**` URL:
+ * The breadcrumb for wherever the hub currently is:
  * `Settings / <account name> / <where you are>`.
  *
- * Pure so the shell's top bar can be reasoned about without a router: the
- * pathname, the account, its name, and the resolved section are the whole
- * input. The account crumb links to the hub itself. The two guided-setup
- * routes and the token detail route hang off a hub section, so they get a
- * fourth crumb and their third links back into that section's pane.
+ * Pure, and takes no URL at all — the hub has no URL of its own, only a
+ * `?accountId=` on the page it floats over. Its whole input is the resolved
+ * account, its name, the active section, and whether a setup wizard is on top
+ * of that section. Each crumb names a `HubTarget`, which `HubLink` turns into
+ * a real href for whatever page the modal is open on.
  */
-export function accountHubCrumbs(
-  pathname: string,
-  accountId: string | undefined,
-  activeSection: AccountSection,
-  accountName: string | null | undefined,
-  tI18nComplete: UiTranslator,
-): HubCrumb[] {
-  const root: HubCrumb = { label: tI18nComplete.raw('text74a883a037bc'), href: '/accounts' };
+export function accountHubCrumbs(input: HubCrumbInput, tI18nComplete: UiTranslator): HubCrumb[] {
+  const { accountId, activeSection, setup, accountName } = input;
+  // The root crumb goes to the account LIST — the hub with no account chosen.
+  const root: HubCrumb = { label: tI18nComplete.raw('text74a883a037bc'), to: hubTarget(null) };
   if (!accountId) return [root, { label: tI18nComplete.raw('text8a7c8b67fe8b') }];
-  const hub = `/accounts/${accountId}`;
+
   const account: HubCrumb = accountName
-    ? { label: accountName, href: hub, kind: 'account' }
-    : { label: tI18nComplete.raw('text7e1b0d5641f2'), href: hub, pending: true, kind: 'account' };
-  const rest = pathname.startsWith(hub) ? pathname.slice(hub.length) : '';
-  const [, sub] = rest.split('/');
-  switch (sub) {
-    case 'sso-setup':
-      return [
-        root,
-        account,
-        { label: tI18nComplete.raw('text999f23fcd7be'), href: `${hub}?tab=identity` },
-        { label: tI18nComplete.raw('text196534a6c8ac') },
-      ];
-    case 'scim-setup':
-      return [
-        root,
-        account,
-        { label: tI18nComplete.raw('text999f23fcd7be'), href: `${hub}?tab=identity` },
-        { label: tI18nComplete.raw('textea1cf924a71b') },
-      ];
-    case 'tokens':
-      return [
-        root,
-        account,
-        { label: tI18nComplete.raw('text98aae8972102'), href: `${hub}?tab=tokens` },
-        { label: tI18nComplete.raw('text99a52df3ff3d') },
-      ];
-    case 'groups':
-      return [root, account, { label: sectionLabel('groups', tI18nComplete) }];
-    case 'members':
-      return [root, account, { label: sectionLabel('members', tI18nComplete) }];
-    default:
-      return [root, account, { label: sectionLabel(activeSection, tI18nComplete) }];
+    ? { label: accountName, to: hubTarget(accountId), kind: 'account' }
+    : {
+        label: tI18nComplete.raw('text7e1b0d5641f2'),
+        to: hubTarget(accountId),
+        pending: true,
+        kind: 'account',
+      };
+
+  // A guided wizard sits ON a section, so it gets a fourth crumb and the third
+  // links back to the section's own pane.
+  if (setup === 'sso' || setup === 'scim') {
+    return [
+      root,
+      account,
+      {
+        label: tI18nComplete.raw('text999f23fcd7be'),
+        to: hubTarget(accountId, { tab: 'identity' }),
+      },
+      {
+        label:
+          setup === 'sso'
+            ? tI18nComplete.raw('text196534a6c8ac')
+            : tI18nComplete.raw('textea1cf924a71b'),
+      },
+    ];
   }
+
+  return [root, account, { label: sectionLabel(activeSection, tI18nComplete) }];
 }

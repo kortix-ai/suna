@@ -30,7 +30,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
     if (await copyToClipboard(text)) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-      successToast(tI18nComplete('textc9b756fdf6c2'));
+      successToast(t('linkCopied'));
     } else {
       errorToast(tI18nComplete.raw('textb7fdaed41e1a'));
     }

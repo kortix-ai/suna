@@ -655,7 +655,7 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   // 2 GiB default so a big image-heavy turn never OOM-kills the gateway; small
   // boxes can dial it back via KORTIX_GATEWAY_MEMORY_LIMIT.
   'llm-gateway': { limit: '${KORTIX_GATEWAY_MEMORY_LIMIT:-2048m}', reservation: '256m' },
-  frontend: { limit: '512m', reservation: '128m' },
+  frontend: { limit: '${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },
   'supabase-kong': { limit: '384m', reservation: '128m' },

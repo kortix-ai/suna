@@ -118,6 +118,19 @@ export interface EmailConnectorContext {
 
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
+  /**
+   * WHY `loadConnectorBySlug` answered null. That function collapses three
+   * states into one null — no such row, a disabled row, and a row with no
+   * usable connection for this session — and the gateway used to report all
+   * three as `connector_not_found`. An agent told "not found" about a connector
+   * it can see in `kortix connectors ls` cannot self-correct; one told
+   * `connector_not_connected` can. Optional: deps without it keep the old
+   * single reason.
+   */
+  explainMissingConnector?(
+    projectId: string,
+    slug: string,
+  ): Promise<'connector_not_found' | 'connector_not_connected' | 'connector_disabled'>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -436,10 +449,13 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const connector = resolved.connector;
   if (!connector || !connector.enabled) {
-    await audit(deps, input, null, 'denied', null, {
-      reason: 'connector_not_found',
-    });
-    return { status: 'denied', reason: 'connector_not_found' };
+    const reason = !connector
+      ? deps.explainMissingConnector
+        ? await deps.explainMissingConnector(input.projectId, resolved.slug)
+        : 'connector_not_found'
+      : 'connector_disabled';
+    await audit(deps, input, null, 'denied', null, { reason });
+    return { status: 'denied', reason };
   }
 
   const action = await deps.loadAction(connector.connectorId, input.actionPath);

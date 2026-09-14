@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt, SessionTurn } from '../rest/projects-client/sessions';
+import type { WorkingInboxInput } from './working';
 import {
   INBOX_OBSERVATION_MAX_MS,
   OPTIMISTIC_ABORT_MAX_MS,
@@ -1197,5 +1198,175 @@ describe('countLiveInboxPrompts', () => {
 
   test('an empty inbox is zero', () => {
     expect(countLiveInboxPrompts([])).toBe(0);
+  });
+});
+
+/**
+ * THE DRAIN: the one transition every observer is blind to at once.
+ *
+ * A prompt leaves the inbox because the control plane handed it to the runtime
+ * — and the ledger row for the turn that hand-off opens is written by a
+ * request this tab has not read since. So for one round trip the honest
+ * answers are: the list says "nothing of yours is waiting" (true — it is
+ * running), and the last `/turn` read says "no turns" (true when it was
+ * issued, before the turn existed). Believing them together is how the session
+ * goes INACTIVE with the user's prompt in flight (dev, 2026-09-06, on video:
+ * the composer dropped Stop and the waiting row vanished seconds after the
+ * first prompt was accepted).
+ *
+ * The floor is evidence, not a timer: it stands only until a read that COULD
+ * have seen the turn answers, and it dies with the observation that armed it.
+ */
+describe('projectWorking — a row the server took off the queue means a turn is opening', () => {
+  const drained = (over: Partial<WorkingInboxInput> = {}): WorkingInboxInput => ({
+    pending: 0,
+    atMs: T0,
+    drainedAtMs: T0,
+    ...over,
+  });
+
+  test('a vanished row keeps the session working while every read predates it', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }),
+    ).toEqual({
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      since: T0,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('it never names a turn — the row the receipt stood on is gone', () => {
+    // A send made DURING another response names that response's turn
+    // (`SendReceipt.turnId`), and the receipt outlives the row by design. Once
+    // the row drains, that association is stale: naming it would put the
+    // shimmer back on a turn whose answer is already complete, and
+    // `suppressWorkingTurnBusy` would then draw no indicator at all — the same
+    // dimmed-bubble-no-indicator frame this whole floor exists to remove.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_queued', turnId: 'msg_previous', atMs: T0 - 1_000 },
+      inbox: drained(),
+      server: { turns: [], atMs: T0 - 2_000 },
+      stream: null,
+      nowMs: T0 + 500,
+    });
+    expect(projection.state).toBe('working');
+    expect(projection.turnId).toBeNull();
+  });
+
+  test('a server read taken AFTER the drain retires the floor', () => {
+    // The whole bound: one read that could have seen the turn ends the floor,
+    // in either direction. This one saw no turns, so the turn is over.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 + 200 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('a WIRE idle frame after the drain does NOT retire it', () => {
+    // The frame is honest about the runtime it left: a box that has just come
+    // up reports idle in its status snapshot, and the turn the drain opened is
+    // not on the wire yet. Only a read of the control plane can answer for a
+    // hand-off the control plane made.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: { type: 'idle', origin: 'wire', atMs: T0 + 300 },
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('working');
+  });
+
+  test('a LOCAL idle frame after the drain does not retire it either', () => {
+    // `reconcileMissingBusySessions` fabricates one of these on every SSE
+    // connect, which on a brand-new session lands moments after the drain. A
+    // fabricated frame may answer when nothing else can; it may never retire a
+    // server-owned fact. See `WorkingStreamInput.origin`.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: { type: 'idle', origin: 'local', atMs: T0 + 300 },
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('working');
+  });
+
+  test('a stop this tab issued never arms the floor', () => {
+    // Stop marks every queued row `held`, which drops the live count to zero —
+    // the same shape as a drain, the opposite meaning. "A HELD row is not work
+    // in flight — Stop must put the composer back."
+    expect(
+      projectWorking({
+        optimistic: null,
+        abort: { atMs: T0 + 100, settledAtMs: null },
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('the floor dies with the observation that armed it', () => {
+    // No separate bound: a reading stops deciding at INBOX_OBSERVATION_MAX_MS,
+    // and a fact carried by that reading cannot outlive it. `workingExpiryAtMs`
+    // already schedules that instant, so nothing new has to be re-armed.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: drained(),
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + INBOX_OBSERVATION_MAX_MS + 1,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('an inbox reading that saw no row leave decides exactly as before', () => {
+    // The regression guard for every caller that reports a count and nothing
+    // else: absent `drainedAtMs`, an empty inbox still never claims working.
+    expect(
+      projectWorking({
+        optimistic: null,
+        inbox: { pending: 0, atMs: T0 },
+        server: { turns: [], atMs: T0 - 2_000 },
+        stream: null,
+        nowMs: T0 + 500,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('an open turn still outranks it, and still names its turn', () => {
+    // The floor is the answer when nothing better exists. A ledger row is
+    // better: it knows WHICH turn, which is what puts the shimmer on the right
+    // bubble.
+    const projection = projectWorking({
+      optimistic: null,
+      inbox: drained(),
+      server: {
+        turns: [turn({ started_at: new Date(T0 + 100).toISOString() })],
+        atMs: T0 + 200,
+      },
+      stream: null,
+      nowMs: T0 + 500,
+    });
+    expect(projection.state).toBe('working');
+    expect(projection.turnId).toBe('msg_01');
   });
 });

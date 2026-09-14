@@ -1,11 +1,28 @@
-import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { getPublicTemplate } from '@kortix/sdk';
-import { getTranslations } from '@/i18n/get-translations';
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 
-export const runtime = 'edge';
+// Node, not Edge. This route is a social-preview image: low traffic, no
+// latency budget. As an Edge Function it carried the whole `@kortix/sdk`
+// barrel plus, from 2026-09-07 (#7160), the 638 KB `translations/en.json`
+// behind `getHardcodedUiServerText` — 5.51 MB against Vercel's 4.02 MB Edge
+// Function limit, which failed the staging frontend deploy for release
+// 0.13.12. The Node runtime has no such gate, and the four strings this
+// image renders are English constants, not localized copy (`OG_TEXT`).
+export const runtime = 'nodejs';
+
+const OG_TEXT = {
+  officialTemplate: '✨ Official Template',
+  aiAgentMarketplace: 'AI Agent Marketplace',
+  aiAgentTemplate: 'AI Agent Template',
+  discover: 'Discover powerful AI agents on Kortix',
+  connectors: 'connectors',
+  defaultDescription: 'An AI agent template ready to be customized for your needs.',
+  by: 'by',
+  kortix: 'Kortix',
+  installs: 'installs',
+} as const;
 
 interface PublicTemplateOgData {
   is_kortix_team?: boolean;
@@ -18,8 +35,6 @@ interface PublicTemplateOgData {
 }
 
 export async function GET(request: NextRequest) {
-  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const tHardcodedUi = { raw: getHardcodedUiServerText };
   try {
     const runtimeEnv = getServerPublicEnv();
     const { searchParams } = new URL(request.url);
@@ -81,7 +96,7 @@ export async function GET(request: NextRequest) {
               }}
             >
               <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 600 }}>
-                {tHardcodedUi.raw('appApiOgTemplateRoute.line74JsxTextOfficialTemplate')}
+                {OG_TEXT.officialTemplate}
               </span>
             </div>
           )}
@@ -120,7 +135,7 @@ export async function GET(request: NextRequest) {
               lineHeight: 1.4,
             }}
           >
-            {template.description || tI18nComplete.raw('texta14072880c75')}
+            {template.description || OG_TEXT.defaultDescription}
           </p>
           <div
             style={{
@@ -132,7 +147,7 @@ export async function GET(request: NextRequest) {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#64748b', fontSize: '18px' }}>
-                {tI18nComplete.raw('texta7e2d26e8d15')}
+                {OG_TEXT.by}
               </span>
               <span style={{ color: '#e2e8f0', fontSize: '18px', fontWeight: 600 }}>
                 {template.creator_name || 'Anonymous'}
@@ -143,7 +158,7 @@ export async function GET(request: NextRequest) {
                 {template.download_count}
               </span>
               <span style={{ color: '#64748b', fontSize: '18px' }}>
-                {tI18nComplete.raw('textf9cfe2f2d411')}
+                {OG_TEXT.installs}
               </span>
             </div>
             {template.mcp_requirements && template.mcp_requirements.length > 0 && (
@@ -152,7 +167,7 @@ export async function GET(request: NextRequest) {
                   {template.mcp_requirements.length}
                 </span>
                 <span style={{ color: '#64748b', fontSize: '18px' }}>
-                  {tI18nComplete.raw('text9064fade0bec')}
+                  {OG_TEXT.connectors}
                 </span>
               </div>
             )}
@@ -186,11 +201,11 @@ export async function GET(request: NextRequest) {
             }}
           >
             <span style={{ color: '#64748b', fontSize: '20px' }}>
-              {tI18nComplete.raw('textab54cf5e1d9d')}
+              {OG_TEXT.kortix}
             </span>
             <span style={{ color: '#334155', fontSize: '20px' }}>•</span>
             <span style={{ color: '#64748b', fontSize: '20px' }}>
-              {tHardcodedUi.raw('appApiOgTemplateRoute.line174JsxTextAiAgentMarketplace')}
+              {OG_TEXT.aiAgentMarketplace}
             </span>
           </div>
         </div>
@@ -240,7 +255,7 @@ export async function GET(request: NextRequest) {
               marginBottom: '16px',
             }}
           >
-            {tHardcodedUi.raw('appApiOgTemplateRoute.line225JsxTextAiAgentTemplate')}
+            {OG_TEXT.aiAgentTemplate}
           </h1>
           <p
             style={{
@@ -248,9 +263,7 @@ export async function GET(request: NextRequest) {
               color: '#94a3b8',
             }}
           >
-            {tHardcodedUi.raw(
-              'appApiOgTemplateRoute.line233JsxTextDiscoverPowerfulAiAgentsOnKortix',
-            )}
+            {OG_TEXT.discover}
           </p>
         </div>
       </div>,
