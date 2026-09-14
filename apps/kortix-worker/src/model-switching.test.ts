@@ -33,7 +33,7 @@ async function fixture() {
         if (unavailable) return new Response('unavailable', { status: 503 });
         if (selected === null) return Response.json({ opencode_model: null, limits: null });
         return Response.json({ opencode_model: `kortix/${selected}`, limits: {
-          model: selected, context: 32768, output: 2048, reasoning: false, images: false,
+          model: selected, context: 32768, output: 2048, reasoning: false, images: selected === 'model-b',
         } });
       }
       if (path.endsWith('/log') || path.endsWith('/agent-state')) {
@@ -159,7 +159,7 @@ test('duplicate concurrent and completed deliveries retain their original model'
   expect((await x.send('Once.', true, { ...input, model: { providerID: 'kortix', modelID: 'model-b' } })).status).toBe(400);
 });
 
-test('configuration reads show the saved model without changing an active turn', async () => {
+test.each(['/config', '/global/config', '/kortix/opencode/state', '/kortix/opencode/state/'])('configuration read %s shows the saved capabilities without changing an active turn', async path => {
   const f = await fixture();
   const x = await f.boot();
   const gate = f.block();
@@ -167,8 +167,10 @@ test('configuration reads show the saved model without changing an active turn',
     expect((await x.send('Active.', true)).status).toBe(204);
     await f.arrived.promise;
     f.select('model-b');
-    const config = await (await x.get('/config')).json() as any;
+    const document = await (await x.get(path)).json() as any;
+    const config = path.includes('/state') ? document.config.value : document;
     expect(config.model).toBe('kortix/model-b');
+    expect(config.provider.kortix.models['model-b'].attachment).toBe(true);
     const health = await (await x.get('/kortix/health')).json() as any;
     expect(health.session_model_selection).toBe('next-prompt-v1');
     expect(f.requests.map(request => request.model)).toEqual(['model-a']);
@@ -257,4 +259,12 @@ test('an unpinned session still validates prompt overrides against its configure
   expect((await x.send('Wrong reasoning.', true, { variant: 'high' })).status).toBe(400);
   expect((await x.send('Configured model.')).status).toBe(200);
   expect(f.requests.map(request => request.model)).toEqual(['model-a']);
+});
+
+test('a reload snapshot fails closed when the saved model configuration is unavailable', async () => {
+  const f = await fixture();
+  const x = await f.boot();
+  f.unavailable();
+  expect((await x.get('/kortix/opencode/state')).status).toBe(503);
+  expect(f.requests).toHaveLength(0);
 });

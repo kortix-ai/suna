@@ -2626,7 +2626,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   activate(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (sessionLog) res.setHeader('x-kortix-prompt-admission', 'durable-message-id-v1');
-    if (cfg.modelConfigUrl && req.method === 'GET' && ['/config', '/global/config', '/agent'].includes(url.pathname)) {
+    if (cfg.modelConfigUrl && req.method === 'GET' && ['/config', '/global/config', '/agent', '/kortix/opencode/state'].includes(url.pathname.replace(/\/+$/, ''))) {
       if (!surface.authorize(req, url)) { res.writeHead(401).end(); return; }
       try {
         const selected = await readSessionModelSelection(cfg.modelConfigUrl, cfg.kortixToken ?? '');

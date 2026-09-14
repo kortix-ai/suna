@@ -47,7 +47,7 @@ implementation is unchanged by the worker recovery fix:
 Worker HTTP and recovery tests cover active and queued selections, duplicate
 message IDs, model endpoint failure before admission, commands, reasoning/image
 capabilities, custom initialization/state, manual compaction, and worker replacement
-at question/permission boundaries. The worker suite passes 862 tests.
+at question/permission boundaries. The worker suite passes 866 tests.
 
 SDK tests cover selection persistence, immutable accepted turns, and navigation
 while saving. The SDK suite passes 2,947 tests. Typecheck and installed-package

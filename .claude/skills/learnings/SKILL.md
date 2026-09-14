@@ -6334,3 +6334,15 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** a real provider overflow on preview `1877cccc43` summarized a short conversation completely. The summary recorded counter `2`, but the replacement request called the counter again and returned `3`.
 **Rule:** automatic recovery retains the bounded active native tool batch. A summary alone does not tell the provider that the current tool request is already satisfied. Oversized batches still follow the storage and context limits; external side effects require application-level idempotency.
 **Enforcer:** `context-compaction.test.ts` checks active and oversized batches. `turn-routes.test.ts` checks the retried provider input. Preview `c0a4e666c4` returns `2 — ORCHID-47`, preserves eight messages across restart, and executes only two total tool calls.
+
+### Check Docker disk capacity before changing PostgreSQL readiness tests (2026-09-14)
+
+**Incident:** four disposable PostgreSQL suites failed initialization with only 19 MB free in Docker. The host still had 1 TB free. Increasing readiness waits would not solve it.
+**Rule:** inspect space inside Docker when several unrelated containers fail startup. Reclaim unused build cache before rerunning. Do not remove database volumes or another project's containers.
+**Verification:** `docker builder prune -af` reclaimed unused cache. The same four suites then passed all 38 tests without code changes.
+
+### Refresh saved model capabilities in the initial runtime snapshot (2026-09-14)
+
+**Incident:** the main browser showed the saved model name but could initially hide the image attachment control after reload. `/kortix/opencode/state` still advertised the worker startup model until a separate configuration read refreshed it.
+**Rule:** every authoritative configuration surface reads the saved model selection, including the initial runtime snapshot. Do not depend on a later legacy config request to repair it. An unavailable selection endpoint fails the snapshot explicitly.
+**Enforcer:** `model-switching.test.ts` checks both canonical snapshot paths, legacy config reads, capability values, an unchanged active model, and selection-service failure.
