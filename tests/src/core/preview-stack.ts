@@ -1,5 +1,6 @@
 export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'DAYTONA_API_KEY',
+  'PLATINUM_API_KEY',
   'KE2E_STRIPE_SECRET_KEY',
   'KE2E_STRIPE_WEBHOOK_SECRET',
   'KORTIX_GITHUB_APP_ID',
@@ -28,6 +29,7 @@ export interface PreviewStackInput {
   apiImage: string;
   gatewayImage: string;
   frontendImage: string;
+  platinumApiUrl?: string;
 }
 
 function validatedOrigin(value: string): string {
@@ -342,7 +344,13 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
+    ...(rawSecrets.PLATINUM_API_KEY
+      ? {
+          PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
+          PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY,
+        }
+      : {}),
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
     DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
     MANAGED_GIT_PROVIDER: 'github',

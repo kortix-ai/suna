@@ -6403,3 +6403,10 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** preview Edit received an upstream 503, then a cached duplicate 200. No Pi admission existed, but the API retained an active turn.
 **Rule:** bind the key to its original message ID. On retry, read the runtime admission capability and forward that same ID when supported. An unreadable capability is retryable, not proof of delivery. Preserve legacy duplicate protection.
 **Enforcer:** `forward-prompt-dedupe.test.ts` covers 503 recovery, placed IDs, changed input, changed IDs, and unavailable capability. `RUN-2` tests both keyed and keyless retries.
+
+### Keep preview secret payloads compatible across the deploy and branch checkouts (2026-09-14)
+
+**When:** a main-branch preview orchestrator boots another branch's stack configurator.
+**Incident:** Pi deployment 34892242627 sent `PLATINUM_API_KEY`; the branch validator rejected it before replacing the API.
+**Rule:** port optional provider payload support with both present/absent tests. Keep unknown secrets rejected. Verify the running SHA after deployment.
+**Enforcer:** `preview-stack.test.ts` checks the allowlist, provider defaults, and explicit Platinum configuration.

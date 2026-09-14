@@ -161,6 +161,7 @@ describe('ephemeral self-host preview stack', () => {
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
       'DAYTONA_API_KEY',
+      'PLATINUM_API_KEY',
       'KE2E_STRIPE_SECRET_KEY',
       'KE2E_STRIPE_WEBHOOK_SECRET',
       'KORTIX_GITHUB_APP_ID',
@@ -234,6 +235,22 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+  });
+
+  it.each([false, true])('accepts the current deployment provider payload, platinum=%s', (platinum) => {
+    const configured = applyPreviewEnvironment(
+      'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
+      { origin: 'https://preview.example', sha: SHA, apiImage: 'api', gatewayImage: 'gateway', frontendImage: 'frontend', platinumApiUrl: 'https://provider.example' },
+      { DAYTONA_API_KEY: 'daytona', PLATINUM_API_KEY: platinum ? 'fixture-platinum' : '', MANAGED_GIT_GITHUB_OWNER: 'preview', MANAGED_GIT_GITHUB_TOKEN: 'fixture-git' },
+    );
+    expect(configured.runtimeEnv).toContain(platinum ? 'ALLOWED_SANDBOX_PROVIDERS=daytona,platinum' : 'ALLOWED_SANDBOX_PROVIDERS=daytona\n');
+    if (platinum) {
+      expect(configured.runtimeEnv).toContain('PLATINUM_API_URL=https://provider.example');
+      expect(configured.runtimeEnv).toContain('PLATINUM_API_KEY=fixture-platinum');
+    } else {
+      expect(configured.runtimeEnv).not.toContain('PLATINUM_API_KEY=');
+    }
+    expect(configured.testEnv).not.toContain('PLATINUM_API_KEY=');
   });
 
   it('fails before boot when managed GitHub cannot run every target flow', () => {
