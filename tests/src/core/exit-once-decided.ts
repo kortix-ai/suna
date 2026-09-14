@@ -25,6 +25,14 @@ import { log } from './log';
  * The timer is unref'd, so it never keeps an otherwise-idle process alive. It
  * still fires if something else is holding the loop open, which is precisely
  * the case worth catching.
+ *
+ * This must never become a way to NOT fix a leak. The rule that came out of
+ * the CONN-27 incident is explicit: "Do not hide a leaked connection by
+ * forcing the test process to exit." A warning on stdout is easy to miss in a
+ * 40,000-line CI log, so under GitHub Actions the notice is emitted as a
+ * `::error::` workflow command. It then appears in the job's annotations and
+ * on the run summary page, where nobody has to go looking for it — the run
+ * still reports its real verdict, and the leak is still on the record.
  */
 export function exitOnceDecided(
   code: number,
@@ -34,7 +42,17 @@ export function exitOnceDecided(
     setExitCode?: (code: number) => void;
   } = {},
 ): void {
-  const warn = deps.warn ?? ((message: string) => log.warn(message));
+  // GitHub Actions turns `::error::` into an annotation on the run summary;
+  // anywhere else it would just be noise, so fall back to a plain warning.
+  const announce = (message: string): void => {
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      const oneLine = message.replace(/\r?\n/g, ' ');
+      process.stderr.write(`::error title=ke2e leaked a handle::${oneLine}\n`);
+      return;
+    }
+    log.warn(message);
+  };
+  const warn = deps.warn ?? announce;
   const exit = deps.exit ?? ((value: number) => process.exit(value));
   (deps.setExitCode ?? ((value: number) => { process.exitCode = value; }))(code);
   const graceMs = Number(process.env.KE2E_EXIT_GRACE_MS ?? 15_000);

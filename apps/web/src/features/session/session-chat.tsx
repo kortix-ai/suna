@@ -67,7 +67,7 @@ import { statusElapsedFrame } from './turn/status-elapsed';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
-import { resolveWorkingTurn } from './turn/working-turn';
+import { freshSendHint, resolveWorkingTurn } from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
@@ -3549,9 +3549,28 @@ export function SessionChat({
     if (firstTurnClaim) ids.add(firstTurnClaim.messageId);
     return ids;
   }, [promptInbox.prompts, firstTurnClaim]);
+  // The idle send this tab made last (`handleSend`), scoped to its session.
+  // While its turn is unanswered it is the working turn even where the
+  // projection names none — see `freshSendHint` for the double jump it removes.
+  const [freshSend, setFreshSend] = useState<{ sessionId: string; messageId: string } | null>(
+    null,
+  );
+  const freshSendTurnId = useMemo(() => {
+    if (!freshSend || freshSend.sessionId !== sessionId) return null;
+    return freshSendHint(
+      turns,
+      (id) =>
+        id === freshSend.messageId || optimisticOriginOf(sessionId, id) === freshSend.messageId,
+    );
+  }, [freshSend, sessionId, turns, optimisticOriginOf]);
   const workingTurn = useMemo(
-    () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
-    [turns, working.turnId, unrunTurnIds],
+    () =>
+      resolveWorkingTurn({
+        turns,
+        hintMessageId: working.turnId ?? freshSendTurnId,
+        unrunTurnIds,
+      }),
+    [turns, working.turnId, freshSendTurnId, unrunTurnIds],
   );
   const workingTurnIdRef = useRef<string | null>(workingTurn.workingTurnId);
   useEffect(() => {
@@ -3987,16 +4006,21 @@ export function SessionChat({
       const sendingIntoRunningTurn = isBusyRef.current;
       const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;
 
-      // A send follows from here: the new bubble lands at the top of the
-      // screen the frame it commits (use-auto-scroll.ts, FACT 2 + THE RULE).
+      // A send follows from here: the new bubble glides ONCE to the top of the
+      // screen when it commits (use-auto-scroll.ts, FACT 2 + THE MOTION).
       // While a turn runs the queued bubble is not anchored at the top (that
       // would shift the streaming answer out of view); one who is at the end
       // sees it appear anyway. One who had scrolled UP is brought to it,
       // smoothly: pressing Enter is intent to see the message land, and a
       // queued bubble that appears off-screen with no feedback reads as
       // "nothing happened" (queue-lab `scroll_up_queue`, 2026-08-19).
-      if (!sendingIntoRunningTurn) anchorTurn(messageID);
-      else if (scrollRef.current?.dataset.follow === 'false') smoothScrollToAbsoluteBottom();
+      if (!sendingIntoRunningTurn) {
+        // Until this turn has an answer it is the working turn, whatever the
+        // inbox row still says (`freshSendHint`). A send into a running turn
+        // is genuinely queued, so it is not recorded.
+        setFreshSend({ sessionId, messageId: messageID });
+        anchorTurn(messageID);
+      } else if (scrollRef.current?.dataset.follow === 'false') smoothScrollToAbsoluteBottom();
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;

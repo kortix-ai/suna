@@ -36,6 +36,38 @@ export function describeLinkExpiry(expiresAtIso: string, nowMs: number): string 
   return 'less than 2 minutes';
 }
 
+export type TextLinkPart =
+  { type: 'text'; value: string } | { type: 'link'; href: string; label: string };
+
+/**
+ * `[label](https://…)` or a bare `https://…`. http(s) only: this runs on
+ * agent-written text, which must never become a `javascript:` href.
+ */
+const TEXT_LINK_PATTERN = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<>]+/g;
+
+/** Prose punctuation that ends a sentence after a bare URL but is not part of it. */
+const URL_TRAILING_PUNCTUATION = /[.,;:!?'")\]]+$/;
+
+/**
+ * Splits agent-written field hints ("Create one at https://…") into text and
+ * link parts, so the form renders the URL as a real link instead of dead text.
+ */
+export function splitTextLinks(text: string): TextLinkPart[] {
+  const parts: TextLinkPart[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(TEXT_LINK_PATTERN)) {
+    const start = match.index ?? 0;
+    const [whole, markdownLabel, markdownHref] = match;
+    const href = markdownHref ?? whole.replace(URL_TRAILING_PUNCTUATION, '');
+    const label = markdownLabel ?? href.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    if (start > cursor) parts.push({ type: 'text', value: text.slice(cursor, start) });
+    parts.push({ type: 'link', href, label: label || href });
+    cursor = start + (markdownHref ? whole.length : href.length);
+  }
+  if (cursor < text.length) parts.push({ type: 'text', value: text.slice(cursor) });
+  return parts;
+}
+
 export type SetupLinkKind = 'secret' | 'connector';
 
 /**

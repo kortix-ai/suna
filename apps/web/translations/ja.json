@@ -46,17 +46,17 @@
     "tryFree": "始める"
   },
   "newWorkspace": {
-    "title": "ワークスペースを作成",
-    "description": "ワークスペースにはエージェント、ファイル、セッションが保存されます。",
-    "templateSeed": "このワークスペースは選択したテンプレートからセットアップされます。",
+    "title": "プロジェクトを作成",
+    "description": "プロジェクトにはエージェント、ファイル、セッションが保存されます。",
+    "templateSeed": "このプロジェクトは選択したテンプレートからセットアップされます。",
     "account": {
       "label": "アカウント",
       "createIn": "{account} に作成",
       "choose": "アカウントを選択"
     },
     "name": {
-      "label": "ワークスペース名",
-      "placeholder": "ワークスペース名"
+      "label": "プロジェクト名",
+      "placeholder": "プロジェクト名"
     },
     "validation": {
       "nameRequired": "名前は必須です",
@@ -64,12 +64,12 @@
       "nameTooLong": "名前は {max} 文字以内にしてください"
     },
     "permissions": {
-      "noCreatableAccount": "ワークスペースを作成するには、アカウントの所有者または管理者権限が必要です。",
+      "noCreatableAccount": "プロジェクトを作成するには、アカウントの所有者または管理者権限が必要です。",
       "unknownAccountPrefix": "どのアカウントがあなたのものか確認できないため、自動選択しません。次の宛先にメールしてください：",
       "unknownAccountSuffix": "。問題を修正します。"
     },
     "actions": {
-      "create": "ワークスペースを作成",
+      "create": "プロジェクトを作成",
       "tryAgain": "もう一度試す",
       "logOut": "ログアウト",
       "signingOut": "ログアウト中"
@@ -77,7 +77,7 @@
     "repository": {
       "label": "リポジトリ",
       "defaultBranch": "デフォルトブランチ",
-      "noGitHubAccount": "このワークスペースのアカウントには、まだ GitHub アカウントが接続されていません。",
+      "noGitHubAccount": "このプロジェクトのアカウントには、まだ GitHub アカウントが接続されていません。",
       "connectGitHub": "GitHub アカウントを接続",
       "connectGitHubSuffix": "すると、このオプションを使用できます。",
       "loadingGitHubAccounts": "GitHub アカウントを読み込み中…",
@@ -89,7 +89,7 @@
       "sources": {
         "managed": {
           "label": "Kortix が管理",
-          "description": "Kortix がこのワークスペース用のプライベートリポジトリを作成して管理します。"
+          "description": "Kortix がこのプロジェクト用のプライベートリポジトリを作成して管理します。"
         },
         "githubCreate": {
           "label": "GitHub に作成",
@@ -313,14 +313,14 @@
       "close": "閉じる",
       "docs": "ドキュメント",
       "groups": {
-        "workspace": "ワークスペース",
+        "workspace": "プロジェクト",
         "personal": "個人",
         "account": "アカウント"
       },
       "items": {
         "workspace": {
           "label": "一般",
-          "description": "このワークスペースの名前とアイコン。"
+          "description": "このプロジェクトの名前とアイコン。"
         },
         "sandbox": {
           "label": "サンドボックステンプレート",
@@ -332,7 +332,7 @@
         },
         "upgrades": {
           "label": "アップグレード",
-          "description": "エージェントがこのワークスペースに加えた変更。実行ごとに確認用の変更リクエストが作成されます。自動ではマージされません。"
+          "description": "エージェントがこのプロジェクトに加えた変更。実行ごとに確認用の変更リクエストが作成されます。自動ではマージされません。"
         },
         "profile": {
           "label": "プロフィール",
@@ -391,7 +391,7 @@
         "switchToLastTab": "最後のタブに切り替える",
         "newSession": "新しいセッション",
         "commandPalette": "コマンドパレット",
-        "switchWorkspace": "ワークスペースを切り替える",
+        "switchWorkspace": "プロジェクトを切り替える",
         "settings": "設定",
         "toggleLeftSidebar": "左側のサイドバーを切り替えます",
         "toggleRightSidebar": "右サイドバーを切り替えます",
@@ -498,7 +498,7 @@
       "conversationDensity": "会話の表示密度",
       "conversationDensityDescription": "エージェントの作業中に会話へ表示する詳細の量を選択します。",
       "wallpaper": "壁紙",
-      "wallpaperDescription": "ワークスペースの背景です。",
+      "wallpaperDescription": "プロジェクトの背景です。",
       "defaultWallpaper": "デフォルト",
       "themes": {
         "light": "ライト",
@@ -621,18 +621,18 @@
       "baseBranchDescription": "新しいセッションと変更リクエストはこのブランチから開始します。",
       "saving": "保存中…",
       "manifestFile": "マニフェストファイル",
-      "manifestDescription": "Kortix にこのワークスペースの実行方法を伝えるリポジトリ内のファイルです。",
+      "manifestDescription": "Kortix にこのプロジェクトの実行方法を伝えるリポジトリ内のファイルです。",
       "learnMore": "詳細を見る",
       "localTitle": "ローカルで作業",
-      "localDescription": "このワークスペースを自分のコンピューターにコピーし、任意のエディターで編集します。",
+      "localDescription": "このプロジェクトを自分のコンピューターにコピーし、任意のエディターで編集します。",
       "installTitle": "Kortix コマンドラインをインストール",
       "installHint": "macOS または Linux で一度だけ設定します。すでにインストール済みの場合はスキップしてください。",
       "installCommand": "インストールコマンド",
-      "cloneTitle": "ワークスペースをコンピューターにコピー",
-      "cloneHint": "コードを新しいフォルダーにダウンロードし、そのフォルダーをこのワークスペースに連携します。",
+      "cloneTitle": "プロジェクトをコンピューターにコピー",
+      "cloneHint": "コードを新しいフォルダーにダウンロードし、そのフォルダーをこのプロジェクトに連携します。",
       "cloneCommand": "クローンコマンド",
       "setupTitle": "新しいフォルダー内で設定を完了",
-      "setupHint": "ローカル設定を書き込み、このワークスペースのシークレットを取得してコードを実行できるようにします。",
+      "setupHint": "ローカル設定を書き込み、このプロジェクトのシークレットを取得してコードを実行できるようにします。",
       "setupCommand": "セットアップコマンド",
       "secretsCommand": "シークレット取得コマンド",
       "ownClientTitle": "任意の Git クライアントを使用",
@@ -641,9 +641,9 @@
       "cloneAddress": "クローンアドレス",
       "peopleTitle": "アクセスできるユーザー",
       "peopleManagedDescription": "GitHub ユーザー名で招待します。GitHub から承認用の招待メールが送信されます。",
-      "peopleExternalDescription": "このワークスペースのリポジトリを読み書きできるユーザーです。",
+      "peopleExternalDescription": "このプロジェクトのリポジトリを読み書きできるユーザーです。",
       "externalGithubDescription": "このリポジトリは Kortix が作成していないため、共同作業者を追加できません。GitHub のリポジトリ設定でアクセス権を管理してください。",
-      "externalProviderDescription": "このワークスペースのリポジトリは {provider} でホストされており、Kortix からの共同作業者招待に対応していません。リポジトリの提供元でアクセス権を管理してください。",
+      "externalProviderDescription": "このプロジェクトのリポジトリは {provider} でホストされており、Kortix からの共同作業者招待に対応していません。リポジトリの提供元でアクセス権を管理してください。",
       "manageOnGithub": "GitHub で管理",
       "alreadyHasAccess": "@{username} はすでにこのリポジトリにアクセスできます",
       "inviteSent": "@{username} に招待を送信しました — GitHub で承認してください",
@@ -654,35 +654,35 @@
       "canView": "閲覧可能",
       "invite": "招待",
       "title": "Git リポジトリ",
-      "loadFailed": "このワークスペースのリポジトリを読み込めませんでした",
+      "loadFailed": "このプロジェクトのリポジトリを読み込めませんでした",
       "retry": "再試行"
     },
     "workspace": {
-      "updateFailed": "ワークスペースを更新できませんでした",
-      "iconUpdateFailed": "ワークスペースのアイコンを更新できませんでした",
+      "updateFailed": "プロジェクトを更新できませんでした",
+      "iconUpdateFailed": "プロジェクトのアイコンを更新できませんでした",
       "icon": "アイコン",
-      "iconDescription": "ワークスペース名の横に表示されます。",
-      "name": "ワークスペース名",
-      "nameDescription": "ワークスペース切り替えと、このワークスペースが一覧表示されるすべての場所に表示されます。",
+      "iconDescription": "プロジェクト名の横に表示されます。",
+      "name": "プロジェクト名",
+      "nameDescription": "プロジェクト切り替えと、このプロジェクトが一覧表示されるすべての場所に表示されます。",
       "saving": "保存中…",
-      "archived": "ワークスペースをアーカイブしました",
-      "archiveFailed": "ワークスペースをアーカイブできませんでした",
-      "loadFailed": "ワークスペースを読み込めませんでした",
+      "archived": "プロジェクトをアーカイブしました",
+      "archiveFailed": "プロジェクトをアーカイブできませんでした",
+      "loadFailed": "プロジェクトを読み込めませんでした",
       "retry": "再試行",
       "dangerZone": "危険な操作",
-      "deleteWorkspace": "ワークスペースを削除",
-      "deleteDescription": "すべてのメンバーから、このワークスペースとその中のすべてを削除します。この操作は元に戻せません。",
-      "deleteTitle": "ワークスペースを削除しますか？",
+      "deleteWorkspace": "プロジェクトを削除",
+      "deleteDescription": "すべてのメンバーから、このプロジェクトとその中のすべてを削除します。この操作は元に戻せません。",
+      "deleteTitle": "プロジェクトを削除しますか？",
       "deleteDialog": "アクセス権を持つすべてのユーザーから {name} を削除します。この操作は元に戻せません。",
       "consequencesTitle": "直ちに失われるもの：",
       "consequences": {
-        "sessions": "このワークスペース内のすべてのセッション、ファイル、履歴、出力",
+        "sessions": "このプロジェクト内のすべてのセッション、ファイル、履歴、出力",
         "automation": "すべてのスケジュール実行とトリガー — 直ちに停止します",
-        "integrations": "このワークスペースに限定されたすべての連携、シークレット、API キー",
-        "access": "チーム全員のアクセス権 — 誰もこのワークスペースに再びアクセスできません"
+        "integrations": "このプロジェクトに限定されたすべての連携、シークレット、API キー",
+        "access": "チーム全員のアクセス権 — 誰もこのプロジェクトに再びアクセスできません"
       },
       "reassurance": "接続済みの Git リポジトリは削除されません。すでにプッシュしたコードはそのまま残ります。",
-      "keepWorkspace": "ワークスペースを保持"
+      "keepWorkspace": "プロジェクトを保持"
     },
     "sandbox": {
       "states": {
@@ -803,7 +803,7 @@
       "categories": {
         "quota": {
           "label": "スナップショット上限に達しました",
-          "help": "このワークスペースには、プランで許可された数の準備済みマシンが保存されています。不要なサンドボックステンプレートを削除するか上限を増やして、再ビルドしてください。"
+          "help": "このプロジェクトには、プランで許可された数の準備済みマシンが保存されています。不要なサンドボックステンプレートを削除するか上限を増やして、再ビルドしてください。"
         },
         "dockerfile": {
           "label": "Dockerfile のビルドに失敗しました",
@@ -997,9 +997,9 @@
     },
     "upgrades": {
       "available": "利用可能なアップグレード",
-      "readOnly": "読み取り専用 — アップグレードの実行には、このワークスペースへの書き込み権限が必要です。",
+      "readOnly": "読み取り専用 — アップグレードの実行には、このプロジェクトへの書き込み権限が必要です。",
       "none": "利用可能なアップグレードはありません",
-      "upToDateDescription": "このワークスペースは最新です。",
+      "upToDateDescription": "このプロジェクトは最新です。",
       "upToDate": "最新",
       "run": "実行",
       "oneOff": "一回限りのアップグレード",
@@ -1098,7 +1098,7 @@
       "namePlaceholder": "例：ノート PC の CLI",
       "nameHint": "このキーを使用する場所が分かる名前を指定してください。",
       "scope": "範囲",
-      "wholeWorkspace": "ワークスペース全体",
+      "wholeWorkspace": "プロジェクト全体",
       "oneProject": "1 つのプロジェクト",
       "scopeHint": "プロジェクト範囲のキーは、選択したプロジェクトにのみアクセスできます。",
       "expires": "有効期限",
@@ -1205,7 +1205,7 @@
     "searchResults": "検索結果",
     "recent": "最近",
     "personalAccount": "個人アカウント",
-    "workspaces": "ワークスペース",
+    "workspaces": "プロジェクト",
     "servers": "サーバー",
     "searchServers": "サーバーを検索...",
     "addServer": "サーバーを追加",
@@ -1282,18 +1282,20 @@
       }
     },
     "workspace": {
-      "switch": "ワークスペースを切り替える",
-      "switchMenu": "ワークスペースを切り替える",
-      "create": "ワークスペースを作成…",
+      "switch": "プロジェクトを切り替える",
+      "switchMenu": "プロジェクトを切り替える",
+      "create": "プロジェクトを作成…",
+      "createIn": "{account} にプロジェクトを作成",
+      "createAccount": "アカウントを作成…",
       "settings": "設定",
       "downloadApp": "アプリをダウンロード",
       "logOut": "ログアウト",
-      "find": "ワークスペースを検索…",
+      "find": "プロジェクトを検索…",
       "accountSettings": "アカウント設定",
-      "noMatches": "一致するワークスペースがありません",
-      "empty": "ワークスペースはまだありません",
+      "noMatches": "一致するプロジェクトがありません",
+      "empty": "プロジェクトはまだありません",
       "account": "アカウント",
-      "loadError": "ワークスペースを読み込めませんでした"
+      "loadError": "プロジェクトを読み込めませんでした"
     },
     "manifestUpgrade": {
       "title": "v2 にアップグレード",
@@ -1674,7 +1676,7 @@
     "failedToStartSession": "セッションを開始できませんでした",
     "hintSkills": "/ を入力してスキル、コマンド、ファイルを使用",
     "hintMentions": "@ を入力してファイルやエージェントをメンション",
-    "hintWorkspaceFile": "ワークスペース内のファイルについて質問",
+    "hintWorkspaceFile": "プロジェクト内のファイルについて質問",
     "hintCommandPalette": "{modifier}K を押してコマンドパレットを開く",
     "hintSwitchAgents": "Tab を押してエージェントを切り替え",
     "hintAttachFiles": "ファイルをドラッグ＆ドロップして添付",
@@ -14710,7 +14712,7 @@
       "text9acf3e31d12e": "コンテンツがありません。",
       "text9ad125fe331f": "{value0}で並べ替え",
       "text9ad1905ba13a": "アカウントメンバーのロールを変更しました",
-      "text9ad6baffd025": "ワークスペースを切り替え",
+      "text9ad6baffd025": "プロジェクトを切り替える",
       "text9ada0e627aed": "agentが自分のpromptを書き換えても、コード変更と同じように、ブランチ上のコミットとしてchange requestに現れ、誰かが確認できます。",
       "text9adff6870471": "リンクをコピー",
       "text9ae2faa5b263": "最初の1つを1分で接続。",
@@ -15290,7 +15292,7 @@
       "textab8fcb695b84": "「SCIM Outbound」プロビジョニング接続を作成し、上に表示された 2 つの値を指定します。",
       "textab93638292af": "Discoverを読み込めませんでした",
       "textab936b802fa6": "SCIM Version",
-      "textab95d456c6bb": "ワークスペースのメンバー",
+      "textab95d456c6bb": "プロジェクトのメンバー",
       "textab986ad2d8e6": "repoで宣言",
       "textab9a61284668": "フィードバックは6か所に届くのに、どこも読まれていません。エージェントがすべて読み、本質的に同じ要望をまとめ、すべての引用を出典付きで仕様書にします。何を作るかはあなたが決めます。",
       "textaba314822529": "SCIMトークンを取り消しました",
@@ -17618,7 +17620,7 @@
       "textec5ba0abb717": "アクセス",
       "textec5c2f7304b1": "コンテキストを整理しました",
       "textec69732f4600": "マニフェストはガバナンスブロック内の動作フィールドを拒否し、エージェント自身の.mdファイルを示すエラーを返します。",
-      "textec70b4a614bf": "ワークスペースを切り替え",
+      "textec70b4a614bf": "プロジェクトを切り替え",
       "textec73f9f19e7c": "一度書けば、すべてのセッションが理解します。",
       "textec7a4e3094f9": "認証所有者は変更されましたが、同期に失敗しました：{value0}。再試行するにはSyncを使用してください。",
       "textec81d7aae411": "マシンはリポジトリをクローンし、セッション名のブランチを作成します。そのセッションによる編集とコミットはすべて、そのブランチにのみ存在します。",
@@ -18373,8 +18375,8 @@
     },
     "kickoff": {
       "tools": "これらのツールも接続しました: {count}。役立つ場合は使用してください。",
-      "noDomain": "ワークスペースのセットアップが完了しました。{toolsClause} 自己紹介をし、何ができるかを説明し、最初にサポートが必要なことを尋ねます。",
-      "withDomain": "{domain} のワークスペースのセットアップが完了しました。会社について調べて、見つけた内容を教えてください。{toolsClause} それから、最初に何についてサポートが必要かを尋ねてください。"
+      "noDomain": "プロジェクトのセットアップが完了しました。{toolsClause} 自己紹介をし、何ができるかを説明し、最初にサポートが必要なことを尋ねます。",
+      "withDomain": "{domain} のプロジェクトのセットアップが完了しました。会社について調べて、見つけた内容を教えてください。{toolsClause} それから、最初に何についてサポートが必要かを尋ねてください。"
     },
     "company": {
       "title": "あなたの会社について教えてください",

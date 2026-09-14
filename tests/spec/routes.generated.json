@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 638,
   "routes": [
     {
       "method": "GET",
@@ -956,6 +956,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connect/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/connect/toolkits"
     },
     {
@@ -1036,6 +1040,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/pipedream/apps"
     },
     {
@@ -1097,6 +1105,10 @@
     {
       "method": "GET",
       "path": "/v1/git/:project/info/refs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/project-snapshot"
     },
     {
       "method": "GET",

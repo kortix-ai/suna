@@ -1,5 +1,98 @@
 import { expect, test } from 'bun:test';
-import { searchComposioCatalog, type ComposioCatalogClient } from './composio-catalog-search';
+import {
+  composioCatalogSections,
+  searchComposioCatalog,
+  type ComposioCatalogClient,
+} from './composio-catalog-search';
+
+function toolkit(slug: string, categories: string[]) {
+  return {
+    slug,
+    name: slug.toUpperCase(),
+    meta: { categories: categories.map((id) => ({ id, name: id.replace(/-/g, ' ') })) },
+  };
+}
+
+function catalogOf(items: ReturnType<typeof toolkit>[]): ComposioCatalogClient {
+  return {
+    toolkits: {
+      async list() {
+        return { items };
+      },
+    },
+  };
+}
+
+test('sections state each category’s true size over a fixed top slice in usage order', async () => {
+  // Usage order is the provider's `sort_by: 'usage'` order. `crm` holds 5, so a
+  // 2-card slice must still report 5 — the count a page of 48 used to report
+  // was however many CRM apps that page happened to contain.
+  const catalogClient = catalogOf([
+    toolkit('hubspot', ['crm', 'marketing']),
+    toolkit('sentry', ['server-monitoring']),
+    toolkit('salesforce', ['crm']),
+    toolkit('pipedrive', ['crm']),
+    toolkit('mailchimp', ['marketing']),
+    toolkit('attio', ['crm']),
+    toolkit('close', ['crm', 'crm']),
+  ]);
+  const result = await composioCatalogSections({
+    perCategory: 2,
+    maxCategories: 2,
+    catalogClient,
+  });
+  expect(result.provider).toBe('composio');
+  expect(result.sections.map(({ key, label, total }) => ({ key, label, total }))).toEqual([
+    { key: 'crm', label: 'crm', total: 5 },
+    { key: 'marketing', label: 'marketing', total: 2 },
+  ]);
+  expect(result.sections[0].toolkits.map((item) => item.slug)).toEqual(['hubspot', 'salesforce']);
+  expect(result.sections[0].toolkits[0]).toEqual({
+    slug: 'hubspot',
+    name: 'HUBSPOT',
+    logo: null,
+    description: null,
+    categories: ['crm', 'marketing'],
+    isNoAuth: false,
+    connected: false,
+  });
+  // The facet lists every category, not only the sections shown, so an open
+  // category can name itself and state its size.
+  expect(result.categories).toEqual([
+    { key: 'crm', label: 'crm', count: 5 },
+    { key: 'marketing', label: 'marketing', count: 2 },
+    { key: 'server-monitoring', label: 'server monitoring', count: 1 },
+  ]);
+});
+
+test('sections break count ties by key and drop blank categories', async () => {
+  const catalogClient = catalogOf([
+    toolkit('zendesk', ['support', ' ']),
+    toolkit('asana', ['productivity']),
+    toolkit('notion', ['']),
+  ]);
+  const result = await composioCatalogSections({ catalogClient });
+  expect(result.categories.map((category) => category.key)).toEqual(['productivity', 'support']);
+});
+
+test('sections clamp their limits to the pipedream-compatible bounds', async () => {
+  const items = Array.from({ length: 50 }, (_, index) =>
+    toolkit(`app-${index}`, [`category-${index}`, 'shared']),
+  );
+  const catalogClient = catalogOf(items);
+  const defaults = await composioCatalogSections({ catalogClient });
+  expect(defaults.sections).toHaveLength(12);
+  expect(defaults.sections[0]).toMatchObject({ key: 'shared', total: 50 });
+  expect(defaults.sections[0].toolkits).toHaveLength(6);
+
+  const capped = await composioCatalogSections({
+    perCategory: 1000,
+    maxCategories: 1000,
+    catalogClient,
+  });
+  expect(capped.sections).toHaveLength(40);
+  expect(capped.sections[0].toolkits).toHaveLength(24);
+});
 
 test('short searches match names, slugs, and descriptions and preserve public metadata', async () => {
   const catalogClient: ComposioCatalogClient = {

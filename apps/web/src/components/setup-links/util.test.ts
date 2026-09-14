@@ -6,7 +6,56 @@ import {
   describeLinkExpiry,
   parseSetupLinkHref,
   setupLinkChipLabel,
+  splitTextLinks,
 } from './util';
+
+describe('splitTextLinks', () => {
+  test('plain text stays one text part', () => {
+    expect(splitTextLinks('Settings → API in Apollo')).toEqual([
+      { type: 'text', value: 'Settings → API in Apollo' },
+    ]);
+  });
+
+  test('a bare URL becomes a link labelled without the protocol, and keeps the sentence period out', () => {
+    expect(splitTextLinks('Create one at https://platform.openai.com/api-keys.')).toEqual([
+      { type: 'text', value: 'Create one at ' },
+      {
+        type: 'link',
+        href: 'https://platform.openai.com/api-keys',
+        label: 'platform.openai.com/api-keys',
+      },
+      { type: 'text', value: '.' },
+    ]);
+  });
+
+  test('a markdown link keeps its own label', () => {
+    expect(
+      splitTextLinks('Open [Apollo settings](https://app.apollo.io/#/settings/api) → API'),
+    ).toEqual([
+      { type: 'text', value: 'Open ' },
+      { type: 'link', href: 'https://app.apollo.io/#/settings/api', label: 'Apollo settings' },
+      { type: 'text', value: ' → API' },
+    ]);
+  });
+
+  test('a bare URL inside parentheses does not swallow the closing parenthesis', () => {
+    expect(splitTextLinks('(see https://dashboard.stripe.com/apikeys)')).toEqual([
+      { type: 'text', value: '(see ' },
+      {
+        type: 'link',
+        href: 'https://dashboard.stripe.com/apikeys',
+        label: 'dashboard.stripe.com/apikeys',
+      },
+      { type: 'text', value: ')' },
+    ]);
+  });
+
+  test('a non-http scheme is never a link', () => {
+    expect(splitTextLinks('javascript:alert(1) and [x](javascript:alert(1))')).toEqual([
+      { type: 'text', value: 'javascript:alert(1) and [x](javascript:alert(1))' },
+    ]);
+  });
+});
 
 const TOKEN = `ksl_${'A'.repeat(400)}`;
 

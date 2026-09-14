@@ -4,13 +4,16 @@ import {
   AT_END_PX,
   BOTTOM_GAP_PX,
   CHEVRON_PX,
+  GLIDE_MIN_PX,
   TURN_TOP_OFFSET,
   chevronVisible,
   classifyScrollKey,
   isAtEnd,
   isEditableTarget,
   keyScrollIntentFor,
+  pickAnchorIndex,
   roomUnderNewestTurn,
+  settleMotion,
   shouldReleaseFollow,
 } from './use-auto-scroll';
 
@@ -24,6 +27,100 @@ describe('roomUnderNewestTurn — FACT 1, the room is one value streaming or idl
   });
   test('a transcript with no turn yet reserves the whole viewport', () => {
     expect(roomUnderNewestTurn(800, null)).toBe(800);
+  });
+});
+
+describe('pickAnchorIndex — a REACHED anchor never falls back to an older turn', () => {
+  /** Pending flags by DOM order, in the (count, isPending) shape the hook passes. */
+  const flags = (pending: boolean[]) => [pending.length, (i: number) => pending[i]] as const;
+
+  test('the newest turn the agent has reached is the anchor; queued turns under it are not', () => {
+    expect(pickAnchorIndex(...flags([false, false, true]), null)).toBe(1);
+    expect(pickAnchorIndex(...flags([false, false, false]), null)).toBe(2);
+  });
+
+  test('every turn queued: the last one (nothing has been reached)', () => {
+    expect(pickAnchorIndex(...flags([true, true]), null)).toBe(1);
+    expect(pickAnchorIndex(...flags([]), null)).toBe(-1);
+  });
+
+  test('the reported double jump: the sent turn flips pending for a frame — the anchor holds', () => {
+    // Anchored on the fresh send (index 1), then a transient `data-turn-pending`
+    // on it. Falling back to index 0 collapsed the room under the new turn and
+    // clamped the viewport down, then re-anchoring glided it back up.
+    expect(pickAnchorIndex(...flags([false, true]), { index: 1, reached: true })).toBe(1);
+  });
+
+  test('forward moves still happen — the agent reached a queued prompt', () => {
+    expect(pickAnchorIndex(...flags([false, false, false]), { index: 1, reached: true })).toBe(2);
+  });
+
+  test('a FALLBACK anchor (chosen while everything was queued) yields to a reached turn above it', () => {
+    expect(pickAnchorIndex(...flags([false, true, true]), { index: 2, reached: false })).toBe(0);
+  });
+
+  test('a previous anchor that left the transcript (rewind, failed send) holds nothing', () => {
+    expect(pickAnchorIndex(...flags([false, true]), { index: 3, reached: true })).toBe(0);
+    expect(pickAnchorIndex(...flags([false, true]), { index: -1, reached: true })).toBe(0);
+  });
+
+  test('the scan stops at the first reached turn from the end — one DOM query per settle', () => {
+    let queries = 0;
+    const isPending = (i: number) => {
+      queries++;
+      return i === 99;
+    };
+    expect(pickAnchorIndex(100, isPending, null)).toBe(98);
+    expect(queries).toBe(2);
+  });
+});
+
+describe('settleMotion — one motion per change, never a cut at the end of a glide', () => {
+  const base = {
+    distance: 0,
+    end: 1_000,
+    anchorChanged: false,
+    glideArmed: false,
+    glideTarget: null,
+    reduceMotion: false,
+  };
+
+  test('already at the end: nothing', () => {
+    expect(settleMotion(base)).toBe('none');
+  });
+
+  test('text streaming under the anchor follows instantly — a glide would lag the text', () => {
+    expect(settleMotion({ ...base, distance: 40 })).toBe('instant');
+    expect(settleMotion({ ...base, distance: 400 })).toBe('instant');
+  });
+
+  test('a new anchor glides once', () => {
+    expect(settleMotion({ ...base, distance: GLIDE_MIN_PX + 1, anchorChanged: true })).toBe(
+      'glide',
+    );
+    expect(settleMotion({ ...base, distance: GLIDE_MIN_PX, anchorChanged: true })).toBe('instant');
+  });
+
+  test('a send glides even when the anchor did not change (it was already the anchor)', () => {
+    expect(settleMotion({ ...base, distance: 600, glideArmed: true })).toBe('glide');
+  });
+
+  test('in flight: a moved end RE-AIMS the glide; an unchanged one lets it land', () => {
+    // The old code ignored every change for a fixed 420ms and then wrote
+    // `scrollTop` — a visible snap whenever the end had moved (or the browser's
+    // own smooth scroll had not finished).
+    expect(settleMotion({ ...base, distance: 300, glideTarget: 1_000 })).toBe('wait');
+    expect(settleMotion({ ...base, distance: 300, glideTarget: 1_000.5 })).toBe('wait');
+    expect(settleMotion({ ...base, distance: 300, end: 1_060, glideTarget: 1_000 })).toBe('glide');
+  });
+
+  test('reduced motion: every glide becomes an instant move', () => {
+    expect(
+      settleMotion({ ...base, distance: 600, anchorChanged: true, reduceMotion: true }),
+    ).toBe('instant');
+    expect(settleMotion({ ...base, distance: 600, glideArmed: true, reduceMotion: true })).toBe(
+      'instant',
+    );
   });
 });
 

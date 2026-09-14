@@ -46,17 +46,17 @@
     "tryFree": "Loslegen"
   },
   "newWorkspace": {
-    "title": "Arbeitsbereich erstellen",
-    "description": "In einem Arbeitsbereich befinden sich deine Agenten, Dateien und Sitzungen.",
-    "templateSeed": "Dieser Arbeitsbereich wird mit der ausgewählten Vorlage eingerichtet.",
+    "title": "Projekt erstellen",
+    "description": "In einem Projekt befinden sich deine Agenten, Dateien und Sitzungen.",
+    "templateSeed": "Dieser Projekt wird mit der ausgewählten Vorlage eingerichtet.",
     "account": {
       "label": "Konto",
       "createIn": "Erstellen in {account}",
       "choose": "Konto auswählen"
     },
     "name": {
-      "label": "Name des Arbeitsbereichs",
-      "placeholder": "Name des Arbeitsbereichs"
+      "label": "Name des Projekts",
+      "placeholder": "Name des Projekts"
     },
     "validation": {
       "nameRequired": "Ein Name ist erforderlich",
@@ -64,12 +64,12 @@
       "nameTooLong": "Der Name darf höchstens {max} Zeichen lang sein"
     },
     "permissions": {
-      "noCreatableAccount": "Du benötigst Eigentümer- oder Administratorzugriff auf ein Konto, um einen Arbeitsbereich zu erstellen.",
+      "noCreatableAccount": "Du benötigst Eigentümer- oder Administratorzugriff auf ein Konto, um einen Projekt zu erstellen.",
       "unknownAccountPrefix": "Wir können nicht feststellen, welches Konto dir gehört, und treffen daher keine Annahme. Sende eine E-Mail an",
       "unknownAccountSuffix": "und wir beheben das Problem."
     },
     "actions": {
-      "create": "Arbeitsbereich erstellen",
+      "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
       "logOut": "Abmelden",
       "signingOut": "Abmeldung läuft"
@@ -77,7 +77,7 @@
     "repository": {
       "label": "Repository",
       "defaultBranch": "Standard-Branch",
-      "noGitHubAccount": "Mit dem Konto dieses Arbeitsbereichs ist noch kein GitHub-Konto verbunden.",
+      "noGitHubAccount": "Mit dem Konto dieses Projekts ist noch kein GitHub-Konto verbunden.",
       "connectGitHub": "GitHub-Konto verbinden",
       "connectGitHubSuffix": "um diese Option zu verwenden.",
       "loadingGitHubAccounts": "GitHub-Konten werden geladen…",
@@ -89,7 +89,7 @@
       "sources": {
         "managed": {
           "label": "Von Kortix verwaltet",
-          "description": "Kortix erstellt und verwaltet ein privates Repository für diesen Arbeitsbereich."
+          "description": "Kortix erstellt und verwaltet ein privates Repository für diesen Projekt."
         },
         "githubCreate": {
           "label": "In GitHub erstellen",
@@ -313,14 +313,14 @@
       "close": "Schließen",
       "docs": "Dokumentation",
       "groups": {
-        "workspace": "Arbeitsbereich",
+        "workspace": "Projekt",
         "personal": "Persönlich",
         "account": "Konto"
       },
       "items": {
         "workspace": {
           "label": "Allgemein",
-          "description": "Name und Symbol für diesen Arbeitsbereich."
+          "description": "Name und Symbol für diesen Projekt."
         },
         "sandbox": {
           "label": "Sandbox-Vorlagen",
@@ -332,7 +332,7 @@
         },
         "upgrades": {
           "label": "Upgrades",
-          "description": "Änderungen, die ein Agent an diesem Arbeitsbereich vornimmt. Jeder Lauf öffnet eine Änderungsanfrage zur Prüfung. Nichts wird automatisch zusammengeführt."
+          "description": "Änderungen, die ein Agent an diesem Projekt vornimmt. Jeder Lauf öffnet eine Änderungsanfrage zur Prüfung. Nichts wird automatisch zusammengeführt."
         },
         "profile": {
           "label": "Profil",
@@ -391,7 +391,7 @@
         "switchToLastTab": "Wechseln Sie zur letzten Registerkarte",
         "newSession": "Neue Sitzung",
         "commandPalette": "Befehlspalette",
-        "switchWorkspace": "Arbeitsbereich wechseln",
+        "switchWorkspace": "Projekt wechseln",
         "settings": "Einstellungen",
         "toggleLeftSidebar": "Linke Seitenleiste umschalten",
         "toggleRightSidebar": "Rechte Seitenleiste umschalten",
@@ -498,7 +498,7 @@
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
       "wallpaper": "Hintergrund",
-      "wallpaperDescription": "Der Hintergrund Ihres Arbeitsbereichs.",
+      "wallpaperDescription": "Der Hintergrund Ihres Projekts.",
       "defaultWallpaper": "Standard",
       "themes": {
         "light": "Hell",
@@ -621,18 +621,18 @@
       "baseBranchDescription": "Neue Sitzungen und Änderungsanfragen beginnen auf diesem Branch.",
       "saving": "Speichern…",
       "manifestFile": "Manifestdatei",
-      "manifestDescription": "Die Datei im Repository, die Kortix sagt, wie dieser Arbeitsbereich ausgeführt wird.",
+      "manifestDescription": "Die Datei im Repository, die Kortix sagt, wie dieser Projekt ausgeführt wird.",
       "learnMore": "Mehr erfahren",
-      "localTitle": "Lokal an diesem Arbeitsbereich arbeiten",
-      "localDescription": "Kopiere diesen Arbeitsbereich auf deinen Computer und bearbeite ihn in deinem Editor.",
+      "localTitle": "Lokal an diesem Projekt arbeiten",
+      "localDescription": "Kopiere diesen Projekt auf deinen Computer und bearbeite ihn in deinem Editor.",
       "installTitle": "Kortix-Befehlszeile installieren",
       "installHint": "Einmalige Einrichtung unter macOS oder Linux. Überspringe diesen Schritt, falls sie bereits installiert ist.",
       "installCommand": "Installationsbefehl",
-      "cloneTitle": "Arbeitsbereich auf deinen Computer kopieren",
-      "cloneHint": "Lädt den Code in einen neuen Ordner und verknüpft ihn mit diesem Arbeitsbereich.",
+      "cloneTitle": "Projekt auf deinen Computer kopieren",
+      "cloneHint": "Lädt den Code in einen neuen Ordner und verknüpft ihn mit diesem Projekt.",
       "cloneCommand": "Klonbefehl",
       "setupTitle": "Einrichtung im neuen Ordner abschließen",
-      "setupHint": "Schreibt die lokale Konfiguration und lädt die Secrets dieses Arbeitsbereichs, damit der Code ausgeführt werden kann.",
+      "setupHint": "Schreibt die lokale Konfiguration und lädt die Secrets dieses Projekts, damit der Code ausgeführt werden kann.",
       "setupCommand": "Einrichtungsbefehl",
       "secretsCommand": "Secrets-Befehl",
       "ownClientTitle": "Eigenen Git-Client verwenden",
@@ -643,7 +643,7 @@
       "peopleManagedDescription": "Lade jemanden mit seinem GitHub-Benutzernamen ein. GitHub sendet eine Einladung zur Annahme.",
       "peopleExternalDescription": "Personen, die dieses Repository lesen und schreiben dürfen.",
       "externalGithubDescription": "Kortix hat dieses Repository nicht erstellt und kann daher keine Mitwirkenden hinzufügen. Verwalte den Zugriff in den Repository-Einstellungen auf GitHub.",
-      "externalProviderDescription": "Das Repository dieses Arbeitsbereichs wird auf {provider} gehostet. Dieser Anbieter unterstützt keine Einladungen durch Kortix. Verwalte den Zugriff beim Anbieter.",
+      "externalProviderDescription": "Das Repository dieses Projekts wird auf {provider} gehostet. Dieser Anbieter unterstützt keine Einladungen durch Kortix. Verwalte den Zugriff beim Anbieter.",
       "manageOnGithub": "Auf GitHub verwalten",
       "alreadyHasAccess": "@{username} hat bereits Zugriff auf dieses Repository",
       "inviteSent": "Einladung an @{username} gesendet — die Person nimmt sie auf GitHub an",
@@ -654,35 +654,35 @@
       "canView": "Kann anzeigen",
       "invite": "Einladen",
       "title": "Git-Repository",
-      "loadFailed": "Repository dieses Arbeitsbereichs konnte nicht geladen werden",
+      "loadFailed": "Repository dieses Projekts konnte nicht geladen werden",
       "retry": "Erneut versuchen"
     },
     "workspace": {
-      "updateFailed": "Arbeitsbereich konnte nicht aktualisiert werden",
-      "iconUpdateFailed": "Symbol des Arbeitsbereichs konnte nicht aktualisiert werden",
+      "updateFailed": "Projekt konnte nicht aktualisiert werden",
+      "iconUpdateFailed": "Symbol des Projekts konnte nicht aktualisiert werden",
       "icon": "Symbol",
-      "iconDescription": "Wird neben dem Namen des Arbeitsbereichs angezeigt.",
-      "name": "Name des Arbeitsbereichs",
-      "nameDescription": "Wird im Arbeitsbereichswechsler und überall angezeigt, wo dieser Arbeitsbereich aufgeführt ist.",
+      "iconDescription": "Wird neben dem Namen des Projekts angezeigt.",
+      "name": "Name des Projekts",
+      "nameDescription": "Wird im Projektswechsler und überall angezeigt, wo dieser Projekt aufgeführt ist.",
       "saving": "Speichern…",
-      "archived": "Arbeitsbereich archiviert",
-      "archiveFailed": "Arbeitsbereich konnte nicht archiviert werden",
-      "loadFailed": "Arbeitsbereich konnte nicht geladen werden",
+      "archived": "Projekt archiviert",
+      "archiveFailed": "Projekt konnte nicht archiviert werden",
+      "loadFailed": "Projekt konnte nicht geladen werden",
       "retry": "Erneut versuchen",
       "dangerZone": "Gefahrenzone",
-      "deleteWorkspace": "Arbeitsbereich löschen",
-      "deleteDescription": "Entfernt diesen Arbeitsbereich und alle Inhalte für alle Mitglieder. Dies kann nicht rückgängig gemacht werden.",
-      "deleteTitle": "Arbeitsbereich löschen?",
+      "deleteWorkspace": "Projekt löschen",
+      "deleteDescription": "Entfernt diesen Projekt und alle Inhalte für alle Mitglieder. Dies kann nicht rückgängig gemacht werden.",
+      "deleteTitle": "Projekt löschen?",
       "deleteDialog": "Dadurch wird {name} für alle Personen mit Zugriff gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "consequencesTitle": "Du verlierst sofort:",
       "consequences": {
-        "sessions": "Jede Sitzung in diesem Arbeitsbereich mit Dateien, Verlauf und Ergebnissen",
+        "sessions": "Jede Sitzung in diesem Projekt mit Dateien, Verlauf und Ergebnissen",
         "automation": "Alle geplanten Ausführungen und Trigger — sie werden sofort beendet",
-        "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Arbeitsbereichs",
-        "access": "Den Zugriff für das gesamte Team — niemand kann diesen Arbeitsbereich erneut öffnen"
+        "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Projekts",
+        "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Das verbundene Git-Repository wird nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Arbeitsbereich behalten"
+      "keepWorkspace": "Projekt behalten"
     },
     "sandbox": {
       "states": {
@@ -803,7 +803,7 @@
       "categories": {
         "quota": {
           "label": "Snapshot-Limit erreicht",
-          "help": "Dieser Arbeitsbereich hat so viele vorbereitete Maschinen gespeichert, wie der Plan erlaubt. Löschen Sie eine nicht mehr benötigte Sandbox-Vorlage oder erhöhen Sie das Limit. Starten Sie danach die Erstellung erneut."
+          "help": "Dieser Projekt hat so viele vorbereitete Maschinen gespeichert, wie der Plan erlaubt. Löschen Sie eine nicht mehr benötigte Sandbox-Vorlage oder erhöhen Sie das Limit. Starten Sie danach die Erstellung erneut."
         },
         "dockerfile": {
           "label": "Dockerfile-Erstellung fehlgeschlagen",
@@ -997,9 +997,9 @@
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",
-      "readOnly": "Schreibgeschützt — zum Ausführen eines Upgrades benötigen Sie Schreibzugriff auf diesen Arbeitsbereich.",
+      "readOnly": "Schreibgeschützt — zum Ausführen eines Upgrades benötigen Sie Schreibzugriff auf diesen Projekt.",
       "none": "Keine Upgrades verfügbar",
-      "upToDateDescription": "Dieser Arbeitsbereich ist bereits aktuell.",
+      "upToDateDescription": "Dieser Projekt ist bereits aktuell.",
       "upToDate": "Aktuell",
       "run": "Ausführen",
       "oneOff": "Einmaliges Upgrade",
@@ -1098,7 +1098,7 @@
       "namePlaceholder": "Zum Beispiel Laptop-CLI",
       "nameHint": "Wähle einen Namen, der den Einsatzort dieses Schlüssels beschreibt.",
       "scope": "Geltungsbereich",
-      "wholeWorkspace": "Gesamter Arbeitsbereich",
+      "wholeWorkspace": "Gesamter Projekt",
       "oneProject": "Ein Projekt",
       "scopeHint": "Ein projektgebundener Schlüssel kann nur auf das ausgewählte Projekt zugreifen.",
       "expires": "Ablauf",
@@ -1205,7 +1205,7 @@
     "searchResults": "Suchergebnisse",
     "recent": "Kürzlich",
     "personalAccount": "Persönliches Konto",
-    "workspaces": "Arbeitsbereiche",
+    "workspaces": "Projekte",
     "servers": "Server",
     "searchServers": "Server suchen...",
     "addServer": "Server hinzufügen",
@@ -1282,18 +1282,20 @@
       }
     },
     "workspace": {
-      "switch": "Arbeitsbereich wechseln",
-      "switchMenu": "Arbeitsbereich wechseln",
-      "create": "Arbeitsbereich erstellen…",
+      "switch": "Projekt wechseln",
+      "switchMenu": "Projekt wechseln",
+      "create": "Projekt erstellen…",
+      "createIn": "Projekt in {account} erstellen",
+      "createAccount": "Konto erstellen…",
       "settings": "Einstellungen",
       "downloadApp": "App herunterladen",
       "logOut": "Abmelden",
-      "find": "Arbeitsbereich suchen…",
+      "find": "Projekt suchen…",
       "accountSettings": "Kontoeinstellungen",
-      "noMatches": "Keine passenden Arbeitsbereiche",
-      "empty": "Noch keine Arbeitsbereiche",
+      "noMatches": "Keine passenden Projekte",
+      "empty": "Noch keine Projekte",
       "account": "Konto",
-      "loadError": "Arbeitsbereiche konnten nicht geladen werden"
+      "loadError": "Projekte konnten nicht geladen werden"
     },
     "manifestUpgrade": {
       "title": "Auf v2 aktualisieren",
@@ -1674,7 +1676,7 @@
     "failedToStartSession": "Sitzung konnte nicht gestartet werden",
     "hintSkills": "Gib / für Skills, Befehle und Dateien ein",
     "hintMentions": "Gib @ ein, um Dateien und Agenten zu erwähnen",
-    "hintWorkspaceFile": "Frage nach einer beliebigen Datei in deinem Arbeitsbereich",
+    "hintWorkspaceFile": "Frage nach einer beliebigen Datei in deinem Projekt",
     "hintCommandPalette": "Drücke {modifier}K, um die Befehlspalette zu öffnen",
     "hintSwitchAgents": "Drücke Tab, um den Agenten zu wechseln",
     "hintAttachFiles": "Ziehe Dateien hierher, um sie anzuhängen",
@@ -14710,7 +14712,7 @@
       "text9acf3e31d12e": "Keine Inhalte.",
       "text9ad125fe331f": "Sortieren nach {value0}",
       "text9ad1905ba13a": "Rolle eines Kontomitglieds geändert",
-      "text9ad6baffd025": "Arbeitsbereich wechseln",
+      "text9ad6baffd025": "Projekt wechseln",
       "text9ada0e627aed": "Wenn ein Agent seinen eigenen Prompt umschreibt, erscheint das genauso wie eine Codeänderung: ein Commit auf einem Branch in einem Änderungsantrag, den jemand liest.",
       "text9adff6870471": "Link kopieren",
       "text9ae2faa5b263": "Verbinde den ersten Connector in einer Minute.",
@@ -15290,7 +15292,7 @@
       "textab8fcb695b84": "Erstellen Sie eine Bereitstellungsverbindung „SCIM Outbound“ und verweisen Sie sie auf die beiden oben angezeigten Werte.",
       "textab93638292af": "Discover konnte nicht geladen werden",
       "textab936b802fa6": "SCIM-Version",
-      "textab95d456c6bb": "Arbeitsbereichsmitglieder",
+      "textab95d456c6bb": "Projektmitglieder",
       "textab986ad2d8e6": "Im Repo deklariert",
       "textab9a61284668": "Feedback kommt an sechs Stellen an und wird an keiner gelesen. Der Agent liest alle sechs, bündelt tatsächlich gleiche Anfragen und schreibt die Spezifikation mit jedem zitierten Original. Du entscheidest, was gebaut wird.",
       "textaba314822529": "SCIM-Token widerrufen",
@@ -17618,7 +17620,7 @@
       "textec5ba0abb717": "Zugriff",
       "textec5c2f7304b1": "Kontext gekürzt",
       "textec69732f4600": "Das Manifest weist ein Verhaltensfeld im Governance-Block zurück und verweist im Fehler auf die .md-Datei des Agenten.",
-      "textec70b4a614bf": "Arbeitsbereich wechseln",
+      "textec70b4a614bf": "Projekt wechseln",
       "textec73f9f19e7c": "Einmal schreiben. Jede Sitzung kennt es.",
       "textec7a4e3094f9": "Autorisierungsinhaber geändert, aber die Synchronisierung ist fehlgeschlagen: {value0}. Verwende „Sync“, um es erneut zu versuchen.",
       "textec81d7aae411": "Die Maschine klont das Repository und erstellt einen nach der Sitzung benannten Branch. Jede Bearbeitung und jeder Commit dieser Sitzung lebt auf diesem Branch und nirgendwo sonst.",
@@ -18373,8 +18375,8 @@
     },
     "kickoff": {
       "tools": "Ich habe auch diese Tools angeschlossen: {count}. Benutzen Sie sie, wenn sie helfen.",
-      "noDomain": "Ich habe meinen Arbeitsbereich fertig eingerichtet.{toolsClause} Stellen Sie sich vor, erklären Sie, was Sie tun können, und fragen Sie zuerst, wobei ich Hilfe benötige.",
-      "withDomain": "Ich habe die Einrichtung meines Arbeitsbereichs für {domain} abgeschlossen. Informieren Sie sich über das Unternehmen und teilen Sie mir mit, was Sie herausgefunden haben.{toolsClause} Fragen Sie dann zuerst, wobei ich Hilfe benötige."
+      "noDomain": "Ich habe meinen Projekt fertig eingerichtet.{toolsClause} Stellen Sie sich vor, erklären Sie, was Sie tun können, und fragen Sie zuerst, wobei ich Hilfe benötige.",
+      "withDomain": "Ich habe die Einrichtung meines Projekts für {domain} abgeschlossen. Informieren Sie sich über das Unternehmen und teilen Sie mir mit, was Sie herausgefunden haben.{toolsClause} Fragen Sie dann zuerst, wobei ich Hilfe benötige."
     },
     "company": {
       "title": "Erzählen Sie uns von Ihrem Unternehmen",
