@@ -1285,6 +1285,7 @@
       "switch": "Switch workspace",
       "switchMenu": "Switch Workspace",
       "create": "Create a workspace…",
+      "createAccount": "Create an account…",
       "settings": "Settings",
       "downloadApp": "Download app",
       "logOut": "Log out",

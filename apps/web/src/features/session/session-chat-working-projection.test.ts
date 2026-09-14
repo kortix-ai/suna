@@ -207,9 +207,11 @@ describe('the turn card reads the same working answer', () => {
     expect(chat).toContain('resolveLastTurnWorking({');
     expect(chat).toContain('isChildSession');
     expect(chat).toContain('sessionWorking={lastTurnWorking}');
-    expect(chat).toContain(
-      'resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })',
-    );
+    // The projection names the turn first; only where it names none does this
+    // tab's own unanswered idle send (`freshSendHint`) — the one-frame "queued"
+    // flash on send that anchored the scroll back and forth.
+    expect(chat).toContain('hintMessageId: working.turnId ?? freshSendTurnId,');
+    expect(chat).toContain('setFreshSend({ sessionId, messageId: messageID });');
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
