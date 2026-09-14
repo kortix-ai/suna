@@ -59,14 +59,20 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import { useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { isAccountCreationRestricted } from '@/lib/config';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { getProject } from '@kortix/sdk';
+import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
@@ -76,8 +82,9 @@ import {
   SignOutIcon as LogOut,
   PlusIcon,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useState } from 'react';
 
@@ -98,6 +105,20 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // `useAccountsList()` hook as every other caller, so React Query serves them
   // all from one user-scoped fetch.
   useEnsureSelectedAccount();
+
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { setSelectedAccountId } = useCurrentAccountStore();
+  // The exact key the account list reads, for the create-account seed below.
+  const accountsQueryKey = useAccountsQueryKey();
+  const [createAccountOpen, setCreateAccountOpen] = useState(false);
+  const { data: adminRole } = useAdminRole();
+  // Self-host hides the row for non-admins when account creation is restricted
+  // — admins are exempt (see `isAccountCreationRestricted()` /
+  // KORTIX_RESTRICT_ACCOUNT_CREATION). The backend 403
+  // (`account_creation_restricted`) is the authoritative gate; this only avoids
+  // offering an affordance the person cannot use.
+  const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an
@@ -206,6 +227,27 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                         {t('workspace.create')}
                       </Link>
                     </DropdownMenuItem>
+
+                    {/* The account-level sibling of the row above, in the one
+                        menu already grouped BY account. A handler rather than
+                        an anchor: creating an account opens a modal, and the
+                        only other affordance that does so lives in the hub's
+                        account-list pane — which no live entry point reaches,
+                        because every one of them opens the hub ON an account
+                        (`hubTarget(accountId)`) and the list is `hubTarget(null)`.
+                        That pane is why this row is a second affordance rather
+                        than a move: reachable only by opening Account settings
+                        and then clicking the hub's root breadcrumb, it left the
+                        product with no discoverable way to create an account. */}
+                    {canCreateAccount && (
+                      <DropdownMenuItem
+                        onSelect={() => deferAfterClose(() => setCreateAccountOpen(true))}
+                        size="sm"
+                      >
+                        <PlusIcon />
+                        {t('workspace.createAccount')}
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
@@ -271,6 +313,31 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <CreateAccountModal
+        open={createAccountOpen}
+        onOpenChange={setCreateAccountOpen}
+        onCreated={(account: KortixAccount) => {
+          // The reader's OWN key, not a hand-built one: writer and reader on
+          // different keys is silent — the create appears to succeed and the
+          // list never changes. Same seed as the hub's account-list pane.
+          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
+            const current = accounts ?? [];
+            return current.some((item) => item.account_id === account.account_id)
+              ? current.map((item) => (item.account_id === account.account_id ? account : item))
+              : [account, ...current];
+          });
+          // `scope()`, not `list(userId)`: the "account list changed" prefix,
+          // which reaches the only slot that can be live without the callback
+          // having to re-derive whose slot it is.
+          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
+          setSelectedAccountId(account.account_id);
+          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+          // The landing door, NOT the remembered project: that cookie names a
+          // project in the account being left.
+          router.push(PROJECT_LANDING_PATH);
+        }}
+      />
     </>
   );
 }
