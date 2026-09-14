@@ -126,6 +126,7 @@ module "api" {
   secrets_blob_arn            = data.aws_secretsmanager_secret.env.arn
   ses_send_region             = "us-east-2"
   ses_send_identity_names     = ["kortix.com", "kortix.ai"]
+  project_snapshots_enabled   = true
   project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).

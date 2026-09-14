@@ -218,7 +218,9 @@ resource "aws_iam_role_policy" "ses_send" {
 # HeadObject is authorized by s3:GetObject. Conditional writes
 # (If-None-Match: *) need no extra action.
 resource "aws_iam_role_policy" "project_snapshots" {
-  count = var.project_snapshot_bucket_arn != "" ? 1 : 0
+  # A plan-time boolean, not the ARN: the ARN comes from a bucket created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.project_snapshots_enabled ? 1 : 0
   name  = "${local.name}-project-snapshots"
   role  = aws_iam_role.task.id
   policy = jsonencode({
