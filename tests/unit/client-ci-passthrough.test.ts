@@ -45,3 +45,13 @@ it('sends the diagnostic credential but redacts it from captured artifacts', asy
   expect(response.captured.req.headers[CI_PASSTHROUGH_HEADER.toLowerCase()]).toBe(`${secret.slice(0, 6)}***[64]`);
   expect(JSON.stringify(response.captured)).not.toContain(secret);
 });
+
+it('keeps the preview gateway mount for anonymous and authenticated requests', async () => {
+  const fetchMock = vi.fn(async (_url: string | URL) => new Response('{}'));
+  vi.stubGlobal('fetch', fetchMock);
+  const gateway = new Client('https://preview.example.test/_gateway');
+  await gateway.get('/health');
+  await gateway.withBearer('test-key').post('/v1/chat/completions', { model: 'glm-5' });
+  expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://preview.example.test/_gateway/health');
+  expect(String(fetchMock.mock.calls[1]?.[0])).toBe('https://preview.example.test/_gateway/v1/chat/completions');
+});
