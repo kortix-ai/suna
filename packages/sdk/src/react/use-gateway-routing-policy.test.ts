@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { qk } from "./query-keys";
 
-let invalidated: unknown[][] = [];
+let invalidated: (readonly unknown[])[] = [];
 // The project-detail read (useProjectLlmGatewayEnabled) resolves the
 // llm_gateway flag ON for these cases — routing policy is a gateway-only
 // surface and its query must stay disabled for a native project.
@@ -20,7 +20,7 @@ mock.module("@tanstack/react-query", () => ({
   },
   useMutation: (config: Record<string, unknown>) => config,
   useQueryClient: () => ({
-    invalidateQueries: (opts: { queryKey: unknown[] }) =>
+    invalidateQueries: (opts: { queryKey: readonly unknown[] }) =>
       invalidated.push(opts.queryKey),
   }),
 }));
