@@ -133,7 +133,6 @@ test("worker exposes connector discovery and execution without waking the enviro
   expect(worker.agent.state.tools.map((tool) => tool.name)).toContain(
     "connector_call",
   );
-  expect(worker.agent.state.systemPrompt).toContain("Use connector_search");
   expect(paths.some((path) => path.includes("/connectors/"))).toBe(false);
   worker.faux!.setResponses([
     fauxAssistantMessage(

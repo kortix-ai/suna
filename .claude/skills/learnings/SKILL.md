@@ -6352,3 +6352,10 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** the full locale census at `6bfb41b6dc` exceeded the frontend's 2 GiB container limit. Docker recorded `OOMKilled=true` and one restart. The logs did not report a V8 heap-limit failure.
 **Rule:** the 1.5 GiB JavaScript heap is not the process memory ceiling. The full preview reserves 4 GiB for the frontend and retains the 1.5 GiB heap limit. This replaces the earlier 2 GiB preview budget. Inspect Docker OOM and restart counters across the complete census; a health check after automatic restart does not prove the run stayed healthy.
 **Enforcer:** `tests/unit/preview-stack.test.ts` checks both ceilings and the HTTP header limit. Record complete deployed browser results and restart counters in PR #6998.
+
+
+### Generate tool guidance after runtime restrictions (2026-09-14)
+
+**Incident:** a Pi connector-only `reader` agent received instructions listing denied workspace tools. It attempted unavailable tools and reported a sandbox failure; environment provisioning was never called.
+**Rule:** derive capability guidance from the tools on each provider request, after permission filtering and step limits. Keep explicit denials intact. Test the outgoing prompt and tool schemas together.
+**Enforcer:** `runtime-tool-guidance.test.ts` covers connector-only, denied, ask, path rules, session updates/reset, custom tools, and step limits through HTTP provider requests. `agent-steps-routes.test.ts` checks the final tool-free request.

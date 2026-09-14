@@ -5,8 +5,9 @@ export function appendRuntimeToolGuidance(
   const names = new Set(tools.map((tool) => tool.name));
   const lines = [
     '## Current runtime capabilities',
-    `Registered tools: ${[...names].join(', ')}.`,
-    'This tool registry describes current availability, including capabilities added after the agent prompt was written.',
+    `Registered tools: ${names.size ? [...names].join(', ') : 'none'}.`,
+    'This list describes the tools enabled for this model request after runtime restrictions. It supersedes older capability descriptions.',
+    'Do not call tools that are absent from this list. Explain the limitation if the task requires an unavailable tool.',
     'Keep the agent-specific restrictions on tool use.',
     'Call tools normally; the runtime requests permission when the configured policy requires it.',
     'Do not invent a separate permission tool or replace a permission request with a text question.',

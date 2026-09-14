@@ -120,6 +120,8 @@ test('the selected agent reserves the final step for a summary and resets for ea
     expect(last!.tools ?? []).toEqual([]);
     expect(first!.messages[0].content).not.toContain('step limit');
     expect(last!.messages[0].content).toContain('step limit');
+    expect(last!.messages[0].content).toContain('Registered tools: none.');
+    expect(last!.messages[0].content).not.toContain('Use todowrite');
     expect(last!.temperature).toBe(0);
     expect(await todos()).toEqual([{ content: 'Step 1', status: 'pending', priority: 'medium' }]);
     expect(worker.agent.state.tools).toEqual(initialTools);

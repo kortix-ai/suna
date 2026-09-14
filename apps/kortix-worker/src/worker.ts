@@ -1031,7 +1031,10 @@ export async function buildHarness(cfg: WorkerConfig) {
   const agent = new Agent({
     streamFn: (m: any, ctx: any, opts: any) => {
       const open = (context: typeof ctx) => tapFirstToken(
-        models.streamSimple(m, context, opts),
+        models.streamSimple(m, {
+          ...context,
+          systemPrompt: appendRuntimeToolGuidance(context.systemPrompt ?? '', context.tools ?? []),
+        }, opts),
         (ms) => { if (timing.firstTokenMs === null) timing.firstTokenMs = ms; },
         m, opts?.signal,
       );
@@ -1580,7 +1583,6 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     (toolCallId) => wireAdapter.toolContext(toolCallId),
     () => agent.abort(),
   );
-  agent.state.systemPrompt = appendRuntimeToolGuidance(agent.state.systemPrompt, agent.state.tools);
   surface = new RuntimeSurface({
     registerAttachment: attachments.registerPart,
     sessionId: cfg.sessionId ?? 'session-local',

@@ -3121,6 +3121,7 @@ describe('prompt system durability', () => {
     const body = {
       messageID: mintWireMessageId({ nowMs: Date.now() }).id,
       system: 'Saved convention.',
+      tools: { '*': false, read: true },
       parts: [{ type: 'text', text: 'replay me' }],
     };
     const response = await request(first, `/session/${sessionID}/message`, {
@@ -3184,7 +3185,10 @@ describe('prompt system durability', () => {
     await waitUntil(() =>
       pending.some((item) => item.kind === 'journal' && item.record.type === 'completed'),
     );
-    expect(seen).toEqual([`${systemBeforeReplay}\nSaved convention.`]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toStartWith(`${systemBeforeReplay}\nSaved convention.\n\n`);
+    expect(seen[0]).toContain('Registered tools: read.');
+    expect(seen[0]).not.toContain('Use question');
     await waitUntil(() => replayed.agent.state.systemPrompt === systemBeforeReplay);
     const messages = (await (await request(replayed, `/session/${sessionID}/message`)).json()) as {
       info: { id: string; system?: string };

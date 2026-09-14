@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { parsePromptInput } from './prompt-input.ts';
 import { startWorker } from './worker.ts';
+import { appendRuntimeToolGuidance } from './runtime-tool-guidance.ts';
 
 const workers: Awaited<ReturnType<typeof startWorker>>[] = [];
 const providers: ReturnType<typeof Bun.serve>[] = [];
@@ -115,7 +116,7 @@ async function verifyPromptSystem(modelId: string) {
       .filter((message) => message.role === 'system')
       .map((message) => message.content)
       .join('\n');
-    expect(prompt).toBe(system ? `${systemBefore}\n${system}` : systemBefore);
+    expect(prompt).toBe(appendRuntimeToolGuidance(system ? `${systemBefore}\n${system}` : systemBefore, worker.agent.state.tools));
     expect(worker.agent.state.systemPrompt).toBe(systemBefore);
   }
   expect(requests).toHaveLength(6);

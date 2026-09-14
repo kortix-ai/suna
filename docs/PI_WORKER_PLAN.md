@@ -199,10 +199,10 @@ Prompt routes reject unsupported agent, model, part, and attachment fields.
 They reject bodies larger than 512 KiB as soon as the limit is known. Benchmark
 routes are unavailable when the worker runs with a project identity.
 
-The web composer treats the compiled worker as immutable. It locks agent and
-model selection for Pi sessions. It blocks unsupported context, file, image,
-data URL, paste, and drop inputs. Prompt, command, and retry payloads omit stale
-agent, model, and variant fields. Unsupported slash actions are hidden.
+The selected agent and source commit remain fixed. The model picker now saves
+selection for each newly accepted prompt. Accepted turns retain their model.
+Images, reasoning variants, prompt controls, and structured output are implemented.
+See the parity scorecard for current host support and verification.
 
 ### P2.9 — OpenCode product compatibility
 
@@ -219,11 +219,11 @@ the effective built-in tool schemas through the installed OpenCode client. The
 SDK routes workspace reads to the environment and conversation reads to the
 worker.
 
-Full compatibility is not complete. Durable blocking interactions, complete
-command behavior, custom tools, plugins, hooks, MCP, subagents, todos,
-compaction, rewind, forks, attachments, web tools, LSP, and parts of the agent
-contract remain partial or missing. The branch cannot replace OpenCode until
-the P0 rows in the scorecard are green on a branch preview.
+Full compatibility is not complete. Custom code, blocking interactions, commands,
+skills, remote MCP resources/prompts, todos, compaction, images, and web tools
+are implemented and tested. Rewind, forks, subagents, live agent switching,
+stdio MCP placement, subscriptions, LSP/formatters, and multiple named environments
+remain open. The scorecard records the exact boundaries.
 
 ## Shared filesystems
 
@@ -275,22 +275,20 @@ Deployed branch gates:
 10. Stop sent to a non-owner reaches and is acknowledged by the owner.
 11. A replacement worker resolves an expired started turn without rerunning it.
 
-Current delivery status:
+Current delivery checkpoint, before the workspace-guidance fix:
 
-| Gate | Status |
+| Gate | Verified result |
 |---|---|
-| Local implementation and focused suites | done |
-| Full repository suite at the current branch tip | in progress |
-| Draft pull request | open |
-| Branch preview stack | `0ea36cfd55` deployed; compatibility working tree pending commit and redeploy |
-| Preview target-full managed Git flows | blocked by managed Git repository credentials |
-| Dev merge and deployment | requires explicit approval |
+| Exact preview SHA | `8474931f9d177fe80db7f357974c0e0ebd5e1a43` |
+| Local full suite | 402 REST/CLI flows and 21 browser tests pass |
+| Local packages | package suite passes; worker 866 tests and SDK 2,947 tests pass |
+| Preview target-full | 465 REST/CLI flows pass, zero fail, three existing skips; all 23 browser tests pass |
+| Preview frontend | 78 memory samples; zero restarts and no OOM kill |
+| Draft pull request | [#6998](https://github.com/kortix-ai/suna/pull/6998), open |
+| Dev merge and deployment | not approved |
 
-The preview GitHub App can write repository contents but cannot create a
-managed repository. It needs repository Administration read/write permission.
-Alternatively, a repository administrator can add a machine-owned fine-grained
-token as `PREVIEW_MANAGED_GIT_GITHUB_TOKEN`. Personal user tokens from another
-environment are not valid preview credentials and must not be copied.
+These results belong to that SHA. New changes require focused verification and
+an exact-SHA preview session. The PR records subsequent verification.
 
 ## Deliberate exclusions
 
@@ -328,3 +326,21 @@ The remaining work continues on `pi-worker`; no merge is approved.
 - The same-environment Pi/OpenCode benchmark has 60 passing samples; worker
   mode is restored. The full three-path lifecycle benchmark remains open.
 - Continue the missing capabilities and host checks in `PI_OPENCODE_PARITY.md`.
+
+## Workspace access and tool guidance — 2026-09-14
+
+The reported `reader` session uses a connector-only test configuration:
+`permission: {"*": "deny", "connector_search": "allow", "connector_describe": "allow", "connector_call": "allow"}`.
+It cannot execute workspace tools, so those calls never reach environment creation.
+Do not remove an agent's permission restrictions to make a test pass.
+
+The runtime previously advertised every installed tool before applying this
+policy. It now builds guidance from the tools sent with each provider request.
+Session permission updates, custom tools, and final-step restrictions therefore
+produce the same tool list in instructions and schemas.
+
+For workspace verification, select an agent whose policy permits `bash`, `read`,
+`edit` (also controls `write`), `glob`, and `grep`. A text-only prompt must leave
+compute absent. The first successful workspace operation must create the
+environment. Later operations must reuse it. Stop/resume must preserve files
+and transcript identities. Neither Pi nor OpenCode runs in that environment.
