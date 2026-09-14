@@ -1452,12 +1452,17 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
   app-region: no-drag;
 }
 
-/* Back on frames with no product navigation (AuthFrame). The desktop shell has
-   no browser toolbar, so a consent or status screen without an in-page exit is
-   a dead end there. The web keeps the browser's own Back, so the control stays
-   hidden unless the shell set data-desktop before first paint.
+/* The window's one Back (root layout, `DesktopBackButton`). The desktop shell
+   has no browser toolbar, so any screen without an in-page exit is a dead end
+   there. The web keeps the browser's own Back, so the control stays hidden
+   unless the shell set data-desktop before first paint.
 
-   Both rules MUST stay unlayered: the control is a Button, whose `flex`
+   A shell that navigates already, and draws its own control in this corner of
+   the band, wears `data-kx-titlebar-owner`: the project shell, the admin shell,
+   the marketing navbar. Back steps aside for it. The marker is an opt-out, so a
+   new screen has an exit without doing anything.
+
+   All three rules MUST stay unlayered: the control is a Button, whose `flex`
    utility lives in a cascade layer and would otherwise show it on the web.
    Placement comes from the band variables on the element itself, the same as
    the project shell's sidebar toggle. */
@@ -1466,6 +1471,17 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
 }
 html[data-desktop='true'] .kx-desktop-back {
   display: flex;
+}
+html[data-desktop='true'] body:has([data-kx-titlebar-owner]) .kx-desktop-back {
+  display: none;
+}
+/* A row pinned to the top of a screen without a shell (`/new`, the landing
+   door's Log out) sits in the band on desktop: under Back and the traffic
+   lights on the left, under the Win/Linux window controls on the right. Wear
+   `.kx-below-titlebar` and it drops below the band and clears the controls. */
+html[data-desktop='true'] .kx-below-titlebar {
+  margin-top: var(--kx-titlebar-inset);
+  margin-right: var(--kx-titlebar-controls-width);
 }
 /* Below `md` the auth mark pins to the top-left corner. On desktop that corner
    is the band (traffic lights on macOS, Back on every platform), so the mark

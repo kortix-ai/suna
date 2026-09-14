@@ -113,10 +113,12 @@ const ICON_WIDTH = '2.5rem';
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/new` is also where `/projects` sends an account with zero workspaces
- * (Task 8), so a user must never be trapped here — the create-into account
- * picker (or email fallback) sits top-left and a `Log out` control sits
- * top-right, independent of the form below.
+ * A user must never be trapped here. It opens from inside a project (the
+ * switcher's "Create a project…") and from the landing door's terminal states,
+ * and nothing on it navigates back: the create-into account picker (or email
+ * fallback) sits top-left and a `Log out` control sits top-right. The browser's
+ * Back is the exit on the web; the root layout's `DesktopBackButton` is the exit
+ * in the desktop shell, which has no toolbar.
  */
 export function NewWorkspacePage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -286,8 +288,10 @@ export function NewWorkspacePage() {
           the true viewport edges — rather than the right edge of the centered
           max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
           the row spans the viewport without overflowing left. Sits ahead of
-          the <form> so it stays reachable regardless of form state. */}
-      <div className="absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
+          the <form> so it stays reachable regardless of form state.
+          `kx-below-titlebar` drops it under the desktop band, where the
+          window's Back (root layout) is this screen's way out. */}
+      <div className="kx-below-titlebar absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
         {/* Create-into account lives here — not in the form body. One account
             collapses to muted identity text (email when none); two or more
             opens the Select on click. */}

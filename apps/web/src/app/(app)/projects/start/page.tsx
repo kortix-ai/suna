@@ -231,7 +231,7 @@ function StartSignOutButton() {
   const [pending, setPending] = useState(false);
 
   return (
-    <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+    <div className="kx-below-titlebar absolute top-4 right-4 sm:top-6 sm:right-6">
       <Button
         variant="outline"
         size="sm"

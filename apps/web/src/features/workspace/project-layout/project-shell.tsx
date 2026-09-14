@@ -282,6 +282,9 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
         'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
         isExpanded && 'border-border border-l',
       )}
+      // The sidebar navigates and the toggle below owns the band's corner, so
+      // the window's desktop Back (root layout) steps aside on every project view.
+      data-kx-titlebar-owner=""
     >
       {/* Collapsed: an invisible strip on the viewport's left edge summons
           the sidebar as a hover flyout; it self-hides while docked open. */}

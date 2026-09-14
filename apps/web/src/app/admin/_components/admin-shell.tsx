@@ -106,7 +106,14 @@ export function AdminShell({
   }
 
   return (
-    <SidebarProvider open={open} onOpenChange={handleOpenChange} className="h-svh">
+    // `data-kx-titlebar-owner`: the admin sidebar navigates, so the window's
+    // desktop Back (root layout) steps aside.
+    <SidebarProvider
+      open={open}
+      onOpenChange={handleOpenChange}
+      className="h-svh"
+      data-kx-titlebar-owner=""
+    >
       <AdminSidebar />
       {/* Collapsed-only hover flyout on the viewport's left edge — the same
           affordance the project sidebar uses to peek back in. */}

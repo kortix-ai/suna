@@ -42,8 +42,29 @@ contextBridge.exposeInMainWorld('__TAURI__', {
   window: { getCurrentWindow: () => currentWindow },
 });
 
+// Mouse side buttons. A browser steps history on them; Electron does nothing.
+// DOM `button` 3 and 4 are the back and forward buttons on macOS, Windows and
+// Linux alike, so one listener covers every platform (Windows' `app-command`
+// would fire for the same click and navigate twice). The main process picks
+// the history entry, so an entry outside the app is never reloaded here.
+window.addEventListener(
+  'mouseup',
+  (event) => {
+    const direction = event.button === 3 ? 'back' : event.button === 4 ? 'forward' : null;
+    if (!direction) return;
+    event.preventDefault();
+    void ipcRenderer.invoke('kortix:navigate', direction);
+  },
+  true,
+);
+
 // Explicit marker so the web app can detect the shell if it ever needs to.
 contextBridge.exposeInMainWorld('kortixDesktop', {
   shell: 'electron',
   version: '0.1.0',
+  // One history step through the shell's policy, which skips entries the
+  // navigation gate keeps out of the window. Resolves true when it moved. The
+  // web app's Back uses this: a renderer history.back() into such an entry is
+  // cancelled by the gate (will-navigate does fire for it) and nothing happens.
+  navigate: (direction) => ipcRenderer.invoke('kortix:navigate', direction),
 });

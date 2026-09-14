@@ -185,6 +185,11 @@ for (const runtime of runtimes) {
           exact: true,
         });
         await expect(switcher).toBeVisible();
+        // The project shell navigates and owns the band's corner, so the
+        // window's Back (root layout) steps aside on every project view.
+        await expect(
+          page.getByRole("button", { name: "Back", exact: true }),
+        ).toHaveCount(0);
         const box = await switcher.boundingBox();
         expect(
           box!.y,
@@ -248,10 +253,10 @@ for (const runtime of runtimes) {
           .getByRole("link", { name: "Customize", exact: true })
           .click();
         await expect(page).toHaveURL(/\/customize\/agents/);
-        await page
-          .getByRole("link", { name: /Kortix/i })
-          .last()
-          .click();
+        // By href, not by a /Kortix/i name: before the agent list renders, the
+        // last link matching that name can be the Skills tab, and the click
+        // lands on /customize/skills.
+        await page.locator('a[href$="/customize/agents/kortix"]').first().click();
         await expect(page).toHaveURL(/\/customize\/agents\/kortix/);
         await expectSeparateRows(
           page.locator(
@@ -283,9 +288,11 @@ for (const runtime of runtimes) {
           path: test.info().outputPath("agent-sections.png"),
           scale: "css",
         });
+        // The capability bar's tab, not the agent editor's "Connectors"
+        // section tab of the same name, which does not change the route.
         const connectors = page
-          .getByRole("tab", { name: "Connectors", exact: true })
-          .first();
+          .locator(".kx-titlebar-tabs")
+          .getByRole("tab", { name: "Connectors", exact: true });
         await connectors.click();
         await expect(page).toHaveURL(/\/customize\/connectors/);
         // A fresh document must also load real data, independent of the agent
@@ -447,10 +454,14 @@ for (const runtime of runtimes) {
           box!.y + box!.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // installBrowserSessionDirect lands on /favicon.png first, so an
-        // in-app entry is behind the dead end and Back is history.back().
+        // installBrowserSessionDirect lands on /favicon.png first, so an entry
+        // is behind the dead end. The browser steps back onto it. The desktop
+        // shell cancels a renderer history.back() into it (not an app path) and
+        // steps over it instead, to /auth, which sends a signed-in user on.
         await back.click();
-        await expect(page).not.toHaveURL(/\/oauth\/authorize/);
+        await expect(page).not.toHaveURL(/\/oauth\/authorize/, {
+          timeout: 60_000,
+        });
         if (desktopApp) return;
         // A window opened straight onto the dead end has no in-app entry
         // behind it (about:blank is another origin), so Back goes home.
@@ -468,6 +479,171 @@ for (const runtime of runtimes) {
           await fresh.close();
         }
       } finally {
+        await deleteAuthUser(user.id, authOptions);
+      }
+    });
+
+    test("Create a project keeps a way back to the project it opened from", async ({
+      page,
+      baseURL,
+      desktopApp,
+    }) => {
+      test.setTimeout(300_000);
+      const databaseUrl =
+        process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+      if (!databaseUrl)
+        throw new Error("Desktop parity requires the configured test database");
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }),
+      );
+      const email = `e2e-desktop-new-${randomUUID()}@example.test`;
+      const user = await createAuthUser(email, authOptions);
+      const session = await signIn(email, authOptions);
+      let project: ManifestProject | undefined;
+      try {
+        const accounts = await api<{ account_id: string }[]>(
+          session.access_token,
+          "GET",
+          "/accounts",
+        );
+        const accountId = accounts[0].account_id;
+        project = await createManifestProject({
+          api,
+          accessToken: session.access_token,
+          accountId,
+          userId: user.id,
+          name: "Desktop back",
+          databaseUrl,
+        });
+        const projectUrl = `${baseURL}/projects/${project.id}`;
+        await installBrowserSessionDirect(page, session, projectUrl, authOptions);
+        await selectAccountForUi(page, accountId);
+        await page.goto(projectUrl);
+        await dismissOnboarding(page);
+
+        // The reported soft lock: the switcher opens /new, and /new has no
+        // navigation of its own — only an account picker and Log out.
+        await page.getByRole("button", { name: "Switch project", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Switch Project", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Create a project…" }).click();
+        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(
+          page.getByRole("heading", { name: "Create a project" }),
+        ).toBeVisible({ timeout: 60_000 });
+
+        const back = page.getByRole("button", { name: "Back", exact: true });
+        if (!desktop) {
+          // The web keeps the browser's own Back and draws none.
+          await expect(back).toHaveCount(0);
+          return;
+        }
+        await expect(back).toBeVisible();
+        const backBox = (await back.boundingBox())!;
+        expect(backBox.x, "Back must clear the macOS traffic lights").toBeGreaterThanOrEqual(62);
+        expect(backBox.y + backBox.height, "Back must sit inside the title-bar band").toBeLessThanOrEqual(43);
+        // The page's own top row (account picker, Log out) drops below the band.
+        const logOut = page.getByRole("button", { name: "Log out", exact: true });
+        await expect(logOut).toBeVisible();
+        expect(
+          (await logOut.boundingBox())!.y,
+          "Log out must sit below the title-bar band",
+        ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
+
+        await back.click();
+        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+          timeout: 60_000,
+        });
+
+        if (!desktopApp) {
+          // Windows and Linux: the window controls sit top-right, so Back takes
+          // the band's left edge and the page's top row must clear the 124px
+          // control cluster on the right. Same session, same history shape.
+          for (const platform of ["Win32", "Linux x86_64"]) {
+            const other = await page.context().newPage();
+            try {
+              await other.addInitScript(
+                (value) =>
+                  Object.defineProperty(navigator, "platform", { get: () => value }),
+                platform,
+              );
+              await other.setViewportSize({ width: 1440, height: 900 });
+              await other.goto(projectUrl);
+              await expect(
+                other.getByRole("button", { name: "Switch project", exact: true }),
+              ).toBeVisible({ timeout: 60_000 });
+              await other.goto(`${baseURL}/new`);
+              await expect(
+                other.getByRole("heading", { name: "Create a project" }),
+              ).toBeVisible({ timeout: 60_000 });
+              const otherBack = other.getByRole("button", { name: "Back", exact: true });
+              await expect(otherBack, `${platform}: Back`).toBeVisible();
+              const b = (await otherBack.boundingBox())!;
+              expect(b.x, `${platform}: Back starts at the band's left edge`).toBeLessThan(24);
+              expect(b.y + b.height, `${platform}: Back sits inside the band`).toBeLessThanOrEqual(42);
+              const otherLogOut = other.getByRole("button", { name: "Log out", exact: true });
+              const l = (await otherLogOut.boundingBox())!;
+              expect(
+                l.x + l.width,
+                `${platform}: Log out clears the window controls`,
+              ).toBeLessThanOrEqual(1440 - 124);
+              expect(l.y, `${platform}: Log out sits below Back`).toBeGreaterThanOrEqual(b.y + b.height);
+              await otherBack.click();
+              await expect(other).toHaveURL(new RegExp(`/projects/${project.id}`), {
+                timeout: 60_000,
+              });
+            } finally {
+              await other.close();
+            }
+          }
+          return;
+        }
+        // The mouse side buttons step the same history. Real DOM buttons 3/4
+        // through CDP, caught by the preload and resolved by the shell.
+        const cdp = await page.context().newCDPSession(page);
+        const sideButton = async (button: "back" | "forward") => {
+          for (const type of ["mousePressed", "mouseReleased"] as const) {
+            await cdp.send("Input.dispatchMouseEvent", {
+              type,
+              x: 400,
+              y: 400,
+              button,
+              buttons: 0,
+              clickCount: 1,
+            });
+          }
+        };
+        await sideButton("forward");
+        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await sideButton("back");
+        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+          timeout: 60_000,
+        });
+        await cdp.detach();
+
+        // The shell's Go menu reaches the same history on any page, including
+        // pages the web app does not render.
+        const menuItem = (id: string) =>
+          desktopApp.evaluate(({ Menu }, itemId) => {
+            const item = Menu.getApplicationMenu()?.getMenuItemById(itemId);
+            return item ? { enabled: item.enabled } : null;
+          }, id);
+        const clickMenu = (id: string) =>
+          desktopApp.evaluate(({ Menu, BrowserWindow }, itemId) => {
+            const item = Menu.getApplicationMenu()?.getMenuItemById(itemId);
+            item?.click(undefined, BrowserWindow.getAllWindows()[0], undefined);
+          }, id);
+        await expect.poll(() => menuItem("kx-go-forward")).toEqual({ enabled: true });
+        await clickMenu("kx-go-forward");
+        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect.poll(() => menuItem("kx-go-back")).toEqual({ enabled: true });
+        await clickMenu("kx-go-back");
+        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+          timeout: 60_000,
+        });
+        await clickMenu("kx-go-home");
+        await expect(page).not.toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+      } finally {
+        await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
       }
     });

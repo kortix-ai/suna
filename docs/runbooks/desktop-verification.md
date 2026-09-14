@@ -37,7 +37,9 @@ Electron unit tests run in the existing packages lane through
 - Open and close the sidebar. Repeat navigation with the sidebar collapsed.
 - Open fullscreen settings. Verify Back to app and the final navigation row.
 - Open a full-screen frame with no sidebar, such as `/oauth/authorize` with no
-  `request_id`. Verify Back sits in the title-bar band and leaves the page.
+  `request_id`, or `/new` from the project switcher. Verify Back sits in the
+  title-bar band and leaves the page. Inside a project, verify no Back shows.
+- Use Go → Back, Forward and Home, their shortcuts, and the mouse side buttons.
 - Check light and dark themes at 1440 × 900 and 720 × 480 window sizes.
 - Check default zoom, zoom in, zoom out, and reset. Native controls do not zoom.
 - Use Tab, arrows, Enter, and Escape. Focus must remain visible and reachable.
@@ -78,13 +80,32 @@ The CSS variables in `apps/web/src/app/globals.css` mirror it. The focused
 the shared Tabs component's layout. `.kx-titlebar-spacer` reserves native chrome
 for fullscreen overlays. It cannot shrink inside a flex column.
 
-The shell has no browser toolbar. Every page must offer an exit. `AuthFrame`
-draws `DesktopBackButton` (`apps/web/src/components/desktop/desktop-back-button.tsx`)
-in the title-bar band for a signed-in user. `.kx-desktop-back` shows it only
-under `html[data-desktop='true']`, and that rule must stay unlayered. Every
-control in the band takes `TITLEBAR_CONTROL_CLASS`
-(`apps/web/src/components/desktop/titlebar-control.ts`). A new full-screen
-surface outside `AuthFrame` needs its own visible exit.
+The shell has no browser toolbar. No screen may be a soft lock. Two layers
+guarantee an exit:
+
+1. **Native, every page.** The Go menu has Back (`Cmd+[`), Forward (`Cmd+]`)
+   and Home (`Cmd+Shift+H`); Windows and Linux use `Alt+Left`, `Alt+Right`,
+   `Alt+Home`. The mouse side buttons step history too. Traversal skips
+   history entries the navigation gate keeps out of the window (a server
+   redirect to github.com). Policy: `apps/desktop-electron/src/navigation.js`.
+2. **Visible, every web screen.** The root layout mounts one
+   `DesktopBackButton` (`apps/web/src/components/desktop/desktop-back-button.tsx`)
+   in the title-bar band for a signed-in user. It is on by default: a new
+   screen needs no opt-in. It hides when a click would replace home with home.
+   - A shell that navigates and draws in the band's corner wears
+     `data-kx-titlebar-owner` (project shell, admin shell, marketing navbar).
+     Back steps aside for it.
+   - A screen that knows where its flow started calls
+     `useDesktopBackTarget(href)`. `AuthFrame` forwards its `backHref` there.
+   - A row pinned to the top of a shell-less screen wears `.kx-below-titlebar`
+     so it clears Back and the window controls (`/new`, `/projects/start`,
+     `/auth/phone-verification`).
+
+`.kx-desktop-back` shows only under `html[data-desktop='true']`, and its
+three rules must stay unlayered. Every control in the band takes
+`TITLEBAR_CONTROL_CLASS` (`apps/web/src/components/desktop/titlebar-control.ts`).
+`APP_PATH_PREFIXES` in `navigation.js` must cover the middleware's
+`DESKTOP_ALLOWED_ROUTES`; `navigation.test.js` fails on a gap.
 
 Do not inject layout CSS from Electron. Do not mark all `[role="tablist"]` or
 `[data-sidebar="sidebar"]` elements as window drag regions. Reserve dragging for
