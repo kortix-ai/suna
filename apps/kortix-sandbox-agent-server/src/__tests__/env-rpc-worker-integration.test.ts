@@ -85,7 +85,7 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<v
  * The daemon router verifies the X-Kortix-User-Context signature, so a green
  * op also proves the worker's own header minting against the daemon's codec.
  */
-async function buildRig(): Promise<Rig> {
+async function buildRig(historyEnabled = false): Promise<Rig> {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'lazy-env-ws-'));
 
   const daemon = new Hono();
@@ -104,6 +104,11 @@ async function buildRig(): Promise<Rig> {
       sandboxToken: ENVIRONMENT_TOKEN,
       envRpcSecret: RPC_SECRET,
       workspace,
+      workload: 'environment',
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      environmentHistory: historyEnabled,
+      agentStateDir: workspace + '-state',
     } as unknown as Config),
   );
   const daemonServer = Bun.serve({ port: 0, fetch: daemon.fetch });
@@ -140,6 +145,7 @@ async function buildRig(): Promise<Rig> {
     daemonServer.stop(true);
     apiServer.stop(true);
     await fs.rm(workspace, { recursive: true, force: true });
+    await fs.rm(workspace + '-state', { recursive: true, force: true });
   };
   return rig;
 }
@@ -692,4 +698,47 @@ describe('worker lazy environment ↔ daemon env-rpc', () => {
       await fs.rm(workspace, { recursive: true, force: true });
     }
   }, 15_000);
+});
+
+
+test.each(['fetch', 'keepalive', 'ws', 'auto'] as const)('%s checkpoints cross the real worker/daemon boundary', async transport => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-history-'));
+  const cfg = { ...proxyConfig(workspace), workload: 'environment', projectId: 'p', sessionId: 's', environmentHistory: true, agentStateDir: workspace + '-state' };
+  const proxy = startProxy(cfg, fakeOpencode(), Date.now());
+  const env = new KortixExecutionEnv({ baseUrl: `http://127.0.0.1:${proxy.port}/kortix/env-rpc`, cwd: workspace, headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-history') }, transport });
+  try {
+    expect((await env.writeFile('a', 'before')).ok).toBe(true);
+    const before = await env.captureWorkspace(crypto.randomUUID());
+    if (!before.ok) throw before.error;
+    expect((await env.writeFile('a', 'after')).ok).toBe(true);
+    const after = await env.captureWorkspace(crypto.randomUUID());
+    if (!after.ok) throw after.error;
+    const move = { operationId: crypto.randomUUID(), from: after.value.snapshotId, to: before.value.snapshotId };
+    expect(await env.applyWorkspace(move)).toMatchObject({ ok: true, value: { status: 'complete', changedPaths: ['a'] } });
+    expect(await fs.readFile(path.join(workspace, 'a'), 'utf8')).toBe('before');
+    expect(await env.pendingWorkspace()).toEqual({ ok: true, value: null });
+    expect(await env.applyWorkspace(move)).toMatchObject({ ok: true, value: { status: 'complete' } });
+    expect((await env.applyWorkspace({ ...move, operationId: 'invalid' })).ok).toBe(false);
+  } finally {
+    await env.cleanup();
+    proxy.stop();
+    await fs.rm(workspace, { recursive: true, force: true });
+    await fs.rm(workspace + '-state', { recursive: true, force: true });
+  }
+});
+
+test('lazy history methods attach only on explicit use and return transport results', async () => {
+  rig = await buildRig(true);
+  expect(rig.ensureCalls).toBe(0);
+  expect(rig.env.attached).toBe(false);
+  const before = await rig.env.captureWorkspace(crypto.randomUUID());
+  if (!before.ok) throw before.error;
+  expect(rig.ensureCalls).toBe(1);
+  expect((await rig.env.writeFile('a', 'after')).ok).toBe(true);
+  const after = await rig.env.captureWorkspace(crypto.randomUUID());
+  if (!after.ok) throw after.error;
+  expect(await rig.env.applyWorkspace({ operationId: crypto.randomUUID(), from: after.value.snapshotId, to: before.value.snapshotId })).toMatchObject({ ok: true, value: { status: 'complete' } });
+  expect(await fs.stat(path.join(rig.workspace, 'a')).catch(() => null)).toBeNull();
+  expect(await rig.env.pendingWorkspace()).toEqual({ ok: true, value: null });
+  expect(rig.ensureCalls).toBe(1);
 });

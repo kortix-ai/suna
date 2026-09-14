@@ -105,12 +105,34 @@ corrupt checkpoints. SQLite supplies an OS-released operation lock only; file
 history lives in the manifests and blobs.
 
 The component requires a quiescent workspace. Its lock excludes other history
-operations; it does not control external processes, terminals, or filesystem
-clients. Individual replacements are atomic, but a multi-file apply is resumable,
+operations. The daemon RPC gate also excludes concurrent environment RPC calls.
+It does not control detached processes, terminals, or other filesystem clients. Individual replacements are atomic, but a multi-file apply is resumable,
 not one atomic filesystem transaction. Commands, network effects, ACLs, extended
 attributes, and hard-link relationships are outside the checkpoint contract.
 The future rewind coordinator must gate writers and recover a pending file move
 before accepting another prompt or publishing a conversation-history transition.
+
+Internal RPC access requires `KORTIX_ENVIRONMENT_HISTORY=1`, workload
+`environment`, `KORTIX_PROJECT_ID`, and `KORTIX_SESSION_ID`. The API does not set
+this flag yet. Storage defaults to
+`/opt/kortix/environment-runtime/workspace-history`; `KORTIX_AGENT_STATE_DIR`
+overrides the parent. Request arguments cannot change the workspace or scope.
+The ordinary purpose-bound environment RPC authentication applies.
+
+| Environment RPC operation | Arguments | Result |
+| --- | --- | --- |
+| `historyCapture` | `captureId` UUIDv4 | `snapshotId`, `files`, `bytes` |
+| `historyApply` | `operationId` UUIDv4, `from` hash, `to` hash | Durable receipt: IDs, `status`, `changedPaths` |
+| `historyPending` | None | Pending receipt or `null` |
+
+The worker adapters expose `captureWorkspace`, `applyWorkspace`, and
+`pendingWorkspace` through the existing transports. Only explicit method calls
+attach a lazy environment. Ordinary text turns do not call them. A capture/apply
+transport failure is not replayed automatically. Inspect recovery state and
+retry the same operation identity. The daemon returns `busy` during another RPC
+operation and `pending` for ordinary operations while file recovery is pending.
+These methods are internal; they are not custom Pi tools or public rewind APIs.
+
 
 ## Config precedence
 

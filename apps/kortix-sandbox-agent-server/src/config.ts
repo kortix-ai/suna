@@ -65,6 +65,9 @@ const Schema = z.object({
   KORTIX_COMPILED_BOOT_MODE: CompiledBootModeSchema.default('off'),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_ENV_RPC_SECRET: z.string().optional(),
+  KORTIX_ENVIRONMENT_HISTORY: BoolFlag.default(false),
+  KORTIX_AGENT_STATE_DIR: z.string().optional(),
+  KORTIX_SESSION_ID: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
   // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
@@ -144,6 +147,10 @@ export type Config = {
   sandboxToken: string | undefined
   /** Purpose-bound HMAC key for worker-to-environment RPC. */
   envRpcSecret?: string
+  /** Internal checkpoint RPC opt-in; disabled until rewind coordination ships. */
+  environmentHistory?: boolean
+  agentStateDir?: string
+  sessionId?: string
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
@@ -184,6 +191,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_ENV_RPC_SECRET: env.KORTIX_ENV_RPC_SECRET,
+    KORTIX_ENVIRONMENT_HISTORY: env.KORTIX_ENVIRONMENT_HISTORY,
+    KORTIX_AGENT_STATE_DIR: env.KORTIX_AGENT_STATE_DIR,
+    KORTIX_SESSION_ID: env.KORTIX_SESSION_ID,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
@@ -220,6 +230,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     sandboxToken: parsed.KORTIX_TOKEN,
     envRpcSecret: parsed.KORTIX_ENV_RPC_SECRET,
+    environmentHistory: parsed.KORTIX_ENVIRONMENT_HISTORY,
+    agentStateDir: parsed.KORTIX_AGENT_STATE_DIR,
+    sessionId: parsed.KORTIX_SESSION_ID,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,

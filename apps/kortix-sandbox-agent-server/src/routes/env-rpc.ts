@@ -13,6 +13,7 @@ import {
 import type { Config } from '../config';
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context';
 import { logger } from '../logger';
+import { WorkspaceHistory, WorkspaceHistoryError } from '../workspace-history';
 
 /**
  * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).
@@ -270,6 +271,11 @@ export function createEnvRpcRouter(cfg: Config): Hono {
   const app = new Hono();
   const rpcSecret = environmentRpcSecret(cfg);
   const cancellations = cancellationRegistry();
+  const history = cfg.environmentHistory && cfg.workload === 'environment' && cfg.projectId && cfg.sessionId
+    ? new WorkspaceHistory({ workspace: cfg.workspace, state: path.join(cfg.agentStateDir || '/opt/kortix/environment-runtime', 'workspace-history'), scope: JSON.stringify([cfg.projectId, cfg.sessionId]) })
+    : null;
+  let historyActive = false;
+  let regularActive = 0;
 
   app.use('*', async (c, next) => {
     if (!rpcSecret) {
@@ -335,14 +341,34 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         ? body.requestId
         : undefined;
 
+    const historyOperation = ['historyCapture', 'historyApply', 'historyPending'].includes(op);
+    if (historyOperation && !history) return c.json(err({ code: 'not_supported', message: 'environment workspace history is disabled' }));
+    if (history && (historyActive || (historyOperation && regularActive > 0))) return c.json(err({ code: 'busy', message: 'environment RPC operations are active' }));
+    if (historyOperation) historyActive = true;
+    else regularActive += 1;
+    let admitted = true;
     const p = (key = 'path') => resolveIn(cwd, String(args[key] ?? ''));
     const execution = cancellations.begin(requestId, c.req.raw.signal);
     const signal = execution.controller.signal;
     let streamingExecution = false;
+    const finish = () => {
+      execution.finish();
+      if (!admitted) return;
+      admitted = false;
+      if (historyOperation) historyActive = false;
+      else regularActive -= 1;
+    };
 
     try {
       if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+      if (history && !historyOperation && await history.pending()) return c.json(err({ code: 'pending', message: 'workspace history recovery is pending' }));
       switch (op) {
+        case 'historyCapture':
+          return c.json(ok(await history!.capture(args.captureId as string)));
+        case 'historyApply':
+          return c.json(ok(await history!.apply({ operationId: args.operationId as string, from: args.from as string, to: args.to as string })));
+        case 'historyPending':
+          return c.json(ok(await history!.pending()));
         case 'absolutePath':
           return c.json(ok(p()));
         case 'canonicalPath': {
@@ -519,7 +545,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
                 await output.write(JSON.stringify({ type: 'result', body }) + '\n');
               } finally {
                 execution.controller.abort();
-                execution.finish();
+                finish();
               }
             });
           }
@@ -537,11 +563,12 @@ export function createEnvRpcRouter(cfg: Config): Hono {
       }
     } catch (e) {
       if (signal.aborted) return c.json(err({ code: 'ABORT_ERR', message: 'aborted' }));
+      if (e instanceof WorkspaceHistoryError) return c.json(fsError(e));
       // Belt and braces: nothing above should reach here, but a Result beats a 500.
       logger.error('[env-rpc] unexpected failure', e);
       return c.json(fsError(e));
     } finally {
-      if (!streamingExecution) execution.finish();
+      if (!streamingExecution) finish();
     }
   };
 

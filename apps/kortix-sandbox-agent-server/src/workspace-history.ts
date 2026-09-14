@@ -1,3 +1,5 @@
+import type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
+export type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
 import { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -14,12 +16,6 @@ const digest = (data: string | Buffer) => createHash('sha256').update(data).dige
 type Entry = { kind: 'file'; blob: string; size: number; mode: number } | { kind: 'symlink'; target: string };
 type Manifest = { version: 1; identity: string; files: Record<string, Entry> };
 type Current = Entry | { kind: 'directory' | 'blocked' } | null;
-export interface WorkspaceCheckpoint { snapshotId: string; files: number; bytes: number }
-export interface WorkspaceHistoryMove { operationId: string; from: string; to: string }
-export interface WorkspaceHistoryReceipt extends WorkspaceHistoryMove {
-  status: 'applying' | 'complete';
-  changedPaths: string[];
-}
 export interface WorkspaceHistoryOptions {
   workspace: string;
   state: string;

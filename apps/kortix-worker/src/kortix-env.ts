@@ -18,6 +18,7 @@
  */
 
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
+import type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
 import type { RpcProgress } from '../../../packages/shared/src/env-rpc-stream';
 import {
   makeTransport,
@@ -305,6 +306,18 @@ export class KortixExecutionEnv {
       signal?.removeEventListener('abort', abortFromCaller);
       operationController.signal.removeEventListener('abort', trackAbort);
     }
+  }
+
+  captureWorkspace(captureId: string, signal?: AbortSignal) {
+    return this.rpc<WorkspaceCheckpoint>('historyCapture', { captureId }, signal);
+  }
+
+  applyWorkspace(move: WorkspaceHistoryMove, signal?: AbortSignal) {
+    return this.rpc<WorkspaceHistoryReceipt>('historyApply', { ...move }, signal);
+  }
+
+  pendingWorkspace(signal?: AbortSignal) {
+    return this.rpc<WorkspaceHistoryReceipt | null>('historyPending', {}, signal);
   }
 
   // ---- FileSystem ---------------------------------------------------------

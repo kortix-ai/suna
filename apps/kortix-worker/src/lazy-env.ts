@@ -15,6 +15,7 @@
  * Same contract as the inner env: operations never throw — a failed ensure is
  * a Result the tool renders, not a crash.
  */
+import type { WorkspaceHistoryMove } from '../../../packages/shared/src/workspace-history';
 import { createHmac } from 'node:crypto';
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
 import { KortixExecutionEnv } from './kortix-env.ts';
@@ -350,6 +351,18 @@ export class LazyKortixEnv {
     } catch (e) {
       return err(e instanceof Error ? e : new EnvUnavailableError(String(e)));
     }
+  }
+
+  captureWorkspace(captureId: string, signal?: AbortSignal) {
+    return this.op((env) => env.captureWorkspace(captureId, signal), true, signal);
+  }
+
+  applyWorkspace(move: WorkspaceHistoryMove, signal?: AbortSignal) {
+    return this.op((env) => env.applyWorkspace(move, signal), true, signal);
+  }
+
+  pendingWorkspace(signal?: AbortSignal) {
+    return this.op((env) => env.pendingWorkspace(signal), false, signal);
   }
 
   // ---- FileSystem (same surface as KortixExecutionEnv) --------------------
