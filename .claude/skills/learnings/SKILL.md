@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Preserve titles across legacy schema generations (2026-09-14)
+
+**When:** importing legacy sessions, resolve a nonblank thread name before the
+linked project name. Verify the destination index and runtime title separately.
+*Incident:* eight production imports displayed `Legacy conversation` because
+their thread names were null while their project names contained the titles.
+*Enforcer:* `projection.test.ts` covers missing/blank thread names, precedence,
+and project identity. Repairs preserve user renames and assert owner identity.
+
 ### Serialize migration checkpoint writers and preserve immutable runtime IDs (2026-09-14)
 
 **When:** bounded migration scripts share a progress ledger. Allow one writer;

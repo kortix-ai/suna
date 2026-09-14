@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { digest } from './ledger';
 import type { JsonRow } from './source';
 
@@ -21,7 +22,16 @@ function timestamp(value: unknown): number {
 /** A native runtime projection, plus an explicit disposition for every source row.
  * The raw ledger remains authoritative. Archival events are never claimed as native messages.
  */
-export function projectThread(input: { ref: string; thread: JsonRow; rows: JsonRow[]; runtimeVersion: string }) {
+export interface CapturedImage {
+  mime: string;
+  filename: string;
+  base64: string;
+  sha256: string;
+}
+
+export function projectThread(input: { ref: string; thread: JsonRow; project?: JsonRow; rows: JsonRow[]; runtimeVersion: string; attachments?: Record<string, CapturedImage> }) {
+  if (input.project && input.project.project_id !== input.thread.project_id) throw new Error('Project does not belong to thread');
+  const title = [input.thread.name, input.project?.name].find(value => typeof value === 'string' && value.trim()) as string | undefined;
   const threadId = String(input.thread.thread_id);
   const sessionID = `ses_${digest(JSON.stringify([input.ref, threadId])).slice(0, 26)}`;
   const rows = [...input.rows].sort((a, b) => timestamp(a.created_at) - timestamp(b.created_at) || String(a.message_id).localeCompare(String(b.message_id)));
@@ -61,8 +71,17 @@ export function projectThread(input: { ref: string; thread: JsonRow; rows: JsonR
       for (const block of content.content) {
         if (typeof block === 'string') { add({ type: 'text', text: block }); continue; }
         const item = object(block);
+        const imageUrl = item.type === 'image_url' ? text(object(item.image_url).url) : '';
+        const captured = imageUrl ? input.attachments?.[imageUrl] : undefined;
         if (typeof item.text === 'string') add({ type: 'text', text: item.text });
-        else {
+        else if (captured) {
+          const bytes = Buffer.from(captured.base64, 'base64');
+          if (!bytes.length || bytes.toString('base64') !== captured.base64 || createHash('sha256').update(bytes).digest('hex') !== captured.sha256) {
+            throw new Error('Captured image digest or encoding mismatch');
+          }
+          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(captured.mime)) throw new Error('Unsupported captured image MIME type');
+          add({ type: 'file', mime: captured.mime, filename: captured.filename, url: `data:${captured.mime};base64,${captured.base64}` });
+        } else {
           // Keep unknown and image blocks legible without inventing a working attachment URL.
           add({ type: 'text', text: `[Legacy content block]\n${JSON.stringify(block)}` });
           unresolved.push(`content-block:${sourceId}`);
@@ -82,6 +101,7 @@ export function projectThread(input: { ref: string; thread: JsonRow; rows: JsonR
       const part = add({ type: 'tool', callID: callId || `${sourceId}:${parts.length}`, tool: text(fn.name) || 'legacy_unknown', state: { status: 'error', input: args, error: 'Legacy tool result unavailable', time: { start: at, end: at } } });
       toolParts.set(callId, [...(toolParts.get(callId) ?? []), part]);
     }
+    if (!parts.length && !user && content.role === 'assistant' && content.content === null) add({ type: 'text', text: '' });
     if (!parts.length) { add({ type: 'text', text: '[Legacy message has no runtime-compatible content; original record retained in archive.]' }); unresolved.push(`empty-content:${sourceId}`); }
     messages.push({ info, parts });
     dispositions.push({ source_id: sourceId, disposition: 'native-message', native_id: id });
@@ -102,7 +122,7 @@ export function projectThread(input: { ref: string; thread: JsonRow; rows: JsonR
   if (new Set(rows.map(r => r.message_id)).size !== rows.length) throw new Error('Duplicate source message IDs');
   if (dispositions.length !== rows.length) throw new Error('Not every source row has a disposition');
   return {
-    runtime: { info: { id: sessionID, slug: `legacy-${threadId}`, projectID: 'legacy', directory: '/workspace', title: text(input.thread.name) || 'Legacy conversation', version: input.runtimeVersion, time: { created, updated } }, messages },
+    runtime: { info: { id: sessionID, slug: `legacy-${threadId}`, projectID: 'legacy', directory: '/workspace', title: title ?? 'Legacy conversation', version: input.runtimeVersion, time: { created, updated } }, messages },
     audit: { source_ref: input.ref, source_thread_id: threadId, source_rows: rows.length, native_messages: messages.length, dispositions, unresolved, raw_archive_required: true, billing_values_are_placeholders: true, ready_for_apply: false },
   };
 }

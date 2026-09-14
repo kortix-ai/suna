@@ -44,3 +44,31 @@ test('invalid timestamps and duplicate source IDs fail', () => {
   expect(() => projectThread({ ref, thread, rows: [{ ...good, created_at: 'bad' }], runtimeVersion: '1.18.23' })).toThrow('timestamp');
   expect(() => projectThread({ ref, thread, rows: [good, good], runtimeVersion: '1.18.23' })).toThrow('Duplicate');
 });
+
+test('projects captured image bytes as a native file part and verifies their digest', () => {
+  const bytes = Buffer.from('captured image bytes');
+  const url = 'https://source.invalid/image.png';
+  const rows = [row(1, 'user', { content: [{ type: 'image_url', image_url: { url } }] })];
+  const attachment = { mime: 'image/png', filename: 'image.png', base64: bytes.toString('base64'), sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex') };
+  const result = projectThread({ ref, thread, rows, runtimeVersion: '1.18.23', attachments: { [url]: attachment } });
+  expect(result.runtime.messages[0]!.parts[0]).toMatchObject({ type: 'file', mime: 'image/png', filename: 'image.png', url: 'data:image/png;base64,' + attachment.base64 });
+  expect(result.audit.unresolved).toEqual([]);
+  expect(() => projectThread({ ref, thread, rows, runtimeVersion: '1.18.23', attachments: { [url]: { ...attachment, sha256: '0'.repeat(64) } } })).toThrow('digest');
+});
+
+test('preserves an explicitly empty assistant message without inventing text', () => {
+  const result = projectThread({ ref, thread, rows: [row(1, 'user', { content: 'hello' }), row(2, 'assistant', { role: 'assistant', content: null })], runtimeVersion: '1.18.23' });
+  expect(result.runtime.messages[1]!.parts).toEqual([{ ...result.runtime.messages[1]!.parts[0], type: 'text', text: '' }]);
+  expect(result.audit.unresolved).toEqual([]);
+});
+
+
+test('uses the legacy project title when the thread name is absent', () => {
+  const t = { ...thread, project_id: 'legacy-project', name: null };
+  const project = { project_id: 'legacy-project', name: 'Original project title' };
+  const input = { ref, thread: t, project, rows: [], runtimeVersion: '1.18.23' };
+  expect(projectThread(input).runtime.info.title).toBe('Original project title');
+  expect(projectThread({ ...input, thread: { ...t, name: '  ' } }).runtime.info.title).toBe('Original project title');
+  expect(projectThread({ ...input, thread: { ...t, name: 'Thread title' } }).runtime.info.title).toBe('Thread title');
+  expect(() => projectThread({ ...input, project: { ...project, project_id: 'another-project' } })).toThrow('Project does not belong to thread');
+});

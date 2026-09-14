@@ -425,3 +425,21 @@ the same JSON ledger and lost restart-response fields. No source rows or importe
 messages were lost. Server metadata reconstructed runtime state, but missing
 operation IDs cannot be claimed as captured evidence. Later operations run
 serially and record their own proof files.
+
+### Legacy title mapping and repair
+
+Use a nonblank `threads.name` first. If absent, use the linked
+`projects.name`. The project ID must match the thread's project ID. Only use
+`Legacy conversation` if neither source field contains a title. Export project
+metadata before running the local projection CLI.
+
+A production batch exposed eight fallback titles despite available project
+names. The repair uses the session PATCH `name` field, which writes the durable
+custom-name override. It preserves the original owner and refuses to replace
+an unexpected destination title, since that can be a user rename. Verify the
+session index and native runtime title separately; importing historical messages
+does not necessarily update an existing runtime session's title.
+
+The regression covers null/blank thread names, explicit thread-name precedence,
+and rejection of an unrelated project. Production evidence is retained privately
+in `.legacy-transfer/production/title-repair-proof.json` and the E2E reports.

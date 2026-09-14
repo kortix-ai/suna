@@ -13,7 +13,7 @@ export async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
     'scope-file': { type: 'string', default: '.legacy-transfer/scope.json' }, 'source-ref': { type: 'string' }, 'key-env': { type: 'string' }, out: { type: 'string' },
     table: { type: 'string' }, pk: { type: 'string' }, schema: { type: 'string', default: 'public' },
-    'thread-id': { type: 'string' }, 'runtime-version': { type: 'string' }, 'page-size': { type: 'string', default: '250' }, help: { type: 'boolean' },
+    'thread-id': { type: 'string' }, 'runtime-version': { type: 'string' }, 'attachments-file': { type: 'string' }, 'page-size': { type: 'string', default: '250' }, help: { type: 'boolean' },
   } });
   const command = positionals[0];
   if (values.help) {
@@ -36,7 +36,11 @@ export async function main(argv: string[]): Promise<void> {
       if (exported?.status !== 'count-matched') throw new Error('A complete thread export is required');
       const records = ledger.db.query("SELECT r.json FROM records r JOIN export_records e USING(source_ref,source_table,source_id) WHERE e.source_ref=? AND e.source_table='public.messages' AND e.scope=?").all(ref, scope) as Array<{ json: string }>;
       if (records.length !== exported.actual) throw new Error('Export membership does not match its recorded count');
-      const result = projectThread({ ref, thread: JSON.parse(saved.json), rows: records.map(r => JSON.parse(r.json)), runtimeVersion: values['runtime-version'] });
+      const attachments = values['attachments-file'] ? await Bun.file(values['attachments-file']).json() : undefined;
+      const thread = JSON.parse(saved.json);
+      const projectRow = ledger.db.query('SELECT json FROM records WHERE source_ref=? AND source_table=? AND source_id=?').get(ref, 'public.projects', thread.project_id) as { json: string } | null;
+      const project = projectRow ? JSON.parse(projectRow.json) : undefined;
+      const result = projectThread({ ref, thread, project, rows: records.map(r => JSON.parse(r.json)), runtimeVersion: values['runtime-version'], attachments });
       for (const [suffix, data] of [['native', result.runtime], ['audit', result.audit]] as const) {
         const fd = openSync(join(values.out, threadId + '.' + suffix + '.json'), constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
         try { writeFileSync(fd, JSON.stringify(data, null, 2)); } finally { closeSync(fd); }
