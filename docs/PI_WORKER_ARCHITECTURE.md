@@ -268,22 +268,34 @@ Pi implements every OpenCode mutation.
 | `POST /session/:id/command` | Executes the supported command subset through the durable turn queue. Unsupported command features return an explicit capability error. |
 | `GET /skill` | Returns authorized project skill Markdown compiled from the immutable session SHA. |
 | `GET /agent` | Returns the selected compiled agent in the installed OpenCode SDK shape. |
-| `GET /tool/ids` and `GET /tool` | Returns the eight effective built-in Pi tools and their JSON schemas. Experimental OpenCode aliases return the same data. |
-| `GET /permission` and `GET /question` | Returns the current worker's pending requests. Pending requests are not durable across worker replacement yet. |
+| `GET /tool/ids` and `GET /tool` | Returns the selected agent's effective built-in and custom tools and their JSON schemas. Experimental OpenCode aliases return the same data. |
+| `GET /permission` and `GET /question` | Returns pending requests restored from durable checkpoints, including after worker replacement. |
 | `POST /permission/:id/reply` and `POST /question/:id/{reply,reject}` | Resolves the matching blocking tool request and publishes the OpenCode event. |
-| Non-text parts, attachments, or unsupported prompt options | Returns `400` instead of silently dropping input. |
+| Unsupported parts or prompt options | Returns `400` instead of silently dropping input. Native user images use immutable, session-scoped asset references. |
 | Request bodies larger than 512 KiB | Returns `413` without waiting for the client to finish the body. |
 
 The local `/prompt`, `/turn`, and `/say` benchmark routes require a JSON object
 with a string `text`. `/prompt` and `/turn` accept only an array-valued `script`
 when it is present. Deployed workers return `404` for all benchmark routes.
 
-The web app detects Pi from the server-owned runtime metadata. It hides compact,
-rewind, edit, and restore controls for Pi sessions. It locks the compiled agent
-and model. It blocks unsupported context, file, image, paste, drop, and data URL
-inputs. Prompt, command, and retry payloads omit stale agent, model, and variant
-fields. Unsupported slash actions are hidden. Non-Pi compact requests use the
-canonical `opencode_session_id`, not the Kortix project-session UUID.
+The web app detects Pi from server-owned runtime metadata. It exposes manual
+compaction, Edit, Restore, model selection, reasoning variants, and native images
+through the SDK. The compiled agent and source commit remain fixed. Unsupported
+actions stay hidden. Runtime requests use the canonical native session ID.
+
+Edit stages a whole-turn rewind before submitting the replacement prompt.
+Restore remains available until a new prompt is accepted. PostgreSQL records
+the history selection; the environment records reversible file operations.
+Prepared operations block new prompts until their receipt commits or cancels.
+Replacement IDs sort above IDs reserved by discarded history. Reload restores
+the saved selection and refreshes file previews through SDK events and reads.
+
+File checkpoints require the original environment disk. They preserve file
+bytes, modes, and symlinks. Conflicting manual edits reject the entire move;
+unrelated edits remain. Gitignored files, Git metadata, empty directories,
+extended attributes, detached writers, and external effects are excluded.
+Close active terminals before file rewind. Checkpoints are not a backup that
+survives environment deletion.
 
 ### Where does agent configuration live?
 
@@ -299,13 +311,18 @@ older null-config artifacts.
 
 ### Can a project use custom Pi tools?
 
-No. The worker currently registers eight built-in tools. Six workspace tools
-execute through the environment. The worker hosts the `question` and `skill`
-tools. No project extension loader exists yet.
+Yes. A selected agent can declare a custom Pi module. The compiler bundles that
+module, pinned JavaScript dependencies, and declared worker resources into the
+immutable `.mjs` artifact. Tools and lifecycle hooks run inside the worker's
+Node permission boundary. Custom code reads bundled resources through
+`resources` and accesses working files through `env` RPC. It does not read the
+environment's disk as a local worker path.
 
-Custom tools require a defined extension ABI and an isolation policy. Kortix
-will not load arbitrary project JavaScript into the worker before those
-contracts exist.
+Declared environment seeds and helper scripts are installed separately in the
+environment. Durable custom state uses the session log. File rewind covers
+recorded default and custom environment operations, but it does not roll back
+custom state or external side effects. See [custom agent examples](./PI_CUSTOM_AGENTS.md)
+for the supported configuration, resource placement, hooks, and limitations.
 
 ### How do Claude Code and Codex fit?
 
@@ -362,12 +379,10 @@ same version-selected runtime contract.
 
 ### What remains deliberately outside this architecture?
 
-- Filesystem version history is a later feature. The content-addressed blob
-  store already provides the storage primitive.
-- Transcript compaction is separate from durable message storage and is hidden
-  for Pi sessions.
-- Rewind, edit, and restore are hidden for Pi sessions. The worker cannot
-  atomically mutate its model tree and durable append-only transcript yet.
+- Workspace backup before environment deletion remains unimplemented. Current
+  file checkpoints depend on the original disk.
+- Forks, subagents, live agent reconfiguration, and complete MCP stdio support
+  remain open. The [parity audit](./PI_OPENCODE_PARITY.md) records these gaps.
 - Durable Objects remain deferred. This deployment does not use them.
 - A worker warm pool is an optional accelerator. Correctness uses cold create.
 - Environment pooling is not used because an environment carries a
