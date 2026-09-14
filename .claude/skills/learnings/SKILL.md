@@ -6366,3 +6366,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** a Pi connector-only `reader` agent received instructions listing denied workspace tools. It attempted unavailable tools and reported a sandbox failure; environment provisioning was never called.
 **Rule:** derive capability guidance from the tools on each provider request, after permission filtering and step limits. Keep explicit denials intact. Test the outgoing prompt and tool schemas together.
 **Enforcer:** `runtime-tool-guidance.test.ts` covers connector-only, denied, ask, path rules, session updates/reset, custom tools, and step limits through HTTP provider requests. `agent-steps-routes.test.ts` checks the final tool-free request.
+
+### Download persistent preview reports with bounded file reads (2026-09-14)
+
+**Incident:** report retrieval for PR #6998 requested a 298,383,589-byte archive in one Platinum call. The provider rejected it at its 268,435,456-byte request limit. This was separate from the superseded-SHA deployment failure.
+**Rule:** download large artifacts in bounded ranges. Write a private temporary file and replace the previous archive only after all bytes arrive. Reject truncation or a changed source. Preserve the reports in the sandbox.
+**Enforcer:** `tests/unit/platinum-ci.test.ts` covers an archive above 256 MiB, truncation, source changes, and read failure. The real preview archive downloads in 8 MiB ranges with matching SHA-256 `8959be466ff21074fae3fb92dcdcd05f3a3a352dc497a2a709bfa7bbd717b10d`.

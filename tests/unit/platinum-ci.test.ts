@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   CI_DOCKER_COMPOSE_AMD64_SHA256,
   CI_DOCKER_COMPOSE_VERSION,
@@ -26,6 +29,8 @@ import {
   platinumTemplateName,
   platinumWarmReadinessTimeoutMs,
   validatePlatinumCiInput,
+  downloadPlatinumFile,
+  PlatinumApi,
 } from '../src/core/platinum-ci';
 
 const sha = 'a'.repeat(40);
@@ -33,6 +38,53 @@ const lockHash = 'b'.repeat(64);
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('Platinum artifact downloads', () => {
+  test('reads files above the 256 MiB request ceiling in bounded ranges', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'platinum-artifact-'));
+    const target = join(directory, 'report.bin');
+    const size = 256 * 1024 * 1024 + 17;
+    const ranges: Array<{ offset: number; limit: number }> = [];
+    const api = {
+      json: async () => ({ size, mtime: 1 }),
+      read: async (_id: string, _path: string, offset?: number, limit?: number) => {
+        if (offset === undefined || limit === undefined || limit > 16 * 1024 * 1024) throw new Error('unbounded file read');
+        ranges.push({ offset, limit });
+        return new Uint8Array(Math.min(limit, size - offset)).fill(ranges.length % 256);
+      },
+    } as unknown as PlatinumApi;
+    try {
+      await downloadPlatinumFile(api, 'sandbox', '/report.bin', target);
+      const bytes = await readFile(target);
+      expect(bytes.length).toBe(size);
+      for (const [index, range] of ranges.entries()) {
+        expect(bytes[range.offset]).toBe((index + 1) % 256);
+        expect(bytes[range.offset + range.limit - 1]).toBe((index + 1) % 256);
+      }
+      expect(ranges.at(-1)!.offset + ranges.at(-1)!.limit).toBe(size);
+      expect(await readdir(directory)).toEqual(['report.bin']);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+  test.each(['truncated', 'changed', 'read failure'])('preserves the previous archive and removes partial output after %s', async mode => {
+    const directory = await mkdtemp(join(tmpdir(), 'platinum-artifact-'));
+    const target = join(directory, 'report.bin');
+    await writeFile(target, 'PREVIOUS');
+    let stats = 0;
+    const api = {
+      json: async () => ({ size: 10, mtime: mode === 'changed' ? ++stats : 1 }),
+      read: async () => {
+        if (mode === 'read failure') throw new Error('connection failed');
+        return new Uint8Array(mode === 'truncated' ? 0 : 10);
+      },
+    } as unknown as PlatinumApi;
+    try {
+      await expect(downloadPlatinumFile(api, 'sandbox', '/report.bin', target)).rejects.toThrow();
+      expect(await readFile(target, 'utf8')).toBe('PREVIOUS');
+      expect(await readdir(directory)).toEqual(['report.bin']);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
 });
 
 describe('Platinum CI worker plan', () => {

@@ -18,7 +18,7 @@ flow('SESS-33', {
   initial.status(200);
   const initialStatus = initial.json<any>().status;
   const stream = 'kortix.pi.turn-admission.v1';
-  const identified = (item: Record<string, unknown>) => ({ ...item, _kortixAppendId: crypto.randomUUID() });
+  const identified = (item: Record<string, unknown>): Record<string, unknown> & { _kortixAppendId: string } => ({ ...item, _kortixAppendId: crypto.randomUUID() });
   const accepted = (messageId: string, historyRevision?: number) => identified({
     kind: 'journal', stream,
     record: { type: 'accepted', turn: { messageId }, ...(historyRevision === undefined ? {} : { historyRevision }) },
