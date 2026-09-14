@@ -473,7 +473,7 @@ flow('GW-ACCESS-1', {
   const team = await ctx.fixtures.team();
   const member = await team.addMember('member');
   const project = await team.project();
-  await team.grantProjectRole(project.id, member.userId!, 'viewer');
+  await team.grantProjectRole(project.id, member.userId!, 'user');
   const params = { projectId: project.id };
   const path = '/v1/projects/:projectId/model-access';
   const owner = ctx.client.as(ctx.P.OWNER);
@@ -501,6 +501,7 @@ flow('GW-ACCESS-1', {
       (await ctx.client.as(actor).put(path, { target: 'provider', id: 'openai', enabled: false }, { params }))
         .status(actor === ctx.P.ANON ? 401 : [403, 404]);
     }
+    (await ctx.client.as(member).get(path, { params })).status(200);
     (await ctx.client.as(member).put(path, { target: 'provider', id: 'openai', enabled: false }, { params })).status(403);
   });
   await ctx.step('default model and provider are protected without writing a restriction', async () => {
