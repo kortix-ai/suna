@@ -78,7 +78,7 @@ export function SettingsHeader({
     haptics.tap();
     // The screen can be first in history (deep link / cold start): go home.
     if (router.canGoBack()) router.back();
-    else router.replace('/projects');
+    else router.replace('/'); // the last project (app/index.tsx), never the list
   };
 
   return (

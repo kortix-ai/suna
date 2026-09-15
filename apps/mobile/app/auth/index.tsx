@@ -47,7 +47,7 @@ export default function AuthScreen() {
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
-    if (isAuthenticated) router.replace('/projects');
+    if (isAuthenticated) router.replace('/');
   }, [isAuthenticated, router]);
 
   return (

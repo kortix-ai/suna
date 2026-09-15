@@ -223,6 +223,7 @@ export interface ProjectLeftDrawerProps {
    *  projects tree and the command palette's sandbox-scoped search, exactly as
    *  the legacy screen did. */
   sessionSandboxUrl?: string;
+  /** New session (row and command palette): open project home, whose composer starts the session. */
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
   /** Close the drawer. Every row calls this before navigating. */
@@ -289,7 +290,9 @@ export function ProjectLeftDrawer({
   const goToProjects = useCallback(() => {
     haptics.tap();
     onClose();
-    router.dismissTo('/projects');
+    // The only way to the Projects list. A project replaces the list when it
+    // opens, so the list is not under it: replace the project with the list.
+    router.replace('/projects');
   }, [onClose, router]);
 
   const handleProjectPress = useCallback(

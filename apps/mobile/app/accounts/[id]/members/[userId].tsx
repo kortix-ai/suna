@@ -196,7 +196,9 @@ export default function MemberDetailScreen() {
           leave.mutate(undefined, {
             onSuccess: () => {
               haptics.success();
-              router.replace('/projects');
+              // The start screen re-resolves from fresh accounts, so a last
+              // project in the account just left is skipped.
+              router.replace('/');
             },
             onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to leave account.'),
           });

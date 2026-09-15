@@ -648,7 +648,11 @@ export default function RootLayout() {
                                       />
                                       <AppStack.Screen
                                         name="projects/[id]"
-                                        options={{ fullScreenGestureEnabled: true }}
+                                        // Back never leaves a project: no swipe-back.
+                                        // Only the project menu's All projects opens the
+                                        // list (ProjectLeftDrawer). Pages inside the
+                                        // project swipe back on their own stack.
+                                        options={{ gestureEnabled: false }}
                                       />
                                       <AppStack.Screen
                                         name="(settings)"
@@ -736,8 +740,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /projects');
-      router.replace('/projects');
+      log.log('🚫 Authenticated user on auth screen, redirecting to the last project');
+      router.replace('/');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

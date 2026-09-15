@@ -12,12 +12,15 @@
  * ProjectScreenLegacy (roughly lines 904–1780). Only the presentation (the old
  * three-pane drawer JSX) is replaced.
  *
- * Rendered unconditionally from app/projects/[id].tsx — the legacy screen and
- * its USE_NEW_PROJECT_UI flag have been removed now that parity is confirmed.
+ * It is the layout of app/projects/[id]/: a nested stack of project home
+ * (index) and the open page, thread, or connecting session (view). Back from
+ * any project page returns to project home; back from project home does
+ * nothing. Only the menu's All projects opens the Projects list (see
+ * ProjectRoutes).
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { View, Alert } from 'react-native';
+import { View, Alert, BackHandler, Platform } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
@@ -35,10 +38,18 @@ import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
-import { Menu } from 'lucide-react-native';
+import { ChevronLeft } from 'lucide-react-native';
+import { useFocusEffect, useNavigation } from 'expo-router/react-navigation';
+import { useAuthContext } from '@/contexts';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
+import { useLastProjectStore } from '@/stores/last-project-store';
+import { AppStack, usePushTransition } from '@/components/navigation/stack-transitions';
+import { PlatformButton } from '@/components/kortix/platform-button';
+import {
+  PROJECT_VIEW_ROUTE,
+  ProjectRouteProvider,
+  type ProjectRouteValue,
+} from '@/components/session/ProjectRoutes';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
 import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
 import { SessionShareSheet } from '@/components/session/SessionShareSheet';
@@ -242,9 +253,22 @@ export function ProjectScreen() {
 
   // Tabs are remembered PER PROJECT: switch the tab store onto this project's
   // scope before the first paint (see ProjectScreenLegacy).
+  // `scopeReady` stays false for the first render, while the store can still
+  // hold another screen's state: the project routes treat that render as
+  // project home, so opening a project never flashes a page push.
+  const [scopeReady, setScopeReady] = useState(false);
   useLayoutEffect(() => {
-    if (projectId) useTabStore.getState().setScope(projectId);
+    if (!projectId) return;
+    useTabStore.getState().setScope(projectId);
+    setScopeReady(true);
   }, [projectId]);
+
+  // The app reopens this project next launch (app/index.tsx → lib/projects/landing).
+  const { user } = useAuthContext();
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId && projectId) useLastProjectStore.getState().remember(userId, projectId);
+  }, [userId, projectId]);
 
   const { sandboxUrl, switchSandbox } = useSandboxContext();
 
@@ -431,6 +455,7 @@ export function ProjectScreen() {
           // ONE server call: POST /start idempotently provisions/resumes the
           // sandbox AND resolves the OpenCode pin server-side.
           const start = await startProjectSession(projectId, sessionId);
+          if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
           const sandbox = start?.sandbox ?? null;
 
           if (start?.stage === 'failed' || sandbox?.status === 'error') {
@@ -445,6 +470,7 @@ export function ProjectScreen() {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
 
             const health = await probeSandboxHealth(sandboxUrl);
+            if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
 
             // Fatal runtime boot failure — stop waiting and surface it with a
             // Restart button (web parity with "OpenCode runtime is not ready").
@@ -813,10 +839,21 @@ export function ProjectScreen() {
     void ensureAndOpen(connectingProjectSessionId);
   }, [connectingProjectSessionId, ensureAndOpen]);
 
-  // Back from the thread → project home.
-  const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
-  // Back from a tool page → previous entry (the thread it was opened from).
-  const handlePageBack = useCallback(() => useTabStore.getState().goBack(), []);
+  // Back from a tool page, a thread, or a connecting session → project home.
+  // The view route pops once the store is on project home (ProjectRoutes), and
+  // it calls this when a swipe or system back removes it. Stops a running
+  // connect loop, so a session that boots later does not reopen the view.
+  const goHome = useCallback(() => {
+    ensuringRef.current = null;
+    setActiveProjectSessionId(null);
+    setConnectingProjectSessionId(null);
+    setConnectError(null);
+    const tabs = useTabStore.getState();
+    if (tabs.showTabsOverview) tabs.setShowTabsOverview(false);
+    if (tabs.activeSessionId || tabs.activePageId) tabs.navigateToSession(null);
+  }, []);
+  const handleBack = goHome;
+  const handlePageBack = goHome;
 
   // Simplified project-home send flow (ported from web 3f150e0). Creates a
   // project session with the typed prompt as initial_prompt and drops into the
@@ -862,6 +899,39 @@ export function ProjectScreen() {
   // state is here to satisfy ProjectHome's onOpenDrawer callback.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Project route stack (ProjectRoutes). `viewOpen`: a page, thread, or
+  // connecting session is pushed over project home.
+  const [viewOpen, setViewOpen] = useState(false);
+  const [homeKey, setHomeKey] = useState(0);
+  const handleViewCovered = useCallback(() => setHomeKey((key) => key + 1), []);
+  const pushTransition = usePushTransition();
+  // This layout's own screen in the root stack (/projects/[id]).
+  const navigation = useNavigation();
+  // Back never leaves the project. iOS: the root stack registers
+  // /projects/[id] with swipe-back off (app/_layout.tsx); pages swipe back on
+  // the project stack. Android back: closes the drawer, then pops the open
+  // page or thread; on project home it is never allowed to pop to a screen
+  // below, and with nothing below the system handles it (app to background).
+  // Only the menu's All projects opens the Projects list.
+  const drawerOpenRef = useRef(drawerOpen);
+  drawerOpenRef.current = drawerOpen;
+  const viewOpenRef = useRef(viewOpen);
+  viewOpenRef.current = viewOpen;
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return undefined;
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (drawerOpenRef.current) {
+          setDrawerOpen(false);
+          return true;
+        }
+        if (viewOpenRef.current) return false; // the project stack pops the view
+        return navigation.canGoBack();
+      });
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
   // ── Presentation glue ──
 
   // The self-contained left drawer. It MUST mount through renderDrawerContent so
@@ -873,17 +943,18 @@ export function ProjectScreen() {
         projectId={projectId}
         activeProjectSessionId={activeProjectSessionId}
         sessionSandboxUrl={sessionSandboxUrl}
-        onNewSession={handleNewSession}
+        // New session opens project home: its composer starts the session.
+        onNewSession={goHome}
         onOpenProjectSession={handleOpenProjectSession}
         onClose={() => setDrawerOpen(false)}
       />
     ),
-    [projectId, activeProjectSessionId, sessionSandboxUrl, handleNewSession, handleOpenProjectSession]
+    [projectId, activeProjectSessionId, sessionSandboxUrl, goHome, handleOpenProjectSession]
   );
 
-  // Tool pages keep PageHeader. Its hamburger opens the left drawer; its
-  // apps-grid button opens the dock's menu as a sheet (no floating dock on
-  // deep pages).
+  // Tool pages keep PageHeader. The view route gives it Go back to project
+  // home in place of the hamburger; its "···" button opens the dock's menu as
+  // a sheet (no floating dock on deep pages).
   const pageChrome = {
     onOpenDrawer: () => setDrawerOpen(true),
     onOpenRightDrawer: () => moreRef.current?.open(),
@@ -891,29 +962,33 @@ export function ProjectScreen() {
     isRightDrawerOpen: false,
   };
 
-  // ── Render ──
+  // ── Route content ──
 
-  return (
-    <>
-      <Stack.Screen options={{ headerShown: false }} />
-      <Drawer
-        open={drawerOpen}
-        onOpen={() => setDrawerOpen(true)}
-        onClose={() => setDrawerOpen(false)}
-        drawerType="slide"
-        drawerStyle={{
-          width: '80%',
-          backgroundColor: 'transparent',
-          shadowColor: 'transparent',
-          shadowOpacity: 0,
-          shadowRadius: 0,
-          shadowOffset: { width: 0, height: 0 },
-          elevation: 0,
-        }}
-        overlayStyle={{ backgroundColor: 'transparent' }}
-        swipeEdgeWidth={80}
-        swipeMinDistance={30}
-        renderDrawerContent={renderDrawer}>
+  const isHome =
+    !scopeReady ||
+    (!showTabsOverview && !activePageId && !activeSessionId && !connectingProjectSessionId);
+
+  // The floating dock. On project home it names the project; on a thread it
+  // names the chat and adds the long-press actions and the change-request button.
+  const renderDock = (inThread: boolean) => (
+    <ProjectDock
+      label={dockPillLabel({
+        inThread,
+        chatTitle: inThread
+          ? (activeProjectSession?.custom_name ?? activeProjectSession?.name ?? null)
+          : null,
+        projectName,
+      })}
+      onNewChat={handleNewSession}
+      onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
+      onOpenMore={() => moreRef.current?.open()}
+      onLongPressLabel={inThread ? () => chatActionsRef.current?.open() : undefined}
+      onOpenChangeRequest={inThread ? () => void handleOpenChangeRequest() : undefined}
+    />
+  );
+
+  // The open page, thread, or connecting session: the view route's content.
+  const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
           {showTabsOverview ? (
           /* Session history grid — opened from the "···" tools menu */
@@ -1092,21 +1167,23 @@ export function ProjectScreen() {
           />
         ) : connectingProjectSessionId ? (
           /* Connecting — a project session is provisioning (or errored).
-             Same chrome as the project home and the thread: no top bar, just
-             the floating global hamburger opening the left drawer. */
+             Same chrome as the thread: no top bar, just the floating Go back
+             button to project home. */
           <View style={{ flex: 1 }} className="bg-background">
             <View
               className="absolute left-4 z-10"
               style={{ top: insets.top + 8 }}
               pointerEvents="box-none">
-              <Button
-                variant="secondary"
-                size="icon"
-                onPress={() => setDrawerOpen(true)}
-                accessibilityLabel="Open menu"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Icon as={Menu} size={20} className="text-foreground" />
-              </Button>
+              <PlatformButton
+                systemImage="chevron.left"
+                icon={ChevronLeft}
+                fallbackVariant="secondary"
+                accessibilityLabel="Go back"
+                onPress={() => {
+                  haptics.tap();
+                  goHome();
+                }}
+              />
             </View>
             <SessionConnecting
               statusLabel={connectingStatusLabel}
@@ -1115,36 +1192,75 @@ export function ProjectScreen() {
               restarting={restartingSession}
             />
           </View>
-        ) : (
-          /* Project home — Kortix symbol, fixed greeting, composer */
-          <ProjectHome
-            projectId={projectId}
-            projectName={loadedProjectName}
-            sending={isDashboardSending}
-            onSubmitNewSession={handleDashboardSend}
-            onOpenDrawer={() => setDrawerOpen(true)}
-          />
-        )}
+        ) : null}
 
-          {/* Floating dock — only in the project-home and thread states. Renders
-              inside the Drawer child, over the content and above the composer. */}
-          {!activePageId && !showTabsOverview && !connectingProjectSessionId ? (
-            <ProjectDock
-              label={dockPillLabel({
-                inThread: !!activeSessionId,
-                chatTitle: activeProjectSession?.custom_name ?? activeProjectSession?.name ?? null,
-                projectName,
-              })}
-              onNewChat={handleNewSession}
-              onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
-              onOpenMore={() => moreRef.current?.open()}
-              onLongPressLabel={activeSessionId ? () => chatActionsRef.current?.open() : undefined}
-              onOpenChangeRequest={
-                activeSessionId ? () => void handleOpenChangeRequest() : undefined
-              }
-            />
-          ) : null}
+          {/* Floating dock over a thread, above the composer. */}
+          {activeSessionId && !activePageId && !showTabsOverview ? renderDock(true) : null}
         </View>
+  );
+
+  // Project home — Kortix symbol, fixed greeting, composer, dock.
+  const homeContent = (
+    <View className="flex-1 bg-background">
+      <ProjectHome
+        projectId={projectId}
+        projectName={loadedProjectName}
+        sending={isDashboardSending}
+        onSubmitNewSession={handleDashboardSend}
+        onOpenDrawer={() => setDrawerOpen(true)}
+      />
+      {renderDock(false)}
+    </View>
+  );
+
+  const projectRoute: ProjectRouteValue = {
+    home: homeContent,
+    view: viewContent,
+    isHome,
+    homeKey,
+    goHome,
+    onViewOpenChange: setViewOpen,
+    onViewCovered: handleViewCovered,
+  };
+
+  // ── Render ──
+
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <Drawer
+        open={drawerOpen}
+        onOpen={() => setDrawerOpen(true)}
+        onClose={() => setDrawerOpen(false)}
+        drawerType="slide"
+        drawerStyle={{
+          width: '80%',
+          backgroundColor: 'transparent',
+          shadowColor: 'transparent',
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 0,
+        }}
+        overlayStyle={{ backgroundColor: 'transparent' }}
+        // While the view is open the left edge is the swipe-back edge.
+        swipeEnabled={!viewOpen}
+        swipeEdgeWidth={80}
+        swipeMinDistance={30}
+        renderDrawerContent={renderDrawer}>
+        <ProjectRouteProvider value={projectRoute}>
+          {/* Same push/pop and swipe-back as every stack (stack-transitions). */}
+          <AppStack
+            screenOptions={{
+              headerShown: false,
+              gestureEnabled: true,
+              fullScreenGestureEnabled: true,
+              ...pushTransition,
+            }}>
+            <AppStack.Screen name="index" />
+            <AppStack.Screen name={PROJECT_VIEW_ROUTE} />
+          </AppStack>
+        </ProjectRouteProvider>
       </Drawer>
 
       {/* Dock-raised sheets — the "More…" grid, the chat-actions sheet, and the

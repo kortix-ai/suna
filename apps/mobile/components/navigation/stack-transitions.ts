@@ -1,6 +1,6 @@
 /**
  * One push/pop transition for every stack in the app (root, `(settings)`,
- * `auth`).
+ * `auth`, and the project stack in `ProjectScreen`).
  *
  * iOS: expo-router's native Stack — the UINavigationController push.
  *

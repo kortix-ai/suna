@@ -28,7 +28,9 @@ import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { ChevronLeft, Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { PlatformButton } from '@/components/kortix/platform-button';
+import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -803,14 +805,22 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
           </View>
         </View>
       ) : (
-        /* Floating menu button — the only chrome above the content. */
+        /* Floating Go back button — the only chrome above the content. A
+           thread is a child of project home, and back returns there. */
         <View
           className="absolute left-4 z-10"
           style={{ top: insets.top + 8 }}
           pointerEvents="box-none">
-          <Button variant="secondary" size="icon" onPress={onOpenDrawer} accessibilityLabel="Open menu" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Icon as={MenuIcon} size={20} className="text-foreground" />
-          </Button>
+          <PlatformButton
+            systemImage="chevron.left"
+            icon={ChevronLeft}
+            fallbackVariant="secondary"
+            accessibilityLabel="Go back"
+            onPress={() => {
+              haptics.tap();
+              onBack();
+            }}
+          />
         </View>
       )}
 

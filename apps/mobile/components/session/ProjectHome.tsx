@@ -98,8 +98,9 @@ export function ProjectHome({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
   }));
 
-  // Nothing is cleared on send. A successful send swaps this screen for the
-  // connecting state, which unmounts it. A failed or gated send (credits,
+  // Nothing is cleared on send. A successful send pushes the connecting state
+  // over this screen, and the project stack remounts this screen once it is
+  // covered (ProjectRoutes `homeKey`). A failed or gated send (credits,
   // network) leaves the prompt and files in place. Web does the same
   // (`clearOnSend={false}` on the home composer).
   const handleSubmit = React.useCallback(() => {

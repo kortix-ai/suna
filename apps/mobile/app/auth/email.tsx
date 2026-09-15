@@ -122,7 +122,7 @@ export default function EmailAuthScreen() {
         setErrorMessage(friendlySignInError(res?.error?.message));
         return;
       }
-      router.replace('/projects');
+      router.replace('/');
     } catch (err: any) {
       log.error('Email sign-in exception:', err);
       setErrorMessage(err?.message || 'Could not sign in.');
@@ -153,7 +153,7 @@ export default function EmailAuthScreen() {
         setInfo('Check your email to confirm your account, then sign in.');
         return;
       }
-      router.replace('/projects');
+      router.replace('/');
     } catch (err: any) {
       log.error('Sign-up exception:', err);
       setErrorMessage(err?.message || 'Could not create your account.');
@@ -190,7 +190,7 @@ export default function EmailAuthScreen() {
           );
           return;
         }
-        if (data.session) router.replace('/projects');
+        if (data.session) router.replace('/');
       } catch (err: any) {
         setErrorMessage(err?.message || 'Could not verify the code.');
       } finally {

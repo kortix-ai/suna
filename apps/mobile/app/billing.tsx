@@ -10,7 +10,7 @@ export default function BillingScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/projects');
+      router.replace('/'); // the last project (app/index.tsx), never the list
     }
   }, [router]);
 

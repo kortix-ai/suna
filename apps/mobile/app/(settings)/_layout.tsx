@@ -22,7 +22,7 @@ export default function SettingsLayout() {
         if (router.canGoBack()) {
           router.back();
         } else {
-          router.replace('/projects');
+          router.replace('/');
         }
         return true;
       });

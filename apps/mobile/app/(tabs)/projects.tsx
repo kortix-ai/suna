@@ -134,8 +134,10 @@ export default function ProjectsTab() {
     if (!hasProjects && searchOpen) closeSearch();
   }, [hasProjects, searchOpen, closeSearch]);
 
+  // A project replaces the list, never stacks on it: back from a project must
+  // not return here. The project menu's All projects is the way back.
   const openProject = React.useCallback(
-    (p: KortixProject) => router.push(`/projects/${p.project_id}`),
+    (p: KortixProject) => router.replace(`/projects/${p.project_id}`),
     [router],
   );
 
@@ -155,7 +157,7 @@ export default function ProjectsTab() {
   const handleCreated = React.useCallback(
     (project: KortixProject) => {
       setNewProjectOpen(false);
-      router.push(`/projects/${project.project_id}`);
+      router.replace(`/projects/${project.project_id}`);
     },
     [router],
   );
