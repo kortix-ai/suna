@@ -820,3 +820,17 @@ retry verified at 19:34:05 UTC. One source Daytona capture returned 5xx. Both
 operations started at earlier concurrency levels, so these events do not prove
 a fixed 90-pipeline capacity ceiling. The probe restored 80, the best measured
 window without pressure failures. Automatic backoff/recovery remains enabled.
+
+### Continue scaling and release completed source captures — 2026-09-15
+
+One Daytona 5xx occurred across 438 capture attempts after the quota bypass.
+That observation does not establish a provider capacity ceiling. The runner keeps
+its measured operating target and automatic recovery; investigate sustained error
+rate and completed throughput before attributing a limit to concurrency.
+
+The Suna capture reconciliation released 38 completed workspaces after rechecking
+archive size/SHA-256, manifest inventory, source selection, and live archive state.
+Twenty-one still had source archive cleanup pending. The two-minute reconciliation
+now runs this check before delayed archive confirmation. Active session writers
+are excluded. Source archive completion remains in the independent cleanup ledger;
+destination import, ownership, history and file-readback verification are unchanged.

@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Apply captured-workspace reconciliation to every migrated source (2026-09-15)
+
+**When:** a valid captured archive waits for its source sandbox to finish archiving,
+revalidate bytes and inventory, then track source cleanup independently. *Incident:*
+Suna accumulated 38 capture reviews although the equivalent Trimaran release was
+already implemented. *Enforcer:* the periodic reconciler now applies the same
+Suna guards, excludes active writers, and records pending cleanup without claiming
+source archive completion or bypassing destination file verification.
+
 ### Scope an internal migration quota override to the original owner and UUID (2026-09-15)
 
 **When:** using the existing internal `enforceAccountCap: false` create command,
