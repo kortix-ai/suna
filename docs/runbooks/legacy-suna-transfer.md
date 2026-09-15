@@ -904,3 +904,37 @@ zero failed, 254 assertions. The dispatcher build passes. The tests include the
 two-of-123 case, sustained failures, expiry, phase isolation, and repeated errors
 from one sandbox. The 20:07:25 UTC live observation recorded 210 phase attempts
 and zero rate-limit, transport, capacity, or timeout failures over two minutes.
+
+### Prepare higher concurrency and reclaim verified cache — 2026-09-15
+
+The dispatcher implementation now accepts a ceiling of 192. Production settings
+remain at 128. The running dispatcher has a fixed 128-slot pool; a file edit does
+not enlarge that pool. Higher levels require a subsequent dispatcher and a fresh
+capacity observation. The planned comparison is 128, then 160, then 192, retaining
+the shared Platinum write budget and comparing completed imports rather than
+worker count. No 160/192 production result exists yet.
+
+At inspection, failed capture logs identified 21 distinct source sandboxes reporting
+`restoring`. These lifecycle failures are separate from the original two isolated
+5xx responses. Stable-state reconciliation remains active. Higher admissions are
+not enabled while this source transition backlog is unresolved.
+
+Free disk approached 22 GiB against the 20 GiB reserve. The private
+`prune-verified-workspace-cache.ts --apply` reclaimed 14,030,065,135 bytes from
+2,872 workspace tar caches, restoring 35 GiB free. It acquires the session, capture,
+and archive leases; requires verified destination inventory/hash/readback evidence
+and preserved source state; checks archive identity and every remote part receipt;
+and rehashes each local tar before removal. It retains manifests, histories, receipt
+files, remote archive objects, and destination files. The operation logs each
+validated archive and completed removal in `cache-prune.ndjson`.
+
+A later operation that needs a pruned tar must reconstruct it from the ordered
+remote receipt parts, verify each part size/hash, and verify the complete archive
+size/hash before reuse. Do not rerun capture or mark a cache miss as unavailable
+source files. The pruning command does not perform a fresh remote download; it
+uses the upload worker's independent readback receipts plus verified destination
+file evidence.
+
+Validation: controller, transient-pressure, and refilling-pool tests report
+18 passed, zero failed, 273 assertions. The dispatcher build passes. The higher
+concurrency test failed before raising the implementation ceiling, then passed.
