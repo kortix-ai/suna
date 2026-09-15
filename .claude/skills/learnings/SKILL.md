@@ -6963,5 +6963,5 @@ configuration within one revision. Cross-revision compatibility is not covered.
 ### Boot the complete artifact, not only a small substitute (2026-09-15)
 
 **Incident:** preview `4421bc829f` failed with Bun `NameTooLong` when importing the full daemon as a base64 data URL. Small native-module fixtures and manifest checks passed.
-**Rule:** use a Blob URL for deferred in-memory module loading. Verify the complete artifact through the provider's launch command and assert its HTTP readiness before deployment.
+**Rule:** use a Blob URL for deferred in-memory module loading. Change the artifact cache namespace when its loader changes. Verify the complete artifact through the provider's launch command and assert its HTTP readiness before deployment.
 **Enforcer:** `compiled-agent-bundle.test.ts` compiles the real daemon, launches the resulting artifact with Node, and checks the execution-only HTTP health response after the Bun trampoline.

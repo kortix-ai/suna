@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -199,6 +200,21 @@ describe("buildCompiledRuntimeArtifact", () => {
 
     expect(rebuilt.cacheHit).toBe(false);
     expect(rebuiltSource).toContain("// kortix-manifest-base64url:");
+  });
+
+  test('rebuilds artifacts cached before the Blob loader', async () => {
+    const { project, sha } = makeProject();
+    const cache = mkdtempSync(join(tmpdir(), 'kortix-runtime-legacy-cache-'));
+    roots.push(cache);
+    process.env.KORTIX_COMPILED_BOOT_CACHE_DIR = cache;
+    const first = await buildCompiledRuntimeArtifact(project, 'main', sha);
+    const bundleSha = createHash('sha256').update(readFileSync(process.env.KORTIX_COMPILED_AGENT_BUNDLE_PATH!)).digest('hex');
+    const legacyKey = createHash('sha256').update(`kortix.compiled-runtime.v1\0agent-environment-resources-v1\0${project.projectId}\0main\0${sha}\0${bundleSha}`).digest('hex');
+    renameSync(first.path, join(cache, `${legacyKey}.server.mjs`));
+    renameSync(first.path.replace('.server.mjs', '.runtime.json'), join(cache, `${legacyKey}.runtime.json`));
+    const rebuilt = await buildCompiledRuntimeArtifact(project, 'main', sha);
+    expect(rebuilt.cacheHit).toBe(false);
+    expect(rebuilt.path).not.toBe(join(cache, `${legacyKey}.server.mjs`));
   });
 
   test("changes the artifact identity when the bundled daemon changes", async () => {
