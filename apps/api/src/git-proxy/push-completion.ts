@@ -1,8 +1,8 @@
-export function afterPushCompletion(
-  body: ReadableStream<Uint8Array>,
+export function afterPushCompletion<T extends Uint8Array>(
+  body: ReadableStream<T>,
   onComplete: () => void,
-): ReadableStream<Uint8Array> {
-  return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+): ReadableStream<T> {
+  return body.pipeThrough(new TransformStream<T, T>({
     transform(chunk, controller) {
       controller.enqueue(chunk);
     },

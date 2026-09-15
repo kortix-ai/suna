@@ -2196,6 +2196,14 @@ starts after upstream stream completion. Four stream tests cover ordering,
 cancellation, failure, and nonblocking compilation; the combined Git regression
 suite passes 40 tests. The final PR records the deployed revision and retest.
 
+A subsequent prompt without an explicit model exposed a separate defaulting bug:
+the session saved the platform model instead of the compiled agent model. Session
+creation now resolves the model from the selected source revision. Request
+overrides and saved agent preferences retain priority. The API suite passes
+9,586 tests with 82 declared skips; API typechecking passes. Four route cases
+cover v2/v3 source pinning and request overrides. The final PR records the live
+model read-back and actual inference verification at the deployed revision.
+
 To test: use the YAML example in `PI_CUSTOM_AGENTS.md`, commit its referenced
 files, and start the named agent. Call a pure custom tool, then an environment
 tool. Edit its Instructions in Customize, then compare old and new sessions.

@@ -79,6 +79,12 @@ environment does not modify the worker. Commit configuration changes and create 
 session from the new commit. Declare agents on the configured project default
 branch before starting sessions; `base_ref` selects their source revision.
 
+Session creation reads the selected agent's model from that source revision.
+An explicit session model wins, followed by an agent model preference, the compiled
+agent model, and project/account/platform defaults. Account entitlement still
+applies. The saved session model drives SDK prompts, so an omitted request model
+does not replace the compiled choice with a platform default.
+
 Existing projects retain the legacy convention when `config` is absent:
 `<config_dir>/agents/<name>.md` supplies behavior and the matching `.ts`, `.js`, or
 `.mjs` supplies optional Pi code. An explicit `config: {}` disables that implicit

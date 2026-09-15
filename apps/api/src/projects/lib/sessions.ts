@@ -1192,11 +1192,25 @@ export async function createProjectSession(input: {
     }
   } else if (llmGatewayEnabled) {
     try {
+      let configuredAgentModel: string | null = null;
+      if (
+        !platformMetaAgent &&
+        (piWorkerIdentity || (loadedAgents.defaultAgent && loadedAgents.manifest?.revision)) &&
+        loadedAgents.specs.some((spec) => spec.name === agentName && spec.enabled)
+      ) {
+        const compiled = await resolveSelectedAgentConfigForSession(
+          await withProjectGitAuth(project),
+          agentName,
+          piWorkerIdentity?.sha ?? baseRef,
+        );
+        configuredAgentModel = normalizeString(JSON.parse(compiled).agent?.[agentName]?.model);
+      }
       const resolved = await resolveEffectiveModel({
         userId,
         accountId,
         projectId,
         agentName,
+        configuredAgentModel,
         explicit: null,
         freeModelsOnly,
       });

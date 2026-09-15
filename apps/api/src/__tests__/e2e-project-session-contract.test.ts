@@ -85,6 +85,7 @@ let assertedIamActions: string[] = [];
 let deniedIamAction: string | null = null;
 let managedModelsAllowed = true;
 let manifestFile: { path: string; content: string } | null = null;
+let manifestsByRef: Record<string, { path: string; content: string }> = {};
 let commitShaResolutionError: Error | null = null;
 let lastProvisionInput: {
   sandboxId: string;
@@ -193,6 +194,7 @@ function resetState() {
   deniedIamAction = null;
   managedModelsAllowed = true;
   manifestFile = null;
+  manifestsByRef = {};
   commitShaResolutionError = null;
 }
 
@@ -320,10 +322,10 @@ mock.module('../projects/git', () => ({
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
-  readManifestFromRepo: async (_project: unknown, candidatePaths: string[]) =>
-    manifestFile
+  readManifestFromRepo: async (_project: unknown, candidatePaths: string[], ref?: string) =>
+    (manifestsByRef[ref ?? ''] ?? manifestFile)
       ? {
-          ...manifestFile,
+          ...(manifestsByRef[ref ?? ''] ?? manifestFile),
           sha: 'c'.repeat(40),
           candidatePaths,
         }
@@ -1293,6 +1295,34 @@ describe('project session API contract', () => {
     expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_META_AGENT');
     expect(lastProvisionInput?.extraEnvVars).not.toHaveProperty('KORTIX_BOOTSTRAP_OPENCODE_SESSION');
   });
+
+  test.each([[2, false], [3, false], [2, true], [3, true]] as const)(
+    'v%s uses its selected source model unless the session explicitly overrides it (%s)',
+    async (version, explicit) => {
+      enablePiWorker();
+      const manifest = (model: string) => ({
+        path: 'kortix.yaml',
+        content: `kortix_version: ${version}\ndefault_agent: default\nagents:\n  default:\n    config:\n      model: ${model}\n      prompt: Use the selected model.\n`,
+      });
+      manifestFile = manifest('kortix/deepseek-v4-flash');
+      manifestsByRef['a'.repeat(40)] = manifest('kortix/gpt-5.6-luna');
+      manifestsByRef['pinned-release'] = manifestsByRef['a'.repeat(40)];
+      const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'daytona', base_ref: 'pinned-release',
+          ...(explicit ? { opencode_model: 'kortix/deepseek-v4-flash' } : {}),
+        }),
+      });
+      expect(response.status).toBe(201);
+      const metadata = {
+        opencode_model: explicit ? 'kortix/deepseek-v4-flash' : 'kortix/gpt-5.6-luna',
+        opencode_model_source: explicit ? 'explicit' : 'agent',
+      };
+      expect(await response.json()).toMatchObject({ metadata });
+      expect(lastSessionInsertValues).toMatchObject({ metadata });
+      await flushUntil(() => sandboxProvisionCalls === 1);
+    },
+  );
 
   test('v3 selects Pi with the pi_worker feature disabled', async () => {
     enablePiWorker();

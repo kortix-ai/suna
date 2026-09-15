@@ -6941,3 +6941,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Near-miss:** the Pi YAML live check initially read the previous agent manifest after a successful Git push. Inspection found prebuilds starting at HTTP headers, before the streamed receive-pack operation finished.
 **Rule:** wait for upstream response completion before refreshing Git refs and starting prebuilds. Keep the response streamed. Do not wait for compilation before finishing the client response.
 **Enforcer:** `push-completion.test.ts` verifies progress streaming, completion ordering, cancellation, upstream failure, and detached compilation. `compiled-prebuild-wiring.test.ts` checks the route uses that completion boundary. Real Git protocol tests preserve successful pushes and policy rejections.
+
+### Test configured defaults without explicit request overrides (2026-09-15)
+
+**Near-miss:** the Pi YAML preview test supplied an explicit model. Custom code and prompts passed, but a later session without that override used the platform model. Session metadata replaced the bundle's configured model on SDK prompts.
+**Rule:** verify omitted and explicit model inputs separately. Read the selected source revision before saving the session default. Assert the persisted choice and the model that produces the response.
+**Enforcer:** `e2e-project-session-contract.test.ts` checks v2/v3 source pinning and request overrides through the session route. `default-model.test.ts` checks configured model precedence, saved preferences, and entitlement.
