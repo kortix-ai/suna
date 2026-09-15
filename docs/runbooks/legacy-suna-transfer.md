@@ -1022,3 +1022,30 @@ The first Platinum probe subsequently completed full verification of 319 files
 and stopped at 21:21:51 UTC. The operator's 128 admission request was acknowledged
 at 21:21:23 UTC. The next routing sample can now restore Platinum as primary at
 the bounded return target, then increase on verified throughput.
+
+### Disk-reserve stall and continuous cache maintenance — 2026-09-15 21:43 UTC
+
+The 30-minute dashboard rate fell to 184/hour. At inspection, disk had 17 GiB
+free, below the 20 GiB capture/readback reserve. Of the inspected 200 failed
+attempts, 174 reported `Local disk reserve`; the remaining 26 reported source
+restoring-state errors. Nearly all active pipelines were capturing and no imports
+completed in the recent two-minute windows. The controller stayed at 32 because
+its growth gate requires completed imports.
+
+Verified-only cache reclamation now accepts workspace tar, raw-record JSON, or
+native JSON. Each file must match its remote receipt parts and full local hash,
+and the session must pass full workspace verification with preserved source state.
+The existing session/capture/archive leases exclude active writers. The pass
+removed 156,393,550 tar bytes, 4,068,746,150 raw-record bytes, and 2,227,820,924
+native JSON bytes. Free disk returned to 23 GiB.
+
+`run-cache-maintenance.ts` checks free space every minute and runs the same
+verified-only pruning below 25 GiB. It logs observed free space before and after.
+It retains source SQLite exports, unverified session artifacts, manifests,
+selection/audit records, and durable archive receipts. Pruned JSON can be restored
+from its ordered remote receipt parts with per-part and full-file hash checks.
+
+After reclamation, 17 sessions recorded completed captures within two minutes.
+No imports had yet completed in that window; source lifecycle cleanup and later
+phases still had to finish. The dashboard's 64-hour estimate extrapolates the
+degraded trailing average; it is not a measured duration for the remaining work.
