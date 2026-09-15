@@ -12,6 +12,10 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '../runtime-versions';
+import {
+  SANDBOX_SHELL_TOOL_APT_LIST,
+  SANDBOX_SHELL_TOOL_LINK_COMMAND,
+} from './shell-tools';
 
 export interface FastSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -42,9 +46,10 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      bash ca-certificates curl file git gzip iproute2 iputils-ping jq less \
-      libatomic1 openssh-client procps ripgrep sudo tmux unzip util-linux xz-utils \
- && rm -rf /var/lib/apt/lists/*
+      bash ca-certificates curl git gzip iproute2 libatomic1 sudo tmux util-linux \
+      ${SANDBOX_SHELL_TOOL_APT_LIST} \
+ && rm -rf /var/lib/apt/lists/* \
+ && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
  && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \

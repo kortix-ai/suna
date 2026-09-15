@@ -8,6 +8,7 @@ The runtime user is `kortix`. It has passwordless `sudo` access.
 The project repository and its configuration are in `/workspace`.
 
 Node.js, npm, pnpm, Bun, OpenCode, uv, Git, curl, tmux, and the `kortix` CLI are ready at boot.
+Shell tools are ready at boot: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`, `sqlite3`, `wget`, `zip`, `unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, `sponge`, and `nano`.
 Python installs automatically on its first `python` or `python3` command.
 Use `uv run --with "pkg1,pkg2" script.py` for Python dependencies outside the document tool pack.
 
