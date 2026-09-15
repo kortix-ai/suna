@@ -643,6 +643,25 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+### Personal provider connections
+
+Connect a ChatGPT subscription or provider API key once, then enable it in each project. Personal connections belong to the signed-in user. Management requires a Supabase user JWT; account PATs and sandbox tokens cannot manage global credentials.
+
+```ts
+const providers = kortix.providerConnections;
+await providers.saveApiKey('openai', apiKey);
+await providers.setProject(projectId, 'openai', true);
+// Reuse the same encrypted connection in another project.
+await providers.setProject(otherProjectId, 'openai', true);
+// Disconnect everywhere, including all project bindings.
+await providers.remove('openai');
+```
+
+For ChatGPT, call `startOAuth('codex')`, show `verification_url` and `user_code`, then call `pollOAuth('codex', flow_id)` at `interval_ms` until success, failure, or expiry. Enable the connection with `setProject(projectId, 'codex', true)` after success.
+
+The gateway selects the connection belonging to its authenticated user. A session uses the launching user recorded in its token. Other participants in that session retain this session identity. Project bindings authorize this use explicitly. Project credentials remain the fallback when no personal binding exists. Native-runtime projects do not support personal provider bindings.
+
+Manage saved accounts in **Preferences → My providers**. Under **Project → Models → Providers**, each row shows its connection status and a **Connect** or **Manage** action. The dialog defaults new connections to **Use my account** when supported. Choose **Share with this project** explicitly for shared credentials. Changes apply only after submission; cancelling preserves the current connection. Metadata endpoints never return credential values. Disconnect removes all project bindings; it does not revoke the upstream provider account itself.
 
 
 ### Project provider and model access

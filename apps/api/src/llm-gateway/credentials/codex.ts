@@ -1,3 +1,4 @@
+import { resolveUserProviderConnection, updateUserProviderConnection, withUserProviderConnectionLock } from '../../provider-connections/store';
 import { eq } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -26,6 +27,8 @@ const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
 interface SecretRow {
+  persistPersonal?: (value: string) => Promise<void>;
+  personalConnection?: NonNullable<Awaited<ReturnType<typeof resolveUserProviderConnection>>>;
   accountId: string;
   secretId: string;
   ownerUserId: string | null;
@@ -44,6 +47,10 @@ async function loadCodexRow(
   userId: string,
   context: CodexCredentialContext,
 ): Promise<SecretRow | null> {
+  const personal = context.accountId ? await resolveUserProviderConnection(projectId, userId, 'codex') : null;
+  if (personal) return { personalConnection: personal, accountId: context.accountId!,
+    secretId: personal.connectionId, ownerUserId: userId, value: personal.value,
+    actorUserId: userId, sessionId: context.sessionId ?? null };
   const resolved = await resolveProjectSecretForConsumer({
     projectId,
     accountId: context.accountId,
@@ -76,6 +83,7 @@ async function refreshAndPersist(
   try {
     const response = await fetchImpl(`${OPENAI_AUTH_BASE}/oauth/token`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: { 'content-type': 'application/json' },
       body: buildRefreshBody(current.refresh),
     });
@@ -88,7 +96,11 @@ async function refreshAndPersist(
     const next = applyRefresh(tokens, current, Date.now());
     if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
 
-    await db
+    if (row.personalConnection) {
+      if (row.persistPersonal) await row.persistPersonal(JSON.stringify({ openai: next }));
+      const updated = row.persistPersonal ? true : await updateUserProviderConnection(row.personalConnection, JSON.stringify({ openai: next }));
+      if (!updated) throw new CodexRefreshError('connection changed during refresh');
+    } else await db
       .update(projectSecrets)
       .set({
         valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),
@@ -104,7 +116,7 @@ async function refreshAndPersist(
       actorType: row.sessionId ? 'agent' : 'human',
       source: 'llm_gateway',
       action: 'secret.consumer.refreshed',
-      resourceType: 'project_secret',
+      resourceType: row.personalConnection ? 'provider_connection' : 'project_secret',
       resourceId: row.secretId,
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
@@ -128,7 +140,7 @@ async function refreshAndPersist(
       source: 'llm_gateway',
       outcome: 'failure',
       action: 'secret.consumer.refresh_failed',
-      resourceType: 'project_secret',
+      resourceType: row.personalConnection ? 'provider_connection' : 'project_secret',
       resourceId: row.secretId,
       metadata: {
         identifier: CODEX_AUTH_JSON_SECRET_NAME,
@@ -149,7 +161,16 @@ function refreshSingleFlight(
 ): Promise<StoredCodexAuth | null> {
   const existing = inflightRefresh.get(row.secretId);
   if (existing) return existing;
-  const pending = refreshAndPersist(projectId, row, current, fetchImpl).finally(() => inflightRefresh.delete(row.secretId));
+  const refresh = row.personalConnection
+    ? withUserProviderConnectionLock(row.secretId, async (latest, persist) => {
+        if (!latest) throw new CodexRefreshError('connection was removed');
+        const stored = parseCodexAuth(latest.value);
+        if (!stored?.access) throw new CodexRefreshError('invalid connection');
+        if (!needsRefresh(stored, Date.now())) return stored;
+        return refreshAndPersist(projectId, { ...row, personalConnection: latest, persistPersonal: persist }, stored, fetchImpl);
+      })
+    : refreshAndPersist(projectId, row, current, fetchImpl);
+  const pending = refresh.finally(() => inflightRefresh.delete(row.secretId));
   inflightRefresh.set(row.secretId, pending);
   return pending;
 }

@@ -484,6 +484,13 @@
       "when": 1789398339291,
       "tag": "20260914150539_project_snapshot_archives",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789416949254,
+      "tag": "20260914201549_user_provider_connections",
+      "breakpoints": true
     }
   ]
 }

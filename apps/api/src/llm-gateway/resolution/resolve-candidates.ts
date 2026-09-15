@@ -1,3 +1,4 @@
+import { resolveUserProviderConnection } from '../../provider-connections/store';
 import { getProjectModelAccess } from '../../repositories/project-model-access';
 import { modelAccessAllows, modelAccessProvider, type ProjectModelAccess } from '../model-access';
 import { toWireModel } from './effective';
@@ -187,7 +188,8 @@ export async function resolveCandidates(
         name,
         consumer: 'llm_gateway',
       });
-    const keys = await resolveProjectSecretsForConsumer({
+    const personal = await resolveUserProviderConnection(principal.projectId, principal.userId, provider);
+    const keys = personal ? [{ identifier: `personal:${personal.connectionId}`, value: personal.value }] : await resolveProjectSecretsForConsumer({
       projectId: principal.projectId,
       accountId: principal.accountId,
       sessionId: principal.sessionId,
