@@ -26,7 +26,7 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
@@ -68,6 +68,6 @@ export default function ProjectCustomizePage() {
     router.replace(landing ? capabilityTabHref(projectId, landing) : `/projects/${projectId}`);
   }, [projectId, rawSection, settled, landing, router]);
 
-  if (!rawSection && projectId) return <CapabilitiesSkeleton />;
+  if (!rawSection && projectId) return <ProjectPendingScreen fill="pane" />;
   return null;
 }

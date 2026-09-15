@@ -2,11 +2,12 @@
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 
 /**
  * The full-viewport frame shown while a project is being opened.
  *
- * Four surfaces render it, and together they are the whole "getting into a
+ * These surfaces render it, and together they are the whole "getting into a
  * project" path, so they must not each invent their own frame:
  *  - `(auth)/auth/page.tsx` — the hand-off after a password is accepted,
  *    while the redirect runs.
@@ -16,6 +17,13 @@ import { useTranslations } from '@/i18n/use-translations';
  *  - `project-access-boundary.tsx` — every hard refresh of `/projects/<id>`
  *    and of a session route, while Supabase resolves the session and the
  *    first `getProject` is in flight.
+ *  - `fill="pane"` — every navigation inside an open project:
+ *    `projects/[id]/loading.tsx` (project home, and a session opened from the
+ *    sidebar), `(capabilities)/loading.tsx`, `files/loading.tsx`, and the
+ *    Customize and Files pages' pre-data frames. The mark fills the content
+ *    pane beside the sidebar instead of the viewport. These used to be
+ *    skeletons of the page about to load; they flashed grey bars shaped like
+ *    ProjectHome in front of a session transcript.
  *
  * They run back to back, so sharing one frame is the point: signing in now
  * paints this mark once and holds it across three navigations instead of
@@ -36,11 +44,23 @@ import { useTranslations } from '@/i18n/use-translations';
  * rather than no feedback at all. The mark never spins — `Loading` is this
  * app's only spinner.
  */
-export function ProjectPendingScreen() {
+interface ProjectPendingScreenProps {
+  /**
+   * `viewport` fills the window: no project chrome exists yet. `pane` fills
+   * the project shell's content pane, beside the sidebar.
+   */
+  fill?: 'viewport' | 'pane';
+}
+
+export function ProjectPendingScreen({ fill = 'viewport' }: ProjectPendingScreenProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
-      className="bg-background flex min-h-svh items-center justify-center"
+      className={cn(
+        'bg-background flex items-center justify-center',
+        fill === 'viewport' ? 'min-h-svh' : 'min-h-0 flex-1',
+      )}
+      data-slot="project-pending-screen"
       aria-busy="true"
       aria-live="polite"
     >

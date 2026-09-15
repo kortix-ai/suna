@@ -1,22 +1,21 @@
-import { ProjectFilesSkeleton } from '@/features/workspace/project-layout/project-files-skeleton';
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 
 /**
  * Navigation Suspense boundary for /projects/[id]/files.
  *
  * Two jobs:
- *  1. Paint Drive chrome the instant the click lands, instead of leaving the
- *     previous page frozen while the RSC payload and route chunk arrive.
+ *  1. Paint feedback the instant the click lands, instead of leaving the
+ *     previous page frozen while the RSC payload and route chunk arrive. The
+ *     feedback is the pulsing Kortix mark (`ProjectPendingScreen`), never a
+ *     skeleton of the Drive.
  *  2. Give Next.js a cacheable prefetch target. This route is dynamic — the
  *     project layout awaits cookies() — and for a dynamic route Next.js
  *     prefetches only as far as the nearest loading boundary. Without this
  *     file the sidebar's `<Link prefetch>` has nothing to store.
  *
- * The wrapper div mirrors `page.tsx` so the handover does not shift layout.
+ * `ProjectFilesView` paints the same mark while its ref resolves, so the
+ * boundary hands over to the page without a change of frame.
  */
 export default function ProjectFilesLoading() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ProjectFilesSkeleton />
-    </div>
-  );
+  return <ProjectPendingScreen fill="pane" />;
 }
