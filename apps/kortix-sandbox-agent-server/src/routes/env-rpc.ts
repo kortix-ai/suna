@@ -15,6 +15,7 @@ import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-u
 import { logger } from '../logger';
 import { workspaceAccess } from '../workspace-access';
 import { WorkspaceHistory, WorkspaceHistoryError } from '../workspace-history';
+import { StdioMcpPool, StdioMcpError, type StdioMcpRequest } from '../stdio-mcp';
 
 /**
  * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).
@@ -276,6 +277,8 @@ export function createEnvRpcRouter(cfg: Config): Hono {
     ? new WorkspaceHistory({ workspace: cfg.workspace, state: path.join(cfg.agentStateDir || '/opt/kortix/environment-runtime', 'workspace-history'), scope: JSON.stringify([cfg.projectId, cfg.sessionId]) })
     : null;
   const access = workspaceAccess(cfg);
+  const mcp = new StdioMcpPool({ cwd: cfg.workspace, ...(history ? { historyLock: path.join(cfg.agentStateDir || '/opt/kortix/environment-runtime', 'workspace-history', 'lock.sqlite') } : {}) });
+  if (access) access.backgroundActive = () => mcp.active > 0;
 
   app.use('*', async (c, next) => {
     if (!rpcSecret) {
@@ -342,7 +345,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
         : undefined;
 
     const historyOperation = ['historyCapture', 'historyApply', 'historyPending', 'historyPlan', 'historyAbort'].includes(op);
-    const tracking = !!history && typeof args.__kortixHistoryOperation === 'string' && ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec'].includes(op);
+    const tracking = !!history && typeof args.__kortixHistoryOperation === 'string' && ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec', 'mcpRequest', 'mcpDisconnect'].includes(op);
     const exclusive = historyOperation || tracking;
     if (historyOperation && !history) return c.json(err({ code: 'not_supported', message: 'environment workspace history is disabled' }));
     const release = access?.enter(exclusive);
@@ -365,7 +368,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
     const finishCheckpoint = async () => {
       if (checkpointFinished) return workspace;
       checkpointFinished = true;
-      if (before && !access?.terminalActive()) {
+      if (before && !access?.untrackedActive() && !op.startsWith('mcp')) {
         try { workspace = { from: before, to: (await history!.capture(crypto.randomUUID())).snapshotId }; }
         catch { workspace = null; }
       }
@@ -373,14 +376,20 @@ export function createEnvRpcRouter(cfg: Config): Hono {
     };
     const reply = async (body: any) => c.json(tracking ? { ...body, workspace: await finishCheckpoint() } : body);
     try {
-      if (tracking && !access?.terminalActive()) {
+      if (tracking && !access?.untrackedActive() && !op.startsWith('mcp')) {
         try { before = (await history!.capture(crypto.randomUUID())).snapshotId; }
         catch { before = null; }
       }
       if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
       if (!historyOperation && access?.pending()) return await reply(err({ code: 'pending', message: 'workspace history recovery is pending' }));
-      if (historyOperation && !['historyAbort', 'historyPending'].includes(op) && access?.terminalActive()) return await reply(err({ code: 'busy', message: 'Close running terminals before rewinding workspace files.' }));
+      if (historyOperation && !['historyAbort', 'historyPending'].includes(op) && access?.untrackedActive()) return await reply(err({ code: 'busy', message: 'Close running terminals and MCP servers before rewinding workspace files.' }));
       switch (op) {
+        case 'mcpRequest':
+          return await reply(ok(await mcp.request(args as unknown as StdioMcpRequest, signal)));
+        case 'mcpDisconnect':
+          if (typeof args.server !== 'string' || typeof args.connectionId !== 'string') return await reply(err({ code: 'invalid', message: 'MCP server and connectionId are required' }));
+          await mcp.disconnect(args.server, args.connectionId);
+          return await reply(ok({ disconnected: true }));
         case 'historyCapture':
           return await reply(ok(await history!.capture(args.captureId as string)));
         case 'historyApply':
@@ -585,7 +594,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
       }
     } catch (e) {
       if (signal.aborted) return await reply(err({ code: 'ABORT_ERR', message: 'aborted' }));
-      if (e instanceof WorkspaceHistoryError) return await reply(fsError(e));
+      if (e instanceof WorkspaceHistoryError || e instanceof StdioMcpError) return await reply(fsError(e));
       // Belt and braces: nothing above should reach here, but a Result beats a 500.
       logger.error('[env-rpc] unexpected failure', e);
       return await reply(fsError(e));

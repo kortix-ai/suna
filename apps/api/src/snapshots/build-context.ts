@@ -885,9 +885,13 @@ async function assertContextComplete(
   }
 }
 
+function agentSharedInputs(dir: string): string[] {
+  return [resolve(dir, '../package.json'), resolve(dir, '../bun.lock'), resolve(dir, '../../../packages/sdk/src/core/pi/mcp.ts')];
+}
+
 async function newestMtimeMs(dir: string): Promise<number> {
   const { readdir } = await import('node:fs/promises');
-  let newest = 0;
+  let newest = Math.max(...await Promise.all(agentSharedInputs(dir).map(async file => (await stat(file)).mtimeMs)));
   for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
     const s = await stat(join(entry.parentPath ?? (entry as any).path ?? dir, entry.name)).catch(() => null);
@@ -903,7 +907,7 @@ async function newestMtimeMs(dir: string): Promise<number> {
  */
 async function srcContentHash(dir: string): Promise<string> {
   const { readdir } = await import('node:fs/promises');
-  const files: string[] = [];
+  const files: string[] = agentSharedInputs(dir);
   for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
     files.push(join((entry.parentPath ?? (entry as { path?: string }).path) ?? dir, entry.name));

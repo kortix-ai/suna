@@ -3,6 +3,8 @@ import type { CompiledAgentResource } from '../../../packages/manifest-schema/sr
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createAgentState } from './agent-state';
 import type { SessionLog } from './session-store';
+import { createStdioMcpTools, STDIO_MCP_TOOL_NAMES } from './stdio-mcp-tools';
+import type { KortixExecutionEnv } from './kortix-env';
 import type { Agent, ExecutionEnv } from '@earendil-works/pi-agent-core';
 import {
   definePiAgent,
@@ -123,6 +125,7 @@ export async function installCustomAgent(
     'connector_search',
     'connector_describe',
     'connector_call',
+    ...STDIO_MCP_TOOL_NAMES,
   ]);
   for (const tool of definition.tools ?? []) {
     if (names.has(tool.name)) throw new Error(`Pi agent tool "${tool.name}" is already registered`);
@@ -138,7 +141,7 @@ export async function installCustomAgent(
         null,
       ),
   }));
-  agent.state.tools = [...agent.state.tools, ...tools];
+  agent.state.tools = [...agent.state.tools, ...tools, ...createStdioMcpTools(definition.mcp, env as unknown as KortixExecutionEnv)];
   if (definition.thinkingLevel !== undefined) agent.state.thinkingLevel = definition.thinkingLevel;
   for (const key of [
     'transformContext',

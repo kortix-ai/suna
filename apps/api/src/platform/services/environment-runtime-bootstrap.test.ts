@@ -20,7 +20,7 @@ async function fixture(corrupt = false, legacyEnvironment = false, oldVersion = 
   const agent = `import http.server,json,os
 class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
-  self.send_response(200);self.end_headers();self.wfile.write(json.dumps({'runtimeReady':True,'workload':os.environ['KORTIX_WORKLOAD'],'opencode':'disabled' if os.environ['KORTIX_WORKLOAD']=='environment' else 'ok','workspaceHistory':os.environ.get('KORTIX_ENVIRONMENT_HISTORY')=='1','environmentRuntimeVersion':5 if os.environ.get('KORTIX_AGENT_BIN') else ${oldVersion},'pid':os.getpid()}).encode())
+  self.send_response(200);self.end_headers();self.wfile.write(json.dumps({'stdioMcp':bool(os.environ.get('KORTIX_AGENT_BIN')),'runtimeReady':True,'workload':os.environ['KORTIX_WORKLOAD'],'opencode':'disabled' if os.environ['KORTIX_WORKLOAD']=='environment' else 'ok','workspaceHistory':os.environ.get('KORTIX_ENVIRONMENT_HISTORY')=='1','environmentRuntimeVersion':6 if os.environ.get('KORTIX_AGENT_BIN') else ${oldVersion},'pid':os.getpid()}).encode())
  def log_message(self,*args): pass
 http.server.HTTPServer(('127.0.0.1',int(os.environ['KORTIX_SERVICE_PORT'])),Handler).serve_forever()
 `;
@@ -75,7 +75,7 @@ describe('environment daemon bootstrap through the provider process contract', (
     const f = await fixture(false, true, oldVersion);
     expect(await f.health()).toMatchObject({ workload: 'environment', environmentRuntimeVersion: oldVersion });
     expect(await f.run()).toMatchObject({ code: 0, report: { ready: true, changed: true } });
-    expect(await f.health()).toMatchObject({ environmentRuntimeVersion: 5, workspaceHistory: true });
+    expect(await f.health()).toMatchObject({ environmentRuntimeVersion: 6, workspaceHistory: true, stdioMcp: true });
     expect(await readFile(join(f.root, 'workspace/working-file.txt'), 'utf8')).toBe('preserve uncommitted work\n');
   }, 15000);
   test('replaces the legacy daemon, keeps working files, and becomes idempotent', async () => {

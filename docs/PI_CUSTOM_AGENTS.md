@@ -607,6 +607,101 @@ that link and waits. The worker does not poll or automatically resubmit a write.
 Stop cancels its HTTP request and permits the next prompt. Cancellation cannot
 undo an action that the remote service already accepted.
 
-This adapter supports remote MCP through project connectors. It does not load
-OpenCode `mcp` configuration, Pi CLI settings, stdio servers, MCP prompts, or
-resource subscriptions. Those remain separate parity work.
+Remote resources and prompts use connector discovery and the gateway. Resource
+subscriptions and server-initiated sampling/elicitation remain unsupported.
+OpenCode `mcp` configuration and Pi CLI settings are not imported automatically.
+Local stdio servers use the custom module below.
+
+
+## Local MCP servers in the environment
+
+The custom Pi module declares each local server. Its declaration enters the same
+commit-pinned `.mjs` artifact as the agent. Registration starts no process and
+allocates no environment. The first `mcp_list` starts the environment and server.
+Pi remains in the worker. The environment runs the MCP executable and `kortixd`.
+
+For a repository helper, declare its placement in `kortix.yaml`:
+
+```yaml
+kortix_version: 3
+default_agent: reviewer
+agents:
+  reviewer:
+    workspace: runtime
+    secrets: none
+    resources:
+      environment:
+        - source: scripts/files.mjs
+          target: /opt/kortix/helpers/files.mjs
+          mode: read_only
+```
+
+Then declare the process in `.kortix/pi/agents/reviewer.ts`:
+
+```ts
+import { definePiAgent } from '@kortix/sdk/pi';
+
+export default definePiAgent(() => ({
+  mcp: {
+    files: {
+      type: 'local',
+      command: ['node', '/opt/kortix/helpers/files.mjs'],
+      cwd: '/workspace',
+      timeout: 30000,
+    },
+  },
+}));
+```
+
+The helper must implement MCP over newline-delimited JSON-RPC on stdin/stdout.
+Send diagnostic logs to stderr. Command arguments are passed directly, without a
+shell. Install dependencies in the environment image or bundle the helper first.
+The runtime does not run `npm install`. Linux environments require Python 3 for
+process supervision; the standard image includes it.
+
+For credentials, grant the project secret to the agent in YAML and add
+`environment: { API_TOKEN: '{env:MCP_TOKEN}' }` to that server's declaration.
+Only explicitly mapped values and a small OS environment enter the child.
+The daemon's API token is not inherited. Missing secret references fail before
+process startup. Secret values do not enter tool schemas or discovery results.
+A server can still return its own credentials; configure trusted servers.
+
+| Tool | Input and behavior |
+| --- | --- |
+| `mcp_list` | `server`, optional `kind` (`tools`, `resources`, `templates`, `prompts`), optional `cursor`. Returns discovery data and `connectionId`. |
+| `mcp_call` | `server`, `connectionId`, discovered `tool`, and `arguments`. |
+| `mcp_read_resource` | `server`, `connectionId`, and `uri`. |
+| `mcp_get_prompt` | `server`, `connectionId`, `prompt`, and optional string `arguments`. |
+| `mcp_disconnect` | `server` and `connectionId`. Stops an idle server and clears its process state. |
+
+Configure permissions in the agent Markdown frontmatter. For example,
+`permission: { mcp_call: { '*': ask, 'files:delete': deny } }` uses the existing
+permission UI. Patterns are `server:tool`, `server:uri`, `server:prompt`, or
+`server:kind`; disconnect uses the server name. Approval happens before execution.
+These permissions govern MCP requests, not the server's internal filesystem access.
+A started server has the environment user's filesystem privileges.
+
+A connection preserves process state between requests. It expires after 60 seconds
+without requests. Configuration or secret changes invalidate old connection IDs.
+Calls with stale IDs fail before execution; discovery returns a new identity.
+Different servers can run concurrently. A busy server rejects another request.
+At most 16 configured processes run per environment. Each request defaults to
+30 seconds, configurable from 1 to 60,000 milliseconds. Requests are limited to
+1 MiB; response frames to 12 MiB; normalized text to 512 KiB.
+
+Stop, timeout, malformed output, and connection failure terminate that server's
+process group. A supervisor also terminates children after daemon death. Failed
+calls are never replayed automatically. Inspect any completed side effects before
+retrying. MCP tool errors remain errors. Text, supported images, resources, prompts,
+and paginated discovery use the same content handling as remote connectors.
+
+MCP process state is not durable. Stopping or replacing the environment loses it.
+Working files follow the environment's existing disk lifecycle. Conversation
+results and image attachments use the existing durable chat storage. MCP side
+effects cannot be undone through chat rewind. A turn containing MCP operations
+refuses file rewind. Active MCP processes also block other workspace checkpoints
+and rewind; disconnect them first. The shared lock survives daemon replacement.
+
+Subscriptions, notifications as live product updates, sampling, elicitation,
+interactive authentication, and automatic OpenCode configuration migration remain
+separate work. Use project connectors for remote HTTP MCP servers.

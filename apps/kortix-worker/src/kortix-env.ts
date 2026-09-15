@@ -18,6 +18,7 @@
  */
 
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
+import type { PiStdioMcpServer } from '../../../packages/sdk/src/core/pi/mcp';
 import type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
 import type { WorkspaceObserver } from './workspace-journal';
 import type { RpcProgress } from '../../../packages/shared/src/env-rpc-stream';
@@ -216,6 +217,14 @@ export class KortixExecutionEnv {
     return operation;
   }
 
+  mcpRequest(input: { server: string; configuration: PiStdioMcpServer; method: string; params?: Record<string, unknown>; connectionId?: string }, signal?: AbortSignal) {
+    return this.rpc<{ connectionId: string; result: unknown }>('mcpRequest', input, signal);
+  }
+
+  mcpDisconnect(server: string, connectionId: string, signal?: AbortSignal) {
+    return this.rpc<{ disconnected: true }>('mcpDisconnect', { server, connectionId }, signal);
+  }
+
   private async rpcOnce<T>(
     op: string,
     args: Record<string, unknown>,
@@ -223,7 +232,7 @@ export class KortixExecutionEnv {
     onProgress?: (progress: RpcProgress) => void,
   ): Promise<Result<T, any>> {
     const operationId = crypto.randomUUID();
-    const mutating = ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec'].includes(op);
+    const mutating = ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec', 'mcpRequest', 'mcpDisconnect'].includes(op);
     let tracked = false;
     try {
       if (mutating && this.observeWorkspace) tracked = await this.observeWorkspace({ phase: 'begin', operationId });

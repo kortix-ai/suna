@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+
+### Diagnose disposable PostgreSQL startup failures before changing tests (2026-09-15)
+
+**When:** a local migration test reports that PostgreSQL did not become ready.
+**Incident:** Docker exhausted its disk during the Pi MCP package run; seven existing migration fixtures exited during `initdb`.
+**Rule:** retain a diagnostic container and inspect its logs. Reclaim disposable image layers only; preserve database volumes. Rerun the unchanged tests after recovery.
+**Verification:** `docker logs` reported `No space left on device`; pruning untagged images reclaimed 7.462 GB. The root package lane remains the release check.
+
 ### Verify tool progress before remote execution exits (2026-09-14)
 
 **When:** changing the Pi execution transport or running tool display.

@@ -221,8 +221,9 @@ worker.
 
 Full compatibility is not complete. Custom code, blocking interactions, commands,
 skills, remote MCP resources/prompts, todos, compaction, images, and web tools
-are implemented and tested. Rewind, forks, subagents, live agent switching,
-stdio MCP placement, subscriptions, LSP/formatters, and multiple named environments
+are implemented and tested. File rewind requires the original environment.
+Forks, subagents, live agent switching,
+MCP subscriptions, LSP/formatters, and multiple named environments
 remain open. The scorecard records the exact boundaries.
 
 ## Shared filesystems
@@ -293,9 +294,9 @@ an exact-SHA preview session. The PR records subsequent verification.
 ## Deliberate exclusions
 
 - Filesystem version history is a later feature.
-- Rewind and restore require one durable mutation across Pi's model tree and
-  the HTTP transcript. Pi sessions hide these controls. The raw endpoints
-  return `501 feature_not_supported` without changing either state.
+- Rewind and restore coordinate the durable model history, HTTP transcript, and
+  original environment checkpoints. Turns with incomplete records or external
+  effects refuse rewind. See `PI_OPENCODE_PARITY.md` for current verification.
 - Durable Objects are not required for the micro-VM implementation.
 - Arbitrary custom in-process code can access its own worker process. The
   supported extension pattern uses SDK-backed remote tools.

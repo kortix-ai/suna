@@ -805,3 +805,68 @@ test.each(['write', 'bash', 'custom'])('real worker %s rewind coordinates histor
     expect(await fs.readFile(path.join(rig.workspace, 'manual'), 'utf8')).toBe('preserve');
   } finally { worker.server.closeAllConnections(); await worker.close(); store.stop(true); await rig.stop(); globals.__KORTIX_PI_AGENT__ = priorFactory; }
 }, 20000);
+
+test.each(['fetch', 'keepalive', 'ws', 'auto'] as const)('%s runs local MCP in the environment, tracks unsafe rewind, and settles Stop', async transport => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rpc-mcp-'));
+  const cfg = { ...proxyConfig(workspace), workload: 'environment', projectId: 'p', sessionId: 's', environmentHistory: true, agentStateDir: workspace + '-state' };
+  const proxy = startProxy(cfg, fakeOpencode(), Date.now());
+  const journal: any[] = [];
+  const baseUrl = `http://127.0.0.1:${proxy.port}/kortix/env-rpc`;
+  const env = new KortixExecutionEnv({ baseUrl, cwd: workspace, headers: { 'x-kortix-user-context': mintUserContext(RPC_SECRET, 'env-mcp') }, transport, observeWorkspace: async event => { journal.push(event); return true; } });
+  const configuration = { type: 'local' as const, command: [process.execPath, path.join(import.meta.dir, 'fixtures/stdio-mcp-server.mjs')] };
+  let connectionId = '';
+  try {
+    expect((await fetch(baseUrl, { method: 'POST', body: JSON.stringify({ op: 'mcpRequest', args: { server: 'fixture', configuration, method: 'tools/list' } }) })).status).toBe(401);
+    const first = await env.mcpRequest({ server: 'fixture', configuration, method: 'tools/list' });
+    if (!first.ok) throw first.error;
+    connectionId = first.value.connectionId;
+    expect(first.value.result).toMatchObject({ tools: [{ name: 'counter' }] });
+    expect(await env.captureWorkspace(crypto.randomUUID())).toMatchObject({ ok: false, error: { code: 'busy' } });
+    expect(journal).toMatchObject([{ phase: 'begin' }, { phase: 'end', workspace: null }]);
+    const written = await env.mcpRequest({ server: 'fixture', configuration, connectionId, method: 'tools/call', params: { name: 'write', arguments: { path: 'mcp-file', text: 'MCP_OK' } } });
+    expect(written.ok).toBe(true);
+    expect(await fs.readFile(path.join(workspace, 'mcp-file'), 'utf8')).toBe('MCP_OK');
+    const controller = new AbortController();
+    const running = env.mcpRequest({ server: 'fixture', configuration, connectionId, method: 'tools/call', params: { name: 'sleep' } }, controller.signal);
+    await waitUntil(() => Bun.file(path.join(workspace, 'started')).size > 0);
+    controller.abort();
+    expect((await running).ok).toBe(false);
+    const pid = Number(await fs.readFile(path.join(workspace, 'started'), 'utf8'));
+    expect(() => process.kill(pid, 0)).toThrow();
+    expect((await env.captureWorkspace(crypto.randomUUID())).ok).toBe(true);
+    expect(await fs.stat(path.join(workspace, 'late')).catch(() => null)).toBeNull();
+    expect((await env.mcpRequest({ server: 'fixture', configuration, connectionId, method: 'tools/call', params: { name: 'counter' } })).ok).toBe(false);
+    expect(journal.filter(event => event.phase === 'end').every(event => event.workspace === null)).toBe(true);
+  } finally {
+    if (connectionId) await env.mcpDisconnect('fixture', connectionId);
+    await env.cleanup(); proxy.stop();
+    await fs.rm(workspace, { recursive: true, force: true });
+    await fs.rm(workspace + '-state', { recursive: true, force: true });
+  }
+});
+
+test('configured MCP allocates the lazy environment only on discovery and reuses it', async () => {
+  rig = await buildRig(true);
+  expect(rig.ensureCalls).toBe(0);
+  const configuration = { type: 'local' as const, command: [process.execPath, path.join(import.meta.dir, 'fixtures/stdio-mcp-server.mjs')] };
+  const discovered = await rig.env.mcpRequest({ server: 'fixture', configuration, method: 'tools/list' });
+  if (!discovered.ok) throw discovered.error;
+  try {
+    expect(rig.ensureCalls).toBe(1);
+    const result = await rig.env.mcpRequest({ server: 'fixture', configuration, connectionId: discovered.value.connectionId, method: 'tools/call', params: { name: 'counter' } });
+    if (!result.ok) throw result.error;
+    expect(JSON.parse((result.value.result as any).content[0].text)).toMatchObject({ count: 1 });
+    expect(rig.ensureCalls).toBe(1);
+  } finally { await rig.env.mcpDisconnect('fixture', discovered.value.connectionId); }
+});
+
+test.each(['mcpRequest', 'mcpDisconnect'] as const)('%s never repeats an ambiguous transport result', async operation => {
+  let calls = 0;
+  const server = Bun.serve({ port: 0, fetch() { calls++; return Response.json({ ok: false, error: { message: 'ECONNRESET: socket closed after side effect' } }); } });
+  const env = new KortixExecutionEnv({ baseUrl: server.url.toString(), cwd: '/workspace', transport: 'fetch' });
+  try {
+    const response = operation === 'mcpDisconnect' ? await env.mcpDisconnect('fixture', 'connection') : await env.mcpRequest({ server: 'fixture', configuration: { type: 'local', command: ['node'] }, method: 'tools/list' });
+    expect(response.ok).toBe(false);
+    expect(calls).toBe(1);
+  } finally { await env.cleanup(); server.stop(true); }
+});

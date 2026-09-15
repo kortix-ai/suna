@@ -41,7 +41,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function connectorContent(data: unknown): (TextContent | ImageContent)[] {
+export function connectorContent(data: unknown): (TextContent | ImageContent)[] {
   if (record(data) && data.jsonrpc === "2.0") {
     if ("error" in data) {
       const message = record(data.error) && typeof data.error.message === "string"
@@ -69,7 +69,7 @@ function connectorContent(data: unknown): (TextContent | ImageContent)[] {
         content.push(...textResult({ source: "remote_mcp_prompt", role: message.role }), message.content);
       }
       data = { content };
-    } else if (["resources", "resourceTemplates", "prompts"].some(key => Array.isArray(result[key]))) {
+    } else if (["tools", "resources", "resourceTemplates", "prompts"].some(key => Array.isArray(result[key]))) {
       return textResult(result);
     } else {
       throw new Error("Unsupported or malformed MCP result");

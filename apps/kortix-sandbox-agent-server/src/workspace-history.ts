@@ -107,7 +107,7 @@ export class WorkspaceHistory {
     let locked = false;
     try {
       lock.exec('PRAGMA busy_timeout=0');
-      try { lock.exec('BEGIN IMMEDIATE'); locked = true; }
+      try { lock.exec('BEGIN EXCLUSIVE'); locked = true; }
       catch (error) {
         if ((error as { code?: string }).code === 'SQLITE_BUSY') fail('busy', 'workspace history is busy');
         throw error;

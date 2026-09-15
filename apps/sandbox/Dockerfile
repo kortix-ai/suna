@@ -50,6 +50,7 @@ RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/manifest-schema /repo/packages/manifest-schema
 COPY packages/shared /repo/packages/shared
+COPY packages/sdk/src/core/pi/mcp.ts /repo/packages/sdk/src/core/pi/mcp.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \

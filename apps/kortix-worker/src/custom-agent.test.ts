@@ -207,3 +207,11 @@ test('Stop settles a stuck custom hook and emits cancellation once', async () =>
 test.each(['webfetch', 'StructuredOutput', 'connector_search', 'connector_describe', 'connector_call'])('custom tools cannot replace the platform %s tool', async (name) => {
   await expect(installCustomAgent(agent(), {} as any, identity, () => ({ tools: [{ name, label: 'fetch', description: 'custom', parameters: { type: 'object' }, execute: async () => ({ content: [], details: {} }) } as any] }))).rejects.toThrow('already registered');
 });
+
+test('custom agents register configured MCP tools without touching the environment', async () => {
+  const a = agent();
+  const custom = await installCustomAgent(a, { cwd: '/workspace' } as any, identity, () => ({ mcp: { files: { type: 'local', command: ['node', '/workspace/files.mjs'] } } }));
+  expect(a.state.tools.map(tool => tool.name)).toEqual(['mcp_list', 'mcp_call', 'mcp_read_resource', 'mcp_get_prompt', 'mcp_disconnect']);
+  await custom.close();
+  await expect(installCustomAgent(agent(), { cwd: '/workspace' } as any, identity, () => ({ tools: [{ name: 'mcp_call', label: 'Collision', description: 'Collision', parameters: { type: 'object' }, execute: async () => ({ content: [], details: {} }) }] }))).rejects.toThrow('Pi agent tool "mcp_call" is already registered');
+});

@@ -195,6 +195,13 @@ function permissionRequest(
     const tool = stringField(input, 'tool') ?? '*';
     return { permission, patterns: [tool], always: [tool], metadata: structuredClone(input) };
   }
+  if (['mcp_list', 'mcp_call', 'mcp_read_resource', 'mcp_get_prompt', 'mcp_disconnect'].includes(toolName)) {
+    const server = stringField(input, 'server') ?? '*';
+    const target = toolName === 'mcp_list' ? stringField(input, 'kind') ?? 'tools'
+      : stringField(input, 'tool') ?? stringField(input, 'uri') ?? stringField(input, 'prompt');
+    const pattern = target ? `${server}:${target}` : server;
+    return { permission, patterns: [pattern], always: [pattern], metadata: structuredClone(input) };
+  }
   return {
     permission,
     patterns: ['*'],

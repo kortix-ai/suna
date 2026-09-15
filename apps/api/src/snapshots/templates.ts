@@ -921,8 +921,8 @@ function validateTemplateMutation(args: {
   }
 }
 
-// The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// The runtime layer bakes source artifacts into every template's rootfs.
+// The agent inputs build the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
 // slack-cli, SDK-backed Connector client) are the non-agent runtime. The
 // agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
@@ -930,6 +930,8 @@ function validateTemplateMutation(args: {
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  { label: 'kortix-agent-lock', path: resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/bun.lock') },
+  { label: 'kortix-agent-mcp-config', path: resolve(REPO_ROOT, 'packages/sdk/src/core/pi/mcp.ts') },
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },

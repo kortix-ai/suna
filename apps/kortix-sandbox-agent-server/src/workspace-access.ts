@@ -6,6 +6,8 @@ export class WorkspaceAccess {
   private exclusive = false;
   private readers = 0;
   terminalActive: () => boolean = () => false;
+  backgroundActive: () => boolean = () => false;
+  untrackedActive(): boolean { return this.terminalActive() || this.backgroundActive(); }
   constructor(readonly pending: () => boolean = () => false) {}
   get locked(): boolean { return this.exclusive || this.pending(); }
   enter(exclusive: boolean): (() => void) | null {

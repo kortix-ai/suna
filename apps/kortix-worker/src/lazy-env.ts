@@ -371,6 +371,14 @@ export class LazyKortixEnv {
     return this.op((env) => env.captureWorkspace(captureId, signal), true, signal);
   }
 
+  mcpRequest(input: Parameters<KortixExecutionEnv['mcpRequest']>[0], signal?: AbortSignal) {
+    return this.op((env) => env.mcpRequest(input, signal), true, signal);
+  }
+
+  mcpDisconnect(server: string, connectionId: string, signal?: AbortSignal) {
+    return this.op((env) => env.mcpDisconnect(server, connectionId, signal), true, signal);
+  }
+
   applyWorkspace(move: WorkspaceHistoryMove & { environmentId?: string }, signal?: AbortSignal) {
     return this.op((env) => move.environmentId && move.environmentId !== this.externalId ? Promise.resolve(err(new EnvUnavailableError('Original environment identity changed'))) : env.applyWorkspace(move, signal), true, signal);
   }

@@ -20,6 +20,7 @@
     "test": "bun test --isolate"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "hono": "^4.12.25",
     "node-forge": "^1.4.0",
     "zod": "^3.23.8"
