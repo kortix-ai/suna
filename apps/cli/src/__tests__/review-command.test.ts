@@ -18,7 +18,7 @@ let tmp: string;
 let entry: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let calls: Call[] = [];
-let featureDisabled = false;
+let forbidden = false;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -93,13 +93,9 @@ function startServer(): string {
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const base = `/v1/projects/${PROJECT}`;
 
-      if (featureDisabled) {
+      if (forbidden) {
         return Response.json(
-          {
-            error: 'Review Center is not enabled for this project. Enable it in Settings → Feature flags.',
-            code: 'feature_disabled',
-            feature: 'review_center',
-          },
+          { error: 'You do not have permission to read reviews in this project.', code: 'forbidden' },
           { status: 403 },
         );
       }
@@ -187,7 +183,7 @@ describe('kortix review', () => {
     entry = writeEntry();
     process.env = { ...ORIGINAL_ENV };
     calls = [];
-    featureDisabled = false;
+    forbidden = false;
   });
 
   afterEach(() => {
@@ -201,9 +197,11 @@ describe('kortix review', () => {
     const r = await runCli(['--help']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('Usage: kortix review');
-    for (const fragment of ['ls [--segment', 'show <item-id>', 'act <item-id>', 'bulk <verdict>', 'submit --kind', 'cr:<id>', 'call:<id>', 'review_center']) {
+    for (const fragment of ['ls [--segment', 'show <item-id>', 'act <item-id>', 'bulk <verdict>', 'submit --kind', 'cr:<id>', 'call:<id>']) {
       expect(r.stdout).toContain(fragment);
     }
+    // Review Center graduated out of the flag system: help names no flag.
+    expect(r.stdout).not.toContain('feature flag');
   });
 
   test('no args prints help and exits 2', async () => {
@@ -371,13 +369,13 @@ describe('kortix review', () => {
     expect(calls).toEqual([]);
   });
 
-  test('a 403 feature_disabled prints the server prose plus the enable command', async () => {
+  test('a 403 prints the server prose and suggests no flag command', async () => {
     const config = writeConfig(startServer());
-    featureDisabled = true;
+    forbidden = true;
     const r = await runCli(['ls', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Review Center is not enabled for this project');
-    expect(r.stderr).toContain('kortix projects features enable review_center');
+    expect(r.stderr).toContain('You do not have permission to read reviews in this project.');
+    expect(r.stderr).not.toContain('kortix projects features enable');
   });
 
   test('a 404 on show surfaces the API message', async () => {

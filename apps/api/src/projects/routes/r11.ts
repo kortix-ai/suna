@@ -8,7 +8,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
-import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -63,8 +62,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     );
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
-    if (gate) return gate;
 
     const segment = normalizeString(c.req.query('segment'))?.toLowerCase();
     if (segment && !SEGMENTS.includes(segment as (typeof SEGMENTS)[number])) {
@@ -184,8 +181,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     );
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
-    if (gate) return gate;
 
     const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
     if (!item) return c.json({ error: 'Review item not found' }, 404);
@@ -226,8 +221,6 @@ projectsApp.openapi(
     );
     // Agent-side gate: submitting a reviewable is the agent's intended path.
     assertAgentScope(c, 'project.review.submit');
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
-    if (gate) return gate;
 
     const kind = normalizeString(body.kind);
     if (!isSubmittableKind(kind)) {
@@ -319,8 +312,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
-    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {
@@ -376,8 +367,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
-    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {

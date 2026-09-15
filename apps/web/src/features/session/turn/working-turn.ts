@@ -51,6 +51,37 @@ export interface WorkingTurnResolution {
   pendingTurnIds: string[];
 }
 
+/**
+ * The hint for an idle send this tab just made, while the projection names no
+ * turn: the sent turn's CURRENT id, until that turn has an answer.
+ *
+ * `projectWorking` drops its receipt the moment the runtime emits anything
+ * (`activityAfterIdle` → `turnId: null`) — and the first thing an idle send
+ * makes the runtime emit is the echo of the user's own prompt, a
+ * `message.part.updated` that lands BEFORE the assistant message exists. In
+ * that window the optimistic inbox row still reads `queued`, so the
+ * `unrunTurnIds` skip below classified the prompt the agent is about to answer
+ * as held: the bubble dimmed for a frame and the transcript's scroll anchor
+ * fell back to the previous answer — then snapped forward again when the answer
+ * opened. That is the double jump on send.
+ *
+ * Only an IDLE send qualifies (the caller records it; a send into a running
+ * turn is genuinely queued and must stay dimmed), and only while the turn is
+ * unanswered — once it has an assistant message, rule 1/2 decide on their own.
+ * `isSentTurn` matches the sent id OR its re-minted echo alias.
+ */
+export function freshSendHint(
+  turns: ReadonlyArray<TurnLike>,
+  isSentTurn: (userMessageId: string) => boolean,
+): string | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const id = turns[i].userMessage.info.id;
+    if (!isSentTurn(id)) continue;
+    return turns[i].assistantMessages.length === 0 ? id : null;
+  }
+  return null;
+}
+
 export function resolveWorkingTurn(input: {
   turns: ReadonlyArray<TurnLike>;
   /** `WorkingProjection.turnId` — the server's or the receipt's answer for

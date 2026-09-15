@@ -66,6 +66,7 @@ mock.module('./viewer', () => ({
 
 const {
   appUpstreamHeaders,
+  authorizeAppRequest,
   appViewerContextHeader,
   appViewerEndpointResponse,
   resolveAppViewerUserId,
@@ -109,6 +110,56 @@ function sessionCookie(revision = 3, kind: 'kortix' | 'password' = 'kortix') {
 const req = (init: RequestInit = {}, path = '/') =>
   new Request(`${URL_HTTPS.origin}${path}`, init);
 
+describe('a public App can still be entered AS someone', () => {
+  // The identity cookie has to come from somewhere. For a gated App the gate
+  // mints it when an access link is redeemed; a public App skipped the gate
+  // entirely, so no cookie ever existed and the change above would have had
+  // nothing to read.
+  //
+  // A public App now redeems an access link the same way — and ONLY that. It
+  // never demands one, so the bare link a client was sent still opens.
+  test('redeeming an access link sets the identity cookie and strips the token from the URL', async () => {
+    const token = createAppAccessToken(
+      // revision 3 = the App's current access revision (see appRow).
+      { appId: APP_ID, kind: 'kortix', userId: USER_ID, revision: 3, expiresAt: new Date(Date.now() + 300_000) },
+      appAccessSecret(),
+    );
+    const url = new URL(`${URL_HTTPS.origin}/reports?__kortix_access=${encodeURIComponent(token)}`);
+    const response = await authorizeAppRequest(
+      new Request(url.toString()),
+      url,
+      appRow({ accessMode: 'public' }),
+      async () => true,
+    );
+    expect(response?.status).toBe(303);
+    expect(response?.headers.get('location')).toBe('/reports');
+    expect(response?.headers.get('set-cookie')).toContain('kortix_app_access=');
+  });
+
+  test('no access link: a public App still opens for anyone, ungated', async () => {
+    const url = new URL(`${URL_HTTPS.origin}/reports`);
+    const response = await authorizeAppRequest(
+      new Request(url.toString()),
+      url,
+      appRow({ accessMode: 'public' }),
+      async () => false,
+    );
+    // null means "let it through" — the outside client with the bare link.
+    expect(response).toBeNull();
+  });
+
+  test('a public App never turns a bad access link into a locked door', async () => {
+    const url = new URL(`${URL_HTTPS.origin}/reports?__kortix_access=not.a.token`);
+    const response = await authorizeAppRequest(
+      new Request(url.toString()),
+      url,
+      appRow({ accessMode: 'public' }),
+      async () => false,
+    );
+    expect(response).toBeNull();
+  });
+});
+
 describe('resolveAppViewerUserId', () => {
   test('reads the viewer out of the gate’s own session cookie', () => {
     const request = req({ headers: { cookie: sessionCookie() } });
@@ -120,10 +171,50 @@ describe('resolveAppViewerUserId', () => {
     expect(resolveAppViewerUserId(request, URL_HTTPS, appRow())).toBeNull();
   });
 
-  test('password and public Apps carry no identity at all', () => {
+  // CHANGED DELIBERATELY. This used to assert that a public App "carries no
+  // identity at all", and public returned null before the cookie was even read.
+  //
+  // That made `public` mean two things at once: "anyone with the link may open
+  // this" AND "nobody is ever recognised". The first is what public is for; the
+  // second was collateral. An App shared with an outside client still wants to
+  // know its own team when they open it — greet them, show them the edit
+  // controls, write their name into an audit trail — without shutting the
+  // client out.
+  //
+  // Identity is not authorization. A public App authorizes everyone by
+  // definition; the header only answers WHO, and only when the gate's own
+  // signed cookie says so. Reading it changes who the App can recognise, never
+  // who may enter.
+  test('a public App recognises a signed-in viewer instead of blinding itself', () => {
+    const request = req({ headers: { cookie: sessionCookie() } });
+    expect(resolveAppViewerUserId(request, URL_HTTPS, appRow({ accessMode: 'public' }))).toBe(USER_ID);
+  });
+
+  test('a public App with no cookie is still anonymous — sharing the bare link keeps working', () => {
+    expect(resolveAppViewerUserId(req(), URL_HTTPS, appRow({ accessMode: 'public' }))).toBeNull();
+  });
+
+  test('a public App still refuses a forged or stale cookie', () => {
+    // Revision 2 against an App on revision 1: a bumped access policy revokes
+    // outstanding cookies, and going public must not weaken that.
+    expect(
+      resolveAppViewerUserId(req({ headers: { cookie: sessionCookie(2) } }), URL_HTTPS, appRow({ accessMode: 'public' })),
+    ).toBeNull();
+    expect(
+      resolveAppViewerUserId(
+        req({ headers: { cookie: '__Host-kortix_app_access=not.a.token' } }),
+        URL_HTTPS,
+        appRow({ accessMode: 'public' }),
+      ),
+    ).toBeNull();
+  });
+
+  test('a PASSWORD App still carries no Kortix identity — its cookie is not a person', () => {
+    // A password session proves knowledge of a shared secret, not who you are.
+    // `kind !== 'kortix'` is what keeps it out, so this holds without a
+    // special case on access mode.
     const request = req({ headers: { cookie: sessionCookie(3, 'password') } });
     expect(resolveAppViewerUserId(request, URL_HTTPS, appRow({ accessMode: 'password' }))).toBeNull();
-    expect(resolveAppViewerUserId(request, URL_HTTPS, appRow({ accessMode: 'public' }))).toBeNull();
   });
 
   test('no cookie, a forged cookie, and another App’s cookie all answer null', () => {

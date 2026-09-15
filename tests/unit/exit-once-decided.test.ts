@@ -89,6 +89,29 @@ describe("exitOnceDecided", () => {
     ).toThrow(/hung/);
   }, 30_000);
 
+  // The CONN-27 rule is "Do not hide a leaked connection by forcing the test
+  // process to exit." A warning buried in a 40,000-line CI log is close enough
+  // to hidden, so under GitHub Actions the notice becomes an annotation.
+  it("raises a workflow annotation under GitHub Actions, so the leak is on the record", () => {
+    const { output } = runScript(
+      `import { exitOnceDecided } from ${JSON.stringify(MODULE)};\n${LEAK}\nexitOnceDecided(1);\n`,
+      { KE2E_EXIT_GRACE_MS: "2000", GITHUB_ACTIONS: "true" },
+    );
+    expect(output).toContain("::error title=ke2e leaked a handle::");
+    // One line, or Actions truncates the annotation at the first newline.
+    const annotation = output.split("\n").find((line) => line.startsWith("::error"));
+    expect(annotation).toContain("left a handle open");
+  }, 30_000);
+
+  it("stays a plain warning off CI, where an Actions command is just noise", () => {
+    const { output } = runScript(
+      `import { exitOnceDecided } from ${JSON.stringify(MODULE)};\n${LEAK}\nexitOnceDecided(1);\n`,
+      { KE2E_EXIT_GRACE_MS: "2000", GITHUB_ACTIONS: "" },
+    );
+    expect(output).not.toContain("::error");
+    expect(output).toContain("left a handle open");
+  }, 30_000);
+
   it("records the exit code without exiting when the loop is still working", () => {
     let exited: number | null = null;
     let recorded: number | null = null;

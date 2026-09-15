@@ -116,7 +116,11 @@ import type {
   ConnectorRouterDeps,
 } from './router';
 import { resolveShareSubject } from './share';
-import { getConnectorCatalogDetail, listConnectorCatalog } from './connector-catalog';
+import {
+  connectorCatalogSections,
+  getConnectorCatalogDetail,
+  listConnectorCatalog,
+} from './connector-catalog';
 import {
   discoverDraftConnectorAuth,
   materializeComputerConnectorProfile,
@@ -834,6 +838,7 @@ type ComposioAdapter = {
     cursor?: string;
     limit?: number;
   }): Promise<unknown>;
+  composioCatalogSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
   composioConnectUrl(input: {
     projectId: string;
     slug: string;
@@ -2014,6 +2019,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // rollback use.
     return null;
   },
+  listConnectSections: async (_projectId, input) => {
+    const composio = await loadComposioAdapter();
+    if (composio?.composioConfigured?.() && composio.composioCatalogSections) {
+      return composio.composioCatalogSections(input);
+    }
+    // Same rule as `/connect/toolkits`: no silent Pipedream fallback.
+    return null;
+  },
   listSessionConnectRequests: async (projectId, sessionId) => {
     const rows = await db
       .select({
@@ -2250,6 +2263,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
+  listDiscoverSections: (input) => connectorCatalogSections(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
