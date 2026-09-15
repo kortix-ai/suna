@@ -6,6 +6,16 @@ import { join, resolve } from 'node:path';
 import { TunnelAgent, CapabilityRegistry, createFilesystemCapability, type TunnelConfig } from '../../../packages/agent-tunnel/src/agent';
 import { flow } from '../core/flow';
 
+// The quarantine below applies to DEPLOYED targets only. Locally there is no
+// WAF in front of the API, the same handshake succeeds, and the local lane
+// (`localRunExitCode`) treats ANY skipped flow as a failure — so the flow keeps
+// running there and keeps its coverage. Read at module scope: the runner
+// discovers flow modules inside `runSuite`, after the local profile has put
+// `KE2E_TARGET=local` on `process.env`, and every deployed workflow sets
+// `KE2E_TARGET` in its job env.
+const KE2E_TARGET = process.env.KE2E_TARGET ?? process.env.E2E_TARGET ?? 'local';
+const WAF_FRONTED_TARGET = KE2E_TARGET !== 'local';
+
 flow('TUN-6', {
   domain: 'tunnel', serial: true, timeoutMs: 120_000,
   // QUARANTINED 2026-09-15 — deterministic on every WAF-fronted target
@@ -22,8 +32,12 @@ flow('TUN-6', {
   // TunnelAgent send an identifying User-Agent under Bun (or gives the flow a
   // UA-bearing WebSocket) AND links a green `tests-release.yml` dry run
   // against staging.
-  quarantine:
-    'TunnelAgent WebSocket handshake from Bun carries no User-Agent; AWS WAF on staging/prod answers 403 (run 34989061001 attempt 4, job 104486189580)',
+  ...(WAF_FRONTED_TARGET
+    ? {
+        quarantine:
+          'TunnelAgent WebSocket handshake from Bun carries no User-Agent; AWS WAF on staging/prod answers 403 (run 34989061001 attempt 4, job 104486189580)',
+      }
+    : {}),
   routes: [
     'POST /v1/tunnel/connections', 'GET /v1/tunnel/connections/:tunnelId',
     'DELETE /v1/tunnel/connections/:tunnelId', 'POST /v1/tunnel/rpc/:tunnelId',
