@@ -834,3 +834,12 @@ Twenty-one still had source archive cleanup pending. The two-minute reconciliati
 now runs this check before delayed archive confirmation. Active session writers
 are excluded. Source archive completion remains in the independent cleanup ledger;
 destination import, ownership, history and file-readback verification are unchanged.
+
+The current process recovered to 90 pipelines at 19:41 UTC. The next batch is
+configured with a 128-pipeline ceiling and exploration enabled: +16 after two
+quiet minutes and 20 successful imports. Pressure retains 25% backoff and returns
+to conservative +4 recovery after five quiet minutes. The running process keeps
+its original 90-slot pool until it drains; 128 has not yet been exercised live.
+Controller/refill tests report 12 passed, zero failed, 87 assertions. The dispatcher
+build passes. The pacing assertion allows one millisecond between the admission
+and job timestamp, while still asserting the complete spacing window.
