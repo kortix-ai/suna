@@ -27,6 +27,7 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
+import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { getSupabase } from '../shared/supabase';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 
@@ -86,14 +87,18 @@ export async function authenticatePreviewPrincipalDetailed(
         : null;
     }
 
-    // Supabase JWT — fast local verify, network fallback only while JWKS warms.
+    // Supabase JWT — fast local verify, network fallback when the local
+    // verifier cannot reach a verdict. Route on the SAME predicate as both auth
+    // middlewares: a hand-listed reason set here once omitted
+    // `unsupported-alg:HS256`, so every preview origin answered "Sign in" to a
+    // valid legacy-signed session while `/v1/p/...` served it.
     const local = await verifySupabaseJwt(token);
     if (local.ok) {
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: local.userId }))
         ? { userId: local.userId, sessionId: null }
         : null;
     }
-    if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') return null;
+    if (!isInconclusiveVerifyFailure(local.reason)) return null;
 
     const supabase = getSupabase();
     const { data: { user }, error } = await supabase.auth.getUser(token);

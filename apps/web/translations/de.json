@@ -19225,6 +19225,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "Zugriff auf das Projekt-Repository",
+    "enabled": "Neue Sitzungen erhalten das Projekt-Repository. Git-Berechtigungen gelten weiterhin. Bestehende Sitzungen behalten ihre Zugriffseinstellung.",
+    "disabled": "Neue Sitzungen laufen ohne Projekt-Repository. Sie können weiterhin Dateien erstellen und freigegebene Werkzeuge nutzen. Bestehende Sitzungen behalten ihre Zugriffseinstellung."
+  },
   "modelAccess": {
     "manageProvider": "Einstellungen für {name}",
     "enableProviderAction": "Anbieter aktivieren",

@@ -448,11 +448,10 @@ export class Client {
       process.env.KE2E_GATEWAY_RETRIES ?? 3,
     ),
   ) {
-    const url = new URL(apiUrl);
-    // API flows supply /v1 themselves. Preview gateway flows use a mounted
-    // service, so retain its prefix through requests and authenticated clones.
-    const mount = url.pathname.replace(/\/+$/, '');
-    this.origin = url.origin + (mount === '/_gateway' ? mount : '');
+    const base = new URL(apiUrl);
+    // Route templates already include /v1. Keep any reverse-proxy mount before it.
+    const mount = base.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
+    this.origin = base.origin + mount;
   }
 
   /** Clone bound to a principal/identity. */

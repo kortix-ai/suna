@@ -125,7 +125,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
       sandboxId: 'sandbox-1',
       sessionId: 'sandbox-1',
       branchName: 'sandbox-1',
-      sessionMetadata: { workspace_mode: 'runtime' },
+      sessionMetadata: { repository_access: false },
     };
 
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
@@ -276,7 +276,7 @@ describe('authorizeGitProxy — sandbox token', () => {
       sandboxId: 'sandbox-1',
       sessionId: 'sandbox-1',
       branchName: 'sandbox-1',
-      sessionMetadata: { workspace_mode: 'runtime' },
+      sessionMetadata: { repository_access: false },
     };
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');

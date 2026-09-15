@@ -166,7 +166,9 @@ flow(
                 )
               : null;
             const title = typeof root?.title === 'string' ? root.title.trim() : '';
-            return Boolean(title) && !/^new (session|agent)\b/i.test(title) && row?.name === title;
+            const sessionTitle = typeof row?.name === 'string' ? row.name.trim() : '';
+            return Boolean(title) && !/^new (session|agent)\b/i.test(title) &&
+              Boolean(sessionTitle) && !/^new (session|agent)\b/i.test(sessionTitle);
           },
           timeoutMs: 180_000,
           intervalMs: 3_000,
@@ -1231,9 +1233,25 @@ flow(
         ],
       });
       await waitForAssistantOutput(ctx, sandboxId, ocId);
-      const file = await ctx.client
-        .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+      // An assistant part can precede its file-writing tool. Wait for the
+      // requested artifact, and surface terminal model errors while waiting.
+      const file = await waitFor(async () => {
+        const messages = await ctx.client.as(ctx.P.OWNER)
+          .get(ocPath(sandboxId, `/session/${ocId}/message`));
+        messages.status(200);
+        const failed = messages.json<any[]>().find((m) => m?.info?.error);
+        if (failed) throw new Error(`golden agent turn failed: ${JSON.stringify(failed.info.error)}`);
+        const result = await ctx.client.as(ctx.P.OWNER)
+          .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+        result.status([200, 404]);
+        return result;
+      }, {
+        until: (result) => result.statusCode === 200 &&
+          new RegExp(`^${goldenMarker}\\n?$`).test(String(result.json<any>()?.content ?? '')),
+        timeoutMs: 240_000,
+        intervalMs: 2000,
+        description: 'the golden agent writes the complete requested file',
+      });
       file
         .status(200)
         .body()

@@ -19225,6 +19225,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "Project repository access",
+    "enabled": "New sessions receive the project repository. Git permissions still apply. Existing sessions keep their access setting.",
+    "disabled": "New sessions run without the project repository. They can still create files and use granted tools. Existing sessions keep their access setting."
+  },
   "modelAccess": {
     "manageProvider": "{name} settings",
     "enableProviderAction": "Enable provider",
