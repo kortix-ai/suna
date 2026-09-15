@@ -25,3 +25,26 @@ export function assertWorkspaceVerified(projectId: string, proof: {
     throw new Error('Workspace verification evidence does not match the source capture');
   }
 }
+
+/** An explicit missing-provider-box waiver verifies history without claiming files. */
+export function assertApprovedMissingSandboxException(proof: {
+  workspace_status?: string;
+  source_sandbox_id?: string | null;
+  approved_exception?: { source_project_id?: string; source_sandbox_id?: string; provider_http?: number; authorized_at?: string };
+  remote_archive_files?: number;
+  remote_archive_verified_at?: string;
+  owner_verified?: boolean;
+  marko_access_verified?: boolean;
+  native_messages_verified?: boolean;
+}): void {
+  const exception = proof.approved_exception;
+  if (proof.workspace_status !== 'approved-404-workspace-skip' || !exception ||
+      !exception.source_project_id || !exception.source_sandbox_id ||
+      exception.source_sandbox_id !== proof.source_sandbox_id ||
+      exception.provider_http !== 404 || !exception.authorized_at ||
+      proof.remote_archive_files !== 4 || !proof.remote_archive_verified_at ||
+      proof.owner_verified !== true || proof.marko_access_verified !== true ||
+      proof.native_messages_verified !== true) {
+    throw new Error('Approved missing-sandbox history evidence is incomplete');
+  }
+}

@@ -494,10 +494,19 @@ Full production completion remains blocked until all applicable items pass:
   title, messages, and required shares verified.
 - Every workspace is captured and restored, or has an explicit source-specific
   approved exception. Exceptions remain separate from restored workspaces.
+- The 27 approved Daytona `404` sandbox IDs allow histories to import with
+  `verified-approved-404-file-skip`. The verifier requires an exact source
+  project/box match, fresh provider `404`, four durable history artifacts,
+  exact native messages, owner, Marko access, and title checks. It never claims
+  a restored workspace for these sessions.
 - Source projects without threads are inventoried for files and assigned a
   destination. A thread-only queue cannot prove that all source files transferred.
 - Storage attachments and filesystem references outside `/workspace` are
   inventoried and reconciled. Workspace restoration alone does not cover them.
+- Source Storage objects move into private `legacy-migrations` paths by source
+  reference. A matching object in the other approved source can recover missing
+  bytes only after eight identity fields match and both archive hashes verify.
+  The ledger keeps `verified-cross-source` distinct from direct source transfer.
 - Unsupported filesystem entries remain blocked. The current restore preserves
   symlinks. It rejects hardlinks and does not preserve xattrs or original numeric owners.
 - Export membership and final reconciliation account for live changes and

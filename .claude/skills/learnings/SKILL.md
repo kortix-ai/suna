@@ -21,6 +21,17 @@ linked, not inlined.
 
 ## Register
 
+### Compare cloned source inventories before declaring Storage bytes lost (2026-09-15)
+
+**When:** a legacy Storage metadata row returns missing bytes, search each
+approved source inventory for the same object ID, bucket, name, size, metadata,
+user metadata, creation time, and version. Verify the other source bytes and
+record the source reference before copying into the missing source namespace.
+*Near-miss:* 18 Trimaran Storage rows returned missing-resource responses; all
+18 matched Suna metadata rows, and 14 had byte-verified Suna archives.
+*Enforcer:* `recover-cross-source-storage.ts` rejects any identity mismatch and
+requires two archive SHA-256 readbacks before `verified-cross-source`.
+
 ### Put an outer deadline around every migration subprocess (2026-09-15)
 
 **When:** orchestrating provider capture, archive, or restore commands, enforce a

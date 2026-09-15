@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test';
-import {assertWorkspaceVerified} from './verification';
+import {assertWorkspaceVerified,assertApprovedMissingSandboxException} from './verification';
 const valid = {workspace_status:'captured',source_sandbox_id:'source-box',workspace_api_verified_files:1,remote_archive_verified_at:'2026-09-15T00:00:00.000Z',remote_archive_files:6,workspace_capture:{archive_sha256:'a'.repeat(64),entries:4,files:1},workspace_restore:{restored_entries:4,regular_files:1,metadata_verified:true,root_directory_verified:true,exact_inventory_verified:true,file_hashes_verified:true,target:'/workspace/project'}};
 test('missing references and unapproved skips cannot complete a file migration',()=>{
  for(const workspace_status of ['no-source-sandbox-reference','unresolved-source-sandbox','capture-pending','skipped']) expect(()=>assertWorkspaceVerified('project',{workspace_status})).toThrow('Workspace is unresolved');
@@ -22,4 +22,12 @@ test('a file count cannot consume the required root directory',()=>{
 test('destination file API must read back every captured regular file',()=>{
  expect(()=>assertWorkspaceVerified('project',{...valid,workspace_api_verified_files:0})).toThrow('does not match');
  expect(()=>assertWorkspaceVerified('project',{...valid,workspace_api_verified_files:undefined})).toThrow('does not match');
+});
+
+test('approved missing sandbox verifies history without claiming file restoration',()=>{
+ const proof={workspace_status:'approved-404-workspace-skip',source_sandbox_id:'box',approved_exception:{source_project_id:'project',source_sandbox_id:'box',provider_http:404,authorized_at:'2026-09-14T00:00:00Z'},remote_archive_files:4,remote_archive_verified_at:'2026-09-15T00:00:00Z',owner_verified:true,marko_access_verified:true,native_messages_verified:true};
+ expect(()=>assertApprovedMissingSandboxException(proof)).not.toThrow();
+ expect(()=>assertWorkspaceVerified('project',proof)).toThrow();
+ expect(()=>assertApprovedMissingSandboxException({...proof,approved_exception:{...proof.approved_exception,provider_http:200}})).toThrow();
+ expect(()=>assertApprovedMissingSandboxException({...proof,remote_archive_files:6})).toThrow();
 });
