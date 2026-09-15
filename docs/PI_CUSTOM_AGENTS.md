@@ -686,7 +686,8 @@ without requests. Configuration or secret changes invalidate old connection IDs.
 Calls with stale IDs fail before execution; discovery returns a new identity.
 An approval wait can outlast that idle window. In that case, rediscover the
 server and request approval for the new call; the expired call does not run.
-Different servers can run concurrently. A busy server rejects another request.
+Each server keeps separate process state. Calls through the agent follow the
+existing environment-operation queue. A busy server rejects another request.
 At most 16 configured processes run per environment. Each request defaults to
 30 seconds, configurable from 1 to 60,000 milliseconds. Requests are limited to
 1 MiB; response frames to 12 MiB; normalized text to 512 KiB.

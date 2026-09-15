@@ -1,4 +1,5 @@
 import type { ToolComponent } from '@/features/session/tool/shared/types';
+import { LOCAL_MCP_TOOL_LABELS } from './local-mcp';
 
 const registry = new Map<string, ToolComponent>();
 
@@ -35,6 +36,8 @@ export const ToolRegistry = {
       const component = registry.get(key);
       if (component) return component;
     }
+
+    if (LOCAL_MCP_TOOL_LABELS.has(name.replace(/^oc-/, '').replace(/-/g, '_'))) return undefined;
 
     const allRegistered = Array.from(registry.keys());
     for (const candidate of candidates) {
