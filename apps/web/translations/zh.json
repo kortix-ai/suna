@@ -14073,7 +14073,7 @@
       "text8a5603decf3a": "按季度统计的赢单率",
       "text8a562f22155c": "为 IdP 发送的每个群组创建 IAM 群组并将用户加入其中——无需逐群组映射。只需将项目角色关联到自动创建的群组。",
       "text8a656173d504": "如果你的总账在 Easy connect 目录中，只需点击并完成 OAuth 页面。如果不在——很多会计系统确实不在——也可以通过 OpenAPI、Postman 集合、GraphQL、原始 HTTP 或远程 MCP 服务器访问。",
-      "text8a7c8b67fe8b": "账户",
+      "text8a7c8b67fe8b": "账号",
       "text8a85cfbe71eb": "Agent 已切换为 {value0}",
       "text8a88857d117b": "Entra Provisioning Admin Credentials 区域，包含 Tenant URL、Secret Token 和 Test Connection",
       "text8a8dc78e312d": "Iv1.xxxxxxxxxxxxxxxx",
@@ -18387,7 +18387,16 @@
       "textf09704dad946": "返回连接器",
       "textf3c16c11f690": "没有可添加的内容",
       "textf75561ab0be6": "凭证现在来自机密 {value0}",
-      "textf91b7814f64d": "此项目中不存在 slug 为“{value0}”的连接器。"
+      "textf91b7814f64d": "此项目中不存在 slug 为“{value0}”的连接器。",
+      "text006f3373ba52": "使用一个共享账号",
+      "text14f151094a7c": "使用一个共享账号连接，供所有成员及其智能体使用。",
+      "text20dee4420874": "一个共享账号",
+      "text46657cd49f74": "同样为整个项目安装——每位成员用自己的 {value0} 账号登录，用于其运行的会话。",
+      "text6dfb578442b2": "整个项目共用一个 {value0} 账号——每位成员及其会话中的智能体。项目管理员只需连接一次。",
+      "textbcbfbec31cb8": "每位成员使用自己的账号",
+      "textb1e4036909b6": "正在检查服务器的登录选项…",
+      "text6b05881dfe08": "无法检查服务器的登录选项。",
+      "text7bc4d9a2803c": "获取方式："
     }
   },
   "projectOnboarding": {

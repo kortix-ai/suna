@@ -406,18 +406,19 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   // Whether this deployment has a catalogue to browse at all.
   //
-  // `useCatalog` falls back to Easy Connect (Pipedream) whenever
-  // `connectors_api_discover` is off, which is the default — so with the flag
-  // off and Pipedream unconfigured, Discovery and All have no backend and every
-  // request they make answers `501`. The probe is read HERE rather than off
-  // `catalog`, because it decides `enabled` for the very hook that would
-  // otherwise report it.
+  // Easy Connect (Composio/Pipedream) is the BASE catalogue on every project;
+  // `connectors_api_discover` only ADDS the Discover surfaces on top of it
+  // (Marko, 2026-09-15: Composio is never removed). So the probe always runs —
+  // it answers whether the base exists — and the All tab stays whenever
+  // either source does. The probe is read HERE rather than off `catalog`,
+  // because it decides `enabled` for the very hook that would otherwise
+  // report it.
   //
-  // Only a confirmed `absent` closes the tabs. While the probe is in flight the
+  // Only a confirmed `absent` closes the tab. While the probe is in flight the
   // page renders exactly as it always has: the overwhelming majority of
-  // deployments do have Pipedream, and removing two tabs for a beat on every
-  // load to spare a minority one is the wrong trade.
-  const connectStatus = useConnectProviderStatus(!discoverEnabled);
+  // deployments do have a managed provider, and removing the tab for a beat on
+  // every load to spare a minority one is the wrong trade.
+  const connectStatus = useConnectProviderStatus(true);
   const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';
 
   const authorizationQueryKeys = useMemo(

@@ -55,4 +55,35 @@ describe('catalogue connector detail route', () => {
     expect(page).not.toContain('{actionOpen ? (');
     expect(page).toContain('connectedConnectorHref(projectId, addedSlug)');
   });
+
+  test('as a split-view pane, Add REPLACES the connector pane instead of nesting', () => {
+    const page = readFileSync(join(feature, 'catalog-connector-page.tsx'), 'utf8');
+    const split = readFileSync(join(feature, 'app-connector-split-page.tsx'), 'utf8');
+    // The split view hands the page an `addHref` — the app page with `?add=1`
+    // (the Install dropdown's own param, honored on mount). Add then
+    // NAVIGATES: the connector pane closes and the add column takes its
+    // place. Without this, the page nested a second SplitSheet inside the
+    // split's left pane and the add column covered the connector pane
+    // (Jay, 2026-09-15).
+    expect(split).toContain("addHref={`${appHref}${easyConnect ? '&' : '?'}add=1`}");
+    expect(page).toContain('addHref ? (');
+    expect(page).toContain('<Link href={addHref}>');
+    // The `?add=1` mount effect must not reopen the in-place column while the
+    // page is a pane — that is the very stacking the prop prevents.
+    expect(page).toContain('if (!addHref) {');
+  });
+
+  test('the split view never grows a third pane — Connect COVERS the connector pane', () => {
+    const split = readFileSync(join(feature, 'app-connector-split-page.tsx'), 'utf8');
+    const connected = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
+    // Catalog | connector is the whole row. The connector pane's Connect
+    // form takes the pane over instead of opening a nested second column —
+    // three surfaces on one row read as overcrowded (Jay, 2026-09-15).
+    // Closing the form (its X, Escape) uncovers the connector page.
+    expect(split).toContain('connectCoversPage');
+    expect(connected).toContain('cover={connectCoversPage}');
+    // Standalone connector pages keep the side-by-side Connect column: the
+    // prop defaults off.
+    expect(connected).toContain('connectCoversPage = false');
+  });
 });

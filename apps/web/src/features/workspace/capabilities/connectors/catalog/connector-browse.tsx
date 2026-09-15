@@ -79,11 +79,11 @@ function CatalogAffordance({
           disabled={projectInstalled}
           onClick={() => router.push(installWith('project'))}
         >
-          {tI18nComplete.raw('textd319702d1c2f')}
+          {tI18nComplete.raw('text006f3373ba52')}
           {projectInstalled ? installedHint : null}
         </DropdownMenuItem>
         <DropdownMenuItem disabled={userInstalled} onClick={() => router.push(installWith('me'))}>
-          {tI18nComplete.raw('textafcbf5878dc9')}
+          {tI18nComplete.raw('textbcbfbec31cb8')}
           {userInstalled ? installedHint : null}
         </DropdownMenuItem>
       </DropdownMenuContent>

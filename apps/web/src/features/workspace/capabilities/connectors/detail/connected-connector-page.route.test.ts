@@ -63,8 +63,11 @@ describe('connected connector route', () => {
   test('Connect opens the split column, not an overlay', () => {
     const page = readFileSync(join(feature, 'connected-connector-page.tsx'), 'utf8');
     // The credential dialog renders as an inline SplitSheet column beside the
-    // page (`shell="split"`); the page must never float it as a modal.
-    expect(page).toContain('<SplitSheet open={credOpen}');
+    // page (`shell="split"`); the page must never float it as a modal. In the
+    // app-split view (`connectCoversPage`) the same sheet covers the pane
+    // instead of adding a third column.
+    expect(page).toContain('open={credOpen}');
+    expect(page).toContain('cover={connectCoversPage}');
     expect(page).toContain('<SplitSheetMain');
     expect(page).toContain('shell="split"');
   });

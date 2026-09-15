@@ -48,7 +48,9 @@ export function AppConnectorSplitPage({
       size="lg"
       // The CONTENT column is the point of this page — the connector UI with
       // its tabs and forms gets the larger share (60/40), the app page keeps
-      // enough width to stay readable context.
+      // enough width to stay readable context. The row never grows a third
+      // column: the connector pane's own Connect form COVERS it instead
+      // (`connectCoversPage` below).
       className="min-h-0 flex-1 [--split-sheet-max:60%] [--split-sheet-width:100rem]"
     >
       <SplitSheetMain className="flex flex-col">
@@ -56,6 +58,13 @@ export function AppConnectorSplitPage({
           projectId={projectId}
           sourceValue={easyConnect ? 'easy-connect' : 'discover'}
           slug={appSlug}
+          // Add another, asked from INSIDE the split view: navigating to the
+          // app page with `?add=1` (the Install dropdown's own param) closes
+          // this connector pane and opens the add column in its place. Without
+          // it the page would nest a second split INSIDE this pane — three
+          // surfaces fighting for the row, the connector pane covered
+          // (Jay, 2026-09-15: replace the pane, don't stack on it).
+          addHref={`${appHref}${easyConnect ? '&' : '?'}add=1`}
         />
       </SplitSheetMain>
       <SplitSheetContent>
@@ -71,6 +80,11 @@ export function AppConnectorSplitPage({
           backHref={appHref}
           hideBackButton
           hideDocumentation
+          // Connect covers this pane (two panes stay two): a second column
+          // nested inside it put three surfaces on one row — overcrowded
+          // (Jay, 2026-09-15). The form's X or Escape uncovers the
+          // connector page.
+          connectCoversPage
           closeAction={
             <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
               <Button

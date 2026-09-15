@@ -18421,7 +18421,16 @@
       "textf09704dad946": "Torna ai connettori",
       "textf3c16c11f690": "Niente da aggiungere",
       "textf75561ab0be6": "La credenziale ora proviene dal segreto {value0}",
-      "textf91b7814f64d": "Nessun connettore con slug “{value0}” esiste in questo progetto."
+      "textf91b7814f64d": "Nessun connettore con slug “{value0}” esiste in questo progetto.",
+      "text006f3373ba52": "Con un account condiviso",
+      "text14f151094a7c": "Si connette con un account condiviso usato da ogni membro e dai suoi agenti.",
+      "text20dee4420874": "Un account condiviso",
+      "text46657cd49f74": "Installato comunque per l’intero progetto: ogni membro accede con il proprio account {value0}, usato nelle sessioni che esegue.",
+      "text6dfb578442b2": "L’intero progetto usa un unico account {value0} — ogni membro e gli agenti nelle sue sessioni. Un project manager lo collega una volta sola.",
+      "textbcbfbec31cb8": "Ogni membro con il proprio account",
+      "textb1e4036909b6": "Verifica delle opzioni di accesso del server…",
+      "text6b05881dfe08": "Impossibile verificare le opzioni di accesso del server.",
+      "text7bc4d9a2803c": "Dove ottenerlo:"
     }
   },
   "projectOnboarding": {

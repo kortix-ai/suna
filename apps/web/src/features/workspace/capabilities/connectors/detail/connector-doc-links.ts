@@ -101,6 +101,36 @@ function appDocsEntry(
  * comes from), then the MCP specification for MCP servers, then the app's
  * website.
  */
+/**
+ * The links that answer "where do I get this credential", for the Connect
+ * dialog's static-credential field: the app's own developer docs first when
+ * curated (API keys and tokens are minted there), then the Kortix guide for
+ * this provider — a bare Value input told the user nothing about where the
+ * value comes from (Jay, 2026-09-15). At most two links; the dialog is a
+ * form, not a reading list.
+ */
+export function connectorCredentialHelpLinks(
+  connector: Pick<AdminConnector, 'provider' | 'slug' | 'name'>,
+  tI18nComplete: UiTranslator,
+): ConnectorDocLink[] {
+  const links: ConnectorDocLink[] = [];
+  const app = appDocsEntry(connector);
+  if (app) {
+    const name = connector.name?.trim() || connector.slug;
+    links.push({
+      label: tI18nComplete('text26ef6803567d', { value0: name }),
+      href: app.docs,
+      external: true,
+    });
+  }
+  links.push({
+    label: tI18nComplete.raw('text97d8aa23aecf'),
+    href: kortixDocsHref(connector.provider),
+    external: false,
+  });
+  return links;
+}
+
 export function connectorDocLinks(
   connector: Pick<AdminConnector, 'provider' | 'slug' | 'name'>,
   tI18nComplete: UiTranslator,

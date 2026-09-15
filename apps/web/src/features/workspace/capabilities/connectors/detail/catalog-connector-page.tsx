@@ -96,10 +96,17 @@ export function CatalogConnectorPage({
   projectId,
   sourceValue,
   slug,
+  addHref,
 }: {
   projectId: string;
   sourceValue: string;
   slug: string;
+  /** Set when this page is the LEFT pane of the app-connector split view.
+   *  Add then NAVIGATES there (the app page with `?add=1`) instead of opening
+   *  the add column in place — in the split view that column would nest a
+   *  third surface inside this pane and cover it. Navigating closes the
+   *  connector pane and hands its column to the add form. */
+  addHref?: string;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const source = parseCatalogSource(sourceValue);
@@ -115,8 +122,13 @@ export function CatalogConnectorPage({
   const addRequested = search?.get('add') === '1';
   useEffect(() => {
     if (!addRequested) return;
-    setInstallFor(search?.get('for') === 'me' ? 'user' : 'project');
-    setActionOpen(true);
+    // As a split-view pane (`addHref` set) the param is not ours to honor —
+    // opening the in-place column here is exactly the stacking the prop
+    // exists to prevent. Still strip it below so the URL heals.
+    if (!addHref) {
+      setInstallFor(search?.get('for') === 'me' ? 'user' : 'project');
+      setActionOpen(true);
+    }
     const params = new URLSearchParams(window.location.search);
     params.delete('add');
     params.delete('for');
@@ -126,7 +138,7 @@ export function CatalogConnectorPage({
       '',
       suffix ? `${window.location.pathname}?${suffix}` : window.location.pathname,
     );
-  }, [addRequested, search]);
+  }, [addHref, addRequested, search]);
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -347,14 +359,25 @@ export function CatalogConnectorPage({
           : 'Add connector';
   const primaryAction = canWrite ? (
     entry.source === 'discover' ? (
-      // The split column's own trigger: it toggles the panel AND moves focus
-      // into it, and closing returns focus here.
-      <SplitSheetTrigger asChild>
-        <Button className="gap-1.5 max-sm:w-full">
-          <PlusIcon className="size-4 shrink-0" />
-          {addLabel}
+      addHref ? (
+        // Split-view pane: Add is a NAVIGATION — the app page with `?add=1`
+        // opens the add column where the connector pane was. See the prop.
+        <Button asChild className="gap-1.5 max-sm:w-full">
+          <Link href={addHref}>
+            <PlusIcon className="size-4 shrink-0" />
+            {addLabel}
+          </Link>
         </Button>
-      </SplitSheetTrigger>
+      ) : (
+        // The split column's own trigger: it toggles the panel AND moves focus
+        // into it, and closing returns focus here.
+        <SplitSheetTrigger asChild>
+          <Button className="gap-1.5 max-sm:w-full">
+            <PlusIcon className="size-4 shrink-0" />
+            {addLabel}
+          </Button>
+        </SplitSheetTrigger>
+      )
     ) : (
       <Button className="gap-1.5 max-sm:w-full" onClick={() => setActionOpen(true)}>
         <PlusIcon className="size-4 shrink-0" />

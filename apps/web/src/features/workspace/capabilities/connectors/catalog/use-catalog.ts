@@ -16,8 +16,8 @@ import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   computersCatalogEntry,
+  mergeCatalogSources,
   type CatalogEntry,
-  type CatalogSource,
 } from './catalog-entry';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
@@ -31,8 +31,6 @@ export interface CatalogState {
   total: number;
   /** The debounced query actually in flight, trimmed. Empty when browsing. */
   activeQuery: string;
-  /** Which catalogue answered. Decides the add flow a card opens. */
-  source: CatalogSource;
   /** Apps matching the query that publish no actions, so the catalogue does
    *  not offer them. Lets the no-match state say why instead of implying the
    *  app does not exist — `q=SAP` is exactly this case. */
@@ -162,37 +160,30 @@ export async function listConnectCatalogPage(input: {
 }
 
 /**
- * The catalogue behind the Discovery and All tabs, from whichever of the two
- * sources this project actually has.
+ * The catalogue behind the All tab: Easy Connect (Composio/Pipedream) is the
+ * BASE catalogue on every project, and the Discover surfaces are ADDED on top
+ * of it when `connectors_api_discover` is on. Discover never replaces the
+ * base (Marko, 2026-09-15: "COMPOSIO doesn't have to be removed") — an app
+ * both catalogues publish appears once, the Discover entry first
+ * (`mergeCatalogSources`, MCP-first per COR-17).
  *
- * **Why two sources.** `connectors_api_discover` resolves to `false` by
- * default (`apps/api/src/experimental/features.ts:83`), so the Discover
- * catalogue is unavailable to most projects. Easy Connect (Pipedream) is not
- * flagged. Falling back keeps the page populated for every project.
+ * **One paging mechanism, two feeds.** A scroll or a click on "Load more"
+ * advances BOTH sources that still have pages; the grid grows as either
+ * lands. `total` is the sum of the two catalogues' own counts (an upper
+ * bound: cross-catalogue duplicates collapse client-side).
  *
- * **Why not merge them.** The two publish overlapping apps under different
- * slugs and different `id` namespaces, and each has its own add flow. A merged
- * list would need a cross-catalogue identity that neither API provides.
+ * **Search is server-side in both feeds.** `q` is a query key for each, so a
+ * new search starts new lists rather than re-slicing accumulated ones.
  *
- * **One paging mechanism.** A scroll or a click on "Load more" fetches the next
- * page. That is all. This replaces a three-layer arrangement — eager initial
- * pages, a per-category auto-deepening effect chain, and a client-side reveal
- * window over the top — that existed only because the client had to accumulate
- * enough pages to fake a category filter. The server filters by category now
- * (`pipedreamCatalogPage`), so the client asks for exactly the page it renders.
+ * **Easy Connect waits for the deployment probe.** No managed-provider
+ * request is sent until the probe has ruled out `absent` — on a deployment
+ * with no provider every one of them is a `501`. `unknown` proceeds: a
+ * failed probe must not hide a catalogue that may well exist.
  *
- * **Filtering happens server-side, over the whole catalogue.** Both `q` and
- * `category` are query keys, so changing either starts a new list rather than
- * re-slicing an accumulated one. Pipedream's own API cannot filter by category
- * at all — see `apps/api/src/connectors/pipedream-index.ts`.
- *
- * **Easy Connect waits for the deployment probe.** No Pipedream request is sent
- * until `usePipedreamStatus` has ruled out `absent`, because on a deployment
- * without Pipedream credentials every one of them is a `501` — and one landing
- * before the probe would paint the error card the probe exists to prevent. The
- * cost is one round trip on the first load of the session, spent on a route that
- * only reads env vars, and the wait is reported as `isLoading` so the grid holds
- * its skeletons instead of flashing an empty result.
+ * **A partial failure keeps the grid.** When one source errors while the
+ * other delivers, the delivered entries render and the failed feed's
+ * additions are silently absent this visit; the error card shows only when
+ * EVERY active source failed.
  */
 export function useCatalog(
   projectId: string,
@@ -204,20 +195,14 @@ export function useCatalog(
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
 
-  // Probed whenever Easy Connect is the source, whether or not the catalogue is
-  // `enabled`. `ConnectorsPage` turns Discovery and All OFF when this answers
-  // `absent`, which turns `enabled` off with them — a probe gated on `enabled`
-  // would then have nothing left to keep it answered, and the tabs would
-  // oscillate. It is one cached request either way.
-  const connectStatus = useConnectProviderStatus(source === 'easy-connect');
-
-  // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
-  // may well exist is the worse of the two mistakes.
+  // Probed unconditionally: `ConnectorsPage` gates the All tab on this same
+  // answer, and a probe gated on `enabled` would have nothing left to keep it
+  // answered once the tab closes — the tab would oscillate. One cached
+  // request either way.
+  const connectStatus = useConnectProviderStatus(true);
   const easyConnectRunnable =
-    source === 'easy-connect' &&
-    (connectStatus.state === 'configured' || connectStatus.state === 'unknown');
+    connectStatus.state === 'configured' || connectStatus.state === 'unknown';
   const easyConnectProvider = connectStatus.provider ?? 'composio';
 
   const discoverQuery = useInfiniteQuery({
@@ -227,7 +212,7 @@ export function useCatalog(
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
-    enabled: opts.enabled && source === 'discover',
+    enabled: opts.enabled && opts.discoverEnabled,
     placeholderData: keepPreviousData,
   });
 
@@ -248,79 +233,115 @@ export function useCatalog(
     placeholderData: keepPreviousData,
   });
 
-  const active = source === 'discover' ? discoverQuery : easyConnectQuery;
-
   const entries = useMemo(() => {
     const native = computersCatalogEntry(tI18nComplete);
     // The native Computers card is ours, not the catalogue's, so it is matched
-    // locally and hidden inside a category it does not claim.
+    // locally.
     const includeComputers =
       !activeQuery ||
       `${native.name} ${native.description ?? ''}`
         .toLowerCase()
         .includes(activeQuery.toLowerCase());
     const nativeEntries = includeComputers ? [native] : [];
-    if (source === 'discover') {
-      return nativeEntries.concat(
-        (discoverQuery.data?.pages ?? []).flatMap((page) =>
+    const discoverEntries = opts.discoverEnabled
+      ? (discoverQuery.data?.pages ?? []).flatMap((page) =>
           page.items.map(catalogEntryFromDiscover),
-        ),
-      );
-    }
-    return nativeEntries.concat(
-      (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
-        page.apps.map(catalogEntryFromEasyConnect),
-      ),
+        )
+      : [];
+    const easyConnectEntries = (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
+      page.apps.map(catalogEntryFromEasyConnect),
     );
-  }, [tI18nComplete, activeQuery, source, easyConnectQuery.data?.pages, discoverQuery.data?.pages]);
+    return nativeEntries.concat(mergeCatalogSources(discoverEntries, easyConnectEntries));
+  }, [
+    tI18nComplete,
+    activeQuery,
+    opts.discoverEnabled,
+    easyConnectQuery.data?.pages,
+    discoverQuery.data?.pages,
+  ]);
 
-  const {
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isPlaceholderData,
-    refetch: activeRefetch,
-  } = active;
-
-  // Stable identity: `useCatalogAutoload` lists this in its observer effect's
-  // deps, and a new function every render would tear down and rebuild the
+  // Destructured so `loadMore` closes over STABLE functions and primitive
+  // flags: `useCatalogAutoload` lists it in its observer effect's deps, and a
+  // new identity every render would tear down and rebuild the
   // `IntersectionObserver` on each one.
-  const loadMore = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage || isPlaceholderData) return;
-    void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, isPlaceholderData, fetchNextPage]);
+  const {
+    fetchNextPage: fetchNextDiscover,
+    hasNextPage: discoverHasNext,
+    isFetchingNextPage: discoverFetchingNext,
+    isPlaceholderData: discoverPlaceholder,
+    refetch: refetchDiscover,
+  } = discoverQuery;
+  const {
+    fetchNextPage: fetchNextEasyConnect,
+    hasNextPage: easyConnectHasNext,
+    isFetchingNextPage: easyConnectFetchingNext,
+    isPlaceholderData: easyConnectPlaceholder,
+    refetch: refetchEasyConnect,
+  } = easyConnectQuery;
 
-  const refetch = useCallback(() => void activeRefetch(), [activeRefetch]);
+  const discoverActive = opts.enabled && opts.discoverEnabled;
+  const easyConnectActive = opts.enabled && easyConnectRunnable;
+  const discoverMore = discoverActive && discoverHasNext && !discoverPlaceholder;
+  const easyConnectMore = easyConnectActive && easyConnectHasNext && !easyConnectPlaceholder;
+
+  const loadMore = useCallback(() => {
+    if (discoverMore && !discoverFetchingNext) void fetchNextDiscover();
+    if (easyConnectMore && !easyConnectFetchingNext) void fetchNextEasyConnect();
+  }, [
+    discoverMore,
+    discoverFetchingNext,
+    fetchNextDiscover,
+    easyConnectMore,
+    easyConnectFetchingNext,
+    fetchNextEasyConnect,
+  ]);
+
+  const refetch = useCallback(() => {
+    if (discoverActive) void refetchDiscover();
+    if (easyConnectActive) void refetchEasyConnect();
+  }, [discoverActive, refetchDiscover, easyConnectActive, refetchEasyConnect]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
 
   const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
 
-  const reportedTotal =
-    source === 'discover' ? discoverQuery.data?.pages[0]?.total : easyConnectPage?.total;
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
-  const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
+  const total =
+    (discoverActive ? (discoverQuery.data?.pages[0]?.total ?? 0) : 0) +
+    (easyConnectActive ? (easyConnectPage?.total ?? 0) : 0) +
+    nativeCount;
+
+  const anySource = discoverActive || easyConnectActive;
+  const everyActiveSourceCold =
+    anySource &&
+    (discoverActive ? discoverQuery.isLoading : true) &&
+    (easyConnectActive ? easyConnectQuery.isLoading : true);
+  const everyActiveSourceFailed =
+    anySource &&
+    (discoverActive ? discoverQuery.isError : true) &&
+    (easyConnectActive ? easyConnectQuery.isError : true);
 
   return {
     entries,
-    total,
+    total: total > 0 ? total : entries.length,
     activeQuery,
-    source,
     excludedNoActions,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
     // so the grid dims instead of blanking to skeletons.
     //
-    // `asking` counts as loading: the Easy Connect queries are held disabled
+    // `asking` counts as loading: the Easy Connect query is held disabled
     // until the deployment probe answers, and a disabled query reports neither
     // loading nor data — without this the grid would render "no results" for a
     // round trip before the real request had started.
-    isLoading: opts.enabled && (connectStatus.state === 'asking' || active.isLoading),
-    isRefreshing: opts.enabled && isPlaceholderData,
-    isError: active.isError,
-    error: active.error,
-    hasMore: opts.enabled && hasNextPage && !isPlaceholderData,
-    isLoadingMore: isFetchingNextPage,
+    isLoading: opts.enabled && (connectStatus.state === 'asking' || everyActiveSourceCold),
+    isRefreshing:
+      opts.enabled &&
+      ((discoverActive && discoverPlaceholder) || (easyConnectActive && easyConnectPlaceholder)),
+    isError: everyActiveSourceFailed,
+    error: easyConnectQuery.error ?? discoverQuery.error,
+    hasMore: discoverMore || easyConnectMore,
+    isLoadingMore: discoverFetchingNext || easyConnectFetchingNext,
     loadMore,
     refetch,
   };

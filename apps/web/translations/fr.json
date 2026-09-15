@@ -18424,7 +18424,16 @@
       "textf09704dad946": "Retour aux connecteurs",
       "textf3c16c11f690": "Rien à ajouter",
       "textf75561ab0be6": "Les identifiants proviennent désormais du secret {value0}",
-      "textf91b7814f64d": "Aucun connecteur avec le slug « {value0} » n’existe dans ce projet."
+      "textf91b7814f64d": "Aucun connecteur avec le slug « {value0} » n’existe dans ce projet.",
+      "text006f3373ba52": "Avec un compte partagé",
+      "text14f151094a7c": "Se connecte avec un compte partagé utilisé par chaque membre et ses agents.",
+      "text20dee4420874": "Un compte partagé",
+      "text46657cd49f74": "Installé pour tout le projet également — chaque membre se connecte avec son propre compte {value0}, utilisé dans ses sessions.",
+      "text6dfb578442b2": "Tout le projet utilise un seul compte {value0} — chaque membre et les agents de ses sessions. Un chef de projet le connecte une seule fois.",
+      "textbcbfbec31cb8": "Chaque membre avec son propre compte",
+      "textb1e4036909b6": "Vérification des options de connexion du serveur…",
+      "text6b05881dfe08": "Impossible de vérifier les options de connexion du serveur.",
+      "text7bc4d9a2803c": "Où l’obtenir :"
     }
   },
   "projectOnboarding": {

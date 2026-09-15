@@ -101,6 +101,7 @@ type OpenRequest = {
 type SplitSheetContextValue = {
   open: boolean;
   instant: boolean;
+  cover: boolean;
   contentId: string;
   titleId: string;
   requestOpen: (nextOpen: boolean, request?: OpenRequest) => void;
@@ -134,6 +135,12 @@ type SplitSheetProps = React.ComponentProps<'div'> & {
   onOpenChange?: (open: boolean) => void;
   /** Sheet column width when the root is wide enough to split. */
   size?: SplitSheetSize;
+  /** The open sheet COVERS the page cell instead of taking a second column —
+   *  the same takeover the narrow-container fallback already does, made
+   *  deliberate. For a root that is itself one pane of a wider split: a
+   *  second column inside it would put three surfaces on one row. The page
+   *  stays mounted and keeps its scroll; closing uncovers it. */
+  cover?: boolean;
 };
 
 function SplitSheet({
@@ -141,6 +148,7 @@ function SplitSheet({
   defaultOpen = false,
   onOpenChange,
   size = 'md',
+  cover = false,
   className,
   children,
   ...props
@@ -187,6 +195,7 @@ function SplitSheet({
     () => ({
       open,
       instant,
+      cover,
       contentId: `${baseId}-content`,
       titleId: `${baseId}-title`,
       requestOpen,
@@ -194,7 +203,7 @@ function SplitSheet({
       focusOnOpenRef,
       restoreFocusRef,
     }),
-    [open, instant, baseId, requestOpen],
+    [open, instant, cover, baseId, requestOpen],
   );
 
   return (
@@ -211,6 +220,7 @@ function SplitSheet({
           className={cn(
             'grid h-full min-h-0 grid-cols-1 grid-rows-1',
             open &&
+              !cover &&
               '@3xl/split-sheet:grid-cols-[minmax(0,1fr)_min(var(--split-sheet-width),var(--split-sheet-max,50%))]',
           )}
         >
@@ -223,16 +233,17 @@ function SplitSheet({
 
 /** The page. Always the first column; it scrolls on its own. */
 function SplitSheetMain({ className, ...props }: React.ComponentProps<'div'>) {
-  const { open } = useSplitSheetContext('SplitSheetMain');
+  const { open, cover } = useSplitSheetContext('SplitSheetMain');
 
   return (
     <div
       data-slot="split-sheet-main"
       className={cn(
         'col-start-1 row-start-1 min-h-0 min-w-0 overflow-y-auto',
-        // Narrow root: the sheet covers this cell. `invisible` keeps the page
-        // mounted with its scroll position and hides it from keyboard and AT.
-        open && '@max-3xl/split-sheet:invisible',
+        // Narrow root (or `cover`): the sheet covers this cell. `invisible`
+        // keeps the page mounted with its scroll position and hides it from
+        // keyboard and AT.
+        open && (cover ? 'invisible' : '@max-3xl/split-sheet:invisible'),
         className,
       )}
       {...props}
@@ -311,7 +322,7 @@ function SplitSheetPanel({
   onKeyDown,
   ...props
 }: Omit<React.ComponentProps<'aside'>, 'ref'>) {
-  const { instant, contentId, titleId, requestOpen, focusOnOpenRef, restoreFocusRef } =
+  const { instant, cover, contentId, titleId, requestOpen, focusOnOpenRef, restoreFocusRef } =
     useSplitSheetContext('SplitSheetContent');
   const panelRef = React.useRef<HTMLElement>(null);
 
@@ -351,7 +362,8 @@ function SplitSheetPanel({
       onKeyDown={handleKeyDown}
       className={cn(
         'bg-popover col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col outline-none',
-        '@3xl/split-sheet:col-start-2 @3xl/split-sheet:border-l',
+        // `cover` keeps the panel on the page's own cell at every width.
+        !cover && '@3xl/split-sheet:col-start-2 @3xl/split-sheet:border-l',
         // Enter only. The column itself snaps: animating grid tracks re-wraps
         // the page on every frame. Reduced motion keeps the fade, drops the slide.
         // `duration-(--duration-moderate)`, not `duration-moderate`: Tailwind 4 has

@@ -90,6 +90,7 @@ export function ConnectedConnectorPage({
   backHref,
   hideBackButton = false,
   hideDocumentation = false,
+  connectCoversPage = false,
   closeAction,
 }: {
   projectId: string;
@@ -102,6 +103,11 @@ export function ConnectedConnectorPage({
   /** Also the right pane: the app page beside it already carries the same
    *  documentation links, so the pane skips its copy. */
   hideDocumentation?: boolean;
+  /** Also the right pane: Connect COVERS this page instead of opening a
+   *  second column inside it — the row already holds the app page, and
+   *  three surfaces on one row read as overcrowded (Jay, 2026-09-15).
+   *  Closing the form uncovers the connector page. */
+  connectCoversPage?: boolean;
   /** The split view's X, rendered at this page's own top right — hidden
    *  while the credential column is open so its header X stays the only
    *  close on screen. */
@@ -219,6 +225,7 @@ export function ConnectedConnectorPage({
       backHref={resolvedBackHref}
       layoutBackHref={layoutBackHref}
       hideDocumentation={hideDocumentation}
+      connectCoversPage={connectCoversPage}
       projectId={projectId}
       connector={connector}
       canWrite={canWrite}
@@ -234,6 +241,7 @@ function ConnectedConnectorContent({
   backHref,
   layoutBackHref,
   hideDocumentation = false,
+  connectCoversPage = false,
   projectId,
   connector,
   canWrite,
@@ -245,6 +253,8 @@ function ConnectedConnectorContent({
   backHref: string;
   layoutBackHref: string | null;
   hideDocumentation?: boolean;
+  /** See the page-level prop: Connect covers this pane instead of splitting it. */
+  connectCoversPage?: boolean;
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
@@ -502,8 +512,16 @@ function ConnectedConnectorContent({
   return (
     /* The Connect dialog is a SPLIT column of this page, not an overlay: the
        connection panel, stepper, and accounts stay readable beside the form
-       while the user fills it. */
-    <SplitSheet open={credOpen} onOpenChange={setCredOpen} size="lg" className="min-h-0 flex-1">
+       while the user fills it. As the right pane of the app-split view
+       (`connectCoversPage`) it COVERS the page instead — the app page is
+       already the other column, and a nested second column made three. */
+    <SplitSheet
+      open={credOpen}
+      onOpenChange={setCredOpen}
+      size="lg"
+      cover={connectCoversPage}
+      className="min-h-0 flex-1"
+    >
       <SplitSheetMain className="flex flex-col">
         <ConnectorDetailLayout
           backHref={layoutBackHref}

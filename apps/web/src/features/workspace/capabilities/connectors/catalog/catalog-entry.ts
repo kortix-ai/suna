@@ -253,3 +253,25 @@ export function catalogEntryConnectors(
     ),
   );
 }
+
+/**
+ * One grid from two catalogues. Discover ADDS surfaces on top of the Easy
+ * Connect (Composio/Pipedream) base — it never replaces it (Marko,
+ * 2026-09-15). An app both catalogues publish appears ONCE: the Discover
+ * entry wins the collision (MCP-first, COR-17), matched by folded slug or
+ * display name so "GitHub" and "github" collapse to one card.
+ */
+export function mergeCatalogSources(
+  discover: readonly CatalogEntry[],
+  easyConnect: readonly CatalogEntry[],
+): CatalogEntry[] {
+  if (discover.length === 0) return [...easyConnect];
+  const taken = new Set<string>();
+  for (const entry of discover) {
+    for (const token of catalogEntryTokens(entry)) taken.add(token);
+  }
+  return [
+    ...discover,
+    ...easyConnect.filter((entry) => !catalogEntryTokens(entry).some((token) => taken.has(token))),
+  ];
+}

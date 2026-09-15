@@ -12,6 +12,7 @@ import {
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
+  mergeCatalogSources,
 } from './catalog-entry';
 
 const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
@@ -254,5 +255,43 @@ describe('catalogAppForConnector — the reverse join for /connectors/<slug> res
     expect(
       catalogAppForConnector(items, { slug: 'internal-billing', name: 'Internal Billing' }),
     ).toBe(null);
+  });
+});
+
+describe('mergeCatalogSources — Discover adds to the Composio base, never replaces it', () => {
+  test('both catalogues appear, Discover entries first', () => {
+    const merged = mergeCatalogSources(
+      [catalogEntryFromDiscover(connector({ id: 'linear', slug: 'linear', name: 'Linear' }))],
+      [catalogEntryFromEasyConnect(app({ slug: 'sentry', name: 'Sentry' }))],
+    );
+    expect(merged.map((entry) => entry.key)).toEqual(['discover:linear', 'easy-connect:sentry']);
+  });
+
+  test('an app both catalogues publish appears once — the Discover entry wins', () => {
+    const merged = mergeCatalogSources(
+      [catalogEntryFromDiscover(connector({ id: 'github', slug: 'github', name: 'GitHub' }))],
+      [
+        catalogEntryFromEasyConnect(app({ slug: 'github', name: 'GitHub' })),
+        catalogEntryFromEasyConnect(app({ slug: 'gitlab', name: 'GitLab' })),
+      ],
+    );
+    expect(merged.map((entry) => entry.key)).toEqual(['discover:github', 'easy-connect:gitlab']);
+  });
+
+  test('collision matches by folded NAME too, not only slug', () => {
+    const merged = mergeCatalogSources(
+      [catalogEntryFromDiscover(connector({ id: 'gh', slug: 'github-com', name: 'GitHub' }))],
+      [catalogEntryFromEasyConnect(app({ slug: 'github', name: 'GitHub' }))],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.source).toBe('discover');
+  });
+
+  test('with no Discover entries the Composio base passes through untouched', () => {
+    const merged = mergeCatalogSources(
+      [],
+      [catalogEntryFromEasyConnect(app({ slug: 'slack', name: 'Slack' }))],
+    );
+    expect(merged.map((entry) => entry.key)).toEqual(['easy-connect:slack']);
   });
 });

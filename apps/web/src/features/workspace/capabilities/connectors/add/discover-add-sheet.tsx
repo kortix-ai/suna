@@ -51,8 +51,9 @@ import { surfacesRecommendedFirst } from '../detail/connector-detail-copy';
  * This replaced a two-modal chain (surface picker → name/slug modal). The
  * whole decision lives on one surface: the recommended way in (MCP where
  * addable) is preselected, the connection is prenamed, and the choices most
- * people never change stay one glance away — including WHO the install is
- * for, a level-1 choice with its access spelled out.
+ * people never change stay one glance away — including the ACCOUNTS choice
+ * (one shared account vs each member's own; the install itself is always
+ * project-wide — Marko, 2026-09-15).
  */
 export function DiscoverAddSheet({
   projectId,
@@ -255,13 +256,15 @@ export function DiscoverAddSheet({
               </fieldset>
             ) : null}
 
-            {/* WHO the install is for — a level-1 decision, never buried in
-                an Advanced fold. The two options ARE the two authorization
-                owners; the copy spells out exactly who gets access. */}
+            {/* The ACCOUNTS choice — the connector installs for the whole
+                project either way (Marko, 2026-09-15); this only decides
+                whether everyone shares ONE account or each member signs in
+                with their own. The two options ARE the two authorization
+                owners. */}
             {strategyEditable ? (
               <fieldset className="space-y-2">
                 <legend className="text-foreground text-sm font-medium">
-                  {tI18nComplete.raw('text83b1bc0429f4')}
+                  {tI18nComplete.raw('text8a7c8b67fe8b')}
                 </legend>
                 <RadioGroup
                   value={strategy}
@@ -280,10 +283,10 @@ export function DiscoverAddSheet({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="text-foreground block text-sm font-medium">
-                        {tI18nComplete.raw('textdf197888764d')}
+                        {tI18nComplete.raw('text20dee4420874')}
                       </span>
                       <span className="text-muted-foreground block text-xs text-pretty">
-                        {tI18nComplete('textd7957d7041c3', { value0: connector.name })}
+                        {tI18nComplete('text6dfb578442b2', { value0: connector.name })}
                       </span>
                     </span>
                   </label>
@@ -299,10 +302,10 @@ export function DiscoverAddSheet({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="text-foreground block text-sm font-medium">
-                        {tI18nComplete.raw('text3a4b4df869c7')}
+                        {tI18nComplete.raw('textbcbfbec31cb8')}
                       </span>
                       <span className="text-muted-foreground block text-xs text-pretty">
-                        {tI18nComplete('textcb9545359d92', { value0: connector.name })}
+                        {tI18nComplete('text46657cd49f74', { value0: connector.name })}
                       </span>
                     </span>
                   </label>
@@ -312,7 +315,7 @@ export function DiscoverAddSheet({
               // The provider fixes the owner — state it instead of rendering
               // a dead control.
               <p className="text-muted-foreground text-xs text-pretty">
-                {tI18nComplete.raw('text7b2768da1390')}
+                {tI18nComplete.raw('text14f151094a7c')}
               </p>
             )}
           </>

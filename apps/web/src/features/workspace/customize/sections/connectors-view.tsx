@@ -2,6 +2,9 @@
 
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
+import Link from 'next/link';
+
+import { connectorCredentialHelpLinks } from '@/features/workspace/capabilities/connectors/detail/connector-doc-links';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -4845,6 +4848,9 @@ export function SetCredentialModal({
   shell?: 'modal' | 'split';
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // The typed `UiTranslator` the shared doc-links helper takes — the same
+  // catalog `tI18nHardcoded` reads, scoped one level deeper.
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   /**
    * `null` until the user picks a tab. The effective tab is then derived from
    * discovery, so a server that supports one-click OAuth opens on OAuth and a
@@ -4877,6 +4883,12 @@ export function SetCredentialModal({
           : requestAuth === 'mtls'
             ? '{"certificate":"-----BEGIN CERTIFICATE-----\\n...","private_key":"-----BEGIN PRIVATE KEY-----\\n...","ca":""}'
             : '••••••••';
+  // Where the pasted value COMES from — the app's developer docs (curated)
+  // and the Kortix guide. A bare input assumed the user already had a token
+  // in hand (Jay, 2026-09-15).
+  const credentialHelpLinks = connector
+    ? connectorCredentialHelpLinks(connector, tI18nComplete)
+    : [];
   const staticValid = (() => {
     if (!value) return false;
     if (!objectCredential) return true;
@@ -4980,7 +4992,13 @@ export function SetCredentialModal({
     // before they choose. A connector with no server URL 400s here and simply
     // leaves the modal on its static-credential default.
     enabled: open && Boolean(connector),
-    retry: false,
+    // One retry, not zero: the probe walks the server's whole metadata chain
+    // (WWW-Authenticate → resource metadata → AS metadata), so one transient
+    // failure anywhere in it used to silently cost the OAuth tab for the rest
+    // of the open — the "sometimes there is no Connect button" report
+    // (Jay, 2026-09-15). A designed 400 (no server URL) pays one extra
+    // request and still lands on the static default.
+    retry: 1,
     // Same tier as the connector config it sits beside: provider metadata
     // changes on the provider's schedule, not on ours (FRESHNESS
     // .connectorOAuth2Discovery).
@@ -5222,22 +5240,78 @@ export function SetCredentialModal({
             </FieldDescription>
           )}
         </Field>
-        {/* The escape hatch for the hidden tab: a server can require
-                    OAuth 2.0 without advertising it in any way discovery can
-                    see. One quiet text action instead of a permanent tab. */}
+        {/* Where the value comes from. The app's developer docs are where
+            API keys and tokens are actually minted; the Kortix guide covers
+            the pasting side. At most two links — this is a form, not a
+            reading list. */}
+        {credentialHelpLinks.length > 0 ? (
+          <p className="text-muted-foreground mt-2 text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text7bc4d9a2803c')}{' '}
+            {credentialHelpLinks.map((link, index) => (
+              <span key={link.href}>
+                {index > 0 ? ' · ' : null}
+                {link.external ? (
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground hover:underline"
+                  >
+                    {link.label}
+                  </a>
+                ) : (
+                  <Link href={link.href} className="text-foreground hover:underline">
+                    {link.label}
+                  </Link>
+                )}
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {/* Below the field, one quiet line about the OTHER way in. On an MCP
+            connector the one-click OAuth flow is the expected path, so while
+            the strip is absent the line says WHY: still checking, or the
+            probe failed (with the retry that brings the option back —
+            before this, a failed probe left a bare token field and no trace
+            of the missing Connect button; Jay, 2026-09-15). Every other
+            provider keeps only the escape hatch: for an API key, "no OAuth"
+            is the designed answer, not a failure worth narrating. */}
         {!showOAuth2Tabs ? (
-          <Button
-            type="button"
-            variant="text"
-            size="sm"
-            className="text-muted-foreground mt-3 h-auto px-0 text-xs"
-            onClick={() => {
-              setOauth2Requested(true);
-              setCredentialTypeChoice('oauth2');
-            }}
-          >
-            {tI18nHardcoded.raw('i18nComplete.textdee89ced3d79')}
-          </Button>
+          connector?.provider === 'mcp' && discoveryPending ? (
+            <p className="text-muted-foreground mt-3 flex items-center gap-1.5 text-xs">
+              <Loading className="size-3.5 shrink-0" />
+              {tI18nHardcoded.raw('i18nComplete.textb1e4036909b6')}
+            </p>
+          ) : connector?.provider === 'mcp' && discoveryError ? (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text6b05881dfe08')}{' '}
+              <Button
+                type="button"
+                variant="text"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() => void discoveryQuery.refetch()}
+              >
+                {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
+              </Button>
+            </p>
+          ) : (
+            /* The escape hatch for the hidden tab: a server can require
+               OAuth 2.0 without advertising it in any way discovery can
+               see. One quiet text action instead of a permanent tab. */
+            <Button
+              type="button"
+              variant="text"
+              size="sm"
+              className="text-muted-foreground mt-3 h-auto px-0 text-xs"
+              onClick={() => {
+                setOauth2Requested(true);
+                setCredentialTypeChoice('oauth2');
+              }}
+            >
+              {tI18nHardcoded.raw('i18nComplete.textdee89ced3d79')}
+            </Button>
+          )
         ) : null}
       </TabsContent>
       <TabsContent value="oauth2" className="space-y-4">
