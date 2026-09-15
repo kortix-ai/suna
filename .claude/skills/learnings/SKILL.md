@@ -21,6 +21,19 @@ linked, not inlined.
 
 ## Register
 
+### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
+
+**When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
+that returns a reason string). #6698 (2026-08-21) taught both auth middlewares
+that `unsupported-alg:HS256` is inconclusive via `isInconclusiveVerifyFailure`,
+but `sandbox-proxy/preview-auth.ts` kept `reason !== 'no-keys' && reason !==
+'no-key-for-kid'`. Prod JWKS publishes an ES256 key while GoTrue still signs
+HS256, so every preview ORIGIN (and `?token=` WebSocket) answered "Sign in to
+open this preview" to a valid session while `/v1/p/...` served the same token.
+*Incident:* prod, every JWT-authenticated preview origin, v0.13.16 and earlier.
+*Enforcer:* tripwire in `unit-jwt-alg-fallback.test.ts` fails when a
+production caller skips the predicate or compares a reason literal.
+
 ### Run browser SQL against the deployed target's test database (2026-09-15)
 
 **When:** a Playwright journey seeds or reads the database. Prefer `KE2E_DATABASE_URL` and `E2E_DATABASE_URL` over `DATABASE_URL` from local dotenv files. *Near-miss:* the v0.13.15 preview admin grant used a different database; the UI's role probe returned `200` without admin access. *Enforcer:* `tests/e2e/helpers/database.ts` selects the target database, and the admin journey reads `/v1/user-roles` after its grant.
