@@ -41,7 +41,6 @@ import {
   SLUG_RE,
   WORKSPACE_MODES_V2,
   type GrantSetV2,
-  type WorkspaceModeV2,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from './lib/agent-config-v2';
 import { isMetaAgentName } from '@kortix/shared';
@@ -119,7 +118,8 @@ export interface AgentSpec {
   /** Default sandbox template slug for sessions started with this agent. */
   sandbox?: string | null;
   /** Project file delivery mode for sessions started with this agent. */
-  workspace?: WorkspaceModeV2 | null;
+  repositoryAccess?: boolean;
+  legacyReadWorkspace?: boolean;
 }
 
 export interface AgentParseError {
@@ -449,15 +449,15 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
 }
 
 /** Resolve the selected agent's project file delivery mode without repository I/O. */
-export function workspaceFromLoadedAgents(
-  agentName: string,
-  loaded: LoadedAgents,
-): WorkspaceModeV2 | null {
-  const concreteName =
-    agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
-      ? loaded.defaultAgent
-      : agentName;
-  return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.workspace ?? null;
+export function repositoryAccessFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
+  const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
+  return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.repositoryAccess ?? true;
+}
+
+/** Legacy read remains unavailable until its owner explicitly chooses a boolean policy. */
+export function legacyReadWorkspaceFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
+  const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
+  return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.legacyReadWorkspace ?? false;
 }
 
 /**
@@ -642,7 +642,8 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     kortixCli: spec.kortixCli,
     env: spec.env,
     file: spec.file,
-    workspace: spec.workspace,
+    repositoryAccess: spec.repositoryAccess,
+    legacyReadWorkspace: spec.legacyReadWorkspace,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -697,7 +698,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       file,
       model,
       sandbox: null,
-      workspace: null,
+      repositoryAccess: true,
     },
   };
 }
@@ -753,7 +754,16 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   ) {
     return err(name, `agents.${name}.workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')}`);
   }
-  const workspace = (workspaceRaw as WorkspaceModeV2 | undefined) ?? null;
+  const repositoryAccessRaw = normalizedRow.repository_access;
+  if (repositoryAccessRaw !== undefined && typeof repositoryAccessRaw !== 'boolean') {
+    return err(name, `agents.${name}.repository_access must be a boolean`);
+  }
+  if (repositoryAccessRaw !== undefined && workspaceRaw !== undefined &&
+      repositoryAccessRaw !== (workspaceRaw === 'branch')) {
+    return err(name, `agents.${name}.repository_access conflicts with workspace`);
+  }
+  const repositoryAccess = repositoryAccessRaw ?? (workspaceRaw === undefined || workspaceRaw === 'branch');
+  const legacyReadWorkspace = workspaceRaw === 'read' && repositoryAccessRaw === undefined;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 
@@ -798,7 +808,8 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       file,
       model,
       sandbox,
-      workspace,
+      repositoryAccess,
+      legacyReadWorkspace,
     },
   };
 }

@@ -188,7 +188,7 @@ test.describe("12 — Sandbox templates UI", () => {
       {
         slug: customSlug,
         name: "E2E image template",
-        image: "kortix/kortix-sandbox:selfhost-local",
+        image: "ubuntu:24.04",
       },
     );
     expect(created.status).toBe(201);

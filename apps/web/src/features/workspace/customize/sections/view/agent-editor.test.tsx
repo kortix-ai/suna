@@ -18,8 +18,6 @@ import {
   stableStringify,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor';
 
 const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
@@ -124,6 +122,11 @@ describe('stableStringify — the dirty check', () => {
     );
   });
 
+  test('disabled repository access remains distinct from an omitted or enabled policy', () => {
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({}));
+    expect(stableStringify({ repository_access: false })).not.toBe(stableStringify({ repository_access: true }));
+  });
+
   test('an undefined value reads the same as an absent key', () => {
     expect(stableStringify({ a: 1, b: undefined })).toBe(stableStringify({ a: 1 }));
   });
@@ -165,10 +168,12 @@ describe('mode pickers use the shared component library', () => {
     }
   });
 
-  test('Tabs stay scoped to the grant-mode field — every section uses Select', () => {
+  test('Tabs stay scoped to grants; repository access uses a Switch and enums use Select', () => {
     for (const source of sectionSources) {
       expect(source).not.toContain('@/components/ui/tabs');
-      expect(source).toContain("from '@/components/ui/select'");
+      expect(source).toContain(source === accessFieldsSource
+        ? "from '@/components/ui/switch'"
+        : "from '@/components/ui/select'");
     }
   });
 
@@ -188,7 +193,6 @@ describe('display-name maps — Select renders the value verbatim', () => {
   test('every mode and action has a non-empty capitalized label', () => {
     const cases: [readonly string[], Record<string, string>][] = [
       [AGENT_MODES, AGENT_MODE_LABEL],
-      [WORKSPACE_MODES, WORKSPACE_MODE_LABEL],
       [PERMISSION_ACTIONS, PERMISSION_ACTION_LABEL],
     ];
     for (const [values, labels] of cases) {

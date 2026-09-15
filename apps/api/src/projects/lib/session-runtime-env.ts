@@ -1,6 +1,4 @@
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
-import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -13,7 +11,7 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
-  workspaceMode?: WorkspaceModeV2 | null;
+  repositoryAccess?: boolean;
   /** Enables the rollback-safe fresh-session Git fast path. */
   fastColdBootEnabled?: boolean;
   /** Experimental compiled checkout and OpenCode launcher rollout mode. */
@@ -88,7 +86,7 @@ export function auditRelayEnvPassthrough(
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
-  const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
+  const allowsFullRepository = input.repositoryAccess ?? true;
   const compiledBootMode = input.compiledBootMode ?? 'off';
   const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
@@ -159,7 +157,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
-    ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
+    KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),

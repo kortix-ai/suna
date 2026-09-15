@@ -21,6 +21,60 @@ linked, not inlined.
 
 ## Register
 
+### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
+
+**When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
+that returns a reason string). #6698 (2026-08-21) taught both auth middlewares
+that `unsupported-alg:HS256` is inconclusive via `isInconclusiveVerifyFailure`,
+but `sandbox-proxy/preview-auth.ts` kept `reason !== 'no-keys' && reason !==
+'no-key-for-kid'`. Prod JWKS publishes an ES256 key while GoTrue still signs
+HS256, so every preview ORIGIN (and `?token=` WebSocket) answered "Sign in to
+open this preview" to a valid session while `/v1/p/...` served the same token.
+*Incident:* prod, every JWT-authenticated preview origin, v0.13.16 and earlier.
+*Enforcer:* tripwire in `unit-jwt-alg-fallback.test.ts` fails when a
+production caller skips the predicate or compares a reason literal.
+
+### Await archive parser completion before extraction (2026-09-14)
+
+**When:** downloading an archive through parallel file and validation streams.
+A file sink finishing does not mean the decompressor has checked every header.
+Await the parser verdict before creating the extraction directory or launching tar.
+*Near-miss:* PR #7240 Linux package gate created a stage for a traversal archive;
+the guard and extraction raced. *Enforcer:* real traversal archive regression in
+`config-provider.test.ts`; it requires no stage and no extracted files on rejection.
+
+### Establish browser readiness before measuring navigation or capturing fonts (2026-09-14)
+
+**When:** measuring document reloads or taking UI screenshots. Await the initial
+load before recording its baseline. Select destination links by their exact href;
+await font readiness before screenshot capture within the journey deadline.
+*Incident:* PR #7240 local Chromium counted a late boot load as a menu reload,
+clicked before the agent card appeared, and timed out during a 46-second cold font load.
+*Enforcers:* browser journeys 24 and 27 retain navigation, layout, and screenshot assertions.
+
+### Drop decoded response headers and capture transcripts before manual stop (2026-09-14)
+
+**When:** forwarding a fetch response or stopping a session. Remove
+`content-encoding` and `content-length` after fetch decompresses the upstream body.
+Await transcript capture before provider stop; turn-end capture can still be in flight.
+*Incident:* PR #7240 live preview: RUN-9 failed with ZstdDecompressionError;
+SESS-24 returned an unavailable transcript immediately after manual stop.
+*Enforcers:* compressed upstream proxy test, stop ordering tests, RUN-9 and SESS-24.
+Live checks also wait for the written artifact, not the first assistant part;
+platform names and OpenCode titles are validated independently (GOLD-1, SESS-10).
+
+### Preserve deployment prefixes and prepare shared images before timed preview flows (2026-09-14)
+
+**When:** running the full suite on a self-hosted preview. Preserve the gateway's
+`/_gateway` mount when binding test credentials. Enable every tested page in the
+preview profile. Finish the cold default-image build before runtime flow timers;
+run forced shared-image rebuilds only after concurrent flows finish. Require the
+current template identity to be ready; fallback images carry an older daemon.
+*Incident:* PR #7240 preview run 34902478412: four gateway failures and seven
+runtime timeouts; `SNAP-2` deleted the shared image while sessions were booting.
+*Enforcers:* `client-ci-passthrough.test.ts`, `preview-stack.test.ts`, runner sandbox
+setup, and `SNAP-2` global scheduling. Vercel analytics also mounts only on Vercel.
+
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
 **When:** stopping the sandbox proxy or running package tests. Cancel boot and
@@ -5222,3 +5276,18 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
 
 **Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.
+
+### Pass the deployed database URL to browser database helpers
+
+**Incident (2026-09-15, PR #7240):** the preview admin journey inserted its
+synthetic `super_admin` grant without passing `KE2E_DATABASE_URL`. The UI then
+queried the preview API, which did not see the grant, and rendered `Admin access
+required` on every retry.
+
+**Rule:** browser journeys that write deployment state must pass
+`KE2E_DATABASE_URL || E2E_DATABASE_URL` to each database helper call. Do not let
+the helper fall back to a repository dotenv file for a deployed target.
+
+**Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
+the role insert and cleanup delete. The preview journey must observe the grant
+through `/v1/user-roles` and render the admin overview.

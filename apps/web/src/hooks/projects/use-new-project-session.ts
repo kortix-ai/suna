@@ -9,7 +9,10 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
+  confirmCommitted,
+  errorCode,
   getRequiredConnectorConnections,
+  isAmbiguousCreateFailure,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import {
@@ -33,6 +36,7 @@ import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   createProjectSession,
+  getProjectSession,
   getProjectSessionScope,
   markSessionFresh,
   setProjectSessionScope,
@@ -234,10 +238,23 @@ export function useNewProjectSession(projectId: string | undefined) {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-        await createProjectSession(projectId, {
-          session_id: sessionId,
-          ...opts?.create,
-        });
+        try {
+          await createProjectSession(projectId, {
+            session_id: sessionId,
+            ...opts?.create,
+          });
+        } catch (error) {
+          // A timeout is not a refusal: the server keeps running the create and
+          // commits the session WITH its first prompt. Rejecting here left the
+          // user on the page they sent from, composer unlocked with a prompt the
+          // agent was already answering. The id is ours, so ask for it.
+          const committed =
+            isAmbiguousCreateFailure(errorCode(error)) &&
+            (await confirmCommitted(async () =>
+              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
+            ));
+          if (!committed) throw error;
+        }
         return sessionId;
       };
 

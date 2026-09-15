@@ -19225,6 +19225,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "项目仓库访问权限",
+    "enabled": "新会话会获得项目仓库。Git 权限仍然适用。现有会话保留原有的访问设置。",
+    "disabled": "新会话在没有项目仓库的情况下运行。仍可创建文件并使用已授权的工具。现有会话保留原有的访问设置。"
+  },
   "modelAccess": {
     "manageProvider": "{name} 设置",
     "enableProviderAction": "启用提供商",

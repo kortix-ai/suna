@@ -19225,6 +19225,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "Pristup repozitorijumu projekta",
+    "enabled": "Nove sesije dobijaju repozitorijum projekta. Git dozvole i dalje važe. Postojeće sesije zadržavaju svoje podešavanje pristupa.",
+    "disabled": "Nove sesije rade bez repozitorijuma projekta. I dalje mogu da prave datoteke i koriste odobrene alate. Postojeće sesije zadržavaju svoje podešavanje pristupa."
+  },
   "modelAccess": {
     "manageProvider": "Podešavanja za {name}",
     "enableProviderAction": "Omogući provajdera",
