@@ -80,7 +80,7 @@ export const MIRROR_MAX_MESSAGE_CHARS = 1_000_000;
 export interface MirrorMessage {
   /** OpenCode's message envelope, verbatim (`Message` in @opencode-ai/sdk). */
   info: Record<string, unknown>;
-  /** The part array, minus tool inputs/outputs and file urls. */
+  /** The part array, minus tool inputs/outputs (except a legacy answer's) and file urls. */
   parts: Array<Record<string, unknown>>;
 }
 
@@ -98,6 +98,28 @@ export interface MirrorSnapshot {
  *  a sibling the transcript renders (a tool's name + status, a file's name +
  *  mime). Removing them is what keeps a mirrored row small. */
 const TOOL_STATE_KEEP = new Set(['status', 'title', 'time', 'metadata']);
+
+/**
+ * A legacy Suna `complete` / `ask` carries the run's final answer in its input
+ * (`text`, `attachments`, `follow_up_prompts`); its output is only
+ * `{"status": "complete"}`. Stripping that input would cold-paint a bare tool
+ * row where the answer belongs, so these fields survive. A live `question`
+ * call registered as `ask` carries `questions` and is stripped as usual.
+ */
+const LEGACY_ANSWER_TOOLS = new Set(['complete', 'ask']);
+const LEGACY_ANSWER_INPUT_KEEP = ['text', 'attachments', 'follow_up_prompts'] as const;
+
+function legacyAnswerInput(tool: unknown, input: unknown): Record<string, unknown> | null {
+  if (typeof tool !== 'string' || !LEGACY_ANSWER_TOOLS.has(tool)) return null;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  if ('questions' in record || typeof record.text !== 'string') return null;
+  const kept: Record<string, unknown> = {};
+  for (const key of LEGACY_ANSWER_INPUT_KEEP) {
+    if (record[key] !== undefined) kept[key] = record[key];
+  }
+  return kept;
+}
 
 /**
  * Pure: strip the unbounded fields out of a part array and bound what is left.
@@ -130,6 +152,15 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
         // `input`/`output` are the tool's whole payload — a file read, a build
         // log, a page of HTML. The compact projection never showed them and the
         // renderer does not need them.
+        const legacyInput = legacyAnswerInput(part.tool, (state as { input?: unknown }).input);
+        if (legacyInput) {
+          if (typeof legacyInput.text === 'string') {
+            const cap = Math.max(0, Math.min(MIRROR_MAX_PART_CHARS, budget));
+            if (legacyInput.text.length > cap) legacyInput.text = legacyInput.text.slice(0, cap);
+            budget -= (legacyInput.text as string).length;
+          }
+          kept.input = legacyInput;
+        }
         part.state = kept;
       }
     }

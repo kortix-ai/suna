@@ -9,6 +9,7 @@
  */
 
 import type { ToolPart } from '@/ui';
+import { isLegacyAnswerPart } from '../../legacy-answer';
 import { isEmptyShowPart, isNoGroupActivityTool } from '../../session-activity-groups';
 import { type StepFamily, familyForTool, narrateFailedStep, narrateStep } from './narration';
 
@@ -84,8 +85,8 @@ export function groupSteps(parts: ToolPart[]): Step[] {
     // Dropped here, before the standalone branch, so it also cannot split a run.
     if (isEmptyShowPart(part)) continue;
 
-    // show / show_user each stand alone.
-    if (isNoGroupActivityTool(part.tool)) {
+    // show / show_user and a legacy Suna answer each stand alone.
+    if (isNoGroupActivityTool(part.tool) || isLegacyAnswerPart(part)) {
       flush();
       steps.push(finalize(f, [part]));
       continue;

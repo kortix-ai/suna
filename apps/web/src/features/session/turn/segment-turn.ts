@@ -8,6 +8,7 @@
  * No React import. Every rule here is unit-tested in segment-turn.test.ts.
  */
 import { isTextPart, isToolPart, type Part, type TextPart, type ToolPart } from '@/ui';
+import { isLegacyAnswerPart } from '../legacy-answer';
 import { isInvisibleActivityPart, isStandaloneActivityTool } from '../session-activity-groups';
 
 export type Segment =
@@ -45,7 +46,9 @@ export function segmentTurn(parts: ReadonlyArray<Part>, opts: SegmentTurnOptions
 
     if (isToolPart(part)) {
       const standalone =
-        isStandaloneActivityTool(part.tool) || !!opts.standaloneCallIds?.has(part.callID);
+        isStandaloneActivityTool(part.tool) ||
+        isLegacyAnswerPart(part) ||
+        !!opts.standaloneCallIds?.has(part.callID);
       if (standalone) {
         flush();
         segments.push({ kind: 'standalone', part });

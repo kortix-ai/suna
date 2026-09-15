@@ -14,6 +14,7 @@
  */
 
 import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
+import { isLegacyAnswerPart, legacyAnswerPayload } from '@/features/session/legacy-answer';
 import type { ToolPart } from '@/ui';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
@@ -242,7 +243,16 @@ export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string
     // call still 'running'/'pending' hasn't produced anything YET either —
     // an artifact only exists once the call actually completes.
     const status = statusOf(part);
-    if (status === 'error' || status === 'running' || status === 'pending') continue;
+    if (status === 'running' || status === 'pending') continue;
+
+    // A legacy Suna `complete` / `ask` hands over its attachments the way
+    // `show` does. Its `error` status only means the migrated transcript lost
+    // the `{"status":"complete"}` result row; the attachments were delivered.
+    if (isLegacyAnswerPart(part)) {
+      for (const item of legacyAnswerOutputsOf(part)) push(item);
+      continue;
+    }
+    if (status === 'error') continue;
 
     const family = familyForTool(part.tool);
     if (family === 'hidden') continue;
@@ -373,6 +383,15 @@ function showOutputsOf(part: ToolPart): OutputItem[] {
 
   const single = showPayloadToOutput(input, part.callID);
   return single ? [single] : [];
+}
+
+/** The attachments of a legacy Suna `complete` / `ask`, as `show` would list them. */
+function legacyAnswerOutputsOf(part: ToolPart): OutputItem[] {
+  const payload = legacyAnswerPayload(part.state?.input);
+  if (!payload) return [];
+  return payload.attachments
+    .map((item) => showPayloadToOutput(item, part.callID))
+    .filter((item): item is OutputItem => item !== null);
 }
 
 /**
