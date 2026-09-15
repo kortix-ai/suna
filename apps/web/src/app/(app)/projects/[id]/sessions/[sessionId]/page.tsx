@@ -611,6 +611,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // becomes a durable inbox row the control plane delivers once the box is up,
   // rather than being dropped.
   const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
+    stage: session.stage,
     sandboxStatus: sandbox?.status,
     hasCachedContent: hasTranscript,
   });
@@ -865,7 +866,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // `sandbox.status`, which does not exist here, so this state used to fall
     // into the FAILURE card above and claim a session that merely stopped had
     // failed before it ever got a computer.
-    if (dormantWithoutRuntime) {
+    if (dormantWithoutRuntime && !showCachedTranscriptWhileDown) {
       // A migrated session's first open lands here by design: it has never had
       // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
       // and make the CTA the restore it actually performs.

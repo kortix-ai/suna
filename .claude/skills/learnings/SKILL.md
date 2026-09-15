@@ -6913,3 +6913,10 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
 
 **Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.
+
+### Saved history must survive a stopped response without a sandbox row (2026-09-15)
+
+**When:** choosing between a transcript and a terminal session screen.
+**Incident:** preview `980464f436` returned exact image bytes and saved message references, but the page replaced history with a stopped card when `/start` omitted the sandbox row.
+**Rule:** use transcript availability and the stopped session stage together. A missing sandbox row does not mean missing history. Keep the empty-session restart screen when no history exists.
+**Enforcer:** two failing-then-passing presentation cases and browser journey 29. The browser reads the exact image blob, reloads, and checks that no sandbox or environment row was created.

@@ -66,6 +66,7 @@ delete the session or its attachments.
 
 - Read chat images through the API without starting either sandbox.
 - Preserve bounded image references in stopped-session history, including tool output.
+- Keep saved history visible when the API reports a stopped session without a sandbox row.
 - Upgrade old image display references during replay without rewriting the durable log.
 - Hydrate two distinct images concurrently. Deduplicate repeated references within
   each replay. Preserve message order and cancel sibling downloads on failure or Stop.
@@ -125,7 +126,8 @@ Preview verification at `91e30e27e5`:
 - The real composer sends two named images as references. Vision identifies their
   color. The second run produces 73 text deltas and eight visible rendering states.
 - Stopped history preserves user and tool image references. A fresh browser reads
-  the exact 79-byte PNG into its displayed blob without starting either sandbox.
+  the exact 79-byte PNG. A later check exposes a terminal-screen replacement after
+  that initial render; the additional fix and regression test are described below.
 - PostgreSQL contains one image row after repeated uploads with different filenames.
   The native conversation log does not contain the image's base64 payload.
 - Two stop/resume cycles preserve all 29 messages exactly. They take 4,374 ms and
@@ -146,3 +148,24 @@ preview, 67 focused tests pass. Deployed `SESS-30` and `SESS-33` pass 2/2 with n
 The full deployed parity census and the matched Pi/OpenCode performance comparison
 remain required. Nothing in this audit enables environment deletion or proves
 production replacement readiness.
+
+Upstream integration at `2c09f25870` preserves the Pi runtime and merges `main`
+through `7204e0609f`. The final core run passes 406/406 HTTP/CLI flows.
+All 482 runner tests and the SDK gates pass. The package suite passes, including
+9,544 API tests and 1,315 daemon tests. Database metadata matches the combined
+schema; applied migration files remain unchanged.
+
+A subsequent fresh-browser check finds an additional display gate: a stopped
+response without a sandbox row replaces saved history with a restart screen.
+The fix preserves the transcript in that case. Browser journey 29 reproduces
+the failure before the fix, then verifies exact image bytes across reloads and
+zero sandbox/environment rows. It also keeps the empty-history restart behavior.
+The full local browser run passes 26 journeys with three configured skips.
+The final focused run passes both populated and empty stopped-session cases.
+Frontend typecheck passes. Focused lint reports zero errors and two existing warnings.
+
+To test the attachment path on the preview: attach two PNGs, send a prompt, and
+check that text appears incrementally. Reload the conversation and open each
+image. Stop the session through the SDK/API, then reopen its history. Saved
+images must remain readable during startup. Ordinary documents still require
+the environment disk; do not delete that disk to test their persistence.
