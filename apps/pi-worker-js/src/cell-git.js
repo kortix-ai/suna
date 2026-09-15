@@ -235,6 +235,17 @@ export async function workingStatus(cell, dir = CELL_CWD) {
     // alone answered correctly (measured 2026-09-10), and `statusMatrix`
     // trusts a one-second stat granularity this filesystem writes inside
     // (see the note above). Two passes and a hash cannot be fooled by either.
+    // HEAD'S TREE IS CACHED ON THE COMMIT IT CAME FROM.
+    //
+    // The walk reads every tree object and every blob id under HEAD, and HEAD
+    // moves only on a commit or a pull — both of which go through this file.
+    // Keying the cache on the resolved commit oid makes it exact: there is no
+    // clock in it, which is the trap the working-tree side of this function
+    // exists to avoid.
+    const commit = await git.resolveRef({ fs, dir, ref: "HEAD" }).catch(() => null);
+    if (commit && cell.__headTree?.commit === commit) {
+      return await compareWorkdir(cell, dir, fs, cell.__headTree.map);
+    }
     const head = new Map();
     await git.walk({
       fs, dir, trees: [git.TREE({ ref: "HEAD" })],
@@ -245,6 +256,16 @@ export async function workingStatus(cell, dir = CELL_CWD) {
         return null;
       },
     });
+    if (commit) cell.__headTree = { commit, map: head };
+    return await compareWorkdir(cell, dir, fs, head);
+  } catch {
+    return [];
+  }
+}
+
+/** The working tree against a HEAD map, which is the half that cannot be cached. */
+async function compareWorkdir(cell, dir, fs, head) {
+  try {
     const out = [];
     const seen = new Set();
     for (const filepath of await walkWorkdir(cell.fs, dir)) {

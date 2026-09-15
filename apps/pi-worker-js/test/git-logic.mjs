@@ -3,7 +3,7 @@
 // and `/file/status` answered `[]` because there was no git. isomorphic-git
 // over the cell's in-memory tree, cloning through the Kortix git proxy with
 // the session's own token.
-// EXPECTED_PASSES=27
+// EXPECTED_PASSES=30
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
@@ -66,6 +66,35 @@ const byPath = Object.fromEntries(status.map((f) => [f.path, f.status]));
 check("a modified, an added and a deleted file each report themselves — the Files panel's own shape",
   byPath["a.txt"] === "modified" && byPath["new.md"] === "added" && byPath["src/b.ts"] === "deleted"
     && status.every((f) => "added" in f && "removed" in f), JSON.stringify(status));
+
+// ── THE HEAD TREE IS CACHED, AND THE CACHE MUST NOT OUTLIVE ITS COMMIT ──
+//
+// Reading every tree object under HEAD was half of `/file/status` (52-61 ms of
+// isolate time for 29 files, measured on dev 2026-09-15), and HEAD moves only
+// on a commit or a pull. Keyed on the resolved commit oid there is no clock in
+// it — but a cache that survived a commit would report the PREVIOUS tree, and
+// every file committed since would read as still modified.
+{
+  await fs.promises.writeFile(`${CELL_CWD}/a.txt`, "hello world\n");
+  await git.add({ fs, dir: CELL_CWD, filepath: "a.txt" });
+  await git.add({ fs, dir: CELL_CWD, filepath: "new.md" });
+  await git.remove({ fs, dir: CELL_CWD, filepath: "src/b.ts" });
+  const second = await git.commit({ fs, dir: CELL_CWD, message: "second", author: { name: "cell", email: "cell@kortix" } });
+  check("after a COMMIT the tree is clean again — the cached HEAD did not outlive the commit it was read from",
+    second !== sha && JSON.stringify(await workingStatus(cell)) === "[]", JSON.stringify(await workingStatus(cell)));
+  // And the working-tree half is never cached: a write with no commit behind it
+  // is what the panel exists to show.
+  await fs.promises.writeFile(`${CELL_CWD}/a.txt`, "changed again\n");
+  const after = await workingStatus(cell);
+  check("and a write AFTER that commit is still seen, with HEAD unmoved and the cache warm",
+    after.length === 1 && after[0].path === "a.txt" && after[0].status === "modified", JSON.stringify(after));
+  // Two writes inside one second, same byte length: the case that made this
+  // function walk rather than trust `statusMatrix` in the first place.
+  await fs.promises.writeFile(`${CELL_CWD}/a.txt`, "changed AGAIN\n");
+  const twice = await workingStatus(cell);
+  check("a second write of the SAME LENGTH in the same second is still modified — object ids, not timestamps",
+    twice.length === 1 && twice[0].status === "modified", JSON.stringify(twice));
+}
 
 // ── the errors isomorphic-git reads ──
 {
