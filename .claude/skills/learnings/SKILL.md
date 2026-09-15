@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Read both legacy tool metadata formats before blocking a result (2026-09-15)
+
+**When:** projecting a legacy `tool` row with an exact assistant link, read
+`frontend_content.tool_execution` and direct `metadata` fields. Preserve the
+result, call ID, function name, and return format in the native part.
+*Near-miss:* 50 results in one 507-message Suna thread had direct metadata;
+the first projector blocked all 50 although every assistant link matched.
+*Enforcer:* `projection.test.ts` covers both metadata formats; the production
+reassessment keeps unmatched links in review.
+
 ### Stop verified migration sessions before the active-session cap (2026-09-15)
 
 **When:** importing many sessions into one project, check the native message count

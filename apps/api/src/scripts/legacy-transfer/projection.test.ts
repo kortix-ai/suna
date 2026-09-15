@@ -45,6 +45,19 @@ test('tool results with an exact legacy assistant link become native tool parts'
  expect((part.state as any).metadata.legacy_source_message_id).toBe(tool.message_id);
 });
 
+test('legacy metadata tool results retain exact assistant links and result bytes',()=>{
+ const assistant=row(2,'assistant',{role:'assistant',content:'answer',tool_calls:[]});
+ const tool=row(3,'tool',{role:'tool',content:'raw'}, {assistant_message_id:assistant.message_id,function_name:'legacy_search',tool_call_id:'legacy-call',result:{items:2},return_format:'json'});
+ const result=projectThread({ref,thread,rows:[row(1,'user',{content:'find bonds'}),assistant,tool],runtimeVersion:'1.18.23'});
+ expect(result.audit.unresolved).toEqual([]);
+ expect(result.audit.dispositions.find(x=>x.source_id===tool.message_id)?.disposition).toBe('native-tool-result-anchored');
+ const part=result.runtime.messages[1]!.parts.find(x=>x.type==='tool')!;
+ expect(part.callID).toBe('legacy-call');
+ expect(part.tool).toBe('legacy_search');
+ expect((part.state as any).output).toBe('{"items":2}');
+ expect((part.state as any).input).toEqual({});
+});
+
 test('unknown content blocks are retained and flagged rather than discarded', () => {
   const result = projectThread({ ref, thread, rows: [row(1, 'user', { content: [{ type: 'image_url', image_url: { url: 'https://source.invalid/a.png' } }] })], runtimeVersion: '1.18.23' });
   expect(result.runtime.messages[0]!.parts[0]!.text).toContain('https://source.invalid/a.png');

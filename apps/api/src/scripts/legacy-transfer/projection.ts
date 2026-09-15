@@ -116,9 +116,11 @@ export function projectThread(input: { ref: string; thread: JsonRow; project?: J
     } else {
       for (const row of results) {
         const sourceId=String(row.message_id),metadata=object(row.metadata),anchor=messagesBySourceId.get(text(metadata.assistant_message_id));
-        const execution=object(object(metadata.frontend_content).tool_execution);
-        if(anchor&&anchor.info.role==='assistant'&&execution.function_name&&execution.result!=null&&execution.arguments&&typeof execution.arguments==='object'&&!Array.isArray(execution.arguments)){
-          const at=timestamp(row.created_at),part={id:`prt_${at.toString(16).padStart(12,'0')}${sourceId.replaceAll('-','')}ffff${digest(input.ref).slice(0,8)}`,sessionID,messageID:anchor.info.id,type:'tool',callID:text(execution.tool_call_id)||`legacy-${sourceId}`,tool:text(execution.function_name),state:{status:'completed',input:execution.arguments,output:text(execution.result),title:text(execution.function_name),metadata:{legacy_source_message_id:sourceId,legacy_assistant_message_id:text(metadata.assistant_message_id)},time:{start:at,end:at}}} as Part;
+        const frontendExecution=object(object(metadata.frontend_content).tool_execution);
+        const execution=frontendExecution.function_name&&frontendExecution.result!=null?frontendExecution:metadata;
+        const argumentsValue=execution.arguments??{};
+        if(anchor&&anchor.info.role==='assistant'&&text(execution.function_name)&&execution.result!=null&&argumentsValue&&typeof argumentsValue==='object'&&!Array.isArray(argumentsValue)){
+          const at=timestamp(row.created_at),part={id:`prt_${at.toString(16).padStart(12,'0')}${sourceId.replaceAll('-','')}ffff${digest(input.ref).slice(0,8)}`,sessionID,messageID:anchor.info.id,type:'tool',callID:text(execution.tool_call_id)||`legacy-${sourceId}`,tool:text(execution.function_name),state:{status:'completed',input:argumentsValue,output:text(execution.result),title:text(execution.function_name),metadata:{legacy_source_message_id:sourceId,legacy_assistant_message_id:text(metadata.assistant_message_id),legacy_return_format:text(execution.return_format)},time:{start:at,end:at}}} as Part;
           anchor.parts.push(part);dispositions.push({source_id:sourceId,disposition:'native-tool-result-anchored',native_id:part.id});
         }else{dispositions.push({source_id:sourceId,disposition:'raw-archive-unmatched-tool'});unresolved.push(`ambiguous-tool-result:${sourceId}`);}
       }
