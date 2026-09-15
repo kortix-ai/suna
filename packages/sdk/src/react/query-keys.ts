@@ -186,6 +186,9 @@ export const qk = {
      */
     modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
+    /** Persisted provider/model inference restrictions and the effective default. */
+    modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass

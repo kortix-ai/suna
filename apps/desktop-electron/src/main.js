@@ -33,6 +33,8 @@ const { openInstanceChooser, focusInstanceChooser } = require('./instance-choose
 const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
 const { createInstanceStore } = require('./instance-store');
 const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
+const { backIndex, isAppPath, isPreviewHost } = require('./nav-rules');
+const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
@@ -152,42 +154,8 @@ function writeMaximized(maximized) {
 
 /* ─── Navigation gate (port of lib.rs) ───────────────────────────────────── */
 
-// Sandbox previews / tunnels — user content, always in-app.
-function isPreviewHost(host) {
-  return (
-    host.endsWith('.localhost') ||
-    host === 'kortix.cloud' ||
-    host.endsWith('.kortix.cloud')
-  );
-}
-
-// Product + auth route prefixes allowed to render in the desktop window. MUST
-// stay in sync with DESKTOP_ALLOWED_ROUTES in apps/web/src/middleware.ts.
-const APP_PATH_PREFIXES = [
-  '/projects',
-  '/new',
-  '/accounts',
-  '/invites',
-  '/admin',
-  '/setup',
-  '/connectors',
-  '/oauth',
-  '/checkout',
-  '/tunnel',
-  '/github',
-  '/cli',
-  '/templates',
-  '/maintenance',
-  '/countryerror',
-  '/debug',
-];
-
-function isAppPath(pathname) {
-  if (pathname === '/auth' || pathname.startsWith('/auth/')) return true;
-  return APP_PATH_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
-}
+// `isPreviewHost` and `isAppPath` live in nav-rules.js, where a test keeps the
+// route list equal to the web middleware's DESKTOP_ALLOWED_ROUTES.
 
 /**
  * Should `urlStr` render inside the desktop window? (Top-frame navigations
@@ -466,6 +434,28 @@ function createMainWindow() {
     },
   );
 
+  // A renderer that crashes, is killed, or runs out of memory leaves only the
+  // window background: no page, no script, no in-app exit. Offer a way back.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (!rendererGoneNeedsRecovery(details)) return;
+    console.warn(`[kortix] renderer gone: ${details?.reason} (exit ${details?.exitCode}).`);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    void dialog
+      .showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Reload', 'Go Home'],
+        defaultId: 0,
+        cancelId: 0,
+        message: 'Kortix stopped unexpectedly',
+        detail: 'Reload to return to this page, or go home to your latest project.',
+      })
+      .then(({ response }) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (response === 1) goHome();
+        else mainWindow.webContents.reload();
+      });
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -487,6 +477,30 @@ function navigateMainWindow(url) {
     .then(() => wc.navigationHistory.clear())
     .catch(() => {}); // did-fail-load reports failures
   mainWindow.focus();
+}
+
+/**
+ * Go ▸ Back (Cmd/Ctrl+[). The shell has no browser toolbar, so without this a
+ * page with no in-app exit is a dead end.
+ *
+ * History traversal does not fire will-navigate, so an unchecked goBack() could
+ * load github.com or the first about:blank inside the app window. Back takes
+ * the previous entry only when the navigation gate would load it in-app
+ * (`backIndex`); with nothing in-app behind the page, it goes home.
+ */
+function goBackInApp() {
+  if (!mainWindow) return;
+  const history = mainWindow.webContents.navigationHistory;
+  const urls = [];
+  for (let i = 0; i < history.length(); i++) urls.push(history.getEntryAtIndex(i)?.url ?? '');
+  const index = backIndex(urls, history.getActiveIndex(), shouldLoadInApp);
+  if (index < 0) goHome();
+  else history.goToIndex(index);
+}
+
+/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the configured app URL, from any page. */
+function goHome() {
+  navigateMainWindow(instanceStore.appUrl());
 }
 
 /** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
@@ -801,6 +815,23 @@ function buildMenu() {
               { label: 'Check for Updates…', click: () => checkForUpdatesInteractive() },
               frontendSubmenu,
             ]),
+      ],
+    },
+    {
+      // The browser toolbar the shell does not have. Back and Home are the
+      // exits from any page, including one with no in-app control.
+      label: 'Go',
+      submenu: [
+        {
+          label: 'Back',
+          accelerator: 'CmdOrCtrl+[',
+          click: () => goBackInApp(),
+        },
+        {
+          label: 'Home',
+          accelerator: 'CmdOrCtrl+Shift+H',
+          click: () => goHome(),
+        },
       ],
     },
     { role: 'windowMenu' },

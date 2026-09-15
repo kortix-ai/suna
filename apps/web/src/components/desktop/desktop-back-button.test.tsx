@@ -115,6 +115,17 @@ describe('only the desktop shell shows Back', () => {
     expect(unlayered(shown!.index!)).toBe(true);
   });
 
+  // A positioned top row on a full-screen frame (`/new`, the `/projects/start`
+  // sign-out) starts in the title-bar band: traffic lights on macOS, the
+  // web-drawn window controls on Win/Linux. On desktop it drops below the band.
+  test('a band row sits below the title-bar band on desktop', () => {
+    const row = css.match(/html\[data-desktop='true'\]\s+\.kx-desktop-band-row\s*\{([^}]*)\}/);
+    expect(row?.[1]).toMatch(/top:\s*calc\(\s*var\(--kx-titlebar-inset\)/);
+    // Below the band there is nothing to indent past: the row keeps its padding.
+    expect(row?.[1]).not.toMatch(/padding/);
+    expect(unlayered(row!.index!)).toBe(true);
+  });
+
   // Below `md` the auth mark pins to the top-left corner. On desktop that
   // corner is the band — traffic lights on macOS, Back on every platform.
   test('the auth mark moves below the band on desktop', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { HubLink, useHubSearchParams } from '@/features/accounts/hub/account-hub-location';
 import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // Guided identity setup — Vercel-style wizards for SAML SSO and Directory
@@ -29,8 +29,6 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
@@ -91,16 +89,14 @@ type Flow = 'sso' | 'scim';
 
 const FLOW_CONFIG: Record<
   Flow,
-  { route: string; heading: string; subheading: string; entitlement: 'sso' | 'scim' }
+  { heading: string; subheading: string; entitlement: 'sso' | 'scim' }
 > = {
   sso: {
-    route: 'sso-setup',
     heading: 'Select your identity provider',
     subheading: 'Let your team sign in with the identity provider you already run.',
     entitlement: 'sso',
   },
   scim: {
-    route: 'scim-setup',
     heading: 'Set up Directory Sync',
     subheading: 'Provision and deprovision accounts automatically from your identity provider.',
     entitlement: 'scim',
@@ -1535,13 +1531,20 @@ function StepBody({
 function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const flowConfig = useLocalizedUiCatalog(FLOW_CONFIG);
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const providerId = searchParams?.get('provider') ?? null;
-  const guide =
-    flow === 'sso'
-      ? getProviderGuide(providerId, tI18nComplete)
-      : getScimGuide(providerId, tI18nComplete);
+  // The wizard is a pane of the account hub, which writes `accountProvider` on
+  // the page URL. Only the hub's translator maps it back to `provider`; a raw
+  // `useSearchParams().get('provider')` is always null, so every provider
+  // click re-rendered the picker (2026-09-14).
+  const providerId = useHubSearchParams().get('provider');
+  // Localizing a guide builds a new object. Memoize it so the guide keeps one
+  // identity per provider and locale instead of a new one per render.
+  const guide = useMemo(
+    () =>
+      flow === 'sso'
+        ? getProviderGuide(providerId, tI18nComplete)
+        : getScimGuide(providerId, tI18nComplete),
+    [flow, providerId, tI18nComplete],
+  );
   const config = flowConfig[flow];
 
   const accountStateQuery = useAccountState({ accountId, enabled: !!accountId });
@@ -1581,14 +1584,22 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
 
   // Restore progress when a guide opens; jump to the first incomplete step.
+  // Keyed on the provider id, never on the localized guide object: when this
+  // effect followed the object it ran after every render, set a fresh
+  // `completed` array (render loop), and snapped `activeStep` back to the first
+  // open step, so Back and the step rail did nothing (2026-09-14). Step ids
+  // are not translated, so the unlocalized table is enough here.
   useEffect(() => {
-    if (!guide) return;
-    const done = loadCompleted(flow, accountId, guide.id);
+    const source = (flow === 'sso' ? PROVIDER_GUIDES : SCIM_PROVIDER_GUIDES).find(
+      (candidate) => candidate.id === providerId,
+    );
+    if (!source) return;
+    const done = loadCompleted(flow, accountId, source.id);
     setCompleted(done);
     const doneSet = new Set(done);
-    const firstOpen = guide.steps.findIndex((s) => !doneSet.has(s.id));
-    setActiveStep(firstOpen === -1 ? guide.steps.length - 1 : firstOpen);
-  }, [accountId, flow, guide]);
+    const firstOpen = source.steps.findIndex((s) => !doneSet.has(s.id));
+    setActiveStep(firstOpen === -1 ? source.steps.length - 1 : firstOpen);
+  }, [accountId, flow, providerId]);
 
   if (accountStateQuery.isLoading) {
     return <Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-md" />;

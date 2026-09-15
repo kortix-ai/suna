@@ -29,32 +29,42 @@ interface AccountSummary {
   account_role: string;
 }
 
-/** The sidebar's one control — trigger, then the "Switch Workspace" submenu.
- *  Every name here is `exact`: the trigger's menu is "Switch workspace" and the
- *  submenu it opens is "Switch Workspace", which differ only in case, and
- *  Playwright's accessible-name match is case-insensitive without it. */
+/** The sidebar's one control — trigger, then the "Switch Project" submenu.
+ *  Every name here is `exact`: the trigger's menu is "Switch project" and the
+ *  submenu it opens is "Switch Project", which differ only in case, and
+ *  Playwright's accessible-name match is case-insensitive without it.
+ *
+ *  The noun was "Workspace" until the product settled on ONE word for a unit
+ *  of work — project, the one the URL, API, CLI, manifest and DB already use
+ *  (`features/workspace/workspace-vocabulary.test.ts`). */
 async function openWorkspacePicker(page: Page): Promise<Locator> {
   const trigger = page
     .locator('[data-slot="sidebar"]')
-    .getByRole("button", { name: "Switch workspace", exact: true });
+    .getByRole("button", { name: "Switch project", exact: true });
   await expect(trigger).toBeVisible({ timeout: 60_000 });
   await trigger.click();
   await page
-    .getByRole("menuitem", { name: "Switch Workspace", exact: true })
+    .getByRole("menuitem", { name: "Switch Project", exact: true })
     .click();
   const picker = page.getByRole("menu", {
-    name: "Switch Workspace",
+    name: "Switch Project",
     exact: true,
   });
   await expect(picker).toBeVisible();
   return picker;
 }
 
-/** Every workspace row: the picker's menu items minus the "Create a workspace…"
- *  row and the "Account settings" row above the list — both are actions/
- *  navigation, not a destination workspace (`workspace-menu-section.tsx`'s
- *  standalone "Account settings" `DropdownMenuItem`, new since this test was
- *  written; it lives in the same "Switch Workspace" menu). */
+/** Every project row: the picker's menu items minus the create rows and the
+ *  "Account settings" row above the list — both are actions/navigation, not a
+ *  destination project (`workspace-menu-section.tsx`'s standalone "Account
+ *  settings" `DropdownMenuItem`, new since this test was written; it lives in
+ *  the same "Switch Project" menu).
+ *
+ *  `hasNotText: "Create a"` is a PREFIX match and is load-bearing for more
+ *  than it was written for: besides the global "Create a project…" row, the
+ *  menu now carries one "Create a project in <account>" row per account group
+ *  (the only affordance that says WHICH account a new project lands in). Both
+ *  start with "Create a", so both stay out of the row count. */
 function workspaceRows(picker: Locator): Locator {
   return picker
     .getByRole("menuitem")

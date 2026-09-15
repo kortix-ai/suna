@@ -212,6 +212,42 @@ resource "aws_iam_role_policy" "ses_send" {
   })
 }
 
+# The API publishes project snapshots (leader worker) and mints presigned GETs
+# for sandboxes from this role's credentials. Objects: PutObject + GetObject
+# (HeadObject is authorized by GetObject). Bucket: ListBucket ONLY so a missing
+# key answers 404 instead of 403 — without it the producer reads "not yet
+# published" as AccessDenied and never builds (dev, 2026-09-14). Conditional
+# writes (If-None-Match: *) need no extra action. No Delete anywhere.
+resource "aws_iam_role_policy" "project_snapshots" {
+  # A plan-time boolean, not the ARN: the ARN comes from a bucket created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.project_snapshots_enabled ? 1 : 0
+  name  = "${local.name}-project-snapshots"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [{
+        Sid      = "SnapshotObjects"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject"]
+        Resource = "${var.project_snapshot_bucket_arn}/*"
+        }, {
+        Sid      = "SnapshotMissingKeyIs404"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.project_snapshot_bucket_arn
+      }],
+      var.project_snapshot_kms_key_arn != "" ? [{
+        Sid      = "SnapshotObjectsKms"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+        Resource = var.project_snapshot_kms_key_arn
+      }] : [],
+    )
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"

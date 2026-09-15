@@ -9,6 +9,19 @@ import { catalogModelForWireModel, gatewayModelCatalog } from './catalog-models'
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
+  test('serves managed Astra with vision, tools, and its supported effort ladder', () => {
+    expect(full['gpt-6-astra']).toMatchObject({
+      name: 'GPT-6 Astra',
+      provider: 'kortix',
+      attachment: true,
+      tool_call: true,
+      temperature: false,
+      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }],
+      limit: { context: 1_050_000, output: 128_000 },
+      cost: { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
+    });
+  });
+
   test('brands managed DeepSeek V4 Flash with the Kortix provider', () => {
     expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
   });
@@ -200,7 +213,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free tier sees no managed Kortix models', () => {
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash', 'gpt-6-astra']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });

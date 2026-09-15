@@ -88,6 +88,7 @@ export function useModelDefaults(
       queryClient.invalidateQueries({ queryKey: ['gateway-routing-policy', projectId] }),
       // Same entry `useProjectModels`/`useModelEnablement` read.
       queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId ?? '') }),
+      queryClient.invalidateQueries({ queryKey: qk.project.modelAccess(projectId ?? '') }),
       queryClient.invalidateQueries({ queryKey: ['project-providers', projectId] }),
     ]);
   }, [projectId, queryClient, queryKey]);
