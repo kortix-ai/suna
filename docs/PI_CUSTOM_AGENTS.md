@@ -684,6 +684,8 @@ A started server has the environment user's filesystem privileges.
 A connection preserves process state between requests. It expires after 60 seconds
 without requests. Configuration or secret changes invalidate old connection IDs.
 Calls with stale IDs fail before execution; discovery returns a new identity.
+An approval wait can outlast that idle window. In that case, rediscover the
+server and request approval for the new call; the expired call does not run.
 Different servers can run concurrently. A busy server rejects another request.
 At most 16 configured processes run per environment. Each request defaults to
 30 seconds, configurable from 1 to 60,000 milliseconds. Requests are limited to
