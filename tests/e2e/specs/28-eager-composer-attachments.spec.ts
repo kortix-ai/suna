@@ -186,6 +186,22 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
         });
         return;
       }
+      // A warm session makes the held Send a network-free take, so no create
+      // reaches the refusal below. Refuse the warm create on every target: the
+      // app then has no warm session and creates, as on the local profile.
+      if (
+        request.method() === "POST" &&
+        path === `/v1/projects/${project.id}/sessions/warm`
+      ) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { message: "Injected warm-session refusal" },
+          }),
+        });
+        return;
+      }
       // The server selects the transport: API chunk PUTs, or one direct Storage
       // PUT to a signed URL. `pathname` never includes the URL token.
       const isUpload =

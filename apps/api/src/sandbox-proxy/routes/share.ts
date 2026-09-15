@@ -14,6 +14,7 @@ import { resolveProvider } from '../index'
 import { combinedAuth } from '../../middleware/auth'
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 import { makeOpenApiApp, json, errors, auth } from '../../openapi'
+import { shareUpstreamResult } from '../share-upstream'
 
 const shareApp = makeOpenApiApp()
 type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
@@ -146,8 +147,8 @@ shareApp.openapi(
         signal: AbortSignal.timeout(10_000),
       })
 
-      const result = await parseJsonResponse(resp)
-      return c.json(result, resp.status as any)
+      const upstream = shareUpstreamResult(resp.status, await parseJsonResponse(resp))
+      return c.json(upstream.body, upstream.status as any)
     } catch (err) {
       console.error('[share] create share link failed:', err)
       return c.json({ error: 'Failed to create share link' }, 502)
@@ -192,8 +193,8 @@ shareApp.openapi(
         headers: buildSandboxHeaders(target.resolved),
         signal: AbortSignal.timeout(10_000),
       })
-      const result = await parseJsonResponse(resp)
-      return c.json(result, resp.status as any)
+      const upstream = shareUpstreamResult(resp.status, await parseJsonResponse(resp))
+      return c.json(upstream.body, upstream.status as any)
     } catch (err) {
       console.error('[share] load share links failed:', err)
       return c.json({ error: 'Failed to load share links' }, 502)
@@ -245,8 +246,8 @@ shareApp.openapi(
         headers: buildSandboxHeaders(target.resolved),
         signal: AbortSignal.timeout(10_000),
       })
-      const result = await parseJsonResponse(resp)
-      return c.json(result, resp.status as any)
+      const upstream = shareUpstreamResult(resp.status, await parseJsonResponse(resp))
+      return c.json(upstream.body, upstream.status as any)
     } catch (err) {
       console.error('[share] revoke share link failed:', err)
       return c.json({ error: 'Failed to revoke share link' }, 502)

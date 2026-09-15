@@ -21,6 +21,23 @@ linked, not inlined.
 
 ## Register
 
+### Await a tee'd validator's completion, not the sink's, before acting on its verdict (2026-09-15)
+
+**When:** a stream feeds a writer and a checker in parallel (hash, header guard,
+virus scan). The writer can finish while the checker still holds unread input.
+Wait for the checker's own end event, and fail closed on a timeout.
+*Near-miss:* `downloadAndExtractProjectSnapshot` started system `tar` before the
+parser saw a `../` entry; the packages lane failed on 4 branches (#7148).
+*Enforcer:* `config-provider.test.ts` puts 4,000 headers before the bad entry.
+
+### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
+
+**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
+every API route that calls a daemon path the daemon does not serve, and give
+each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
+"sandbox not found". *Near-miss:* RUN-8 failed on the #7148 preview.
+*Enforcer:* `share-upstream.test.ts` pins the daemon marker and the 502 mapping.
+
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
 **When:** stopping the sandbox proxy or running package tests. Cancel boot and
