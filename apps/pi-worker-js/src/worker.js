@@ -1631,11 +1631,23 @@ export class AgentCell {
     // already reports on, so a slow attach names its own slow part.
     const t0 = Date.now();
     const marks = [];
-    const mark = (label) => { marks.push(`${label}=${Date.now() - t0}ms`); this.broadcast({ type: "machine", line: `attach ${marks.join(" ")}` }); };
+    // BOUNDED. A provision that drags is exactly when the marks matter and
+    // exactly when there are most of them — dev answered `provisioning` 55
+    // times over 71 s once — so the middle is dropped rather than the record.
+    const MARKS_MAX = 24;
+    const mark = (label) => {
+      marks.push(`${label}=${Date.now() - t0}ms`);
+      if (marks.length > MARKS_MAX) marks.splice(Math.floor(MARKS_MAX / 2), marks.length - MARKS_MAX, "...");
+      this.broadcast({ type: "machine", line: `attach ${marks.join(" ")}` });
+    };
     const r = await attachEnvironment({
       env: this.effectiveEnv(),
       sql: this.sql,
-      onProgress: (line) => this.broadcast({ type: "machine", line }),
+      // EVERY ASK IS MARKED. The `ensure` leg read 2957 ms against a
+      // control-plane that provisioned in 1913 ms, and two attempts to close
+      // that gap were aimed at the wrong half because the shape of the polling
+      // was modelled rather than measured. Now the attempts are in the marks.
+      onProgress: (line) => { mark(line.replace(/[^a-z0-9()]+/gi, "-").slice(0, 28)); },
     });
     mark("ensure");
     if (!r.ok) return r;

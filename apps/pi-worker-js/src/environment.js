@@ -38,6 +38,34 @@ export const ENSURE_POLL_MS = 300;
 export const ENSURE_POLL_MAX_MS = 2_000;
 export const ENSURE_MAX_MS = 180_000;
 
+/**
+ * THE ASK CADENCE, SHAPED LIKE THE THING IT IS WAITING FOR.
+ *
+ * Provisioning is not an event with an unknown distribution: it is a Platinum
+ * create, and it takes 1.2-2.0 s every time. An exponential backoff is the
+ * wrong shape for that — it asks four times while nothing can possibly be ready
+ * and then leaves a gap exactly where it becomes ready.
+ *
+ * Measured on dev 2026-09-15, one attach, marks from the loop itself:
+ *
+ *   provisioning=118ms  516ms  1063ms  1830ms   active=2904ms
+ *
+ * The control plane's own log put the box active at 1959 ms. The 945 ms
+ * between that and the fifth ask was the whole overhead.
+ *
+ * So: ask once to start it, wait out the floor, then ask steadily. The first
+ * gap is the one place a long wait is free, and 150 ms steady is cheap — the
+ * answer is a row read. After a few seconds it backs off, because a
+ * provisioning that has not finished by then is not one more poll away.
+ */
+export const ENSURE_FLOOR_MS = 900;
+export const ENSURE_STEADY_MS = 150;
+export const ENSURE_STEADY_ASKS = 20;
+export const ensureDelay = (attempt) =>
+  attempt === 0 ? ENSURE_FLOOR_MS
+    : attempt < ENSURE_STEADY_ASKS ? ENSURE_STEADY_MS
+      : pollDelay(attempt - ENSURE_STEADY_ASKS, ENSURE_STEADY_MS * 2, ENSURE_POLL_MAX_MS);
+
 /** The nth wait, backing off from `ENSURE_POLL_MS` toward the ceiling. */
 export const pollDelay = (attempt, base = ENSURE_POLL_MS, ceiling = ENSURE_POLL_MAX_MS) =>
   Math.min(Math.round(base * 1.4 ** Math.max(0, attempt)), ceiling);
@@ -111,6 +139,36 @@ export async function healthy(edge, { fetch: f = globalThis.fetch, timeoutMs = 2
 }
 
 /**
+ * WAIT FOR THE EDGE, NOT FOR THE CONTROL PLANE TO SAY THE SAME THING AGAIN.
+ *
+ * Once `ensure` has answered with a preview url the box EXISTS; the only thing
+ * still pending is its edge answering. The loop used to handle that miss by
+ * sleeping 300 ms and POSTing `ensure` a second time — a full control-plane
+ * round trip that can only repeat what is already known — and each probe spent
+ * up to 2 s failing.
+ *
+ * Measured on dev 2026-09-15, one session end to end: the API provisioned in
+ * 1913 ms and the cell's `ensure` leg read 2957 ms. That 1044 ms was this.
+ *
+ * A box that is up answers in about 100 ms, so the probes start 40 ms apart and
+ * back off gently, and each one gives up quickly rather than hanging.
+ */
+export const EDGE_PROBE_MS = 750;
+export const EDGE_POLL_MS = 40;
+export const EDGE_POLL_MAX_MS = 400;
+export async function waitForEdge(edge, { fetch: f = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, maxMs = 20_000, probeMs = EDGE_PROBE_MS } = {}) {
+  const started = now();
+  let attempt = 0;
+  let last = { ok: false, reason: "not probed" };
+  while (now() - started < maxMs) {
+    last = await healthy(edge, { fetch: f, timeoutMs: probeMs });
+    if (last.ok) return { ...last, waitedMs: now() - started };
+    await sleep(pollDelay(attempt++, EDGE_POLL_MS, EDGE_POLL_MAX_MS));
+  }
+  return { ...last, waitedMs: now() - started };
+}
+
+/**
  * Wait for the machine's checkout, for the operations that need it: the file
  * routes, git, and anything reading the project. A command like `node -v` does
  * not call this and does not pay for it.
@@ -174,7 +232,7 @@ export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch,
       // timeout spends all 8 on the first miss. Measured 2026-09-12: the
       // attach's `ensure` leg read 12.6 s against a 6.2 s control-plane
       // floor, and this was where the difference lived.
-      const h = await healthy(edge, { fetch: f });
+      const h = await waitForEdge(edge, { fetch: f, sleep, now, maxMs: Math.max(1_000, maxMs - (now() - started)) });
       if (h.ok) {
         const record = { externalId: body.external_id, edge, rpcSecret: body.rpc_secret, attachedAt: now(), branch: h.branch ?? null };
         writeCached(sql, record);
@@ -182,7 +240,7 @@ export async function attachEnvironment({ env, sql, fetch: f = globalThis.fetch,
       }
       onProgress?.(`machine up, ${h.reason}`);
     }
-    await sleep(pollMs ?? pollDelay(attempt++));
+    await sleep(pollMs ?? ensureDelay(attempt++));
   }
   return { ok: false, reason: `the machine did not become ready within ${Math.round(maxMs / 1000)} s (last status: ${last?.status ?? "none"})`, status: last?.status ?? null };
 }

@@ -11,12 +11,12 @@
 //
 // Fake control plane, fake box, fake clock: every step is asserted without
 // a Platinum account.
-// EXPECTED_PASSES=30
+// EXPECTED_PASSES=38
 import { DatabaseSync } from "node:sqlite";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
-const { attachEnvironment, ensureUrl, usable, healthy, readCached, writeCached, clearCached, ENVIRONMENT_TABLE_SQL, ENSURE_POLL_MS, ENSURE_POLL_MAX_MS, pollDelay, waitForRepo } = await import("../src/environment.js");
+const { attachEnvironment, ensureUrl, usable, healthy, readCached, writeCached, clearCached, ENVIRONMENT_TABLE_SQL, ENSURE_POLL_MS, ENSURE_POLL_MAX_MS, pollDelay, ensureDelay, waitForRepo } = await import("../src/environment.js");
 
 const makeSql = () => { const db = new DatabaseSync(":memory:"); return { exec(q, ...a) { const t = q.trim(); if (/^(CREATE|INSERT|UPDATE|DELETE)/i.test(t)) { const st = db.prepare(t); a.length ? st.run(...a) : st.run(); return { toArray: () => [], [Symbol.iterator]: function* () {} }; } const rows = db.prepare(t).all(...a); return { toArray: () => rows, [Symbol.iterator]: function* () { yield* rows; } }; } }; };
 const ENV = { KORTIX_API_URL: "https://api.example/v1", KORTIX_PROJECT_ID: "p1", KORTIX_SESSION_ID: "s1", KORTIX_TOKEN: "tok" };
@@ -94,8 +94,17 @@ const provisioning = { status: "provisioning", external_id: null, preview_url: n
   check("the attach POSTs ensure with the session's token and polls until the machine is usable",
     r.ok && r.externalId === "sbx_1" && r.edge === "https://8000-1.sbx" && r.rpcSecret === "sec" && cp.asks.length === 3 && cp.asks[0].auth === "Bearer tok",
     JSON.stringify({ r: { ok: r.ok, id: r.externalId }, asks: cp.asks.length }));
-  check("and it asks OFTEN at the start — a 2 s grid spent up to 2 s of a 6 s attach asleep",
-    t === pollDelay(0) + pollDelay(1) && t < 1_000, `${t} ms of sleeping across two polls`);
+  // THIS CLAIM USED TO SAY "ASK OFTEN AT THE START", against a 2 s grid that
+  // slept through a third of the attach. Asking often was the right correction
+  // to that and the wrong shape for this: a Platinum create takes 1.2-2.0 s, so
+  // the early asks cannot find anything, and the backoff they grow into then
+  // leaves a gap where the box actually becomes ready. Measured on dev
+  // 2026-09-15 — asks at 118/516/1063/1830 ms, active at 1959 ms, found at
+  // 2904 ms. What matters is not how early it asks but how little it wastes
+  // once the answer exists.
+  check("the loop waits out the floor once rather than asking into it, then asks steadily",
+    t === ensureDelay(0) + ensureDelay(1) && ensureDelay(1) < ensureDelay(0),
+    `${t} ms of sleeping across two polls`);
   check("and reports each state it saw, so the tool can tell the user what it waited on", progress.some((p) => /provisioning/.test(p)) && progress.some((p) => /active/.test(p)), JSON.stringify(progress));
   check("the record is cached for the next turn", readCached(sql)?.externalId === "sbx_1", "");
   const again = await attachEnvironment({ env: ENV, sql, fetch: cp.fetch, sleep, now });
@@ -171,6 +180,65 @@ const provisioning = { status: "provisioning", external_id: null, preview_url: n
 check("the poll backs off from a fast first ask toward the worker's own cadence, and never past it",
   pollDelay(0) === ENSURE_POLL_MS && pollDelay(1) > pollDelay(0) && pollDelay(20) === ENSURE_POLL_MAX_MS && pollDelay(0) < 500,
   `${pollDelay(0)}, ${pollDelay(1)}, ${pollDelay(5)}, ${pollDelay(20)}`);
+
+// ── THE ASK CADENCE MATCHES WHAT IT WAITS FOR ──
+{
+  const { ensureDelay, ENSURE_FLOOR_MS, ENSURE_STEADY_MS, ENSURE_POLL_MAX_MS } = await import("../src/environment.js");
+  const at = [];
+  let t = 0;
+  for (let i = 0; i < 12; i++) { at.push(t); t += ensureDelay(i); }
+  check("the first wait clears the floor a provision cannot beat, instead of asking four times into an empty second",
+    ensureDelay(0) === ENSURE_FLOOR_MS && ENSURE_FLOOR_MS >= 600, String(ensureDelay(0)));
+  check("then it asks steadily, so the box is found within one steady step of going active",
+    ensureDelay(1) === ENSURE_STEADY_MS && ensureDelay(5) === ENSURE_STEADY_MS, `${ensureDelay(1)}/${ensureDelay(5)}`);
+  // 1.2-2.0 s is the measured provisioning range; every value in it must be
+  // caught within a steady step, which is the claim the old backoff failed.
+  const worst = Math.max(...[1200, 1500, 1800, 1959, 2000].map((ready) => {
+    const found = at.find((x) => x >= ready);
+    return found === undefined ? Infinity : found - ready;
+  }));
+  check("across the whole measured provisioning range the wasted wait is one step, not a second",
+    worst <= ENSURE_STEADY_MS + 1, `worst overshoot ${worst}ms across ${JSON.stringify(at)}`);
+  check("and a provision that drags on backs off rather than hammering the control plane for ever",
+    ensureDelay(40) > ENSURE_STEADY_MS && ensureDelay(400) <= ENSURE_POLL_MAX_MS, `${ensureDelay(40)}/${ensureDelay(400)}`);
+}
+
+// ── THE EDGE IS WAITED FOR WITHOUT ASKING THE CONTROL PLANE AGAIN ──
+//
+// `ensure` answering with a preview url means the box EXISTS. Handling a miss
+// by sleeping 300 ms and POSTing ensure a second time can only repeat what is
+// already known, and each probe hung up to 2 s. Measured on dev 2026-09-15: the
+// API provisioned in 1913 ms, the cell's ensure leg read 2957 ms, and the
+// difference was this.
+{
+  const { waitForEdge, EDGE_POLL_MS, EDGE_POLL_MAX_MS } = await import("../src/environment.js");
+  let calls = 0;
+  const slept = [];
+  const comesUpOnThirdTry = async () => {
+    calls++;
+    if (calls < 3) throw new Error("connection refused");
+    return new Response(JSON.stringify({ repo_ready: false, branch: "b" }), { status: 200 });
+  };
+  const r = await waitForEdge("https://edge.example", {
+    fetch: comesUpOnThirdTry,
+    sleep: async (ms) => { slept.push(ms); },
+    now: (() => { let t = 0; return () => (t += 10); })(),
+  });
+  check("a box whose edge is not up yet is probed again, and answers without a second ensure",
+    r.ok === true && calls === 3, JSON.stringify({ ok: r.ok, calls }));
+  check("and the first retry is tens of milliseconds, not the control plane's own cadence",
+    slept[0] === EDGE_POLL_MS && slept.every((ms) => ms <= EDGE_POLL_MAX_MS), JSON.stringify(slept));
+  check("the repo's readiness rides back with it, so the caller still decides whether to wait for the clone",
+    r.repoReady === false && r.branch === "b", JSON.stringify({ repoReady: r.repoReady, branch: r.branch }));
+  const dead = await waitForEdge("https://edge.example", {
+    fetch: async () => { throw new Error("nope"); },
+    sleep: async () => {},
+    now: (() => { let t = 0; return () => (t += 400); })(),
+    maxMs: 1_000,
+  });
+  check("an edge that never comes up gives up within its budget and says why, rather than hanging",
+    dead.ok === false && /nope/.test(dead.reason) && dead.waitedMs <= 2_000, JSON.stringify(dead));
+}
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");
 process.exit(bad ? 1 : 0);
