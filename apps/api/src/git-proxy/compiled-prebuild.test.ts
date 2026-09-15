@@ -84,6 +84,23 @@ describe('compiled boot prebuild', () => {
 });
 
 describe('manifest runtime prebuild', () => {
+  test('Pi environment prebuild starts while the matching worker artifact is still compiling', async () => {
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = prebuildManifestRuntime(project, 'https://api.test/git', false, {
+      refresh: async () => {}, resolveTip: async () => 'a'.repeat(40),
+      resolveRuntime: async () => 'pi',
+      pi: async (_project, tip) => { calls.push(`pi:${await tip(project, 'main')}`); await gate; },
+      environment: async (_project, sha) => { calls.push(`environment:${sha}`); },
+      opencode: async () => { throw new Error('unexpected OpenCode build'); },
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      expect(calls.sort()).toEqual([`environment:${'a'.repeat(40)}`, `pi:${'a'.repeat(40)}`]);
+    } finally { release(); }
+    await pending;
+  });
   for (const enabled of [false, true]) {
     test(`Pi builds only Pi with legacy compiled boot enabled=${enabled}`, async () => {
       const calls: string[] = [];

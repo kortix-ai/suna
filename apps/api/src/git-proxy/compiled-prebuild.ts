@@ -1,4 +1,5 @@
 import { resolveCommitSha } from '../projects/git';
+import { prebuildPiEnvironmentImages } from './pi-environment-prebuild';
 import type { GitBackedProject } from '../projects/git/types';
 import { refreshMirror } from '../projects/git/mirror';
 import { resolveManifestRuntimeForPiSession } from '../projects/lib/compile-agent-config';
@@ -126,6 +127,7 @@ interface ManifestPrebuildDependencies {
   resolveTip: typeof resolveCommitSha;
   resolveRuntime: typeof resolveManifestRuntimeForPiSession;
   pi(project: GitBackedProject, resolveTip: typeof resolveCommitSha): Promise<unknown>;
+  environment?: typeof prebuildPiEnvironmentImages;
   opencode(project: GitBackedProject, ref: string, sha: string, url: string): Promise<unknown>;
 }
 
@@ -138,6 +140,7 @@ export async function prebuildManifestRuntime(
     resolveTip: resolveCommitSha,
     resolveRuntime: resolveManifestRuntimeForPiSession,
     pi: prebuildDefaultBranchPiRuntime,
+    environment: prebuildPiEnvironmentImages,
     opencode: prebuildCompiledBootArtifacts,
   },
 ): Promise<void> {
@@ -145,7 +148,10 @@ export async function prebuildManifestRuntime(
   const sha = await dependencies.resolveTip(project, project.defaultBranch);
   const runtime = await dependencies.resolveRuntime(project, sha);
   if (runtime === 'pi') {
-    await dependencies.pi(project, async () => sha);
+    await Promise.all([
+      dependencies.pi(project, async () => sha),
+      dependencies.environment?.(project, sha),
+    ]);
   } else if (opencodeEnabled) {
     await dependencies.opencode(project, project.defaultBranch, sha, runtimeRepoUrl);
   }

@@ -51,6 +51,7 @@ import {
 } from './last-ready-image';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import { prebuildStartupImages } from './startup-prebuild';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
@@ -1569,32 +1570,18 @@ export function kickStartupPreBuild(): void {
   if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
-  for (const providerId of templateBuildProviders()) {
-    void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
-      .then((r) =>
-        console.log(
-          `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-        ),
-      )
-      .catch((err) =>
-        console.warn(
-          `[snapshots] startup pre-build of platform default failed (${providerId}):`,
-          err instanceof Error ? err.message : err,
-        ),
-      );
-    void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
-      .then((r) =>
-        console.log(
-          `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-        ),
-      )
-      .catch((err) =>
-        console.warn(
-          `[snapshots] startup pre-build of platform meta failed (${providerId}):`,
-          err instanceof Error ? err.message : err,
-        ),
-      );
-  }
+  void prebuildStartupImages(templateBuildProviders(), {
+    default: ensurePlatformDefaultImage,
+    meta: ensureMetaSandboxImage,
+    pi: ensurePiWorkerImage,
+    report: outcome => {
+      if ('error' in outcome) {
+        console.warn(`[snapshots] startup pre-build of ${outcome.kind} failed (${outcome.provider}):`, outcome.error);
+      } else {
+        console.log(`[snapshots] startup pre-build (${outcome.provider}): ${outcome.kind} image ${outcome.snapshotName} ${outcome.built ? 'built' : 'ready'}`);
+      }
+    },
+  });
 }
 
 // ─── Custom (toml / UI) templates — explicit rebuilds ────────────────────────
@@ -1660,6 +1647,5 @@ export function kickProjectTemplatePrebuilds(
 }
 
 // ─── Per-project COLD rootfs warm ────────────────────────────────────────────
-
 
 
