@@ -108,4 +108,22 @@ describe('boot instrumentation', () => {
     expect(report).toBeGreaterThan(probe)
     expect(MAIN).toContain("bootMark('opencode-http-listening')")
   })
+
+  test('until a process has answered once, only the liveness route is probed, with the short timeout', () => {
+    // OpenCode's port is bound ~100 ms before its request handler exists; a
+    // request sent then is never answered. A dropped liveness probe costs
+    // LISTENING_PROBE_TIMEOUT_MS, a dropped directory probe 2 s, a dropped
+    // root-list request 5 s, a dropped /event subscribe the whole session.
+    const probe = OPENCODE.indexOf('const probe = directoryProbeOpen && listeningKnown')
+    expect(probe).toBeGreaterThan(-1)
+    expect(OPENCODE.slice(probe, probe + 400)).toContain('listeningKnown ? 2_000 : LISTENING_PROBE_TIMEOUT_MS')
+    expect(OPENCODE).toContain('waitForCurrentListeningResponse(): Promise<void>')
+    expect(MAIN).toContain('firstListeningResponse: opencode.waitForCurrentListeningResponse()')
+    const EVENTS = readFileSync(new URL('../opencode-events.ts', import.meta.url), 'utf8')
+    const gate = EVENTS.indexOf('await waitForListeningOrTimeout(opencode')
+    const connect = EVENTS.indexOf('await connectOnce()', gate)
+    expect(gate).toBeGreaterThan(-1)
+    expect(connect).toBeGreaterThan(gate)
+    expect(EVENTS).toContain("controller.abort(new DOMException('subscribe headers timeout', 'TimeoutError'))")
+  })
 })

@@ -548,6 +548,120 @@ hundred milliseconds shorter and the trickling tail should disappear with the
 distance; that case could not be measured because the test account's policy
 denied US buckets, and it is where S3 would pull clearly ahead of Git.
 
+### Real S3, bucket in the boxes' region (us-east-2), plain and accelerated, 2026-09-15
+
+A second throwaway account with every region open: the same module in
+**us-east-2** (Ohio, 65 ms first byte from the New York boxes) with S3
+Transfer Acceleration enabled on the bucket, so the plain regional endpoint and
+the accelerated endpoint (`KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true` on the
+API, presigned URLs on `<bucket>.s3-accelerate.amazonaws.com`) were measured
+against the same objects. Presign branch, 20 rounds per arm, 400-file project,
+Git bundle from the laptop through the quick tunnel as before.
+
+| Arm | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 20 / 0 / 0 | 944 / 1,239 ms | 962 / 1,278 ms | 6,053 / 10,065 ms | — |
+| **S3 v2 + presign, plain us-east-2** | 20 / 0 / 0 (2 retried) | **315 / 1,192 ms** (283 / 1,158 in-guest) | 344 / 1,222 ms | **9,776 / 11,291 ms** | env 18 / proxy 2 |
+| New Git provider (`git` mode), accelerated run | 20 / 0 / 0 | 1,047 / 1,351 ms | 1,074 / 1,383 ms | 5,994 / 9,573 ms | — |
+| **S3 v2 + presign, Transfer Acceleration** | 20 / 0 / 0 (5 retried) | 352 / 1,185 ms (397 / 1,143 in-guest) | 385 / 1,205 ms | 9,109 / 11,870 ms | env 15 / proxy 5 |
+
+Hydration `ok` 20/20 in both runs (import p50 87 ms plain, 157 ms
+accelerated). No trickling tail: max acquisition 1.2 s plain against the
+26–30 s tail from Stockholm. **Transfer Acceleration buys nothing this
+close** (352 vs 315 ms at the median, 5 retries instead of 2): its edge is a
+first-hop optimisation for long paths, and New York → Ohio is not one. Keep
+the bucket in the boxes' region; leave acceleration off.
+
+From the box's region the S3 acquisition is **3× faster than the Git
+bundle** (315 vs 944 ms) — and yet the S3 boot reached `runtime_ready` **3.7 s
+later** (9.8 vs 6.1 s at p50). That gap is not S3; it is the section below.
+
+### The daemon versus OpenCode's bind→handler window (found 2026-09-15, fixed in #7242)
+
+In-guest marks, medians of the plain run above (ms after daemon start):
+
+| mark | Git | S3 |
+|---|---|---|
+| `repo-materialized` | 1,037 | 344 |
+| `managed-reconcile` (root-list poll + `/event` subscribe start here) | 1,634 | 811 |
+| `opencode-listening` (root list answered) | 2,272 | 6,245 |
+| `opencode-ready` | 2,298 | 6,260 |
+
+Per round the S3 arm was bimodal: 16 rounds with the root list answered at
+6.0–6.4 s, 4 rounds (the ones whose checkout landed after 1.2 s) at 2.0–2.3 s.
+The two Git rounds whose checkout landed before 0.65 s showed the same 6.2 s.
+
+**Mechanism.** OpenCode 1.18.23 builds its server with Effect's
+`NodeHttpServer`: `make` calls `server.listen()` and returns once the port is
+bound; `on("request", handler)` is attached later, in `serve`, after the
+router is built. For ~100 ms the kernel accepts connections, Node parses the
+request, the `request` event has no listener, and the request is never
+answered and never retried — the client waits for its own timeout. Reproduced
+inside a box with a plain-socket sprayer against a second `opencode serve`
+(native binary, port 4210): connections accepted 0.645–0.747 s after spawn
+(6 of 6) were never answered; every connection from 0.767 s was answered in
+≤18 ms. Identical with an empty cwd and no config dir. A 100 ms poll always
+lands in that window once: 12/12 trials against a fake server with a 110 ms
+dead window, Bun and Python alike, each losing the full 5 s timeout.
+
+**What the daemon lost.** The readiness probe (2 s timeout) lost 2 s on every
+boot, S3 and Git alike (`opencode-http-listening` at 3.6–3.8 s). The root-list
+poll (5 s timeout) lost 5 s whenever it was already polling when the port
+bound — every S3 boot with an early checkout — and that is the whole 3.7 s
+boot gap. The `/event` subscribe had **no timeout**: on those boots it hung
+for the life of the session (`ss`: 184 bytes sent, 0 received after 112 s, no
+`[opencode-events] subscribed` line), so the daemon never saw `session.idle`.
+A prompt on such a session: OpenCode finished the answer in 6 s, the API
+closed the turn 18.4 s after start with `end_reason = unknown` (the reaper),
+against 3.1 s and `completed` on a Git session whose subscribe had connected.
+
+**Fix (daemon, `kortixd`).** Until the current OpenCode has answered once,
+the supervisor probes only the instance-free liveness route with a 300 ms
+timeout (`LISTENING_PROBE_TIMEOUT_MS`), and exposes that first answer as
+`waitForCurrentListeningResponse()`. The root-list gate
+(`waitForFastOpencodeRootReadiness`) waits on it on every boot, not only under
+the fast-cold-boot flag; the `/event` loop waits on it before every attempt and
+bounds the header phase of a subscribe at 10 s. Git keeps its timing (its
+polling already started after the window); S3 boots no longer pay the 5 s.
+Measured after the fix: see the next subsection.
+
+### After the fix (same Ohio bucket, plain endpoint), 2026-09-15
+
+Daemon rebuilt with the fix (new image `kortix-default-5b883d908877`), 10
+rounds per arm, everything else as in the plain run above.
+
+| Arm | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 10 / 0 / 0 | 955 / 1,423 ms | 996 / 1,456 ms | 6,215 / 7,498 ms | — |
+| **S3 v2 + presign, plain us-east-2** | 10 / 0 / 0 (1 retried) | **361 / 1,136 ms** (287 / 1,061 in-guest) | 395 / 1,166 ms | **6,273 / 11,156 ms** | env 9 / proxy 1 |
+
+In-guest marks, medians (ms after daemon start), before → after:
+
+| mark | Git before | Git after | S3 before | S3 after |
+|---|---|---|---|---|
+| `repo-materialized` | 1,037 | 996 | 344 | 395 |
+| `opencode-http-listening` (first answer) | 3,625 | **1,429** | 3,843 | **1,548** |
+| `opencode-listening` (root list answered) | 2,272 | 2,043 | 6,245 | **2,191** |
+| `opencode-ready` | 2,298 | 2,061 | 6,260 | **2,208** |
+
+Every S3 round answered the root list 0.5–0.7 s after OpenCode's first
+answer; no round lost a timeout; `[opencode-events] subscribed` on every
+boot (+1.1 s on the probe session). The S3 boot is 3.5 s shorter at p50
+(9,776 → 6,273 ms) and now equal to Git's 6,215 ms. The remaining spread is
+outside the guest: S3 round 4 reached `opencode-ready` at 1,982 ms in-guest
+and `runtime_ready` at 11,156 ms — sandbox provisioning, the same class as
+Git's round 2 (7,498 ms with `opencode-ready` at 2,005 ms).
+
+Reading: both boots are now bounded by OpenCode's own startup (~1.4 s to its
+first answer) plus one instance init (~0.6 s); the checkout finishes before
+that on either path, so acquisition speed is no longer visible in the boot
+time on a 400-file project. S3's remaining ~150 ms in-guest deficit lands on
+`opencode-http-listening` (1,548 vs 1,429): its extraction, hydration and
+config-deps copy run while OpenCode starts. Where S3 still wins outright:
+larger projects and projects without the scaffold root (the Git path there is
+a full proxied clone, see the loopback section), and boots that must not
+depend on the Git proxy's upstream.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted

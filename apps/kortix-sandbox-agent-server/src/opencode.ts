@@ -61,6 +61,18 @@ import {
 } from './secret-capabilities'
 
 const READY_POLL_MS = 100
+// A freshly spawned OpenCode binds its port ~100 ms BEFORE its request handler
+// exists: Effect's NodeHttpServer calls `listen()` in `make` and attaches
+// `on("request")` only once the router is built. A request that arrives in
+// that window is parsed, never answered and never retried by the server — the
+// client sits there until ITS timeout fires. Measured on 1.18.23 (2026-09-15):
+// window 0.645–0.747 s after spawn, 6/6 connections dropped, everything from
+// 0.767 s answered in ≤18 ms. Until a process has answered once, the probe uses
+// the instance-free liveness route with THIS timeout, so a dropped probe costs
+// 300 ms instead of the 2 s directory probe and the retry lands after the
+// window. `waitForCurrentListeningResponse` exposes that first answer so every
+// other boot-time request (root list, /event subscribe) starts after it.
+const LISTENING_PROBE_TIMEOUT_MS = 300
 /** How long the post-respawn turn finalize waits for opencode to answer again.
  *  Generous next to a ~5-12s cold start, and bounded so cleanup cannot outlive
  *  the problem it is cleaning up after. */
@@ -1724,6 +1736,14 @@ export type Opencode = {
   markReady(): void
   /** Resolves when the active supervised process answers the real session API. */
   waitForCurrentReadyResponse(): Promise<void>
+  /**
+   * Resolves when the active supervised process has answered ANY HTTP request.
+   * Before that, its port may be bound with no request handler attached yet
+   * (see LISTENING_PROBE_TIMEOUT_MS), and a request sent then is never
+   * answered. Every boot-time request without its own short timeout — the
+   * root-list poll, the /event subscribe — waits for this first.
+   */
+  waitForCurrentListeningResponse(): Promise<void>
 }
 
 export interface OpencodeSupervisorOptions {
@@ -1809,6 +1829,11 @@ export function createOpencodeSupervisor(
   let directoryProbeOpen = options.deferDirectoryProbe !== true
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
+  // The process that has answered ANY HTTP request, i.e. its request handler
+  // is attached and nothing sent from now on can fall into the bind→handler
+  // window (see LISTENING_PROBE_TIMEOUT_MS). Reset with the process.
+  let listeningProcess: ChildProcess | null = null
+  const listeningWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
   let binaryResolutionPromise: Promise<string | null> | null = null
@@ -2013,6 +2038,7 @@ export function createOpencodeSupervisor(
 
     if (supervise) {
       readyResponseProcess = null
+      listeningProcess = null
       child = proc
       superviseChild(proc)
     }
@@ -2030,6 +2056,7 @@ export function createOpencodeSupervisor(
       // existing retry path. This also makes candidate verification fail fast.
       if (supervise && child === proc) {
         readyResponseProcess = null
+        listeningProcess = null
         child = null
         state = stopping ? 'down' : 'starting'
       }
@@ -2053,6 +2080,7 @@ export function createOpencodeSupervisor(
         return
       }
       if (readyResponseProcess === proc) readyResponseProcess = null
+      if (listeningProcess === proc) listeningProcess = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -2098,8 +2126,17 @@ export function createOpencodeSupervisor(
     restartDelayMs = 500
   }
 
+  function reportListeningResponse(proc: ChildProcess) {
+    if (stopping || child !== proc || listeningProcess === proc) return
+    listeningProcess = proc
+    for (const resolve of listeningWaiters) resolve()
+    listeningWaiters.clear()
+  }
+
   function reportReadyResponse(proc: ChildProcess) {
     if (stopping || child !== proc) return
+    // A session-API answer proves the handler is attached, too.
+    reportListeningResponse(proc)
     readyResponseProcess = proc
     for (const resolve of readyResponseWaiters) resolve()
     readyResponseWaiters.clear()
@@ -2397,11 +2434,23 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const probedPort = livePort()
       const probedChild = child
-      // Closed gate → liveness only, on a route that creates no Instance.
-      const probe = directoryProbeOpen
+      // Has THIS process answered anything yet? Before that, the port may be
+      // bound with no request handler behind it (LISTENING_PROBE_TIMEOUT_MS):
+      // a directory probe sent then is dropped and would wait its full 2 s.
+      // So until the first answer, probe only the instance-free liveness route
+      // with the short timeout. Closed gate → liveness only as well, on a
+      // route that creates no Instance.
+      const listeningKnown = probedChild !== null && listeningProcess === probedChild
+      const probe = directoryProbeOpen && listeningKnown
         ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
-        : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
+        : ((await probeOpencodeListening(
+              `http://127.0.0.1:${probedPort}`,
+              listeningKnown ? 2_000 : LISTENING_PROBE_TIMEOUT_MS,
+            ))
+            ? 'listening'
+            : 'down')
       const ready = probe === 'ready'
+      if (probe !== 'down' && probedChild && probedChild === child) reportListeningResponse(probedChild)
       if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
         firstListeningResponseReported = true
         options.onFirstListeningResponse?.()
@@ -2498,6 +2547,7 @@ export function createOpencodeSupervisor(
       stopping = true
       state = 'down'
       readyResponseProcess = null
+      listeningProcess = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
@@ -2737,6 +2787,13 @@ export function createOpencodeSupervisor(
       if (!stopping && child && readyResponseProcess === child) return Promise.resolve()
       return new Promise<void>((resolve) => {
         readyResponseWaiters.add(resolve)
+      })
+    },
+
+    waitForCurrentListeningResponse() {
+      if (!stopping && child && listeningProcess === child) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        listeningWaiters.add(resolve)
       })
     },
   }

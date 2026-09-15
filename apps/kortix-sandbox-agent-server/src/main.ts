@@ -1635,6 +1635,7 @@ async function maybeCreateInitialOpencodeSession(
   const fastRootReadinessEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
   const rootListDeadlineMs = await waitForFastOpencodeRootReadiness({
     fastPathEnabled: fastRootReadinessEnabled,
+    firstListeningResponse: opencode.waitForCurrentListeningResponse(),
     firstReadyResponse: opencode.waitForCurrentReadyResponse(),
   })
   // A verified reload can promote OpenCode onto the standby port while the
@@ -1940,6 +1941,8 @@ const OPENCODE_FIRST_READY_GATE_MAX_MS = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
 
 type FastOpencodeRootReadinessInput = {
   fastPathEnabled: boolean
+  /** The supervisor's first HTTP answer from the current OpenCode (any route). */
+  firstListeningResponse: Promise<void>
   firstReadyResponse: Promise<void>
   deadlineMs?: number
 }
@@ -1965,26 +1968,35 @@ async function waitForSignalOrTimeout(signal: Promise<void>, timeoutMs: number):
 }
 
 /**
- * Hold the optional FAST root lookup for the supervisor's first successful
- * session-API response. The gate replaces at most one doomed five-second
- * root-list request. Its elapsed time is deducted from the existing 20-second
- * root-resolution budget, so it cannot extend boot. The unchanged resolver
- * still owns retries, root selection, and found/create/defer decisions.
+ * Hold the root lookup until OpenCode can actually answer it.
+ *
+ * Every boot waits for the supervisor's first HTTP answer from the current
+ * OpenCode. A freshly spawned OpenCode binds its port ~100 ms before its
+ * request handler exists, and a root-list request that lands in that window is
+ * never answered: it burns the whole 5 s attempt timeout, then the retry is
+ * answered in milliseconds. That was the S3-boot penalty measured on
+ * 2026-09-15 (`opencode-listening` at 6.2 s instead of 2.3 s): the S3 checkout
+ * lands early enough for the poll to be running when the port binds, the Git
+ * checkout mostly does not. The FAST path additionally waits for the first
+ * successful session-API response, replacing at most one doomed request during
+ * OpenCode's instance init. Elapsed gate time is deducted from the existing
+ * 20-second root-resolution budget, so neither wait can extend boot. The
+ * unchanged resolver still owns retries, root selection, and
+ * found/create/defer decisions.
  */
 export async function waitForFastOpencodeRootReadiness(
   input: FastOpencodeRootReadinessInput,
   deps: FastOpencodeRootReadinessDeps = {},
 ): Promise<number> {
   const deadlineMs = Math.max(0, input.deadlineMs ?? OPENCODE_ROOT_RESOLUTION_DEADLINE_MS)
-  if (!input.fastPathEnabled) return deadlineMs
-
   const now = deps.now ?? Date.now
   const waitForSignal = deps.waitForSignal ?? waitForSignalOrTimeout
   const startedAt = now()
-  await waitForSignal(
-    input.firstReadyResponse,
-    Math.min(deadlineMs, OPENCODE_FIRST_READY_GATE_MAX_MS),
-  )
+  const gateMaxMs = Math.min(deadlineMs, OPENCODE_FIRST_READY_GATE_MAX_MS)
+  await waitForSignal(input.firstListeningResponse, gateMaxMs)
+  if (input.fastPathEnabled) {
+    await waitForSignal(input.firstReadyResponse, Math.max(0, gateMaxMs - (now() - startedAt)))
+  }
   const elapsedMs = Math.max(0, now() - startedAt)
   return Math.max(0, deadlineMs - elapsedMs)
 }
