@@ -10,78 +10,50 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve }
 }
 
-const never = new Promise<void>(() => {})
-
-describe('OpenCode root readiness gate', () => {
-  test('every boot waits for the first HTTP answer before the first root-list request', async () => {
-    // A root-list request sent before OpenCode's request handler exists is
-    // never answered and burns the whole 5 s attempt timeout (the S3-boot
-    // penalty measured 2026-09-15). The gate holds the request for the
-    // supervisor's first answer, on the legacy path too.
-    const listening = deferred()
-    const events: string[] = []
-    let now = 1_000
-    const deadlinePromise = waitForFastOpencodeRootReadiness(
-      {
-        fastPathEnabled: false,
-        firstListeningResponse: listening.promise,
-        firstReadyResponse: never,
-      },
-      {
-        now: () => now,
-        waitForSignal: async (signal, timeoutMs) => {
-          if (signal === never) throw new Error('legacy path must not wait for the ready signal')
-          events.push(`listening-gate:${timeoutMs}`)
-          await signal
-          now += 700
-          events.push('listening')
-        },
-      },
-    )
-
-    await Promise.resolve()
-    expect(events).toEqual(['listening-gate:5000'])
-
-    listening.resolve()
-    expect(await deadlinePromise).toBe(19_300)
-    expect(events).toEqual(['listening-gate:5000', 'listening'])
-  })
-
-  test('fast path waits for the first HTTP answer, then for the first ready answer', async () => {
-    const listening = deferred()
+describe('fast OpenCode root readiness gate', () => {
+  test('waits for the supervisor first-ready signal before root resolution', async () => {
     const ready = deferred()
     const events: string[] = []
     let now = 1_000
     const deadlinePromise = waitForFastOpencodeRootReadiness(
       {
         fastPathEnabled: true,
-        firstListeningResponse: listening.promise,
         firstReadyResponse: ready.promise,
       },
       {
         now: () => now,
         waitForSignal: async (signal, timeoutMs) => {
-          const name = signal === listening.promise ? 'listening' : 'ready'
-          events.push(`${name}-gate:${timeoutMs}`)
+          events.push(`gate:${timeoutMs}`)
           await signal
-          now += name === 'listening' ? 800 : 3_400
-          events.push(name)
+          now += 4_200
+          events.push('ready')
         },
       },
     )
 
     await Promise.resolve()
-    expect(events).toEqual(['listening-gate:5000'])
-
-    listening.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
-    // The ready wait only gets what is left of the same 5 s gate budget.
-    expect(events).toEqual(['listening-gate:5000', 'listening', 'ready-gate:4200'])
+    expect(events).toEqual(['gate:5000'])
 
     ready.resolve()
     expect(await deadlinePromise).toBe(15_800)
-    expect(events).toEqual(['listening-gate:5000', 'listening', 'ready-gate:4200', 'ready'])
+    expect(events).toEqual(['gate:5000', 'ready'])
+  })
+
+  test('explicit false does not wait for readiness and keeps the full deadline', async () => {
+    const deadlineMs = await waitForFastOpencodeRootReadiness(
+      {
+        fastPathEnabled: false,
+        firstReadyResponse: new Promise<void>(() => {}),
+      },
+      {
+        now: () => 10_000,
+        waitForSignal: async () => {
+          throw new Error('legacy path must not wait for the fast readiness signal')
+        },
+      },
+    )
+
+    expect(deadlineMs).toBe(20_000)
   })
 
   test('gate timeout falls through and consumes the same 20-second deadline', async () => {
@@ -90,8 +62,7 @@ describe('OpenCode root readiness gate', () => {
     const deadlineMs = await waitForFastOpencodeRootReadiness(
       {
         fastPathEnabled: true,
-        firstListeningResponse: never,
-        firstReadyResponse: never,
+        firstReadyResponse: new Promise<void>(() => {}),
       },
       {
         now: () => now,
@@ -102,10 +73,8 @@ describe('OpenCode root readiness gate', () => {
       },
     )
 
-    // The listening gate spent the whole budget; the ready gate gets 0 and
-    // returns at once. The resolver keeps the remaining 15 s.
     expect(deadlineMs).toBe(15_000)
-    expect(calls).toEqual(['gate:5000', 'gate:0'])
+    expect(calls).toEqual(['gate:5000'])
   })
 
   test('boot keeps subscribe-before-root ordering and uses only the existing fast flag', async () => {
@@ -136,7 +105,6 @@ describe('OpenCode root readiness gate', () => {
       "const fastRootReadinessEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'",
     )
     expect(initial).toContain('fastPathEnabled: fastRootReadinessEnabled')
-    expect(initial).toContain('firstListeningResponse: opencode.waitForCurrentListeningResponse()')
     expect(initial).toContain('onListening,\n    fastRootReadinessEnabled,')
   })
 
