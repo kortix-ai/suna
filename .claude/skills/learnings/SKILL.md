@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Put an outer deadline around every migration subprocess (2026-09-15)
+
+**When:** orchestrating provider capture, archive, or restore commands, enforce a
+deadline outside the provider SDK. Record timeout exit `124` and retain the
+checkpoint for retry. Verify the source sandbox returns to its original state.
+*Near-miss:* four Suna capture subprocesses remained alive for 47 minutes after
+their SDK operations stopped making progress.
+*Enforcer:* the production batch runner terminates capture/archive after 15
+minutes and apply after 20 minutes; the ledger keeps incomplete work unverified.
+
 ### Model every captured filesystem entry before restoring it (2026-09-14)
 
 **When:** migrating a workspace, preserve each supported entry type and its

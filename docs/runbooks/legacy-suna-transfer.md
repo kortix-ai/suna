@@ -507,7 +507,9 @@ Full production completion remains blocked until all applicable items pass:
 - A session import requires six remotely read-back archive artifacts before
   destination sandbox creation. `assertWorkspaceVerified` rejects a missing receipt.
 - Parallel apply has per-session claims, source-sandbox capture locks, retry
-  checkpoints, and capacity controls. The current global lease serializes apply.
+  checkpoints, capacity controls, and outer subprocess deadlines. Capture and
+  archive stop after 15 minutes. Apply stops after 20 minutes. The current global
+  coordinator lease serializes batches.
 
 The OpenCode `/file/content` route can return binary content as UTF-8 text.
 Its response changed a 363,046-byte source file into 363,052 bytes in a
