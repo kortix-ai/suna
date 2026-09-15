@@ -506,6 +506,48 @@ the API. Not done in #7242 (decision pending); the shape is a second bucket via
 a provider alias plus `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION` in the deploy
 workflow — see the main runbook's AWS section.
 
+### Real S3 (a throwaway account, bucket in eu-north-1), 2026-09-15
+
+The same run with the local API pointed at a **real** bucket built from the
+repo's module in a throwaway AWS account (`tmp` Terraform root, destroyed
+afterwards). The account's organization policy allows eu-north-1 only, so the
+objects sat in Stockholm while the Daytona boxes sat in the US (`us` target =
+New York or Los Angeles; first byte to Stockholm 510 ms from LA). The Git
+bundle still came from the laptop through the quick tunnel. Presign branch,
+20 rounds per arm, 400-file project.
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 20 / 0 / 0 | 1,052 / 1,374 ms | 1,084 / 1,402 ms | 5,807 / 8,187 ms | — |
+| **New S3 provider v2 + presign** (`prefer-s3`), real S3 eu-north-1 | 20 / 0 / 0 (1 retried) | **1,195 / 26,636 ms** — the 17 ordinary rounds: 1,132 / 1,656 ms (min 950, max 2,521) | 1,226 / 26,667 ms (17 ordinary: 1,219 / 1,727) | 6,401 / 31,312 ms (17 ordinary: 6,368 / 8,833) | env 19, proxy 1 |
+
+19 of 20 S3 boots made **no Git-proxy request before readiness**; the one
+`GET project-snapshot` is round 20's retry (first transfer refused, fresh
+proxy descriptor, done in 2.5 s). Hydration `ok` 20/20, import p50 304 ms.
+Extractor `tar` ×20. A first attempt of this run (8 valid rounds before the
+test account's 15-minute exported keys expired — see the main runbook's TTL
+note) measured the same median: `s3_acquire` p50 1,178 ms.
+
+**The tail is the distance.** Three rounds (1, 17, 19) completed in one
+attempt but took 14.8, 26.6 and 29.6 s: the 1.5 MB object trickled across the
+Atlantic at well under 100 KB/s without ever pausing for the 12 s inactivity
+watchdog, and their hydration (the 1.6 MB pack) took 1.8–4.9 s the same way.
+Nothing like it happened on the Git arm, whose bundle rides a Cloudflare-fronted
+path. Fifteen percent of boots stretched to 15–30 s is not acceptable for a
+default, and it is the strongest argument for the bucket being in the boxes'
+own region.
+
+Reading: at a transatlantic distance from the sandbox — comparable to, and a
+little further than, dev's cross-country bucket — the S3 boot is level with
+the Git bundle at the median (1,132 vs 1,052 ms on the ordinary rounds)
+instead of 800 ms behind, because the descriptor round trip is gone. What
+remains is the first-byte distance: TLS + one GET to Stockholm is ~1 s of the
+1.13 s. From a bucket in the boxes' own region (32 ms first byte from New
+York to us-east-1, 101 ms from LA to us-west-2) the same request is several
+hundred milliseconds shorter and the trickling tail should disappear with the
+distance; that case could not be measured because the test account's policy
+denied US buckets, and it is where S3 would pull clearly ahead of Git.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
