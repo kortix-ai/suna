@@ -676,6 +676,10 @@ export class AgentCell {
       // after the clone, before the agent is built.
       const loadedPlugins = await this.plugins(sessionId).catch(() => null);
       this.__pluginTools = (loadedPlugins?.tools ?? []).map((t) => toPiTool(t, { onError: (p, n, e) => this.broadcast({ type: "plugin", line: `${p}.${n} threw: ${e?.message ?? e}` }) }));
+      // PLUGINS GET THEIR OWN MARK. They were inside `skills`, which is where a
+      // workspace walk would hide: the phase that used to be a cached string
+      // read would simply have grown, with nothing to say it had.
+      tMark("plugins");
       // The checkout may have just ARRIVED, so a skills answer cached from
       // before it is stale by definition.
       const { block } = await this.skills(sessionId, { reload: !this.skillsAfterCheckout });
@@ -1193,8 +1197,22 @@ export class AgentCell {
     // The machine's copy arrives in ONE exec (machine-fs `bundle`). Reading it
     // the way the cell is read would be one RPC per file, which for a checkout
     // that has run `npm install` is thousands.
+    // NEVER WAIT FOR THE MACHINE'S CLONE HERE.
+    //
+    // `machineRepoReady()` blocks until the machine has the repo, and the whole
+    // point of taking the clone off the attach path was that a turn should not
+    // wait for it. Awaiting it here put it straight back: measured 2026-09-15,
+    // the first machine turn went 6778 ms -> 8066 ms.
+    //
+    // The cell has the same repo at the same ref, already checked out, so the
+    // plugins are read from there until the machine's copy exists — and the
+    // moment it does, the cache is dropped so the next turn reads the machine,
+    // which is what `npm install` on the box needs.
     const machine = await this.machineEnv();
-    if (machine) await this.machineRepoReady();
+    if (machine && !this.__machineRepoReady) {
+      this.machineRepoReady().then((ok) => { if (ok) this.__plugins = null; }).catch(() => {});
+    }
+    const fromMachine = machine && this.__machineRepoReady;
     const readable = {
       async readdirWithFileTypes(dir) {
         const r = await env.listDir(dir);
@@ -1210,12 +1228,17 @@ export class AgentCell {
     // A PROJECT THAT SHIPS NO PLUGINS PAYS NOTHING. That is nearly every
     // project and every turn, and the walk is the expensive part — one cheap
     // listing of the plugins directory decides it.
-    const shipped = await env.listDir(dir)
-      .then((r) => (r?.ok ? (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name) : []))
-      .catch(() => []);
+    // ASK WHEREVER THE FILES WILL BE READ FROM. Listing the cell's plugin
+    // directory to decide whether to read the MACHINE's would miss a plugin
+    // that only exists on the machine — which is the whole point of being able
+    // to write one there.
+    const shipped = await (fromMachine
+      ? machineFs(machine).readdirWithFileTypes(`${CELL_CWD}/${dir}`).then((es) => es.filter((e) => e.isFile).map((e) => e.name))
+      : env.listDir(dir).then((r) => (r?.ok ? (r.value ?? []).filter((e) => e.kind === "file").map((e) => e.name) : []))
+    ).catch(() => []);
     const workspace = !shipped.some(isPluginFile)
       ? { files: [], dirs: [] }
-      : await (machine ? machineFs(machine).bundle(CELL_CWD) : collectWorkspace(readable, CELL_CWD)).catch((e) => {
+      : await (fromMachine ? machineFs(machine).bundle(CELL_CWD) : collectWorkspace(readable, CELL_CWD)).catch((e) => {
       this.broadcast({ type: "plugin", line: `could not read the workspace: ${e?.message ?? e}` });
       return { files: [], dirs: [] };
     });
@@ -1417,7 +1440,46 @@ export class AgentCell {
    * big for the isolate — each leaves the session exactly as it was before
    * this existed: an empty workspace that still answers.
    */
+  /**
+   * The checkout, begun off the critical path and awaited by nobody.
+   *
+   * Once per isolate: `ensureCheckout` is itself idempotent, but firing a clone
+   * per health poll would have several racing, and the first one to finish is
+   * the only one that matters.
+   */
+  prewarmCheckout() {
+    if (this.__prewarmed) return;
+    // NOTHING TO CLONE YET IS NOT A PREWARM. A cell is addressed before the
+    // control plane has pushed its env, and latching the flag on that first
+    // request meant the clone was never started early at all — measured
+    // 2026-09-15: four seconds after the client opened the session the
+    // workspace was still empty, and `checkout` cost the first turn 1017 ms.
+    if (!String(this.effectiveEnv().KORTIX_REPO_URL ?? "").trim()) return;
+    this.__prewarmed = true;
+    this.ensureCheckout().catch(() => null);
+  }
+
+  /**
+   * ONE CLONE, HOWEVER MANY CALLERS.
+   *
+   * `ensureCheckout` short-circuits on a tree that is already THERE, which is
+   * not the same as one being fetched: the prewarm and the first turn both saw
+   * no checkout and both started one. Measured 2026-09-15 — two clones racing
+   * took `checkout` from 1081 ms to 2644 ms, worse than the problem the prewarm
+   * was for. Callers now share the in-flight promise.
+   *
+   * Only success is remembered. A clone that failed must be retried by the next
+   * turn rather than cached as the answer for the life of the isolate.
+   */
   async ensureCheckout() {
+    if (this.__checkoutOk) return this.__checkoutOk;
+    this.__checkoutInFlight ??= this.checkoutOnce()
+      .then((r) => { if (r?.ok) this.__checkoutOk = r; return r; })
+      .finally(() => { this.__checkoutInFlight = null; });
+    return this.__checkoutInFlight;
+  }
+
+  async checkoutOnce() {
     const e = this.effectiveEnv();
     const url = typeof e.KORTIX_REPO_URL === "string" ? e.KORTIX_REPO_URL.trim() : "";
     if (!url) return { ok: false, reason: "no repo url" };
@@ -1860,6 +1922,20 @@ export class AgentCell {
       ?? this.state.id?.toString?.()
       ?? "default";
 
+    // THE CLONE STARTS ON THE FIRST REQUEST THAT NAMES THIS SESSION.
+    //
+    // It was hooked to `/kortix/health`, which the control plane polls while
+    // the box opens — but that poll does not carry `c=`, so it lands on a
+    // different cell of the shared runner and the session's own isolate never
+    // heard about it. Measured 2026-09-15: three seconds of idle before the
+    // prompt still paid `checkout=1007ms`, exactly as if nothing had been
+    // prewarmed, because nothing had.
+    //
+    // Here the session IS resolved, so whatever the client touches first — the
+    // transcript, the file list, an addressed health poll — begins the clone,
+    // and the first prompt finds it done or in flight rather than starting it.
+    this.prewarmCheckout();
+
     // THE TERMINAL TAB'S SOCKET, which is not the session watcher's. It
     // carries raw text (xterm's keystrokes out, bytes back) for ONE terminal,
     // so it is accepted here, before the JSON protocol below, and remembered
@@ -2051,6 +2127,14 @@ export class AgentCell {
         this.sql.exec("INSERT INTO session_env(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, String(v));
         applied.push(k);
       }
+      // THE ENV IS WHAT THE CLONE WAS WAITING FOR. A cell holds no repo url
+      // until the control plane pushes one, which is why prewarming on the
+      // first addressed request did nothing — measured 2026-09-15, `repo:
+      // false` four seconds after the client opened the session. This push is
+      // the first moment a clone is even possible, and it lands ahead of the
+      // prompt that follows it, so the turn finds the checkout in flight
+      // instead of starting it.
+      this.prewarmCheckout();
       return Response.json({ ok: true, sessionId, applied: applied.length, keys: applied.slice(0, 40) });
     }
     if (path === "/kortix/env") {
@@ -2800,6 +2884,12 @@ export class AgentCell {
           ops: this.sql.exec("SELECT COUNT(*) AS n FROM ops").toArray()[0].n,
           files: this.cellFs.fileCount?.() ?? null,
           checkedOut: await isCheckedOut(this.cellFs.fs).catch(() => false),
+          // WHY A CHECKOUT HAS NOT HAPPENED, which `checkedOut: false` alone
+          // cannot say: no repo url yet, prewarm not fired, or a clone that ran
+          // and failed. Booleans only — the url carries a token.
+          repo: Boolean(String(this.effectiveEnv().KORTIX_REPO_URL ?? "").trim()),
+          prewarmed: Boolean(this.__prewarmed),
+          checkoutOk: Boolean(this.__checkoutOk),
           // WHICH DIRECTORY THIS PROJECT'S AGENTS AND SKILLS COME FROM. The
           // schema moved it at v3 and a session that resolved it before its
           // checkout landed read the wrong one silently — the only symptom
