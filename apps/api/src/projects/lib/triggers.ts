@@ -1,3 +1,4 @@
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -529,12 +530,12 @@ async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
     sql`exists (
       select 1
       from ${projectTriggerRuntime}
-      where ${projectTriggerRuntime.projectId} = ${projects.projectId}
+      where ${projectTriggerRuntime.projectId} = ${qualifiedColumn(projects.projectId)}
     )`,
     sql`exists (
       select 1
       from ${connectors}
-      where ${connectors.projectId} = ${projects.projectId}
+      where ${connectors.projectId} = ${qualifiedColumn(projects.projectId)}
     )`,
   );
   const rows = await db
@@ -1823,9 +1824,17 @@ function hasResolvedGitAuth(project: ManifestProject): project is ProjectRow & {
   return 'gitAuthToken' in project || 'gitAuthHeaders' in project;
 }
 
+/**
+ * The manifest a Customize editor shows or rewrites. Always read after a forced
+ * mirror refresh: each API replica refreshes its own git mirror at most every
+ * 60 s, and a write refreshes only the replica that handled it, so an
+ * unforced read on another replica serves the manifest from before the save.
+ * Editor reads are not a hot path; one `git fetch` per read is the price of
+ * showing what was committed.
+ */
 export async function loadManifestForEdit(project: ManifestProject): Promise<ParsedManifest> {
   const gitProject = hasResolvedGitAuth(project) ? project : await withProjectGitAuth(project);
-  const existing = await readManifest(gitProject);
+  const existing = await readManifest(gitProject, { forceRefresh: true });
   if (existing) return existing;
   return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
 }

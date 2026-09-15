@@ -4,6 +4,8 @@ import {
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
+  catalogModelForWireModel,
+  clampGenerationConfig,
   getManagedModel,
   isManagedModelId,
   pricingRefLookupCandidates,
@@ -28,6 +30,7 @@ describe('managed catalog', () => {
       'muse-spark-1.2',
       'minimax-m3',
       'gpt-5.6-luna',
+      'gpt-6-astra',
       'glm-5.3-flash',
     ]);
   });
@@ -37,9 +40,52 @@ describe('managed catalog', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('kortix-basic');
   });
 
-  test('Grok 4.6 is the single flagship', () => {
+  test('Grok 4.6 remains the default flagship', () => {
     expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('grok-4.6');
-    expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
+    expect(getManagedModel(MANAGED_FLAGSHIP_MODEL_ID)?.tier).toBe('flagship');
+  });
+
+  test('Astra routes through OpenAI on OpenRouter with standard and long-context prices', () => {
+    expect(getManagedModel('gpt-6-astra')).toMatchObject({
+      name: 'GPT-6 Astra',
+      upstreamModelId: 'openai/gpt-6-astra',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/openai/gpt-6-astra',
+      tier: 'flagship',
+      vision: true,
+      limit: { context: 1_050_000, output: 128_000 },
+      openrouterProvider: { order: ['openai'], allow_fallbacks: true },
+      pricing: {
+        inputPerMillion: 10,
+        outputPerMillion: 50,
+        cachedInputPerMillion: 1,
+        cacheWritePerMillion: 12.5,
+        contextOver200k: {
+          contextThreshold: 272_000,
+          inputPerMillion: 20,
+          outputPerMillion: 75,
+          cachedInputPerMillion: 2,
+          cacheWritePerMillion: 25,
+        },
+      },
+    });
+  });
+
+  test('Astra bundled capabilities reject unsupported sampling and reasoning settings', () => {
+    const astra = catalogModelForWireModel('gpt-6-astra');
+    expect(astra).toMatchObject({
+      attachment: true,
+      reasoning: true,
+      tool_call: true,
+      temperature: false,
+      structured_output: true,
+      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }],
+    });
+    expect(clampGenerationConfig({ temperature: 0.7, topP: 0.8, reasoningEffort: 'none' }, astra)).toEqual({});
+    expect(clampGenerationConfig({ reasoningEffort: 'max', maxOutputTokens: 200_000 }, astra)).toEqual({
+      reasoningEffort: 'max',
+      maxOutputTokens: 128_000,
+    });
   });
 
   test('every model has an upstream id, transport, and pricing ref', () => {

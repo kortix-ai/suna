@@ -18,7 +18,7 @@ import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 import {
   buildSessionSandboxEnvVars,
@@ -249,7 +249,7 @@ export async function restartSession(input: {
       agentName: session.agentName ?? 'default',
       allowProjectImage: projectImageAllowedForSession(
         session.agentName,
-        workspaceModeFromSessionMetadata(session.metadata),
+        repositoryAccessFromSessionMetadata(session.metadata),
       ),
       sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
@@ -273,7 +273,7 @@ export async function restartSession(input: {
           // meta agent config, so the daemon clones the project over the meta
           // workspace and wipes /workspace/AGENTS.md.
           platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
-          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
           restoreSessionBranch: true,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),

@@ -612,6 +612,13 @@ export async function downloadAndExtractProjectSnapshot(
   gunzip.on('error', (err) => {
     decoderError ??= err
   })
+  // The file sink can finish before the decompressor/parser. Its completion
+  // does not prove that the archive guard has inspected every header.
+  const guardFinished = new Promise<void>((resolve) => {
+    parser.once('end', resolve)
+    parser.once('error', () => resolve())
+    gunzip.once('error', () => resolve())
+  })
   gunzip.pipe(parser)
 
   await mkdir(dirname(file), { recursive: true })
@@ -644,6 +651,7 @@ export async function downloadAndExtractProjectSnapshot(
   }
   const downloadMs = Date.now() - t0
   try {
+    await guardFinished
     // The bytes ARE the published object (digest verified). Now the guard's
     // verdict on its headers is final, and a decoder error means the object
     // itself is not a valid gzip tar — never a transport problem.

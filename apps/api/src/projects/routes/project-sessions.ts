@@ -52,6 +52,7 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
 const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
   'workspace_mode',
+  'repository_access',
   'sandbox_slug',
 ] as const;
 

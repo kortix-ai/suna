@@ -1,3 +1,6 @@
+import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { modelAccessAllows, modelAccessProvider, type ProjectModelAccess } from '../model-access';
+import { toWireModel } from './effective';
 import {
   type AuthedPrincipal,
   GatewayResolutionError,
@@ -61,10 +64,11 @@ export const resolveCachedManagedModels = accountMayUseManagedModels;
 // is off, so a self-host naturally has no managed fallback — the explicit check
 // here is redundant belt-and-suspenders (never a silent fallback to Kortix's
 // shared credentials), not load-bearing on its own.
-function byokFallbackCandidates(): UpstreamDescriptor[] {
+function byokFallbackCandidates(access: ProjectModelAccess): UpstreamDescriptor[] {
+  if (access.disabledProviders.includes('kortix')) return [];
   if (!config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
-  if (!fallbackId) return [];
+  if (!fallbackId || !modelAccessAllows(access, fallbackId)) return [];
   const managed = getRuntimeManagedModel(fallbackId);
   return managed ? managedCandidates(managed) : [];
 }
@@ -112,7 +116,18 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  const effectiveModel = model;
+  const effectiveModel = toWireModel(model);
+  const access = principal.projectId
+    ? await getProjectModelAccess(principal.projectId)
+    : { disabledProviders: [], disabledModels: [] };
+  if (!modelAccessAllows(access, effectiveModel)) {
+    const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
+    throw new GatewayResolutionError(
+      providerDisabled ? 'provider_disabled' : 'model_disabled',
+      providerDisabled ? 'This provider is disabled for this project.' : 'This model is disabled for this project.',
+      'Choose an enabled model, or ask a project manager to enable it in Models.',
+    );
+  }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -264,7 +279,7 @@ export async function resolveCandidates(
       // admission gate on the way, since that gate is bypassed for exactly the
       // tiers this fallback would be serving.
       return mayUseManagedModels
-        ? [...byokDescriptors, ...byokFallbackCandidates()]
+        ? [...byokDescriptors, ...byokFallbackCandidates(access)]
         : byokDescriptors;
     }
     // No shared key configured for this project — provider keys are always
@@ -287,6 +302,10 @@ export async function resolveCandidates(
   // key; it never falls through here.
   const managed = getRuntimeManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED && config.KORTIX_MANAGED_PROVIDER_ENABLED) {
+    if (access.disabledProviders.includes('kortix')) {
+      throw new GatewayResolutionError('provider_disabled', 'Kortix Managed Models are disabled for this project.',
+        'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
+    }
     if (principal.freeModelsOnly) {
       throw new GatewayResolutionError(
         'plan_upgrade_required',

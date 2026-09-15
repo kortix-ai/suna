@@ -13,6 +13,7 @@ export {
   isTunnelCapability,
   operationForMethod,
   validateTunnelPermissionScope,
+  validateFilesystemParams,
 } from './shared';
 
 export type {

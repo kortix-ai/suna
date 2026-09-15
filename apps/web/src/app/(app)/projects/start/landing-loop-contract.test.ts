@@ -97,6 +97,29 @@ describe('/projects/start stuck states offer a sign-out escape hatch', () => {
     expect(mounts).toBe(2);
   });
 
+  // `resolve()` returns early on an empty list, so neither `terminal` nor
+  // `failed` was ever set: the loading frame stayed up forever with no control.
+  // On desktop, with no browser Back, that was a hard lock.
+  test('an empty account list renders the terminal with sign-out, not an endless loading frame', () => {
+    expect(source).toContain('const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;');
+    expect(source).toContain("const shownTerminal = terminal ?? (noAccounts ? 'no-permission' : null);");
+    expect(source).toContain('if (shownTerminal) {');
+    expect(source).toContain('<ProjectStartEmpty reason={shownTerminal} />');
+    expect(source).not.toContain('if (terminal) {');
+  });
+
+  // The button used to sit at `top-4 right-4`. On Win/Linux the web-drawn
+  // window controls cover that corner at z 100, so a click meant for Sign out
+  // could land on minimise, maximise or close instead.
+  test('the escape hatch clears the window controls on desktop', () => {
+    const button = signOutButton();
+    expect(button).toContain('kx-desktop-band-row');
+    expect(button).not.toContain('absolute top-4 right-4');
+    // The row spans the window; only the button takes clicks.
+    expect(button).toContain('pointer-events-none');
+    expect(button).toContain('pointer-events-auto');
+  });
+
   test('the escape hatch signs out through the one shared sign-out', () => {
     // `performSignOut` owns the whole sequence — read the `{ error }`, retry
     // locally, clear the bounce cookie, reset every client cache, then leave.

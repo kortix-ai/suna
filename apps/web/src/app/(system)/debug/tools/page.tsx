@@ -286,6 +286,35 @@ const CONNECTOR_CALL_OUTPUT = JSON.stringify({
   },
 });
 
+const CONNECTORS_LIST_OUTPUT = JSON.stringify({
+  connectors: [
+    { slug: 'gmail-mfda1u', name: 'Gmail', provider: 'composio', tools: 24, status: 'active' },
+    { slug: 'linear', name: 'Linear', provider: 'mcp', tools: 31, status: 'active' },
+  ],
+});
+
+const CONNECTOR_DISCOVER_OUTPUT = JSON.stringify({
+  matches: [
+    {
+      tool: 'gmail-mfda1u.list_threads',
+      risk: 'read',
+      description: 'Retrieves a list of email threads from a Gmail account.',
+    },
+    {
+      tool: 'gmail-mfda1u.send_email',
+      risk: 'write',
+      description: 'Sends an email from the connected Gmail account.',
+    },
+  ],
+});
+
+const CONNECTOR_DESCRIBE_OUTPUT = JSON.stringify({
+  tool: 'gmail-mfda1u.list_threads',
+  risk: 'read',
+  description: 'Retrieves a list of email threads from a Gmail account.',
+  inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+});
+
 const SESSION_STATS_OUTPUT = `## Session stats
 
 - Messages: 42
@@ -733,6 +762,24 @@ const GROUPS: Group[] = [
       {
         label: 'agent_status',
         node: part('agent_status', done({}, AGENT_STATUS_OUTPUT)),
+      },
+      {
+        label: 'kortix-connectors_connectors',
+        node: part('kortix-connectors_connectors', done({}, CONNECTORS_LIST_OUTPUT)),
+      },
+      {
+        label: 'kortix-connectors_discover',
+        node: part(
+          'kortix-connectors_discover',
+          done({ query: 'gmail threads' }, CONNECTOR_DISCOVER_OUTPUT),
+        ),
+      },
+      {
+        label: 'kortix-connectors_describe',
+        node: part(
+          'kortix-connectors_describe',
+          done({ tool: 'gmail-mfda1u.list_threads' }, CONNECTOR_DESCRIBE_OUTPUT),
+        ),
       },
       {
         label: 'kortix-connectors_call',

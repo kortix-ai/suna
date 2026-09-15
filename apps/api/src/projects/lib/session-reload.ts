@@ -41,8 +41,7 @@ import {
 } from './compile-agent-config';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import {
-  workspaceModeAllowsFullRepository,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 
 const SANDBOX_SERVICE_PORT = 8000;
@@ -332,7 +331,7 @@ export async function latestAgentConfigEtag(input: {
   // very commit the caller is asking about.
   invalidateProjectMirror(input.projectId);
   const compiled = await (
-    !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+    !repositoryAccessFromSessionMetadata(session?.metadata) &&
     session?.agentName
       ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
       : resolveCompiledAgentConfigForSession(gitProject, input.baseRef)

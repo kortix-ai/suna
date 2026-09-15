@@ -322,10 +322,15 @@ export function createPermissionRequestsRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      await db
+      const [denied] = await db
         .update(tunnelPermissionRequests)
         .set({ status: 'denied', updatedAt: new Date() })
-        .where(eq(tunnelPermissionRequests.requestId, requestId));
+        .where(and(
+          eq(tunnelPermissionRequests.requestId, requestId),
+          eq(tunnelPermissionRequests.status, 'pending'),
+        ))
+        .returning({ requestId: tunnelPermissionRequests.requestId });
+      if (!denied) return c.json({ error: 'Request already resolved' }, 409);
 
       return c.json({ success: true });
     },

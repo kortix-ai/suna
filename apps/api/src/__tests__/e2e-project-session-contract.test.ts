@@ -320,14 +320,6 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureFastSandboxImage: async () => ({
-    snapshotName: 'kortix-fast-test',
-    slug: 'default',
-    contentHash: 'f'.repeat(64),
-    built: false,
-    isDefault: true,
-    runtimeProfile: 'fast',
-  }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',
     slug: 'meta',
@@ -1866,7 +1858,7 @@ describe('project session API contract', () => {
   });
 
   test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
-    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionRow!.metadata = { repository_access: false };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -2284,6 +2276,10 @@ describe('project session API contract', () => {
       {
         body: { metadata: { workspace_mode: 'branch' } },
         message: 'metadata key is server-managed: workspace_mode',
+      },
+      {
+        body: { metadata: { repository_access: true } },
+        message: 'metadata key is server-managed: repository_access',
       },
       {
         body: { metadata: { sandbox_slug: 'default' } },

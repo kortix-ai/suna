@@ -62,6 +62,14 @@ setInterval(() => {}, 60_000)
   chmodSync(path, 0o755)
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
 function heldCount(heldFile: string): number {
   if (!existsSync(heldFile)) return 0
   return readFileSync(heldFile, 'utf8').split('\n').filter(Boolean).length
@@ -107,17 +115,19 @@ describe('OpenCode supervisor listening announcement', () => {
       return (originalWrite as (...args: unknown[]) => boolean)(chunk, ...rest)
     }) as typeof process.stdout.write
     try {
+      const ready = deferred()
       supervisor = createOpencodeSupervisor(makeCfg(), configDir, undefined, {
         binaryPathOverride: binary,
         configPathOverride: join(root, 'runtime-config.json'),
         onStartupMark: (label) => marks.push(label),
+        onFirstReadyResponse: ready.resolve,
       })
 
       const started = Date.now()
       await supervisor.start()
       await supervisor.waitForCurrentListening()
       const listeningAfterMs = Date.now() - started
-      await supervisor.waitForCurrentReadyResponse()
+      await ready.promise
       const readyAfterMs = Date.now() - started
 
       // Not one connection reached the port while the handler was missing.
@@ -140,16 +150,18 @@ describe('OpenCode supervisor listening announcement', () => {
     mkdirSync(configDir)
     writeDeadWindowBinary(binary, 300, false, heldFile)
 
+    const ready = deferred()
     supervisor = createOpencodeSupervisor(makeCfg(), configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       // The real value is 10 s; the point here is only that probing resumes.
       listeningLineFallbackMs: 200,
+      onFirstReadyResponse: ready.resolve,
     })
 
     const started = Date.now()
     await supervisor.start()
-    await supervisor.waitForCurrentReadyResponse()
+    await ready.promise
     const readyAfterMs = Date.now() - started
 
     // The fallback pays for the window (a probe dropped in it waits its 2 s

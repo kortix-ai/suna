@@ -86,6 +86,10 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // The turn-end relay can still be in flight. Persist the transcript before
+    // powering off the only live reader; capture failures never prevent stop.
+    const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
+    await captureSessionTranscriptMirror(sessionId);
   }
 
   try {

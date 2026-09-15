@@ -94,12 +94,14 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \
+        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
         texlive-latex-extra texlive-latex-recommended \
-    && rm -rf /var/lib/apt/lists/*
+        bat bc fd-find file fzf git-lfs htop iputils-ping jq less lsof moreutils nano netcat-openbsd openssh-client patch procps ripgrep rsync sqlite3 tree unzip wget xz-utils zip zstd \
+    && rm -rf /var/lib/apt/lists/* \
+    && (command -v fd >/dev/null || ln -s "$(command -v fdfind)" /usr/local/bin/fd) && (command -v bat >/dev/null || ln -s "$(command -v batcat)" /usr/local/bin/bat) && rg --version >/dev/null && fd --version >/dev/null && bat --version >/dev/null && jq --version >/dev/null && fzf --version >/dev/null
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
     && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \

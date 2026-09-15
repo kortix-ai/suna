@@ -127,6 +127,32 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(pickerIndex).toBeGreaterThan(0);
     expect(pickerIndex).toBeLessThan(formIndex);
   });
+
+  // The desktop shell has no browser toolbar. Without this control, Log out was
+  // the only way off `/new` there.
+  test('on desktop, a Close control after Log out returns to the landing door', () => {
+    const logOutAt = code.indexOf('{signOutLabel}');
+    const closeAt = code.indexOf('<DesktopCloseButton');
+    expect(logOutAt).toBeGreaterThan(0);
+    // Extreme right: rendered after Log out, in the same top row.
+    expect(closeAt).toBeGreaterThan(logOutAt);
+    expect(closeAt).toBeLessThan(code.indexOf('<AnimatePresence'));
+
+    const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
+    expect(close).toContain('router.replace(PROJECT_LANDING_PATH)');
+    expect(code).toContain("from '@/lib/onboarding/landing-destination'");
+    expect(code).toContain("from '@/components/desktop/desktop-close-button'");
+  });
+
+  test('the top row sits below the title-bar band on desktop', () => {
+    // The band holds the macOS traffic lights and the Win/Linux controls. The
+    // email used to sit directly under the lights.
+    const row = code.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
+    expect(row).toBeDefined();
+    expect(row).toContain('kx-desktop-band-row');
+    // The old side indents and their gutter variable are gone.
+    expect(row).not.toContain('--kx-band-row-gutter');
+  });
 });
 
 describe('/new page: uses the shared form model, not local rules', () => {

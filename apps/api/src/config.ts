@@ -523,16 +523,6 @@ const envSchema = z.object({
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
-  // Additive cold-boot accelerators that keep the standard runtime image and
-  // every tool: Platinum rootfs materialization and the native OpenCode binary
-  // prefetch. It never keeps a sandbox or an OpenCode process running.
-  //
-  // NOT gated here: the fresh-session Git fast path has its own switch,
-  // KORTIX_FAST_GIT_BOOT_ENABLED below (deploy-dev injects an explicit `false`
-  // for THIS flag on every push, so it can never double as that path's kill
-  // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
-  // push). The per-project warm-image system it also used to gate is gone.
-  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -1210,7 +1200,6 @@ export const config = {
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
-  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,

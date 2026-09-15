@@ -41,3 +41,5 @@ export {
   validateTunnelPermissionScope,
 } from './permissions';
 export type { PermissionScopeValidationResult } from './permissions';
+
+export { validateFilesystemParams } from './filesystem-validation';

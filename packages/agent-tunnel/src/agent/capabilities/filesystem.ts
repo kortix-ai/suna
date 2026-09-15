@@ -6,6 +6,8 @@
  */
 
 import { open, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
+import { createHash } from 'node:crypto';
+import { validateFilesystemParams } from '../../shared/filesystem-validation';
 import { join, dirname } from 'path';
 import type { Capability, RpcHandler } from './index';
 import { validatePath, validateWritePath } from '../security/path-validator';
@@ -131,6 +133,8 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
 
   methods.set('fs.write', async (params) => {
     assertFilesystemOperation(params, 'fs.write');
+    const validationError = validateFilesystemParams('fs.write', params);
+    if (validationError) throw new Error(validationError);
     const path = params.path as string;
     const content = params.content as string;
     const encoding = parseEncoding(params.encoding);
@@ -148,17 +152,31 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
       throw new Error(`Content exceeds max size (${contentBytes} > ${maxFileSize})`);
     }
 
+    const bytes = Buffer.from(content, encoding);
+    const expectedHash = createHash('sha256').update(bytes).digest('hex');
+    if (params.sha256 !== undefined && (params.sha256 as string).toLowerCase() !== expectedHash) {
+      throw new Error('SHA-256 mismatch: content differs from the source; destination was not modified');
+    }
+
     await mkdir(dirname(path), { recursive: true });
     validateFilesystemPath(path, config, params, true);
 
-    await writeFile(path, content, { encoding });
+    await writeFile(path, bytes);
     validateFilesystemPath(path, config, params);
-    const stats = await stat(path);
+    const handle = await open(path, 'r');
+    try {
+      const stats = await handle.stat();
+      const persistedHash = createHash('sha256').update(await handle.readFile()).digest('hex');
+      if (persistedHash !== expectedHash) throw new Error('SHA-256 mismatch after write; destination verification failed');
 
-    return {
-      size: stats.size,
-      path,
-    };
+      return {
+        sha256: persistedHash,
+        size: stats.size,
+        path,
+      };
+    } finally {
+      await handle.close();
+    }
   });
 
   methods.set('fs.list', async (params) => {

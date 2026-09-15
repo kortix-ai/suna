@@ -1,6 +1,7 @@
 import { withRetry } from '@kortix/llm-gateway';
 import {
   GatewayResolutionError,
+  type NoUpstreamReasonCode,
   type AuthedPrincipal,
   type AuthorizeResult,
   type GatewayTrace,
@@ -113,7 +114,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       const result = await post<{
         candidates?: UpstreamDescriptor[];
         resolutionError?: {
-          code: 'model_not_found' | 'model_disabled_on_deployment' | 'plan_upgrade_required' | 'provider_not_connected' | 'provider_reauth_required';
+          code: NoUpstreamReasonCode;
           message: string;
           suggestion: string;
         };

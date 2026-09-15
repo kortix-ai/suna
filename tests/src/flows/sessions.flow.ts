@@ -164,6 +164,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
       'GET /v1/p/public-share/:token',
+      'GET /v1/p/config',
     ],
   },
   async (ctx) => {
@@ -338,7 +339,7 @@ flow(
     });
 
     await ctx.step(
-      'unauthenticated resolution of the file token → 200/503 with its public origin URL',
+      'unauthenticated file resolution matches the deployment’s preview-origin configuration',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
@@ -346,6 +347,13 @@ flow(
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
+          const config = await ctx.client.as(ctx.P.ANON).get('/v1/p/config');
+          config.status(200);
+          if (config.json<any>().preview_url_template === null) {
+            r.body().has('$.share.public_url', null)
+              .has('$.share.proxy_path', `/v1/p/public-share/${fileToken}/file`);
+            return;
+          }
           const publicUrl = new URL(r.json<any>().share.public_url);
           if (publicUrl.protocol !== 'https:' || publicUrl.pathname !== '/open') {
             throw new Error(`file share returned an invalid public_url: ${publicUrl}`);
@@ -1158,6 +1166,91 @@ flow(
         throw new Error('exclude_session_id was ignored — the excluded warm session came back');
       }
       ctx.track('session', freshId, { projectId: p.id });
+    });
+  },
+);
+
+flow(
+  'SESS-28',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 600_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+    ],
+  },
+  async (ctx) => {
+    const { waitFor } = await import('../core/poll');
+    const project = await ctx.fixtures.project({ managedGit: true, seed: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let restrictedSessionId = '';
+    for (const access of [false, true]) {
+      await ctx.step(`create repository_access=${access} session and prove checkout plus session-token authorization`, async () => {
+        const config = await owner.put('/v1/projects/:projectId/agents/:agentName/config', {
+          repository_access: access,
+          kortix_cli: ['project.file.read', 'project.gitops.read'],
+        }, { params: { projectId: project.id, agentName: 'kortix' } });
+        config.status(200);
+        const created = await owner.post('/v1/projects/:projectId/sessions', {
+          agent_name: 'kortix', metadata: { repository_access: !access, workspace_mode: access ? 'runtime' : 'branch' },
+        }, { params: { projectId: project.id } });
+        created.status(201);
+        const sessionId = created.json<any>().session_id;
+        if (!sessionId) throw new Error('session create returned no session_id');
+        ctx.track('session', sessionId, { projectId: project.id });
+        if (!access) restrictedSessionId = sessionId;
+        const params = { projectId: project.id, sessionId };
+        const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+        read.status(200).body().has('$.metadata.repository_access', access)
+          .has('$.metadata.workspace_mode', access ? 'branch' : 'runtime');
+        const patch = await owner.patch('/v1/projects/:projectId/sessions/:sessionId', {
+          metadata: { repository_access: !access },
+        }, { params });
+        patch.status(400);
+        const ready = await waitFor(async () => {
+          const response = await owner.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
+            { params, query: { wait_ms: '8000' }, timeoutMs: 25_000 });
+          response.status(200);
+          const body = response.json<any>();
+          if (body.stage === 'error' && body.retriable === false) throw new Error(JSON.stringify(body));
+          return body;
+        }, { until: (body) => body.stage === 'ready' && Boolean(body.sandbox?.external_id ?? body.sandbox?.externalId),
+          timeoutMs: 240_000, intervalMs: 3000, description: 'repository policy session ready' });
+        const externalId = ready.sandbox.external_id ?? ready.sandbox.externalId;
+        // Only status codes and checkout state leave the sandbox. Its credential stays inside it.
+        const script = `const fs = require("node:fs");
+const expected = ${access};
+const checkout = fs.existsSync("/workspace/.git");
+if (checkout !== expected) throw new Error("unexpected checkout: " + checkout);
+const base = process.env.KORTIX_API_URL.replace(/\\/$/, "");
+const headers = { Authorization: "Bearer " + process.env.KORTIX_TOKEN };
+const files = await fetch(base + "/projects/${project.id}/files", { headers });
+if (files.status !== (expected ? 200 : 403)) throw new Error("file status: " + files.status);
+await files.body?.cancel();
+const git = await fetch(base + "/git/${project.id}.git/info/refs?service=git-upload-pack", { headers });
+if (git.status !== (expected ? 200 : 403)) throw new Error("git status: " + git.status);
+await git.body?.cancel();
+console.log(JSON.stringify({ checkout, files: files.status, git: git.status }));`;
+        const command = `bun -e '${script.replace(/'/g, "'\\''")}'`;
+        const execution = await owner.post(`/v1/p/${externalId}/8000/kortix/env-rpc`,
+          { op: 'exec', args: { command, timeout: 30_000 } }, { timeoutMs: 40_000 });
+        execution.status(200).body().has('$.ok', true).has('$.value.exitCode', 0);
+        const proof = JSON.parse(execution.json<any>().value.stdout.trim());
+        if (proof.checkout !== access || proof.files !== (access ? 200 : 403) || proof.git !== (access ? 200 : 403)) {
+          throw new Error(`unexpected repository proof: ${JSON.stringify(proof)}`);
+        }
+      });
+    }
+    await ctx.step('changing the agent to enabled leaves its existing restricted session restricted', async () => {
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: restrictedSessionId },
+      });
+      read.status(200).body().has('$.metadata.repository_access', false).has('$.metadata.workspace_mode', 'runtime');
     });
   },
 );
