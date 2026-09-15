@@ -21,6 +21,33 @@ linked, not inlined.
 
 ## Register
 
+### A `[skip ci]` VERSION bump can become the staging tip with no images behind it — promote the BUILT commit, not the branch (2026-09-15)
+
+**When:** cutting two releases in one sitting, or any time `staging` moved
+after the previous release. `deploy-prod.yml`'s `sync-staging-version` job
+squash-merges `chore(release): staging VERSION → X.Y.Z [skip ci]` onto
+`staging` at the END of a prod deploy. Normally that bump lands before the next
+`main → staging` merge and the merge gets a build. On 2026-09-15 the order
+inverted: v0.13.15's deploy was still running when #7244 (main → staging,
+`62543c38`) merged and built; ten minutes later the 0.13.16 bump (`d57c4805`)
+landed on top with no `build-staging` run. `promote.yml` takes `IMAGE_SHA =
+HEAD` of the source ref and its `check_green` passes an EMPTY check list, so a
+promote of the tip would have opened a release PR whose `RELEASE_SOURCE_SHA`
+has no `staging-d57c4805` image — refused by the retag step only after the
+release gate had spent an hour. **Rules.** (1) Before promoting, compare
+`git rev-parse origin/staging` with the SHA that `build-staging` and
+`deploy-staging` actually built and verified; if they differ by a `[skip ci]`
+commit, pass `-f ref=<full built SHA>` to `promote.yml`. `actions/checkout`
+accepts a SHA, the release branch is cut from detached HEAD, and the version is
+computed from `origin/prod:VERSION`, so the only tree difference is the
+VERSION file promote stamps anyway. (2) `deploy-staging` runs on
+`workflow_run`, so its `headSha` is the triggering branch's head (main's), not
+staging's — locate the run by id, and read the real SHA from its "Resolve
+staging ref" job. *Near-miss:* v0.13.16, caught before the promote by reading
+`sync-staging-version` in `deploy-prod.yml`. *Enforcer:* none — `promote.yml`
+should refuse (or walk back to the nearest built ancestor) when `IMAGE_SHA`
+has no `Build API image (staging, amd64)` check-run; that is the TODO.
+
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
 **When:** stopping the sandbox proxy or running package tests. Cancel boot and

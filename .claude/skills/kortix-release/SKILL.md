@@ -144,6 +144,14 @@ gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body   # title + note
 
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
   zombie queued run blocks the next deploy — cancel it first.
+- **Promote the BUILT commit, not a `[skip ci]` tip.** deploy-prod's
+  `sync-staging-version` job squash-merges a `[skip ci]` VERSION bump onto
+  `staging` at the end of every prod deploy. If your `main → staging` merge landed
+  BEFORE that bump (two releases in one sitting), staging's tip has no images and
+  promote's green gate passes on an empty check list. Compare
+  `git rev-parse origin/staging` with the SHA `build-staging`/`deploy-staging`
+  built; if they differ, run promote with `-f ref=<full built SHA>` (the tree is
+  identical except VERSION, which promote stamps). Learnings entry 2026-09-15.
 - **Don't promote a moving `staging`.** If commits are still landing, wait until
   staging deploy + QA settles, then promote that exact HEAD.
 - **Staging is not dev.** If `staging.kortix.com/api/runtime-config` references
