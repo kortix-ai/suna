@@ -519,3 +519,20 @@ only when it is `true`. Everything else stock.
 DECISION (Jay, 2026-09-15): dialogs have no close button unless a call site
 asks for one. Only consumer at the time: `AppearanceRow` (settings-list),
 which closes on option select and on overlay tap.
+
+## dialog.tsx + alert-dialog.tsx — popover surface, darker overlay (2026-09-16)
+Stock content: `bg-background`. Stock overlay: `bg-black/50`.
+Before this entry the fork had drifted without a record: `DialogContent` was
+`bg-secondary … p-4 py-5` (commit 206ae887e5), `AlertDialogContent` stayed
+`bg-background`.
+Defect (Jay, 2026-09-16): the content blended into what was behind it.
+  - Light `Dialog`: a nested `SettingsGroup` card (`--card` 95.4%) sat on
+    `--secondary` (96.1%) — no visible group edge.
+  - Dark `AlertDialog`: `--background` (3.9%) over a page dimmed to ~2% —
+    computed contrast ~1.03:1.
+Fork now: both contents `bg-popover`; both overlays `bg-black/70`.
+`DialogContent` keeps `p-4 py-5`; `AlertDialogContent` keeps stock `p-6`.
+DECISION (Jay, 2026-09-16): a dialog is a floating surface, so it uses the
+same token as bottom sheets (`getSheetBg` → `THEME.*.popover`): white in
+light, 9% in dark, matching web `--popover`. Call sites set shape/width only,
+never a background.

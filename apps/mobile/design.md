@@ -88,7 +88,7 @@ A row is **icon · label · trailing**. Nothing else.
 | Inline control | `right` prop → `Switch`, `ToggleGroup`, check mark, icon button. Replaces the chevron |
 | Selected option (picker) | `checked` prop → primary check mark. Picker rows also pass `right={null}` so no chevron shows (Sound pack, Language) |
 | Active item that still navigates | `checked` + default chevron (the active account on Accounts) |
-| Appearance | always `<AppearanceRow />` — a `Dialog` (not a page, not an inline toggle) listing System, Light, Dark in that order, each with its icon (`Monitor`, `Sun`, `Moon`) and a check on the active mode; choosing applies and closes. Dialog width is explicit — `min(window width − 32, 420)` — because `w-full` collapses to content inside the native overlay wrappers |
+| Appearance | always `<AppearanceRow />` — a `Dialog` (not a page, not an inline toggle) listing System, Light, Dark in that order, each with its icon (`Monitor`, `Sun`, `Moon`) and a check on the active mode, in a `SettingsGroup className="bg-secondary"` on the `bg-popover` dialog; choosing applies and closes. Dialog width is explicit — `min(window width − 32, 420)` — because `w-full` collapses to content inside the native overlay wrappers |
 | Destructive | `destructive` prop → icon and label `text-destructive` (Delete account, Sign out) |
 | Badge | `badge` prop → small destructive pill after the label (e.g. "Scheduled") |
 | Press feedback | background highlight `active:bg-accent`. Never scale a row inside a card |
@@ -98,7 +98,8 @@ A row is **icon · label · trailing**. Nothing else.
 | Screen | Structure |
 | --- | --- |
 | Account tab | page title "Account" (`Text variant="h3"` in a 40pt row, part of the scroll content — no header bar, no logo, page background) → one untitled group with a single row (no icon · email · `PricingTierBadge size="md"` for the active account's plan, same plan-name fallback as Billing) → Preferences → Workspace → Help → **Advanced** (Delete account, Sign out — destructive, last). User settings has no Advanced group |
-| Projects header | Kortix logo · search · New. No settings/avatar button — the Account tab owns settings |
+| Projects header | Kortix logo · search · New. No settings/avatar button — the Account tab owns settings. Search shows only when the account has at least one project (hidden while loading and when empty) |
+| Projects empty state | Plain page, centred between header and tab bar: "No projects yet" (`Text variant="large"`) · 24pt gap · primary `Button size="lg" rounded-full` "Create project" (owners and admins only). No card, border, fill, icon, or description |
 | Account detail (`/accounts/[id]`) | `SettingsHeader title={account name}` + tab switcher (Members, Groups, Git, Audit, Settings). No avatar/name/"1 member · 1 project" block |
 | Tab content | `SettingsPage`; primary action (Invite member, Create group, …) as the first row group; lists as titled groups of avatar/icon · name · value · chevron; row actions on the detail screen or an action sheet, never inline icon buttons |
 | Detail screens (member, group) | `SettingsHeader title={name}`; destructive action alone at the bottom |
@@ -113,7 +114,7 @@ No subtitles, helper paragraphs, or meta lines anywhere on these screens.
 | Android / web tab bar | `FloatingTabBar`, mirrors the iOS bar: 60pt capsule (`FLOATING_BAR_HEIGHT`), icon (20pt) over a 12px label, `bg-secondary` pill thumb behind the active tab, foreground icon + label on every tab. Light: `bg-background` + soft shadow; dark: `bg-card` + border. Behind it, a scroll-edge fade (theme background, transparent 36pt above the capsule → opaque at the screen edge), like the iOS 26 bar. Hides on React Native `Keyboard` events, not keyboard-controller values. Android nav bar: `expo-navigation-bar` `enforceContrast: false` (no 3-button scrim in builds) + `NavigationBar.setStyle` matching the status bar |
 | Push transition | Every stack (root, `(settings)`, `auth`) renders `AppStack` with `...usePushTransition()` from `components/navigation/stack-transitions`. iOS: native push. Android: JS card stack, layered and mirrored — push slides the new page in from the right edge over the current one (which shifts −30% and dims 10%), back slides it out to the right; 320ms open / 260ms close on `cubic-bezier(0.32, 0.72, 0, 1)`, soft leading-edge shadow; reduced motion → 150ms crossfade. Root swaps (auth ⇄ tabs) spread `fadeTransition`. No native Android animation is used: `default` fades the leaving page out on back, `ios_from_right` smears, `slide_from_right` is 400ms |
 | Tab root headers | The Account tab has no screen header — the profile block is the top of the page (status-bar inset: automatic on iOS, `insets.top + 16` on Android) |
-| Confirmations | `AlertDialog` (`rounded-3xl` content — `Dialog` and `AlertDialog` are borderless in the primitives; footer: destructive `Button size="lg" rounded-full` + `AlertDialogCancel asChild` secondary pill). Never `Alert.alert`. Sign out keeps the dialog open while it runs and shows a failure in the description |
+| Confirmations | `AlertDialog` (`rounded-3xl` content — `Dialog` and `AlertDialog` are borderless in the primitives, on `bg-popover` — the same surface as bottom sheets — over a `bg-black/70` overlay; call sites never set a background; footer: destructive `Button size="lg" rounded-full` + `AlertDialogCancel asChild` secondary pill). Never `Alert.alert`. Sign out keeps the dialog open while it runs and shows a failure in the description |
 
 ### Copy
 

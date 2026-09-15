@@ -313,8 +313,9 @@ that drops props silently breaks the screens that still pass them.
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
    content; `DialogContent` renders its X close button only with
-   `showCloseButton` — Jay, 2026-09-15). A seventh entry means someone forked a
-   primitive.
+   `showCloseButton` — Jay, 2026-09-15; content surface is `bg-popover`, the
+   bottom-sheet token, over a `bg-black/70` overlay — Jay, 2026-09-16). A
+   seventh entry means someone forked a primitive.
 2. `global.css` is the single source of color (see **Color** above),
    pinned by `lib/utils/theme.test.ts`.
 3. Mobile spacing intentionally diverges from web's tighter scale (see

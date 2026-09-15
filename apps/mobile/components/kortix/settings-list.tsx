@@ -159,7 +159,16 @@ export function SettingsPage({
 }
 
 /** Sentence-case title above a borderless rounded card; renders nothing when empty. */
-export function SettingsGroup({ title, children }: { title?: string; children: React.ReactNode }) {
+export function SettingsGroup({
+  title,
+  className,
+  children,
+}: {
+  title?: string;
+  /** Card surface override — e.g. `bg-background` on a `bg-popover` dialog. */
+  className?: string;
+  children: React.ReactNode;
+}) {
   // toArray drops null / false, so conditional rows (`{cond && <SettingsRow/>}`) just work.
   const rows = React.Children.toArray(children).filter(React.isValidElement);
   if (rows.length === 0) return null;
@@ -171,7 +180,7 @@ export function SettingsGroup({ title, children }: { title?: string; children: R
           {title}
         </Text>
       ) : null}
-      <Card className="gap-0 overflow-hidden rounded-2xl border-0 py-0">
+      <Card className={cn('gap-0 overflow-hidden rounded-2xl border-0 py-0', className)}>
         {rows.map((row, i) => (
           <React.Fragment key={row.key ?? i}>
             {i > 0 ? <Separator /> : null}
@@ -328,7 +337,7 @@ export function AppearanceRow() {
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
-          <SettingsGroup>
+          <SettingsGroup className="bg-secondary">
             {APPEARANCE_OPTIONS.map((option) => (
               <SettingsRow
                 key={option.value}

@@ -12,7 +12,7 @@ import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, Sparkles } from 'lucide-react-native';
+import { AlertCircle, MoreVertical, Plus, Search, Sparkles } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -127,6 +127,12 @@ export default function ProjectsTab() {
   const showEmpty = !!activeAccountId && !loading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId && !loading && !projectsQuery.isError && total > 0 && filtered.length === 0;
+  // Search needs something to search: hidden until the account has a project.
+  // Archiving the last project while searching leaves search mode.
+  const hasProjects = total > 0;
+  React.useEffect(() => {
+    if (!hasProjects && searchOpen) closeSearch();
+  }, [hasProjects, searchOpen, closeSearch]);
 
   const openProject = React.useCallback(
     (p: KortixProject) => router.push(`/projects/${p.project_id}`),
@@ -229,16 +235,18 @@ export default function ProjectsTab() {
               </Button>
             )}
             {/* Search: icon-size button that switches the header to search mode. */}
-            <PlatformButton
-              systemImage="magnifyingglass"
-              icon={Search}
-              fallbackVariant="secondary"
-              accessibilityLabel="Search projects"
-              onPress={() => {
-                haptics.selection();
-                setSearchOpen(true);
-              }}
-            />
+            {hasProjects && (
+              <PlatformButton
+                systemImage="magnifyingglass"
+                icon={Search}
+                fallbackVariant="secondary"
+                accessibilityLabel="Search projects"
+                onPress={() => {
+                  haptics.selection();
+                  setSearchOpen(true);
+                }}
+              />
+            )}
             {/* New: native SwiftUI button on iOS, design-system pill on Android. */}
             {canCreate && (
               <PlatformButton
@@ -289,21 +297,21 @@ export default function ProjectsTab() {
           contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
-          <View className="flex-1 px-4 pt-4">
-            <EmptyState
-              icon={FolderPlus}
-              title="No projects yet"
-              description="A project is a dedicated space for one company, product, or idea."
-              actionLabel={canCreate ? 'Create your first project' : undefined}
-              onActionPress={
-                canCreate
-                  ? () => {
-                      haptics.selection();
-                      setNewProjectOpen(true);
-                    }
-                  : undefined
-              }
-            />
+          {/* Plain page: no card, no icon, no description — title and one pill,
+              centred in the space between the header and the tab bar. */}
+          <View className="flex-1 items-center justify-center gap-6 px-8">
+            <Text variant="large">No projects yet</Text>
+            {canCreate && (
+              <Button
+                size="lg"
+                className="rounded-full"
+                onPress={() => {
+                  haptics.selection();
+                  setNewProjectOpen(true);
+                }}>
+                <Text>Create project</Text>
+              </Button>
+            )}
           </View>
         </ScrollView>
       ) : showNoResults ? (
