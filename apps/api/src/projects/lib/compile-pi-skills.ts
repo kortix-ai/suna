@@ -8,6 +8,7 @@
 import {
   manifestCandidatePaths,
   manifestDefaultConfigDir,
+  manifestConfigDir,
   manifestFormatForPath,
   parseManifestText,
 } from '@kortix/manifest-schema';
@@ -63,6 +64,7 @@ function configDirOf(block: unknown): string | null {
 }
 
 function skillConfigDir(manifest: Record<string, unknown>): string {
+  if (manifest.config_dir !== undefined) return manifestConfigDir(manifest);
   return (
     configDirOf(manifest.pi) ??
     configDirOf(manifest.opencode) ??

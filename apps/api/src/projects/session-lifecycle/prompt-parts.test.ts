@@ -202,7 +202,7 @@ test('a native image that is a remote URL is still admitted', () => {
 });
 
 test.each(['text/plain', 'text/csv', 'application/zip', 'image/svg+xml'])('accepts an uploaded %s reference only for an existing Pi session', mime => {
-  const file = { type: 'file', mime, filename: 'document', url: `kortix-attachment:sha256:${'a'.repeat(64)}` };
+  const file = { type: 'file' as const, mime, filename: 'document', url: `kortix-attachment:sha256:${'a'.repeat(64)}` };
   expect(sanitizeInboxPromptParts([file], { allowSessionAttachments: true })).toEqual({ parts: [file] });
   expect(sanitizeInboxPromptParts([file])).toHaveProperty('error');
   expect(sanitizeInboxPromptParts([{ ...file, url: file.url + 'x' }], { allowSessionAttachments: true })).toHaveProperty('error');

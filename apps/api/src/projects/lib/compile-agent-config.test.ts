@@ -70,6 +70,39 @@ const {
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
+test.each([2, 3])('YAML agent configuration compiles identically for version %s without inherited Markdown', version => {
+  const config = {
+    model: 'kortix/gpt-5.6-luna', prompt: 'Use the supplied rules.', temperature: 0.2,
+    permission: { '*': 'deny', read: 'allow' } as const, pi: { source: 'agents/reviewer.ts' },
+  };
+  const manifest = { kortix_version: version, default_agent: 'reviewer', agents: { reviewer: { config } } };
+  const result = compileSelectedAgentConfig(manifest, 'reviewer', 'opencode', {
+    [agentMarkdownPath(manifest, 'reviewer')]: '---\nmodel: old-model\n---\nUNSELECTED LEGACY PROMPT',
+  });
+  expect(result).toEqual({ model: config.model, agent: { reviewer: {
+    model: config.model, prompt: config.prompt, temperature: 0.2, permission: config.permission,
+  } } });
+});
+
+test('explicit prompt files are required and preserve their exact text without hidden frontmatter settings', () => {
+  const manifest = { kortix_version: 3, default_agent: 'reviewer', agents: { reviewer: { config: {
+    model: 'kortix/gpt-5.6-luna', prompt: { file: 'prompts/reviewer.md' },
+  } } } };
+  expect(agentMarkdownPath(manifest, 'reviewer')).toBe('prompts/reviewer.md');
+  expect(() => compileSelectedAgentConfig(manifest, 'reviewer')).toThrow(/prompts\/reviewer.md/);
+  const prompt = '---\nmodel: this-is-prompt-text\n---\nFollow the rules.\n';
+  expect(compileSelectedAgentConfig(manifest, 'reviewer', 'opencode', { 'prompts/reviewer.md': prompt })
+    .agent.reviewer).toEqual({ model: 'kortix/gpt-5.6-luna', prompt });
+});
+
+test('an explicit empty configuration does not inherit a legacy prompt and shared config directory does not depend on runtime version', () => {
+  for (const kortix_version of [2, 3]) {
+    const manifest = { kortix_version, config_dir: '.kortix/shared', default_agent: 'reviewer', agents: { reviewer: { config: {} } } };
+    expect(agentMarkdownPath(manifest, 'reviewer')).toBe('.kortix/shared/agents/reviewer.md');
+    expect(compileSelectedAgentConfig(manifest, 'reviewer', 'opencode', { '.kortix/shared/agents/reviewer.md': 'Do not inherit.' }).agent.reviewer).toEqual({});
+  }
+});
+
 // Governance-only v2 manifest — the 2026-07-05 redirect's shape. Behavior
 // lives in each agent's own `.kortix/opencode/agents/<name>.md`.
 const GOVERNANCE_FIXTURE = `

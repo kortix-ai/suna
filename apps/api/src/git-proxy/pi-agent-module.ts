@@ -2,7 +2,7 @@ import { build as buildJavaScript } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { builtinModules } from 'node:module';
 import { dirname, posix, resolve } from 'node:path';
-import { manifestDefaultConfigDir } from '@kortix/manifest-schema';
+import { manifestConfigDir } from '@kortix/manifest-schema';
 
 const behavior = new Set([
   'description',
@@ -46,9 +46,13 @@ export function resolvePiConfigDir(manifest: Record<string, unknown>): string {
   }
   const pi = (manifest.pi as any)?.config_dir;
   const oc = (manifest.opencode as any)?.config_dir;
+  for (const dir of [pi, oc]) {
+    if (dir !== undefined && (typeof dir !== 'string' || dir !== dir.trim()))
+      throw new Error('Pi config_dir must be a repository-relative directory');
+  }
   if (pi !== undefined && oc !== undefined && pi !== oc)
     throw new Error('pi.config_dir and opencode.config_dir disagree');
-  const value = pi ?? oc ?? manifestDefaultConfigDir(Number(manifest.kortix_version));
+  const value = manifestConfigDir(manifest);
   if (
     typeof value !== 'string' ||
     !value.trim() ||
@@ -84,10 +88,13 @@ function platformPackage(name: string): string | undefined {
 export async function compilePiAgentModule(input: {
   entry: string;
   files: Record<string, string>;
+  sourcePaths?: ReadonlySet<string>;
+  loadSource?: (path: string) => Promise<string>;
   dependencyRoot?: string;
   dependencyLockSha256?: string;
 }): Promise<PiAgentModule> {
-  if (!Object.hasOwn(input.files, input.entry))
+  const available = (path: string) => Object.hasOwn(input.files, path) || input.sourcePaths?.has(path);
+  if (!available(input.entry))
     throw new Error(`Pi agent source "${input.entry}" is missing`);
   if (
     Object.keys(input.files).length > 256 ||
@@ -98,7 +105,9 @@ export async function compilePiAgentModule(input: {
     [
       path,
       ...['.ts', '.js', '.mjs', '.cjs', '.json', '/index.ts', '/index.js'].map((ext) => path + ext),
-    ].find((p) => Object.hasOwn(input.files, p));
+    ].find(available);
+  let loadedFiles = 0;
+  let loadedBytes = 0;
   const result = await buildJavaScript({
     entryPoints: ['kortix-pi-agent-entry'],
     platform: 'node',
@@ -183,18 +192,26 @@ export async function compilePiAgentModule(input: {
             contents: `import factory from 'kortix-selected-agent';globalThis.__KORTIX_PI_AGENT__=factory;`,
             loader: 'js',
           }));
-          build.onLoad({ filter: /.*/, namespace: 'pi-project' }, (args) => ({
-            contents: input.files[args.path]!,
-            loader: args.path.endsWith('.json')
-              ? 'json'
-              : /\.(md|txt)$/.test(args.path)
-                ? 'text'
-                : args.path.endsWith('.tsx')
-                  ? 'tsx'
-                  : args.path.endsWith('.ts')
-                    ? 'ts'
-                    : 'js',
-          }));
+          build.onLoad({ filter: /.*/, namespace: 'pi-project' }, async (args) => {
+            const contents = input.files[args.path] ?? (await input.loadSource?.(args.path));
+            if (contents === undefined) throw new Error(`Pi agent source "${args.path}" is missing`);
+            loadedFiles++;
+            loadedBytes += Buffer.byteLength(contents);
+            if (loadedFiles > 256 || loadedBytes > 8 * 1024 * 1024)
+              throw new Error('Pi agent source exceeds 256 files or 8 MiB');
+            return {
+              contents,
+              loader: args.path.endsWith('.json')
+                ? 'json'
+                : /\.(md|txt)$/.test(args.path)
+                  ? 'text'
+                  : args.path.endsWith('.tsx')
+                    ? 'tsx'
+                    : args.path.endsWith('.ts')
+                      ? 'ts'
+                      : 'js',
+            };
+          });
         },
       },
     ],

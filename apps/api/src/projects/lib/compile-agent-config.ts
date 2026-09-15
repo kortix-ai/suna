@@ -1,41 +1,14 @@
 /**
- * The runtime compiler (spec docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.3, redirected 2026-07-05 — "one home per concern"): turns a
- * `kortix_version: 2` manifest's `agents:` map (pure governance) plus each
- * agent's own native `.kortix/opencode/agents/<name>.md` (frontmatter +
- * body — the OpenCode behavior source of truth) into OpenCode-native config.
- *
- * The 2026-07-05 redirect killed the earlier "nested `opencode:` block in
- * kortix.yaml + illegal-frontmatter gate" design: OpenCode behavior
- * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
- * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
- * OpenCode agent `.md` is valid input as-is, frontmatter included. The
- * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_cli/workspace/enabled); the agent's NAME is the join
- * between the two (map key ↔ `.md` filename).
- *
- * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
- * parses that agent's `.md` content (supplied by the caller, keyed by the
- * conventional path — see `agentMarkdownPath`), copies every recognized
- * OpenCode behavioral field straight through, and overlays governance on top:
- * `enabled: false` forces the runtime's `disable` on (governance always wins
- * on that one field); `skills` folds onto `permission.skill`. Every other
- * governance field (connectors/secrets/kortix_cli/workspace) has no runtime
- * representation and is never copied.
- *
- * `resolveCompiledAgentConfigForSession` is the I/O half: reads the project's
- * manifest + each declared agent's `.md` straight from git (bypassing apps/api's
- * v1-only `triggers.ts` manifest reader, which still caps at `kortix_version`
- * 1 — this compiler is the first apps/api consumer of a v2 manifest's `agents:`
- * map, so it reads the raw text itself via `@kortix/manifest-schema` rather
- * than waiting on that cap to move). It never throws: a v1 project (or any
- * read/parse/compile failure) resolves to `null`, which is the "v1 byte-for-
- * byte unaffected" contract the session-env wiring depends on.
+ * Compile YAML agent configuration or legacy Markdown into the runtime contract.
+ * The selected-agent path pins every input to the session source revision and
+ * fails closed. The legacy all-agent resolver retains its null-on-failure API.
+ * Platform grants remain separate; enabled and skill permissions overlay behavior.
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
-  manifestDefaultConfigDir,
+  AGENT_BEHAVIOR_KEYS,
+  manifestConfigDir,
   manifestDefaultRuntime,
   manifestUsesAgentMap,
   manifestCandidatePaths,
@@ -43,6 +16,7 @@ import {
   parseManifestText,
   validateManifest,
   validateAgentMdFrontmatter,
+  validateAgentConfiguration,
   type AgentBlockV2,
   type GrantSetV2,
   type ManifestIssue,
@@ -54,6 +28,7 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
+import { readAgentPrompt } from './read-agent-prompt';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -118,14 +93,6 @@ function manifestSchemaVersion(manifest: Record<string, unknown>): number {
   return Number.NaN;
 }
 
-/** A `config_dir` string off one top-level block, or null when unset. */
-function configDirOf(block: unknown): string | null {
-  if (!block || typeof block !== 'object' || Array.isArray(block)) return null;
-  const dir = (block as Record<string, unknown>).config_dir;
-  if (typeof dir !== 'string' || !dir.trim()) return null;
-  return dir.trim().replace(/\/+$/, '');
-}
-
 /**
  * Where this project's agents/skills/commands live — "where does
  * `<config_dir>/agents/...` live for this project", unrelated to per-agent
@@ -142,20 +109,19 @@ function configDirOf(block: unknown): string | null {
  * different path would lose them.
  */
 function resolveConfigDir(manifest: Record<string, unknown>): string {
-  return (
-    configDirOf(manifest.pi) ??
-    configDirOf(manifest.opencode) ??
-    manifestDefaultConfigDir(manifestSchemaVersion(manifest))
-  );
+  return manifestConfigDir(manifest);
 }
 
-/**
- * The conventional path to an agent's native `.md` file — the agent's NAME is
- * the join between the manifest's `agents:` map key and this file (spec
- * §2.2, 2026-07-05 redirect). No manifest field ever spells this path out.
- */
+/** The explicit prompt file, or the legacy agent Markdown path. */
 export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: string): string {
+  const prompt = (manifest.agents as Record<string, AgentBlockV2> | undefined)?.[agentName]?.config?.prompt;
+  if (prompt && typeof prompt === 'object' && typeof prompt.file === 'string') return prompt.file;
   return `${resolveConfigDir(manifest)}/agents/${agentName}.md`;
+}
+
+function needsAgentFile(manifest: Record<string, unknown>, agentName: string): boolean {
+  const config = (manifest.agents as Record<string, AgentBlockV2> | undefined)?.[agentName]?.config;
+  return config === undefined || typeof config?.prompt === 'object';
 }
 
 /** Behavioral frontmatter keys copied straight through onto the compiled
@@ -164,20 +130,7 @@ export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: 
  *  `KNOWN_BEHAVIOR_KEYS` (this list minus `disable`, which the editor never
  *  round-trips) and its wire schema from it, instead of hand-maintaining a
  *  second/third copy — see `routes/agent-config.ts`. */
-export const BEHAVIOR_FRONTMATTER_KEYS = [
-  'description',
-  'mode',
-  'model',
-  'variant',
-  'temperature',
-  'top_p',
-  'options',
-  'color',
-  'steps',
-  'hidden',
-  'permission',
-  'disable',
-] as const;
+export const BEHAVIOR_FRONTMATTER_KEYS = AGENT_BEHAVIOR_KEYS;
 
 /** The agent-config editor's round-tripped subset of `BEHAVIOR_FRONTMATTER_KEYS`
  *  — every field except `disable`, which the editor never round-trips (a
@@ -340,7 +293,19 @@ function compileAgentBlock(
   const block: AgentBlockV2 = rawBlock ?? ({} as AgentBlockV2);
   const out: OpencodeAgentConfig = {};
 
-  if (mdContent !== undefined) {
+  if (block.config !== undefined) {
+    const issues: ManifestIssue[] = [];
+    validateAgentConfiguration(block.config, `agents.${name}.config`, issues, validateAgentMdFrontmatter);
+    const errors = issues.filter(issue => issue.severity === 'error');
+    if (errors.length) throw new CompileAgentConfigError(errors.map(issue => `${issue.path}: ${issue.message}`).join('; '), name);
+    for (const key of BEHAVIOR_FRONTMATTER_KEYS)
+      if (block.config[key] !== undefined) (out as Record<string, unknown>)[key] = block.config[key];
+    if (typeof block.config.prompt === 'string') out.prompt = block.config.prompt;
+    else if (block.config.prompt) {
+      if (mdContent === undefined) throw new CompileAgentConfigError(`Agent "${name}" prompt file "${mdPath}" is missing.`, name);
+      out.prompt = mdContent;
+    }
+  } else if (mdContent !== undefined) {
     const { frontmatter, body } = parseAgentMarkdown(mdContent);
 
     const issues: ManifestIssue[] = [];
@@ -556,9 +521,12 @@ export async function resolveCompiledAgentConfigForSession(
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
+        if (!needsAgentFile(raw, name)) return;
         const path = agentMarkdownPath(raw, name);
         try {
-          agentMdFiles[path] = await readRepoFile(project, path, ref);
+          agentMdFiles[path] = agents[name]?.config !== undefined
+            ? await readAgentPrompt(project, path, ref)
+            : await readRepoFile(project, path, ref);
         } catch (err) {
           // A MISSING file is an expected client condition: the manifest may
           // declare an agent that carries no behavior file, and that agent
@@ -643,10 +611,14 @@ export async function resolveSelectedAgentConfigForSession(
 
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
-  try {
-    agentMdFiles[path] = await readRepoFile(project, path, ref);
-  } catch (err) {
-    if (!isRepoFileNotFoundError(err)) throw err;
+  if (needsAgentFile(raw, agentName)) {
+    try {
+      agentMdFiles[path] = rawAgents[agentName]?.config !== undefined
+        ? await readAgentPrompt(project, path, ref)
+        : await readRepoFile(project, path, ref);
+    } catch (err) {
+      if (!isRepoFileNotFoundError(err)) throw err;
+    }
   }
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));

@@ -44,6 +44,22 @@ test('agent modules compile relative dependencies into standalone JavaScript wit
   );
 });
 
+test('loads only the selected module import graph and omits unrelated agent source', async () => {
+  const files = {
+    'agents/reviewer.ts': "import {label} from '../shared/label';export default ()=>({thinkingLevel:label});",
+    'shared/label.ts': "export const label='low';",
+    'agents/unrelated.ts': "throw new Error('UNRELATED_SOURCE');",
+  };
+  const reads: string[] = [];
+  const result = await compilePiAgentModule({
+    entry: 'agents/reviewer.ts', files: {}, sourcePaths: new Set(Object.keys(files)),
+    loadSource: async path => { reads.push(path); return files[path as keyof typeof files]; },
+  });
+  expect(reads.sort()).toEqual(['agents/reviewer.ts', 'shared/label.ts']);
+  expect(result.source).not.toContain('UNRELATED_SOURCE');
+  expect(await execute(result.source)).toEqual({ thinkingLevel: 'low' });
+});
+
 test('the compiler rejects missing, escaping, and uninstalled imports instead of falling back to host files', async () => {
   for (const body of [
     `import '../../secret';export default ()=>({});`,

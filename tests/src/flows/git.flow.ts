@@ -481,6 +481,8 @@ flow('GH-18', {
     'GET /v1/git/:project/compiled-pi-runtime',
     'GET /v1/projects/:projectId/sessions/:sessionId/environment/resources',
     'PATCH /v1/projects/:projectId/features',
+    'GET /v1/projects/:projectId/agents/:agentName/config',
+    'PUT /v1/projects/:projectId/agents/:agentName/config',
   ],
 }, async (ctx) => {
   const project = await ctx.fixtures.project({ managedGit: true });
@@ -513,13 +515,15 @@ flow('GH-18', {
         { feature: 'pi_worker', enabled: false }, { params: { projectId: project.id } });
       flag.status(200).body().has('$.experimental.pi_worker', false);
       await git(['clone', `${ctx.env.apiUrl}/git/${project.id}.git`, repo]);
-      await writeFile(join(repo, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: reader\nagents:\n  reader:\n    resources:\n      worker:\n        rules: assets/rules.json\n      environment:\n        - source: assets/template.txt\n          target: /workspace/template.txt\n          mode: seed\n');
+      await writeFile(join(repo, 'kortix.yaml'), 'kortix_version: 3\nconfig_dir: .kortix/shared\ndefault_agent: reader\nagents:\n  reader:\n    config:\n      model: kortix/gpt-5.6-luna\n      prompt: {file: prompts/reader.md}\n      pi: {source: agents/reader.ts}\n    resources:\n      worker:\n        rules: assets/rules.json\n      environment:\n        - source: assets/template.txt\n          target: /workspace/template.txt\n          mode: seed\n');
       await mkdir(join(repo, 'assets'));
       await writeFile(join(repo, 'assets/rules.json'), '{"currency":"EUR"}');
       await writeFile(join(repo, 'assets/template.txt'), 'pinned template');
-      await mkdir(join(repo, '.kortix/pi/agents'), { recursive: true });
-      await writeFile(join(repo, '.kortix/pi/agents/reader.md'), '---\nmodel: kortix/gpt-5.6-luna\n---\nArtifact fixture reader.\n');
-      await git(['-C', repo, 'add', 'kortix.yaml', '.kortix/pi/agents/reader.md', 'assets']);
+      await mkdir(join(repo, 'prompts'), { recursive: true });
+      await mkdir(join(repo, 'agents'), { recursive: true });
+      await writeFile(join(repo, 'prompts/reader.md'), 'Artifact fixture reader.\n');
+      await writeFile(join(repo, 'agents/reader.ts'), `export default () => ({thinkingLevel: 'low'});`);
+      await git(['-C', repo, 'add', 'kortix.yaml', 'prompts', 'agents', 'assets']);
       await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Declare Pi runtime']);
       sha = await git(['-C', repo, 'rev-parse', 'HEAD']);
       await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
@@ -544,6 +548,33 @@ flow('GH-18', {
       (await client.get('/v1/git/:project/compiled-pi-runtime', {
         params: { project: project.id }, query: { ref: sha, sha: 'b'.repeat(40) },
       })).status(409);
+    });
+    await ctx.step('The editor reads YAML behavior and saves the declared prompt file without losing custom code or resources', async () => {
+      const route = '/v1/projects/:projectId/agents/:agentName/config';
+      const params = { projectId: project.id, agentName: 'reader' };
+      const original = await client.get(route, { params });
+      original.status(200).body().has('$.schema_version', 3).has('$.block.opencode.model', 'kortix/gpt-5.6-luna').has('$.block.opencode.prompt', 'Artifact fixture reader.\n');
+      const prompt = '---\nThis is prompt text, not frontmatter.\n---\nUse the configured source.';
+      const saved = await client.put(route, { ...original.json<any>().block, opencode: { model: 'kortix/gpt-5.6-luna', temperature: 0.3, prompt } }, { params });
+      saved.status(200).body().has('$.schema_version', 3).has('$.block.opencode.prompt', prompt);
+      (await client.get(route, { params })).status(200).body().has('$.block.opencode.temperature', 0.3).has('$.block.opencode.prompt', prompt);
+      await git(['-C', repo, 'pull', '--ff-only', 'origin', 'main']);
+      const yaml = await Bun.file(join(repo, 'kortix.yaml')).text();
+      assert.match(yaml, /source: agents\/reader.ts/);
+      assert.match(yaml, /file: prompts\/reader.md/);
+      assert.match(yaml, /rules: assets\/rules.json/);
+      assert.equal(await Bun.file(join(repo, 'prompts/reader.md')).text(), prompt);
+      assert.equal(await Bun.file(join(repo, '.kortix/shared/agents/reader.md')).exists(), false);
+      const committed = await git(['-C', repo, 'rev-parse', 'HEAD']);
+      (await client.put(route, { opencode: { temperature: 'invalid' } }, { params })).status(400);
+      await git(['-C', repo, 'fetch', 'origin', 'main']);
+      assert.equal(await git(['-C', repo, 'rev-parse', 'origin/main']), committed);
+      (await client.get('/v1/git/:project/compiled-pi-runtime', {
+        params: { project: `${project.id}.git` }, query: { ref: committed, sha: committed }, timeoutMs: 120_000,
+      })).status(200).headerEquals('x-kortix-artifact-source-sha', committed);
+      (await client.get('/v1/git/:project/compiled-pi-runtime', {
+        params: { project: `${project.id}.git` }, query: { ref: sha, sha }, timeoutMs: 120_000,
+      })).status(200).headerEquals('x-kortix-artifact-source-sha', sha);
     });
     await ctx.step('A Pi session reads only its pinned environment files after the default branch changes', async () => {
       const session = await ctx.fixtures.session(project, { agentName: 'reader', piSourceSha: sha });

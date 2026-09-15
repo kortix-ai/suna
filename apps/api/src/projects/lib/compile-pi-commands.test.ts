@@ -121,18 +121,18 @@ describe('compilePiCommands', () => {
 });
 
 describe('resolveCompiledPiCommandsForSession', () => {
-  test('reads command content from the immutable source SHA, not the moved branch', async () => {
+  test.each(['.kortix/pi', '.kortix/shared'])('reads commands at the immutable SHA from %s', async (configDir) => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-pi-commands-'));
     roots.push(root);
     const source = join(root, 'source');
-    mkdirSync(join(source, '.kortix', 'pi', 'commands'), { recursive: true });
+    mkdirSync(join(source, configDir, 'commands'), { recursive: true });
     git(['init', '-b', 'main'], source);
     writeFileSync(
       join(source, 'kortix.yaml'),
-      'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',
+      `kortix_version: 3\nconfig_dir: ${configDir}\ndefault_agent: build\nagents:\n  build: {}\n`,
     );
     writeFileSync(
-      join(source, '.kortix', 'pi', 'commands', 'review.md'),
+      join(source, configDir, 'commands', 'review.md'),
       '---\ndescription: Original\n---\n\nReview $ARGUMENTS\n',
     );
     git(['add', '-A'], source);
@@ -140,7 +140,7 @@ describe('resolveCompiledPiCommandsForSession', () => {
     const originalSha = git(['rev-parse', 'HEAD'], source);
 
     writeFileSync(
-      join(source, '.kortix', 'pi', 'commands', 'review.md'),
+      join(source, configDir, 'commands', 'review.md'),
       '---\ndescription: Moved\n---\n\nIgnore the requested SHA\n',
     );
     git(['add', '-A'], source);

@@ -11,11 +11,11 @@ const BASE = {
 };
 
 describe('convertPendingPromptToInboxRow', () => {
-  test('a Pi first prompt stores image bytes separately from its durable command', async () => {
+  test.each(['image/png', 'application/pdf', 'text/csv'])('a Pi first prompt stores %s bytes separately from its durable command', async (mime) => {
     const result = await convertPendingPromptToInboxRow({
       ...BASE,
       piWorker: true,
-      pendingPrompt: { text: 'Read this', parts: [{ type: 'text', text: 'Read this' }, { type: 'file', mime: 'image/png', filename: 's.png', url: 'data:image/png;base64,AQID' }] },
+      pendingPrompt: { text: 'Read this', parts: [{ type: 'text', text: 'Read this' }, { type: 'file', mime, filename: 'file', url: `data:${mime};base64,AQID` }] },
     });
     expect(result.error).toBeNull();
     expect(result.attachments?.[0]?.content).toEqual(Buffer.from([1, 2, 3]));
@@ -23,13 +23,13 @@ describe('convertPendingPromptToInboxRow', () => {
     expect((result.rowValues?.payload as any).parts[1].url).toMatch(/^kortix-attachment:sha256:[a-f0-9]{64}$/);
   });
 
-  test('a Pi first prompt refuses an unsupported attachment without creating a command', async () => {
+  test('a Pi first prompt refuses malformed attachment data without creating a command', async () => {
     const result = await convertPendingPromptToInboxRow({
       ...BASE,
       piWorker: true,
-      pendingPrompt: { text: 'Read this', parts: [{ type: 'file', mime: 'application/pdf', url: 'data:application/pdf;base64,AQID' }] },
+      pendingPrompt: { text: 'Read this', parts: [{ type: 'file', mime: 'application/pdf', url: 'data:application/pdf;base64,not-base64!' }] },
     });
-    expect(result.error).toContain('PNG, JPEG, GIF, or WebP');
+    expect(result.error).toBeString();
     expect(result.rowValues).toBeNull();
     expect(result.attachments).toBeUndefined();
   });

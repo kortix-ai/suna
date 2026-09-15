@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { resolveConfigAgents } from '../projects/git/config';
-import type { LoadedAgents } from '../projects/agents';
+import { extractAgents, type LoadedAgents } from '../projects/agents';
 
 const nativeAgents = [
   {
@@ -143,4 +143,12 @@ describe('project config agent discovery', () => {
     expect(result.agent_discovery).toBe('declarative');
     expect(result.agents).toEqual([]);
   });
+});
+
+test('YAML configuration owns the discovery model and prompt path without legacy inheritance', () => {
+  const raw = { kortix_version: 3, default_agent: 'kortix', agents: { kortix: { config: { model: 'new/model', prompt: { file: 'prompts/main.md' } } } } };
+  const loaded = extractAgents({ raw, schemaVersion: 3, format: 'yaml', path: 'kortix.yaml' });
+  expect(resolveConfigAgents(nativeAgents, loaded, raw).agents[0]).toMatchObject({ name: 'kortix', path: 'prompts/main.md', model: 'new/model', description: null, mode: null });
+  raw.agents.kortix.config.prompt = undefined as never;
+  expect(resolveConfigAgents(nativeAgents, loaded, raw).agents[0]?.path).toBe('kortix.yaml');
 });

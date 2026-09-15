@@ -1,25 +1,5 @@
-/**
- * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
- * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_cli/workspace/enabled. OpenCode
- * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
- * permission/prompt) lives entirely in the agent's own native
- * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
- * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
- * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
- * editor route (`../routes/agent-config.ts`) is what merges this governance
- * half with the `.md` behavior half into one wire response/request — this
- * module only ever touches kortix.yaml.
- *
- * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
- * resolves the platform GRANT the session token carries (a narrower view —
- * connectors/secrets/kortix_cli reduced to the wire `AgentGrant` shape).
- * This module instead reads/writes the agent's declared governance block
- * verbatim so the editor can present (and persist) the complete governance
- * field space, not just the grant subset. Pure — no I/O; callers own
- * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
- */
+/** Read and update agent declarations in YAML. Behavior can live in config or
+ *  legacy native Markdown; the editor route preserves the selected source. */
 import {
   manifestUsesAgentMap,
   type AgentBlockV2,
@@ -124,14 +104,14 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
   if (rawAgents === undefined || rawAgents === null) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
+    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent };
   }
   if (Array.isArray(rawAgents) || typeof rawAgents !== 'object') {
     return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
   }
   const entry = (rawAgents as Record<string, unknown>)[agentName];
   if (entry === undefined) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
+    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent };
   }
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
@@ -140,7 +120,7 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   if (!normalized.ok) return normalized;
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: manifest.schemaVersion,
     block: normalized.block as AgentBlockV2,
     defaultAgent,
   };

@@ -2,13 +2,10 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
+  validAgentResourceSource,
+  type AgentBlockV2,
 } from '@kortix/manifest-schema';
-import {
-  listRepoFiles,
-  readManifestFromRepo,
-  readRepoFile,
-  type GitBackedProject,
-} from '../projects/git';
+import { readManifestFromRepo, type GitBackedProject } from '../projects/git';
 import { parseAgentMarkdown } from '../projects/lib/agent-markdown';
 import {
   compilePiAgentModule,
@@ -16,6 +13,7 @@ import {
   validatePiAgentFrontmatter,
 } from './pi-agent-module';
 import { preparePiDependencies } from './pi-agent-dependencies';
+import { refreshMirror, runGit } from '../projects/git/mirror';
 
 export async function resolvePiAgentModule(
   project: GitBackedProject,
@@ -30,18 +28,44 @@ export async function resolvePiAgentModule(
   if (!found) throw new Error('Pi agent module requires a manifest at the compiled Git SHA');
   const manifest = parseManifestText(found.content, manifestFormatForPath(found.path));
   const configDir = resolvePiConfigDir(manifest);
-  const paths = new Set(
-    (await listRepoFiles(project, sourceSha, configDir)).map((file) => file.path),
+  const explicit = (manifest.agents as Record<string, AgentBlockV2> | undefined)?.[agentName]
+    ?.config;
+  if (explicit !== undefined) {
+    const { prompt, pi, ...behavior } = explicit;
+    validatePiAgentFrontmatter(behavior, agentName);
+    if (!pi) return null;
+    if (!validAgentResourceSource(pi.source) || !/\.(ts|js|mjs)$/.test(pi.source))
+      throw new Error(`Pi agent "${agentName}" has an invalid source`);
+  }
+  const mirror = await refreshMirror(project);
+  const tree = await runGit(
+    ['ls-tree', '-r', '-z', '-l', sourceSha, '--', ...(explicit ? [] : [configDir])],
+    mirror,
+    false,
   );
+  const blobs = new Map<string, { sha: string; size: number }>();
+  for (const entry of tree.stdout.split('\0')) {
+    const match = /^(100644|100755) blob ([a-f0-9]{40})\s+(\d+)\t(.+)$/.exec(entry);
+    if (match) blobs.set(match[4]!, { sha: match[2]!, size: Number(match[3]) });
+  }
+  const paths = new Set(blobs.keys());
+  const read = async (path: string) => {
+    const blob = blobs.get(path);
+    if (!blob || !validAgentResourceSource(path))
+      throw new Error(
+        `Pi agent source "${path}" must be an existing regular Git file without secrets or traversal`,
+      );
+    if (blob.size > 8 * 1024 * 1024) throw new Error(`Pi agent source "${path}" exceeds 8 MiB`);
+    return (await runGit(['cat-file', 'blob', blob.sha], mirror, false)).stdout;
+  };
   const markdown = `${configDir}/agents/${agentName}.md`;
-  if (paths.has(markdown))
-    validatePiAgentFrontmatter(
-      parseAgentMarkdown(await readRepoFile(project, markdown, sourceSha)).frontmatter,
-      agentName,
-    );
-  const entries = ['ts', 'js', 'mjs']
-    .map((extension) => `${configDir}/agents/${agentName}.${extension}`)
-    .filter((path) => paths.has(path));
+  if (explicit === undefined && paths.has(markdown))
+    validatePiAgentFrontmatter(parseAgentMarkdown(await read(markdown)).frontmatter, agentName);
+  const entries = explicit?.pi
+    ? [explicit.pi.source]
+    : ['ts', 'js', 'mjs']
+        .map((extension) => `${configDir}/agents/${agentName}.${extension}`)
+        .filter((path) => paths.has(path));
   if (entries.length > 1)
     throw new Error(`Pi agent "${agentName}" has multiple source entrypoints`);
   if (!entries.length) return null;
@@ -51,21 +75,11 @@ export async function resolvePiAgentModule(
       path !== configDir + '/package-lock.json' &&
       path !== configDir + '/package.json',
   );
-  if (sourcePaths.length > 256)
-    throw new Error('Pi agent config directory exceeds 256 source files');
-  const files: Record<string, string> = {};
-  let bytes = 0;
-  for (const path of sourcePaths) {
-    const content = await readRepoFile(project, path, sourceSha);
-    bytes += Buffer.byteLength(content);
-    if (bytes > 8 * 1024 * 1024) throw new Error('Pi agent source exceeds 8 MiB');
-    files[path.slice(configDir.length + 1)] = content;
-  }
   const packageJson = paths.has(configDir + '/package.json')
-    ? await readRepoFile(project, configDir + '/package.json', sourceSha)
+    ? await read(configDir + '/package.json')
     : undefined;
   const packageLock = paths.has(configDir + '/package-lock.json')
-    ? await readRepoFile(project, configDir + '/package-lock.json', sourceSha)
+    ? await read(configDir + '/package-lock.json')
     : undefined;
   if (Boolean(packageJson) !== Boolean(packageLock))
     throw new Error(
@@ -77,8 +91,10 @@ export async function resolvePiAgentModule(
       : undefined;
   try {
     const result = await compilePiAgentModule({
-      entry: entries[0]!.slice(configDir.length + 1),
-      files,
+      entry: entries[0]!,
+      files: {},
+      sourcePaths: new Set(sourcePaths),
+      loadSource: read,
       dependencyRoot: dependencies?.root,
       dependencyLockSha256: dependencies?.lockSha256,
     });

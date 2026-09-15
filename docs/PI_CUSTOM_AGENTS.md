@@ -20,58 +20,78 @@ requests OpenCode prebuilds for YAML v2 projects when platform prebuilds are off
 
 ## Configuration ownership
 
-| Location | Purpose |
-| --- | --- |
-| `kortix.yaml` | Runtime, agent names, grants, environment templates, and deployment configuration |
-| `.kortix/pi/agents/<name>.md` | Prompt and declarative behavior for one agent |
-| `.kortix/pi/agents/<name>.ts` | Optional custom JavaScript behavior, native Pi hooks, and tools |
-| `.kortix/pi/skills/<name>/SKILL.md` | Skills compiled into the worker, subject to the agent's skill grant |
-| `.kortix/pi/commands/*.md` | Compiled slash commands |
-| `.kortix/pi/package.json` and `package-lock.json` | Optional locked dependencies for custom source |
-
-Declare new agents and their platform grants on the project's configured default
-branch before creating sessions. A session's `base_ref` selects its source version;
-it does not authorize an agent absent from that project declaration.
-
-The manifest agent name joins the Markdown file and source module. One artifact
-contains one selected agent. The compiler pins source, behavior, and dependencies
-to the same Git SHA. Changing files in a running environment does not change that
-worker. Commit the changes and create a session from the new commit.
+`kortix.yaml` declares each agent's behavior, grants, and file references. This is
+now the preferred authoring format. Source files remain in Git. The API resolves
+them at one commit, then builds one immutable `.mjs` artifact per selected agent.
+The worker downloads that artifact; it does not clone the repository.
 
 ```yaml
 kortix_version: 3
-runtime: pi
+config_dir: .kortix/shared
 default_agent: reviewer
-pi:
-  config_dir: .kortix/pi
 agents:
   reviewer:
     connectors: none
     secrets: none
     skills: none
-  operator:
-    connectors: none
-    secrets: none
-    skills: none
+    workspace: runtime
+    config:
+      description: Review supplied text
+      model: kortix/gpt-5.6-luna
+      temperature: 0.2
+      permission:
+        '*': deny
+        review_text: allow
+      prompt:
+        file: prompts/reviewer.md
+      pi:
+        source: agents/reviewer.ts
 ```
 
-`agents.<name>` accepts the existing governance fields: `enabled`, `sandbox`,
-`connectors`, `connectors_required`, `connectors_personal` (legacy alias), `secrets`,
-`skills`, `kortix_cli`, `workspace`, and `resources`. Behavior belongs in the Markdown or source.
-The `sandbox` field selects the execution environment template. The platform owns
-the worker image and identity.
+- `config.prompt` accepts inline text or `{file: repository/path.md}`. A referenced
+  file supplies exact prompt text; frontmatter inside it is also prompt text.
+- `config.pi.source` selects one TypeScript or JavaScript factory. Its relative
+  imports can reference other regular files inside the repository. Only reachable
+  imports are bundled. Files unrelated to the selected agent are not read.
+- `config_dir` holds shared skills, commands, and the optional `package.json` and
+  `package-lock.json`. File references under `config` are relative to the repository,
+  not this directory. The compiler pins dependencies to that lock.
+- Custom code and its imported constants execute in the worker. Working files,
+  shell commands, and installed workspace dependencies live in the environment.
+  Custom code uses `env` to access them. Declaring a source file does not copy the
+  repository into the environment. `resources` controls explicit file placement.
+- The editor reads the effective behavior. Saving it updates YAML and its declared
+  prompt file in one Git commit. It preserves the custom source and resource
+  declarations. File pointers themselves are authored in YAML.
 
-`workspace: runtime` creates an environment without a repository checkout. A worker
-with this setting can download its pinned agent bundle. Its credential cannot
-clone the repository, request another release, or select another agent.
+Change `kortix_version` to `2` to select OpenCode. The same shared behavior fields,
+inline/file prompt, agent names, grants, and `config_dir` compile for both versions.
+`config.pi.source` applies only to Pi. Native OpenCode plugins keep their existing
+OpenCode configuration. Pi code and OpenCode plugins are different APIs; changing
+versions does not translate extension code. Pi resource placement currently remains
+v3-only; an OpenCode adapter for those declarations is still outstanding.
 
-Version 3 selects Pi and defaults to `.kortix/pi`. Version 2 selects OpenCode
-and defaults to `.kortix/opencode`. Contradictory runtime declarations fail validation. `opencode.config_dir` remains a compatibility
-alias. Setting both directories to different values fails compilation. Directories
-must be relative to the repository. Other fields in the `pi` or `opencode` block
-are rejected by the Pi compiler.
+The API compiles after a source push, or on demand if that exact artifact is absent.
+A running session keeps its selected agent and source SHA. Editing files in its
+environment does not modify the worker. Commit configuration changes and create a
+session from the new commit. Declare agents on the configured project default
+branch before starting sessions; `base_ref` selects their source revision.
 
-## Agent Markdown
+Existing projects retain the legacy convention when `config` is absent:
+`<config_dir>/agents/<name>.md` supplies behavior and the matching `.ts`, `.js`, or
+`.mjs` supplies optional Pi code. An explicit `config: {}` disables that implicit
+inheritance. Missing explicit file references fail compilation.
+
+Without a shared `config_dir`, v3 defaults to `.kortix/pi` and v2 to
+`.kortix/opencode`. Legacy `pi.config_dir` and `opencode.config_dir` remain accepted.
+The Pi compiler rejects conflicting legacy directories and unknown runtime fields.
+
+`sandbox` selects the execution environment template. The platform owns the worker
+image and identity. `workspace: runtime` leaves the environment without a repository
+checkout. Its worker can fetch the pinned bundle, but its credential cannot clone
+the repository or select another agent or release.
+
+## Legacy agent Markdown
 
 For `.kortix/pi/agents/reviewer.md`:
 
@@ -127,7 +147,8 @@ Workers without this capability projection keep the control hidden.
 
 ## Custom source
 
-Use exactly one of `<name>.ts`, `<name>.js`, or `<name>.mjs` beside its Markdown.
+Point `config.pi.source` at a `.ts`, `.js`, or `.mjs` file. Legacy agents discover
+exactly one matching file beside their Markdown.
 Export a factory with `definePiAgent` from `@kortix/sdk/pi`. The factory receives
 `agentName`, `sessionId`, `sourceSha`, `env`, durable `state`, bundled `resources`, and a callback-scoped `signal`.
 
@@ -480,7 +501,7 @@ scripts. Private registries, Git dependencies, links, native addons, install-tim
 builds, and runtime asset loading are unsupported. Use static imports. A dynamic
 import that cannot be bundled is not a supported dependency-loading mechanism.
 
-Limits: 256 source files, 8 MiB total source; 128 locked production packages;
+Limits: 256 imported source files, 8 MiB total imported source; 128 locked production packages;
 8 MiB per compressed archive, 64 MiB total downloads; 128 MiB total unpacked data;
 20000 archive entries; 90 seconds for dependency downloads. The artifact manifest
 records the custom module hash and dependency lock hash.

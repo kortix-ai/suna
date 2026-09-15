@@ -965,6 +965,12 @@
           "kortix_version": {
             "const": 2
           },
+          "config_dir": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+          },
           "default_agent": {
             "type": "string",
             "minLength": 1
@@ -981,6 +987,192 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "primary",
+                        "subagent",
+                        "all"
+                      ]
+                    },
+                    "variant": {
+                      "type": "string"
+                    },
+                    "temperature": {
+                      "type": "number"
+                    },
+                    "top_p": {
+                      "type": "number"
+                    },
+                    "steps": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "color": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^#[0-9a-fA-F]{6}$"
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "primary",
+                            "secondary",
+                            "accent",
+                            "success",
+                            "warning",
+                            "error",
+                            "info"
+                          ]
+                        }
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    },
+                    "disable": {
+                      "type": "boolean"
+                    },
+                    "options": {
+                      "type": "object"
+                    },
+                    "permission": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ask",
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "todowrite": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "question": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "webfetch": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "websearch": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "doom_loop": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            }
+                          },
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "ask",
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ask",
+                                    "allow",
+                                    "deny"
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "prompt": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "file"
+                          ],
+                          "properties": {
+                            "file": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "pi": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source"
+                      ],
+                      "properties": {
+                        "source": {
+                          "allOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                            },
+                            {
+                              "pattern": "\\.(ts|js|mjs)$"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
                 "resources": false,
                 "enabled": {
                   "type": "boolean"
@@ -2075,7 +2267,7 @@
         "$defs": {
           "agentMdFrontmatter": {
             "type": "object",
-            "description": "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+            "description": "Behavior fields shared by agents.<name>.config and legacy agent Markdown frontmatter. Runtime adapters validate native options.",
             "properties": {
               "description": {
                 "type": "string"
@@ -2238,6 +2430,12 @@
           "kortix_version": {
             "const": 3
           },
+          "config_dir": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+          },
           "default_agent": {
             "type": "string",
             "minLength": 1
@@ -2254,6 +2452,192 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "primary",
+                        "subagent",
+                        "all"
+                      ]
+                    },
+                    "variant": {
+                      "type": "string"
+                    },
+                    "temperature": {
+                      "type": "number"
+                    },
+                    "top_p": {
+                      "type": "number"
+                    },
+                    "steps": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "color": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^#[0-9a-fA-F]{6}$"
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "primary",
+                            "secondary",
+                            "accent",
+                            "success",
+                            "warning",
+                            "error",
+                            "info"
+                          ]
+                        }
+                      ]
+                    },
+                    "hidden": {
+                      "type": "boolean"
+                    },
+                    "disable": {
+                      "type": "boolean"
+                    },
+                    "options": {
+                      "type": "object"
+                    },
+                    "permission": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ask",
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "todowrite": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "question": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "webfetch": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "websearch": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            },
+                            "doom_loop": {
+                              "type": "string",
+                              "enum": [
+                                "ask",
+                                "allow",
+                                "deny"
+                              ]
+                            }
+                          },
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "ask",
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ask",
+                                    "allow",
+                                    "deny"
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "prompt": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "file"
+                          ],
+                          "properties": {
+                            "file": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "pi": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source"
+                      ],
+                      "properties": {
+                        "source": {
+                          "allOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!\\s)(?!.*\\s$)(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+(?:/(?!(?:\\.{1,2}|\\.git|\\.env(?:\\.[^/]*)?)(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]+)*$"
+                            },
+                            {
+                              "pattern": "\\.(ts|js|mjs)$"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
                 "resources": {
                   "type": "object",
                   "additionalProperties": false,
@@ -3433,7 +3817,7 @@
         "$defs": {
           "agentMdFrontmatter": {
             "type": "object",
-            "description": "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+            "description": "Behavior fields shared by agents.<name>.config and legacy agent Markdown frontmatter. Runtime adapters validate native options.",
             "properties": {
               "description": {
                 "type": "string"

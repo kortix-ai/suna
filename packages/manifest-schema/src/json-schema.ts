@@ -1,4 +1,6 @@
 import { agentResourcesSchema } from './agent-resources';
+import { AGENT_RESOURCE_SOURCE_PATTERN } from './agent-resources';
+import { agentConfigurationSchema } from './agent-configuration';
 /**
  * The canonical, PUBLIC JSON Schema for `kortix.toml` / `kortix.yaml` —
  * the Kortix equivalent of opencode's https://opencode.ai/config.json.
@@ -178,7 +180,7 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     description:
-      "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
+      "Behavior fields shared by agents.<name>.config and legacy agent Markdown frontmatter. Runtime adapters validate native options.",
     properties: {
       description: { type: 'string' },
       model: { type: 'string' },
@@ -580,6 +582,7 @@ function agentBlockV2Schema(version: 2 | 3): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
+      config: agentConfigurationSchema(agentMdFrontmatterSchema().properties as Record<string, unknown>),
       resources: version === 3 ? agentResourcesSchema() : false,
       enabled: { type: 'boolean' },
       sandbox: { allOf: [SLUG_SCHEMA, { not: { const: PI_WORKER_SANDBOX_SLUG } }] },
@@ -733,6 +736,7 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
     required: ['kortix_version', 'default_agent', 'agents'],
     properties: {
       kortix_version: { const: version },
+      config_dir: { type: 'string', minLength: 1, maxLength: 1024, pattern: AGENT_RESOURCE_SOURCE_PATTERN },
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,

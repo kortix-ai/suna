@@ -1,4 +1,5 @@
 import { validateAgentResources, type AgentResources } from './agent-resources';
+import { validateAgentConfiguration, type AgentConfiguration } from './agent-configuration';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -101,21 +102,10 @@ export type PermissionConfigV2 = PermissionActionV2 | PermissionConfigObjectV2;
  */
 export type GrantSetV2 = 'all' | 'none' | string[];
 
-/**
- * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
- * "one home per concern"). OpenCode behavior (mode, model, temperature,
- * top_p, steps, variant, color, hidden, permission, and the prompt itself)
- * lives entirely in the agent's native `.kortix/opencode/agents/<name>.md`
- * frontmatter + body — a stock OpenCode agent `.md` is valid as-is, with no
- * Kortix-specific split. The agent NAME is the join between this map key and
- * that `.md` filename; there is no `prompt:`/file-ref field here anymore.
- *
- * Kortix governance (this type) is enforced platform-side (IAM grants,
- * secret scoping) and has no OpenCode representation, except `skills`, which
- * the compiler folds onto the frontmatter's `permission.skill` — see
- * compile-agent-config.ts.
- */
+/** One agent's grants, resource declarations, and optional shared behavior.
+ *  Omitting config retains native Markdown authoring for existing projects. */
 export interface AgentBlockV2 {
+  config?: AgentConfiguration;
   resources?: AgentResources;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
@@ -158,6 +148,7 @@ export interface AgentBlockV2 {
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
 export interface ManifestV2 {
   kortix_version: 2;
+  config_dir?: string;
   default_agent: string;
   runtime?: RuntimeV2;
   agents: Record<string, AgentBlockV2>;
@@ -513,7 +504,7 @@ export function validateAgentMdFrontmatter(
   }
 }
 
-/** One entry of the v2 `agents:` map — governance only (spec §2.2, 2026-07-05
+/** One entry of the v2/v3 `agents:` map (spec §2.2, 2026-07-05
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
@@ -524,6 +515,7 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   }
 
   validateAgentResources(entry.resources, `${where}.resources`, issues);
+  validateAgentConfiguration(entry.config, `${where}.config`, issues, validateAgentMdFrontmatter);
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });

@@ -66,7 +66,7 @@ interface CachedPiRuntimeMetadata {
 
 const builds = new Map<string, Promise<StoredCompiledPiRuntimeArtifact>>();
 const MANIFEST_MARKER = "// kortix-manifest-base64url:";
-const ARTIFACT_KEY_VERSION = "custom-pi-agent-v1";
+const ARTIFACT_KEY_VERSION = "agent-yaml-config-v2";
 
 export class CompiledPiRuntimeSourceMovedError extends Error {
   constructor(expectedSha: string, actualSha: string) {

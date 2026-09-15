@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -108,6 +108,31 @@ afterEach(() => {
 });
 
 describe("buildCompiledPiRuntimeArtifact selected-agent config", () => {
+  test('compiles YAML settings and explicit prompt and source files without conventional agent files', async () => {
+    const { project, sha } = await makeProject({
+      manifest: 'kortix_version: 3\nconfig_dir: .kortix/shared\ndefault_agent: build\nagents:\n  build:\n    config:\n      model: kortix/gpt-5.6-luna\n      prompt: {file: prompts/build.md}\n      pi: {source: agents/build.ts}\n',
+      agentFiles: {
+        'prompts/build.md': 'Use the explicit prompt.',
+        'agents/build.ts': "import {level} from '../shared/level';export default ()=>({thinkingLevel:level});",
+        'shared/level.ts': "export const level='low';",
+        'agents/unrelated.ts': 'UNRELATED_AGENT_MUST_NOT_BE_COMPILED',
+      },
+    });
+    const artifact = await buildCompiledPiRuntimeArtifact(project, 'main', sha, 'build');
+    expect(JSON.parse(artifact.manifest.agent_config!).agent.build).toMatchObject({
+      model: 'kortix/gpt-5.6-luna', prompt: 'Use the explicit prompt.',
+    });
+    expect(artifact.manifest.agent_module?.entry).toBe('agents/build.ts');
+    expect(await Bun.file(artifact.path).text()).not.toContain('UNRELATED_AGENT_MUST_NOT_BE_COMPILED');
+  });
+
+  test('an explicitly missing Pi source fails instead of booting the predefined harness', async () => {
+    const { project, sha } = await makeProject({
+      manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build:\n    config:\n      prompt: Build safely.\n      pi: {source: agents/missing.ts}\n',
+    });
+    await expect(buildCompiledPiRuntimeArtifact(project, 'main', sha, 'build')).rejects.toThrow(/missing.ts/);
+  });
+
   test('bakes the selected gateway model limits into the immutable artifact', async () => {
     const { project, sha } = await makeProject({
       manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',
@@ -281,4 +306,29 @@ test('actual Git compilation rejects ignored behavior, ambiguous source, and inc
     const {project,sha}=await makeProject({manifest:'kortix_version: 3\ndefault_agent: build\nagents:\n  build: {}\n',agentFiles:{'.kortix/pi/agents/build.md':'Build safely.\n',...files}});
     await expect(buildCompiledPiRuntimeArtifact(project,'main',sha,'build')).rejects.toThrow(/not supported|multiple source|both package/);
   }
+});
+
+test('explicit prompt files reject missing files and symlinks before creating an artifact', async () => {
+  const { project } = await makeProject({
+    manifest: 'kortix_version: 3\ndefault_agent: build\nagents:\n  build:\n    config:\n      prompt: {file: prompts/link.md}\n',
+    agentFiles: {'prompts/real.md': 'Real prompt'},
+  });
+  const source = project.repoUrl.slice('file://'.length);
+  const missingSha = await git(['rev-parse', 'HEAD'], source);
+  await expect(buildCompiledPiRuntimeArtifact(project, 'main', missingSha, 'build')).rejects.toThrow('regular Git file');
+  symlinkSync('real.md', join(source, 'prompts/link.md'));
+  await git(['add', '-A'], source);
+  await git(['commit', '-m', 'prompt symlink'], source);
+  const linkedSha = await git(['rev-parse', 'HEAD'], source);
+  await expect(buildCompiledPiRuntimeArtifact(project, 'main', linkedSha, 'build')).rejects.toThrow('regular Git file');
+});
+
+test('unrelated source files do not consume the selected agent import budget', async () => {
+  const unrelated = Object.fromEntries(Array.from({length: 270}, (_, n) => [`agents/unrelated-${n}.ts`, 'invalid unrelated source: !']));
+  const { project, sha } = await makeProject({
+    manifest: 'kortix_version: 3\nconfig_dir: config/shared\ndefault_agent: build\nagents:\n  build:\n    config:\n      prompt: Inline prompt\n      pi: {source: agents/build.ts}\n',
+    agentFiles: {'agents/build.ts': 'export default () => ({thinkingLevel: "low"});', ...unrelated},
+  });
+  const artifact = await buildCompiledPiRuntimeArtifact(project, 'main', sha, 'build');
+  expect(artifact.manifest.agent_module?.entry).toBe('agents/build.ts');
 });

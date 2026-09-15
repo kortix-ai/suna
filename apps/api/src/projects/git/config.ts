@@ -4,6 +4,8 @@
 
 import {
   manifestDefaultConfigDir,
+  manifestConfigDir,
+  type AgentBlockV2,
   type ManifestFormat,
   manifestCandidatePaths,
   manifestFormatForPath,
@@ -159,6 +161,7 @@ type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' 
 export function resolveConfigAgents(
   nativeAgents: NativeAgentSummary[],
   loadedAgents: LoadedAgents,
+  manifest?: Record<string, unknown>,
 ): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
   if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
     return {
@@ -178,14 +181,15 @@ export function resolveConfigAgents(
     agents: loadedAgents.specs
       .filter((spec) => spec.enabled)
       .map((spec) => {
+        const config = (manifest?.agents as Record<string, AgentBlockV2> | undefined)?.[spec.name]?.config;
         const native =
           (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
         return {
           name: spec.name,
-          path: spec.file ?? native?.path ?? spec.path,
-          description: native?.description ?? null,
-          mode: native?.mode ?? null,
-          model: native?.model ?? null,
+          path: config !== undefined ? (typeof config.prompt === 'object' ? config.prompt.file : spec.path.split('#')[0]!) : spec.file ?? native?.path ?? spec.path,
+          description: config !== undefined ? config.description ?? null : native?.description ?? null,
+          mode: config !== undefined ? config.mode ?? null : native?.mode ?? null,
+          model: config !== undefined ? config.model ?? null : native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           sandbox: spec.sandbox ?? null,
@@ -273,7 +277,7 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents, manifest);
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -363,6 +367,7 @@ export async function loadProjectConfig(
  * reads, and edits land in a directory nothing loads.
  */
 function resolveOpencodeDir(manifest: Record<string, unknown>): string {
+  if (manifest.config_dir !== undefined) return manifestConfigDir(manifest);
   for (const block of [manifest.pi, manifest.opencode]) {
     if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
     const raw = (block as Record<string, unknown>).config_dir;

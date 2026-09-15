@@ -39,14 +39,6 @@ import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
-import { config } from '../../config';
-import { previewCorsHeaders } from '../preview-hosts';
-import { appCookieHeader } from '../preview-session';
-import {
-  PREVIEW_STATE_HEADER,
-  previewStatePage,
-  type PreviewState,
-} from '../preview-state-page';
 import { canAccessPreviewSandbox, canAccessSandboxSession, takeSessionAccessRefusal } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,

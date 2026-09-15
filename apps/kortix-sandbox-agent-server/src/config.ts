@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { manifestConfigDir, parseManifestText } from '@kortix/manifest-schema'
 
 /**
  * Env contract for kortix-sandbox-agent-server.
@@ -412,8 +413,8 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
 }
 
 /**
- * Pluck `opencode.config_dir` out of the project manifest without dragging in a
- * full parser. Resolves kortix.yaml first, then legacy kortix.toml, and reads
+ * Resolve shared config_dir or the legacy runtime directory with the canonical
+ * manifest parser. Resolves kortix.yaml first, then legacy kortix.toml, and reads
  * the field from whichever format it found. Falls back to the default if the
  * manifest is absent or anything's off.
  */
@@ -424,12 +425,12 @@ async function readOpencodeConfigDirFromManifest(
   const fallback = '.kortix/opencode'
   const manifest = await readProjectManifest(fs, projectTarget)
   if (!manifest) return fallback
-  const rawValue = extractNestedString(manifest.body, manifest.format, 'opencode', 'config_dir')
-  if (!rawValue) return fallback
-  const raw = rawValue.trim().replace(/\/+$/, '')
-  // Reject absolute paths and parent traversal — matches the API's validator.
-  if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return fallback
-  return raw
+  try {
+    const raw = manifestConfigDir(parseManifestText(manifest.body, manifest.format))
+    return isPlainRelativePath(raw) ? raw : fallback
+  } catch {
+    return fallback
+  }
 }
 
 /**

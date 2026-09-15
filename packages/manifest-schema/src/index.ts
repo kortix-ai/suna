@@ -16,6 +16,7 @@
  */
 
 import type { ManifestIssue } from './issue';
+import { validAgentResourceSource } from './agent-resources';
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
@@ -294,6 +295,8 @@ function validateManifestBodyV2(
   // hardcoded 2 made a v3 manifest report "not supported in kortix_version 2".
   version: number,
 ): void {
+  if (parsed.config_dir !== undefined && !validAgentResourceSource(parsed.config_dir))
+    issues.push({ path: 'config_dir', message: 'must be a repository-relative directory without secrets or traversal', severity: 'error' });
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
@@ -1717,5 +1720,7 @@ export {
 
 export { validateAgentResources, validAgentResourceSource } from './agent-resources';
 export type { AgentResources } from './agent-resources';
+export { AGENT_BEHAVIOR_KEYS, manifestConfigDir, validateAgentConfiguration } from './agent-configuration';
+export type { AgentConfiguration } from './agent-configuration';
 export { decodeCompiledAgentResources, MAX_AGENT_RESOURCE_BYTES, type CompiledAgentResource } from './compiled-agent-resources';
 export type { ManifestIssue } from './issue';

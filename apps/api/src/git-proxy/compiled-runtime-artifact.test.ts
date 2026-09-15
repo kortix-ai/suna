@@ -130,6 +130,22 @@ describe("buildCompiledRuntimeArtifact", () => {
     expect(manifest.opencode_config_archive_bytes).toBeGreaterThan(0);
   });
 
+  test('OpenCode compiles the same YAML behavior and shared configuration directory', async () => {
+    const { project, source } = makeProject();
+    mkdirSync(join(source, 'config/shared'), { recursive: true });
+    mkdirSync(join(source, 'prompts'), { recursive: true });
+    writeFileSync(join(source, 'config/shared/opencode.jsonc'), '{"default_agent":"kortix"}');
+    writeFileSync(join(source, 'prompts/kortix.md'), 'Shared prompt.');
+    writeFileSync(join(source, 'kortix.yaml'), 'kortix_version: 2\nconfig_dir: config/shared\ndefault_agent: kortix\nagents:\n  kortix:\n    config:\n      model: provider/model\n      prompt: {file: prompts/kortix.md}\n      pi: {source: agents/pi.ts}\n');
+    git(['add', '-A'], source);
+    git(['commit', '-m', 'shared YAML source'], source);
+    const sha = git(['rev-parse', 'HEAD'], source);
+    const artifact = await buildCompiledRuntimeArtifact(project, 'main', sha);
+    expect(JSON.parse(artifact.manifest.agent_config!)).toEqual({ model: 'provider/model', agent: {kortix: {model: 'provider/model', prompt: 'Shared prompt.'}} });
+    expect(artifact.manifest.opencode_config_dir).toBe('config/shared');
+    expect(artifact.manifest.opencode_config_archive_bytes).toBeGreaterThan(0);
+  });
+
   test("reuses a verified content-addressed artifact", async () => {
     const { project, sha } = makeProject();
     const cache = mkdtempSync(join(tmpdir(), "kortix-runtime-cache-"));
