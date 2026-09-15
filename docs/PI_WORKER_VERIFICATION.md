@@ -2266,3 +2266,9 @@ they require an image whose fingerprint includes the current baked daemon.
 The regression tests cover fresh and replacement boots, moved branches,
 restricted workspaces, and simultaneous compiled/baked fingerprint requests.
 Preview verification and its exact source SHA are recorded in PR #6998.
+
+The cold-session test also exposed Node resolving `bun:sqlite` before the Bun
+trampoline could run. The compiled launcher now defers daemon module loading
+until Bun starts. Tests exercise a native SQLite import and the real daemon
+bundle. Session branch creation now accepts full commit SHAs through both the
+GitHub refs API and Git transport.

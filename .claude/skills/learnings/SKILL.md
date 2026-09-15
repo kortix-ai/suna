@@ -6953,3 +6953,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** Pi preview `dab26628aa` booted OpenCode from a last-ready image. The old daemon reported ready without installing declared resources or loading the custom tool. Its background update took effect only after restart.
 **Rule:** converge required runtime capabilities before reporting ready. Use the pinned compiled daemon for resource-bearing branch sessions. Restricted sessions must use an image fingerprint that includes the baked daemon. Pin configuration and checkout hints to the same resource revision.
 **Enforcer:** `session-runtime-env.test.ts`, `e2e-project-session-contract.test.ts`, `session-sandbox.test.ts`, and the snapshot freshness/fingerprint tests cover first boot, replacement, moved branches, restricted workspaces, and image selection. Live verification must call the custom tool on the first boot and read its actual tool result.
+
+### Runtime trampolines must defer native module loading (2026-09-15)
+
+**Incident:** preview `dc75d054ae` downloaded the compiled daemon, but Node rejected its static `bun:sqlite` import before the Bun trampoline ran. The previous test bundle used only Node-compatible imports.
+**Rule:** load the native daemon module only after selecting its runtime. Verify the real bundle and a native import through the older launch command. Treat commit SHAs as commits when creating session branches; never prefix them with `refs/heads/`.
+**Enforcer:** `compiled-runtime.test.ts` runs SQLite through the Node-to-Bun path and checks startup failures. `compiled-agent-bundle.test.ts` compiles the real daemon and checks its deferred startup export. `e2e-project-session-branch-git.test.ts` verifies pinned commits through GitHub and a real Git repository after its main branch moves.

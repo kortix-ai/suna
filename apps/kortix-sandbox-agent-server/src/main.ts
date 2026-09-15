@@ -100,6 +100,8 @@ export function resetClaimedInitialTurnForTests(): void {
 }
 
 
+export { main as startCompiledRuntime }
+
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()

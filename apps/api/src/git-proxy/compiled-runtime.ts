@@ -181,7 +181,14 @@ if (opencodeConfigArchiveBase64 && manifest.opencode_config_archive_sha256) {
   process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR = target;
 }
 
-${agentBundle}
+const daemonSource = ${JSON.stringify(agentBundle)};
+try {
+  const daemon = await import("data:text/javascript;base64," + Buffer.from(daemonSource).toString("base64"));
+  if (typeof daemon.startCompiledRuntime === "function") await daemon.startCompiledRuntime();
+} catch (error) {
+  process.stderr.write("Compiled Kortix daemon failed: " + error.message + "\\n");
+  process.exit(1);
+}
 `;
 }
 

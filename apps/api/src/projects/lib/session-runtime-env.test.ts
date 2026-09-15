@@ -500,8 +500,8 @@ test.each([true, false])('resource-bearing OpenCode boots its pinned compiled da
   expect(env.KORTIX_BASE_REF).toBe(pin);
   expect(env.KORTIX_DEFAULT_BRANCH).toBe(pin);
 });
-test('resource source pin rejects Git hints prepared for a newer branch tip', () => {
-  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, agentResourcesSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), gitDeltaBundleBase64: 'moved', gitDeltaBundleRemote: true, gitDeltaParentSha: 'c'.repeat(40), gitDeltaParentCommitBase64: 'parent', projectSnapshotMode: 'prefer-s3', projectSnapshotPin: 'moved-snapshot' });
+test.each([undefined, 'b'.repeat(40)])('resource pin rejects Git hints without its exact source (%s)', baseSha => {
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, agentResourcesSha: 'a'.repeat(40), baseSha, gitDeltaBundleBase64: 'moved', gitDeltaBundleRemote: true, gitDeltaParentSha: 'c'.repeat(40), gitDeltaParentCommitBase64: 'parent', projectSnapshotMode: 'prefer-s3', projectSnapshotPin: 'moved-snapshot' });
   expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
   for (const key of ['KORTIX_GIT_DELTA_BUNDLE_BASE64', 'KORTIX_GIT_DELTA_BUNDLE_REMOTE', 'KORTIX_GIT_DELTA_PARENT_SHA', 'KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64', 'KORTIX_PROJECT_SNAPSHOT_PIN']) expect(env).not.toHaveProperty(key);
 });

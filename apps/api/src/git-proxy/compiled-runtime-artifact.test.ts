@@ -28,7 +28,7 @@ beforeEach(() => {
   const bundleRoot = mkdtempSync(join(tmpdir(), "kortix-runtime-test-bundle-"));
   roots.push(bundleRoot);
   const bundlePath = join(bundleRoot, "server.mjs");
-  writeFileSync(bundlePath, 'console.log("kortix-sandbox-agent-server starting:test");\n');
+  writeFileSync(bundlePath, 'export function startCompiledRuntime() { console.log("kortix-sandbox-agent-server starting:test"); }\n');
   process.env.KORTIX_COMPILED_AGENT_BUNDLE_PATH = bundlePath;
 });
 
@@ -212,8 +212,8 @@ describe("buildCompiledRuntimeArtifact", () => {
 
     const firstBundle = join(bundles, "first.mjs");
     const secondBundle = join(bundles, "second.mjs");
-    writeFileSync(firstBundle, 'console.log("kortix-sandbox-agent-server starting:first");\n');
-    writeFileSync(secondBundle, 'console.log("kortix-sandbox-agent-server starting:second");\n');
+    writeFileSync(firstBundle, 'export function startCompiledRuntime() { console.log("kortix-sandbox-agent-server starting:first"); }\n');
+    writeFileSync(secondBundle, 'export function startCompiledRuntime() { console.log("kortix-sandbox-agent-server starting:second"); }\n');
 
     process.env.KORTIX_COMPILED_AGENT_BUNDLE_PATH = firstBundle;
     const first = await buildCompiledRuntimeArtifact(project, "main", sha);

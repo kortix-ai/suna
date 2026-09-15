@@ -19,6 +19,9 @@ function validateBundle(source: string): CompiledAgentBundle {
   if (!source.includes('kortix-sandbox-agent-server starting')) {
     throw new Error('compiled sandbox daemon bundle has no daemon entrypoint');
   }
+  if (!source.includes('startCompiledRuntime')) {
+    throw new Error('compiled sandbox daemon bundle has no deferred startup export');
+  }
   return {
     source,
     sha256: createHash('sha256').update(source).digest('hex'),

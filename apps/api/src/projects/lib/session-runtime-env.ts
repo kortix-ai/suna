@@ -92,7 +92,7 @@ export function auditRelayEnvPassthrough(
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
   const compiledBootMode = input.compiledBootMode ?? 'off';
-  const gitHintMatchesResources = !input.agentResourcesSha || !input.baseSha || input.baseSha === input.agentResourcesSha;
+  const gitHintMatchesResources = !input.agentResourcesSha || input.baseSha === input.agentResourcesSha;
   const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
