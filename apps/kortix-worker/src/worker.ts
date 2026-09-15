@@ -1,7 +1,7 @@
 import { SessionRewind, SessionRewindError } from './session-rewind';
 import { workspaceJournalItem, workspaceUndoPlan, type WorkspaceObserver } from './workspace-journal';
 import { projectPiHistory, type PiHistoryWorkspaceMove, type PiHistorySelection } from '../../../packages/shared/src/pi-history';
-import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, type PromptAttachment } from './session-attachments.ts';
+import { AttachmentInputError, SessionAttachmentStore, attachmentDigest, attachmentUserContent, isNativeImageAttachment, type PromptAttachment } from './session-attachments.ts';
 import { parseWorkerModelLimits, type WorkerModelLimits } from './model-limits';
 import { sessionModelConfigUrl, applySessionModelLimits, parseSessionModelSelection, readSessionModelSelection, type SessionModelSelection } from './session-model';
 import { installCustomAgent } from './custom-agent.ts';
@@ -559,6 +559,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   // through the Kortix API and every operation then runs over the provider
   // edge. Bench/spike rigs keep the direct-URL path by setting KORTIX_ENV_URL.
   const workspaceOwners = new Map<string, string>();
+  let prepareAttachments: NonNullable<import('./kortix-env').KortixEnvOptions['prepareAttachments']> = async () => ({ ok: true, value: undefined });
   const observeWorkspace: WorkspaceObserver = async event => {
     const messageId = event.phase === 'begin' ? persistenceTurnIdentity?.() : workspaceOwners.get(event.operationId);
     if (!messageId || !turnJournalRef) return false;
@@ -574,6 +575,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     !cfg.envUrlExplicit && cfg.apiUrl && cfg.kortixToken && cfg.projectId && cfg.sessionId
       ? new LazyKortixEnv({
           observeWorkspace,
+          prepareAttachments: (client, signal) => prepareAttachments(client, signal),
           apiUrl: cfg.apiUrl,
           token: cfg.kortixToken,
           projectId: cfg.projectId,
@@ -585,6 +587,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     lazy ??
     new KortixExecutionEnv({
       observeWorkspace,
+      prepareAttachments: (client, signal) => prepareAttachments(client, signal),
       baseUrl: cfg.envUrl,
       cwd: cfg.envCwd,
       token: cfg.envToken,
@@ -1357,6 +1360,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     recoverAbandonedTurn,
     rewindAcceptedInputForReplay,
     setPersistenceTurnIdentity,
+    setPrepareAttachments: (prepare: typeof prepareAttachments) => { prepareAttachments = prepare; },
     restoredEntries,
     restoredMessages,
     storeError,
@@ -1443,6 +1447,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     recoverAbandonedTurn,
     rewindAcceptedInputForReplay,
     setPersistenceTurnIdentity,
+    setPrepareAttachments,
     restoredEntries,
     restoredMessages,
     storeError,
@@ -1528,6 +1533,23 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     | null = null;
   let stopPendingAdmissions = async (): Promise<void> => {};
   let surface!: RuntimeSurface;
+  setPrepareAttachments(async (client, signal) => {
+    const activeId = surface?.turnEndIdentity().messageId;
+    if (!activeId || !surface) return { ok: true, value: undefined };
+    const messages = surface.transcript.page({ limit: Math.max(1, surface.transcript.count), before: null }).messages;
+    const activeIndex = messages.findIndex(message => message.info.id === activeId);
+    if (activeIndex < 0) return { ok: true, value: undefined };
+    for (const message of messages.slice(0, activeIndex + 1)) {
+      for (const part of message.parts) {
+        if (part.type !== 'file' || typeof part.url !== 'string') continue;
+        const stored = attachments.referenceForPart(part.url);
+        if (!stored || isNativeImageAttachment(stored)) continue;
+        const result = await client.installAttachment({ sha256: attachmentDigest(stored.url)!, mime: stored.mime, filename: typeof part.filename === 'string' ? part.filename : stored.filename }, signal);
+        if (!result.ok) return result;
+      }
+    }
+    return { ok: true, value: undefined };
+  });
   let recoveryProjectionCount = 0;
   let recoveryProjectionPending = false;
   const selectedAgentConfig = compiledPayload?.agentConfig?.agent?.[runtimeAgent];
@@ -2583,7 +2605,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
     }
 
     if (options.files?.length) {
-      if (!(options.modelSelection ? options.modelSelection.limits.images : agent.state.model?.input.includes('image'))) throw new AttachmentInputError('the selected model does not accept image attachments');
+      if (options.files.some(isNativeImageAttachment) && !(options.modelSelection ? options.modelSelection.limits.images : agent.state.model?.input.includes('image'))) throw new AttachmentInputError('the selected model does not accept image attachments');
       await attachments.validate(options.files, signal);
     }
     signal.throwIfAborted();

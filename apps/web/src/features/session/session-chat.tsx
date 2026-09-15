@@ -14,7 +14,7 @@ import {
   isPiWorkerRuntimeMetadata,
   listSessionPrompts,
   projectSessionConnection,
-  putSessionImage,
+  putSessionFile,
   showsGeneratingIndicator,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
@@ -2315,7 +2315,7 @@ export function SessionChat({
     sandboxIsPiWorker,
   });
   const runtimeAttachmentsAllowed = runtimePromptOverridesAllowed ||
-    (!!projectId && !!projectSessionId && local.model.imageAttachmentsSupported === true);
+    (!!projectId && !!projectSessionId && isPiWorkerSession);
   const runtimeReasoningAllowed = runtimePromptOverridesAllowed ||
     (isPiWorkerSession && local.model.variant.list.length > 0);
   const historyMutationsEnabled =
@@ -4087,7 +4087,7 @@ export function SessionChat({
       try {
         built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile,
           isPiWorkerSession ? async (file, mime) => ({
-            ...await putSessionImage(projectId!, projectSessionId!, new Uint8Array(await file.arrayBuffer()), {
+            ...await putSessionFile(projectId!, projectSessionId!, new Uint8Array(await file.arrayBuffer()), {
               contentType: mime, filename: file.name,
             }), filename: file.name,
           }) : undefined,

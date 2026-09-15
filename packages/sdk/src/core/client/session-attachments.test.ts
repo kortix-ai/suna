@@ -13,6 +13,18 @@ const kortix = createKortix({
   backendUrl: "https://attachment.test/v1",
   getToken: async () => "attachment-token",
 });
+
+test('uploads an ordinary file as an immutable prompt part without starting compute', async () => {
+  const attachments = kortix.session('project', 'session').attachments;
+  const part = await attachments.file(data, { contentType: 'application/pdf', filename: 'R&D report.pdf' });
+  expect(part).toEqual({ type: 'file', mime: 'application/pdf', filename: 'R&D report.pdf', url: `kortix-attachment:sha256:${digest}` });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.method).toBe('PUT');
+  expect(new Uint8Array(await calls[0]!.arrayBuffer())).toEqual(data);
+  await expect(attachments.file(data, { contentType: 'text/plain; charset=utf-8' })).rejects.toThrow('MIME');
+  await expect(attachments.file(data, { filename: 'a\0.txt' })).rejects.toThrow('filename');
+  expect(calls).toHaveLength(1);
+});
 beforeEach(() => {
   calls.length = 0;
   reply = (request) =>

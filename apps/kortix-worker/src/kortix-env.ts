@@ -22,6 +22,7 @@ import type { PiStdioMcpServer } from '../../../packages/sdk/src/core/pi/mcp';
 import type { WorkspaceCheckpoint, WorkspaceHistoryMove, WorkspaceHistoryReceipt } from '../../../packages/shared/src/workspace-history';
 import type { WorkspaceObserver } from './workspace-journal';
 import type { RpcProgress } from '../../../packages/shared/src/env-rpc-stream';
+import { sessionAttachmentPath, type WorkspaceAttachment } from '../../../packages/shared/src/session-attachment-path';
 import {
   makeTransport,
   RpcCancellationError,
@@ -110,6 +111,7 @@ export type TransportKind = 'fetch' | 'keepalive' | 'ws' | 'auto';
 
 export interface KortixEnvOptions {
   observeWorkspace?: WorkspaceObserver;
+  prepareAttachments?: (env: KortixExecutionEnv, signal?: AbortSignal) => Promise<Result<void, any>>;
   /** Base URL of the environment's RPC endpoint. In production this is the Kortix sandbox proxy. */
   baseUrl: string;
   /** Working directory inside the environment. */
@@ -140,6 +142,8 @@ export function toExecTimeoutMs(timeoutSeconds: unknown): number | undefined {
 export class KortixExecutionEnv {
   readonly cwd: string;
   private readonly observeWorkspace?: WorkspaceObserver;
+  private readonly prepareAttachments?: KortixEnvOptions['prepareAttachments'];
+  private readonly installedAttachments = new Set<string>();
   private readonly baseUrl: string;
   private readonly token?: string;
   private readonly headers: Record<string, string>;
@@ -153,6 +157,7 @@ export class KortixExecutionEnv {
 
   constructor(opts: KortixEnvOptions) {
     this.observeWorkspace = opts.observeWorkspace;
+    this.prepareAttachments = opts.prepareAttachments;
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.cwd = opts.cwd;
     this.token = opts.token;
@@ -179,6 +184,13 @@ export class KortixExecutionEnv {
   ): Promise<Result<T, any>> {
     this.calls.push({ op, args });
     const invoke = async () => {
+      if (this.prepareAttachments && !op.startsWith('history')) {
+        try {
+          signal?.throwIfAborted();
+          const prepared = await this.prepareAttachments(this, signal);
+          if (!prepared.ok) return prepared;
+        } catch (error) { return err(error); }
+      }
       // One retry for reads: a pooled keep-alive socket retired by the peer
       // between calls is a transport artifact, not a tool failure. Mutations
       // cannot be replayed because the daemon may commit the side effect before
@@ -195,8 +207,9 @@ export class KortixExecutionEnv {
       }
       return first;
     };
-    const operation = this.observeWorkspace ? this.workspaceTail.then(invoke, invoke) : invoke();
-    if (this.observeWorkspace) this.workspaceTail = operation.then(() => undefined, () => undefined);
+    const serialized = this.observeWorkspace || this.prepareAttachments;
+    const operation = serialized ? this.workspaceTail.then(invoke, invoke) : invoke();
+    if (serialized) this.workspaceTail = operation.then(() => undefined, () => undefined);
     if (signal) {
       const trackAbort = () => {
         const settlement = operation.then((result) => {
@@ -215,6 +228,19 @@ export class KortixExecutionEnv {
       );
     }
     return operation;
+  }
+
+  async installAttachment(file: WorkspaceAttachment, signal?: AbortSignal): Promise<Result<void, any>> {
+    try {
+      signal?.throwIfAborted();
+      const identity = sessionAttachmentPath(file);
+      if (this.installedAttachments.has(identity)) return ok(undefined);
+      const result = await this.rpcOnce<{ path: string }>('installAttachment', { ...file }, signal);
+      if (!result.ok) return result;
+      if (result.value.path !== `${this.cwd.replace(/\/$/, '')}/${identity}`) return err(new Error('attachment destination does not match the workspace'));
+      this.installedAttachments.add(identity);
+      return ok(undefined);
+    } catch (error) { return err(error); }
   }
 
   mcpRequest(input: { server: string; configuration: PiStdioMcpServer; method: string; params?: Record<string, unknown>; connectionId?: string }, signal?: AbortSignal) {

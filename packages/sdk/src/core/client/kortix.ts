@@ -1201,6 +1201,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
         P.getSessionTranscriptSync(projectId, sessionId, options),
       attachments: {
+        file: (...args: DropFirst2<Parameters<typeof P.putSessionFile>>) =>
+          P.putSessionFile(projectId, sessionId, ...args),
         image: (...args: DropFirst2<Parameters<typeof P.putSessionImage>>) =>
           P.putSessionImage(projectId, sessionId, ...args),
         put: (...args: DropFirst2<Parameters<typeof P.putSessionAttachment>>) =>

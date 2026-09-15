@@ -455,10 +455,13 @@ test('Pi image attachments use immutable conversation storage without uploading 
   expect(result).toEqual({ text: 'Describe it.', remoteParts: [part] });
 });
 
-test('Pi document files retain the existing environment upload and actual path reference', async () => {
-  const result = await buildPromptPartsWithUploads('Read it.', [localFile('notes.txt', 'text/plain')], async () => [{ path: '/workspace/uploads/actual-notes.txt', size: 5 }], async () => { throw new Error('documents are workspace files'); });
-  expect(result.remoteParts).toEqual([]);
-  expect(result.text).toContain('path="/workspace/uploads/actual-notes.txt"');
+test('Pi stores documents and images in input order without touching the environment', async () => {
+  const files = [localFile('notes.txt', 'text/plain'), localFile('logo.svg', 'image/svg+xml'), localFile('screenshot.png', 'image/png')];
+  const result = await buildPromptPartsWithUploads('Read it.', files, async () => { throw new Error('environment must stay off'); }, async (file, mime) => ({
+    type: 'file', mime, filename: file.name, url: `kortix-attachment:sha256:${'b'.repeat(64)}`,
+  }));
+  expect(result.text).toBe('Read it.');
+  expect(result.remoteParts.map(part => part.filename)).toEqual(['notes.txt', 'logo.svg', 'screenshot.png']);
 });
 
 test('Pi refuses arbitrary remote attachment URLs before upload or prompt admission', async () => {

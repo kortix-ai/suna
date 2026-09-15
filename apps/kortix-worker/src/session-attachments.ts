@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { sessionAttachmentPath } from '../../../packages/shared/src/session-attachment-path';
+import { promptFileReferenceXml } from '../../../packages/shared/src/prompt-attachments';
 import { sessionAttachmentReference } from '../../../packages/sdk/src/core/runtime/session-attachment-reference';
 
 const PREFIX = "kortix-attachment:sha256:";
@@ -10,6 +12,7 @@ const IMAGE_TYPES = new Set([
 ]);
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_CACHE_BYTES = 16 * 1024 * 1024;
+export const isNativeImageAttachment = (file: { mime: string }) => IMAGE_TYPES.has(file.mime);
 
 export interface PromptAttachment {
   type: "file";
@@ -36,13 +39,13 @@ export function parsePromptAttachment(
         `file part field "${field}" is not supported`,
       );
   }
-  if (typeof part.mime !== "string" || !IMAGE_TYPES.has(part.mime))
+  if (typeof part.mime !== "string" || !/^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/.test(part.mime))
     throw new AttachmentInputError(
-      "Pi image attachments require PNG, JPEG, GIF, or WebP",
+      "invalid attachment MIME type",
     );
   if (typeof part.url !== "string" || !attachmentDigest(part.url))
     throw new AttachmentInputError(
-      "Pi image attachments require an immutable session attachment reference",
+      "Pi attachments require an immutable session attachment reference",
     );
   if (
     part.filename !== undefined &&
@@ -65,10 +68,14 @@ export function attachmentUserContent(text: string, files: unknown) {
   return [
     { type: "text", text },
     ...(Array.isArray(files)
-      ? files.map((file) => ({
+      ? files.map((file) => isNativeImageAttachment(file) ? ({
           type: "image",
           data: "",
           mimeType: file.mime,
+          kortixAttachment: file,
+        }) : ({
+          type: 'text',
+          text: promptFileReferenceXml({ path: sessionAttachmentPath({ ...file, sha256: attachmentDigest(file.url)! }), mime: file.mime, filename: file.filename || 'upload' }),
           kortixAttachment: file,
         }))
       : []),
@@ -93,7 +100,7 @@ export function restoreUserAttachmentParts(
   register?: RegisterAttachmentPart,
 ) {
   const files = Array.isArray(content)
-    ? content.filter(block => block?.type === 'image' && block.kortixAttachment).map(block => block.kortixAttachment)
+    ? content.filter(block => (block?.type === 'image' || block?.type === 'text') && block.kortixAttachment).map(block => block.kortixAttachment)
     : [];
   let index = 0;
   return parts.map(part => {
@@ -141,9 +148,11 @@ export class SessionAttachmentStore {
   private readonly partReferences = new Map<string, PromptAttachment>();
   readonly registerPart = (ref: string, file: PromptAttachment): string => {
     this.partReferences.set(ref, { ...file });
-    return this.projectId && this.sessionId
+    const canonical = this.projectId && this.sessionId
       ? sessionAttachmentReference(this.projectId, this.sessionId, attachmentDigest(file.url) ?? '') ?? ref
       : ref;
+    this.partReferences.set(canonical, { ...file });
+    return canonical;
   };
   referenceForPart(ref: string): PromptAttachment | undefined {
     return this.partReferences.get(ref);
@@ -351,7 +360,7 @@ export class SessionAttachmentStore {
       total += (await this.read(file, signal)).length;
       if (total > MAX_CACHE_BYTES)
         throw new AttachmentInputError(
-          "prompt image attachments exceed 16 MiB",
+          "prompt attachments exceed 16 MiB",
         );
     }
   }
@@ -388,6 +397,7 @@ export class SessionAttachmentStore {
       if (!Array.isArray(source.content)) return message;
       const content = [...source.content];
       for (const [index, block] of content.entries()) {
+        if (block?.type === 'text' && block.kortixAttachment) content[index] = { type: 'text', text: block.text };
         if (block?.type === "image" && block.kortixAttachment) {
           const file = parsePromptAttachment(block.kortixAttachment);
           const key = JSON.stringify([file.url, file.mime]);

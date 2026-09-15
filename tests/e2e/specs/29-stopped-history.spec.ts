@@ -27,7 +27,7 @@ const imageBytes = Buffer.from(
   "base64",
 );
 
-test("29 — stopped sessions keep saved text and image bytes visible without a sandbox", async ({
+test("29 — stopped sessions keep saved text, image previews, and file downloads available without a sandbox", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -79,6 +79,13 @@ test("29 — stopped sessions keep saved text and image bytes visible without a 
       body: imageBytes,
     });
     expect(uploaded.status).toBe(204);
+    const documentBytes = Buffer.from('name,total\nKortix,42\n');
+    const documentDigest = createHash('sha256').update(documentBytes).digest('hex');
+    const documentPath = `/projects/${projectId}/sessions/${sessionId}/attachments/${documentDigest}`;
+    const documentUpload = await fetch(apiBase + documentPath, {
+      method: 'PUT', headers: { authorization: `Bearer ${login.access_token}`, 'content-type': 'text/csv' }, body: documentBytes,
+    });
+    expect(documentUpload.status).toBe(204);
     await database.query(
       "UPDATE kortix.project_sessions SET status='stopped', opencode_session_id=$2 WHERE session_id=$1",
       [sessionId, nativeId],
@@ -95,6 +102,7 @@ test("29 — stopped sessions keep saved text and image bytes visible without a 
       time: { created: Date.now() },
     };
     const parts = [
+      { id: 'part_saved_document', sessionID: nativeId, messageID: messageId, type: 'file', filename: 'R&D report.csv', mime: 'text/csv', url: documentPath },
       {
         id: "part_saved_text",
         sessionID: nativeId,
@@ -155,6 +163,17 @@ test("29 — stopped sessions keep saved text and image bytes visible without a 
         ),
       );
       expect(Buffer.from(bytes)).toEqual(imageBytes);
+      const fileResponse = page.waitForResponse(response => response.url().endsWith(documentPath) && response.request().method() === 'GET');
+      const downloadStarted = page.waitForEvent('download');
+      await chat.getByRole('button', { name: /R&D report.csv/ }).click();
+      expect((await fileResponse).status()).toBe(200);
+      const download = await downloadStarted;
+      expect(download.suggestedFilename()).toBe('R&D report.csv');
+      const stream = await download.createReadStream();
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks)).toEqual(documentBytes);
+
       const current = await api<{ status: string }>(
         login.access_token,
         "GET",

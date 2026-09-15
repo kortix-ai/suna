@@ -624,6 +624,13 @@ See [React hooks](/docs/sdk/react) for the rest of `useSession`.
 
 Upload immutable conversation assets without starting either sandbox:
 
+Documents use `session.attachments.file(bytes, { contentType, filename })`.
+Pass the returned part to `session.send(text, { files: [part] })`.
+Uploads and chat downloads require no sandbox. File tools create an editable
+copy in the environment. The original stays in PostgreSQL. Worker replacement
+preserves workspace edits; environment replacement restores the original.
+Files are limited to 8 MiB each and 16 files / 16 MiB per prompt.
+
 ```ts
 const attachment = await session.attachments.put(bytes, { contentType: 'image/png' })
 const stored = await session.attachments.get(attachment.sha256)

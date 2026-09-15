@@ -10,7 +10,7 @@ Pi runs in the worker. Files and commands use the environment. No Durable Object
 | Conversation and native Pi state | PostgreSQL `session_worker_log` | Ordered JSON mutations, message identities, tool state, and attachment references | The replacement worker replays the log |
 | Stopped-session display | PostgreSQL `session_transcript_mirrors` and `session_transcript_messages` | Bounded message envelopes; same-session attachment URLs | Text and preserved image references load through the API |
 | Uploaded chat images and tool images | PostgreSQL `session_attachments.content` (`bytea`) | MIME, filename, and a SHA-256 reference; no repeated base64 payload | Exact bytes remain readable without either sandbox |
-| Ordinary composer uploads | Environment `/workspace/uploads` | File path and display metadata in the prompt | Bytes are lost if that environment disk is deleted |
+| Ordinary Pi composer uploads | PostgreSQL `session_attachments.content`; editable copies under environment `uploads/.kortix-attachments` | MIME, original filename, immutable reference | Chat downloads work while stopped. A file tool restores the original into a replacement environment. Later edits need workspace backup |
 | Edited code, generated documents, downloads | Environment filesystem | Tool history and paths; not a backup of the files | Only committed and pushed Git content can be restored today |
 | Agent source and configuration | Project Git repository | Session pins the agent and source commit | Compile or fetch the artifact for that commit |
 | Compiled Pi bundle | PostgreSQL `pi_runtime_artifacts`; API disk is a cache | Artifact identity and source commit | The worker downloads the saved `.mjs` bundle |
@@ -19,12 +19,13 @@ Pi runs in the worker. Files and commands use the environment. No Durable Object
 The Pi bundle and attachment stores use PostgreSQL. The upstream repository
 snapshot system optionally stores committed Git archives in S3 for faster checkout.
 It does not back up uploads, uncommitted edits, or the Pi conversation. This
-preview does not configure an S3 bucket. Ordinary uploads and generated files
-are not durable chat attachments merely because a message mentions them.
+preview does not configure an S3 bucket. Generated files are not durable chat
+attachments merely because a message mentions them. Ordinary Pi uploads now use
+the immutable attachment store. OpenCode uploads retain their existing path.
 
 ```mermaid
 flowchart LR
-  UI[Chat UI] -->|upload original image bytes| API[Kortix API]
+  UI[Chat UI] -->|upload original file bytes| API[Kortix API]
   API -->|session + SHA-256 + MIME + bytes| DB[(PostgreSQL)]
   UI -->|prompt with immutable reference| API
   API --> W[Pi worker]
@@ -32,6 +33,7 @@ flowchart LR
   W -->|load images for model input| API
   UI -->|history and private attachment reads| API
   W -->|files, shell, MCP, terminal| E[Environment disk]
+  E -->|fetch original uploads with session credential| API
   G[Git: config and committed files] --> B[Compiled Pi bundle]
   B --> W
   G -->|checkout when configured| E
@@ -86,7 +88,7 @@ Pi execution currently uses Daytona; provider-neutral APIs do not prove other pr
 
 | Priority | Work | Completion proof |
 |---|---|---|
-| 1 | Durable ordinary uploads and generated chat files. Store original bytes independently of the environment. Keep filenames, MIME, digest, and stable references in history. Materialize files only when a tool needs them. Add retention and quotas. | PDF, text, CSV, ZIP, duplicate names, failed/retried uploads, Stop, reload, sharing, and environment replacement preserve exact bytes and permissions |
+| 1 | Finish generated chat files, public sharing, retention, and aggregate quotas. Ordinary Pi uploads now use immutable storage and lazy environment copies. | PDF, text, CSV, ZIP, duplicate names, failed/retried uploads, Stop, reload, sharing, and environment replacement preserve exact bytes and permissions |
 | 2 | Environment backup and restore before idle deletion. Preserve uncommitted files and checkpoint identity, or reject destructive cleanup. | Delete an owned test environment, recreate it, and recover files, history, and valid rewind state. Never enable seven-day deletion before this passes |
 | 3 | Session fork, children, subagents, agent switching, and remaining message mutations | Independent identities, copied history boundary, workspace rules, cancellation, permissions, and billing pass real sessions |
 | 4 | Remaining OpenCode services and configuration adapters | LSP, formatters, runtime administration, shared configuration mapping, and declared extensions have tested equivalents or explicitly accepted differences |
@@ -169,3 +171,22 @@ check that text appears incrementally. Reload the conversation and open each
 image. Stop the session through the SDK/API, then reopen its history. Saved
 images must remain readable during startup. Ordinary documents still require
 the environment disk; do not delete that disk to test their persistence.
+
+## Ordinary file attachment implementation
+
+- `.attachments.file()` accepts non-empty files up to 8 MiB. A prompt accepts
+  16 files and 16 MiB total. Original filenames stay in message history.
+- The Pi composer uses immutable storage for documents and images. The chat
+  downloads documents through the authenticated API, including while stopped.
+- PDFs, CSV, text, archives, and SVG use a file reference in model context.
+  Native PNG/JPEG/GIF/WebP remain image inputs. Documents work with text-only models.
+- Before an environment tool runs, the daemon downloads earlier visible uploads
+  with its own session credential. No file bytes cross worker RPC requests.
+- Paths include full content and filename hashes. Sanitization preserves Unicode
+  within the filesystem filename limit. Repeated uploads cannot overwrite a
+  different file. Later queued prompts stay invisible to the active turn.
+- A receipt outside the workspace prevents replay from undoing edits or deletions.
+  A replacement environment restores original uploads. Restoring later workspace
+  edits remains the backup task above. No automatic environment deletion is enabled.
+- Original bytes are private. Public attachment sharing, document previews,
+  generated-file capture, aggregate quotas, and orphan retention remain unfinished.

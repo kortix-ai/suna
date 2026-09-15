@@ -75,7 +75,7 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
-| Ordinary chat files | Images use immutable session storage. Other composer uploads use environment paths | Durable original bytes, stable private history references, lazy file materialization, quotas, cleanup, and public-share policy |
+| Ordinary chat files | Pi uploads persist original bytes and filenames in private session storage. File tools fetch editable environment copies. Stopped chat downloads use the API | Generated-file capture, document previews, aggregate quotas, cleanup, and public-share policy |
 | Idle environment deletion | Working files and rewind checkpoints depend on the original disk | Backup/restore proof before enabling seven-day deletion; preserve uncommitted files |
 | Rewind and restore | Whole-turn rewind and restore coordinate PostgreSQL history with environment file receipts. Default and custom environment tools record checkpoints. SDK events and existing Edit/Restore controls are connected. Replacement prompt IDs sort above IDs reserved by discarded history | Checkpoints still depend on the original environment disk. Interrupted operations without a complete record refuse rewind. Detached writers and external effects are outside rollback |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |

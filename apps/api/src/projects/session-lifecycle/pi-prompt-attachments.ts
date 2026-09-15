@@ -13,6 +13,7 @@ export interface StagedSessionAttachment {
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const REFERENCE = /^kortix-attachment:sha256:[a-f0-9]{64}$/;
+const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
 const MAX_PROMPT_IMAGE_BYTES = 16 * 1024 * 1024;
 
 type PreparedImage = { part: PromptPartWire; content?: Buffer; remoteUrl?: string };
@@ -25,8 +26,8 @@ export async function preparePiPromptAttachments(
   let inlineSize = 0;
   const images = parts.map((part): PreparedImage => {
     if (part.type === 'text') return { part };
-    if (part.type !== 'file' || !IMAGE_TYPES.has(part.mime ?? ''))
-      throw new Error('Pi prompts accept text and PNG, JPEG, GIF, or WebP images');
+    if (part.type !== 'file' || !MIME.test(part.mime ?? ''))
+      throw new Error('Pi prompts accept text and files with a valid MIME type');
     if (++count > 16) throw new Error('Pi prompts accept up to 16 images');
     if (
       part.source !== undefined ||
@@ -43,12 +44,14 @@ export async function preparePiPromptAttachments(
       const { bytes } = parseStagedPromptDataUrl(part);
       if (bytes.byteLength === 0) throw new Error('image attachment is empty');
       if (bytes.byteLength > MAX_SESSION_ATTACHMENT_BYTES)
-        throw new Error('image attachment exceeds 8 MiB');
+        throw new Error('attachment exceeds 8 MiB');
       inlineSize += bytes.byteLength;
       if (inlineSize > MAX_PROMPT_IMAGE_BYTES)
-        throw new Error('Pi image attachments exceed 16 MiB');
+        throw new Error('Pi attachments exceed 16 MiB');
       return { part, content: Buffer.from(bytes) };
     }
+    if (!IMAGE_TYPES.has(part.mime ?? ''))
+      throw new Error('upload file bytes or use an immutable session attachment reference');
     let url: URL;
     try {
       url = new URL(part.url ?? '');
@@ -87,7 +90,7 @@ export async function preparePiPromptAttachments(
       continue;
     }
     size += content.byteLength;
-    if (size > MAX_PROMPT_IMAGE_BYTES) throw new Error('Pi image attachments exceed 16 MiB');
+    if (size > MAX_PROMPT_IMAGE_BYTES) throw new Error('Pi attachments exceed 16 MiB');
     const sha256 = createHash('sha256').update(content).digest('hex');
     const existing = attachments.get(sha256);
     if (existing && existing.contentType !== part.mime)

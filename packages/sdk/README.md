@@ -784,6 +784,21 @@ The API stores one immutable value per session and digest. Repeating an upload
 is idempotent. Changing its MIME type returns `409`. Working files remain in
 the environment filesystem.
 
+`session.attachments.file(bytes, { contentType?, filename?, signal? })` uploads any
+file and returns a prompt part. Original bytes stay in PostgreSQL. The worker
+adds a workspace path to model context for ordinary files. The environment
+fetches each original with its own session credential before a file tool runs.
+Copies use `uploads/.kortix-attachments/<content hash>/<filename hash>/<filename>`.
+Existing workspace edits and deletions survive worker restarts. A replacement
+environment restores the original upload, not later workspace edits.
+
+```ts
+const document = await session.attachments.file(new TextEncoder().encode('name,total\nKortix,42'), {
+  contentType: 'text/csv', filename: 'report.csv',
+});
+await session.send('Read the uploaded CSV.', { files: [document] });
+```
+
 Pi accepts PNG, JPEG, GIF, and WebP images through immutable session references:
 
 ```ts
@@ -794,8 +809,9 @@ await session.send('Describe this image.', { files: [image] });
 ```
 
 `attachments.image` uploads bytes without starting either sandbox. `send` starts
-the Pi worker when needed. Each image is at most 8 MiB; one prompt accepts up to
-16 images and 16 MiB in total. The selected model must support images. Image
+the Pi worker when needed. Each file is at most 8 MiB; one prompt accepts up to
+16 files and 16 MiB in total. Native images require a model that supports images.
+Ordinary documents work with text-only models. Image
 bytes stay out of the worker journal and load again after worker replacement.
 Arbitrary remote URLs and local filesystem URLs are not valid Pi image inputs.
 

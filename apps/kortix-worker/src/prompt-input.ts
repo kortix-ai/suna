@@ -146,7 +146,7 @@ export function parsePromptInput(
     if (part.type === 'file') {
       try { files.push(parsePromptAttachment(rawPart as Record<string, unknown>)); }
       catch (error) { return { ok: false, error: (error as Error).message }; }
-      if (files.length > 16) return { ok: false, error: 'at most 16 image attachments are supported per prompt' };
+      if (files.length > 16) return { ok: false, error: 'at most 16 attachments are supported per prompt' };
       continue;
     }
     if (part.type !== 'text') {

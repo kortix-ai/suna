@@ -5,6 +5,8 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchAttachmentPart, isAttachmentPartRef } from '@kortix/sdk';
+import { downloadBlob } from '@/lib/utils/download';
 
 import {
   CaretDownIcon as ChevronDown,
@@ -724,6 +726,16 @@ export function MessageAttachments({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const download = async (file: NormalizedAttachment) => {
+    if (downloading) return;
+    setDownloading(file.key);
+    setDownloadError(null);
+    try { downloadBlob(await fetchAttachmentPart(file.src), file.filename); }
+    catch (error) { setDownloadError(error instanceof Error ? error.message : 'Download failed'); }
+    finally { setDownloading(null); }
+  };
 
   const { visible, hidden } = planAttachmentGrid(attachments, expanded);
   if (visible.length === 0) return null;
@@ -732,7 +744,7 @@ export function MessageAttachments({
   // Only a FAILURE gets a line: it is the one state a tile cannot show on its
   // own. Uploading is already on every tile as its spinner — a second
   // "Uploading N files…" line said the same thing twice (Jay, 2026-09-06).
-  const caption = status?.state === 'failed' ? (status.message ?? 'Upload failed') : null;
+  const caption = status?.state === 'failed' ? (status.message ?? 'Upload failed') : downloadError;
 
   return (
     <div className={cn('flex flex-col gap-1.5', align === 'start' ? 'items-start' : 'items-end')}>
@@ -781,14 +793,14 @@ export function MessageAttachments({
             );
           }
 
-          const canOpen = Boolean(file.path);
+          const stored = isAttachmentPartRef(file.src);
           return (
             <li key={file.key} className="contents">
               <AttachmentTile
                 filename={file.filename}
                 mime={file.mime}
-                pending={pending || file.pending}
-                onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
+                pending={pending || file.pending || downloading === file.key}
+                onOpen={stored ? () => { void download(file); } : file.path ? () => openFileInComputer(file.path!) : undefined}
               />
             </li>
           );
@@ -801,7 +813,7 @@ export function MessageAttachments({
         // upload never needs a colour the palette does not have.
         <p
           className="text-muted-foreground max-w-md text-right text-xs leading-tight"
-          role={status?.state === 'failed' ? 'alert' : 'status'}
+          role={status?.state === 'failed' || downloadError ? 'alert' : 'status'}
         >
           {caption}
         </p>

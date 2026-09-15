@@ -203,14 +203,26 @@ export async function buildPromptPartsWithUploads(
   text: string,
   files: AttachedFile[] | undefined,
   uploadFile: UploadFileForPrompt,
-  uploadImage?: (file: File, mime: string) => Promise<PromptFilePart>,
+  uploadAttachment?: (file: File, mime: string) => Promise<PromptFilePart>,
 ): Promise<{
   text: string;
   remoteParts: PromptFilePart[];
 }> {
   const { localFiles, remoteParts } = splitFiles(files);
-  if (uploadImage && remoteParts.some(part => !/^kortix-attachment:sha256:[a-f0-9]{64}$/.test(part.url))) {
+  if (uploadAttachment && remoteParts.some(part => !/^kortix-attachment:sha256:[a-f0-9]{64}$/.test(part.url))) {
     throw new Error("Attach a local file in this Pi session");
+  }
+  if (uploadAttachment) {
+    const source = files ?? [];
+    const results = await Promise.allSettled(source.map(file => file.kind === 'local'
+      ? uploadAttachment(file.file, attachmentMime(file.file.type, file.file.name))
+      : Promise.resolve({ type: 'file' as const, mime: file.mime, filename: file.filename, url: file.url })));
+    const failures = results.flatMap((result, index) => {
+      const file = source[index];
+      return result.status === 'rejected' ? [{ filename: file.kind === 'local' ? file.file.name : file.filename, reason: failureReason(result.reason) }] : [];
+    });
+    if (failures.length) throw new UploadBatchError(failures, []);
+    return { text, remoteParts: results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []) };
   }
   if (localFiles.length === 0) return { text, remoteParts };
 
@@ -219,10 +231,6 @@ export async function buildPromptPartsWithUploads(
   // outcome rather than abandon the first failure's peers.
   const settled = await Promise.allSettled(
     localFiles.map(async (file) => {
-      const mime = attachmentMime(file.file.type, file.file.name);
-      if (uploadImage && mime.startsWith('image/')) {
-        return { image: await uploadImage(file.file, mime) };
-      }
       return { ref: await uploadLocalFile(file, uploadFile) };
     }),
   );
@@ -231,8 +239,7 @@ export async function buildPromptPartsWithUploads(
   const failures: UploadFailure[] = [];
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled') {
-      if (result.value.image) remoteParts.push(result.value.image);
-      else if (result.value.ref) uploaded.push(result.value.ref);
+      uploaded.push(result.value.ref);
       return;
     }
     failures.push({

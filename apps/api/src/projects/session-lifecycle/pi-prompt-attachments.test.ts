@@ -11,6 +11,15 @@ const image = {
   url: `data:image/png;base64,${bytes.toString('base64')}`,
 };
 
+test.each(['application/pdf', 'text/plain', 'text/csv', 'application/zip', 'image/svg+xml'])('stages ordinary %s files as durable references', async (mime) => {
+  const input = { type: 'file' as const, mime, filename: 'report', url: `data:${mime};base64,${bytes.toString('base64')}` };
+  const prepared = await preparePiPromptAttachments([input, { ...input, filename: 'copy' }]);
+  expect(prepared.attachments).toEqual([{ sha256, contentType: mime, content: bytes }]);
+  expect(prepared.parts).toEqual([input, { ...input, filename: 'copy' }].map(part => ({ ...part, url: `kortix-attachment:sha256:${sha256}` })));
+  expect(await preparePiPromptAttachments(prepared.parts, { allowReferences: true })).toEqual({ parts: prepared.parts, attachments: [] });
+  await expect(preparePiPromptAttachments([{ ...input, url: 'https://example.test/report' }])).rejects.toThrow('upload');
+});
+
 test('staged Pi images become ordered immutable references and exact storage bytes', async () => {
   const result = await preparePiPromptAttachments([
     { type: 'text', text: 'Describe it' },

@@ -14,6 +14,8 @@ import type { Config } from '../config';
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context';
 import { logger } from '../logger';
 import { workspaceAccess } from '../workspace-access';
+import { installSessionAttachment } from '../session-attachments';
+import type { WorkspaceAttachment } from '../../../../packages/shared/src/session-attachment-path';
 import { WorkspaceHistory, WorkspaceHistoryError } from '../workspace-history';
 import { StdioMcpPool, StdioMcpError, type StdioMcpRequest } from '../stdio-mcp';
 
@@ -346,7 +348,7 @@ export function createEnvRpcRouter(cfg: Config): Hono {
 
     const historyOperation = ['historyCapture', 'historyApply', 'historyPending', 'historyPlan', 'historyAbort'].includes(op);
     const tracking = !!history && typeof args.__kortixHistoryOperation === 'string' && ['writeFile', 'appendFile', 'renameFile', 'createDir', 'remove', 'exec', 'mcpRequest', 'mcpDisconnect'].includes(op);
-    const exclusive = historyOperation || tracking;
+    const exclusive = historyOperation || tracking || op === 'installAttachment';
     if (historyOperation && !history) return c.json(err({ code: 'not_supported', message: 'environment workspace history is disabled' }));
     const release = access?.enter(exclusive);
     if (access && !release) return c.json(err({ code: 'busy', message: 'environment operations are active' }));
@@ -384,6 +386,8 @@ export function createEnvRpcRouter(cfg: Config): Hono {
       if (!historyOperation && access?.pending()) return await reply(err({ code: 'pending', message: 'workspace history recovery is pending' }));
       if (historyOperation && !['historyAbort', 'historyPending'].includes(op) && access?.untrackedActive()) return await reply(err({ code: 'busy', message: 'Close running terminals and MCP servers before rewinding workspace files.' }));
       switch (op) {
+        case 'installAttachment':
+          return await reply(ok(await installSessionAttachment(cfg, args as unknown as WorkspaceAttachment, signal)));
         case 'mcpRequest':
           return await reply(ok(await mcp.request(args as unknown as StdioMcpRequest, signal)));
         case 'mcpDisconnect':

@@ -434,6 +434,32 @@ flow(
           throw new Error("conflict overwrote the image");
       },
     );
+    await ctx.step('ordinary file prompts persist exact bytes, ordered names, and immutable references without a runtime', async () => {
+      const files = ['application/pdf', 'text/plain', 'text/csv', 'application/zip', 'image/svg+xml'].map((mime, index) => {
+        const bytes = Buffer.from(`SESS-31 document ${index} ${crypto.randomUUID()}`);
+        return { bytes, sha256: createHash('sha256').update(bytes).digest('hex'), part: { type: 'file', mime, filename: `same-name-${index}.dat`, url: `data:${mime};base64,${bytes.toString('base64')}` } };
+      });
+      const submitted = await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+        client_message_id: `documents-${sessionId}`,
+        message_id: `msg_${Date.now().toString(16).padStart(12, '0')}${'B'.repeat(14)}`,
+        parts: [{ type: 'text', text: 'Read the documents' }, ...files.map(file => file.part), { ...files[0]!.part, filename: 'second-name.pdf' }],
+      }, { params });
+      submitted.status(202);
+      const rows = (await readPrompts()).json<any>().prompts;
+      if (rows.length !== 3 || JSON.stringify(rows).includes('data:')) throw new Error('document admission changed prompt history');
+      for (const file of files) {
+        const stored = await owner.get('/v1/projects/:projectId/sessions/:sessionId/attachments/:sha256', { params: { ...params, sha256: file.sha256 } });
+        stored.status(200);
+        if (stored.text() !== file.bytes.toString() || stored.header('content-type') !== file.part.mime) throw new Error('document bytes or MIME changed');
+      }
+      const invalid = await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+        client_message_id: `unsafe-document-${sessionId}`,
+        message_id: `msg_${Date.now().toString(16).padStart(12, '0')}${'C'.repeat(14)}`,
+        parts: [{ ...files[0]!.part, url: 'https://example.com/report.pdf' }],
+      }, { params });
+      invalid.status(400);
+      if ((await readPrompts()).json<any>().prompts.length !== 3) throw new Error('unsafe document URL created a prompt');
+    });
     await ctx.step(
       "anonymous and nonmember callers cannot read the staged image",
       async () => {

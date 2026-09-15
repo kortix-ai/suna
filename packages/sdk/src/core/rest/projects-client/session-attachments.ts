@@ -99,6 +99,18 @@ export async function putSessionImage(
   const mime = options.contentType.toLowerCase();
   if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime))
     throw new Error('Pi image attachments require PNG, JPEG, GIF, or WebP');
+  return putSessionFile(projectId, sessionId, content, { ...options, contentType: mime });
+}
+
+export async function putSessionFile(
+  projectId: string,
+  sessionId: string,
+  content: Uint8Array,
+  options: { contentType?: string; filename?: string; signal?: AbortSignal } = {},
+): Promise<FilePartInput> {
+  const mime = (options.contentType ?? 'application/octet-stream').toLowerCase();
+  if (!/^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/.test(mime))
+    throw new Error('content-type must be a MIME type without parameters');
   if (options.filename !== undefined && (options.filename.length > 255 || options.filename.includes('\0')))
     throw new Error('invalid attachment filename');
   const stored = await putSessionAttachment(projectId, sessionId, content, { contentType: mime, signal: options.signal });

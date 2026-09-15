@@ -19,7 +19,7 @@ import type { WorkspaceObserver } from './workspace-journal';
 import type { WorkspaceHistoryMove } from '../../../packages/shared/src/workspace-history';
 import { createHmac } from 'node:crypto';
 import type { ShellExecOptions } from '@earendil-works/pi-agent-core';
-import { KortixExecutionEnv } from './kortix-env.ts';
+import { KortixExecutionEnv, type KortixEnvOptions } from './kortix-env.ts';
 import {
   isEnvironmentAuthenticationRejected,
   isEnvironmentUnreachable,
@@ -60,6 +60,7 @@ class OperationAbortedError extends Error {
 
 export interface LazyEnvOptions {
   observeWorkspace?: WorkspaceObserver;
+  prepareAttachments?: KortixEnvOptions['prepareAttachments'];
   /** Kortix API base incl. /v1 (KORTIX_API_URL). */
   apiUrl: string;
   /** The worker's session credential (KORTIX_TOKEN). */
@@ -222,6 +223,7 @@ export class LazyKortixEnv {
       this.externalId = ensured.external_id ?? null;
       this.inner = new KortixExecutionEnv({
         observeWorkspace: this.opts.observeWorkspace,
+        prepareAttachments: this.opts.prepareAttachments,
         baseUrl: `${edge}/kortix/env-rpc`,
         cwd: this.cwd,
         headers,
