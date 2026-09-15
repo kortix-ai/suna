@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
 import { runDatabaseSql } from "../helpers/database";
-import { INFRASTRUCTURE_STATUSES, json } from "../helpers/http";
+import { INFRASTRUCTURE_STATUSES, createApiJsonClient, json } from "../helpers/http";
 import {
   createAuthUser,
   deleteAuthUser,
@@ -13,6 +13,7 @@ const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
 const password = process.env.E2E_ADMIN_PASSWORD || "E2eAccountAccess123!";
 const authOptions = { supabaseUrl, password, envFiles: ["apps/api/.env"] };
+const api = createApiJsonClient(apiBase);
 
 /**
  * Load `/admin` until the platform-admin guard actually lets the page through.
@@ -90,6 +91,13 @@ async function assertAdminRouteClean(
       ) {
         return;
       }
+      if (
+        text.includes("MIME type ('text/plain')") &&
+        (text.includes("/_vercel/insights/script.js") ||
+          text.includes("/_vercel/speed-insights/script.js"))
+      ) {
+        return;
+      }
       consoleErrors.push(text);
     }
   });
@@ -128,15 +136,25 @@ test.describe("09 - Admin console", () => {
     const synthetic = configuredAdminEmail
       ? null
       : await createAuthUser(adminEmail, authOptions);
-    if (synthetic) {
-      await runDatabaseSql(`
-insert into kortix.platform_user_roles (account_id, role)
-values ('${synthetic.id}'::uuid, 'super_admin'::kortix.platform_role)
-on conflict (account_id) do update set role = excluded.role;
-`);
-    }
+    let grantedAccountId: string | null = null;
     try {
       const session = await signIn(adminEmail, authOptions);
+      if (synthetic) {
+        // /v1/user-roles resolves the authenticated user id, not an account
+        // selected from /v1/accounts. Keep the grant key tied to the JWT sub.
+        grantedAccountId = synthetic.id;
+        await runDatabaseSql(`
+insert into kortix.platform_user_roles (account_id, role)
+values ('${grantedAccountId}'::uuid, 'super_admin'::kortix.platform_role)
+on conflict (account_id) do update set role = excluded.role;
+`);
+        const role = await api<{ isAdmin: boolean; role: string | null }>(
+          session.access_token,
+          "GET",
+          "/user-roles",
+        );
+        expect(role).toEqual({ isAdmin: true, role: "super_admin" });
+      }
       // Let the assertions below own the admin navigations; otherwise the
       // immediate duplicate /admin load can abort Supabase's user fetch.
       await installBrowserSessionDirect(
@@ -155,10 +173,12 @@ on conflict (account_id) do update set role = excluded.role;
       ]);
 
     } finally {
-      if (synthetic) {
+      if (grantedAccountId) {
         await runDatabaseSql(
-          `delete from kortix.platform_user_roles where account_id = '${synthetic.id}'::uuid;`,
+          `delete from kortix.platform_user_roles where account_id = '${grantedAccountId}'::uuid;`,
         );
+      }
+      if (synthetic) {
         await deleteAuthUser(synthetic.id, authOptions);
       }
     }

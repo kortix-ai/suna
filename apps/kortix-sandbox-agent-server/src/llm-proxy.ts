@@ -150,6 +150,9 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             if (!STRIP_REQ_HEADERS.has(k.toLowerCase())) headers.set(k, v)
           })
           headers.set('authorization', `Bearer ${tok}`)
+          // Bun fetch decodes the upstream body. Prevent a compressed response
+          // from retaining an incompatible content-encoding across this hop.
+          headers.set('accept-encoding', 'identity')
 
           try {
             // Model requests are windowed HERE, before they leave the sandbox

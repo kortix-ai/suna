@@ -106,12 +106,15 @@ async function observeCreatedContext(
       resolveContext(join(tempBase, filename));
     }
   });
-  const timeout = setTimeout(() => resolveContext(''), 2_000);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     let error: unknown;
     await run().catch((caught) => {
       error = caught;
     });
+    // Staging can spend more than two seconds validating source artifacts.
+    // Bound delivery of the watcher event after the operation settles.
+    timeout = setTimeout(() => resolveContext(''), 2_000);
     const contextDir = await contextCreated;
     return { contextDir, error };
   } finally {

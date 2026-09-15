@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { Config } from '../config'
+import type { ConfigProviderSummary } from '../config-provider/types'
 import { readRepoInfo } from '../git'
 import { runtimeConvergenceReport } from '../runtime-assets'
 import type { Opencode } from '../opencode'
@@ -70,6 +71,13 @@ export type SandboxBootState = {
    * before this flips. Undefined on every other path: unchanged behaviour.
    */
   workspaceReady?: boolean
+  /** What this boot's project acquisition did (src/config-provider). Null until it ran. */
+  configProvider?: ConfigProviderSummary | null
+  /**
+   * A prepared-S3 start defers the optional history backfill until the runtime
+   * is actually ready (not a fixed timer); main.ts runs this at that point.
+   */
+  deferredHistoryBackfill?: (() => void) | null
 }
 
 /**
@@ -272,6 +280,11 @@ export function createHealthRouter(
       boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
+      // Which config provider delivered the project this boot (git | s3), the
+      // expected vs actual SHA, and — when S3 was attempted and Git delivered
+      // instead — the classified reason. A successful fallback keeps the S3
+      // failure visible here; the same facts go to the boot timeline relay.
+      config_provider: bootState.configProvider ?? null,
       // In-container boot timeline (ms since process start) so the dashboard can
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,

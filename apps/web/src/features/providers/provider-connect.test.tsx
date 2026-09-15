@@ -279,9 +279,7 @@ describe('ProviderConnectView — the key field', () => {
     expect(out).not.toContain('That key was rejected.');
   });
 
-  test('providerKeyFieldId is the one id the row and the detail both use', () => {
-    // `ProviderDetail`'s Connect closes the detail and focuses the row's field
-    // by this id. If the row stopped using it the focus would silently no-op.
+  test('providerKeyFieldId associates the credential input with its label', () => {
     expect(providerKeyFieldId('anthropic', 'ANTHROPIC_API_KEY')).toBe(
       'provider-connect-anthropic-ANTHROPIC_API_KEY',
     );
@@ -323,19 +321,12 @@ describe('ProviderConnectView — access and copy', () => {
   });
 });
 
-describe('ProviderConnectView — the long-tail detail path', () => {
-  /**
-   * `ProviderDetail` (the browse-before-you-connect model list) was re-homed
-   * here out of the deleted `catalog-tab.tsx`. It is reachable only through a
-   * two-condition gate — `onOpenDetail && row.modelCount > 0`, then
-   * `detailProviderId` set — so without these tests the whole capability could
-   * be deleted and every other test would still pass.
-   */
+describe('ProviderConnectView — shared model navigation', () => {
   const GROQ = row({ id: 'groq', label: 'Groq', modelCount: 12 });
 
-  test('a row with models offers the detail affordance', () => {
+  test('a row with models offers the model-list link', () => {
     const out = renderToStaticMarkup(
-      <ProviderConnectView {...props({ rows: [GROQ], onOpenDetail: () => {} })} />,
+      <ProviderConnectView {...props({ rows: [GROQ], onOpenModels: () => {} })} />,
     );
     expect(out).toContain('12 models');
   });
@@ -343,33 +334,18 @@ describe('ProviderConnectView — the long-tail detail path', () => {
   test('no affordance when the row declares no models', () => {
     const out = renderToStaticMarkup(
       <ProviderConnectView
-        {...props({ rows: [row({ id: 'groq', label: 'Groq' })], onOpenDetail: () => {} })}
+        {...props({ rows: [row({ id: 'groq', label: 'Groq' })], onOpenModels: () => {} })}
       />,
     );
     expect(out).not.toContain('0 model');
   });
 
-  test('no affordance when the host supplies no onOpenDetail', () => {
+  test('no affordance when the host supplies no onOpenModels', () => {
     const out = renderToStaticMarkup(<ProviderConnectView {...props({ rows: [GROQ] })} />);
     expect(out).not.toContain('12 models');
   });
 
-  test('the detail REPLACES the whole list, and is never a dialog', () => {
-    const out = renderToStaticMarkup(
-      <ProviderConnectView
-        {...props({
-          rows: [GROQ, ANTHROPIC],
-          onOpenDetail: () => {},
-          detailProviderId: 'groq',
-          detailSlot: <div>provider-detail-marker</div>,
-        })}
-      />,
-    );
-    expect(out).toContain('provider-detail-marker');
-    expect(out).not.toContain('data-provider-search');
-    expect(out).not.toContain('data-provider-row=');
-    expect(out).not.toContain('role="dialog"');
-  });
+
 });
 
 /**

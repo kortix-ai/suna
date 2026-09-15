@@ -1,4 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+
+// Existing fixtures have no project inference restrictions.
+mock.module('../repositories/project-model-access', () => ({ getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }) }));
 import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
 
 let billingEnabled = true;

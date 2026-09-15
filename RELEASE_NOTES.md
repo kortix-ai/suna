@@ -1,25 +1,25 @@
-Account creation you can find, Review Center for everyone, and a steadier session view
+Project model access controls, GPT-6 Astra, and a desktop app you can always leave
 
 ### New
 
-- **Review Center is on for every project.** It is no longer behind a feature flag — the routes, registry, contract, web surfaces, CLI, and docs all ship it by default.
-- **A public App can recognise you.** `public` used to mean both "anyone with the link may open this" and "nobody is ever recognised". Now an App you share outside your company still greets your own team, shows them the controls a visitor should not see, and records who acted.
+- **Project-level provider and model access controls.** Owners and admins choose which model providers and which models a project may use, from one model management view that also holds provider links. Kortix managed models sit beside your own providers in the same list, a ChatGPT subscription shows its access beside its credentials, and the picker distinguishes "not shown" from "blocked" so a member sees why a model is unavailable.
+- **GPT-6 Astra is in the managed catalog.** Select `kortix/gpt-6-astra` with image input, tools, and the supported reasoning efforts. Routing, prices, capability limits, and sandbox fallbacks are all in step.
+- **The desktop app always has a way out.** The shell has no browser toolbar, so a page without an in-app exit was a dead end. Every such page now has Close, the Go menu has Back (Cmd/Ctrl+[) and Home (Cmd/Ctrl+Shift+H), a renderer crash offers Reload or Go Home instead of an empty window, and the Electron route allowlist now matches the web middleware's exactly.
 
 ### Improved
 
-- **Creating an account is reachable again, and it lands you in the account you created.** The control had no live entry point, and the one path that reached it dropped you back where you started. There is now a "Create an account…" row in the workspace switcher, and creating an account opens its first workspace with that account selected.
-- **Connector categories show their true size.** The catalogue counted one page of results and headed every category with "· 1". Categories are now grouped over the complete catalogue on the server, and "View all" filters to the set its heading counted.
-- **Secret intake forms read better.** Field hints written by an agent become real links, every non-form step shares one status notice, and the header no longer runs under the close button.
-- **Modals opened over modals stack correctly.** A modal opened while another was open could render underneath it; it now takes the layer above, and the switch control meets contrast in both themes.
-- **Session hover cards line up.** Sessions carrying a Slack, schedule, or shared marker opened their card inset from the sidebar edge; every row now anchors at the same place.
+- **One noun: project.** The interface said "workspace" while the SDK, CLI, API, routes, manifest, and docs all said "project". Screen copy now says project in every one of the nine languages, each with its own word rather than a find-and-replace. The sandbox `/workspace` directory, the manifest's per-agent `workspace:` boundary, and Slack workspaces keep their names.
+- **Create a project in a specific account.** The Switch project menu, already grouped by account, gains a "Create a project in {account}" row for each account where you are an owner or admin, including accounts that have no projects yet. The old global link never said which account it would land in.
+- **The SSO and SCIM setup wizards work again.** Picking a provider did nothing, and Back or the step rail snapped you to the first step with a render loop in the console. Both are fixed, and a browser journey now walks every step of both wizards on every deploy.
+- **Tunnel file transfers are verified end to end.** Binary files sent through the Computer Tunnel are checked by digest at the destination, an approval for one exact file no longer grants its parent directory, permission decisions are serialized so an approve and a deny cannot both win, and orphaned upload tasks are stopped.
 
 ### Fixed
 
-- **Sending a message no longer makes the transcript jump twice.** An idle send moved the view down and then glided it back. The send is now recognised as the working turn, so the view moves once.
+- **The sandbox model proxy asked upstream for compressed responses and could not decode them.** It now requests identity encoding, so a session on a model that answered with zstd no longer fails its first turn.
 
 ### Internal
 
-- 4xx denials are logged as warnings, not errors. Roughly 43% of production error-level lines were expected denials — expired tokens, a project-scoped token refused a cross-project read, an agent missing a grant — which buried real faults. Severity now follows the status class; the lines stay queryable and Sentry behaviour is unchanged.
-- A dropped audit batch now says why. The log recorded the whole failing statement plus its bound parameters — IP addresses, user agents, account and project ids — while hiding the SQLSTATE that distinguishes a transient timeout from a permanent constraint violation. It now reports the code and cause, with no statement text and no parameters.
-- A forced test exit raises a workflow annotation instead of a line buried in a 40,000-line CI log.
-- The staging deploy asserts the host-only access cookie from `main`, matching what staging already checked.
+- **Project snapshot config provider v2 (S3).** Sessions can boot from a prebuilt, blob-less snapshot of the project's committed tree with the history hydrated off the boot path, falling back to Git when no snapshot is ready. Every environment gets a private snapshot bucket and the task-role grant; only staging names its bucket, so production sessions keep the Git path until the in-region measurement lands.
+- The project-snapshot task role gets `s3:ListBucket`, so a missing object is a 404 and not a denied build, and the grant is gated on a plan-time boolean so `terraform plan` succeeds on a root that creates the bucket in the same apply.
+- The deployed release gate's contracts were corrected for previews: marketing stays enabled while the browser gate exercises `/pricing`, App domains are not expected on a sandbox origin, cold Daytona boots get a budget above their measured image builds, encoded-path probes accept the exact auth redirect, and the project submenu is required before a row is selected.
+- The connector connection-flow routing change (#7074) was merged and reverted within the same window; it ships no behavior.

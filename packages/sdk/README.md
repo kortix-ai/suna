@@ -643,3 +643,20 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+
+
+### Project provider and model access
+
+```ts
+const policy = await kortix.projects.modelAccess(projectId);
+await kortix.projects.setModelAccess(projectId, {
+  target: 'provider', id: 'kortix', enabled: false,
+});
+await kortix.projects.setModelAccess(projectId, {
+  target: 'model', id: 'openai/gpt-5.5', enabled: false,
+});
+```
+
+`kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
+
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.

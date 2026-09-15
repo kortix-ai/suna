@@ -544,6 +544,20 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `TUN-4` device auth (public) `POST /tunnel/device-auth`, `GET …/:code/status`; (auth) `GET …/:code/info`, `POST …/:code/approve|deny`.
 `TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
 
+`TUN-6` — verified binary transfer and permission decisions
+
+Register a real filesystem agent over WebSocket. Empty `fs.write` arguments return
+400 before creating a permission request. A valid unapproved write returns 403 and
+creates no file. Denying it prevents approval of that same request (409). Concurrent
+approve/deny requests produce exactly one 200 and one 409. Grant a path-scoped write
+permission, then execute `agent-tunnel-cli fs_upload` with an XLSX source path. The
+process exits 0, stderr is empty, and stdout reports the source size and SHA-256.
+The destination bytes match the source. Repeat the write through a Computer Tunnel
+connector and assert its returned digest and persisted bytes. Same-length corrupted bytes with the source
+checksum fail without replacing the destination. Malformed base64 returns 400.
+Cleanup removes the connection and temporary files.
+
+
 ### Ops (platform admin)
 
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
@@ -599,7 +613,7 @@ Run these against representative endpoints from each domain.
 `SEC-C` `NONMEMBER` on `GET/PATCH/DELETE /accounts/:id`, `/projects/:id` → 403/404.
 `SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
-`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig → 400/401.
+`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig never process the forged payload. An unconfigured webhook can return its exact service-unavailable response.
 `SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
@@ -736,7 +750,7 @@ supplied scope field without restarting the session.
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
 
-`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
+`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `GET …/project-snapshot` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy, compiled boot artifacts and the project snapshot descriptor (S3 config provider), git token auth (not JWT); bad/no token → 401/502; the refused descriptor never carries a presigned URL; a malformed `sha` → 400.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
 `GH-12` `POST /projects/:id/git/collaborators` → missing username → 400; non-managed → 409; no install → 502.
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
@@ -1016,3 +1030,5 @@ Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in
 the app, including when the frontend uses a custom host.
+
+`GW-ACCESS-1` Project provider and model access. New projects have no explicit restrictions. Anonymous and nonmember reads/writes are denied; members cannot write. Managers disable managed or BYOK providers and individual models. The current default model/provider cannot be disabled. Concurrent edits persist together. Disables survive reads, hide models from the picker, and reject direct gateway requests with `provider_disabled` or `model_disabled` before upstream inference. Provider re-enable retains individual model restrictions. Model re-enable restores access; invalid payloads do not change policy. A disabled target cannot become the routing default. Other project metadata survives. The web app uses one Models list for provider browsing and access controls. Provider model-count links open the Models tab with all provider groups listed together and no provider selector. Enabled providers have no status label; provider menus expose enable/disable and explain default protection.

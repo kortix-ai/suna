@@ -46,17 +46,17 @@
     "tryFree": "开始"
   },
   "newWorkspace": {
-    "title": "创建工作区",
-    "description": "工作区用于存放您的智能体、文件和会话。",
-    "templateSeed": "此工作区将使用您选择的模板进行初始化。",
+    "title": "创建项目",
+    "description": "项目用于存放您的智能体、文件和会话。",
+    "templateSeed": "此项目将使用您选择的模板进行初始化。",
     "account": {
       "label": "账户",
       "createIn": "在 {account} 中创建",
       "choose": "选择账户"
     },
     "name": {
-      "label": "工作区名称",
-      "placeholder": "工作区名称"
+      "label": "项目名称",
+      "placeholder": "项目名称"
     },
     "validation": {
       "nameRequired": "名称为必填项",
@@ -64,12 +64,12 @@
       "nameTooLong": "名称不得超过 {max} 个字符"
     },
     "permissions": {
-      "noCreatableAccount": "您需要拥有账户的所有者或管理员权限才能创建工作区。",
+      "noCreatableAccount": "您需要拥有账户的所有者或管理员权限才能创建项目。",
       "unknownAccountPrefix": "我们无法确定哪个账户属于您，因此不会擅自选择。请发送电子邮件至",
       "unknownAccountSuffix": "，我们会解决此问题。"
     },
     "actions": {
-      "create": "创建工作区",
+      "create": "创建项目",
       "tryAgain": "重试",
       "logOut": "退出登录",
       "signingOut": "正在退出"
@@ -77,7 +77,7 @@
     "repository": {
       "label": "代码仓库",
       "defaultBranch": "默认分支",
-      "noGitHubAccount": "此工作区的账户尚未连接 GitHub 账户。",
+      "noGitHubAccount": "此项目的账户尚未连接 GitHub 账户。",
       "connectGitHub": "连接 GitHub 账户",
       "connectGitHubSuffix": "以使用此选项。",
       "loadingGitHubAccounts": "正在加载 GitHub 账户…",
@@ -89,7 +89,7 @@
       "sources": {
         "managed": {
           "label": "由 Kortix 管理",
-          "description": "Kortix 为此工作区创建并管理私有代码仓库。"
+          "description": "Kortix 为此项目创建并管理私有代码仓库。"
         },
         "githubCreate": {
           "label": "在 GitHub 中创建",
@@ -313,14 +313,14 @@
       "close": "关闭",
       "docs": "文档",
       "groups": {
-        "workspace": "工作区",
+        "workspace": "项目",
         "personal": "个人",
         "account": "账户"
       },
       "items": {
         "workspace": {
           "label": "常规",
-          "description": "此工作区的名称和图标。"
+          "description": "此项目的名称和图标。"
         },
         "sandbox": {
           "label": "沙盒模板",
@@ -332,7 +332,7 @@
         },
         "upgrades": {
           "label": "升级",
-          "description": "代理对此工作区进行的更改。每次运行都会创建变更请求供你审核。任何内容都不会自动合并。"
+          "description": "代理对此项目进行的更改。每次运行都会创建变更请求供你审核。任何内容都不会自动合并。"
         },
         "profile": {
           "label": "个人资料",
@@ -391,7 +391,7 @@
         "switchToLastTab": "切换到最后一个选项卡",
         "newSession": "新会议",
         "commandPalette": "命令面板",
-        "switchWorkspace": "切换工作空间",
+        "switchWorkspace": "切换项目",
         "settings": "设置",
         "toggleLeftSidebar": "切换左侧边栏",
         "toggleRightSidebar": "切换右侧边栏",
@@ -498,7 +498,7 @@
       "conversationDensity": "对话密度",
       "conversationDensityDescription": "选择智能体工作时在对话中显示多少细节。",
       "wallpaper": "壁纸",
-      "wallpaperDescription": "工作区背后的背景。",
+      "wallpaperDescription": "项目背后的背景。",
       "defaultWallpaper": "默认",
       "themes": {
         "light": "浅色",
@@ -621,18 +621,18 @@
       "baseBranchDescription": "新会话和变更请求从此分支开始。",
       "saving": "正在保存…",
       "manifestFile": "清单文件",
-      "manifestDescription": "存储库中用于告诉 Kortix 如何运行此工作区的文件。",
+      "manifestDescription": "存储库中用于告诉 Kortix 如何运行此项目的文件。",
       "learnMore": "了解更多",
       "localTitle": "在本地工作",
-      "localDescription": "将此工作区复制到你的计算机，并在自己的编辑器中修改。",
+      "localDescription": "将此项目复制到你的计算机，并在自己的编辑器中修改。",
       "installTitle": "安装 Kortix 命令行",
       "installHint": "在 macOS 或 Linux 上只需设置一次。如果已经安装，请跳过。",
       "installCommand": "安装命令",
-      "cloneTitle": "将工作区复制到计算机",
-      "cloneHint": "将代码下载到新文件夹，并将该文件夹关联到此工作区。",
+      "cloneTitle": "将项目复制到计算机",
+      "cloneHint": "将代码下载到新文件夹，并将该文件夹关联到此项目。",
       "cloneCommand": "克隆命令",
       "setupTitle": "在新文件夹中完成设置",
-      "setupHint": "写入本地配置，然后获取此工作区的密钥，以便运行代码。",
+      "setupHint": "写入本地配置，然后获取此项目的密钥，以便运行代码。",
       "setupCommand": "设置命令",
       "secretsCommand": "密钥命令",
       "ownClientTitle": "使用自己的 Git 客户端",
@@ -641,9 +641,9 @@
       "cloneAddress": "克隆地址",
       "peopleTitle": "有权访问的人员",
       "peopleManagedDescription": "使用 GitHub 用户名邀请人员。GitHub 会向对方发送邀请以供接受。",
-      "peopleExternalDescription": "可以读取和写入此工作区存储库的人员。",
+      "peopleExternalDescription": "可以读取和写入此项目存储库的人员。",
       "externalGithubDescription": "Kortix 未创建此存储库，因此无法添加协作者。请在 GitHub 的存储库设置中管理访问权限。",
-      "externalProviderDescription": "此工作区的存储库托管在 {provider} 上，该提供商不支持 Kortix 发起协作者邀请。请在存储库所在位置管理访问权限。",
+      "externalProviderDescription": "此项目的存储库托管在 {provider} 上，该提供商不支持 Kortix 发起协作者邀请。请在存储库所在位置管理访问权限。",
       "manageOnGithub": "在 GitHub 上管理",
       "alreadyHasAccess": "@{username} 已有此存储库的访问权限",
       "inviteSent": "已向 @{username} 发送邀请 — 对方需在 GitHub 上接受",
@@ -654,35 +654,35 @@
       "canView": "可查看",
       "invite": "邀请",
       "title": "Git 存储库",
-      "loadFailed": "无法加载此工作区的存储库",
+      "loadFailed": "无法加载此项目的存储库",
       "retry": "重试"
     },
     "workspace": {
-      "updateFailed": "无法更新工作区",
-      "iconUpdateFailed": "无法更新工作区图标",
+      "updateFailed": "无法更新项目",
+      "iconUpdateFailed": "无法更新项目图标",
       "icon": "图标",
-      "iconDescription": "显示在工作区名称旁边。",
-      "name": "工作区名称",
-      "nameDescription": "显示在工作区切换器以及列出此工作区的所有位置。",
+      "iconDescription": "显示在项目名称旁边。",
+      "name": "项目名称",
+      "nameDescription": "显示在项目切换器以及列出此项目的所有位置。",
       "saving": "正在保存…",
-      "archived": "工作区已归档",
-      "archiveFailed": "无法归档工作区",
-      "loadFailed": "无法加载工作区",
+      "archived": "项目已归档",
+      "archiveFailed": "无法归档项目",
+      "loadFailed": "无法加载项目",
       "retry": "重试",
       "dangerZone": "危险区域",
-      "deleteWorkspace": "删除工作区",
-      "deleteDescription": "为所有成员删除此工作区及其中的所有内容。此操作无法撤销。",
-      "deleteTitle": "删除工作区？",
-      "deleteDialog": "这会为所有有权访问 {name} 的人删除该工作区。此操作无法撤销。",
+      "deleteWorkspace": "删除项目",
+      "deleteDescription": "为所有成员删除此项目及其中的所有内容。此操作无法撤销。",
+      "deleteTitle": "删除项目？",
+      "deleteDialog": "这会为所有有权访问 {name} 的人删除该项目。此操作无法撤销。",
       "consequencesTitle": "你将立即失去：",
       "consequences": {
-        "sessions": "此工作区中的每个会话及其文件、历史记录和输出",
+        "sessions": "此项目中的每个会话及其文件、历史记录和输出",
         "automation": "所有计划运行和触发器 — 它们会立即停止",
-        "integrations": "此工作区范围内的每个已连接集成、密钥和 API 密钥",
-        "access": "整个团队的访问权限 — 任何人都无法再次访问此工作区"
+        "integrations": "此项目范围内的每个已连接集成、密钥和 API 密钥",
+        "access": "整个团队的访问权限 — 任何人都无法再次访问此项目"
       },
       "reassurance": "已连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
-      "keepWorkspace": "保留工作区"
+      "keepWorkspace": "保留项目"
     },
     "sandbox": {
       "states": {
@@ -803,7 +803,7 @@
       "categories": {
         "quota": {
           "label": "已达到快照限额",
-          "help": "此工作区保存的预备机器数量已达到套餐上限。请删除不再使用的沙盒模板或提高限额，然后重新构建。"
+          "help": "此项目保存的预备机器数量已达到套餐上限。请删除不再使用的沙盒模板或提高限额，然后重新构建。"
         },
         "dockerfile": {
           "label": "Dockerfile 构建失败",
@@ -997,9 +997,9 @@
     },
     "upgrades": {
       "available": "可用升级",
-      "readOnly": "只读 — 运行升级需要此工作区的写入权限。",
+      "readOnly": "只读 — 运行升级需要此项目的写入权限。",
       "none": "没有可用升级",
-      "upToDateDescription": "此工作区已经是最新版本。",
+      "upToDateDescription": "此项目已经是最新版本。",
       "upToDate": "已是最新",
       "run": "运行",
       "oneOff": "一次性升级",
@@ -1098,7 +1098,7 @@
       "namePlaceholder": "例如，笔记本电脑 CLI",
       "nameHint": "使用能说明此密钥使用位置的名称。",
       "scope": "范围",
-      "wholeWorkspace": "整个工作区",
+      "wholeWorkspace": "整个项目",
       "oneProject": "一个项目",
       "scopeHint": "项目范围的密钥只能访问所选项目。",
       "expires": "过期时间",
@@ -1205,7 +1205,7 @@
     "searchResults": "搜索结果",
     "recent": "最近",
     "personalAccount": "个人账户",
-    "workspaces": "工作区",
+    "workspaces": "项目",
     "servers": "服务器",
     "searchServers": "搜索服务器...",
     "addServer": "添加服务器",
@@ -1282,19 +1282,20 @@
       }
     },
     "workspace": {
-      "switch": "切换工作空间",
-      "switchMenu": "切换工作空间",
-      "create": "创建工作区…",
+      "switch": "切换项目",
+      "switchMenu": "切换项目",
+      "create": "创建项目…",
+      "createIn": "在 {account} 中创建项目",
       "createAccount": "创建账户…",
       "settings": "设置",
       "downloadApp": "下载应用",
       "logOut": "退出登录",
-      "find": "查找工作区…",
+      "find": "查找项目…",
       "accountSettings": "账户设置",
-      "noMatches": "没有匹配的工作区",
-      "empty": "暂无工作区",
+      "noMatches": "没有匹配的项目",
+      "empty": "暂无项目",
       "account": "账户",
-      "loadError": "工作区加载失败"
+      "loadError": "项目加载失败"
     },
     "manifestUpgrade": {
       "title": "升级到 v2",
@@ -1675,7 +1676,7 @@
     "failedToStartSession": "无法启动会话",
     "hintSkills": "输入 / 以使用技能、命令和文件",
     "hintMentions": "输入 @ 以提及文件和智能体",
-    "hintWorkspaceFile": "询问工作区中的任何文件",
+    "hintWorkspaceFile": "询问项目中的任何文件",
     "hintCommandPalette": "按 {modifier}K 打开命令面板",
     "hintSwitchAgents": "按 Tab 切换智能体",
     "hintAttachFiles": "拖放文件以添加附件",
@@ -14711,7 +14712,7 @@
       "text9acf3e31d12e": "无内容。",
       "text9ad125fe331f": "按 {value0} 排序",
       "text9ad1905ba13a": "已更改账户成员角色",
-      "text9ad6baffd025": "切换工作区",
+      "text9ad6baffd025": "切换项目",
       "text9ada0e627aed": "代理重写自身提示词的过程与代码变更完全相同：在分支上的提交，以及某人阅读的变更请求。",
       "text9adff6870471": "复制链接",
       "text9ae2faa5b263": "一分钟内连接第一个应用。",
@@ -15291,7 +15292,7 @@
       "textab8fcb695b84": "创建一个“SCIM Outbound”provisioning connection，并将其指向上面显示的两个值。",
       "textab93638292af": "无法加载 Discover",
       "textab936b802fa6": "SCIM Version",
-      "textab95d456c6bb": "工作区成员",
+      "textab95d456c6bb": "项目成员",
       "textab986ad2d8e6": "在代码仓库中声明",
       "textab9a61284668": "反馈来自六个地方，却没有一个被完整阅读。代理会读取全部六处，将实质相同的请求归组，并为每条引用标注来源后写成规格说明。要构建什么，由你决定。",
       "textaba314822529": "已撤销 SCIM 令牌",
@@ -17619,7 +17620,7 @@
       "textec5ba0abb717": "访问权限",
       "textec5c2f7304b1": "上下文已修剪",
       "textec69732f4600": "清单会拒绝治理块中的行为字段，并将错误指向智能体自己的 .md 文件。",
-      "textec70b4a614bf": "切换工作区",
+      "textec70b4a614bf": "切换项目",
       "textec73f9f19e7c": "写一次。每个会话都知道。",
       "textec7a4e3094f9": "授权所有者已更改，但同步失败：{value0}。使用 Sync 重试。",
       "textec81d7aae411": "机器会克隆仓库，并创建以会话命名的分支。该会话进行的每次编辑和提交都只存在于该分支中。",
@@ -18374,8 +18375,8 @@
     },
     "kickoff": {
       "tools": "我也连接了这些工具：{count}。如果有帮助就使用它们。",
-      "noDomain": "我完成了工作区的设置。{toolsClause} 介绍一下你自己，解释一下你能做什么，并首先询问我需要什么帮助。",
-      "withDomain": "我完成了 {domain} 的工作区设置。研究一下这家公司并告诉我你发现了什么。{toolsClause}然后首先询问我需要什么帮助。"
+      "noDomain": "我完成了项目的设置。{toolsClause} 介绍一下你自己，解释一下你能做什么，并首先询问我需要什么帮助。",
+      "withDomain": "我完成了 {domain} 的项目设置。研究一下这家公司并告诉我你发现了什么。{toolsClause}然后首先询问我需要什么帮助。"
     },
     "company": {
       "title": "告诉我们您的公司",
@@ -19223,5 +19224,24 @@
         "prompt": "编写一份新员工第一周阅读的文档——介绍我们的工作方式、资料存放位置、可以向谁求助，以及什么才算做好。尽可能从项目记忆中提取信息，并在最后列出所有不得不猜测的内容，而不是停下来询问我。"
       }
     }
+  },
+  "modelAccess": {
+    "manageProvider": "{name} 设置",
+    "enableProviderAction": "启用提供商",
+    "disableProviderAction": "禁用提供商",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "enableProvider": "启用{name}",
+    "defaultProviderHint": "禁用此提供商前，请将其他提供商的模型设为项目默认模型。",
+    "credentialsHint": "禁用推理但保留凭据。",
+    "providerError": "无法更新提供商访问权限。",
+    "managedTitle": "Kortix 托管模型",
+    "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
+    "hidden": "已从选择器中隐藏",
+    "disableModel": "禁用模型",
+    "modelError": "无法更新模型访问权限。",
+    "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
+    "resetError": "无法重置模型列表。"
   }
 }

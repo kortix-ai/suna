@@ -630,12 +630,12 @@ async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Prom
  * replacing target's CONTENTS — same-filesystem renames that only need write
  * access to `target`, which the runtime user owns.
  */
-async function createStagePath(target: string, kind: string): Promise<string> {
+export async function createStagePath(target: string, kind: string): Promise<string> {
   await mkdir(target, { recursive: true })
   return join(target, `.kortix-${kind}-${process.pid}-${Date.now()}`)
 }
 
-async function clearDirContents(dir: string, keep?: string): Promise<void> {
+export async function clearDirContents(dir: string, keep?: string): Promise<void> {
   for (const entry of await readdir(dir)) {
     if (entry === keep) continue
     await rm(join(dir, entry), { recursive: true, force: true })
@@ -652,20 +652,108 @@ async function swapStageIntoTarget(stage: string, target: string): Promise<void>
   await rm(stage, { recursive: true, force: true })
 }
 
+/** `origin` → the session's proxied repo URL, whether or not the checkout shipped with a remote. */
+async function ensureOriginRemote(target: string, repoUrl: string): Promise<void> {
+  const existing = await execGit(['-C', target, 'remote', 'get-url', 'origin'])
+  const result =
+    existing.code === 0
+      ? await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
+      : await execGit(['-C', target, 'remote', 'add', 'origin', repoUrl])
+  if (result.code !== 0) throw new Error(`git remote origin setup failed: ${result.stderr || result.stdout}`)
+}
+
+/**
+ * Shared checkout finalization for a VERIFIED stage produced by a non-Git
+ * transport (the S3 config provider): swap it into the target, reconnect the
+ * session remote (the archive ships no remote — never a credential-bearing
+ * one), create the local session branch, pin the repo identity, and mark the
+ * checkout adopted. Exactly the contract the compiled-checkout branch of
+ * acquireProjectViaGit delivers, so every later Git operation — credential
+ * helper, refresh, config-dir sync, push — finds the workspace it expects.
+ */
+export async function finalizeSnapshotStage(cfg: Config, stage: string): Promise<void> {
+  const repoUrl = requireRepoUrl(cfg)
+  const target = cfg.projectTarget
+  await swapStageIntoTarget(stage, target)
+  await ensureOriginRemote(target, repoUrl)
+  await configurePartialClone(target)
+  if (cfg.branchName) await pointHeadAtSessionBranch(target, cfg.branchName)
+  await configureRepoGitIdentity(cfg, target)
+  await markSessionCheckoutAdopted(target, cfg.branchName)
+}
+
+/**
+ * The snapshot's `.git` ships without blobs (its one pack is marked promisor).
+ * Declare `origin` the promisor remote with a blob-less filter so git treats
+ * every missing blob as fetchable-on-demand through the proxy — the safety net
+ * until the blob pack is imported — and so the later history backfill stays
+ * blob-less too. Config only; nothing here reads the working tree.
+ */
+async function configurePartialClone(target: string): Promise<void> {
+  const settings: Array<[string, string]> = [
+    ['core.repositoryformatversion', '1'],
+    ['extensions.partialclone', 'origin'],
+    ['remote.origin.promisor', 'true'],
+    ['remote.origin.partialclonefilter', 'blob:none'],
+  ]
+  for (const [key, value] of settings) {
+    const res = await execGit(['-C', target, 'config', '--local', key, value])
+    if (res.code !== 0) throw new Error(`git config ${key} failed: ${res.stderr || res.stdout}`)
+  }
+}
+
+/**
+ * Create the session branch at HEAD and point HEAD at it WITHOUT a checkout.
+ * `git checkout -B` would refresh the index — stat and hash every file — and
+ * a snapshot ships an index with no stat data, so that would put a full-tree
+ * hash on the boot path (and, blob-less, it has nothing to read the old
+ * content from). `branch` + `symbolic-ref` touch refs only; the tree is
+ * already exactly HEAD. An existing ref is reused, never reset (see
+ * checkoutLocalSessionBranch for why).
+ */
+async function pointHeadAtSessionBranch(target: string, branch: string): Promise<void> {
+  const exists = await execGit(['-C', target, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (exists.code !== 0) {
+    const created = await execGit(['-C', target, 'branch', branch, 'HEAD'])
+    if (created.code !== 0) throw new Error(`failed to create local session branch ${branch}: ${created.stderr}`)
+  }
+  const pointed = await execGit(['-C', target, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`])
+  if (pointed.code !== 0) throw new Error(`failed to point HEAD at ${branch}: ${pointed.stderr}`)
+  logger.info('[git] session branch created without checkout (snapshot)', { branch })
+}
+
 /**
  * Materialize the project repository into `cfg.projectTarget` at the configured
  * branch. Ported from core/scripts/kortix-daemon clone_project_if_requested.
  */
 export async function materializeRepo(cfg: Config): Promise<void> {
+  if (await adoptOrClearBakedCheckout(cfg)) return
+  await acquireProjectViaGit(cfg)
+}
+
+function requireRepoUrl(cfg: Config): string {
   if (!cfg.repoUrl) {
     throw new Error('KORTIX_PROJECT_AUTO_CLONE is enabled but KORTIX_REPO_URL is unset')
   }
+  return cfg.repoUrl
+}
 
+/**
+ * The warm half of materialization, split out so the config-provider
+ * coordinator can run it BEFORE choosing a transport: a baked checkout that IS
+ * this session's base is adopted in place (returns true — nothing to acquire),
+ * anything else is cleared so a fresh acquisition (S3 or Git) lands in an empty
+ * target (returns false). Behaviour is unchanged from the original in-line
+ * block of materializeRepo.
+ */
+export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
+  const repoUrl = requireRepoUrl(cfg)
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
   await mkdir(target, { recursive: true })
 
-  if (await pathExists(`${target}/.git`)) {
+  if (!(await pathExists(`${target}/.git`))) return false
+  {
     await configureSafeDirectory(target)
     // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
     // already project-initialized in the snapshot. A fork may reuse it ONLY when
@@ -687,7 +775,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       (cfg.sessionFresh && !adoption.adopted && (!cfg.baseSha || bakedHead !== cfg.baseSha))
     if (!mismatched) {
       logger.info('[git] using baked repo checkout (warm)', { target, head: bakedHead })
-      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
       if (cfg.branchName && cfg.sessionFresh && !adoption.adopted && cfg.baseSha === bakedHead) {
         await establishBaseRefsFromBakedHead(target, base, bakedHead)
@@ -695,7 +783,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)
       if (!adoption.markerMatches) await markSessionCheckoutAdopted(target, cfg.branchName)
-      return
+      return true
     }
     logger.info('[git] baked checkout requires authoritative materialization', {
       bakedHead,
@@ -703,7 +791,22 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       reason: restoreNeeded ? 'restore-session-branch' : 'base-mismatch',
     })
     await clearDirContents(target)
+    return false
   }
+}
+
+/**
+ * The acquisition half of the legacy Git path — compiled checkout, scaffold
+ * delta, or clone — followed by the shared checkout finalization (session
+ * branch, identity, adoption marker). Expects an EMPTY target (see
+ * adoptOrClearBakedCheckout). The config-provider coordinator calls this as
+ * the Git transport and as the fallback after a failed S3 attempt.
+ */
+export async function acquireProjectViaGit(cfg: Config): Promise<void> {
+  const repoUrl = requireRepoUrl(cfg)
+  const target = cfg.projectTarget
+  const base = cfg.defaultBranch
+  await mkdir(target, { recursive: true })
   {
     if (cfg.compiledBootMode !== 'off' && cfg.sessionFresh) {
       const stage = await createStagePath(target, 'compiled')
@@ -714,7 +817,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           await rm(stage, { recursive: true, force: true })
         } else {
           await swapStageIntoTarget(stage, target)
-          const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+          const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
           if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
           if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
           await configureRepoGitIdentity(cfg, target)
@@ -763,7 +866,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
-      repoUrl: cfg.repoUrl,
+      repoUrl: repoUrl,
       base,
       target,
       depth: cfg.cloneDepth || 'full',
@@ -811,10 +914,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Blobless partial clone keeps full history but defers file blobs, cutting
       // the boot-time transfer from a full-history pack to roughly the working
       // tree. This is the dominant per-session boot cost on large repos.
-      cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+      cloned = await gitWithAuth(cloneCredential, repoUrl, [
         ...baseCloneArgs,
         ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
-        cfg.repoUrl,
+        repoUrl,
         tmpTarget,
       ], { timeoutMs: 35_000 })
       if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr) && !isEmptyUpstream(cloned.stderr)) {
@@ -825,7 +928,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
+        cloned = await gitWithAuth(cloneCredential, repoUrl, [...baseCloneArgs, repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
       // Empty upstream is terminal-but-fine: stop retrying and init locally below.

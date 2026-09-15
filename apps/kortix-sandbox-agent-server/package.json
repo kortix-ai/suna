@@ -21,6 +21,7 @@
   "dependencies": {
     "hono": "^4.12.25",
     "node-forge": "^1.4.0",
+    "tar": "^7.5.22",
     "zod": "^3.23.8"
   },
   "devDependencies": {

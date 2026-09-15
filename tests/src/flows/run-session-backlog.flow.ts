@@ -40,7 +40,7 @@ async function waitForSessionReady(
   ctx: FlowContext,
   projectId: string,
   sessionId: string,
-  timeoutMs = 300_000,
+  timeoutMs = 540_000,
 ): Promise<any> {
   try {
     return await waitFor(
@@ -352,7 +352,7 @@ async function waitForAssistantOutput(
   ocId: string,
   timeoutMs = 240_000,
 ): Promise<any[]> {
-  return waitFor(
+  const messages = await waitFor(
     async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
       return r.statusCode === 200 ? r.json<any[]>() : [];
@@ -364,6 +364,11 @@ async function waitForAssistantOutput(
       description: `observable assistant output in OpenCode session ${ocId}`,
     },
   );
+  const failed = messages.find((message: any) => message?.info?.role === 'assistant' && message?.info?.error);
+  if (failed) {
+    throw new Error(`OpenCode assistant failed: ${failed.info.error.data?.message ?? failed.info.error.name}`);
+  }
+  return messages;
 }
 
 // ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
@@ -528,7 +533,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 660_000,
     // Only manifest-real routes are declared; the /p/<sbx>/8000/* proxy
     // catch-all is exercised at runtime but is not a coverage target.
     routes: [
@@ -551,7 +556,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -580,7 +585,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',

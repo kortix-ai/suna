@@ -579,12 +579,13 @@ export function startProxy(
   const offloadDbPath = opencodeDbPath(OPENCODE_HOME)
   const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME)
   let offloadRunning = false
+  let stopped = false
   const runOffloadIfIdle = async (why: string): Promise<void> => {
-    if (offloadRunning) return
+    if (stopped || offloadRunning) return
     if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return
     offloadRunning = true
     try {
-      if ((await turnInFlight()) !== false) return
+      if ((await turnInFlight()) !== false || stopped) return
       const result = await runAttachmentOffloadPass({ dbPath: offloadDbPath, sidecarDir: offloadSidecarDir })
       if (result.offloaded > 0) logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result })
     } catch (err) {
@@ -595,9 +596,10 @@ export function startProxy(
   }
   const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000)
   offloadTimer.unref?.()
-  setTimeout(() => void runOffloadIfIdle('boot'), 90_000).unref?.()
+  const offloadBootTimer = setTimeout(() => void runOffloadIfIdle('boot'), 90_000)
+  offloadBootTimer.unref?.()
 
-  resourceMonitor = startResourceMonitor({
+  const proxyResourceMonitor = startResourceMonitor({
     opencodePid: () => opencode.getPid(),
     opencodeState: () => opencode.getState(),
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
@@ -623,6 +625,7 @@ export function startProxy(
       },
     },
   })
+  resourceMonitor = proxyResourceMonitor
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
   // is the only thing that knows, so it answers the question rather than the
@@ -714,6 +717,11 @@ export function startProxy(
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {
+      stopped = true
+      clearTimeout(offloadBootTimer)
+      clearInterval(offloadTimer)
+      proxyResourceMonitor.stop()
+      if (resourceMonitor === proxyResourceMonitor) resourceMonitor = null
       server.stop(true)
     },
   }

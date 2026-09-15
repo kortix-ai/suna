@@ -23,7 +23,11 @@
  * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
-import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
+import {
+  GearSixIcon as CogOne,
+  MagnifyingGlassIcon as Search,
+  PlusIcon,
+} from '@phosphor-icons/react';
 import { useQueries } from '@tanstack/react-query';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { hubTarget } from '@/stores/account-panel-store';
@@ -43,6 +47,8 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { filterCreatableAccounts } from '@/features/workspace/new/new-workspace-form';
 import {
   filterWorkspaceGroups,
   groupWorkspacesByAccount,
@@ -111,6 +117,15 @@ export function WorkspaceMenuSection() {
     workspaceQueries[i].isError ? [{ account, result: workspaceQueries[i] }] : [],
   );
 
+  // Accounts the user may actually create a project in — the same owner/admin
+  // rule `/new` enforces (`filterCreatableAccounts`) and the API gates on
+  // (`ACCOUNT_ACTIONS.PROJECT_CREATE`, 403 "Owner or admin role required").
+  // Offering the create row to a plain member would dead-end in that 403.
+  const creatableAccountIds = useMemo(
+    () => new Set(filterCreatableAccounts(accounts).map((account) => account.account_id)),
+    [accounts],
+  );
+
   const groups = useMemo(
     () =>
       groupWorkspacesByAccount({
@@ -120,7 +135,33 @@ export function WorkspaceMenuSection() {
       }),
     [accounts, allWorkspaces, activeProjectId],
   );
-  const visibleGroups = useMemo(() => filterWorkspaceGroups(groups, query), [groups, query]);
+  // `groupWorkspacesByAccount` builds its groups from the PROJECTS it is given,
+  // so an account with none never becomes a group — and an account with no
+  // project is exactly the one you most want to create a project in. Seed those
+  // here rather than changing that function: its "drops accounts that have no
+  // workspaces" contract is pinned by `workspace-grouping.test.ts`, and the
+  // list below is the only place that wants them back.
+  //
+  // A FAILED account is deliberately excluded: `failedAccounts` already renders
+  // its own header + retry row, and an errored fetch folds to `[]`, so seeding
+  // it here would render that account twice — once as "empty", once as failed.
+  const groupsWithEmptyAccounts = useMemo(() => {
+    const present = new Set(groups.map((group) => group.accountId));
+    const failed = new Set(failedAccounts.map(({ account }) => account.account_id));
+    const seeded = filterCreatableAccounts(accounts)
+      .filter((account) => !present.has(account.account_id) && !failed.has(account.account_id))
+      .map((account) => ({
+        accountId: account.account_id,
+        accountName: account.name?.trim() || t('workspace.account'),
+        workspaces: [],
+      }));
+    return seeded.length > 0 ? [...groups, ...seeded] : groups;
+  }, [groups, accounts, failedAccounts, t]);
+
+  const visibleGroups = useMemo(
+    () => filterWorkspaceGroups(groupsWithEmptyAccounts, query),
+    [groupsWithEmptyAccounts, query],
+  );
 
   // The account "Account settings" opens, and the account every row in the
   // list below belongs to when there is only one. `null` while the user's
@@ -137,7 +178,12 @@ export function WorkspaceMenuSection() {
   // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
   // either — that would show "No workspaces yet" over an account we simply failed
   // to load, instead of that account's own retry row.
-  const isEmpty = visibleGroups.length === 0 && failedAccounts.length === 0;
+  // "No projects yet" is about PROJECTS, not groups. Seeding a group for an
+  // empty creatable account (above) makes `visibleGroups` non-empty for a user
+  // who owns accounts but no project at all, which would silently retire this
+  // state — so count the projects inside the groups, not the groups.
+  const isEmpty =
+    visibleGroups.every((group) => group.workspaces.length === 0) && failedAccounts.length === 0;
 
   // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
   // on select unless the handler calls `preventDefault`.
@@ -333,6 +379,33 @@ export function WorkspaceMenuSection() {
                     </DropdownMenuItem>
                   );
                 })}
+
+                {/* The only affordance in the product that says WHICH account a
+                    new project lands in. The global "Create a project…" row one
+                    level up (`workspace-switcher.tsx`) links to a bare `/new`,
+                    where the account picker renders `null` for anyone with a
+                    single creatable account (`account-picker.tsx`) — so the
+                    target account was never stated. Here the account is already
+                    the group's own heading, so the row can name it.
+
+                    An anchor, not a handler: `router.push` from a menu row runs
+                    the RSC fetch cold at click time, and that fetch degrades
+                    into a full document load whenever it answers wrong. */}
+                {creatableAccountIds.has(group.accountId) ? (
+                  <DropdownMenuItem asChild className="cursor-pointer px-1.5" size="sm">
+                    <Link href={newWorkspacePathForAccount(group.accountId)} prefetch>
+                      <PlusIcon />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t('workspace.createIn', {
+                          account: group.accountName.replaceAll(
+                            tI18nComplete.raw('text78add5e83e0b'),
+                            '',
+                          ),
+                        })}
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuGroup>
             ))}
             {/* Rendered after the successful groups, and NOT filtered by `query`:

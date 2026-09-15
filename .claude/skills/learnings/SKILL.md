@@ -21,6 +21,201 @@ linked, not inlined.
 
 ## Register
 
+### Run browser SQL against the deployed target's test database (2026-09-15)
+
+**When:** a Playwright journey seeds or reads the database. Prefer `KE2E_DATABASE_URL` and `E2E_DATABASE_URL` over `DATABASE_URL` from local dotenv files. *Near-miss:* the v0.13.15 preview admin grant used a different database; the UI's role probe returned `200` without admin access. *Enforcer:* `tests/e2e/helpers/database.ts` selects the target database, and the admin journey reads `/v1/user-roles` after its grant.
+
+### Detect preview App domains through the custom target origin (2026-09-15)
+
+**When:** asserting App URLs in a preview Playwright journey. `loadEnv()` classifies sandbox HTTPS origins as `custom`, not `preview`; derive the App-domain suffix from that origin. *Near-miss:* the v0.13.15 preview browser gate expected `custom-…apps.kortix.com` for a valid `preview-…apps.eu-west.sbx.platinum.dev` URL. *Enforcer:* the Apps browser journey passed against the retained preview origin with the custom-target assertion.
+
+### Require the durable transcript before stopping a session in a mirror test (2026-09-15)
+
+**When:** testing stopped-session transcript read-back. A live transcript can contain a streaming marker before the turn-end mirror is captured; wait for `shape=sync` to report a complete mirror first. *Near-miss:* v0.13.15 preview `SESS-24` stopped session A after a live marker but before a mirror existed, then received `available:false` as the route specifies. *Enforcer:* `SESS-24` checks a complete mirror before stop and the same marker afterward.
+
+### Exclude unavailable Vercel instrumentation from self-host admin console errors (2026-09-15)
+
+**When:** asserting the admin console's own network and console errors on a self-host origin. Filter the two `/_vercel/.../script.js` 404s and their strict-MIME console messages together. *Near-miss:* v0.13.15 preview admin retry rendered Overview but failed on instrumentation served as `text/plain`. *Enforcer:* `09-admin-console.spec.ts` excludes only those exact script paths and MIME error.
+
+### Identify the project submenu by a row unique to that menu (2026-09-15)
+
+**When:** locating the open project picker in Playwright. Filter the menu by its `Account settings` row; accessible names for the trigger and nested menus can vary under Radix. *Near-miss:* the v0.13.15 local gate intermittently failed `20-workspace-switching` after clicking “Switch Project” because its named menu selector found no visible element. *Enforcer:* both `20-workspace-switching.spec.ts` and `24-no-hard-navigation.spec.ts` use the unique row.
+
+### Refuse an empty successful Git object lookup in the parallel package gate (2026-09-15)
+
+**When:** comparing a Git SHA captured by Bun `execFileSync` under parallel tests. A successful `git rev-parse` must print an object ID; retry an empty capture before using it as the expected SHA. *Near-miss:* two v0.13.15 local full runs compared a valid bundle SHA against `""` after `rev-parse HEAD` returned empty under load. *Enforcer:* the `git()` helper in `fast-boot-bundle.test.ts` retries and then fails explicitly.
+
+### Report the failed assistant turn before checking its expected file (2026-09-15)
+
+**When:** a real-agent flow waits for OpenCode messages and then reads a written file. If the assistant message contains `info.error`, raise its message before a file read. *Near-miss:* v0.13.15 preview `GOLD-1` reported only a file 404 after the turn had already failed with `ZstdDecompressionError`. *Enforcer:* `waitForAssistantOutput` in `tests/src/flows/run-session-backlog.flow.ts` surfaces the assistant error.
+
+### Request identity encoding on the sandbox model proxy's upstream hop (2026-09-15)
+
+**When:** forwarding model requests through Bun's localhost credential proxy. Set upstream `accept-encoding` to `identity`, since Bun fetch decodes the response before the proxy relays it. *Near-miss:* v0.13.15 preview `GOLD-1` failed its agent turn with `ZstdDecompressionError` at `127.0.0.1:4319`; the proxy forwarded `gzip, deflate, br, zstd` upstream. *Enforcer:* `llm-proxy.test.ts` checks the upstream header; `GOLD-1` must write the file on preview.
+
+### Budget a real cold image build before declaring session readiness broken (2026-09-15)
+
+**When:** setting deployed session flow deadlines. Include the provider's measured cold image-build duration and subsequent runtime steps. *Near-miss:* the v0.13.15 preview built four Daytona images in 400–439 seconds, while `SESS-25`, `RUN-9`, `SESS-24`, and `SESS-10` stopped after 240–310 seconds. *Enforcer:* the two session flow helpers allow 540 seconds for readiness, and those flows declare a larger total budget.
+
+### Make preview serve every public page required by its browser gate (2026-09-15)
+
+**When:** configuring a full preview stack. Keep marketing enabled if `target-full` probes `/pricing`; check the preview origin before interpreting a missing heading as a frontend defect. *Near-miss:* the v0.13.15 preview gate followed `/pricing` to `/auth` because `KORTIX_PUBLIC_DISABLE_LANDING_PAGE` was `true`. *Enforcer:* `tests/src/core/preview-stack.ts` sets the flag to `false`, and the target browser journey asserts pricing content.
+
+### Assert preview App domains against the preview namespace (2026-09-15)
+
+**When:** testing project App URLs on a preview origin. Use the preview App namespace instead of the production `apps.kortix.com` pattern. *Near-miss:* the v0.13.15 preview gate rejected a working `preview-…apps.eu-west.sbx.platinum.dev` URL. *Enforcer:* `tests/e2e/specs/18-apps-ui.spec.ts` uses a preview-specific host assertion.
+
+### Treat a same-origin auth redirect as a rejected sensitive-path probe (2026-09-15)
+
+**When:** probing encoded filesystem paths through an auth-gated frontend. Accept a `307` only if it points to relative `/auth` with the exact normalized path in `redirect`. Check the response body for secrets independently. *Near-miss:* the v0.13.15 preview gate failed `SEC-J` on an encoded `/etc/passwd` path that returned this redirect. *Enforcer:* `SEC-J` checks the redirect shape and secret body in `tests/src/flows/security-backlog.flow.ts`.
+
+### A webhook security gate must distinguish rejection from absent configuration (2026-09-15)
+
+**When:** testing forged requests against an optional webhook integration. Require no 2xx, and allow a service-unavailable response only when its body names the exact missing configuration. *Near-miss:* the v0.13.15 preview gate failed `SEC-F` because unsigned Slack ingress returned `503` with `OAuth mode not configured` on a preview without Slack OAuth. *Enforcer:* `SEC-F` checks the exact 503 response in `tests/src/flows/security-backlog.flow.ts`.
+
+### Count browser document loads only after the initial page reaches `load` (2026-09-15)
+
+**When:** counting loads in a Playwright journey after `page.goto` waits only for `domcontentloaded`. Wait for `page.waitForLoadState('load')` before recording the baseline. The initial page's late `load` otherwise counts as a navigation caused by the next click. *Near-miss:* the v0.13.15 local release gate reported a false hard reload while every per-click sentinel survived. *Enforcer:* `tests/e2e/specs/24-no-hard-navigation.spec.ts` waits at both count boundaries.
+
+### Match an actual PEM block before calling a 404 page a private-key leak (2026-09-15)
+
+**When:** checking web error pages for secret content. A bare `BEGIN PRIVATE KEY` phrase can occur in bundled parser code on a 404 page. Require PEM delimiters and encoded key material. *Near-miss:* the v0.13.15 preview gate marked `/.env` exposed although it returned 404; the 1.4 MB frontend error page contained only the phrase. *Enforcer:* `SEC-J` in `tests/src/flows/security-backlog.flow.ts` matches a complete key block.
+
+### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
+
+**When:** stopping the sandbox proxy or running package tests. Cancel boot and
+interval offload timers; reject callbacks after stop. Disable automatic offload in
+the test runner; explicit offload tests use temporary databases. Use the actual
+`kortixd` package name for the sequential lane. *Near-miss:* XLSX verification's
+full run entered a background scan of the developer's OpenCode DB; the process
+was stopped during its SELECT. *Enforcers:* proxy stop regression and runner contract.
+
+### Validate the destination against an exact-file permission, not its parent (2026-09-14)
+
+**When:** validating Computer Tunnel writes. Resolve both the destination and
+missing allowlist paths through their nearest existing ancestor. Compare the full
+resolved destination with the allowlist. An approved file does not grant its parent.
+*Incident:* XLSX follow-up CI exposed rejected exact-file approvals; macOS also
+compared `/var` with `/private/var` for missing files. *Enforcers:*
+`filesystem-integrity.test.ts` and `TUN-6` with an exact-file permission.
+
+### Transfer opaque bytes programmatically and verify the destination digest (2026-09-14)
+
+**When:** sending binary artifacts through Computer Tunnel. Never transcribe base64
+from model context. Use `fs_upload`, or generate at the destination. Validate format
+at the source; compare SHA-256 after transfer. Reject malformed file arguments before
+creating permission requests. Resolve approve/deny with a pending-state conditional update.
+*Incident:* XLSX transfer to a Mac produced identical same-length corrupt copies;
+an approval denial also conflicted with a reported write. That historical race is unproven.
+*Enforcers:* `filesystem-integrity.test.ts` and product flow `TUN-6`.
+
+### Moving a surface under a URL namespace must move every reader, and an effect must never depend on a per-render localized object (2026-09-14)
+
+**When:** relocating a page into an overlay/modal that prefixes its query
+params, or localizing a static catalog through a function that returns a new
+object. (1) Inside the account hub read state only through
+`useHubSearchParams()`; a raw `useSearchParams().get('provider')` is always
+`null` because the URL carries `accountProvider`. (2) Memoize localized objects
+and key effects on primitive ids — `localizeProviderGuide()` returned a new
+guide each render, so the progress-restore effect looped and reset the step.
+*Incident:* SSO + SCIM setup wizards unusable on dev/staging/prod from
+`123c1d91c5` (2026-09-08, provider pick did nothing) and `ebaae4d247`
+(2026-09-04, Back/step rail snapped back, `Maximum update depth exceeded`).
+*Enforcer:* `apps/web/src/features/accounts/hub/hub-search-params.test.ts`
+(no hub-rendered file reads a hub key off the raw URL) and browser journey
+`tests/e2e/specs/28-identity-setup-wizard.spec.ts` (every step, reload,
+change provider, fails on render-loop console errors).
+
+### A least-privilege S3 grant that checks "does this key exist?" needs `s3:ListBucket` — MinIO root credentials never show the gap (2026-09-14)
+
+**When:** writing an IAM policy for code that calls HeadObject/GetObject and
+treats `404`/`NoSuchKey` as "not there yet". Without `s3:ListBucket` on the
+bucket ARN, AWS answers a missing key with `403 AccessDenied`, so the caller
+reads a normal miss as a denial. A local MinIO root user or an admin laptop
+key has every permission and passes. Test IAM against the real role before
+calling it verified. *Incident:* #7221 on dev; the project-snapshot producer
+failed every build with `not authorized to perform: s3:ListBucket` on
+`kortix-dev-project-snapshots`, so no snapshot was ever published. Sessions
+stayed on Git, so there was no user impact. *Automation:* none — the dev
+post-deploy check (`GET …/project-snapshot` → 200) caught it.
+
+### `count`/`for_each` must be known at PLAN time — gate a grant on a literal bool, never on an ARN created in the same apply (2026-09-14)
+
+**When:** adding an optional resource to a Terraform module whose on/off input is
+another resource's attribute (`count = var.bucket_arn != "" ? 1 : 0` fed by
+`module.bucket.bucket_arn`). On a root where the bucket does not exist yet, the
+ARN is unknown until apply and `terraform plan` fails with `Invalid count
+argument`. `terraform validate` and `fmt` pass — only a plan catches it.
+*Incident:* #7221 merged `ccd3f7596d`; Deploy Dev run `34891285433` failed at
+"Apply dev API Terraform", which skipped the dev API and frontend deploys for
+every push until the fix (`project_snapshots_enabled` bool). *Automation:* none
+yet — candidate: Terraform CI runs `terraform plan -refresh=false` with a local
+backend on each root that creates new resources.
+
+### A stop → resume restarts the daemon on Daytona and does NOT on Platinum — never assume boot-time work re-runs after a resume (2026-09-14)
+
+**When:** writing anything that expects the sandbox daemon's boot path (config
+provider, reconcile, warm adoption, a health summary) to run again after
+`/sessions/:id/stop` + `/start`, or a check that reads the post-resume health
+as if it were a fresh boot. Daytona restarts the container, so the daemon
+re-runs and adopts the workspace warm (`provider: git`, `timings: {warm: ~230}`).
+Platinum CoW-resumes the SAME VM with the same process: `opencode_pid`
+unchanged, `uptime_s` carried on, and the health endpoint still reports the
+ORIGINAL boot's `config_provider` (`provider: s3, s3_attempted: true`) — which
+reads exactly like a re-acquisition and is not one (the uncommitted file is
+still on disk). Make the assertion provider-agnostic: "never re-acquired" is
+either "restarted + adopted warm" or "same daemon continued (summary identical,
+uptime ≥ before)"; a real re-acquisition shows NEW timings.
+*Near-miss:* the S3 compat gate's first Platinum run (PR #7221) failed its
+resume step on this and would have blocked a green provider; cost one run.
+*Enforcer:* `project-snapshot-compat.ts` prints `adoptedWarm` / `daemonContinued`
+per run and passed 23/23 on both providers; nothing yet guards other resume
+assumptions (`scheduleSandboxRuntimeRefresh` exists for the reconcile case).
+
+### A blob-less partial clone must still carry its symlink blobs, and a small fetch is loose objects, not a pack (2026-09-13)
+
+**When:** building or consuming a blob-less checkout (snapshot v2, any
+`--filter=blob:none` scheme). (1) `git status` / `update-index --refresh`
+compare a SYMLINK against its blob's CONTENT (`ce_compare_link`), so a tree
+with one symlink lazy-fetches through the promisor remote on every status —
+ship symlink blobs with the trees. (2) `git fetch` below
+`transfer.unpackLimit` (100 objects) explodes the pack into LOOSE objects;
+"remove the fetched pack" then leaves every blob in the archive — fetch with
+`-c transfer.unpackLimit=1` and purge `objects/??/`.
+*Near-miss:* both caught pre-merge by the daemon suite (a status timeout) and
+the integration suite (0 missing objects where blobs were expected).
+*Enforcer:* `config-provider.test.ts` (symlinked fixture, `--missing=print`
+counts) and `integration-project-snapshot.test.ts` (distinct-blob count).
+
+### The sandbox agent's Bun 1.3 re-issues a GET after a mid-body reset and appends the second body — never trust length alone (2026-09-13)
+
+**When:** streaming a download in `kortixd` (compiled with
+`SANDBOX_AGENT_BUN_VERSION=1.3.11`). After a socket reset mid-body, Bun 1.3
+silently re-issues the request and appends the new response to the SAME
+`fetch` body stream (server sees 2 GETs; consumer sees 1st-half + 2nd response,
+`close` with no `end`/`error`). Bun 1.4 (laptops) delivers a clean short EOF, so
+the suite is green locally and wrong in the image. Rules: (1) compare received
+bytes AND sha256 against a trusted descriptor; (2) treat an overrun past the
+declared size as transient transport garbage, not "too large"; (3) run the
+streaming suite under `oven/bun:<SANDBOX_AGENT_BUN_VERSION>` before shipping.
+*Near-miss:* the S3 config provider classified a reset as `malformed` (no
+retry) under 1.3.11; caught by running its suite in Docker under 1.3.11.
+*Enforcer:* none in CI — `docs/runbooks/project-snapshot-s3.md` carries the
+Docker command; a CI lane on the pinned Bun is the TODO.
+
+### Hand the AWS SDK a Buffer, not a Node stream, on the API image's Bun 1.2 (2026-09-13)
+
+**When:** uploading a file with `@aws-sdk/client-s3` from `apps/api` (image
+`BUN_VERSION=1.2`, 1.2.23). `PutObjectCommand({ Body: createReadStream(path) })`
+never completes on that Bun and pins a core at 90 % — the same call with
+`Body: await readFile(path)` finishes in 15–30 ms, and HeadObject, GetObject,
+conditional put (412) and presigning all work. Laptop/CI Bun 1.3/1.4 stream
+fine, so unit + integration tests are green while the deployed leader's
+snapshot worker would spin forever without publishing.
+*Near-miss:* the project-snapshot producer (`project-snapshot-store.ts`),
+caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
+*Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
+image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
@@ -4946,3 +5141,25 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+### Preview runtime secret contracts span two Git revisions (2026-09-14)
+
+**When:** a preview fails in `validatePreviewRuntimeSecrets` before the API starts.
+The orchestration code runs from `main`; the bootstrap reads the exact PR head.
+A newly allowlisted runtime secret on `main` can therefore reach an older PR
+bootstrap that rejects it. Merge the upstream contract change into the canonical
+branch before retrying. Do not bypass validation or remove the allowlist.
+
+*Incident:* PR #7233, preview run `34893648765`, rejected `PLATINUM_API_KEY`.
+The publisher carried #7221's new field, while the PR bootstrap predated it.
+Merging `8767572f10` brought in the matching allowlist and provider configuration.
+*Automation:* `tests/unit/preview-stack.test.ts` checks the allowlist and Platinum
+configuration within one revision. Cross-revision compatibility is not covered.
+
+### Preserve mounted service paths in preview test clients
+
+**Incident (2026-09-14, PR #7233):** preview gateway tests reached the API because the REST test client discarded `/_gateway`. Gateway health returned `kortix-api`, and inference routes returned `404`. The deployed gateway itself remained healthy.
+
+**Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
+
+**Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.
