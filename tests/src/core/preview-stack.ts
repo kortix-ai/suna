@@ -9,6 +9,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
+  'PLATINUM_API_KEY',
 ] as const;
 
 export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
@@ -28,6 +29,8 @@ export interface PreviewStackInput {
   apiImage: string;
   gatewayImage: string;
   frontendImage: string;
+  /** Platinum API base URL, offered as a second session provider when PLATINUM_API_KEY is present. */
+  platinumApiUrl?: string;
 }
 
 function validatedOrigin(value: string): string {
@@ -294,7 +297,7 @@ export function applyPreviewEnvironment(
     CORS_ALLOWED_ORIGINS: origin,
     KORTIX_PUBLIC_APP_URL: origin,
     KORTIX_PUBLIC_AUTH_METHODS: 'magic,password',
-    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
+    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'false',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
     // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same
@@ -315,7 +318,17 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    // Daytona stays FIRST: the API takes the first allowed provider for an
+    // unpinned session, so the preview gate's behaviour does not change.
+    // Platinum is offered when its key is present so a session can be pinned
+    // to it ({"provider":"platinum"} on create) for provider-parity checks.
+    ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
+    ...(rawSecrets.PLATINUM_API_KEY
+      ? {
+          PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
+          PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY,
+        }
+      : {}),
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
     DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
     MANAGED_GIT_PROVIDER: 'github',
@@ -346,6 +359,7 @@ export function applyPreviewEnvironment(
     KE2E_SUPABASE_URL: origin,
     E2E_SUPABASE_URL: origin,
     E2E_MAILPIT_URL: `${origin}/_mailpit`,
+    E2E_APPS_BASE_DOMAIN: runtime.KORTIX_APPS_BASE_DOMAIN || `apps.${new URL(origin).hostname.split('.').slice(1).join('.')}`,
     KE2E_DATABASE_URL: `postgresql://postgres:${postgresPassword}@127.0.0.1:15432/postgres`,
     E2E_DATABASE_URL: `postgresql://postgres:${postgresPassword}@127.0.0.1:15432/postgres`,
     KE2E_SUPABASE_ANON_KEY: anonKey,

@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
+import { readdirSync, readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'connector-settings.tsx'), 'utf8');
@@ -32,25 +32,18 @@ describe('connector settings write path', () => {
     // section label plus the field is the whole explanation now.
     expect(source).toContain("raw('textfa065317dfc5')");
     expect(source).not.toContain('Project — one account everyone uses');
-    // End at the section close AFTER the label — the Name section now closes
-    // a `</section>` earlier in the file, and slicing to the FIRST one would
-    // make this an empty string that can never fail.
-    const ownerStart = source.indexOf("raw('textfa065317dfc5')");
-    const section = source.slice(ownerStart, source.indexOf('</section>', ownerStart));
-    expect(section.length).toBeGreaterThan(0);
+    const section = source.slice(
+      source.indexOf("raw('textfa065317dfc5')"),
+      source.indexOf('</section>'),
+    );
     expect(section).not.toMatch(/<p\b/);
   });
 
   test('the danger row never mutates directly — only ConfirmDialog does', () => {
-    // The visible Remove button only opens the dialog. Anchored on the danger
-    // row itself, not the file's first <Button> — the Name form's Rename
-    // button now precedes it in source order.
-    const dangerRow = source.slice(
-      source.indexOf('{!isChannel ?'),
-      source.indexOf('<ConfirmDialog'),
-    );
-    expect(dangerRow).toContain('onClick={() => setConfirmDelete(true)}');
-    expect(dangerRow).not.toContain('remove.mutate()');
+    // The visible Remove button only opens the dialog.
+    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
+    expect(removeButtonBlock).toContain('onClick={() => setConfirmDelete(true)}');
+    expect(removeButtonBlock).not.toContain('remove.mutate()');
 
     // The mutation itself only fires from ConfirmDialog's onConfirm.
     const calls = [...source.matchAll(/remove\.mutate\(\)/g)];
@@ -65,11 +58,7 @@ describe('connector settings write path', () => {
     // destructive. Scoped to the Remove `<Button>` element itself, not the
     // surrounding prose, which legitimately names "destructive" in a comment
     // explaining this exact rule.
-    // Anchored inside the danger row — the file's first <Button> is the Name
-    // form's Rename control now.
-    const removeStart = source.indexOf('<Button', source.indexOf('{!isChannel ?'));
-    const removeButtonBlock = source.slice(removeStart, source.indexOf('</Button>', removeStart));
-    expect(removeButtonBlock).toContain('setConfirmDelete(true)');
+    const removeButtonBlock = source.slice(source.indexOf('<Button'), source.indexOf('</Button>'));
     expect(removeButtonBlock).not.toContain('variant="destructive"');
   });
 

@@ -14,8 +14,6 @@ export interface AdminConnectorCandidate {
   requestAuthType: AdminConnectorView['requestAuthType'];
   secretIdentifier: string | null;
   credentialSource: AdminConnectorView['credentialSource'];
-  /** The sync engine's stored failure reason — the why behind status 'error'. */
-  lastError: string | null;
 }
 
 export function buildAdminConnectorViews(
@@ -29,7 +27,6 @@ export function buildAdminConnectorViews(
     platform: candidate.platform,
     iconUrl: candidate.iconUrl,
     status: candidate.status,
-    lastError: candidate.lastError,
     credentialMode: 'shared' as const,
     authorizationStrategy: candidate.authorizationStrategy,
     sensitive: candidate.sensitive,

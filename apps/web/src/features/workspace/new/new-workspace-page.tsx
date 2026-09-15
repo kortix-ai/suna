@@ -10,6 +10,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +39,7 @@ import {
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 
 /**
@@ -286,8 +288,12 @@ export function NewWorkspacePage() {
           the true viewport edges — rather than the right edge of the centered
           max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
           the row spans the viewport without overflowing left. Sits ahead of
-          the <form> so it stays reachable regardless of form state. */}
-      <div className="absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
+          the <form> so it stays reachable regardless of form state.
+
+          `kx-desktop-band-row` moves the row below the title-bar band on
+          desktop, clear of the macOS traffic lights and the Win/Linux window
+          controls. */}
+      <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
         {/* Create-into account lives here — not in the form body. One account
             collapses to muted identity text (email when none); two or more
             opens the Select on click. */}
@@ -309,20 +315,28 @@ export function NewWorkspacePage() {
             `performSignOut`, not the old bare `void signOut()`: that neither
             awaited the sign-out nor navigated, so pressing Log out here signed
             the user out and left them sitting on the create form. */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground shrink-0"
-          disabled={signingOut}
-          onClick={() => {
-            setSigningOut(true);
-            void performSignOut();
-          }}
-        >
-          {signingOut ? <Loading className="size-4 shrink-0" /> : null}
-          {signOutLabel}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground shrink-0"
+            disabled={signingOut}
+            onClick={() => {
+              setSigningOut(true);
+              void performSignOut();
+            }}
+          >
+            {signingOut ? <Loading className="size-4 shrink-0" /> : null}
+            {signOutLabel}
+          </Button>
+          {/* Desktop only. The shell has no browser toolbar, so without this
+              Log out was the only way off this page there. `replace`, not
+              `push`: `/new` is where the user left, not somewhere to return
+              to. The landing door resolves the latest project, or offers
+              create and sign-out to an account with none. */}
+          <DesktopCloseButton onClose={() => router.replace(PROJECT_LANDING_PATH)} />
+        </div>
       </div>
 
       {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.

@@ -46,17 +46,17 @@
     "tryFree": "Começar"
   },
   "newWorkspace": {
-    "title": "Criar um espaço de trabalho",
-    "description": "Um espaço de trabalho reúne seus agentes, arquivos e sessões.",
-    "templateSeed": "Este espaço de trabalho será iniciado com o modelo escolhido.",
+    "title": "Criar um projeto",
+    "description": "Um projeto reúne seus agentes, arquivos e sessões.",
+    "templateSeed": "Este projeto será iniciado com o modelo escolhido.",
     "account": {
       "label": "Conta",
       "createIn": "Criar em {account}",
       "choose": "Escolher uma conta"
     },
     "name": {
-      "label": "Nome do espaço de trabalho",
-      "placeholder": "Nome do espaço de trabalho"
+      "label": "Nome do projeto",
+      "placeholder": "Nome do projeto"
     },
     "validation": {
       "nameRequired": "O nome é obrigatório",
@@ -64,12 +64,12 @@
       "nameTooLong": "O nome deve ter no máximo {max} caracteres"
     },
     "permissions": {
-      "noCreatableAccount": "Você precisa de acesso de proprietário ou administrador em uma conta para criar um espaço de trabalho.",
+      "noCreatableAccount": "Você precisa de acesso de proprietário ou administrador em uma conta para criar um projeto.",
       "unknownAccountPrefix": "Não conseguimos determinar qual conta pertence a você, então não faremos suposições. Envie um e-mail para",
       "unknownAccountSuffix": "e corrigiremos o problema."
     },
     "actions": {
-      "create": "Criar espaço de trabalho",
+      "create": "Criar projeto",
       "tryAgain": "Tentar novamente",
       "logOut": "Sair",
       "signingOut": "Saindo"
@@ -77,7 +77,7 @@
     "repository": {
       "label": "Repositório",
       "defaultBranch": "Branch padrão",
-      "noGitHubAccount": "Ainda não há uma conta do GitHub conectada à conta deste espaço de trabalho.",
+      "noGitHubAccount": "Ainda não há uma conta do GitHub conectada à conta deste projeto.",
       "connectGitHub": "Conectar uma conta do GitHub",
       "connectGitHubSuffix": "para usar esta opção.",
       "loadingGitHubAccounts": "Carregando contas do GitHub…",
@@ -89,7 +89,7 @@
       "sources": {
         "managed": {
           "label": "Gerenciado pela Kortix",
-          "description": "A Kortix cria e gerencia um repositório privado para este espaço de trabalho."
+          "description": "A Kortix cria e gerencia um repositório privado para este projeto."
         },
         "githubCreate": {
           "label": "Criar no GitHub",
@@ -313,14 +313,14 @@
       "close": "Fechar",
       "docs": "Documentação",
       "groups": {
-        "workspace": "Espaço de trabalho",
+        "workspace": "Projeto",
         "personal": "Pessoal",
         "account": "Conta"
       },
       "items": {
         "workspace": {
           "label": "Geral",
-          "description": "Nome e ícone deste espaço de trabalho."
+          "description": "Nome e ícone deste projeto."
         },
         "sandbox": {
           "label": "Modelos de sandbox",
@@ -332,7 +332,7 @@
         },
         "upgrades": {
           "label": "Atualizações",
-          "description": "Alterações que um agente faz neste espaço de trabalho. Cada execução abre uma solicitação de alteração para sua revisão. Nada é mesclado automaticamente."
+          "description": "Alterações que um agente faz neste projeto. Cada execução abre uma solicitação de alteração para sua revisão. Nada é mesclado automaticamente."
         },
         "profile": {
           "label": "Perfil",
@@ -391,7 +391,7 @@
         "switchToLastTab": "Mudar para a última guia",
         "newSession": "Nova sessão",
         "commandPalette": "Paleta de comandos",
-        "switchWorkspace": "Alternar espaço de trabalho",
+        "switchWorkspace": "Alternar projeto",
         "settings": "Configurações",
         "toggleLeftSidebar": "Alternar barra lateral esquerda",
         "toggleRightSidebar": "Alternar barra lateral direita",
@@ -621,18 +621,18 @@
       "baseBranchDescription": "Novas sessões e solicitações de alteração começam neste branch.",
       "saving": "Salvando…",
       "manifestFile": "Arquivo de manifesto",
-      "manifestDescription": "O arquivo no repositório que informa ao Kortix como executar este espaço de trabalho.",
+      "manifestDescription": "O arquivo no repositório que informa ao Kortix como executar este projeto.",
       "learnMore": "Saiba mais",
       "localTitle": "Trabalhe localmente",
-      "localDescription": "Copie este espaço de trabalho para seu computador e edite-o no seu próprio editor.",
+      "localDescription": "Copie este projeto para seu computador e edite-o no seu próprio editor.",
       "installTitle": "Instale a linha de comando do Kortix",
       "installHint": "Configuração única no macOS ou Linux. Ignore se já estiver instalada.",
       "installCommand": "Comando de instalação",
-      "cloneTitle": "Copie o espaço de trabalho para o computador",
-      "cloneHint": "Baixa o código em uma nova pasta e vincula essa pasta a este espaço de trabalho.",
+      "cloneTitle": "Copie o projeto para o computador",
+      "cloneHint": "Baixa o código em uma nova pasta e vincula essa pasta a este projeto.",
       "cloneCommand": "Comando de clonagem",
       "setupTitle": "Conclua a configuração na nova pasta",
-      "setupHint": "Grava a configuração local e busca os segredos deste espaço de trabalho para executar o código.",
+      "setupHint": "Grava a configuração local e busca os segredos deste projeto para executar o código.",
       "setupCommand": "Comando de configuração",
       "secretsCommand": "Comando de segredos",
       "ownClientTitle": "Use seu próprio cliente Git",
@@ -641,9 +641,9 @@
       "cloneAddress": "Endereço de clonagem",
       "peopleTitle": "Pessoas com acesso",
       "peopleManagedDescription": "Convide alguém pelo nome de usuário do GitHub. O GitHub enviará um convite para aceitação.",
-      "peopleExternalDescription": "Quem pode ler e gravar no repositório deste espaço de trabalho.",
+      "peopleExternalDescription": "Quem pode ler e gravar no repositório deste projeto.",
       "externalGithubDescription": "O Kortix não criou este repositório e não pode adicionar colaboradores. Gerencie o acesso nas configurações do repositório no GitHub.",
-      "externalProviderDescription": "O repositório deste espaço de trabalho está hospedado em {provider}, que não aceita convites de colaboradores pelo Kortix. Gerencie o acesso no provedor.",
+      "externalProviderDescription": "O repositório deste projeto está hospedado em {provider}, que não aceita convites de colaboradores pelo Kortix. Gerencie o acesso no provedor.",
       "manageOnGithub": "Gerenciar no GitHub",
       "alreadyHasAccess": "@{username} já tem acesso a este repositório",
       "inviteSent": "Convite enviado para @{username} — a pessoa deve aceitá-lo no GitHub",
@@ -654,35 +654,35 @@
       "canView": "Pode visualizar",
       "invite": "Convidar",
       "title": "Repositório Git",
-      "loadFailed": "Não foi possível carregar o repositório deste espaço de trabalho",
+      "loadFailed": "Não foi possível carregar o repositório deste projeto",
       "retry": "Tentar novamente"
     },
     "workspace": {
-      "updateFailed": "Não foi possível atualizar o espaço de trabalho",
-      "iconUpdateFailed": "Não foi possível atualizar o ícone do espaço de trabalho",
+      "updateFailed": "Não foi possível atualizar o projeto",
+      "iconUpdateFailed": "Não foi possível atualizar o ícone do projeto",
       "icon": "Ícone",
-      "iconDescription": "Exibido ao lado do nome do espaço de trabalho.",
-      "name": "Nome do espaço de trabalho",
-      "nameDescription": "Exibido no seletor e em qualquer lugar onde este espaço de trabalho apareça.",
+      "iconDescription": "Exibido ao lado do nome do projeto.",
+      "name": "Nome do projeto",
+      "nameDescription": "Exibido no seletor e em qualquer lugar onde este projeto apareça.",
       "saving": "Salvando…",
-      "archived": "Espaço de trabalho arquivado",
-      "archiveFailed": "Não foi possível arquivar o espaço de trabalho",
-      "loadFailed": "Não foi possível carregar o espaço de trabalho",
+      "archived": "Projeto arquivado",
+      "archiveFailed": "Não foi possível arquivar o projeto",
+      "loadFailed": "Não foi possível carregar o projeto",
       "retry": "Tentar novamente",
       "dangerZone": "Zona de perigo",
-      "deleteWorkspace": "Excluir espaço de trabalho",
-      "deleteDescription": "Remove este espaço de trabalho e todo o seu conteúdo para todos os membros. Esta ação não pode ser desfeita.",
-      "deleteTitle": "Excluir espaço de trabalho?",
+      "deleteWorkspace": "Excluir projeto",
+      "deleteDescription": "Remove este projeto e todo o seu conteúdo para todos os membros. Esta ação não pode ser desfeita.",
+      "deleteTitle": "Excluir projeto?",
       "deleteDialog": "Isso exclui {name} para todas as pessoas com acesso. Esta ação não pode ser desfeita.",
       "consequencesTitle": "Você perde imediatamente:",
       "consequences": {
-        "sessions": "Todas as sessões deste espaço de trabalho, com arquivos, histórico e resultados",
+        "sessions": "Todas as sessões deste projeto, com arquivos, histórico e resultados",
         "automation": "Todas as execuções agendadas e gatilhos — eles param imediatamente",
-        "integrations": "Todas as integrações conectadas, segredos e chaves de API deste espaço de trabalho",
-        "access": "O acesso de toda a equipe — ninguém poderá acessar este espaço de trabalho novamente"
+        "integrations": "Todas as integrações conectadas, segredos e chaves de API deste projeto",
+        "access": "O acesso de toda a equipe — ninguém poderá acessar este projeto novamente"
       },
       "reassurance": "O repositório Git conectado não é excluído. Todo código já enviado permanece no lugar.",
-      "keepWorkspace": "Manter espaço de trabalho"
+      "keepWorkspace": "Manter projeto"
     },
     "sandbox": {
       "states": {
@@ -803,7 +803,7 @@
       "categories": {
         "quota": {
           "label": "Limite de snapshots atingido",
-          "help": "Este espaço de trabalho armazenou o máximo de máquinas preparadas permitido pelo plano. Exclua um modelo de sandbox que não usa mais ou aumente o limite e recrie."
+          "help": "Este projeto armazenou o máximo de máquinas preparadas permitido pelo plano. Exclua um modelo de sandbox que não usa mais ou aumente o limite e recrie."
         },
         "dockerfile": {
           "label": "Falha na criação do Dockerfile",
@@ -997,9 +997,9 @@
     },
     "upgrades": {
       "available": "Atualizações disponíveis",
-      "readOnly": "Somente leitura — executar uma atualização exige acesso de gravação a este espaço de trabalho.",
+      "readOnly": "Somente leitura — executar uma atualização exige acesso de gravação a este projeto.",
       "none": "Nenhuma atualização disponível",
-      "upToDateDescription": "Este espaço de trabalho já está atualizado.",
+      "upToDateDescription": "Este projeto já está atualizado.",
       "upToDate": "Atualizado",
       "run": "Executar",
       "oneOff": "Atualização avulsa",
@@ -1098,7 +1098,7 @@
       "namePlaceholder": "Por exemplo, CLI do notebook",
       "nameHint": "Use um nome que identifique onde você usará esta chave.",
       "scope": "Escopo",
-      "wholeWorkspace": "Espaço de trabalho inteiro",
+      "wholeWorkspace": "Projeto inteiro",
       "oneProject": "Um projeto",
       "scopeHint": "Uma chave com escopo de projeto pode acessar somente o projeto selecionado.",
       "expires": "Expira",
@@ -1205,7 +1205,7 @@
     "searchResults": "Resultados da Busca",
     "recent": "Recentes",
     "personalAccount": "Conta Pessoal",
-    "workspaces": "Espaços de Trabalho",
+    "workspaces": "Projetos",
     "servers": "Servidores",
     "searchServers": "Pesquisar servidores...",
     "addServer": "Adicionar servidor",
@@ -1282,19 +1282,20 @@
       }
     },
     "workspace": {
-      "switch": "Alternar espaço de trabalho",
-      "switchMenu": "Alternar espaço de trabalho",
-      "create": "Criar espaço de trabalho…",
+      "switch": "Alternar projeto",
+      "switchMenu": "Alternar projeto",
+      "create": "Criar projeto…",
+      "createIn": "Criar um projeto em {account}",
       "createAccount": "Criar uma conta…",
       "settings": "Configurações",
       "downloadApp": "Transferir aplicação",
       "logOut": "Sair",
-      "find": "Encontrar um espaço de trabalho…",
+      "find": "Encontrar um projeto…",
       "accountSettings": "Configurações da conta",
-      "noMatches": "Nenhum espaço de trabalho correspondente",
-      "empty": "Ainda não existem espaços de trabalho",
+      "noMatches": "Nenhum projeto correspondente",
+      "empty": "Ainda não existem projetos",
       "account": "Conta",
-      "loadError": "Não foi possível carregar os espaços de trabalho"
+      "loadError": "Não foi possível carregar os projetos"
     },
     "manifestUpgrade": {
       "title": "Atualizar para v2",
@@ -1370,7 +1371,10 @@
         "Bom dia! O que vamos construir?",
         "Bom dia! Pronto para arrasar?"
       ],
-      "afternoon": ["Boa tarde! Como posso ajudar?", "E aí, tudo bem? O que vamos fazer?"],
+      "afternoon": [
+        "Boa tarde! Como posso ajudar?",
+        "E aí, tudo bem? O que vamos fazer?"
+      ],
       "evening": [
         "Boa noite! Trabalhando até tarde?",
         "Boa noite! No que estamos trabalhando?",
@@ -1672,7 +1676,7 @@
     "failedToStartSession": "Não foi possível iniciar a sessão",
     "hintSkills": "Digite / para habilidades, comandos e arquivos",
     "hintMentions": "Digite @ para mencionar arquivos e agentes",
-    "hintWorkspaceFile": "Pergunte sobre qualquer arquivo no espaço de trabalho",
+    "hintWorkspaceFile": "Pergunte sobre qualquer arquivo no projeto",
     "hintCommandPalette": "Pressione {modifier}K para abrir a paleta de comandos",
     "hintSwitchAgents": "Pressione Tab para trocar de agente",
     "hintAttachFiles": "Arraste e solte arquivos para anexá-los",
@@ -14708,7 +14712,7 @@
       "text9acf3e31d12e": "Nenhum conteúdo.",
       "text9ad125fe331f": "Ordenar por {value0}",
       "text9ad1905ba13a": "Função do membro da conta alterada",
-      "text9ad6baffd025": "Trocar espaço de trabalho",
+      "text9ad6baffd025": "Alternar projeto",
       "text9ada0e627aed": "Um agente reescrevendo o próprio prompt aparece da mesma forma que uma alteração de código: um commit, em uma branch, em uma solicitação de mudança que alguém lê.",
       "text9adff6870471": "Copiar link",
       "text9ae2faa5b263": "Conecte o primeiro em um minuto.",
@@ -15288,7 +15292,7 @@
       "textab8fcb695b84": "Crie uma conexão de provisionamento \"SCIM Outbound\" e aponte-a para os dois valores mostrados acima.",
       "textab93638292af": "Não foi possível carregar o Discover",
       "textab936b802fa6": "Versão do SCIM",
-      "textab95d456c6bb": "Membros do espaço de trabalho",
+      "textab95d456c6bb": "Membros do projeto",
       "textab986ad2d8e6": "Declarado no repositório",
       "textab9a61284668": "O feedback chega por seis lugares e não é lido em nenhum. O agente lê os seis, agrupa solicitações que são essencialmente iguais e escreve a especificação com cada citação referenciada. Você decide o que construir.",
       "textaba314822529": "Token SCIM revogado",
@@ -17616,7 +17620,7 @@
       "textec5ba0abb717": "Acesso",
       "textec5c2f7304b1": "Contexto podado",
       "textec69732f4600": "O manifesto rejeita um campo comportamental no bloco de governança, com um erro apontando para o próprio arquivo .md do agente.",
-      "textec70b4a614bf": "Trocar espaço de trabalho",
+      "textec70b4a614bf": "Trocar projeto",
       "textec73f9f19e7c": "Escreva uma vez. Toda sessão saberá.",
       "textec7a4e3094f9": "Proprietário da autorização alterado, mas a sincronização falhou: {value0}. Use Sync para tentar novamente.",
       "textec81d7aae411": "A máquina clona o repositório e cria uma branch com o nome da sessão. Toda edição e commit feitos pela sessão vivem nessa branch e em nenhum outro lugar.",
@@ -18356,72 +18360,7 @@
       "textb38cb5e18525": "esse ciclo e mostra seu trabalho. Tem vinte minutos?",
       "textff5bd8333c4e": "Você e qualquer pessoa que possa gerenciar este projeto",
       "text36d8691ae566": "Qualquer pessoa com a URL, além da sua equipe",
-      "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe",
-      "text00014a68c034": "Fonte do catálogo não encontrada",
-      "text0668b6bceb30": "Adicionado ao projeto",
-      "text08e6480e9b78": "{value0} adicionado",
-      "text0c6c035d5429": "Documentação do MCP",
-      "text1d35d664a8ba": "Conector não encontrado",
-      "text221bee24f060": "Origem da credencial",
-      "text24fa20ced6cc": "Conecte sua conta",
-      "text26ef6803567d": "Documentação da API de {value0}",
-      "text2814edeb3957": "Requer login ou credencial após adicionar",
-      "text2ba8a1bcfc5c": "Falha ao atualizar a vinculação",
-      "text2e300bb1c797": "Entrar no {value0}",
-      "text2fa7425980f8": "Adicionado ×{value0}",
-      "text33a484a069ac": "{value0} adicionado — entre para concluir a conexão.",
-      "text370e8d05e760": "Nenhum conector do catálogo {value0} corresponde a “{value1}”.",
-      "text37479e6422d0": "Falha ao adicionar o conector",
-      "text3a4b4df869c7": "Só eu",
-      "text4b29172693be": "Parar de usar {value0}?",
-      "text4ca06a005d29": "Neste projeto",
-      "text51eb40d78f0a": "Concluir a configuração",
-      "text572ca3ee73f4": "Não requer login",
-      "text618c9623e0f3": "O conector não guarda credencial própria; as chamadas falham até você adicionar uma ou vincular outro segredo. O segredo em si não é alterado.",
-      "text641cf33675f8": "Adicionar {value0}",
-      "text650179ec8cbe": "o segredo vinculado",
-      "text66e83f905e7a": "Documentação de {value0}",
-      "text691991176e63": "{value0} salvo — entre para concluir a conexão.",
-      "text698c933c2a68": "“{value0}” não é um catálogo de conectores compatível.",
-      "text6aadac2f2b7a": "Voltar",
-      "text6f520bd876d2": "URL oficial do conector",
-      "text71ec1c2e842f": "Adicionar a credencial",
-      "text7b2768da1390": "Instala para o projeto inteiro: uma conexão compartilhada que todos os membros e seus agentes usam.",
-      "text83b1bc0429f4": "Instalar para",
-      "text8626b5d27992": "Não foi possível carregar o conector",
-      "text86f0b18d6d8a": "Usa o segredo do projeto {value0}. Rotacione ou edite na página Segredos — este conector o acompanha.",
-      "text87f2fa0e1edc": "Esta entrada publica apenas documentação — nenhuma superfície à qual o Kortix possa se conectar.",
-      "text9720ba5a9ede": "Não foi possível ler a lista de conectores do projeto.",
-      "text97d8aa23aecf": "Documentação do Kortix",
-      "text9bbde51bfbd3": "Cada membro adiciona sua própria credencial abaixo, em Contas.",
-      "text9cd2dee87dd6": "Salvo como",
-      "text9ffc843f501a": "Configurar manualmente",
-      "texta88c299ab989": "Salvar credencial",
-      "textae5bd6d7ed0b": "Sincronização de ferramentas",
-      "textafcbf5878dc9": "Só para mim",
-      "textb16446d4331a": "Site oficial",
-      "textb5a229ac8bec": "Site",
-      "textbdeb87e037ba": "Abrir conector",
-      "textc19b3005db37": "Não foi possível carregar as opções de conexão",
-      "textc4b8a965e9ef": "Use Conectar acima. O Kortix armazena criptografado e anexa a cada chamada.",
-      "textc769b970c58f": "Vincular um segredo do projeto",
-      "textcb9545359d92": "Sua própria conexão, usada apenas nas sessões que você inicia. Nada é compartilhado — cada colega que quiser {value0} conecta a própria conta aqui.",
-      "textd157dd6a3627": "A solicitação ao catálogo falhou.",
-      "textd319702d1c2f": "Para o projeto inteiro",
-      "textd7957d7041c3": "Uma conexão compartilhada. Cada membro deste projeto — e os agentes em suas sessões — usa a mesma conta {value0}. Um gerente de projeto conecta uma vez.",
-      "textda22b1af2010": "Escolha uma ferramenta e defina o que acontece quando um agente a usa.",
-      "textda9e74dcdde6": "Parar de usar um segredo",
-      "textdca68375fa4f": "Desvincular",
-      "textdee89ced3d79": "Usar OAuth 2.0 em vez disso",
-      "textdf197888764d": "O projeto inteiro",
-      "texte0e9f2833427": "Como se conecta",
-      "texte72d6e4b58ed": "A última sincronização falhou.",
-      "textee1ee9e008b4": "Um conector pode ser adicionado mais de uma vez — cada conexão recebe seu próprio nome.",
-      "texteec42a6f22ad": "Segredo desvinculado — o conector fica sem credencial até você adicionar uma",
-      "textf09704dad946": "Voltar aos conectores",
-      "textf3c16c11f690": "Nada para adicionar",
-      "textf75561ab0be6": "A credencial agora vem do segredo {value0}",
-      "textf91b7814f64d": "Nenhum conector com o slug “{value0}” existe neste projeto."
+      "text4fb2abecc0a6": "Qualquer pessoa com a senha, além da sua equipe"
     }
   },
   "projectOnboarding": {
@@ -18436,8 +18375,8 @@
     },
     "kickoff": {
       "tools": "Conectei essas ferramentas também: {count}. Use-os se eles ajudarem.",
-      "noDomain": "Terminei de configurar meu espaço de trabalho.{toolsClause} Apresente-se, explique o que você pode fazer e pergunte primeiro em que preciso de ajuda.",
-      "withDomain": "Terminei de configurar meu espaço de trabalho para {domain}. Pesquise a empresa e me diga o que você encontrou.{toolsClause} Em seguida, pergunte primeiro no que preciso de ajuda."
+      "noDomain": "Terminei de configurar meu projeto.{toolsClause} Apresente-se, explique o que você pode fazer e pergunte primeiro em que preciso de ajuda.",
+      "withDomain": "Terminei de configurar meu projeto para {domain}. Pesquise a empresa e me diga o que você encontrou.{toolsClause} Em seguida, pergunte primeiro no que preciso de ajuda."
     },
     "company": {
       "title": "Conte-nos sobre sua empresa",
@@ -19285,5 +19224,29 @@
         "prompt": "Escreva o documento que uma nova pessoa contratada lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem perguntar e como é um bom resultado. Aproveite o que puder da memória do projeto e, no final, liste tudo o que você precisou supor, em vez de parar para me perguntar."
       }
     }
+  },
+  "repositoryAccess": {
+    "label": "Acesso ao repositório do projeto",
+    "enabled": "As novas sessões recebem o repositório do projeto. As permissões do Git continuam em vigor. As sessões existentes mantêm a sua configuração de acesso.",
+    "disabled": "As novas sessões são executadas sem o repositório do projeto. Podem criar arquivos e usar ferramentas autorizadas. As sessões existentes mantêm a sua configuração de acesso."
+  },
+  "modelAccess": {
+    "manageProvider": "Configurações de {name}",
+    "enableProviderAction": "Ativar provedor",
+    "disableProviderAction": "Desativar provedor",
+    "enabled": "Ativado",
+    "disabled": "Desativado",
+    "enableProvider": "Ativar {name}",
+    "defaultProviderHint": "Escolha um modelo padrão de outro provedor antes de desativar este provedor.",
+    "credentialsHint": "Desative a inferência sem remover as credenciais.",
+    "providerError": "Não foi possível atualizar o acesso ao provedor.",
+    "managedTitle": "Modelos gerenciados pela Kortix",
+    "managedDescription": "Modelos gerenciados cobrados em créditos Kortix. Não é necessária uma chave API.",
+    "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
+    "hidden": "Oculto no seletor",
+    "disableModel": "Desativar modelo",
+    "modelError": "Não foi possível atualizar o acesso ao modelo.",
+    "hiddenShort": "Oculto no seletor. Solicitações diretas continuam permitidas.",
+    "resetError": "Não foi possível redefinir a lista de modelos."
   }
 }

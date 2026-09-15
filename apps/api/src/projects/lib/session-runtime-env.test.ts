@@ -68,10 +68,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('runtime mode removes every project Git coordinate', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'runtime',
+      repositoryAccess: false,
     });
 
-    expect(env.KORTIX_WORKSPACE_MODE).toBe('runtime');
+    expect(env.KORTIX_REPOSITORY_ACCESS).toBe('0');
     expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
@@ -82,10 +82,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('read mode cannot clone before exact-path artifacts are implemented', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'read',
+      repositoryAccess: false,
     });
 
-    expect(env.KORTIX_WORKSPACE_MODE).toBe('read');
+    expect(env.KORTIX_REPOSITORY_ACCESS).toBe('0');
     expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
@@ -96,7 +96,7 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
   test('legacy and branch sessions keep the project clone and Git coordinates', () => {
     for (const env of [
       buildSessionRuntimeEnv(BASE_INPUT),
-      buildSessionRuntimeEnv({ ...BASE_INPUT, workspaceMode: 'branch' }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: true }),
     ]) {
       expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('1');
       expect(env.KORTIX_REPO_URL).toBe(BASE_INPUT.repoUrl);
@@ -151,7 +151,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        workspaceMode: 'runtime',
+        repositoryAccess: false,
         compiledBootMode: 'prefer',
         freshSession: true,
         baseSha: 'a'.repeat(40),
@@ -174,7 +174,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   test('does not emit branch-restore authority for repository-free workspaces', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'runtime',
+      repositoryAccess: false,
       restoreSessionBranch: true,
     });
 
@@ -259,7 +259,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        workspaceMode: 'runtime',
+        repositoryAccess: false,
         freshSession: true,
         opencodeConfigDir: '.kortix/opencode',
       }),
@@ -282,7 +282,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        workspaceMode: 'runtime',
+        repositoryAccess: false,
         fastColdBootEnabled: true,
         freshSession: true,
         baseSha: 'a'.repeat(40),
@@ -325,7 +325,7 @@ describe('buildSessionRuntimeEnv — OpenCode executable prefetch', () => {
   test('keeps prefetch enabled for runtime-only sessions', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      workspaceMode: 'runtime',
+      repositoryAccess: false,
       fastColdBootEnabled: true,
       freshSession: true,
     });
@@ -400,5 +400,43 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     });
     expect(env).not.toHaveProperty('KORTIX_MODEL');
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
+  });
+});
+
+describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
+  const PIN = `${'a'.repeat(40)}:${'b'.repeat(64)}:3177064`;
+
+  test('git mode (the default) emits neither the mode nor the pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'git', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a fresh full-repository session carries the mode and the identity-only pin', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).toBe(PIN);
+    // The pin is identity only: never a URL, never a credential.
+    expect(env.KORTIX_PROJECT_SNAPSHOT_PIN).not.toMatch(/https?:|X-Amz-/);
+  });
+
+  test('a cache miss carries the mode without a pin (the daemon records the miss and boots from Git)', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: null });
+    expect(env.KORTIX_PROJECT_SNAPSHOT_MODE).toBe('prefer-s3');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+  });
+
+  test('a resumed (not fresh) session never receives the S3 keys', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, restoreSessionBranch: true, projectSnapshotMode: 'require-s3', projectSnapshotPin: PIN });
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
+    expect(env.KORTIX_SESSION_BRANCH_RESTORE).toBe('1');
+  });
+
+  test('a restricted workspace mode receives no repository and therefore no archive', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, repositoryAccess: false, projectSnapshotMode: 'prefer-s3', projectSnapshotPin: PIN });
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
   });
 });

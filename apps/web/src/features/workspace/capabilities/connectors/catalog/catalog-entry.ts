@@ -1,6 +1,8 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
+import { POPULAR_SECTION } from './connector-categories';
+
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
  * add flow the card opens. A `discover` entry goes to `DiscoverAddFlow`
@@ -90,35 +92,6 @@ export function catalogEntryFromEasyConnect(
  * into one comparable token: `Google Sheets`, `google-sheets` and
  * `google_sheets` all become `googlesheets`.
  */
-/**
- * The catalogue kind behind a card, or `null` when the source has none
- * (Easy Connect apps and the native Computers card carry no kind).
- */
-export function catalogEntryKind(entry: CatalogEntry): DiscoverConnector['kind'] | null {
-  return entry.source === 'discover' ? entry.connector.kind : null;
-}
-
-/**
- * The one fact that varies between cards: HOW this entry connects. Short
- * nouns, shown as the card's quiet line under the title — every card gets
- * one, so the rows scan as a consistent column instead of some cards
- * carrying a mark and others nothing.
- */
-export function catalogEntryKindLabel(entry: CatalogEntry): string {
-  if (entry.source === 'computer') return 'Native';
-  if (entry.source === 'easy-connect') return 'App';
-  switch (entry.connector.kind) {
-    case 'mcp':
-      return 'MCP';
-    case 'graphql':
-      return 'GraphQL';
-    case 'cli':
-      return 'CLI';
-    default:
-      return 'API';
-  }
-}
-
 export function foldKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -171,85 +144,15 @@ export function connectedCatalogKeys(connectors: readonly AdminConnector[]): Rea
   return keys;
 }
 
-/**
- * Does a connector token (folded slug or name) identify this entry token?
- *
- * Exact match, or the connector token EXTENDS the entry's — the default add
- * flows propose names like "Canva MCP server" / "Canva MCP server 2", which
- * fold to `canvamcpserver…` and share only a PREFIX with the entry's `canva`.
- * Exact-only matching read every such connector as unrelated, so the Canva
- * card offered `+` and the Canva page listed nothing while the project held
- * two Canva servers. Prefix only counts for entry tokens of 4+ characters, so
- * a short entry ("Git") cannot claim everything that merely starts with it
- * (github, gitlab).
- */
-function tokenIdentifiesEntry(connectorToken: string, entryToken: string): boolean {
-  if (!entryToken || !connectorToken) return false;
-  if (connectorToken === entryToken) return true;
-  return entryToken.length >= 4 && connectorToken.startsWith(entryToken);
-}
-
-function catalogEntryTokens(entry: CatalogEntry): string[] {
-  return [foldKey(entry.slug), foldKey(entry.name)].filter(Boolean);
-}
-
 export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
   if (entry.source === 'computer') return connectedKeys.has('provider:computer');
-  const tokens = catalogEntryTokens(entry);
-  // The set stays the cheap exact index; the prefix pass iterates it — two
-  // keys per connector, dozens of connectors, ~72 cards: trivial.
-  for (const token of tokens) {
-    if (connectedKeys.has(token)) return true;
-  }
-  for (const key of connectedKeys) {
-    if (tokens.some((token) => tokenIdentifiesEntry(key, token))) return true;
-  }
-  return false;
+  return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
 }
 
-/**
- * Every project connector created from this catalogue entry — the membership
- * list behind a detail page's "In this project" section. Unlike
- * {@link connectedCatalogKeys} it does NOT skip `needs_auth` rows: this is
- * "what exists", not "what works" — a half-connected connector belongs in the
- * list with its status line saying so.
- */
-/**
- * The inverse of {@link catalogEntryConnectors}: given catalogue items, which
- * one does this CONNECTOR belong to? Same prefix rule, same direction — the
- * connector token extends the app token ("canvamcpserver" extends "canva") —
- * so the two joins cannot disagree about membership.
- */
-export function catalogAppForConnector<T extends { slug: string; name: string }>(
-  items: readonly T[],
-  connector: Pick<AdminConnector, 'slug' | 'name'>,
-): T | null {
-  const connectorTokens = [foldKey(connector.slug), foldKey(connector.name ?? '')].filter(Boolean);
-  return (
-    items.find((item) =>
-      [foldKey(item.slug), foldKey(item.name)]
-        .filter(Boolean)
-        .some((token) =>
-          connectorTokens.some((connectorToken) => tokenIdentifiesEntry(connectorToken, token)),
-        ),
-    ) ?? null
-  );
-}
-
-export function catalogEntryConnectors(
-  connectors: readonly AdminConnector[],
-  entry: CatalogEntry,
-): AdminConnector[] {
-  if (entry.source === 'computer') {
-    return connectors.filter((connector) => connector.provider === 'computer');
-  }
-  const tokens = catalogEntryTokens(entry);
-  return connectors.filter((connector) =>
-    [foldKey(connector.slug), foldKey(connector.name ?? '')].some((connectorToken) =>
-      tokens.some((token) => tokenIdentifiesEntry(connectorToken, token)),
-    ),
-  );
-}
+/** The synthetic first browse section. Not a catalogue category — see
+ *  `browseSections` in `browse-sections.ts`. Defined in `connector-categories.ts`
+ *  and re-exported here for the modules that already import this one. */
+export { POPULAR_SECTION };

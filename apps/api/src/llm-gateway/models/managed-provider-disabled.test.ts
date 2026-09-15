@@ -1,5 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 
+// Existing fixtures have no project inference restrictions.
+mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }) }));
+
 // Self-host default: KORTIX_MANAGED_PROVIDER_ENABLED is OFF. This file boots
 // the gateway's real (unmocked) descriptors/resolve-candidates/catalog/picker
 // modules against that config so every consumer of the managed lineup is

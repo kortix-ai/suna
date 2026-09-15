@@ -150,16 +150,16 @@ function sidebar(page: Page): Locator {
 
 async function openWorkspacePicker(page: Page): Promise<Locator> {
   const trigger = sidebar(page).getByRole("button", {
-    name: "Switch workspace",
+    name: "Switch project",
     exact: true,
   });
   await expect(trigger).toBeVisible({ timeout: 60_000 });
   await trigger.click();
   await page
-    .getByRole("menuitem", { name: "Switch Workspace", exact: true })
+    .getByRole("menuitem", { name: "Switch Project", exact: true })
     .click();
   const picker = page.getByRole("menu", {
-    name: "Switch Workspace",
+    name: "Switch Project",
     exact: true,
   });
   await expect(picker).toBeVisible();
@@ -223,6 +223,9 @@ test.describe("24 — a menu click never reloads the document", () => {
       });
       await dismissOnboarding(page);
 
+      // The initial goto waits for DOMContentLoaded. Finish its load event
+      // before counting document loads caused by subsequent menu clicks.
+      await page.waitForLoadState("load");
       const loadsAfterBoot = documentLoads.length;
 
       // 1. Switching workspace from the sidebar picker. Every row here was a

@@ -83,6 +83,27 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
     }
   })
 
+  test('returns decompressed upstream content without stale compression headers', async () => {
+    const payload = JSON.stringify({ choices: [{ message: { content: 'TURN_OK' } }] })
+    const compressed = Bun.gzipSync(payload)
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: () => new Response(compressed, { headers: {
+        'content-type': 'application/json',
+        'content-encoding': 'gzip',
+        'content-length': String(compressed.byteLength),
+      } }),
+    })
+    try {
+      startLlmProxy(14319, `http://127.0.0.1:${upstream.port}`, 'token')
+      const response = await fetch(`${llmProxyBaseUrl()}/chat/completions`)
+      expect(response.headers.get('content-encoding')).toBeNull()
+      expect(await response.text()).toBe(payload)
+    } finally {
+      upstream.stop(true)
+    }
+  })
+
   test('connector proxy injects + swaps its token independently', async () => {
     const up = mockUpstream()
     try {

@@ -21,6 +21,195 @@ linked, not inlined.
 
 ## Register
 
+### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
+
+**When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
+that returns a reason string). #6698 (2026-08-21) taught both auth middlewares
+that `unsupported-alg:HS256` is inconclusive via `isInconclusiveVerifyFailure`,
+but `sandbox-proxy/preview-auth.ts` kept `reason !== 'no-keys' && reason !==
+'no-key-for-kid'`. Prod JWKS publishes an ES256 key while GoTrue still signs
+HS256, so every preview ORIGIN (and `?token=` WebSocket) answered "Sign in to
+open this preview" to a valid session while `/v1/p/...` served the same token.
+*Incident:* prod, every JWT-authenticated preview origin, v0.13.16 and earlier.
+*Enforcer:* tripwire in `unit-jwt-alg-fallback.test.ts` fails when a
+production caller skips the predicate or compares a reason literal.
+
+### Await archive parser completion before extraction (2026-09-14)
+
+**When:** downloading an archive through parallel file and validation streams.
+A file sink finishing does not mean the decompressor has checked every header.
+Await the parser verdict before creating the extraction directory or launching tar.
+*Near-miss:* PR #7240 Linux package gate created a stage for a traversal archive;
+the guard and extraction raced. *Enforcer:* real traversal archive regression in
+`config-provider.test.ts`; it requires no stage and no extracted files on rejection.
+
+### Establish browser readiness before measuring navigation or capturing fonts (2026-09-14)
+
+**When:** measuring document reloads or taking UI screenshots. Await the initial
+load before recording its baseline. Select destination links by their exact href;
+await font readiness before screenshot capture within the journey deadline.
+*Incident:* PR #7240 local Chromium counted a late boot load as a menu reload,
+clicked before the agent card appeared, and timed out during a 46-second cold font load.
+*Enforcers:* browser journeys 24 and 27 retain navigation, layout, and screenshot assertions.
+
+### Drop decoded response headers and capture transcripts before manual stop (2026-09-14)
+
+**When:** forwarding a fetch response or stopping a session. Remove
+`content-encoding` and `content-length` after fetch decompresses the upstream body.
+Await transcript capture before provider stop; turn-end capture can still be in flight.
+*Incident:* PR #7240 live preview: RUN-9 failed with ZstdDecompressionError;
+SESS-24 returned an unavailable transcript immediately after manual stop.
+*Enforcers:* compressed upstream proxy test, stop ordering tests, RUN-9 and SESS-24.
+Live checks also wait for the written artifact, not the first assistant part;
+platform names and OpenCode titles are validated independently (GOLD-1, SESS-10).
+
+### Preserve deployment prefixes and prepare shared images before timed preview flows (2026-09-14)
+
+**When:** running the full suite on a self-hosted preview. Preserve the gateway's
+`/_gateway` mount when binding test credentials. Enable every tested page in the
+preview profile. Finish the cold default-image build before runtime flow timers;
+run forced shared-image rebuilds only after concurrent flows finish. Require the
+current template identity to be ready; fallback images carry an older daemon.
+*Incident:* PR #7240 preview run 34902478412: four gateway failures and seven
+runtime timeouts; `SNAP-2` deleted the shared image while sessions were booting.
+*Enforcers:* `client-ci-passthrough.test.ts`, `preview-stack.test.ts`, runner sandbox
+setup, and `SNAP-2` global scheduling. Vercel analytics also mounts only on Vercel.
+
+### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
+
+**When:** stopping the sandbox proxy or running package tests. Cancel boot and
+interval offload timers; reject callbacks after stop. Disable automatic offload in
+the test runner; explicit offload tests use temporary databases. Use the actual
+`kortixd` package name for the sequential lane. *Near-miss:* XLSX verification's
+full run entered a background scan of the developer's OpenCode DB; the process
+was stopped during its SELECT. *Enforcers:* proxy stop regression and runner contract.
+
+### Validate the destination against an exact-file permission, not its parent (2026-09-14)
+
+**When:** validating Computer Tunnel writes. Resolve both the destination and
+missing allowlist paths through their nearest existing ancestor. Compare the full
+resolved destination with the allowlist. An approved file does not grant its parent.
+*Incident:* XLSX follow-up CI exposed rejected exact-file approvals; macOS also
+compared `/var` with `/private/var` for missing files. *Enforcers:*
+`filesystem-integrity.test.ts` and `TUN-6` with an exact-file permission.
+
+### Transfer opaque bytes programmatically and verify the destination digest (2026-09-14)
+
+**When:** sending binary artifacts through Computer Tunnel. Never transcribe base64
+from model context. Use `fs_upload`, or generate at the destination. Validate format
+at the source; compare SHA-256 after transfer. Reject malformed file arguments before
+creating permission requests. Resolve approve/deny with a pending-state conditional update.
+*Incident:* XLSX transfer to a Mac produced identical same-length corrupt copies;
+an approval denial also conflicted with a reported write. That historical race is unproven.
+*Enforcers:* `filesystem-integrity.test.ts` and product flow `TUN-6`.
+
+### Moving a surface under a URL namespace must move every reader, and an effect must never depend on a per-render localized object (2026-09-14)
+
+**When:** relocating a page into an overlay/modal that prefixes its query
+params, or localizing a static catalog through a function that returns a new
+object. (1) Inside the account hub read state only through
+`useHubSearchParams()`; a raw `useSearchParams().get('provider')` is always
+`null` because the URL carries `accountProvider`. (2) Memoize localized objects
+and key effects on primitive ids — `localizeProviderGuide()` returned a new
+guide each render, so the progress-restore effect looped and reset the step.
+*Incident:* SSO + SCIM setup wizards unusable on dev/staging/prod from
+`123c1d91c5` (2026-09-08, provider pick did nothing) and `ebaae4d247`
+(2026-09-04, Back/step rail snapped back, `Maximum update depth exceeded`).
+*Enforcer:* `apps/web/src/features/accounts/hub/hub-search-params.test.ts`
+(no hub-rendered file reads a hub key off the raw URL) and browser journey
+`tests/e2e/specs/28-identity-setup-wizard.spec.ts` (every step, reload,
+change provider, fails on render-loop console errors).
+
+### A least-privilege S3 grant that checks "does this key exist?" needs `s3:ListBucket` — MinIO root credentials never show the gap (2026-09-14)
+
+**When:** writing an IAM policy for code that calls HeadObject/GetObject and
+treats `404`/`NoSuchKey` as "not there yet". Without `s3:ListBucket` on the
+bucket ARN, AWS answers a missing key with `403 AccessDenied`, so the caller
+reads a normal miss as a denial. A local MinIO root user or an admin laptop
+key has every permission and passes. Test IAM against the real role before
+calling it verified. *Incident:* #7221 on dev; the project-snapshot producer
+failed every build with `not authorized to perform: s3:ListBucket` on
+`kortix-dev-project-snapshots`, so no snapshot was ever published. Sessions
+stayed on Git, so there was no user impact. *Automation:* none — the dev
+post-deploy check (`GET …/project-snapshot` → 200) caught it.
+
+### `count`/`for_each` must be known at PLAN time — gate a grant on a literal bool, never on an ARN created in the same apply (2026-09-14)
+
+**When:** adding an optional resource to a Terraform module whose on/off input is
+another resource's attribute (`count = var.bucket_arn != "" ? 1 : 0` fed by
+`module.bucket.bucket_arn`). On a root where the bucket does not exist yet, the
+ARN is unknown until apply and `terraform plan` fails with `Invalid count
+argument`. `terraform validate` and `fmt` pass — only a plan catches it.
+*Incident:* #7221 merged `ccd3f7596d`; Deploy Dev run `34891285433` failed at
+"Apply dev API Terraform", which skipped the dev API and frontend deploys for
+every push until the fix (`project_snapshots_enabled` bool). *Automation:* none
+yet — candidate: Terraform CI runs `terraform plan -refresh=false` with a local
+backend on each root that creates new resources.
+
+### A stop → resume restarts the daemon on Daytona and does NOT on Platinum — never assume boot-time work re-runs after a resume (2026-09-14)
+
+**When:** writing anything that expects the sandbox daemon's boot path (config
+provider, reconcile, warm adoption, a health summary) to run again after
+`/sessions/:id/stop` + `/start`, or a check that reads the post-resume health
+as if it were a fresh boot. Daytona restarts the container, so the daemon
+re-runs and adopts the workspace warm (`provider: git`, `timings: {warm: ~230}`).
+Platinum CoW-resumes the SAME VM with the same process: `opencode_pid`
+unchanged, `uptime_s` carried on, and the health endpoint still reports the
+ORIGINAL boot's `config_provider` (`provider: s3, s3_attempted: true`) — which
+reads exactly like a re-acquisition and is not one (the uncommitted file is
+still on disk). Make the assertion provider-agnostic: "never re-acquired" is
+either "restarted + adopted warm" or "same daemon continued (summary identical,
+uptime ≥ before)"; a real re-acquisition shows NEW timings.
+*Near-miss:* the S3 compat gate's first Platinum run (PR #7221) failed its
+resume step on this and would have blocked a green provider; cost one run.
+*Enforcer:* `project-snapshot-compat.ts` prints `adoptedWarm` / `daemonContinued`
+per run and passed 23/23 on both providers; nothing yet guards other resume
+assumptions (`scheduleSandboxRuntimeRefresh` exists for the reconcile case).
+
+### A blob-less partial clone must still carry its symlink blobs, and a small fetch is loose objects, not a pack (2026-09-13)
+
+**When:** building or consuming a blob-less checkout (snapshot v2, any
+`--filter=blob:none` scheme). (1) `git status` / `update-index --refresh`
+compare a SYMLINK against its blob's CONTENT (`ce_compare_link`), so a tree
+with one symlink lazy-fetches through the promisor remote on every status —
+ship symlink blobs with the trees. (2) `git fetch` below
+`transfer.unpackLimit` (100 objects) explodes the pack into LOOSE objects;
+"remove the fetched pack" then leaves every blob in the archive — fetch with
+`-c transfer.unpackLimit=1` and purge `objects/??/`.
+*Near-miss:* both caught pre-merge by the daemon suite (a status timeout) and
+the integration suite (0 missing objects where blobs were expected).
+*Enforcer:* `config-provider.test.ts` (symlinked fixture, `--missing=print`
+counts) and `integration-project-snapshot.test.ts` (distinct-blob count).
+
+### The sandbox agent's Bun 1.3 re-issues a GET after a mid-body reset and appends the second body — never trust length alone (2026-09-13)
+
+**When:** streaming a download in `kortixd` (compiled with
+`SANDBOX_AGENT_BUN_VERSION=1.3.11`). After a socket reset mid-body, Bun 1.3
+silently re-issues the request and appends the new response to the SAME
+`fetch` body stream (server sees 2 GETs; consumer sees 1st-half + 2nd response,
+`close` with no `end`/`error`). Bun 1.4 (laptops) delivers a clean short EOF, so
+the suite is green locally and wrong in the image. Rules: (1) compare received
+bytes AND sha256 against a trusted descriptor; (2) treat an overrun past the
+declared size as transient transport garbage, not "too large"; (3) run the
+streaming suite under `oven/bun:<SANDBOX_AGENT_BUN_VERSION>` before shipping.
+*Near-miss:* the S3 config provider classified a reset as `malformed` (no
+retry) under 1.3.11; caught by running its suite in Docker under 1.3.11.
+*Enforcer:* none in CI — `docs/runbooks/project-snapshot-s3.md` carries the
+Docker command; a CI lane on the pinned Bun is the TODO.
+
+### Hand the AWS SDK a Buffer, not a Node stream, on the API image's Bun 1.2 (2026-09-13)
+
+**When:** uploading a file with `@aws-sdk/client-s3` from `apps/api` (image
+`BUN_VERSION=1.2`, 1.2.23). `PutObjectCommand({ Body: createReadStream(path) })`
+never completes on that Bun and pins a core at 90 % — the same call with
+`Body: await readFile(path)` finishes in 15–30 ms, and HeadObject, GetObject,
+conditional put (412) and presigning all work. Laptop/CI Bun 1.3/1.4 stream
+fine, so unit + integration tests are green while the deployed leader's
+snapshot worker would spin forever without publishing.
+*Near-miss:* the project-snapshot producer (`project-snapshot-store.ts`),
+caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
+*Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
+image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
@@ -4946,3 +5135,40 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+### Preview runtime secret contracts span two Git revisions (2026-09-14)
+
+**When:** a preview fails in `validatePreviewRuntimeSecrets` before the API starts.
+The orchestration code runs from `main`; the bootstrap reads the exact PR head.
+A newly allowlisted runtime secret on `main` can therefore reach an older PR
+bootstrap that rejects it. Merge the upstream contract change into the canonical
+branch before retrying. Do not bypass validation or remove the allowlist.
+
+*Incident:* PR #7233, preview run `34893648765`, rejected `PLATINUM_API_KEY`.
+The publisher carried #7221's new field, while the PR bootstrap predated it.
+Merging `8767572f10` brought in the matching allowlist and provider configuration.
+*Automation:* `tests/unit/preview-stack.test.ts` checks the allowlist and Platinum
+configuration within one revision. Cross-revision compatibility is not covered.
+
+### Preserve mounted service paths in preview test clients
+
+**Incident (2026-09-14, PR #7233):** preview gateway tests reached the API because the REST test client discarded `/_gateway`. Gateway health returned `kortix-api`, and inference routes returned `404`. The deployed gateway itself remained healthy.
+
+**Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
+
+**Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.
+
+### Pass the deployed database URL to browser database helpers
+
+**Incident (2026-09-15, PR #7240):** the preview admin journey inserted its
+synthetic `super_admin` grant without passing `KE2E_DATABASE_URL`. The UI then
+queried the preview API, which did not see the grant, and rendered `Admin access
+required` on every retry.
+
+**Rule:** browser journeys that write deployment state must pass
+`KE2E_DATABASE_URL || E2E_DATABASE_URL` to each database helper call. Do not let
+the helper fall back to a repository dotenv file for a deployed target.
+
+**Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
+the role insert and cleanup delete. The preview journey must observe the grant
+through `/v1/user-roles` and render the admin overview.

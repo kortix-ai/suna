@@ -6,6 +6,7 @@ import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/reac
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
+import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
 import { Button } from '@/components/ui/button';
 import { Modal, ModalContent } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -290,7 +291,12 @@ export function ProjectOnboardingWizard({
               failed silently as a visual collision rather than a broken control.
               Grid tracks cannot overlap: `1fr auto 1fr` keeps the progress optically
               centred (both side tracks are equal) while each control reserves its
-              own space at every width. Do not go back to absolute centring. */}
+              own space at every width. Do not go back to absolute centring.
+
+              On desktop `.kx-titlebar-spacer` above the bar drops it below the
+              title-bar band: the macOS traffic lights otherwise cover the Back
+              arrow. */}
+            <div className="kx-titlebar-spacer" aria-hidden />
             <div className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-4">
               <div className="flex justify-start">
                 {index > 0 && (
@@ -308,7 +314,7 @@ export function ProjectOnboardingWizard({
 
               <StepProgress total={steps.length} current={index} />
 
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-2">
                 {/* Muted at rest — an escape hatch, never a call to action competing
                     with the step's own primary button.
 
@@ -331,6 +337,11 @@ export function ProjectOnboardingWizard({
                     <span className="hidden sm:inline">{t('skipForNow')}</span>
                   </Button>
                 )}
+                {/* Desktop only, and on every host: the shell has no browser
+                    toolbar, and the project shell passes no `onSkip`. Closing
+                    stamps onboarding through `skip` — an unstamped close would
+                    reopen the wizard on the next project load. */}
+                <DesktopCloseButton onClose={skip} />
               </div>
             </div>
 

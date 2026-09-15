@@ -1,5 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 
+// Existing fixtures have no project inference restrictions.
+mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }) }));
+
 const configuredModels = [
   {
     id: 'glm-5.3-flash',

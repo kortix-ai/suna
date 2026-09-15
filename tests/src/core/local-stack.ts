@@ -526,7 +526,7 @@ export async function ensureLocalStack(
           LLM_GATEWAY_BASE_URL: "",
           LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
           GATEWAY_INTERNAL_TOKEN: gatewayToken,
-          TUNNEL_ENABLED: "false",
+          TUNNEL_ENABLED: "true",
           TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
           // One connection string configures delivery, exactly as an operator
           // sets it — so the local suite exercises the EMAIL_URL path itself.

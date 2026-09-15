@@ -148,3 +148,32 @@ describe('getAgentConfig', () => {
     expect(response.block).not.toHaveProperty('connectors_personal');
   });
 });
+
+
+describe('repository access compatibility', () => {
+  test('reads legacy restricted agents as repository access disabled', async () => {
+    for (const workspace of ['runtime', 'read']) {
+      nextBody = { agent: 'support', schema_version: 2, block: { workspace } };
+      const response = await getAgentConfig('project-1', 'support');
+      expect(response.block).toEqual({ repository_access: false });
+    }
+  });
+
+  test('writes the boolean field when an older caller supplies a supported workspace alias', async () => {
+    await updateAgentConfig('project-1', 'support', { workspace: 'runtime' });
+    expect(calls[0]?.body).toEqual({ repository_access: false });
+  });
+
+  test('rejects conflicting aliases before sending a request', async () => {
+    await expect(updateAgentConfig('project-1', 'support', {
+      repository_access: true, workspace: 'runtime',
+    } as AgentConfigBlock)).rejects.toThrow('repository_access conflicts with workspace');
+    expect(calls).toHaveLength(0);
+  });
+
+  test('does not turn an unavailable read request into a working session implicitly', async () => {
+    await expect(updateAgentConfig('project-1', 'support', { workspace: 'read' }))
+      .rejects.toThrow('Set repository_access explicitly');
+    expect(calls).toHaveLength(0);
+  });
+});

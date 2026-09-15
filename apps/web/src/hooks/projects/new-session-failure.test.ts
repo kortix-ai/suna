@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getRequiredConnectorConnections, resolveCreateFailure } from './new-session-failure';
+import {
+  confirmCommitted,
+  errorCode,
+  getRequiredConnectorConnections,
+  isAmbiguousCreateFailure,
+  resolveCreateFailure,
+} from './new-session-failure';
 
 const connectorConnections = [
   {
@@ -104,5 +110,81 @@ describe('getRequiredConnectorConnections', () => {
         data: { connectors: ['gmail-read'] },
       }),
     ).toBeNull();
+  });
+});
+
+describe('isAmbiguousCreateFailure', () => {
+  test('a client timeout and a server deadline leave the outcome unknown', () => {
+    expect(isAmbiguousCreateFailure('TIMEOUT')).toBe(true);
+    expect(isAmbiguousCreateFailure('request_deadline')).toBe(true);
+  });
+
+  test('a definite refusal is not ambiguous', () => {
+    expect(isAmbiguousCreateFailure('subscription_required')).toBe(false);
+    expect(isAmbiguousCreateFailure('WARM_SESSION_ALREADY_CLAIMED')).toBe(false);
+    expect(isAmbiguousCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe(false);
+    expect(isAmbiguousCreateFailure(undefined)).toBe(false);
+  });
+});
+
+describe('errorCode', () => {
+  test('reads a string code off an error-like value', () => {
+    expect(errorCode({ code: 'TIMEOUT' })).toBe('TIMEOUT');
+    expect(errorCode(Object.assign(new Error('x'), { code: 'request_deadline' }))).toBe(
+      'request_deadline',
+    );
+  });
+
+  test('anything else has no code', () => {
+    expect(errorCode(new Error('x'))).toBeUndefined();
+    expect(errorCode({ code: 503 })).toBeUndefined();
+    expect(errorCode(null)).toBeUndefined();
+    expect(errorCode('TIMEOUT')).toBeUndefined();
+  });
+});
+
+describe('confirmCommitted — ask the server before calling an ambiguous create a failure', () => {
+  const noSleep = async () => {};
+
+  test('true on the first probe that sees the commit, without probing again', async () => {
+    let probes = 0;
+    const committed = await confirmCommitted(
+      async () => {
+        probes += 1;
+        return probes === 2;
+      },
+      { attempts: 5, delayMs: 1, sleep: noSleep },
+    );
+    expect(committed).toBe(true);
+    expect(probes).toBe(2);
+  });
+
+  test('a probe that throws (404 while the commit lands) counts as not yet', async () => {
+    let probes = 0;
+    const committed = await confirmCommitted(
+      async () => {
+        probes += 1;
+        if (probes < 3) throw new Error('Not found');
+        return true;
+      },
+      { attempts: 5, delayMs: 1, sleep: noSleep },
+    );
+    expect(committed).toBe(true);
+    expect(probes).toBe(3);
+  });
+
+  test('false after the last attempt, with a sleep between attempts only', async () => {
+    let probes = 0;
+    const sleeps: number[] = [];
+    const committed = await confirmCommitted(
+      async () => {
+        probes += 1;
+        return false;
+      },
+      { attempts: 3, delayMs: 7, sleep: async (ms) => void sleeps.push(ms) },
+    );
+    expect(committed).toBe(false);
+    expect(probes).toBe(3);
+    expect(sleeps).toEqual([7, 7]);
   });
 });

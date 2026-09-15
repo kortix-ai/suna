@@ -172,9 +172,6 @@ export interface CatalogConnector {
 }
 
 export interface AdminConnectorView extends CatalogConnector {
-  /** Why the last synchronization failed — the reason behind status 'error'.
-   *  Persisted by sync (`catalogPersistenceState`); null when healthy. */
-  lastError: string | null;
   authSecret: string | null;
   /** Project secret identifier used as the connector credential source. */
   secretIdentifier: string | null;
