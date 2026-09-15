@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Confirm delayed Daytona archive transitions before releasing captures (2026-09-15)
+
+**When:** source capture writes `workspace_status=captured` before an archived
+box returns to `archived`, leave the queue in review. Recheck the original
+source ID and state, archive SHA-256, and capture failure log before stamping
+the lifecycle receipt. *Near-miss:* six Trimaran captures produced valid archives,
+but Daytona remained `archiving` beyond the 180-second lifecycle wait.
+*Enforcer:* `confirm-delayed-source-archives.ts` releases only an exact archived
+state with matching capture artifacts; the review worker retries every 120 seconds.
+
 ### Preserve unlinked legacy tool rows as labeled native history (2026-09-15)
 
 **When:** a legacy tool row has no exact assistant or call link, keep its source

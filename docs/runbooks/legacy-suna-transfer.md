@@ -293,12 +293,19 @@ Keep it in `workspace-discovery` until an exact project, account, owner, and
 sandbox relation is found. Capture a `started` source box in place with two
 matching inventories. Return a `stopped` or `archived` box to its original
 state. Keep restoring, archiving, and error states in `capture-review`.
+If archive bytes verify but Daytona remains `archiving` beyond capture's
+180-second state check, keep the session in `capture-review`. The private
+delayed-archive checker verifies the capture log, tarball SHA-256, exact source
+sandbox ID, and final `archived` state before releasing that session. It
+never labels an `archiving` box as preserved.
 
 Image URLs require a matching Storage inventory row and byte-verified private
 archive. A pending image keeps its thread in `projection-review`, even when the
 native projector reports no unresolved content block. Tool results require an
 exact assistant link. The projector supports both legacy tool metadata formats.
-Unmatched rows remain in review with their raw record archived.
+An unlinked tool row with no source assistant is a labeled native history
+message with its exact content. The raw archive retains its source role and
+metadata. Unknown content blocks remain in review.
 
 The runtime proxy can replace an imported inline image URL with
 `/kortix/part/`. Verify that reference's session, message, and part IDs.
@@ -311,6 +318,9 @@ sessions before that cap blocks later imports. Requeue only failures whose
 attempt logs show the cap, and reuse their prepared checkpoints. The current
 operator batch uses 16 capture and 16 apply workers. Measure provider and API
 errors before increasing concurrency again.
+The current private batch runner pipelines capture, archive upload, apply,
+and stop for each prepared session. It starts the next stage when that
+session's proof passes. It does not wait for every selected capture to finish.
 
 An admission refusal can dead-letter the create command. Replaying its
 idempotency key returns the stored error even after active sessions stop.
