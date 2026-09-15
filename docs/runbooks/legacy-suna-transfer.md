@@ -1049,3 +1049,19 @@ After reclamation, 17 sessions recorded completed captures within two minutes.
 No imports had yet completed in that window; source lifecycle cleanup and later
 phases still had to finish. The dashboard's 64-hour estimate extrapolates the
 degraded trailing average; it is not a measured duration for the remaining work.
+
+### Mac build-cache cleanup — 2026-09-15
+
+The user authorized a broad cleanup. Inactive Next.js `.next` directories
+accounted for the largest reclaimable space. The cleanup removed 15 generated
+`apps/web/.next` directories, totaling 100.21 GiB by allocated-size inspection.
+It excluded any worktree with a live process working directory, refreshed that
+check before each removal, rejected symlink targets, and required `git ls-files`
+to report no tracked content beneath the target. Active worktrees, source code,
+dependencies, migration records, and unverified artifacts remained intact.
+
+The deletion manifest is `/tmp/kortix-build-cache-cleanup-1789508987.json`.
+`df -h /Users/markokraemer` reported 122 GiB available afterward. Migration
+admissions reached 80; the 21:49:37 UTC observation recorded 46 verified imports
+in two minutes, with zero reported quota, transport, capacity, or timeout errors
+in that window. This short sample is not a sustained throughput guarantee.
