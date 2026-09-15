@@ -143,7 +143,7 @@ export function ProjectActions({
           // Keep the dialog up until an in-flight archive settles.
           if (!open && !archive.isPending) setConfirmProject(null);
         }}>
-        <AlertDialogContent className="rounded-3xl border-0">
+        <AlertDialogContent className="rounded-3xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Archive project</AlertDialogTitle>
             <AlertDialogDescription className={archiveFailed ? 'text-destructive' : undefined}>

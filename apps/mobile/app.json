@@ -122,6 +122,12 @@
       "expo-router",
       "expo-notifications",
       [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash.png",

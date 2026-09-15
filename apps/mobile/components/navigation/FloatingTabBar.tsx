@@ -14,14 +14,24 @@
  * interruptible; reduced motion snaps instead). Press feedback is a 0.96
  * scale driven by shared values — a function `style` on a classNamed
  * Pressable is silently dropped by css-interop, so it can't live there.
- * Slides down behind the keyboard, same as the dock.
+ * Hides while the keyboard is up (150ms fade + slide down, 200ms back). Driven by
+ * React Native `Keyboard` events, not react-native-keyboard-controller: its
+ * `useReanimatedKeyboardAnimation` can report an open keyboard while it is
+ * closed on some Android devices (upstream #864), which faded this bar to 0
+ * and slid it off-screen on one test phone.
+ *
+ * A scroll-edge fade sits behind the capsule, like the iOS 26 tab bar: the
+ * theme background from transparent (36pt above the capsule) to opaque at
+ * the screen edge. Content fades out instead of stopping at a hard line, and
+ * the system navigation area blends into the same colour (3-button phones
+ * draw a contrast scrim there).
  *
  * Screens under this bar are full-height; pad their scroll content with
  * `useTabBarClearance()` from `tab-bar-layout` so the last rows never sit
  * under the capsule.
  */
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 import type { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Reanimated, {
@@ -31,8 +41,8 @@ import Reanimated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import { useColorScheme } from 'nativewind';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
@@ -46,9 +56,15 @@ type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tab
 const SLIDE = { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 const PRESS_IN = { duration: 90, easing: Easing.out(Easing.quad) };
 const PRESS_OUT = { duration: 140, easing: Easing.out(Easing.quad) };
+// Hide faster than it returns: the keyboard is already covering the bar.
+const KEYBOARD_HIDE = { duration: 150, easing: Easing.out(Easing.quad) };
+const KEYBOARD_SHOW = { duration: 200, easing: Easing.bezier(0.23, 1, 0.32, 1) };
 
 /** Soft lift for the light capsule, from the foreground token. */
 const LIGHT_SHADOW = `0px 6px 24px ${withAlpha(THEME.light.foreground, 0.12)}`;
+
+/** How far the scroll-edge fade reaches above the capsule. */
+const FADE_ABOVE_BAR = 36;
 
 function TabItem({
   label,
@@ -113,9 +129,22 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
   const thumbX = useSharedValue(0);
   const settled = React.useRef(false);
 
-  // Same trick as the dock: RNKC's height animates 0 → -keyboardHeight, so
-  // negating it slides the bar DOWN behind the keyboard while it fades.
-  const { height: kbHeight, progress: kbProgress } = useReanimatedKeyboardAnimation();
+  // 0 = keyboard closed, 1 = open. See the header comment for why this uses
+  // React Native Keyboard events.
+  const keyboardShown = useSharedValue(0);
+  React.useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardShown.value = withTiming(1, KEYBOARD_HIDE);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardShown.value = withTiming(0, KEYBOARD_SHOW);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [keyboardShown]);
+  const hiddenOffset = insets.bottom + FLOATING_BAR_GAP + FLOATING_BAR_HEIGHT;
 
   React.useEffect(() => {
     if (segmentWidth <= 0) return;
@@ -130,11 +159,29 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
 
   const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value }] }));
   const barStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -kbHeight.value }],
-    opacity: 1 - kbProgress.value,
+    transform: [{ translateY: keyboardShown.value * hiddenOffset }],
+    opacity: 1 - keyboardShown.value,
   }));
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: 1 - keyboardShown.value }));
+
+  const background = isDark ? THEME.dark.background : THEME.light.background;
+  const fadeColors = [
+    withAlpha(background, 0),
+    withAlpha(background, 0.85),
+    withAlpha(background, 1),
+  ] as const;
+  const fadeHeight = insets.bottom + FLOATING_BAR_GAP + FLOATING_BAR_HEIGHT + FADE_ABOVE_BAR;
 
   return (
+    <>
+      {/* Scroll-edge fade behind the capsule (see header comment). */}
+      <Reanimated.View
+        pointerEvents="none"
+        style={[fadeStyle, { height: fadeHeight }]}
+        className="absolute inset-x-0 bottom-0">
+        <LinearGradient colors={fadeColors} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
+      </Reanimated.View>
+
     <Reanimated.View
       pointerEvents="box-none"
       style={[barStyle, { bottom: insets.bottom + FLOATING_BAR_GAP }]}
@@ -188,5 +235,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
         </View>
       </View>
     </Reanimated.View>
+    </>
   );
 }

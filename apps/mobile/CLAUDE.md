@@ -62,7 +62,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`/`SheetFooter`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
-| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, inline Light/Dark/System toggle. See `design.md` → Settings screens. |
+| `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account tab, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). See `design.md` → Settings screens. |
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
 | `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Falls back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
@@ -304,14 +304,17 @@ that drops props silently breaks the screens that still pass them.
    The permanent record of what deviates is `scratchpad/rnr-fork-delta.md`,
    which IS tracked — that file, not the captures, is the source of truth.
 
-   Exactly four files may differ, all recorded in `rnr-fork-delta.md`:
+   Exactly six files may differ, all recorded in `rnr-fork-delta.md`:
    `text.tsx` (adds `font-roobert` to the base class — 164 importers depend on
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
    `text-base font-semibold`, so no screen sets label or box size by class),
    and `input.tsx` (borderless filled field in Roobert — no input has a
-   border). A fifth entry means someone forked a primitive.
+   border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
+   content; `DialogContent` renders its X close button only with
+   `showCloseButton` — Jay, 2026-09-15). A seventh entry means someone forked a
+   primitive.
 2. `global.css` is the single source of color (see **Color** above),
    pinned by `lib/utils/theme.test.ts`.
 3. Mobile spacing intentionally diverges from web's tighter scale (see

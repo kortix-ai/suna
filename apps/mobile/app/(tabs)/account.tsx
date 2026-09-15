@@ -7,7 +7,6 @@ import {
   Globe,
   LifeBuoy,
   LogOut,
-  Palette,
   Trash2,
   User,
   Users,
@@ -27,9 +26,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { Avatar } from '@/components/kortix/avatar';
 import {
-  AppearanceToggle,
+  AppearanceRow,
   SettingsGroup,
   SettingsPage,
   SettingsRow,
@@ -37,6 +35,8 @@ import {
 import { getFrontendUrl } from '@/api/config';
 import { haptics } from '@/lib/haptics';
 import { useAccounts } from '@/lib/projects/hooks';
+import { useAccountState } from '@/lib/billing/hooks';
+import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -54,7 +54,9 @@ export default function AccountTab() {
   // No screen header on this tab. iOS scroll views inset the status bar
   // themselves (contentInsetAdjustmentBehavior="automatic"); the Android
   // floating tab bar screens pad for it here.
-  const profileTopPadding = usesNativeTabBar ? 12 : insets.top + 16;
+  // 14pt matches the Projects tab header's py-3.5, so both tab titles sit at
+  // the same height.
+  const topPadding = usesNativeTabBar ? 14 : insets.top + 14;
 
   const accountsQuery = useAccounts(!!user);
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
@@ -63,11 +65,21 @@ export default function AccountTab() {
     accountsQuery.data?.[0] ??
     null;
 
+  // Plan of the active account, shown as the tier badge next to the email.
+  // Same plan name fallback as BillingPage's Current plan row.
+  const accountStateQuery = useAccountState({
+    accountId: activeAccount?.account_id ?? undefined,
+    enabled: !!activeAccount,
+  });
+  const subscription = accountStateQuery.data?.subscription;
+  const planName = subscription
+    ? subscription.tier_display_name || subscription.tier_key || 'Basic'
+    : undefined;
+
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !!user });
   // Hidden when the backend endpoint is unsupported (web parity).
   const accountDeletionSupported = deletionStatus?.supported ?? true;
 
-  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const email = user?.email || '';
   const languageName = availableLanguages.find((l) => l.code === currentLanguage)?.nativeName;
 
@@ -118,21 +130,24 @@ export default function AccountTab() {
         paddingBottom={tabBarClearance}
         contentInsetAdjustmentBehavior={TAB_SCROLL_INSET_ADJUSTMENT}
         header={
-          <View className="items-center pb-2" style={{ paddingTop: profileTopPadding }}>
-            <Avatar size={64} fallbackText={displayName} />
-            <Text variant="large" className="mt-3">
-              {displayName}
-            </Text>
-            {!!email && (
-              <Text variant="muted" className="mt-0.5">
-                {email}
-              </Text>
-            )}
+          // Page title, then one untitled row: who is signed in and on which plan.
+          // The title is page content (no header bar), so it shares the page
+          // background; h-10 matches the Projects header row height.
+          <View className="gap-3.5" style={{ paddingTop: topPadding }}>
+            <View className="h-10 justify-center">
+              <Text variant="h3">Account</Text>
+            </View>
+            <SettingsGroup>
+              <SettingsRow
+                label={email}
+                right={planName ? <PricingTierBadge planName={planName} size="md" /> : null}
+              />
+            </SettingsGroup>
           </View>
         }>
         <SettingsGroup title="Preferences">
           <SettingsRow icon={User} label="General" onPress={() => go('/(settings)/general')} />
-          <SettingsRow icon={Palette} label="Appearance" right={<AppearanceToggle />} />
+          <AppearanceRow />
           <SettingsRow icon={Volume2} label="Sounds" onPress={() => go('/(settings)/sounds')} />
           <SettingsRow
             icon={Bell}
@@ -195,7 +210,7 @@ export default function AccountTab() {
           // Keep the dialog up until an in-flight sign out settles.
           if (!isSigningOut) setSignOutOpen(open);
         }}>
-        <AlertDialogContent className="rounded-3xl border-0">
+        <AlertDialogContent className="rounded-3xl">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('settings.signOut')}</AlertDialogTitle>
             <AlertDialogDescription className={signOutFailed ? 'text-destructive' : undefined}>

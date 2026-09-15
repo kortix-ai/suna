@@ -6,7 +6,7 @@
  *   <SettingsPage>
  *     <SettingsGroup title="Preferences">
  *       <SettingsRow icon={User} label="General" onPress={…} />
- *       <SettingsRow icon={Palette} label="Appearance" right={<AppearanceToggle />} />
+ *       <AppearanceRow />
  *     </SettingsGroup>
  *   </SettingsPage>
  *
@@ -18,9 +18,10 @@
  */
 
 import * as React from 'react';
-import { Pressable, ScrollView, View, type ScrollViewProps } from 'react-native';
+import { Pressable, ScrollView, View, useWindowDimensions, type ScrollViewProps } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowUpRight,
   Check,
@@ -28,6 +29,7 @@ import {
   ChevronRight,
   Monitor,
   Moon,
+  Palette,
   Sun,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -36,7 +38,7 @@ import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { haptics } from '@/lib/haptics';
 import { cn } from '@/lib/utils/index';
@@ -279,41 +281,71 @@ export function SettingsRow({
   );
 }
 
-const THEME_OPTIONS: { value: ThemePreference; icon: LucideIcon; label: string }[] = [
-  { value: 'light', icon: Sun, label: 'Light' },
-  { value: 'dark', icon: Moon, label: 'Dark' },
-  { value: 'system', icon: Monitor, label: 'System' },
+const APPEARANCE_OPTIONS: {
+  value: ThemePreference;
+  icon: LucideIcon;
+  labelKey: string;
+  fallback: string;
+}[] = [
+  { value: 'system', icon: Monitor, labelKey: 'theme.system', fallback: 'System' },
+  { value: 'light', icon: Sun, labelKey: 'theme.light', fallback: 'Light' },
+  { value: 'dark', icon: Moon, labelKey: 'theme.dark', fallback: 'Dark' },
 ];
 
 /**
- * Light / Dark / System segmented toggle for an Appearance row's `right` slot.
- * Appearance is always this inline toggle — there is no separate appearance page.
+ * The Appearance row: shows the current mode as its value and opens a dialog
+ * listing System, Light and Dark (icon · label · check on the active one).
+ * Choosing an option applies it and closes the dialog. Drop it into a
+ * `SettingsGroup` like any row.
  */
-export function AppearanceToggle() {
+export function AppearanceRow() {
+  const { t } = useTranslation();
   const preference = useThemeStore((s) => s.preference);
   const setPreference = useThemeStore((s) => s.setPreference);
+  const [open, setOpen] = React.useState(false);
+  // DialogContent's `w-full` resolves against the overlay's shrink-wrapped
+  // animated wrappers on native, so the dialog collapsed to its content.
+  // An explicit width: screen minus 16pt each side, capped at 420pt.
+  const { width: windowWidth } = useWindowDimensions();
+  const dialogWidth = Math.min(windowWidth - 32, 420);
+
+  const current = APPEARANCE_OPTIONS.find((o) => o.value === preference) ?? APPEARANCE_OPTIONS[0];
+  const title = t('theme.title', 'Appearance');
 
   return (
-    <ToggleGroup
-      type="single"
-      value={preference}
-      className="overflow-hidden rounded-md border border-border"
-      onValueChange={(next) => {
-        if (!next) return;
-        haptics.selection();
-        void setPreference(next as ThemePreference);
-      }}>
-      {THEME_OPTIONS.map((opt, i) => (
-        <ToggleGroupItem
-          key={opt.value}
-          value={opt.value}
-          size="sm"
-          aria-label={opt.label}
-          isFirst={i === 0}
-          isLast={i === THEME_OPTIONS.length - 1}>
-          <ToggleGroupIcon as={opt.icon} />
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    <>
+      <SettingsRow
+        icon={Palette}
+        label={title}
+        value={t(current.labelKey, current.fallback)}
+        onPress={() => {
+          haptics.tap();
+          setOpen(true);
+        }}
+      />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="rounded-3xl" style={{ width: dialogWidth }}>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          <SettingsGroup>
+            {APPEARANCE_OPTIONS.map((option) => (
+              <SettingsRow
+                key={option.value}
+                icon={option.icon}
+                label={t(option.labelKey, option.fallback)}
+                checked={option.value === preference}
+                right={null}
+                onPress={() => {
+                  haptics.selection();
+                  void setPreference(option.value);
+                  setOpen(false);
+                }}
+              />
+            ))}
+          </SettingsGroup>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

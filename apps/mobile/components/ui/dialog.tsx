@@ -65,17 +65,20 @@ function DialogOverlay({
 function DialogContent({
   className,
   portalHost,
+  showCloseButton = false,
   children,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   portalHost?: string;
+  /** Render the top-right X close button. Off by default. */
+  showCloseButton?: boolean;
 }) {
   return (
     <DialogPortal hostName={portalHost}>
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'bg-secondary z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg p-4 py-5 shadow-lg shadow-black/5 sm:max-w-lg',
             Platform.select({
               web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
@@ -83,6 +86,7 @@ function DialogContent({
           )}
           {...props}>
           <>{children}</>
+          {showCloseButton ? (
           <DialogPrimitive.Close
             className={cn(
               'absolute right-4 top-4 rounded opacity-70 active:opacity-100',
@@ -97,6 +101,7 @@ function DialogContent({
             />
             <Text className="sr-only">Close</Text>
           </DialogPrimitive.Close>
+          ) : null}
         </DialogPrimitive.Content>
       </DialogOverlay>
     </DialogPortal>

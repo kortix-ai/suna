@@ -29,6 +29,7 @@ import { useFonts } from 'expo-font';
 import { SplashScreen, useRouter, useSegments } from 'expo-router';
 import { AppStack, fadeTransition, usePushTransition } from '@/components/navigation/stack-transitions';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -301,16 +302,34 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, [checkAndApplyUpdates]);
 
-  // Re-apply status bar style on foreground — iOS resets the bar appearance
-  // when the app suspends/resumes and the declarative <StatusBar/> doesn't
-  // re-render unless the React tree updates.
+  // Keep the status bar visible with icons that contrast with the theme.
+  // - iOS resets the bar appearance on suspend/resume, and the declarative
+  //   <StatusBar/> only re-applies when the React tree updates.
+  // - Android: KeyboardProvider replaces React Native's StatusBarManager with
+  //   react-native-keyboard-controller's compat module, which silently drops
+  //   setStyle/setHidden while `currentActivity` is null. A call that races
+  //   the activity attach is lost, the icons keep Expo Go's previous colour
+  //   (white on our light header) and the bar reads as empty on some phones.
+  //   Re-applying shortly after mount lands once the activity exists.
   useEffect(() => {
     const desired: 'light' | 'dark' = (colorScheme ?? 'light') === 'dark' ? 'light' : 'dark';
-    setStatusBarStyle(desired, true);
+    const apply = () => {
+      StatusBar.setHidden(false);
+      setStatusBarStyle(desired, false);
+      // Android navigation buttons follow the same contrast. Takes effect on
+      // 3-button phones once the contrast scrim is off (`enforceContrast:
+      // false` in app.json — dev and store builds, not Expo Go).
+      if (Platform.OS === 'android') NavigationBar.setStyle(desired);
+    };
+    apply();
+    const retries = [150, 600, 1500].map((ms) => setTimeout(apply, ms));
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') setStatusBarStyle(desired, true);
+      if (state === 'active') apply();
     });
-    return () => sub.remove();
+    return () => {
+      retries.forEach(clearTimeout);
+      sub.remove();
+    };
   }, [colorScheme]);
   // ==========================================
   // END OTA UPDATE SYSTEM

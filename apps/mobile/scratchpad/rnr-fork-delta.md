@@ -502,3 +502,20 @@ $ wc -l < /tmp/missing.txt
 All 19 remaining entries are exactly the 5 groups above. See
 `.superpowers/sdd/2026-09-05-mobile-rnr-migration/task-7-report.md` for the
 full gate output (tsc, `bun test`, per-token presence counts).
+
+## dialog.tsx + alert-dialog.tsx — no border on the content (2026-09-15)
+Stock content class: `bg-background border-border … rounded-lg border p-6 …`.
+Fork: `border-border` and `border` removed from `DialogContent` and
+`AlertDialogContent`; everything else stock.
+DECISION (Jay, 2026-09-15): dialogs are borderless, matching the app-wide
+"no borders" rule (cards, inputs). Call sites keep only layout/shape classes
+(`rounded-3xl`); the `border-0` overrides in account.tsx and
+ProjectActions.tsx were removed as redundant.
+
+## dialog.tsx — close button opt-in (2026-09-15)
+Stock `DialogContent` always renders the top-right X (`DialogPrimitive.Close`).
+Fork: new prop `showCloseButton?: boolean`, default `false`; the X renders
+only when it is `true`. Everything else stock.
+DECISION (Jay, 2026-09-15): dialogs have no close button unless a call site
+asks for one. Only consumer at the time: `AppearanceRow` (settings-list),
+which closes on option select and on overlay tap.

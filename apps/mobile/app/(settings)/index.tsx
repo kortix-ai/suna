@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useLanguage } from '@/contexts';
 import { Bell, BookOpen, LifeBuoy, Palette, User, Volume2 } from 'lucide-react-native';
 import {
-  AppearanceToggle,
+  AppearanceRow,
   SettingsGroup,
   SettingsPage,
   SettingsRow,
@@ -40,7 +40,7 @@ export default function SettingsScreen() {
       <SettingsGroup title="Preferences">
         <SettingsRow icon={User} label="General" onPress={() => go('/(settings)/general')} />
         {/* Inline control — the color mode changes right here, no subpage. */}
-        <SettingsRow icon={Palette} label="Appearance" right={<AppearanceToggle />} />
+        <AppearanceRow />
         <SettingsRow icon={Volume2} label="Sounds" onPress={() => go('/(settings)/sounds')} />
         <SettingsRow
           icon={Bell}
