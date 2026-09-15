@@ -1560,6 +1560,9 @@
       "commandsAndActions": "Befehle und Aktionen",
       "toUse": "zur Verwendung",
       "use": "Verwenden"
+    },
+    "legacyAnswer": {
+      "followUps": "Vorgeschlagene Folgefragen"
     }
   },
   "agents": {

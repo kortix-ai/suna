@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { STATUS_TEXT } from '@/components/ui/status';
+import { isLegacyAnswerPart } from '@/features/session/legacy-answer';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { GenericTool } from '@/features/session/tool/generic-tool';
 import {
@@ -19,6 +20,7 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
+import { LegacyAnswerTool } from '@/features/session/tool/tools/legacy-answer-tool';
 import { cn } from '@/lib/utils';
 import {
   PERMISSION_LABELS,
@@ -140,7 +142,12 @@ function ToolPartRendererImpl({
 
   if (part.tool === 'todoread') return null;
 
-  if (part.state.status === 'error' && 'error' in part.state) {
+  // A legacy Suna `complete` / `ask` carries its answer in the input. A missing
+  // result row ("Legacy tool result unavailable") loses nothing the reader
+  // needs, so the answer renders instead of a failure card.
+  const legacyAnswer = isLegacyAnswerPart(part);
+
+  if (part.state.status === 'error' && 'error' in part.state && !legacyAnswer) {
     const errorStr = (part.state as { error: string }).error;
     const { display, server } = (() => {
       const slashIdx = part.tool.lastIndexOf('/');
@@ -183,7 +190,9 @@ function ToolPartRendererImpl({
     );
   }
 
-  const RegisteredComponent = ToolRegistry.get(part.tool);
+  // Matched by input shape before the registry: `ask` is also registered as a
+  // live `question` alias, and a name lookup cannot tell the two apart.
+  const RegisteredComponent = legacyAnswer ? LegacyAnswerTool : ToolRegistry.get(part.tool);
   const forceOpen = !!permission || !!question;
   const isLocked = !!permission || !!question;
 

@@ -52,6 +52,56 @@ describe('sanitizeParts', () => {
     });
   });
 
+  test('a legacy Suna `complete` keeps its answer fields — the answer IS the input', () => {
+    const [part] = sanitizeParts([
+      {
+        id: 'prt_legacy',
+        type: 'tool',
+        tool: 'complete',
+        state: {
+          status: 'completed',
+          title: 'complete',
+          metadata: { legacy_source_message_id: 'c3452e75' },
+          input: {
+            text: 'All four missing premiums are filled in.',
+            attachments: 'Macro_Hedge_Positions_Completed.xlsx',
+            follow_up_prompts: ['Break out the premium spend by fund'],
+            unrelated: 'x'.repeat(1000),
+          },
+          output: '{"status": "complete"}',
+        },
+      },
+    ]);
+    expect(part!.state).toEqual({
+      status: 'completed',
+      title: 'complete',
+      metadata: { legacy_source_message_id: 'c3452e75' },
+      input: {
+        text: 'All four missing premiums are filled in.',
+        attachments: 'Macro_Hedge_Positions_Completed.xlsx',
+        follow_up_prompts: ['Break out the premium spend by fund'],
+      },
+    });
+  });
+
+  test('a live `ask` question and a legacy answer over budget stay bounded', () => {
+    const [question] = sanitizeParts([
+      {
+        type: 'tool',
+        tool: 'ask',
+        state: { status: 'completed', input: { questions: [{ question: 'Pick' }], text: 'x' } },
+      },
+    ]);
+    expect(question!.state).toEqual({ status: 'completed' });
+
+    const huge = 'a'.repeat(MIRROR_MAX_PART_CHARS + 10);
+    const [legacy] = sanitizeParts([
+      { type: 'tool', tool: 'ask', state: { status: 'error', input: { text: huge } } },
+    ]);
+    const input = (legacy!.state as { input: { text: string } }).input;
+    expect(input.text.length).toBe(MIRROR_MAX_PART_CHARS);
+  });
+
   test('a text part survives intact — it is the transcript', () => {
     expect(sanitizeParts([{ id: 'p', type: 'text', text: 'hello world' }])).toEqual([
       { id: 'p', type: 'text', text: 'hello world' },

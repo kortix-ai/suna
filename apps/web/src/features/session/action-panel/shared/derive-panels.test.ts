@@ -21,6 +21,19 @@ function part(
 }
 
 describe('deriveOutputs', () => {
+  it('lists the attachments of a legacy Suna `complete` / `ask`, even when its result row was lost', () => {
+    const out = deriveOutputs([
+      part('complete', { text: 'Done', attachments: 'Macro_Hedge.xlsx, charts/pnl.png' }),
+      part('ask', { text: 'Which?', attachments: ['brief.pdf'] }, { status: 'error' }),
+      part('complete', { text: 'No files' }),
+    ]);
+    expect(out.map((o) => [o.path, o.kind, o.shown])).toEqual([
+      ['/workspace/Macro_Hedge.xlsx', 'file', true],
+      ['/workspace/charts/pnl.png', 'image', true],
+      ['/workspace/brief.pdf', 'file', true],
+    ]);
+  });
+
   it('is empty when the agent produced nothing', () => {
     expect(deriveOutputs([part('read', { filePath: '/a/x.ts' })])).toEqual([]);
   });
