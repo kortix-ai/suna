@@ -21,5 +21,8 @@ Use Bun only when a project requires it.
 - Bundled Python tools run on the pre-installed package floor with plain `python3`.
 - `agent-browser` and Chromium are installed for accessing local pages.
 - Git, curl, tmux, ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract are installed.
+- Shell tools are installed: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`,
+  `sqlite3`, `wget`, `zip`, `unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, `sponge`, and `nano`.
+  Use `rg` to search file contents and `fd` to find files.
 
 Project-specific instructions will override this file.

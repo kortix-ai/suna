@@ -225,7 +225,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
               {String(parsed.description)}
             </p>
           ) : null}
-          {/* The tool's name and what it does answer "what is this app
+          {/* The tool's name and what it does answer "what is this connector
               action". The JSON schema of its arguments is for the model, and
               it is the longest thing on the card. */}
           <FoldedSection
@@ -318,7 +318,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
             )}
           </div>
 
-          {/* The arguments the app was called WITH fold; what it answered
+          {/* The arguments the connector was called WITH fold; what it answered
               does not. A call's result is the only thing on this card the
               reader opened it for, including the failure reason. */}
           {Object.keys(args).length > 0 && (
