@@ -1,7 +1,8 @@
 /**
  * Compile YAML agent configuration or legacy Markdown into the runtime contract.
  * The selected-agent path pins every input to the session source revision and
- * fails closed. The legacy all-agent resolver retains its null-on-failure API.
+ * fails closed. The all-agent resolver retains null-on-failure only for legacy
+ * Markdown declarations; explicit YAML configuration failures propagate.
  * Platform grants remain separate; enabled and skill permissions overlay behavior.
  */
 import { createHash } from 'node:crypto';
@@ -505,6 +506,7 @@ export async function resolveCompiledAgentConfigForSession(
   baseRef?: string | null,
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
+  let hasExplicitConfiguration = false;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
@@ -518,6 +520,7 @@ export async function resolveCompiledAgentConfigForSession(
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
+    hasExplicitConfiguration = Object.values(agents).some(block => block?.config !== undefined);
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
@@ -550,6 +553,7 @@ export async function resolveCompiledAgentConfigForSession(
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
     return compiled ? JSON.stringify(compiled) : null;
   } catch (err) {
+    if (hasExplicitConfiguration) throw err;
     console.warn(
       `[compile-agent-config] project ${project.projectId}: compile failed, session boots without a compiled agent config: ${(err as Error).message}`,
     );

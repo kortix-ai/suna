@@ -146,6 +146,15 @@ describe("buildCompiledRuntimeArtifact", () => {
     expect(artifact.manifest.opencode_config_archive_bytes).toBeGreaterThan(0);
   });
 
+  test('an OpenCode artifact refuses an unreadable explicit YAML prompt', async () => {
+    const { project, source } = makeProject();
+    writeFileSync(join(source, 'kortix.yaml'), 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix:\n    config:\n      prompt: {file: prompts/missing.md}\n');
+    git(['add', '-A'], source);
+    git(['commit', '-m', 'missing explicit prompt'], source);
+    const sha = git(['rev-parse', 'HEAD'], source);
+    await expect(buildCompiledRuntimeArtifact(project, 'main', sha)).rejects.toThrow('regular Git file');
+  });
+
   test("reuses a verified content-addressed artifact", async () => {
     const { project, sha } = makeProject();
     const cache = mkdtempSync(join(tmpdir(), "kortix-runtime-cache-"));

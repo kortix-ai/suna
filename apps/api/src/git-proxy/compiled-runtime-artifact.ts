@@ -63,7 +63,7 @@ function artifactKey(
 ): string {
   return createHash("sha256")
     .update(
-      `${COMPILED_RUNTIME_FORMAT}\0${projectId}\0${ref}\0${sourceSha}\0${agentBundleSha256}`,
+      `${COMPILED_RUNTIME_FORMAT}\0agent-yaml-config-v2\0${projectId}\0${ref}\0${sourceSha}\0${agentBundleSha256}`,
     )
     .digest("hex");
 }
