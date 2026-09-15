@@ -49,20 +49,8 @@ export default function SettingsLayout() {
         ...pushTransition,
       }}
     >
-      <AppStack.Screen
-        name="index"
-        options={{
-          header: () => <SettingsHeader title={t('settings.title')} />,
-          headerShown: true,
-        }}
-      />
-      <AppStack.Screen
-        name="general"
-        options={{
-          header: () => <SettingsHeader title="General" />,
-          headerShown: true,
-        }}
-      />
+      {/* No index screen: the Account page (Account tab, or /account-settings
+          from a project) is the one settings page and pushes these sub-pages. */}
       <AppStack.Screen
         name="name"
         options={{

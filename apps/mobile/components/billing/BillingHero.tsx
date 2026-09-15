@@ -14,7 +14,7 @@ import * as React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
-import { ChevronRight, CircleHelp } from 'lucide-react-native';
+import { ArrowUpRight, ChevronRight, CircleHelp } from 'lucide-react-native';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -57,6 +57,7 @@ const PALETTE = {
  */
 const OVERSCROLL_COVER = 800;
 
+
 export function BillingHero({
   title,
   helpLabel,
@@ -76,8 +77,11 @@ export function BillingHero({
   balanceLabel?: string;
   balance?: string;
   rows?: BillingHeroRow[];
-  /** The one primary action, a dark pill under the rows. */
-  action?: { label: string; onPress: () => void };
+  /**
+   * The one primary action, a dark pill under the rows. `external` (opens the
+   * browser) swaps the chevron for an arrow, like a `SettingsRow`.
+   */
+  action?: { label: string; onPress: () => void; external?: boolean };
 }) {
   const { colorScheme } = useColorScheme();
   const palette = PALETTE[colorScheme === 'dark' ? 'dark' : 'light'];
@@ -126,7 +130,9 @@ export function BillingHero({
       {/* pb-14: the page sheet overlaps the bottom 24pt, leaving 32pt under the action. */}
       <View className="px-5 pb-14 pt-3">
         {loading ? (
-          <View className="items-center py-16">
+          // The brand loader, no grey page-shaped bars. h-64 is about the
+          // loaded hero's height, so the sheet below barely moves.
+          <View className="h-64 items-center justify-center">
             <KortixLoader />
           </View>
         ) : (
@@ -154,7 +160,7 @@ export function BillingHero({
             {action ? (
               <Button size="lg" className="mt-6 justify-between rounded-full" onPress={action.onPress}>
                 <Text>{action.label}</Text>
-                <Icon as={ChevronRight} size={18} strokeWidth={2.75} />
+                <Icon as={action.external ? ArrowUpRight : ChevronRight} size={18} strokeWidth={2.75} />
               </Button>
             ) : null}
           </>

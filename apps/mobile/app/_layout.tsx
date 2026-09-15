@@ -657,6 +657,10 @@ export default function RootLayout() {
                                           fullScreenGestureEnabled: true,
                                         }}
                                       />
+                                      <AppStack.Screen
+                                        name="account-settings"
+                                        options={{ fullScreenGestureEnabled: true }}
+                                      />
                                       <AppStack.Screen name="plans" />
                                       <AppStack.Screen name="billing" />
                                       <AppStack.Screen

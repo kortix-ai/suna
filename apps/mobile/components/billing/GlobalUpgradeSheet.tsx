@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowRight, Asterisk, UserPlus } from 'lucide-react-native';
+import { Check, ChevronRight, UserPlus, Users } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { useLanguage } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useAccountState } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
@@ -15,12 +18,6 @@ import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { getUpgradeSheetTransition } from '@/lib/billing/upgrade-sheet-lifecycle';
 import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
-import { THEME } from '@/lib/utils/theme';
-
-
 
 /** Opens the upgrade sheet when the root sandbox bootstrap is blocked by billing. */
 export function SandboxUpgradeGateListener() {
@@ -39,8 +36,17 @@ export function SandboxUpgradeGateListener() {
   return null;
 }
 
-/** Global native counterpart to the web upgrade modal. */
+/**
+ * Global native counterpart to the web upgrade modal: the Team offer when a
+ * billing gate blocks the user.
+ *
+ * Layout (apps/mobile/design.md): centred plan name and per-seat price (the
+ * Billing hero's type), the gate message, an Includes group, the seat total,
+ * then one primary pill to the Plans screen and a Not now pill. A member who
+ * cannot manage billing sees an Ask an account owner row instead of the pill.
+ */
 export function GlobalUpgradeSheet() {
+  const { t } = useLanguage();
   const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const wasPresentedRef = useRef(false);
@@ -56,9 +62,9 @@ export function GlobalUpgradeSheet() {
   const offer = getTeamUpgradeOffer(accountState);
   const included = [
     `$${offer.pricePerSeat} of usage credit per teammate, every month`,
-    'Every model — drawn from one shared team wallet',
+    'Every model, drawn from one shared team wallet',
     'AI Computers to run code, browsers, and terminals',
-    'Spend on compute, LLM, or both — one wallet, auto top-up',
+    'Spend on compute, LLM, or both, with auto top-up',
     'Auto-prorated as teammates join or leave',
   ];
 
@@ -80,7 +86,6 @@ export function GlobalUpgradeSheet() {
     closeUpgradeSheet();
   }, [closeUpgradeSheet]);
 
-
   const handleViewPlans = useCallback(() => {
     haptics.medium();
     closeUpgradeSheet();
@@ -100,91 +105,67 @@ export function GlobalUpgradeSheet() {
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
-    >
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
       <BottomSheetScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: insets.bottom + 20 }}
-      >
-
-        <Badge variant="secondary" className='w-fit self-start rounded  px-2 py-0'>
-          <Text className='text-foreground' style={{
-            fontFamily: 'Roobert-Medium',
-            fontSize: 12,
-          }}>
-          KORTIX TEAM
-          </Text>
-        </Badge>
-
-        <View className="mt-4">
-          <Text
-            className="text-foreground"
-            style={{ fontFamily: 'Roobert-SemiBold', fontSize: 48, lineHeight: 48, letterSpacing: -2, fontVariant: ['tabular-nums'] }}
-          >
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 8,
+          paddingBottom: insets.bottom + 20,
+          gap: 18,
+        }}>
+        <View className="items-center">
+          <Text variant="large">{t('upgrade.teamPlan', 'Kortix Team')}</Text>
+          <Text variant="h1" className="mt-1 tabular-nums">
             ${offer.pricePerSeat}
           </Text>
-          <Text className="mt-1 text-sm text-muted-foreground">per seat · billed monthly</Text>
-          <Text className="mt-4 text-sm leading-5 text-muted-foreground">
-            LLM compute and AI Computers for every teammate. Add seats as your team grows.
+          <Text variant="muted" className="mt-1">
+            {t('upgrade.perSeatMonthly', 'per seat / month')}
           </Text>
+          {message ? (
+            <Text variant="muted" className="mt-4 text-center">
+              {message}
+            </Text>
+          ) : null}
         </View>
 
-        <View className="mt-7 gap-3 ">
+        <SettingsGroup title={t('upgrade.includes', 'Includes')}>
           {included.map((item) => (
-            <View key={item} className="flex-row items-start">
-              <Text className="mr-2.5 text-sm leading-5 text-foreground">•</Text>
-              <Text className="flex-1 text-sm leading-5 text-foreground">{item}</Text>
-            </View>
+            <SettingsRow key={item} icon={Check} label={item} multiline />
           ))}
-        </View>
+        </SettingsGroup>
 
-        <View className="mt-7 border-t border-border pt-5">
-          {offer.hasSeatMath && (
-            <View className="mb-4 flex-row items-center justify-between">
-              <Text className="text-sm text-muted-foreground">
-                {offer.seatCount} {offer.seatCount === 1 ? 'seat' : 'seats'} × ${offer.pricePerSeat}
-              </Text>
-              <Text className="font-roobert-medium text-sm text-foreground">${offer.monthlyTotal}/mo</Text>
-            </View>
-          )}
+        {offer.hasSeatMath ? (
+          <SettingsGroup>
+            <SettingsRow
+              icon={Users}
+              label={t('plans.seats', {
+                defaultValue: '{{count}} seats × ${{price}}',
+                count: offer.seatCount,
+                price: offer.pricePerSeat,
+              })}
+              value={t('plans.perMonth', { defaultValue: '${{total}} / mo', total: offer.monthlyTotal })}
+            />
+          </SettingsGroup>
+        ) : null}
 
+        <View style={{ gap: 10 }}>
           {offer.canManageBilling ? (
-            <>
-              <Button onPress={handleViewPlans}>
-                <Text>
-                  {offer.hasSeatMath
-                    ? `Subscribe — $${offer.monthlyTotal}/mo`
-                    : `Subscribe — $${offer.pricePerSeat}/seat`}
-                </Text>
-                <Icon as={ArrowRight} size={17} className="text-primary-foreground" strokeWidth={2.2} />
-              </Button>
-              <Text
-                className="mt-3 text-center text-muted-foreground"
-                style={{ fontSize: 12, lineHeight: 16 }}
-              >
-                Auto-prorated · cancel anytime · billed monthly
-              </Text>
-            </>
+            <Button size="lg" className="justify-between rounded-full" onPress={handleViewPlans}>
+              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
+              <Icon as={ChevronRight} size={18} strokeWidth={2.75} />
+            </Button>
           ) : (
-            <View className="flex-row gap-3 rounded-xl border border-border p-4">
-              <Icon as={UserPlus} size={19} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2.1} />
-              <View className="flex-1">
-                <Text className="font-roobert-medium text-sm text-foreground">Ask an account owner for a seat</Text>
-                <Text className="mt-1 leading-4 text-muted-foreground" style={{ fontSize: 12 }}>
-                  Only account owners can subscribe. Your seat activates automatically once they do.
-                </Text>
-              </View>
-            </View>
+            <SettingsGroup>
+              <SettingsRow
+                icon={UserPlus}
+                label={t('upgrade.askOwner', 'Ask an account owner for a seat')}
+                multiline
+              />
+            </SettingsGroup>
           )}
-
-          {message && (
-            <Text className="mt-4 text-center leading-4 text-muted-foreground" style={{ fontSize: 12 }}>{message}</Text>
-          )}
-          <Pressable
-            onPress={closeUpgradeSheet}
-            className="mt-3 items-center rounded-full px-5 py-3 active:opacity-70"
-          >
-            <Text className="font-roobert-medium text-sm text-muted-foreground">Not now</Text>
-          </Pressable>
+          <Button variant="secondary" size="lg" className="rounded-full" onPress={closeUpgradeSheet}>
+            <Text>{t('upgrade.notNow', 'Not now')}</Text>
+          </Button>
         </View>
       </BottomSheetScrollView>
     </BottomSheetModal>

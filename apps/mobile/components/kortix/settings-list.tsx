@@ -214,6 +214,8 @@ export interface SettingsRowProps {
   external?: boolean;
   badge?: string;
   destructive?: boolean;
+  /** Wraps a long label onto more lines instead of truncating it (plan feature lists). */
+  multiline?: boolean;
 }
 
 const TRAILING_ICON = { size: 16, strokeWidth: 2.75 } as const;
@@ -229,6 +231,7 @@ export function SettingsRow({
   external = false,
   badge,
   destructive = false,
+  multiline = false,
 }: SettingsRowProps) {
   const trailing =
     right !== undefined ? (
@@ -264,7 +267,9 @@ export function SettingsRow({
         ) : null}
 
         <View className="flex-1 flex-row items-center">
-          <Text className={destructive ? 'text-destructive' : 'text-foreground'} numberOfLines={1}>
+          <Text
+            className={cn(destructive ? 'text-destructive' : 'text-foreground', multiline && 'flex-1')}
+            numberOfLines={multiline ? undefined : 1}>
             {label}
           </Text>
           {badge ? (

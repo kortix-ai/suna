@@ -1,59 +1,58 @@
 /**
- * Billing Page Component
+ * Billing page — `/billing`, opened from Account → Workspace → Billing.
  *
- * Credits balance, credit breakdown, subscription, and purchase actions.
  * Layout (apps/mobile/design.md → Billing): a `BillingHero` (gradient, centred
  * header, balance, breakdown, one primary action) on `SettingsPage hero`, then
- * borderless grouped rows on the page sheet — icon · label · trailing, no
- * descriptions.
+ * the scheduled plan change and the Subscription group on the page sheet —
+ * icon · label · trailing rows, no descriptions.
  *
- * Rendered by the `/billing` route. The header's back button uses the router
- * (back, or /projects without history), which matches app/billing.tsx.
+ * Reads the active account (hooks/useActiveAccount), the same account as the
+ * Account page's plan badge. Mobile has no in-app purchase: Buy credits and
+ * Manage on kortix.com open web billing in the browser. The balance refetches
+ * when the app returns to the foreground and on pull to refresh, so a web
+ * purchase shows up on return.
  */
 
-import React, { useCallback } from 'react';
-import { Alert, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AppState, RefreshControl, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
+import { useColorScheme } from 'nativewind';
 import {
   AlertCircle,
+  ArrowUpDown,
+  BadgeCheck,
   Calendar,
   CreditCard,
+  Receipt,
   RotateCcw,
-  Settings,
 } from 'lucide-react-native';
 import { formatCredits } from '@kortix/shared';
 
-import { Text } from '@/components/ui/text';
-import { Button } from '@/components/ui/button';
 import {
   SettingsGroup,
   SettingsHeader,
   SettingsPage,
   SettingsRow,
 } from '@/components/kortix/settings-list';
+import { useToast } from '@/components/kortix/toast-provider';
 import { BillingHero, type BillingHeroRow } from '@/components/billing/BillingHero';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
-import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
-import {
-  useAccountState,
-  useSubscriptionCommitment,
-  useScheduledChanges,
-  billingKeys,
-  presentCustomerInfo,
-  shouldUseRevenueCat,
-  isRevenueCatInitialized,
-  initializeRevenueCat,
-} from '@/lib/billing';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useActiveAccount } from '@/hooks/useActiveAccount';
+import { billingKeys, useAccountState } from '@/lib/billing';
+import { openExternalUrl } from '@/lib/billing/checkout';
+import { getWebBillingUrl, getWebCreditsExplainedUrl } from '@/lib/billing/web-links';
+import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 interface BillingPageProps {
   visible: boolean;
   /** Kept for API compatibility; the header's back button navigates via the router. */
   onClose: () => void;
+  /** Opens the Plans screen. */
   onChangePlan?: () => void;
 }
 
@@ -67,133 +66,74 @@ const formatDate = (dateValue: string | number, month: 'long' | 'short' = 'long'
 export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
   const { t } = useLanguage();
   const { user } = useAuthContext();
-  const isAuthenticated = !!user;
+  const toast = useToast();
+  const { colorScheme } = useColorScheme();
   const queryClient = useQueryClient();
+  const { account, isLoading: isLoadingAccount } = useActiveAccount();
 
   const {
     data: accountState,
-    isLoading: isLoadingSubscription,
-    error: subscriptionError,
-    refetch: refetchSubscription,
+    error,
+    refetch,
   } = useAccountState({
-    enabled: visible && isAuthenticated,
+    accountId: account?.account_id ?? undefined,
+    // Wait for the account list, so the first request already has the account.
+    enabled: visible && !!user && !isLoadingAccount,
   });
 
-  const { data: commitmentData, refetch: refetchCommitment } = useSubscriptionCommitment(
-    accountState?.subscription?.subscription_id || undefined,
-    {
-      enabled: visible && !!accountState?.subscription?.subscription_id,
-    }
-  );
-
-  const { data: scheduledChangesData, refetch: refetchScheduledChanges } = useScheduledChanges({
-    enabled: visible && isAuthenticated,
-  });
-
-  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
-
-  const handleSubscriptionUpdate = useCallback(() => {
-    refetchSubscription();
-    refetchCommitment();
-    refetchScheduledChanges();
-    queryClient.invalidateQueries({ queryKey: billingKeys.all });
-  }, [refetchSubscription, refetchCommitment, refetchScheduledChanges, queryClient]);
-
-  const handleCreditsExplained = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
     try {
-      // Use kortix.com for production, staging.kortix.com for staging
-      const baseUrl =
-        process.env.EXPO_PUBLIC_ENV === 'staging'
-          ? 'https://staging.kortix.com'
-          : 'https://www.kortix.com';
-      await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
+      await queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [queryClient, refetch]);
+
+  // Back from kortix.com (a purchase, a plan change): show the new balance.
+  useEffect(() => {
+    if (!visible) return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refetch();
+    });
+    return () => subscription.remove();
+  }, [visible, refetch]);
+
+  const openCreditsExplained = useCallback(async () => {
+    haptics.tap();
+    try {
+      await WebBrowser.openBrowserAsync(getWebCreditsExplainedUrl(), {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });
-    } catch (error) {
-      log.error('Error opening credits explained page:', error);
+    } catch (openError) {
+      log.error('Error opening credits explained page:', openError);
     }
   }, []);
 
-  const handleChangePlan = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const openWebBilling = useCallback(async () => {
+    haptics.tap();
+    try {
+      await openExternalUrl(getWebBillingUrl());
+    } catch {
+      toast.error(t('billing.openWebFailed', 'Could not open kortix.com. Try again.'));
+    }
+  }, [t, toast]);
+
+  const changePlan = useCallback(() => {
+    haptics.tap();
     onChangePlan?.();
   }, [onChangePlan]);
-
-  const handleGetCredits = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Use RevenueCat paywall for credit purchases
-    if (useNativePaywall) {
-      log.log('📱 Using RevenueCat paywall for additional credits');
-      await presentUpgradePaywall();
-    } else {
-      log.warn('⚠️ RevenueCat not available, cannot purchase credits');
-    }
-  }, [useNativePaywall, presentUpgradePaywall]);
-
-  const handleCustomerInfo = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      // Ensure RevenueCat is initialized before presenting customer info
-      if (user && shouldUseRevenueCat()) {
-        const initialized = await isRevenueCatInitialized();
-        if (!initialized) {
-          log.log('🔄 RevenueCat not initialized, initializing now...');
-          try {
-            await initializeRevenueCat(user.id, user.email || undefined, true);
-          } catch (initError) {
-            log.warn('⚠️ RevenueCat initialization warning:', initError);
-          }
-        }
-      }
-
-      await presentCustomerInfo();
-      // Refresh billing data after user returns from customer info portal
-      handleSubscriptionUpdate();
-    } catch (error) {
-      log.error('Error presenting customer info portal:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }
-  }, [user, handleSubscriptionUpdate]);
-
-  const handleRestorePurchase = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(
-      t('billing.restorePurchase', 'Restore purchase'),
-      t('billing.noPurchaseToRestore', 'No purchase to be restored'),
-      [{ text: t('common.ok', 'OK') }]
-    );
-  }, [t]);
-
-  // Show RevenueCat actions on iOS/Android only
-  const useRevenueCat = shouldUseRevenueCat();
 
   if (!visible) return null;
 
   const title = t('billing.title', 'Billing');
   const helpLabel = t('billing.creditsExplained', 'Credits explained');
 
-  if (isLoadingSubscription) {
+  if (error && !accountState) {
     return (
-      <View className="absolute inset-0 z-50 bg-background">
-        <SettingsPage
-          hero={
-            <BillingHero
-              title={title}
-              helpLabel={helpLabel}
-              onHelp={handleCreditsExplained}
-              loading
-            />
-          }>
-          {null}
-        </SettingsPage>
-      </View>
-    );
-  }
-
-  if (subscriptionError) {
-    return (
-      <View className="absolute inset-0 z-50 bg-background">
+      <View className="flex-1 bg-background">
         <SettingsHeader title={title} />
         <SettingsPage>
           <SettingsGroup>
@@ -204,8 +144,11 @@ export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
             />
             <SettingsRow
               icon={RotateCcw}
-              label={t('common.tryAgain', 'Try again')}
-              onPress={() => refetchSubscription()}
+              label={t('common.retry', 'Try again')}
+              onPress={() => {
+                haptics.tap();
+                void refetch();
+              }}
             />
           </SettingsGroup>
         </SettingsPage>
@@ -213,12 +156,10 @@ export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
     );
   }
 
+  const loading = !accountState;
+
   // Credits from AccountState
   const credits = accountState?.credits;
-  const totalCredits = credits?.total || 0;
-  const dailyCredits = credits?.daily || 0;
-  const monthlyCredits = credits?.monthly || 0;
-  const extraCredits = credits?.extra || 0;
   const dailyRefreshInfo = credits?.daily_refresh;
 
   // Hours until daily credits refresh, e.g. "in 3h"
@@ -240,128 +181,124 @@ export function BillingPage({ visible, onChangePlan }: BillingPageProps) {
   };
 
   const subscription = accountState?.subscription;
+  // The API's trial-aware plan label first, then the stored tier name.
+  const planName =
+    accountState?.plan?.label ||
+    (subscription ? subscription.tier_display_name || subscription.tier_key || 'Basic' : '');
   const nextBillingDate = subscription?.current_period_end
     ? formatDate(subscription.current_period_end)
     : null;
   const dailyRefreshTime = getDailyRefreshTime();
+  const commitment = subscription?.commitment;
   const commitmentEndDate =
-    commitmentData?.has_commitment && commitmentData?.commitment_end_date
-      ? formatDate(commitmentData.commitment_end_date, 'short')
+    commitment?.has_commitment && commitment.commitment_end_date
+      ? formatDate(commitment.commitment_end_date, 'short')
       : null;
   const cancellationDate =
     subscription?.is_cancelled && subscription.cancellation_effective_date
       ? formatDate(subscription.cancellation_effective_date, 'short')
       : null;
 
-  const scheduledChange = scheduledChangesData?.scheduled_change || subscription?.scheduled_change;
+  const scheduledChange = subscription?.scheduled_change ?? null;
   const canBuyCredits = !!subscription?.can_purchase_credits;
 
   // Credit breakdown under the balance. Daily credits only exist when daily
   // refresh is enabled; monthly shows unless daily replaces it and is empty.
   const breakdown: BillingHeroRow[] = [
     dailyRefreshInfo?.enabled
-      ? { label: t('billing.daily', 'Daily'), value: formatCredits(dailyCredits) }
+      ? { label: t('billing.daily', 'Daily'), value: formatCredits(credits?.daily || 0) }
       : null,
     dailyRefreshTime
       ? { label: t('billing.nextDailyRefresh', 'Next daily refresh'), value: dailyRefreshTime }
       : null,
-    !dailyRefreshInfo?.enabled || monthlyCredits > 0
-      ? { label: t('billing.monthly', 'Monthly'), value: formatCredits(monthlyCredits) }
+    !dailyRefreshInfo?.enabled || (credits?.monthly || 0) > 0
+      ? { label: t('billing.monthly', 'Monthly'), value: formatCredits(credits?.monthly || 0) }
       : null,
-    { label: t('billing.extra', 'Extra'), value: formatCredits(extraCredits) },
+    { label: t('billing.extra', 'Extra'), value: formatCredits(credits?.extra || 0) },
   ].filter((row): row is BillingHeroRow => row !== null);
 
   // One primary action in the hero: buying credits when the plan allows it,
-  // otherwise changing plan. The other action stays on the sheet.
+  // otherwise changing plan. Change plan then moves to the Subscription group.
   const heroAction = canBuyCredits
-    ? { label: t('billing.getAdditionalCredits', 'Get additional credits'), onPress: handleGetCredits }
-    : subscription && onChangePlan
-      ? { label: t('billing.changePlan', 'Change plan'), onPress: handleChangePlan }
+    ? { label: t('billing.buyCredits', 'Buy credits'), onPress: openWebBilling, external: true }
+    : onChangePlan
+      ? { label: t('billing.changePlan', 'Change plan'), onPress: changePlan }
       : undefined;
-  const showChangePlanOnSheet = !!subscription && !!onChangePlan && canBuyCredits;
+  const showChangePlanRow = canBuyCredits && !!onChangePlan;
 
   return (
-    <View className="absolute inset-0 z-50 bg-background">
+    <View className="flex-1 bg-background">
       <SettingsPage
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground}
+          />
+        }
         hero={
           <BillingHero
             title={title}
             helpLabel={helpLabel}
-            onHelp={handleCreditsExplained}
+            onHelp={openCreditsExplained}
+            loading={loading}
             balanceLabel={t('billing.totalCredits', 'Total available credits')}
-            balance={formatCredits(totalCredits)}
+            balance={formatCredits(credits?.total || 0)}
             rows={breakdown}
             action={heroAction}
           />
         }>
-        {scheduledChange && (
-          <ScheduledDowngradeCard
-            scheduledChange={scheduledChange}
-            onCancel={handleSubscriptionUpdate}
-          />
-        )}
+        {scheduledChange ? (
+          <ScheduledDowngradeCard scheduledChange={scheduledChange} onCancel={() => void refetch()} />
+        ) : null}
 
-        {subscription && (
-          <View>
-            <SettingsGroup title={t('billing.subscription', 'Subscription')}>
-              <SettingsRow
-                label={t('billing.currentPlan', 'Current plan')}
-                right={
-                  <PricingTierBadge
-                    planName={subscription.tier_display_name || subscription.tier_key || 'Basic'}
-                    size="md"
-                  />
-                }
-              />
-              {nextBillingDate && (
-                <SettingsRow
-                  icon={Calendar}
-                  label={t('billing.nextBilling', 'Next billing')}
-                  value={nextBillingDate}
-                />
-              )}
-              {commitmentEndDate && (
-                <SettingsRow
-                  icon={CreditCard}
-                  label={t('billing.annualCommitment', 'Annual commitment')}
-                  value={t('billing.activeUntil', {
-                    defaultValue: 'Until {date}',
-                    date: commitmentEndDate,
-                  })}
-                />
-              )}
-              {cancellationDate && (
-                <SettingsRow
-                  icon={AlertCircle}
-                  label={t('billing.cancelsOn', 'Cancels on')}
-                  value={cancellationDate}
-                  destructive
-                />
-              )}
-            </SettingsGroup>
-
-            {showChangePlanOnSheet && (
-              <Button size="lg" variant="secondary" className="mt-3 rounded-full" onPress={handleChangePlan}>
-                <Text>{t('billing.changePlan', 'Change plan')}</Text>
-              </Button>
-            )}
-          </View>
-        )}
-
-        {useRevenueCat && (
-          <SettingsGroup title={t('billing.purchases', 'Purchases')}>
+        {subscription ? (
+          <SettingsGroup title={t('billing.subscription', 'Subscription')}>
             <SettingsRow
-              icon={Settings}
-              label={t('billing.customerInfo', 'Customer info')}
-              onPress={handleCustomerInfo}
+              icon={BadgeCheck}
+              label={t('billing.currentPlan', 'Current plan')}
+              right={<PricingTierBadge planName={planName} size="md" />}
             />
+            {nextBillingDate ? (
+              <SettingsRow
+                icon={Calendar}
+                label={t('billing.nextBilling', 'Next billing')}
+                value={nextBillingDate}
+              />
+            ) : null}
+            {commitmentEndDate ? (
+              <SettingsRow
+                icon={CreditCard}
+                label={t('billing.annualCommitment', 'Annual commitment')}
+                value={t('billing.activeUntil', {
+                  defaultValue: 'Until {{date}}',
+                  date: commitmentEndDate,
+                })}
+              />
+            ) : null}
+            {cancellationDate ? (
+              <SettingsRow
+                icon={AlertCircle}
+                label={t('billing.cancelsOn', 'Cancels on')}
+                value={cancellationDate}
+                destructive
+              />
+            ) : null}
+            {showChangePlanRow ? (
+              <SettingsRow
+                icon={ArrowUpDown}
+                label={t('billing.changePlan', 'Change plan')}
+                onPress={changePlan}
+              />
+            ) : null}
             <SettingsRow
-              icon={RotateCcw}
-              label={t('billing.restorePurchase', 'Restore purchase')}
-              onPress={handleRestorePurchase}
+              icon={Receipt}
+              label={t('billing.manageOnWeb', 'Manage on kortix.com')}
+              external
+              onPress={openWebBilling}
             />
           </SettingsGroup>
-        )}
+        ) : null}
       </SettingsPage>
     </View>
   );

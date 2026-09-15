@@ -302,12 +302,12 @@ export function ProjectLeftDrawer({
     [onClose]
   );
 
-  // The user row opens user settings directly (appearance, docs, support,
-  // log out) — there is no account menu sheet.
+  // The user row opens the Account page — the same page as the Account tab,
+  // pushed over the project so Go back returns here.
   const handleUserMenuOpen = useCallback(() => {
     haptics.tap();
     onClose();
-    router.push('/(settings)');
+    router.push('/account-settings');
   }, [onClose, router]);
 
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
@@ -528,7 +528,7 @@ export function ProjectLeftDrawer({
         onPageSelect={(pageId) => useTabStore.getState().navigateToPage(pageId)}
         onSettings={() => {
           onClose();
-          router.push('/(settings)');
+          router.push('/account-settings');
         }}
         sandboxUrl={sessionSandboxUrl}
       />

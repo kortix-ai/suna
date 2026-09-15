@@ -78,7 +78,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | `StopIcon.tsx` | Stop-square SVG icon used on the composer's stop button. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
-| `toast.tsx` / `toast-provider.tsx` | Toast primitive + provider/context (`useToast().toast.error(...)` etc). |
+| `toast.tsx` / `toast-provider.tsx` | Toast primitive + provider/context. `useToast()` returns the toast functions: `const toast = useToast(); toast.error(...)`. |
 
 Plurality rule: if you find yourself writing the same `className` string on more
 than one `<Text>`, you are doing it wrong — that styling already exists as a

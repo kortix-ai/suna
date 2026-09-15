@@ -1,186 +1,174 @@
 /**
- * Plan Page — plan picker for mobile.
+ * Plans — `/plans`, where a user picks a plan and upgrades. Opened from
+ * Billing → Change plan and from the upgrade sheet.
  *
- * Mobile has NO in-app purchase. Plans are display-only and mirror the web
- * pricing (Free / Team / Enterprise — see `lib/billing/pricing` → PRICING_PLANS,
- * synced from apps/web/src/features/billing/pricing-plans.ts). "Get Started"
- * opens the web pricing page in the system browser, where the user subscribes.
+ * Mobile has no in-app purchase. The button opens kortix.com — web billing,
+ * or the contact page for Enterprise — where checkout happens. Plans mirror
+ * the web pricing (`lib/billing/pricing` → PRICING_PLANS); which plan is
+ * current and what the button does come from `lib/billing/plan-action`.
+ *
+ * Layout (apps/mobile/design.md): a Plan picker (icon · name · price, or
+ * "Current" · check), the seat total for Team, the selected plan's features,
+ * and one pill pinned above the home indicator.
  */
 
-import React from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
+import * as React from 'react';
+import { AppState, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { ArrowUpRight, Check, X } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { ArrowUpRight, Check, Users } from 'lucide-react-native';
 
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
+import {
+  SettingsGroup,
+  SettingsHeader,
+  SettingsPage,
+  SettingsRow,
+} from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
-import { PRICING_PLANS, type PricingPlan } from '@/lib/billing/pricing';
+import { useLanguage } from '@/contexts';
+import { useActiveAccount } from '@/hooks/useActiveAccount';
+import { useAccountState } from '@/lib/billing/hooks';
 import { openExternalUrl } from '@/lib/billing/checkout';
-import { getFrontendUrl } from '@/api/config';
-import { usePricingModalStore } from '@/stores/billing-modal-store';
+import {
+  defaultPlanSelection,
+  getPlanAction,
+  getPlanFamily,
+  isCurrentPlan,
+  type PlanAction,
+} from '@/lib/billing/plan-action';
+import { PRICING_PLANS, type PricingPlan, type PricingPlanId } from '@/lib/billing/pricing';
+import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
+import { getWebBillingUrl, getWebContactSalesUrl } from '@/lib/billing/web-links';
+import { haptics } from '@/lib/haptics';
 
 interface PlanPageProps {
   visible?: boolean;
+  /** Kept for API compatibility; the header's back button navigates via the router. */
   onClose?: () => void;
   onPurchaseComplete?: () => void;
 }
 
-export function PlanPage({ visible = true, onClose }: PlanPageProps) {
+export function PlanPage({ visible = true }: PlanPageProps) {
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const toast = useToast();
-  const { alertTitle, alertSubtitle } = usePricingModalStore();
+  const { account, isLoading: isLoadingAccount } = useActiveAccount();
+  const { data: accountState, refetch } = useAccountState({
+    accountId: account?.account_id ?? undefined,
+    enabled: visible && !isLoadingAccount,
+  });
 
-  const openPricing = React.useCallback(async () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await openExternalUrl(`${getFrontendUrl()}/pricing`);
-    } catch {
-      toast.error('Could not open the pricing page. Please try again.');
-    }
-  }, [toast]);
+  // Back from kortix.com after a checkout: the current plan moves.
+  React.useEffect(() => {
+    if (!visible) return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refetch();
+    });
+    return () => subscription.remove();
+  }, [visible, refetch]);
 
-  const continueFree = React.useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose?.();
-  }, [onClose]);
+  const current = getPlanFamily(accountState);
+  const offer = getTeamUpgradeOffer(accountState);
+  // Until the user taps a plan, the selection follows the loaded account.
+  const [picked, setPicked] = React.useState<PricingPlanId | null>(null);
+  const selected = picked ?? defaultPlanSelection(current);
+  const plan = PRICING_PLANS.find((p) => p.id === selected) ?? PRICING_PLANS[0];
+  const action = getPlanAction({ selected, current, canManageBilling: offer.canManageBilling });
 
   if (!visible) return null;
 
+  const priceOf = (p: PricingPlan) => {
+    // "Current" only once the account state is loaded, so Free is never
+    // briefly marked current for a paying account.
+    if (accountState && isCurrentPlan(p.id, current)) return t('plans.current', 'Current');
+    return p.id === 'team' ? `$${offer.pricePerSeat} / seat` : p.price;
+  };
+
+  const runAction = async () => {
+    const url = action === 'contact-sales' ? getWebContactSalesUrl() : getWebBillingUrl();
+    haptics.medium();
+    try {
+      await openExternalUrl(url);
+    } catch {
+      toast.error(t('billing.openWebFailed', 'Could not open kortix.com. Try again.'));
+    }
+  };
+
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View
-        className="flex-row items-center justify-between border-b border-border/30 px-5"
-        style={{ paddingTop: insets.top + 10, paddingBottom: 12 }}>
-        <Text variant="large">Plans</Text>
-        {onClose ? (
-          <Pressable
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onClose();
-            }}
-            hitSlop={10}
-            className="-mr-1 h-9 w-9 items-center justify-center">
-            <Icon as={X} size={20} className="text-muted-foreground" />
-          </Pressable>
-        ) : (
-          <View className="h-9 w-9" />
-        )}
-      </View>
+      <SettingsHeader title={t('plans.title', 'Plans')} />
+      <SettingsPage paddingBottom={24}>
+        <SettingsGroup title={t('plans.plan', 'Plan')}>
+          {PRICING_PLANS.map((p) => (
+            <SettingsRow
+              key={p.id}
+              icon={p.icon}
+              label={p.name}
+              value={priceOf(p)}
+              checked={p.id === selected}
+              right={null}
+              onPress={() => {
+                haptics.selection();
+                setPicked(p.id);
+              }}
+            />
+          ))}
+        </SettingsGroup>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 24, gap: 14 }}
-        showsVerticalScrollIndicator={false}>
-        {alertTitle ? (
-          <View className="rounded-xl border border-border bg-secondary/60 p-4">
-            <Text className="font-semibold">{alertTitle}</Text>
-            {alertSubtitle ? (
-              <Text variant="muted" className="mt-1">
-                {alertSubtitle}
-              </Text>
-            ) : null}
-          </View>
+        {selected === 'team' && offer.hasSeatMath ? (
+          <SettingsGroup>
+            <SettingsRow
+              icon={Users}
+              label={t('plans.seats', {
+                defaultValue: '{{count}} seats × ${{price}}',
+                count: offer.seatCount,
+                price: offer.pricePerSeat,
+              })}
+              value={t('plans.perMonth', { defaultValue: '${{total}} / mo', total: offer.monthlyTotal })}
+            />
+          </SettingsGroup>
         ) : null}
 
-        <Text variant="muted" className="text-center">
-          Choose a plan — subscriptions are managed securely on the web.
-        </Text>
+        <SettingsGroup title={t('plans.includes', { defaultValue: '{{plan}} includes', plan: plan.name })}>
+          {plan.features.map((feature) => (
+            <SettingsRow key={feature} icon={Check} label={feature} multiline />
+          ))}
+        </SettingsGroup>
+      </SettingsPage>
 
-        {PRICING_PLANS.map((plan, i) => (
-          <PlanCard
-            key={plan.id}
-            plan={plan}
-            index={i}
-            onGetStarted={openPricing}
-            onContinueFree={continueFree}
-          />
-        ))}
-
-        <Text variant="muted" className="mt-1 text-center text-xs">
-          Prices in USD. You'll finish checkout on kortix.com.
-        </Text>
-      </ScrollView>
+      <View className="bg-background px-5 pt-3" style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+        <PlanActionButton action={action} planName={plan.name} onPress={runAction} />
+      </View>
     </View>
   );
 }
 
-function PlanCard({
-  plan,
-  index,
-  onGetStarted,
-  onContinueFree,
+function PlanActionButton({
+  action,
+  planName,
+  onPress,
 }: {
-  plan: PricingPlan;
-  index: number;
-  onGetStarted: () => void;
-  onContinueFree: () => void;
+  action: PlanAction;
+  planName: string;
+  onPress: () => void;
 }) {
-  const isFree = plan.id === 'free';
-  const ctaLabel = plan.id === 'enterprise' ? 'Contact sales' : 'Get Started';
+  const { t } = useLanguage();
+
+  const label = {
+    current: t('plans.currentPlan', 'Current plan'),
+    'ask-owner': t('plans.askOwner', 'Ask an account owner to upgrade'),
+    'contact-sales': t('plans.contactSales', 'Contact sales'),
+    upgrade: t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: planName }),
+    switch: t('plans.switchTo', { defaultValue: 'Switch to {{plan}}', plan: planName }),
+  }[action];
+  const opensWeb = action === 'contact-sales' || action === 'upgrade' || action === 'switch';
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(index * 60).duration(400)}
-      className={`rounded-2xl border bg-secondary/50 p-5 ${
-        plan.highlight ? 'border-kortix-blue' : 'border-border'
-      }`}>
-      <View className="flex-row items-center gap-2">
-        {plan.icon ? <Icon as={plan.icon} size={18} className="text-foreground" /> : null}
-        <Text className="font-semibold text-lg">{plan.name}</Text>
-        {plan.badge ? (
-          <View className="ml-1 rounded-full bg-kortix-blue px-2 py-0.5">
-            <Text className="text-[11px] font-medium text-white">{plan.badge}</Text>
-          </View>
-        ) : null}
-      </View>
-
-      <View className="mt-2 flex-row items-baseline gap-1">
-        <Text className="font-bold text-3xl">{plan.price}</Text>
-        {plan.unit ? <Text variant="muted">{plan.unit}</Text> : null}
-      </View>
-      <Text variant="muted" className="mt-1">
-        {plan.note}
-      </Text>
-
-      <View className="mt-4 gap-2">
-        {plan.features.map((f) => (
-          <View key={f} className="flex-row items-start gap-2">
-            <Icon as={Check} size={16} className="mt-0.5 text-kortix-green" strokeWidth={2.4} />
-            <Text variant="small" className="flex-1 text-foreground">
-              {f}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {isFree ? (
-        <Button
-          variant="secondary"
-          size="lg"
-          className="mt-5"
-          onPress={onContinueFree}>
-          <Text>Continue on Free</Text>
-        </Button>
-      ) : (
-        <Button
-          variant={plan.highlight ? 'default' : 'secondary'}
-          size="lg"
-          className="mt-5"
-          onPress={onGetStarted}>
-          <Text>{ctaLabel}</Text>
-          <Icon
-            as={ArrowUpRight}
-            size={17}
-            className={plan.highlight ? 'text-primary-foreground' : 'text-foreground'}
-            strokeWidth={2.2}
-          />
-        </Button>
-      )}
-    </Animated.View>
+    <Button size="lg" className="rounded-full" disabled={!opensWeb} onPress={onPress}>
+      <Text>{label}</Text>
+      {opensWeb ? <Icon as={ArrowUpRight} size={18} strokeWidth={2.75} /> : null}
+    </Button>
   );
 }
