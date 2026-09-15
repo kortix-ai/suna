@@ -658,3 +658,34 @@ User requested stop followed by archive. The separate archive worker selects onl
 The archive queue is gated by an actual Platinum archive → reopen → native history/title and file hash readback → stop pilot. The dashboard separately reports Platinum verification and destination archive receipts. Existing Daytona imports remain on Daytona per the user’s clarification; only subsequent destinations use Platinum.
 
 Archive pilot result: Platinum reported `archived`; reopening preserved the same Kortix session ID, native ID, and sandbox ID. Native title/history readback and all 5 file hashes passed (12 native messages). The pilot was stopped again. This receipt automatically enables the separate eight-sandbox archive queue. Regular stop/wake and a second fresh Platinum import also passed. Existing Daytona sessions remain on their provider, as explicitly requested.
+
+### CPU and Trimaran completion — 2026-09-15
+
+Platinum download readback now consumes the response reader and writes through a
+file handle with backpressure. The previous `Bun.write(path, response)` path left
+workers using most of a core for minutes. A live 34-file readback finished in
+2.83 seconds using 170 ms CPU. Delayed chunks, empty files, interrupted streams,
+partial-file cleanup, size checks, and SHA-256 checks have automated coverage.
+
+Preparation includes `capture-required-cross-source`. It checks the fresh evidence
+project, original account, mapped user identity, and exact sandbox ID. It keeps
+session history and ownership from the original source. The audit checked all
+62 cross-source Trimaran mappings with zero owner or sandbox mismatches.
+
+Source archive cleanup and destination completion have separate receipts.
+`release-captured-trimaran.ts` validates the source selection, archive byte count,
+archive SHA-256, and manifest inventory before releasing captured files. A source
+must report `archived` or `archiving`. The latter creates a pending cleanup record,
+not a successful source lifecycle receipt. `confirm-source-cleanup.ts` uses the
+independent SQLite `source_cleanup` table and records completion only when the
+provider reports the expected state. Destination import still requires all six
+durable archive artifacts, exact restored inventory, and every file hash readback.
+
+Uncaptured sources in provider error remain blocked. Recovery calls apply only to
+sources whose API explicitly reports `recoverable: true`. Any additional missing
+file exception requires an explicit user decision and an exact source scope.
+
+Import retries apply archive permissions only to expected final artifacts.
+Interrupted-upload staging files may belong to root and must not enter the
+runtime user's permission command through a wildcard. Native import failures
+save a private diagnostic containing the exit code and command output.

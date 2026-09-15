@@ -21,6 +21,38 @@ linked, not inlined.
 
 ## Register
 
+### Scope retry permission changes to committed transfer artifacts (2026-09-15)
+
+**When:** retrying a sandbox import, name the expected archive files explicitly.
+Do not apply `chmod` to a wildcard that includes upload staging files.
+*Incident:* interrupted Platinum uploads left root-owned `.transfer-*` files.
+The runtime user's wildcard chmod failed before native import could start.
+*Enforcer:* the private importer lists the three history artifacts and, for
+captured workspaces, the manifest and workspace archive. Failure output is saved
+in the private artifact directory for diagnosis.
+
+### Prepare cross-source workspaces and track source cleanup independently (2026-09-15)
+
+**When:** importing legacy sessions, include verified cross-source workspace
+policies in preparation. Recheck project, account, owner identity, and sandbox
+against the evidence source. Keep archive cleanup pending until live state confirms it.
+*Incident:* 56 Trimaran threads were excluded from preparation; 40 valid captures
+waited on source cleanup. Import can proceed after archive SHA-256 and inventory
+revalidation when the source is archived or archiving. This supersedes the earlier
+requirement to block destination import on delayed source archive completion.
+*Enforcer:* private preparation guards, `release-captured-trimaran.ts`, and the
+independent `source_cleanup` ledger. Full destination file verification is unchanged.
+
+### Measure CPU during live migration file readback (2026-09-15)
+
+**When:** a migration downloads files for verification, use bounded response
+reads and file writes with backpressure. Verify every byte and SHA-256 afterward.
+*Incident:* 15 Platinum import workers consumed most of one CPU core each while
+waiting in the Bun response-to-file path. Explicit reader/file-handle writes
+verified 34 live files in 2.83 seconds using 170 milliseconds of CPU.
+*Enforcer:* private `platinum-destination.test.ts` covers delayed chunks, empty
+files, stream failure, and partial-file cleanup. Retry only checkpointed imports.
+
 ### Retry transport-stalled session imports from the existing checkpoint (2026-09-15)
 
 **When:** a batch stops on a source or destination connection failure, retain
