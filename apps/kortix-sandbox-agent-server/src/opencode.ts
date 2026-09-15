@@ -61,6 +61,22 @@ import {
 } from './secret-capabilities'
 
 const READY_POLL_MS = 100
+// OpenCode announces readiness on stdout. `serve.ts` prints this line only
+// after `Server.listen` resolves, i.e. after Effect's `HttpRouter.serve` has
+// attached the request handler. The PORT is bound ~100 ms earlier
+// (NodeHttpServer calls `listen()` while the server layer builds), and a
+// request accepted in that window is parsed, never answered and never retried
+// by the server — the client sits there until ITS timeout fires (upstream
+// anomalyco/opencode#46437; `server.ts` unchanged from 1.18.23 through
+// 1.18.31). The line has read the same since 1.0.0. Until the current process
+// has printed it, the daemon sends it nothing: no readiness probe, no root
+// list, no /event subscribe — so no boot-time request can be lost.
+const OPENCODE_LISTENING_LINE = 'opencode server listening on'
+// If the line never shows up (a wording change upstream, stdout not flushed),
+// probe the port as before, this long after the spawn. A probe that lands in
+// the bind→handler window is lost, so this is a safety net, not a fast path.
+const LISTENING_LINE_FALLBACK_MS = 10_000
+let stdoutErrorsIgnored = false
 /** How long the post-respawn turn finalize waits for opencode to answer again.
  *  Generous next to a ~5-12s cold start, and bounded so cleanup cannot outlive
  *  the problem it is cleaning up after. */
@@ -1724,11 +1740,21 @@ export type Opencode = {
   markReady(): void
   /** Resolves when the active supervised process answers the real session API. */
   waitForCurrentReadyResponse(): Promise<void>
+  /**
+   * Resolves once the active supervised process can be talked to: it printed
+   * OPENCODE_LISTENING_LINE (its request handler is attached), or — after
+   * LISTENING_LINE_FALLBACK_MS without the line — a probe was answered. Before
+   * that its port may be bound with no handler behind it, and a request sent
+   * then is never answered. Every boot-time request waits for this first.
+   */
+  waitForCurrentListening(): Promise<void>
 }
 
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
+  /** Test override for LISTENING_LINE_FALLBACK_MS. */
+  listeningLineFallbackMs?: number
   /**
    * First HTTP response of ANY status from the spawned process: the port is
    * bound and bun has finished loading the binary. The gap to
@@ -1809,6 +1835,15 @@ export function createOpencodeSupervisor(
   let directoryProbeOpen = options.deferDirectoryProbe !== true
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
+  // The supervised process that can be talked to (see OPENCODE_LISTENING_LINE);
+  // reset with the process. `announced` also covers verification candidates,
+  // which are never `child` while they are probed.
+  let listeningProcess: ChildProcess | null = null
+  const listeningWaiters = new Set<() => void>()
+  const announced = new WeakSet<ChildProcess>()
+  const spawnedAt = new WeakMap<ChildProcess, number>()
+  let firstListeningLineReported = false
+  const listeningLineFallbackMs = options.listeningLineFallbackMs ?? LISTENING_LINE_FALLBACK_MS
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
   let binaryResolutionPromise: Promise<string | null> | null = null
@@ -2000,19 +2035,25 @@ export function createOpencodeSupervisor(
     // freshly-spawned opencode is installing into concurrently — a real path
     // to a torn/corrupted node_modules that then fails every session's first
     // prompt until the sandbox is rebuilt.
+    // stdout is PIPED, not inherited: the daemon forwards every byte to its own
+    // stdout (the sandbox log collector sees what it saw before) and watches
+    // the stream for OPENCODE_LISTENING_LINE. stderr stays inherited.
     const proc = spawn(bin, args, {
       cwd,
       env,
-      stdio: ['ignore', 'inherit', 'inherit'],
+      stdio: ['ignore', 'pipe', 'inherit'],
       detached: true,
     })
     childPorts.set(proc, port)
+    spawnedAt.set(proc, Date.now())
+    watchListeningLine(proc)
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
     })
 
     if (supervise) {
       readyResponseProcess = null
+      listeningProcess = null
       child = proc
       superviseChild(proc)
     }
@@ -2030,12 +2071,64 @@ export function createOpencodeSupervisor(
       // existing retry path. This also makes candidate verification fail fast.
       if (supervise && child === proc) {
         readyResponseProcess = null
+        listeningProcess = null
         child = null
         state = stopping ? 'down' : 'starting'
       }
       throw err
     }
     return proc
+  }
+
+  /**
+   * Forward the child's stdout to ours and watch it for OpenCode's readiness
+   * announcement. On Linux `process.stdout.write` to a pipe is synchronous, so
+   * backpressure reaches OpenCode exactly as it did with `stdio: 'inherit'`.
+   */
+  function watchListeningLine(proc: ChildProcess): void {
+    const out = proc.stdout
+    if (!out) return
+    if (!stdoutErrorsIgnored) {
+      // A closed log pipe (EPIPE) must not take the daemon down; with
+      // `inherit` OpenCode absorbed that error itself.
+      stdoutErrorsIgnored = true
+      process.stdout.on('error', () => {})
+    }
+    let tail = ''
+    let seen = false
+    out.on('data', (chunk: Buffer) => {
+      try {
+        process.stdout.write(chunk)
+      } catch {}
+      if (seen) return
+      // The line can straddle two chunks: keep a tail as long as the marker.
+      const text = tail + chunk.toString('utf8')
+      if (text.includes(OPENCODE_LISTENING_LINE)) {
+        seen = true
+        tail = ''
+        onListeningLine(proc)
+        return
+      }
+      tail = text.slice(-OPENCODE_LISTENING_LINE.length)
+    })
+    out.on('error', () => {})
+  }
+
+  function onListeningLine(proc: ChildProcess): void {
+    announced.add(proc)
+    const afterMs = Date.now() - (spawnedAt.get(proc) ?? Date.now())
+    logger.info('[opencode] announced listening', { pid: proc.pid, afterMs, supervised: child === proc })
+    if (!firstListeningLineReported) {
+      firstListeningLineReported = true
+      startupMark('opencode-listening-line')
+    }
+    reportListening(proc)
+  }
+
+  /** May the readiness loop / a candidate probe talk to `proc` yet? */
+  function mayProbe(proc: ChildProcess): boolean {
+    if (announced.has(proc)) return true
+    return Date.now() - (spawnedAt.get(proc) ?? 0) >= listeningLineFallbackMs
   }
 
   /**
@@ -2053,6 +2146,7 @@ export function createOpencodeSupervisor(
         return
       }
       if (readyResponseProcess === proc) readyResponseProcess = null
+      if (listeningProcess === proc) listeningProcess = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -2098,8 +2192,17 @@ export function createOpencodeSupervisor(
     restartDelayMs = 500
   }
 
+  function reportListening(proc: ChildProcess) {
+    if (stopping || child !== proc || listeningProcess === proc) return
+    listeningProcess = proc
+    for (const resolve of listeningWaiters) resolve()
+    listeningWaiters.clear()
+  }
+
   function reportReadyResponse(proc: ChildProcess) {
     if (stopping || child !== proc) return
+    // A session-API answer proves the handler is attached, too.
+    reportListening(proc)
     readyResponseProcess = proc
     for (const resolve of readyResponseWaiters) resolve()
     readyResponseWaiters.clear()
@@ -2257,6 +2360,12 @@ export function createOpencodeSupervisor(
     while (Date.now() < deadline) {
       if (stopping) return false
       if (proc.exitCode !== null || proc.signalCode !== null) return false
+      // Same rule as the readiness loop: nothing is sent before the candidate
+      // announced its handler (or the fallback deadline passed).
+      if (!mayProbe(proc)) {
+        await new Promise((r) => setTimeout(r, 50))
+        continue
+      }
       if (await probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)) {
         return true
       }
@@ -2397,11 +2506,21 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const probedPort = livePort()
       const probedChild = child
+      // Send nothing to a process that has not announced its handler yet
+      // (OPENCODE_LISTENING_LINE): a probe that reaches the bound-but-
+      // handlerless port is lost and would wait its full 2 s. After
+      // LISTENING_LINE_FALLBACK_MS without the line, probe anyway.
+      if (probedChild && !mayProbe(probedChild)) {
+        scheduleReadinessProbe()
+        return
+      }
       // Closed gate → liveness only, on a route that creates no Instance.
       const probe = directoryProbeOpen
         ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
         : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
       const ready = probe === 'ready'
+      // An answered probe proves the handler exists (the fallback path).
+      if (probe !== 'down' && probedChild && probedChild === child) reportListening(probedChild)
       if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
         firstListeningResponseReported = true
         options.onFirstListeningResponse?.()
@@ -2498,6 +2617,7 @@ export function createOpencodeSupervisor(
       stopping = true
       state = 'down'
       readyResponseProcess = null
+      listeningProcess = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
@@ -2739,6 +2859,13 @@ export function createOpencodeSupervisor(
         readyResponseWaiters.add(resolve)
       })
     },
+
+    waitForCurrentListening() {
+      if (!stopping && child && listeningProcess === child) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        listeningWaiters.add(resolve)
+      })
+    },
   }
 }
 
@@ -2779,9 +2906,17 @@ export async function waitForOpencodeReady(
 ): Promise<boolean> {
   const deadline = Date.now() + READY_TIMEOUT_MS
   let listeningSeen = false
+  let mayProbe = false
   while (Date.now() < deadline) {
     if (opencode.getState() === 'ok') return true
     if (directory) {
+      // Send nothing before the process announced its handler (or the
+      // supervisor's fallback probe proved it): see OPENCODE_LISTENING_LINE.
+      // A probe dropped in the bind→handler window would cost its 500 ms.
+      if (!mayProbe) {
+        mayProbe = await raceListening(opencode, BOOT_READY_POLL_MS)
+        if (!mayProbe) continue
+      }
       const probe = await probeOpencodeReadiness(opencode.getInternalUrl(), directory, 500)
       if (probe !== 'down' && !listeningSeen) {
         listeningSeen = true
@@ -2795,6 +2930,25 @@ export async function waitForOpencodeReady(
     await new Promise((r) => setTimeout(r, directory ? BOOT_READY_POLL_MS : READY_POLL_MS))
   }
   return false
+}
+
+/** True once the current OpenCode may be talked to, false after `maxMs`.
+ *  Optional-chained so a partial test double without the supervisor method
+ *  behaves as before (no gate). */
+async function raceListening(opencode: Opencode, maxMs: number): Promise<boolean> {
+  const signal = opencode.waitForCurrentListening?.()
+  if (!signal) return true
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      signal.then(() => true, () => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), maxMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /** Richer boot probe: 'down' = port not answering at all, 'listening' = answers

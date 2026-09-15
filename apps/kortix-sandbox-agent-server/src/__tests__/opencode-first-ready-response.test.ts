@@ -78,6 +78,9 @@ describe('OpenCode supervisor first ready response', () => {
       `#!/usr/bin/env bun
 const port = Number(Bun.argv[Bun.argv.indexOf('--port') + 1])
 Bun.serve({ port, hostname: '127.0.0.1', fetch: () => Response.json([]) })
+// Real OpenCode announces itself once its handler is attached; the supervisor
+// sends nothing before this line (or its 10 s fallback).
+console.log('opencode server listening on http://127.0.0.1:' + port)
 `,
     )
     chmodSync(binary, 0o755)
@@ -110,6 +113,7 @@ Bun.serve({
       : new Response('starting', { status: 503 })
   },
 })
+console.log('opencode server listening on http://127.0.0.1:' + port)
 `,
     )
     chmodSync(binary, 0o755)
