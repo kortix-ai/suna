@@ -299,7 +299,7 @@ describe('AttachmentTiles', () => {
   test('a refusal Retry cannot fix states its reason and offers only Remove', () => {
     const refusals: Array<[Error, string]> = [
       [
-        new BillingError(402, { message: 'Out of credits' }),
+        new BillingError(402, { message: 'Payment required' }),
         'Your plan or credits do not allow uploads right now.',
       ],
       [

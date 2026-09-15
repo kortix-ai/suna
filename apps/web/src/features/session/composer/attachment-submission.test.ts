@@ -602,7 +602,7 @@ describe('runComposerSend', () => {
 
 describe('attachmentFailureReason', () => {
   test('names the refusals Retry cannot fix; any other failure is a connection failure', () => {
-    expect(attachmentFailureReason(new BillingError(402, { message: 'Out of credits' }))).toBe(
+    expect(attachmentFailureReason(new BillingError(402, { message: 'Payment required' }))).toBe(
       'billing',
     );
     expect(
@@ -647,7 +647,7 @@ describe('attachmentFailureReason', () => {
 describe('takeNewBillingRefusals', () => {
   test('returns each billing refusal once and never a connection failure', () => {
     const seen = new WeakSet<object>();
-    const outOfCredits = new BillingError(402, { message: 'Out of credits' });
+    const outOfCredits = new BillingError(402, { message: 'Payment required' });
     const items: PromptAttachmentItem[] = [
       { ...item('a', 'error'), error: outOfCredits },
       { ...item('b', 'error'), error: new Error('socket hang up') },
