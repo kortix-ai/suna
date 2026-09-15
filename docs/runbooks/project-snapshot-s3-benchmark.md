@@ -617,6 +617,84 @@ remaining lever: a short close on the env-presigned URL is transient and the
 URL is still valid, so retrying it in place (no backoff, no proxy descriptor)
 would cut an affected boot from ~1.3 s to ~0.6 s.
 
+### Gate the daemon on OpenCode's "server listening" line (branch `opencode-listening-line`), 2026-09-15
+
+Same topology as the previous section — this branch at `513ca2d476` (PR
+#7242's `af83fb1454` plus one kortixd change), worktree API on the laptop
+behind a cloudflared quick tunnel, Daytona `us` target, 400-file fixture, a
+**real bucket in us-east-2** from the repo's module in a throwaway account
+(plain endpoint, acceleration off, API on the SDK default chain through
+`AWS_PROFILE` → `credential_process`), objects rebuilt and verified (`tree`
+1,576,450 B / 652 entries, `blobs` 1,600,272 B). Image
+`kortix-default-bd425fd52ad8` (this daemon build; every round's boot timeline
+carries the new `opencode-listening-line` mark, 60/60). 30 rounds per arm,
+arms alternating, one warm-up discarded, `--probe-hosts` and `--daemon-log`
+on, the 250 ms `/event`-subscribe watcher alongside. Bucket destroyed
+afterwards.
+
+**The change.** OpenCode 1.18 binds its port ~100 ms before its request
+handler is attached (Effect `NodeHttpServer.layer` listens while the server
+layer builds; `HttpRouter.serve` attaches `on("request")` after the app layer
+builds — `server.ts` is identical from 1.18.23 through 1.18.31; upstream
+anomalyco/opencode#46437). A request accepted in that window is never
+answered. `serve.ts` prints `opencode server listening on http://…` only after
+`Server.listen` resolves, i.e. after the handler exists, and has since 1.0.0.
+kortixd now pipes OpenCode's stdout (forwarded byte for byte to its own),
+resolves a per-process listening signal on that line, and sends the process
+**nothing** before it — no readiness probe, no root list, no `/event`
+subscribe (10 s fallback to plain probing if the line never shows; 10 s
+header timeout on the subscribe). No timer-based probing.
+
+| Arm | Rounds / failures / fallbacks | Acquisition p50 / p95 (min / max) | `repo-materialized` p50 / p95 | In-guest `opencode-ready` p50 / p95 | Full boot p50 / p95 (min / max) | Descriptor | S3 rounds retried |
+|---|---|---|---|---|---|---|---|
+| Git (`git` mode) | 30 / 0 / 0 | 1,078 / 1,414 ms (610 / 1,790) | 1,111 / 1,442 ms | 2,272 / 2,566 ms | 6,593 / 10,807 ms (5,096 / 13,332) | — | — |
+| **S3 v2 + presign, plain** (`<bucket>.s3.us-east-2`) | 30 / 0 / 0 | **307 / 1,137 ms** (210 / 1,284) | 348 / 1,168 ms | **1,934 / 2,532 ms** | **5,836 / 8,518 ms** (4,586 / 11,288) | env 28, proxy 2 | 2 / 30 |
+
+Single-attempt S3 rounds (28): in-guest `s3_acquire` 276 ms p50; the two
+retried rounds (6, 15) read `download/unavailable` — the Bun short close of
+the previous section — and were answered by a proxy descriptor (1,142 and
+1,289 ms total). Hydration `ok` 30/30 (import p50 92 ms); extractor `tar`
+throughout. Boxes: New York City 47, Miami 6, Los Angeles 6, Ashburn 1; in-box
+first byte to the bucket 79–82 ms p50, to the laptop's tunnel 192–195 ms.
+
+**The listening line, in-guest (p50 / p95 / max, ms):**
+
+| | Git | S3 |
+|---|---|---|
+| `opencode-listening-line` after boot start | 1,243 / 1,438 / 1,735 | 1,323 / 1,521 / 1,756 |
+| spawn → line | 1,129 / 1,322 / 1,596 | 1,202 / 1,377 / 1,604 |
+| checkout landed **before** the line (the ordering that used to drop the first request) | 20 / 30, lead 426 ms p50 | **30 / 30**, lead 892 ms p50 |
+| line → first answered request (`opencode-http-listening`) | 62 / 628 / 810 | 570 / 684 / 757 |
+| line → root list answered (`opencode-listening`) | 980 / 1,301 / 1,843 | 573 / 1,041 / 1,102 |
+| root-list request → answer (`opencode-listening − managed-reconcile`) | 588 / 715 / 812 | 946 / 1,173 / **1,531** |
+| root-list poll started before the first answered request | 8 / 30 | 28 / 30 |
+| `/event` subscribe answered / header timeouts | 30 / 30, 0 | 30 / 30, 0 |
+| spawn → subscribed | 2,146 / 2,403 / 2,968 | 1,804 / 2,357 / 2,425 |
+
+The line → first-answer gap differs by arm for a known reason: on an S3 boot
+the workspace is complete when the line arrives, so the first probe is the
+directory-scoped one and pays OpenCode's Instance init (~500 ms) up front; on
+most Git boots the checkout is still landing, so the first probe is the
+instance-free liveness route (62 ms) and the Instance init is paid by the root
+list instead (`opencode-listening − opencode-http-listening` 941 ms on Git,
+−1 ms on S3). Either way no request waits for a timeout: a request dropped in
+the window read ≥ 5,000 ms in the root-list row before; the maximum here is
+1,531 ms. The four full-boot rounds above 10 s (Git 13,332 / 10,807 / 10,121,
+S3 11,288) all have in-guest `opencode-ready` at 2.1–3.1 s — sandbox
+create/start on the provider side, not the daemon.
+
+Reading: with the daemon gated on OpenCode's own announcement the S3 boot
+keeps its acquisition lead (307 vs 1,078 ms, 3.5×) **and** turns it into an
+earlier runtime: in-guest `opencode-ready` 1,934 vs 2,272 ms, `runtimeReady`
+5,836 vs 6,593 ms at the median (before any fix, previous section: 9.9 s vs
+6.1 s). Against the 300 ms liveness-probe variant of the same fix
+(DimitrijeGlibic/suna#2, same bucket region, 30 rounds/arm: full boot 6,263 vs
+6,249 ms, root-list request → answer 1,056 ms p50 / 1,402 max on S3) the
+in-guest picture is the same with no timer, no probe sent into the window and
+no wasted 300 ms: the first request follows the announcement by 62–570 ms at
+the median depending on which probe goes first. Raw rows: job `e2725831`'s
+`tmp/bench-main.jsonl` (+ `.subscribe.jsonl`, `.report.json`).
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
