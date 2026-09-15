@@ -291,7 +291,7 @@ paths. The user message renders every attachment before and after reload, with t
 same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
 rewritten in place before the next prompt.
 
-`SESS-28` Eager private attachment uploads. A project accepts bytes before any
+`SESS-29` Eager private attachment uploads. A project accepts bytes before any
 session exists. Initiation returns an opaque handle with a server-selected
 transport. Direct mode, the default, returns a short-lived signed Storage upload
 URL. The client sends the whole file in one PUT with no Authorization header.
