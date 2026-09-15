@@ -729,3 +729,59 @@ Rollout evidence: PID 59974 logged `rolling-pipeline-start` at 18:48 UTC with
 `max_items: 1000` and `concurrency: 24`. The previous batch completed normally.
 Five controller/refill tests passed. Sustained throughput at the new admission
 count remains to be measured.
+
+### Measured Platinum control-plane limit and follow-up probe — 2026-09-15
+
+The initial tally from the first 32-pipeline probe counted 33 rate-limited import attempts:
+28 on Platinum `/exec`, five on `/files`. Responses supply `Retry-After: 1`.
+The adapter now retries only rejected 429 requests, with the server delay plus
+jitter. It does not retry ambiguous failed execution responses. Small uploads
+use two calls instead of four: upload staging bytes, then hash-check, change
+ownership, move, clean the staging chunk, and hash-check the destination in one
+command. A digest mismatch exits before replacing the destination. Multipart
+uploads retain bounded chunks and a complete-file digest check.
+
+Live capacity commands use `scale-control-suna.json` with a unique ID, a target,
+an expiry, and an optional hold of at most ten minutes. Targets remain within
+8..90. Holds stop automatic increases but never pressure backoff. A separate
+probe measures 32, 48, 64, 80, and 90 pipelines after warm-up. It records completed
+imports and hard pressure in `capacity-probe-results.json`, stops on hard
+pressure or a throughput decline under throttling, and retains the best measured
+level. These are short-window observations, not a permanent capacity guarantee.
+
+For dispatcher handoff, source captures drain first. A slow destination readback
+can retain its process and session lease under `apply-draining`; a dedicated
+watcher verifies its completion checkpoint, reconciles the queue, and stops only
+a verified session. It returns incomplete work to review. This avoids blocking
+all other imports on a single long readback. New completion timestamps are written
+after file verification, so throughput counts do not use a pre-readback timestamp.
+
+The optimized 32-pipeline sample completed 44 imports in 120 seconds (1,320/h).
+The repeated 48-pipeline sample completed 46 in 120 seconds (1,380/h), with no
+hard pressure or recovered throttles in that sample. A previous 48-pipeline
+attempt encountered one source Daytona 502. Another attempt failed a file
+readback with 404 after a recovered 429; that is a file verification failure,
+not evidence that retries exhausted the provider rate limit. The failed session
+remains unverified. Retry log messages now use a separate throttle-retry marker;
+the capacity probe inspects the final error when classifying older logs.
+
+Validation: `bun test ./.legacy-transfer/production/platinum-destination.test.ts
+./.legacy-transfer/production/concurrency-controller.test.ts
+./.legacy-transfer/production/refilling-pool.test.ts` reports 20 passed, zero
+failed, and 112 assertions. The dispatcher builds successfully with Bun.
+
+The 64-pipeline probe hit the application's `project_session_create_limit`:
+100 creates/hour per API replica, enforced by the in-process token bucket in
+`apps/api/src/shared/rate-limit.ts`. Its config property is absent from the config
+schema, so account seats/credits and a runtime environment variable cannot raise
+it in this version. The probe stopped; 80 and 90 were not tested. Short successful
+samples therefore do not prove sustained throughput above the create quota.
+
+Quota-aware retries apply only to migration POSTs with a fixed session UUID.
+They honor bounded server delays, check that UUID for an existing destination,
+and use a fresh lifecycle command key after a terminal quota rejection. This
+avoids replaying the API's cached quota error as HTTP 500. Ambiguous errors do not
+trigger a new command key. Two policy tests pass with ten assertions. The operator
+requeued 25 terminal quota failures only after confirming their durable archives,
+mapped owner, absence of a create checkpoint, and live destination 404.
+The quota remains enforced. Raising it requires a scoped server-side change.

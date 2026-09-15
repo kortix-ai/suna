@@ -21,6 +21,34 @@ linked, not inlined.
 
 ## Register
 
+### Treat session-create quotas separately from provider capacity (2026-09-15)
+
+**When:** probing migration throughput, distinguish application create quotas
+from provider throttles. *Incident:* a 64-pipeline probe hit the 100/hour/project
+replica-local create bucket; retries replayed its terminal failure as HTTP 500.
+*Enforcer:* the private quota retry policy tests restrict retries to known quota
+failures and fixed destination IDs. The operator checks destination existence
+before a fresh lifecycle command key. Account seat increases do not change this cap.
+
+### Classify the terminal failure separately from recovered retries (2026-09-15)
+
+**When:** controlling migration concurrency from subprocess output, do not treat
+an earlier recovered 429 as the cause of a later failed attempt. *Incident:*
+a 48-pipeline probe reduced capacity when a file readback returned 404 after
+an earlier throttle recovered. *Enforcer:* retry output uses a separate marker;
+the private capacity probe classifies historical logs from their terminal error.
+Missing file readbacks retain their failed verification status.
+
+### Distinguish recovered throttles from failed imports when probing capacity (2026-09-15)
+
+**When:** scaling a transfer, record endpoint-level pressure and completed imports.
+Honor `Retry-After` for rejected 429 requests. Do not replay the whole import for
+one rejected request. A recovered throttle postpones scaling; a failed attempt
+reduces concurrency. *Incident:* a 32-pipeline probe hit Platinum `/exec` and
+`/files` throttles, then overly broad backoff reduced successful work to nine.
+*Enforcer:* controller tests cover recovered throttles, hard backoff, and expiring
+probe holds. File finalization tests verify corruption cannot replace a target.
+
 ### Recover migration capacity after the rate-limit window ends (2026-09-15)
 
 **When:** throttling a migration, base recovery on a quiet time window and
