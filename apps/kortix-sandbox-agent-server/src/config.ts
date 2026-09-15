@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { manifestConfigDir } from '../../../packages/manifest-schema/src/agent-configuration'
+import { manifestConfigDir } from '../../../packages/manifest-schema/src/manifest-config-dir'
 
 /**
  * Env contract for kortix-sandbox-agent-server.

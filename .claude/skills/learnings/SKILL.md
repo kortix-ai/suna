@@ -6933,3 +6933,5 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** Pi preview build `34989732075` rejected the workspace dependency added by `6a864f9d93`. Local typechecking used monorepo dependencies and passed; the previous preview stayed active.
 **Rule:** daemon imports must preserve its standalone package.json/bun.lock contract. Use dependency-free shared source and the pinned Bun parsers for manifest reads. Run the standalone gate before committing or deploying.
 **Enforcer:** `apps/kortix-sandbox-agent-server/src/egress-shim/blocked-headers.test.ts` rejects workspace dependencies and lock drift. The build verifies the shared source from an isolated directory with Bun 1.3.11.
+
+**Follow-up:** `34990233820` exposed a type-only path from the shared configuration type into parser dependencies. Keep daemon helpers in leaf modules that have no runtime **or type** dependency on the full manifest validator. Isolated verification must run `typecheck` before `build`, as the production Docker stage does.

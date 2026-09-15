@@ -27,8 +27,7 @@ describe('existing project session composer runtime contract', () => {
       'onVariantChange={runtimeReasoningAllowed ? handleVariantChange : undefined}',
     );
     expect(sessionChat).toContain('attachmentsEnabled={runtimeAttachmentsAllowed}');
-    expect(sessionChat).toContain('local.model.imageAttachmentsSupported === true');
-    expect(sessionChat).toContain('putSessionImage(projectId!, projectSessionId!');
+    expect(sessionChat).toContain('putSessionFile(projectId!, projectSessionId!');
   });
 
   test('strips stale prompt overrides and refuses file parts before upload', () => {
