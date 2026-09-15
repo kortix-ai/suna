@@ -1017,3 +1017,8 @@ fallback directions, two unavailable providers, fresh primary recovery, no probe
 recent Platinum failure, obsolete recovery receipts, and receipt expiry. The
 probe build passes. Cache reclamation removed another 5,847,355,994 bytes from
 1,309 verified workspace tar caches; free disk measured 30 GiB afterward.
+
+The first Platinum probe subsequently completed full verification of 319 files
+and stopped at 21:21:51 UTC. The operator's 128 admission request was acknowledged
+at 21:21:23 UTC. The next routing sample can now restore Platinum as primary at
+the bounded return target, then increase on verified throughput.
