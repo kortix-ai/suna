@@ -87,15 +87,23 @@ describe('connectors page Global rules', () => {
     expect(header).not.toContain('size="default"');
     expect(header).toContain("newConfigPrompt('connector')");
     expect(header).toContain("label: tI18nComplete.raw('text90ccaee30bdc')");
-    expect(header).toContain("setPanel('custom')");
+    expect(header).toContain('openAdd()');
   });
 
-  test('it opens in a Sheet and renders PoliciesPanel, with the copy intact', () => {
+  test('it opens in a SplitSheet column and renders PoliciesPanel, with the copy intact', () => {
+    // An inline column beside the page, never an overlay — the catalogue
+    // stays readable while the rules are edited (Jay, 2026-09-13).
     const body = code(source);
-    expect(body).toContain('<Sheet open={rulesOpen} onOpenChange={setRulesOpen}>');
-    expect(body).toContain('<SheetTitle');
+    expect(body).toContain('<SplitSheet');
+    expect(body).toContain('<SplitSheetMain');
+    expect(body).toContain('<SplitSheetTitle');
     expect(body).toContain("raw('text014d10bd3c64')");
     expect(body).toContain('<PoliciesPanel projectId={projectId} />');
+    expect(body).not.toContain('<Sheet ');
+    // `?rules=1` still opens that column: it is one of the two occupants the
+    // single sheet arbitrates between (see `connectors-page.add-sheet.test.ts`).
+    expect(body).toContain("rulesOpen ? 'rules' : null");
+    expect(body).toContain('open={sheet !== null}');
   });
 
   // `menu-registry.ts`'s `proj-connectors-policies` navigates straight here,

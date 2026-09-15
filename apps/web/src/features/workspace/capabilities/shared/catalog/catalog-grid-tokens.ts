@@ -20,6 +20,14 @@
 export const GRID_CLASSNAME = 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3';
 
 /**
+ * The CONNECTOR grids' dense variant: borderless `plain` cards carrying only
+ * icon + title + a kind line, so they fit four across on desktop and nearly
+ * touch — the hover fill separates rows, not gaps. Agents/skills keep
+ * `GRID_CLASSNAME`; their outlined, description-carrying cards need the room.
+ */
+export const DENSE_GRID_CLASSNAME = 'grid gap-1 sm:grid-cols-2 lg:grid-cols-3 ';
+
+/**
  * Height of a real `CatalogCard`, sized to the common two-line-description
  * case so the loading skeleton and the settled card never reflow vertically.
  *
