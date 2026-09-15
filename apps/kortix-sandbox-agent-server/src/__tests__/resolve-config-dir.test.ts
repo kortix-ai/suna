@@ -82,6 +82,16 @@ describe('resolveOpencodeConfigDir', () => {
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.kortix/opencode'))
   })
 
+  test.each([
+    ['kortix.yaml', '{kortix_version: 2, config_dir: config/shared}'],
+    ['kortix.toml', 'kortix_version = 2\nconfig_dir = "config/shared"\n'],
+  ])('reads shared configuration from %s with the pinned Bun parser', async (filename, content) => {
+    writeFileSync(join(workspace, filename!), content!)
+    mkdirSync(join(workspace, 'config/shared'), { recursive: true })
+    writeFileSync(join(workspace, 'config/shared/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'config/shared'))
+  })
+
   test('honors a custom opencode.config_dir from kortix.yaml', async () => {
     writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: config/oc\n')
     mkdirSync(join(workspace, 'config/oc'), { recursive: true })

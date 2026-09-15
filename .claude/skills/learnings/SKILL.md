@@ -6927,3 +6927,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Near-miss:** Pi document staging and direct SDK sends passed, but the real composer received HTTP 400 for an immutable SVG reference. The shared inbox sanitizer still required non-native files to carry a data URL.
 **Rule:** verify both data-URL staging and immutable-reference admission through the real prompt-inbox route. Enable reference formats from the loaded session runtime, not a caller-supplied flag. Keep OpenCode defaults unchanged.
 **Enforcer:** `prompt-parts.test.ts` checks Pi-only references, malformed digests, and remote URLs. `SESS-31` submits stored PDF, text, CSV, ZIP, and SVG references through HTTP.
+
+### Run the standalone dependency gate before committing daemon imports (2026-09-15)
+
+**Incident:** Pi preview build `34989732075` rejected the workspace dependency added by `6a864f9d93`. Local typechecking used monorepo dependencies and passed; the previous preview stayed active.
+**Rule:** daemon imports must preserve its standalone package.json/bun.lock contract. Use dependency-free shared source and the pinned Bun parsers for manifest reads. Run the standalone gate before committing or deploying.
+**Enforcer:** `apps/kortix-sandbox-agent-server/src/egress-shim/blocked-headers.test.ts` rejects workspace dependencies and lock drift. The build verifies the shared source from an isolated directory with Bun 1.3.11.

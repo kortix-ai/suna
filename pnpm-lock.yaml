@@ -338,9 +338,6 @@ importers:
 
   apps/kortix-sandbox-agent-server:
     dependencies:
-      '@kortix/manifest-schema':
-        specifier: workspace:^
-        version: link:../../packages/manifest-schema
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(zod@3.25.76)
