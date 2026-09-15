@@ -14,7 +14,7 @@ import {
 } from '../fixtures/database-project';
 
 flow('SESS-28', {
-  domain: 'sessions', requires: ['database'], timeoutMs: 180_000,
+  domain: 'sessions', requires: ['database', 'funded'], timeoutMs: 180_000,
   routes: [
     'POST /v1/projects/:projectId/attachments',
     'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index',
