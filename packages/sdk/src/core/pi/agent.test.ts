@@ -68,3 +68,32 @@ test('custom tools require valid names, object schemas, and unique registrations
     await expect(definePiAgent(() => ({ tools }) as any)(context)).rejects.toThrow(/Pi agent/);
   }
 });
+
+test('custom Pi definitions accept lazy environment MCP servers', async () => {
+  const mcp = {
+    files: { type: 'local', command: ['node', '/workspace/mcp.js'], environment: { API_TOKEN: '{env:MCP_TOKEN}' }, timeout: 30000 },
+    disabled: { type: 'local', command: ['unused'], enabled: false },
+  };
+  expect((await definePiAgent(() => ({ mcp }) as any)(context)) as any).toMatchObject({ mcp });
+});
+
+test.each([
+  null,
+  [],
+  { '../escape': { type: 'local', command: ['node'] } },
+  { test: { type: 'remote', url: 'https://example.com' } },
+  { test: { type: 'local', command: 'node server.js' } },
+  { test: { type: 'local', command: [] } },
+  { test: { type: 'local', command: [''] } },
+  { test: { type: 'local', command: ['node', '\0'] } },
+  { test: { type: 'local', command: ['node'], enabled: 'yes' } },
+  { test: { type: 'local', command: ['node'], timeout: 0 } },
+  { test: { type: 'local', command: ['node'], timeout: 60001 } },
+  { test: { type: 'local', command: ['node'], environment: { INVALID: 3 } } },
+  { test: { type: 'local', command: ['node'], environment: { 'INVALID=KEY': 'value' } } },
+  { test: { type: 'local', command: ['node'], cwd: '\0' } },
+  { test: { type: 'local', command: ['node'], shell: true } },
+  Object.fromEntries(Array.from({ length: 17 }, (_, i) => ['server' + i, { type: 'local', command: ['node'] }])),
+])('custom Pi definitions reject invalid local MCP configuration %#', async mcp => {
+  await expect(definePiAgent(() => ({ mcp }) as any)(context)).rejects.toThrow(/MCP/);
+});

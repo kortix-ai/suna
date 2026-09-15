@@ -984,6 +984,7 @@
     "PiStateNamespace",
     "PiStateSnapshot",
     "PiStateValue",
+    "PiStdioMcpServer",
     "PipedreamApp",
     "PipedreamCatalogPage",
     "PipedreamCatalogQuery",
@@ -3940,6 +3941,7 @@
     "PiStateNamespace",
     "PiStateSnapshot",
     "PiStateValue",
+    "PiStdioMcpServer",
     "definePiAgent"
   ],
   "./internal/sync-store": [

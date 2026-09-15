@@ -754,6 +754,9 @@ Omitting `runtime` retains OpenCode selection behavior.
 `@kortix/sdk/pi` exports `definePiAgent`, `PiAgentFactory`, `PiAgentDefinition`,
 and `PiAgentContext`. It also exports `PiAgentState`, `PiStateValue`,
 `PiStateSnapshot`, `PiStateDefinition`, `PiStateNamespace`, and `PiStateConflictError`.
+`PiStdioMcpServer` describes optional `mcp` declarations in the custom agent module.
+Their commands run lazily in the execution environment. Discovery returns the
+connection identity required by calls. See the [local MCP contract](../../docs/PI_CUSTOM_AGENTS.md#local-mcp-servers-in-the-environment).
 `PiAgentResources` and `PiAgentResource` describe the optional `context.resources`
 reader. Declare `agents.<name>.resources.worker` in YAML v3, then use `readText`,
 `readJson`, or `readBinary` to read immutable bundled files without starting compute.

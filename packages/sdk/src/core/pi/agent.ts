@@ -1,4 +1,6 @@
 import type { PiAgentResources } from './resources';
+import { validateStdioMcpServers, type PiStdioMcpServer } from './mcp';
+export type { PiStdioMcpServer } from './mcp';
 export type { PiAgentResource, PiAgentResources } from './resources';
 import type {
   AgentEvent,
@@ -33,6 +35,7 @@ export interface PiAgentDefinition extends Pick<
   | 'onResponse'
 > {
   tools?: AgentTool<any>[];
+  mcp?: Record<string, PiStdioMcpServer>;
   thinkingLevel?: AgentState['thinkingLevel'];
   hookTimeoutMs?: number;
   initialize?: (context: PiAgentContext) => void | Promise<void>;
@@ -57,7 +60,7 @@ const hooks = [
   'cancel',
   'shutdown',
 ];
-const fields = new Set([...hooks, 'tools', 'thinkingLevel', 'hookTimeoutMs']);
+const fields = new Set([...hooks, 'tools', 'mcp', 'thinkingLevel', 'hookTimeoutMs']);
 
 /** Validate JavaScript definitions too; TypeScript alone does not validate a compiled artifact. */
 export function definePiAgent(factory: PiAgentFactory): PiAgentFactory {
@@ -71,6 +74,7 @@ export function definePiAgent(factory: PiAgentFactory): PiAgentFactory {
       if (hooks.includes(key) && value !== undefined && typeof value !== 'function')
         throw new Error(`Pi agent hook "${key}" must be a function`);
     }
+    if (result.mcp !== undefined) validateStdioMcpServers(result.mcp);
     if (
       result.hookTimeoutMs !== undefined &&
       (!Number.isSafeInteger(result.hookTimeoutMs) ||
