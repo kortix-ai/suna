@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Scope an internal migration quota override to the original owner and UUID (2026-09-15)
+
+**When:** using the existing internal `enforceAccountCap: false` create command,
+validate the account, project, mapped owner, destination UUID and archive proof.
+*Incident:* the public create quota prevented the authorized Libremax transfer.
+*Enforcer:* the private migration policy has an expiry and scope tests; production
+commands use original actor IDs and deterministic idempotency keys. The canary
+passed 79 independent file readbacks before broad activation. Keep runner-side
+concurrency limits because this flag also skips active-session caps.
+
 ### Treat session-create quotas separately from provider capacity (2026-09-15)
 
 **When:** probing migration throughput, distinguish application create quotas

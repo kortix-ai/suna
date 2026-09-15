@@ -784,4 +784,31 @@ avoids replaying the API's cached quota error as HTTP 500. Ambiguous errors do n
 trigger a new command key. Two policy tests pass with ten assertions. The operator
 requeued 25 terminal quota failures only after confirming their durable archives,
 mapped owner, absence of a create checkpoint, and live destination 404.
-The quota remains enforced. Raising it requires a scoped server-side change.
+The public API quota remains enforced. The migration now uses the existing
+internal lifecycle override described below.
+
+### Authorized migration-only quota bypass — 2026-09-15
+
+The production lifecycle worker already supports `enforceAccountCap: false` on
+internal create commands. The operator now enqueues those commands with source
+`admin`, the original mapped owner as `actor_user_id`, a fixed destination UUID,
+private visibility, Platinum, and an idempotency key unique to the source thread.
+The command remains in the production lifecycle ledger; production code creates
+the destination. No production server change or global limiter change is needed.
+Billing checks remain active. This internal flag also bypasses active-session
+caps, so the private migration runner retains its 90-pipeline ceiling and normal
+provider-pressure backoff, followed by verified stop/archive processing.
+
+The private policy permits only Suna and Trimaran's two destination project UUIDs
+inside the Libremax account, validates source metadata and durable archive proof,
+checks live owner access and destination existence, and expires September 22 UTC.
+`migration-create-overrides.ndjson` records each command, destination, and owner.
+Existing destination owner/provider mismatches stop the import. A queued command
+is reused by idempotency key; failed or unknown commands are not marked verified.
+
+Canary `00b64340-d36a-40fc-a751-e03526c21e4b` used command
+`031012a9-8a43-40e4-a083-3864b0ff9243`. It passed full history/owner/sharing checks,
+79 independent file downloads and hashes, and reached `verified` at
+2026-09-15T19:25:36.503Z. The stop helper returned `already-stopped`. After this
+proof, the operator enabled the override for both migration sources and resumed
+64/80/90 capacity probes. Twenty-three focused tests pass with 132 assertions.
