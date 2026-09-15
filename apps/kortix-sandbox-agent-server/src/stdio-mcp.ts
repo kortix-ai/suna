@@ -102,6 +102,18 @@ export class StdioMcpPool {
     signal?: AbortSignal,
   ): Promise<{ connectionId: string; result: any }> {
     signal?.throwIfAborted();
+    if (
+      typeof input.server !== 'string' ||
+      (input.connectionId !== undefined &&
+        (typeof input.connectionId !== 'string' ||
+          !input.connectionId ||
+          input.connectionId.length > 100))
+    ) {
+      throw new StdioMcpError(
+        'invalid',
+        'MCP server and connection identity must be strings',
+      );
+    }
     try {
       validateStdioMcpServers({ [input.server]: input.configuration });
     } catch (error) {

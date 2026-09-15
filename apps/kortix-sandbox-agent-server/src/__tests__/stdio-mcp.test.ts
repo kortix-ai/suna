@@ -380,3 +380,22 @@ test('oversized requests fail without executing the requested tool', async () =>
   expect(await fs.exists(path.join(f.cwd, 'oversized'))).toBe(false);
   expect(f.pool.active).toBe(0);
 });
+
+test('malformed RPC identities never allocate a process', async () => {
+  const f = await fixture();
+  for (const identity of [
+    { server: undefined },
+    { server: 'fixture', connectionId: 0 },
+    { server: 'fixture', connectionId: '' },
+    { server: 'fixture', connectionId: 'x'.repeat(101) },
+  ]) {
+    await expect(
+      f.pool.request({
+        configuration: f.configuration,
+        method: 'tools/list',
+        ...identity,
+      } as any),
+    ).rejects.toThrow(/identity/);
+    expect(f.pool.active).toBe(0);
+  }
+});
