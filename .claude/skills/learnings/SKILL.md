@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Keep a thread in review when any image archive is pending (2026-09-15)
+
+**When:** preparing or reassessing a legacy thread, treat a pending image URL
+as a blocking condition even if the native projector reports no unresolved
+content block. Record the thread and continue the other queue items.
+*Near-miss:* one Suna batch stopped after 11 preparations because the image
+loader and projector disagreed. The retained checkpoint allowed a restart.
+*Enforcer:* production preparation and reassessment require zero pending image
+archives before moving a thread to `prepared` or `queued`.
+
 ### Read both legacy tool metadata formats before blocking a result (2026-09-15)
 
 **When:** projecting a legacy `tool` row with an exact assistant link, read

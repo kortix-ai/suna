@@ -230,7 +230,10 @@ destination checkpoints need separate versions.
 
 ## Destination execution design
 
-The following stages are a design, not implemented apply commands:
+The checked-in preparation CLI has no apply command. The authorized production
+run uses private operator scripts and SQLite ledgers under
+`.legacy-transfer/production/`. Do not attach those ledgers or raw records to a
+PR. The execution stages are:
 
 1. **Preflight:** validate the approved, hashed source manifest and identity map;
    assert destination project, runtime version, capacity, and access policy.
@@ -252,13 +255,53 @@ Do not mark a run verified when database inserts finish. Do not count an
 arbitrary number of runtime session IDs as proof of restoration. Unavailable
 source data requires recovery or an explicit exception to the 1:1 requirement.
 
+## Authorized production operator run — 2026-09-15
+
+The user authorized the two standalone production projects and exactly 27
+Daytona 404 sandbox exceptions. The cutoff is `2026-09-14T22:13:38Z`. The
+Data API cannot create a transaction across the exports. Reconcile writes
+after the cutoff before declaring the run complete.
+
+The private `run.sqlite` ledger records source thread, destination session,
+owner, title, queue state, source-row count, native-message count, workspace
+manifest, and verification proof. `storage.sqlite` records each source Storage
+object, archive path, SHA-256, and readback state. A restarted batch reuses a
+prepared session. Never generate a second destination session for that thread.
+
+The operator runner checks six durable archive artifacts for a regular
+session: raw records, native projection, disposition audit, selection,
+workspace manifest, and workspace tarball. It reads the native messages as the
+source owner and verifies the exact title, owner, Marko share, restored file
+count, and every regular-file hash. It stops the verified sandbox after checking
+that its native message count has not changed. `POST /stop` preserves the disk;
+`POST /start` must restore the same native conversation and file hashes.
+
+An approved 404 exception has four history artifacts and a fresh provider 404
+proof. Its queue state is `verified-approved-404-file-skip`. It does not claim
+that files were restored. A missing sandbox reference has no such exception.
+Keep it in `workspace-discovery` until an exact project, account, owner, and
+sandbox relation is found. Keep an active source sandbox in `capture-review`;
+do not stop a current user's source work to clear a queue.
+
+Image URLs require a matching Storage inventory row and byte-verified private
+archive. A pending image keeps its thread in `projection-review`, even when the
+native projector reports no unresolved content block. Tool results require an
+exact assistant link. The projector supports both legacy tool metadata formats.
+Unmatched rows remain in review with their raw record archived.
+
+The project allows 100 active sessions. The private runner stops verified
+sessions before that cap blocks later imports. Requeue only failures whose
+attempt logs show the cap, and reuse their prepared checkpoints. The current
+operator batch uses 16 capture and 16 apply workers. Measure provider and API
+errors before increasing concurrency again.
+
 ## Rehearsal and GO gates
 
 A local export rehearsal is read-only and can run now. A full rehearsal creates
 new destination resources and can start archived source sandboxes; it is a
 separate operation requiring execution authorization.
 
-GO remains blocked until all of these have evidence:
+A complete 1:1 claim remains blocked until all of these have evidence:
 
 - Source ownership map and destination memberships are resolved.
 - Private files have a persistence design that does not expose them in shared Git.
@@ -267,7 +310,7 @@ GO remains blocked until all of these have evidence:
 - Owner access and unauthorized-user denial pass through the real API and UI.
 - The apply implementation supports interruption, retry, duplicates, and rollback.
 - Capacity, concurrency, source consistency, and cutover window are recorded.
-- The exact manifest and execution command receive approval.
+- The exact cutoff manifest and reconciliation receive readback proof.
 
 ## Verification
 
@@ -326,7 +369,9 @@ limits prevent classifying the prototype as a complete machine transfer.
 
 ## Development evidence — 2026-09-14
 
-**Gate: NOT READY. Production execution remains unauthorized.**
+**Historical gate:** this bounded experiment did not authorize production
+execution on 2026-09-14. The user later authorized the production operator run
+described above. Completion still requires cutoff reconciliation and readback.
 
 The bounded experiment uses source `cwefmhtthmguktqcysag` and the dev API.
 Three source threads map to three private destination sessions under two verified
