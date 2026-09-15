@@ -21,6 +21,28 @@ linked, not inlined.
 
 ## Register
 
+### Model every captured filesystem entry before restoring it (2026-09-14)
+
+**When:** migrating a workspace, preserve each supported entry type and its
+type-specific metadata. Keep an entry blocked until capture and restore both
+model it. Never downgrade a blocked entry into a completed empty workspace.
+*Near-miss:* one production orphan restore blocked on two captured absolute
+symlinks after all regular-file checks passed.
+*Enforcer:* `restore-workspace.test.py` restores a symlink, verifies its target
+with `readlink`, and rejects a changed destination target.
+
+### Verify migrated binary files through a byte-preserving download (2026-09-14)
+
+**When:** validating restored workspace files, download the bytes through the
+sandbox provider and compare every file's SHA-256 and size with the source
+manifest. The OpenCode `/file/content` text response is not a binary proof.
+*Near-miss:* production readback turned one 363,046-byte source file into
+363,052 UTF-8 bytes despite HTTP 200; the provider download returned the exact
+363,046 bytes and matching hash. The session stayed incomplete.
+*Enforcer:* `assertWorkspaceVerified` requires a verified download count equal
+to the captured file count; production apply and restore use
+`verify-downloaded-files.ts`.
+
 ### A missing legacy sandbox reference is not an empty workspace (2026-09-14)
 
 **When:** migrating session files, require a captured manifest and matching

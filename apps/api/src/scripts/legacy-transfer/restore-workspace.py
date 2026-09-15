@@ -11,7 +11,8 @@ def restore(base, project, workspace="/workspace"):
  assert sum(e['path']=='.' and e['type']=='directory' for e in entries)==1, 'Missing root directory'
  for e in m['entries']:
   p=pathlib.PurePosixPath(e['path'])
-  assert str(p)==e['path'] and not p.is_absolute() and '..' not in p.parts and e['type'] in ['file','directory']
+  assert str(p)==e['path'] and not p.is_absolute() and '..' not in p.parts and e['type'] in ['file','directory','symlink']
+  if e['type']=='symlink':assert isinstance(e.get('target'),str) and e['target'] and '\0' not in e['target']
  def verify(root):
   assert stat.S_ISDIR(os.lstat(root).st_mode), 'Root is not a real directory'
   actual={'.'}
@@ -20,8 +21,9 @@ def restore(base, project, workspace="/workspace"):
   assert actual=={e['path'] for e in m['entries']}, 'Destination inventory differs from source'
   for e in m['entries']:
    p=os.path.join(root,e['path']); st=os.lstat(p)
-   assert (stat.S_ISDIR(st.st_mode) if e['type']=='directory' else stat.S_ISREG(st.st_mode))
-   assert stat.S_IMODE(st.st_mode)==e['mode'] and st.st_mtime_ns==e['mtime_ns']
+   assert (stat.S_ISDIR(st.st_mode) if e['type']=='directory' else stat.S_ISREG(st.st_mode) if e['type']=='file' else stat.S_ISLNK(st.st_mode))
+   if e['type']=='symlink':assert os.readlink(p)==e['target'] and st.st_mtime_ns==e['mtime_ns']
+   else:assert stat.S_IMODE(st.st_mode)==e['mode'] and st.st_mtime_ns==e['mtime_ns']
    if e['type']=='file':
     assert st.st_size==e['size']
     with open(p,'rb') as f: assert hashlib.file_digest(f,'sha256').hexdigest()==e['sha256']
@@ -31,10 +33,14 @@ def restore(base, project, workspace="/workspace"):
    with tarfile.open(base+'/workspace.tar.gz') as t:
     for e in t.getmembers():
      p=pathlib.PurePosixPath(e.name)
-     if p.is_absolute() or '..' in p.parts or not (e.isdir() or e.isfile()): raise RuntimeError('Unsupported archive entry; migration blocked')
-    t.extractall(staging,filter='data')
+     if p.is_absolute() or '..' in p.parts or not (e.isdir() or e.isfile() or e.issym()): raise RuntimeError('Unsupported archive entry; migration blocked')
+    t.extractall(staging,members=[e for e in t.getmembers() if not e.issym()],filter='data')
+   for e in m['entries']:
+    if e['type']=='symlink':os.symlink(e['target'],os.path.join(staging,e['path']))
    for e in reversed(m['entries']):
-    p=os.path.join(staging,e['path']);os.chmod(p,e['mode']);os.utime(p,ns=(e['mtime_ns'],e['mtime_ns']))
+    p=os.path.join(staging,e['path'])
+    if e['type']!='symlink':os.chmod(p,e['mode'])
+    os.utime(p,ns=(e['mtime_ns'],e['mtime_ns']),follow_symlinks=False)
    verify(staging)
    if os.path.lexists(target):raise RuntimeError('Target appeared during restore')
    os.rename(staging,target);staging=None

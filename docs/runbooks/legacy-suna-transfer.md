@@ -477,8 +477,8 @@ that state. Preserve empty subdirectories. A missing source reference does not
 prove an empty workspace. Never create an empty replacement and call it restored.
 
 The versioned `apps/api/src/scripts/legacy-transfer/restore-workspace.py`
-validates a unique manifest root, exact destination paths, file SHA-256 hashes,
-sizes, modes, and modification times. Existing destination changes block a retry;
+validates a unique manifest root, exact destination paths, complete destination Daytona file download readback, file SHA-256 hashes,
+  sizes, modes, modification times, symlink types, and symlink targets. Existing destination changes block a retry;
 the restore does not overwrite them. `assertWorkspaceVerified` requires explicit
 root-directory, exact-inventory, and file-hash evidence before completion.
 Older proofs without these fields require revalidation, not inferred flags.
@@ -498,11 +498,18 @@ Full production completion remains blocked until all applicable items pass:
   destination. A thread-only queue cannot prove that all source files transferred.
 - Storage attachments and filesystem references outside `/workspace` are
   inventoried and reconciled. Workspace restoration alone does not cover them.
-- Unsupported filesystem entries remain blocked. The current restore rejects
-  symlinks and hardlinks; it does not preserve xattrs or original numeric owners.
+- Unsupported filesystem entries remain blocked. The current restore preserves
+  symlinks. It rejects hardlinks and does not preserve xattrs or original numeric owners.
 - Export membership and final reconciliation account for live changes and
   deletions. A created-at cutoff is not a consistent database snapshot.
 - Durable off-box archives and lost-sandbox recovery are verified. Local files
   and a copy inside the destination sandbox do not meet this requirement.
+- A session import requires six remotely read-back archive artifacts before
+  destination sandbox creation. `assertWorkspaceVerified` rejects a missing receipt.
 - Parallel apply has per-session claims, source-sandbox capture locks, retry
   checkpoints, and capacity controls. The current global lease serializes apply.
+
+The OpenCode `/file/content` route can return binary content as UTF-8 text.
+Its response changed a 363,046-byte source file into 363,052 bytes in a
+production check. Download files through Daytona `fs.downloadFile` for byte
+comparison. A separate browser Files check verifies user-facing visibility.
