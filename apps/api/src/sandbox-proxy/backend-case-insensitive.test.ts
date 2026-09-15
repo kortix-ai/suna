@@ -46,12 +46,14 @@ mock.module('../shared/db', () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: () => ({
-          orderBy: () => ({
-            limit: async () => {
-              queryCount += 1;
-              return queryCount === 1 ? [] : [canonicalRow];
-            },
+        leftJoin: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: async () => {
+                queryCount += 1;
+                return queryCount === 1 ? [] : [canonicalRow];
+              },
+            }),
           }),
         }),
       }),

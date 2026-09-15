@@ -155,12 +155,14 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     sandboxId: sessionSandboxes.sandboxId,
     externalId: sessionSandboxes.externalId,
     sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
+    // A JOIN, not a correlated `sql` subquery. In a single-table select Drizzle
+    // renders select-list columns unqualified, so the old subquery reached
+    // Postgres as `where "session_id" = "session_id"` — always true — and
+    // answered an arbitrary tenant's agent. A prompt with no `agent` then
+    // re-minted this session's token to that foreign agent
+    // (INC-2026-09-15-CROSS-TENANT-AGENT-GRANT). The join is on the
+    // `project_sessions` primary key, so it matches at most one row.
+    agentName: projectSessions.agentName,
     projectId: sessionSandboxes.projectId,
     accountId: sessionSandboxes.accountId,
     provider: sessionSandboxes.provider,
@@ -172,6 +174,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     const [match] = await db
       .select(columns)
       .from(sessionSandboxes)
+      .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(condition)
       .orderBy(...preferredSandboxOrder())
       .limit(1);

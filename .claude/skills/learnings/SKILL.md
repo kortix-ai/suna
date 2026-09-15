@@ -21,6 +21,25 @@ linked, not inlined.
 
 ## Register
 
+### Never correlate a Drizzle select-list subquery through `${column}` interpolation — it renders unqualified and matches every row (2026-09-15)
+
+**When:** writing `db.select({ field: sql`(select … where ${inner.col} = ${outer.col})` })`.
+In a single-table select Drizzle renders select-list columns without a table
+prefix, so Postgres receives `where "session_id" = "session_id"`; both names
+bind to the inner table, the predicate is always true, and `limit 1` answers an
+arbitrary row from any tenant. WHERE clauses are rendered qualified; only the
+select list has this hazard. Use a JOIN, or write the outer reference as literal
+qualified SQL. *Incident:* INC-2026-09-15-CROSS-TENANT-AGENT-GRANT —
+`sandbox-proxy/backend.ts` `loadSandbox` read `agentName` this way; every prompt
+with no `agent` in its body re-minted the session token to another tenant's
+agent, 650 active prod tokens in 339 projects since 2026-08-27, CLI/connectors
+denied, foreign agent names shown to customers. The same trap had already
+shipped once in `repositories/iam.ts` (counts returned table totals) and was
+fixed by hand with only a comment. *Automation:*
+`apps/api/src/__tests__/unit-select-list-subquery-correlation.test.ts` fails on
+any select-list subquery that interpolates columns of two tables;
+`integration-correlated-subquery-isolation.test.ts` proves per-row agents.
+
 ### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
 
 **When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
