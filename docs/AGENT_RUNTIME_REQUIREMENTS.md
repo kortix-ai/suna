@@ -1,6 +1,6 @@
 # Agent runtime: shared configuration and recoverable workspaces
 
-Design proposal · 2026-09-10 · Canonical plan; implementation status appears below.
+Design proposal · updated 2026-09-15 · Canonical plan; implementation status appears below.
 
 **Goal: configure an agent once, select OpenCode or Pi with the YAML version,
 and keep its conversation and files when compute is replaced.**
@@ -31,44 +31,50 @@ source path and reason. Never silently omit them or start the other runtime.
 
 ### Shared source example
 
-This is the **proposed neutral layout**, replacing runtime-specific authoring directories:
+YAML points to agent behavior and source files. Their paths can use a shared layout:
 
 ```text
 kortix.yaml
-.kortix/agents/analyst.md
-.kortix/agents/analyst.ts                 # optional portable custom code
+prompts/analyst.md
+agents/analyst.ts                       # optional Pi source
 .kortix/skills/reporting/SKILL.md
 .kortix/commands/review.md
 .kortix/package.json + package-lock.json # optional locked dependencies
-.kortix/native/pi/                       # optional native escape hatch
-.kortix/native/opencode/
+.kortix/native/opencode/                # native OpenCode configuration remains separate
 ```
 
 ```yaml
 kortix_version: 3 # change to 2 for OpenCode
+config_dir: .kortix
 default_agent: analyst
 agents:
   analyst:
     connectors: none
     secrets: none
     skills: [reporting]
+    config:
+      description: Analyze reports
+      model: kortix/gpt-5.6-luna
+      prompt:
+        file: prompts/analyst.md
+      permission:
+        '*': deny
+        read: allow
+        write_note: ask
+      pi:
+        source: agents/analyst.ts
 ```
 
-The agent declaration joins `analyst.md` and `analyst.ts` by name. Environment
-templates, mounts, connectors, and secret references stay in `kortix.yaml`.
+Paths under `config` are relative to the repository. `config_dir` holds shared
+skills, commands, and locked dependencies. `config.pi.source` is Pi-specific;
+changing the YAML version does not translate that code into an OpenCode plugin.
+The portable custom-code adapter remains planned. Environment templates,
+connectors, and secret references stay in `kortix.yaml`; mounts remain planned.
 Secrets are injected at execution time; never compile their values into bundles.
 
-Example `.kortix/agents/analyst.md` under the proposed shared contract:
+Example `prompts/analyst.md` supplies exact prompt text:
 
 ```markdown
----
-description: Analyze reports
-model: gpt-5.6-luna
-permission:
-  '*': deny
-  read: allow
-  write_note: ask
----
 Read the supplied reports. Ask before saving a note with write_note.
 ```
 
@@ -289,10 +295,14 @@ History, artifacts, and checkpoints have separate retention rules.
 | Independent lifecycle, reopen warmup, gated seven-day cleanup | Concurrent opens create one environment. A terminal survives worker stop. Day-ten recovery works with the same session ID. |
 | Remaining customization, parity, and performance | Real custom agents and client flows pass. Compare split Pi, direct Pi, and OpenCode under equal conditions; restore worker mode afterwards. |
 
-**Current:** version selection, compiled Pi agents, native hooks/tools, and
-PostgreSQL state exist. State recovery was preview-verified at `8b60e2c2b2`.
-The neutral layout, portable custom API, general file checkpoints, Lix integration,
-and gated reopen/cleanup lifecycle remain work. Existing orphan deletion is not
+**Current:** version selection, explicit YAML behavior and file paths, shared
+`config_dir`, compiled Pi agents, native hooks/tools, and PostgreSQL state exist.
+The browser edits declared prompt files while preserving source/resource paths.
+Preview `9d405788e0` verifies imported custom code, worker resources, environment
+RPC, release pinning, and exact restart history. Private chat uploads also persist
+outside sandboxes. Native resource placement remains Pi-only.
+The portable custom API, OpenCode resource adapter, general workspace backups,
+Lix integration, and gated reopen/cleanup lifecycle remain work. Existing orphan deletion is not
 a verified-backup policy; replace its gate before enabling this design.
 
 Acceptance also covers corrupt/missing backups, storage quotas, lost disks and
