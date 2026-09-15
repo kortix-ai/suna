@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Recover migration capacity after the rate-limit window ends (2026-09-15)
+
+**When:** throttling a migration, base recovery on a quiet time window and
+successful imports. Do not require an entire long batch to contain zero past
+errors. *Incident:* one early burst held Suna at 13 pipelines for more than an
+hour despite a configured 64. A bounded 500-item run also drained to one capture.
+*Enforcer:* `concurrency-controller.test.ts` checks the five-minute quiet window,
+20-success threshold, +4 recovery steps, 25% backoff, floor, and ceiling.
+
 ### Recheck externally archiving sandboxes without starving later work (2026-09-15)
 
 **When:** an archive worker observes an existing archive transition, schedule a

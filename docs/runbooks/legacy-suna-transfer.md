@@ -707,3 +707,25 @@ Its status is `verified-approved-unrecoverable-file-skip`, with
 `files_status: unavailable`. A hash-verified `FILES_UNAVAILABLE.txt` notice lives
 in `/workspace/de55c5ec-752e-46a2-8da3-31b699dc8c7d/`. The notice is a migration
 artifact, not a restored source file. Stop readback passed after the import.
+
+### Throughput recovery — 2026-09-15
+
+A 150-session Suna sample measured median capture 5.6 s, source lifecycle cleanup
+35.3 s, durable archive upload 5.6 s, and destination import/verification 32.1 s.
+Capture and cleanup use proof timestamps. Upload and import use successful
+first-attempt log completion times. These are separate stage medians, not an
+end-to-end latency percentile. Local migration CPU was 5.2% at inspection.
+
+The operator reset Suna's next batch admission to 24 pipelines. The pool retains
+up to 64 worker slots, admits only the effective concurrency, and reduces that
+count by 25% on pressure with a floor of eight. After five minutes without new
+pressure and at least 20 successful imports, it adds four admissions, at most
+once every two minutes. Prior cumulative errors no longer prevent recovery.
+Selections now span up to 1,000 sessions to reduce batch-drain overhead. Source
+cleanup still occupies a pipeline; overlapping it with destination work needs
+separate lifecycle tracking and concurrent checkpoint-write protection.
+
+Rollout evidence: PID 59974 logged `rolling-pipeline-start` at 18:48 UTC with
+`max_items: 1000` and `concurrency: 24`. The previous batch completed normally.
+Five controller/refill tests passed. Sustained throughput at the new admission
+count remains to be measured.
