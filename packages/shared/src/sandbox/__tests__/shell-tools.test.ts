@@ -4,7 +4,6 @@ import { describe, expect, test } from 'bun:test';
 
 import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixToolchainLayer } from '../dockerfile-layer';
-import { buildFastSandboxDockerfile } from '../fast-dockerfile';
 import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
@@ -20,23 +19,6 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
   {
     label: 'standard layer (platform default + custom templates)',
     dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }),
-  },
-  {
-    label: 'fast cold-boot image',
-    dockerfile: buildFastSandboxDockerfile({
-      agentBinaryPath: 'a',
-      cliBinaryPath: 'a',
-      entrypointScriptPath: 'a',
-      opencodeWarmupScriptPath: 'a',
-      machineDocPath: 'a',
-      slackCliPath: 'a',
-      lazyToolsPath: 'a',
-      catalogPath: 'a',
-      managedSkillsPath: 'a',
-      runtimeVersionsPath: 'a',
-      opencodeConfigPath: 'a',
-      scaffoldPath: 'a',
-    }),
   },
   {
     label: 'meta-agent image',

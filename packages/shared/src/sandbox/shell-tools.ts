@@ -1,7 +1,6 @@
 /**
  * The shell tool floor every Kortix sandbox image installs: the standard layer
- * (platform default AND every custom template), the fast cold-boot image, and
- * the meta-agent image. Agents reach for these in plain bash — `rg`, `fd`,
+ * (platform default AND every custom template) and the meta-agent image. Agents reach for these in plain bash — `rg`, `fd`,
  * `jq` — and a missing one costs a failed tool call plus a detour.
  *
  * OpenCode downloads its own ripgrep into its data dir for its search tool,
