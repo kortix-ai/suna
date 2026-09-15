@@ -16,6 +16,7 @@
 // line agentOS draws, from the other side.
 import { Bash, InMemoryFs, defineCommand } from "just-bash/browser";
 import { nodeCommand } from "./nodejs.js";
+import { npmCommand } from "./npm.js";
 import { guardedFetch, wgetCommand } from "./cell-net.js";
 import { ExecutionError, FileError, err, ok } from "@earendil-works/pi-agent-core";
 
@@ -58,7 +59,7 @@ export function cellFs(sql) {
   // and its engine permits dynamic evaluation — measured on a live cell
   // 2026-09-11 — so a script the model writes runs here rather than needing a
   // machine. No interpreter is shipped and nothing is compiled to wasm.
-  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD }, fetch: net, customCommands: [wgetCommand(net), nodeCommand(defineCommand, { fetch: net })] });
+  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD }, fetch: net, customCommands: [wgetCommand(net), nodeCommand(defineCommand, { fetch: net }), npmCommand(defineCommand, { fetch: net })] });
   // Snapshot the whole tree. Rows not in the tree are gone; everything else is
   // upserted. One statement each, inside the one commit the request already pays.
   async function persist() {
@@ -117,12 +118,12 @@ export function cellFs(sql) {
 // down — and cellfs-logic asserts this array equals what `ls /usr/bin` really
 // prints, so a just-bash upgrade that adds or drops a command fails the suite
 // instead of quietly leaving the prompt lying to the model.
-export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mv", "nl", "node", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "zcat"];
+export const CELL_COMMANDS = ["alias", "awk", "base64", "basename", "bash", "cat", "chmod", "clear", "column", "comm", "cp", "cut", "date", "diff", "dirname", "du", "echo", "egrep", "env", "expand", "expr", "false", "fgrep", "file", "find", "fold", "grep", "gunzip", "gzip", "head", "help", "history", "hostname", "html-to-markdown", "join", "jq", "ln", "ls", "md5sum", "mkdir", "mv", "nl", "node", "npm", "od", "paste", "printenv", "printf", "pwd", "readlink", "rev", "rg", "rm", "rmdir", "sed", "seq", "sh", "sha1sum", "sha256sum", "sleep", "sort", "split", "stat", "strings", "tac", "tail", "tee", "time", "timeout", "touch", "tr", "tree", "true", "unalias", "unexpand", "uniq", "wc", "which", "whoami", "xargs", "zcat"];
 
 /** The commands a real box has that this shell does not — named, because a
  *  model that is not told will try them and burn a turn on exit 127. */
 export const CELL_MISSING = [
-  "git", "ssh", "npm", "pnpm", "yarn", "python", "python3",
+  "git", "ssh", "pnpm", "yarn", "python", "python3",
   "pip", "docker", "make", "gcc", "apt-get", "tar", "uname",
 ];
 
@@ -140,7 +141,7 @@ export function cellShellNote() {
   return [
     `Your bash tool is a small POSIX shell over this session's own tree at ${CELL_CWD}, which persists between turns.`,
     "It is not a Linux machine: no package manager, no processes. curl and wget work over HTTP(S).",
-    "node works here and is real — require, ESM, TypeScript, fs/path/crypto/zlib/http, and anything already in node_modules — but with no npm, no sockets and no child processes.",
+    "node works here and is real — require, ESM, TypeScript, fs/path/crypto/zlib/http — and `npm install <pkg>` fetches from the registry into node_modules. There are no sockets, no child processes and no lifecycle scripts.",
     "When a task needs a real machine — installs, python, builds, a dev server, git — use the machine tool: it attaches a full Linux environment with the project checked out and runs your command there.",
   ].join("\n");
 }

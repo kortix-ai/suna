@@ -11,7 +11,8 @@
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
-const { machineFs, machineGit, parsePorcelain, parseNumstat, untar } = await import("../src/machine-fs.js");
+const { machineFs, machineGit, parsePorcelain, parseNumstat } = await import("../src/machine-fs.js");
+const { untar } = await import("../src/tar.js");
 
 const ok = (value) => ({ ok: true, value });
 const err = (message, code = "unknown") => ({ ok: false, error: { code, message } });

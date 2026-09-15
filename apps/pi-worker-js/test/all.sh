@@ -177,6 +177,7 @@ run_suite machinefs  node test/machine-fs-logic.mjs
 run_suite node       node test/node-logic.mjs
 run_suite plugins    node test/plugins-logic.mjs
 run_suite typescript node test/typescript-logic.mjs
+run_suite npm        node test/npm-logic.mjs
 run_suite plan       node --experimental-sqlite test/plan-logic.mjs
 run_suite pty        node --experimental-sqlite test/pty-logic.mjs
 run_suite git        node --experimental-sqlite test/git-logic.mjs
