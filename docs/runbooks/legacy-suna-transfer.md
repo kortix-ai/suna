@@ -875,3 +875,32 @@ used only for rate-rejected Platinum creation with no recorded runtime or native
 history. Existing sandbox write retries do not invoke restart. Six create failures
 and four write failures had passed complete verification at inspection; the rest
 remain pending recovery, not complete.
+
+### Correct isolated transient-error backoff — 2026-09-15
+
+The paced source capture window contained two failed attempts among 123 (1.6%).
+The old controller reduced global concurrency on any exhausted 5xx, transport
+error, or timeout. That sample did not establish overload at 112 pipelines.
+
+The private dispatcher now evaluates transient failures within a rolling two-minute
+window, separately by source and phase. Backoff requires three distinct failing
+resources and either three consecutive distinct failing resources or a failure
+ratio of at least 5% across at least 20 attempts. Repeated failures of one resource
+do not trigger global backoff. Exhausted explicit rate-limit and capacity refusals
+retain immediate backoff. Per-session retries and verification remain unchanged.
+
+A temporary live guard applies this policy to the current dispatcher without
+interrupting source captures. It restores only reductions attributed to isolated
+transient failures. It exits when the next dispatcher advertises native policy
+version 2. The guard restored 112 at 20:05:08 UTC; automatic recovery reached
+128 at 20:07:08 UTC. This is an exercised concurrency level, not a proven sustained
+throughput result. Shared Platinum write pacing remains active. Old standalone
+capacity probe scripts classify individual 5xx as pressure; do not reuse those
+scripts without aligning their classification with this policy.
+
+Validation: `bun test ./.legacy-transfer/production/transient-pressure.test.ts
+./.legacy-transfer/production/concurrency-controller.test.ts` reports 13 passed,
+zero failed, 254 assertions. The dispatcher build passes. The tests include the
+two-of-123 case, sustained failures, expiry, phase isolation, and repeated errors
+from one sandbox. The 20:07:25 UTC live observation recorded 210 phase attempts
+and zero rate-limit, transport, capacity, or timeout failures over two minutes.
