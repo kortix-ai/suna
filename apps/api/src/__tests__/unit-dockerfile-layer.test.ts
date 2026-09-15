@@ -311,8 +311,9 @@ describe('extractSandboxDefault', () => {
     expect(extractSandboxDefault({ sandbox: { default: '  dev  ' } })).toBe('dev');
   });
 
-  test('treats the reserved "default" as no override (null)', () => {
+  test('treats server-owned slugs as no override (null)', () => {
     expect(extractSandboxDefault({ sandbox: { default: DEFAULT_SANDBOX_SLUG } })).toBeNull();
+    expect(extractSandboxDefault({ sandbox: { default: 'pi-worker' } })).toBeNull();
   });
 
   test('ignores non-string / invalid-slug values', () => {
@@ -358,11 +359,12 @@ describe('extractSandboxTemplates', () => {
     expect(out[0]).toMatchObject({ slug: 'ml', image: 'python:3.12-slim' });
   });
 
-  test('rejects [[sandbox.templates]] entries claiming the reserved "default" slug', () => {
+  test('rejects [[sandbox.templates]] entries claiming server-owned slugs', () => {
     const out = extractSandboxTemplates({
       sandbox: {
         templates: [
           { slug: 'default', image: 'ubuntu:22.04' },
+          { slug: 'pi-worker', image: 'ubuntu:22.04' },
           { slug: 'ml', image: 'python:3.12-slim' },
         ],
       },

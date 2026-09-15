@@ -7,6 +7,10 @@
  *   bun scripts/create-migration.ts <slug>                normal .sql migration
  *   bun scripts/create-migration.ts <slug> --concurrent    the CONCURRENTLY
  *                                                           escape hatch (.concurrent.ts)
+ *   bun scripts/create-migration.ts <slug> --constraint-transition
+ *                                                           ADD NOT VALID →
+ *                                                           VALIDATE → DROP
+ *                                                           (.nontransaction.ts)
  *
  * For schema-shape changes prefer `pnpm migrate:generate <slug>` (drizzle-kit
  * diffs kortix.ts) — this script is for RLS, functions, data backfills, and
@@ -34,16 +38,53 @@ function utcStamp(): string {
 
 const args = process.argv.slice(2);
 const concurrent = args.includes('--concurrent');
+const constraintTransition = args.includes('--constraint-transition');
 const slug = args.find((a) => !a.startsWith('--')) ?? '';
 
-if (!/^[a-z0-9_]+$/.test(slug)) {
-  console.error('Usage: bun scripts/create-migration.ts <slug> [--concurrent]   (slug matches /^[a-z0-9_]+$/)');
+if (!/^[a-z0-9_]+$/.test(slug) || (concurrent && constraintTransition)) {
+  console.error(
+    'Usage: bun scripts/create-migration.ts <slug> [--concurrent | --constraint-transition]   (slug matches /^[a-z0-9_]+$/)',
+  );
   process.exit(1);
 }
 
 const ts = utcStamp();
 
 if (!existsSync(MIGRATIONS_DIR)) mkdirSync(MIGRATIONS_DIR, { recursive: true });
+
+if (constraintTransition) {
+  const target = join(MIGRATIONS_DIR, `${ts}_${slug}.nontransaction.ts`);
+  writeFileSync(
+    target,
+    `// constraint-transition: TODO explain why ADD NOT VALID, VALIDATE, and DROP must commit separately
+// mixed-version-safe: TODO explain why old code tolerates the constraint replacement
+
+export const shorthands = undefined;
+
+/** @param {import('node-pg-migrate').MigrationBuilder} pgm */
+export const up = (pgm) => {
+  pgm.noTransaction();
+  pgm.sql(\`set lock_timeout = '5s'\`);
+  pgm.sql(\`set statement_timeout = '30min'\`);
+  pgm.sql(\`
+    alter table kortix.TODO_TABLE
+      add constraint TODO_CONSTRAINT_V2 check (TODO_EXPRESSION) not valid
+  \`);
+  pgm.sql(\`
+    alter table kortix.TODO_TABLE validate constraint TODO_CONSTRAINT_V2
+  \`);
+  pgm.sql(\`
+    alter table kortix.TODO_TABLE drop constraint TODO_OLD_CONSTRAINT
+  \`);
+};
+
+export const down = false;
+`,
+  );
+  console.log(`Created: packages/db/migrations/${ts}_${slug}.nontransaction.ts`);
+  console.log('Fill in the TODOs, then review with `pnpm --filter @kortix/db lint`.');
+  process.exit(0);
+}
 
 if (concurrent) {
   const target = join(MIGRATIONS_DIR, `${ts}_${slug}.concurrent.ts`);
@@ -160,4 +201,6 @@ set statement_timeout = '30s';
 `,
 );
 console.log(`Created: packages/db/migrations/${ts}_${slug}.sql`);
-console.log('Fill it in, delete the checklist lines that don\'t apply, then review with `pnpm --filter @kortix/db lint`.');
+console.log(
+  "Fill it in, delete the checklist lines that don't apply, then review with `pnpm --filter @kortix/db lint`.",
+);

@@ -19,7 +19,7 @@ export function useFileSearch(
   query: string,
   options?: { type?: 'file' | 'directory'; limit?: number; enabled?: boolean },
 ) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const limit = options?.limit ?? 50;
 
   return useQuery<string[]>({

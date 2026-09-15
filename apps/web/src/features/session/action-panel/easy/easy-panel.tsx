@@ -49,8 +49,16 @@ export function EasyPanel() {
   // read-only inside `sub-session-modal.tsx`, which has no panel at all.
   if (!panel) return null;
 
-  const { files, context, apps, outputsDefaultOpen, sessionId, handleOpenOutput, openDetail } =
-    panel;
+  const {
+    files,
+    context,
+    apps,
+    outputsDefaultOpen,
+    sessionId,
+    attachmentsEnabled = true,
+    handleOpenOutput,
+    openDetail,
+  } = panel;
 
   return (
     // A fill-and-scroll column, not a scrolling stack.
@@ -81,7 +89,11 @@ export function EasyPanel() {
         onOpenFile={(path, allPaths) =>
           handleOpenOutput(pathOutput(path), allPaths.map(pathOutput))
         }
-        onAddContext={() => useSessionComposerPrefillStore.getState().requestAttach(sessionId)}
+        onAddContext={
+          attachmentsEnabled
+            ? () => useSessionComposerPrefillStore.getState().requestAttach(sessionId)
+            : undefined
+        }
       />
       {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
       {/* Last, under Preview, and conditional like it — the card draws itself

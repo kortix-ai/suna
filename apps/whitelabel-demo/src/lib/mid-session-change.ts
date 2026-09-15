@@ -5,11 +5,11 @@
  * differently, which is exactly the sort of thing a reference app should make
  * legible rather than let people discover in production:
  *
- * - MODEL — changeable. `PUT /sessions/{id}/model` re-points the running runtime.
- *   Restarts it, so the in-flight turn ends.
- * - AGENT — changeable PER PROMPT: each message names the agent it runs. The
- *   proxy re-scopes secret delivery plus the connector and Kortix-CLI token
- *   grant before it forwards the prompt.
+ * - MODEL — changeable. The runtime can save the selection for new prompts
+ *   or restart, which ends the in-flight turn.
+ * - AGENT — a runtime can support agent changes per prompt. The proxy re-scopes
+ *   secret delivery and connector/Kortix-CLI grants before forwarding the prompt.
+ *   A compiled-agent runtime keeps the agent fixed for the session.
  * - SECRETS and CONNECTOR BINDINGS — changeable, with SET semantics:
  *   `PUT /projects/{id}/sessions/{sid}/scope` REPLACES the list with the one
  *   sent, and it takes effect from the next prompt (the per-prompt env sync
@@ -51,8 +51,9 @@ export type ModelChangeOutcome =
 /**
  * Classify what a model change actually achieved.
  *
- * THREE outcomes, not two. `PUT .../model` writes the row first, then pushes to
- * the live sandbox — so `appliedLive: false` covers two opposite situations:
+ * `appliesTo: 'next_prompt'` confirms a selection saved for new prompts.
+ * A runtime can instead write the row and push to the live sandbox.
+ * In that case, `appliedLive: false` covers two outcomes:
  *
  * - no live sandbox to push to: the stored value IS the mechanism, and the next
  *   start reads it. A success.
@@ -67,6 +68,7 @@ export type ModelChangeOutcome =
 export function classifyModelChange(result: {
   model?: string | null;
   appliedLive?: boolean;
+  appliesTo?: 'next_prompt';
   pushFailed?: boolean;
   detail?: string;
 }): ModelChangeOutcome {
@@ -78,6 +80,7 @@ export function classifyModelChange(result: {
       ...(result.detail ? { detail: result.detail } : {}),
     };
   }
+  if (result.appliesTo === 'next_prompt') return { kind: 'stored', message: `${model} saved for new prompts. Accepted prompts keep their model.` };
   if (result.appliedLive) return { kind: 'applied', message: `Now running ${model}` };
   return { kind: 'stored', message: `${model} saved — applies when this session next starts` };
 }

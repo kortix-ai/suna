@@ -1,3 +1,5 @@
+import { validateAgentResources, type AgentResources } from './agent-resources';
+import { validateAgentConfiguration, type AgentConfiguration } from './agent-configuration';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -36,6 +38,8 @@ import {
   HEX_COLOR_RE_V2,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  PI_WORKER_SANDBOX_SLUG,
+  manifestDefaultRuntime,
   SLUG_RE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -55,9 +59,7 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 /** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
-/** Session runtimes. `pi` boots the compiled pi worker (behind the project's
- *  `pi_worker` feature flag); anything else — including absence — keeps the
- *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
+/** Version 2 selects OpenCode. Version 3 selects the compiled Pi worker. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
 /** `$defs.PermissionActionConfig` in the OpenCode config schema. */
@@ -100,21 +102,11 @@ export type PermissionConfigV2 = PermissionActionV2 | PermissionConfigObjectV2;
  */
 export type GrantSetV2 = 'all' | 'none' | string[];
 
-/**
- * One entry of the v2 `agents:` map — GOVERNANCE ONLY (decision 2026-07-05,
- * "one home per concern"). OpenCode behavior (mode, model, temperature,
- * top_p, steps, variant, color, hidden, permission, and the prompt itself)
- * lives entirely in the agent's native `.kortix/opencode/agents/<name>.md`
- * frontmatter + body — a stock OpenCode agent `.md` is valid as-is, with no
- * Kortix-specific split. The agent NAME is the join between this map key and
- * that `.md` filename; there is no `prompt:`/file-ref field here anymore.
- *
- * Kortix governance (this type) is enforced platform-side (IAM grants,
- * secret scoping) and has no OpenCode representation, except `skills`, which
- * the compiler folds onto the frontmatter's `permission.skill` — see
- * compile-agent-config.ts.
- */
+/** One agent's grants, resource declarations, and optional shared behavior.
+ *  Omitting config retains native Markdown authoring for existing projects. */
 export interface AgentBlockV2 {
+  config?: AgentConfiguration;
+  resources?: AgentResources;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -156,6 +148,7 @@ export interface AgentBlockV2 {
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
 export interface ManifestV2 {
   kortix_version: 2;
+  config_dir?: string;
   default_agent: string;
   runtime?: RuntimeV2;
   agents: Record<string, AgentBlockV2>;
@@ -308,13 +301,22 @@ export function validateRequiredConnectorFields(
 }
 
 /** v2 dispatch: called from `index.ts`'s `validateManifestBodyV2`. */
-export function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node === undefined || node === null) return;
+export function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[], version = 2): void {
+  if (node === undefined) return;
   const v = typeof node === 'string' ? node.trim() : '';
   if (!(V2_RUNTIME_VALUES as readonly string[]).includes(v)) {
     issues.push({
       path,
       message: `runtime must be one of: ${V2_RUNTIME_VALUES.join(', ')} (got ${JSON.stringify(node)}).`,
+      severity: 'error',
+    });
+    return;
+  }
+  const expected = manifestDefaultRuntime(version);
+  if (node !== expected) {
+    issues.push({
+      path,
+      message: `kortix_version ${version} requires runtime "${expected}".`,
       severity: 'error',
     });
   }
@@ -502,7 +504,7 @@ export function validateAgentMdFrontmatter(
   }
 }
 
-/** One entry of the v2 `agents:` map — governance only (spec §2.2, 2026-07-05
+/** One entry of the v2/v3 `agents:` map (spec §2.2, 2026-07-05
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
@@ -512,16 +514,22 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     return;
   }
 
+  validateAgentResources(entry.resources, `${where}.resources`, issues);
+  validateAgentConfiguration(entry.config, `${where}.config`, issues, validateAgentMdFrontmatter);
+
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });
   }
 
   if (entry.sandbox !== undefined) {
     const sandbox = typeof entry.sandbox === 'string' ? entry.sandbox.trim() : '';
-    if (!sandbox || !SLUG_RE.test(sandbox)) {
+    if (!sandbox || !SLUG_RE.test(sandbox) || sandbox === PI_WORKER_SANDBOX_SLUG) {
       issues.push({
         path: `${where}.sandbox`,
-        message: 'sandbox must be a valid template slug.',
+        message:
+          sandbox === PI_WORKER_SANDBOX_SLUG
+            ? `sandbox "${PI_WORKER_SANDBOX_SLUG}" is reserved for the server-selected Pi runtime.`
+            : 'sandbox must be a valid template slug.',
         severity: 'error',
       });
     }

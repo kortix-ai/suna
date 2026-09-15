@@ -14,6 +14,7 @@
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.84.3",
     "@opencode-ai/sdk": "1.18.23",
     "zustand": "^5.0.3"
   },
@@ -31,6 +32,7 @@
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
     "./server": "./src/node/server.ts",
+    "./pi": "./src/core/pi/agent.ts",
     "./internal/sync-store": "./src/internal/sync-store.ts",
     "./internal/server-store": "./src/internal/server-store.ts",
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
@@ -63,6 +65,7 @@
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
+      "./pi": { "types": "./dist/core/pi/agent.d.ts", "import": "./dist/core/pi/agent.js" },
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
       "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },

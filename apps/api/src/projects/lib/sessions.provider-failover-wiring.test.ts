@@ -23,7 +23,7 @@ describe('provider failover wiring', () => {
     expect(locked).toBeGreaterThan(-1);
     expect(provision).toBeGreaterThan(locked);
     // The flag must actually reach the provisioner, not just be computed.
-    expect(source.slice(provision)).toContain('providerLocked,');
+    expect(source.slice(provision)).toContain('providerLocked: effectiveProviderLocked,');
   });
 
   test('the provisioner honors providerLocked instead of "any provider is explicit"', async () => {

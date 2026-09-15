@@ -1,0 +1,119 @@
+---
+title: Custom Pi agents
+description: Configure prompts, native Pi hooks, and custom tools for Pi worker sessions.
+---
+
+The Pi worker preview supports project-specific source. Each agent joins three
+files: its entry in `kortix.yaml`, its Markdown prompt, and an optional TypeScript
+factory. Declare the agent and its grants on the project's default branch first.
+Commit the source and start a session from that Git commit. A session's `base_ref`
+does not authorize an undeclared agent.
+
+```yaml
+kortix_version: 3
+runtime: pi
+default_agent: reviewer
+agents:
+  reviewer:
+    connectors: none
+    secrets: none
+    skills: none
+```
+
+Create `.kortix/pi/agents/reviewer.md` with the agent prompt and optional `model`,
+`temperature`, `top_p`, `steps`, and `permission` frontmatter. Create
+`.kortix/pi/agents/reviewer.ts` for code:
+
+```ts
+import { definePiAgent } from '@kortix/sdk/pi';
+
+export default definePiAgent(() => ({
+  thinkingLevel: 'low',
+  transformContext: async (messages) => messages,
+  onEvent(event) {
+    if (event.type === 'turn_end') console.log('Review turn completed');
+  },
+}));
+```
+
+The factory receives `agentName`, `sessionId`, `sourceSha`, `env`, and `signal`.
+Use `env` for remote files and commands. Pure JavaScript runs in the worker.
+The execution environment does not run another Pi loop. Durable Objects are not
+required or used by this preview.
+
+Native Pi Agent Core hooks include `transformContext`, `beforeToolCall`,
+`afterToolCall`, `shouldStopAfterTurn`, `onPayload`, and `onResponse`. `onEvent`
+receives native events. Add native `AgentTool` definitions through `tools`.
+Kortix also provides `initialize`, `cancel`, and `shutdown` callbacks.
+
+`initialize` runs once per worker process. Replacement restores conversation
+history and runs initialization again. JavaScript state is not persistent.
+Recovery can replay hooks, so external side effects must be idempotent. SIGKILL
+and sandbox loss do not guarantee shutdown. Asynchronous hook deadlines default
+to 5000 ms; `hookTimeoutMs` accepts 1–30000 ms. These deadlines cannot preempt a
+synchronous loop.
+
+The compiler supplies `@kortix/sdk/pi`, Pi Agent Core, Pi AI, and TypeBox.
+Additional pure JavaScript packages require `package.json` and npm lockfile
+version 3 in `.kortix/pi`. Public npm archives are integrity-checked and bundled.
+Install scripts, native addons, private registries, and Pi CLI TUI extensions are
+unsupported. Unknown configuration fields fail instead of silently being ignored.
+
+This authoring API is available in the Pi preview branch. It has not been
+published as a production SDK release.
+
+
+## Images from HTTPS URLs
+
+Pi prompt admission can download public HTTPS images into private session storage.
+Use PNG, JPEG, GIF, or WebP. The server validates the destination and every redirect,
+checks the response MIME and image signature, and enforces 8 MiB per image,
+16 images, and 16 MiB per prompt. Downloads have a 20-second cap and finish before the remaining API request deadline.
+
+```ts
+const created = await kortix.project(projectId).sessions.create({
+  agent_name: 'reviewer',
+  pending_prompt: {
+    text: 'Describe this diagram.',
+    parts: [
+      { type: 'text', text: 'Describe this diagram.' },
+      {
+        type: 'file',
+        mime: 'image/png',
+        filename: 'diagram.png',
+        url: 'https://example.com/diagram.png',
+      },
+    ],
+  },
+});
+```
+
+For an existing session, the same file parts are accepted by `s.prompts.create()`.
+That method returns the durable inbox admission. Reuse its `clientMessageId` on
+retries. An accepted retry returns the original prompt without downloading again.
+The worker reads the stored bytes, so later turns and worker restarts do not depend
+on the source URL remaining available. Image admission does not start an environment.
+
+The server sends no caller credentials to the image host. Private addresses,
+non-HTTPS URLs, authenticated URLs with user information, invalid responses, and
+oversize images are rejected. Signed query URLs can be used if the image host accepts
+them without additional headers. Local uploads still use `s.attachments.image()`.
+The direct runtime method `s.send()` accepts the resulting private attachment
+references; URL ingestion uses the durable prompt admission methods above.
+
+## Persistent custom state
+
+Use `context.state.open('counter', {schemaVersion: 1, initialValue: {count: 0}})`
+inside a custom callback. The returned namespace provides `read()` and
+`update(value => ({count: value.count + 1}))`. Each returns a snapshot with
+`revision`, `schemaVersion`, and `value` after persistence succeeds.
+
+State lives in PostgreSQL and survives worker replacement without starting an
+environment. A new session has separate state. Updates and explicit `migrate`
+callbacks can retry, so they must contain no external side effects. Older code
+rejects newer state schemas. Current limits are 64 KiB per JSON value, 128
+namespaces, and 4096 writes or 16 MiB of state history per session. State follows
+session deletion; it does not provide file storage, jobs, or secret storage.
+
+This capability requires the matching Pi worker and API preview. Unsupported
+servers fail explicitly; there is no in-memory fallback.

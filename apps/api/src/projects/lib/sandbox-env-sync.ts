@@ -1,35 +1,35 @@
 import { createHash } from 'node:crypto';
+import { projectSessions, projects, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { db } from '../../shared/db';
+import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { resolveSessionSecretGrant } from './secret-grant';
-import { sanitizeSandboxEnv } from './sandbox-env-names';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
-import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 import { createCoalescedRunner } from './env-sync-coalescer';
-import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { sanitizeSandboxEnv } from './sandbox-env-names';
+import { resolveSessionSecretGrant } from './secret-grant';
 import {
   workspaceModeAllowsFullRepository,
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
-import { resolveSessionNetworkBoundary } from './network-secret-boundary';
-import { sandboxBelongsToThisInstance } from '../instance-scope';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -236,7 +236,11 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
       armedNetworkBoundaries.delete(oldest.value);
     }
   }
-  armedNetworkBoundaries.set(externalId, { digest, armedAt: Date.now(), secretIds: [...secretIds] });
+  armedNetworkBoundaries.set(externalId, {
+    digest,
+    armedAt: Date.now(),
+    secretIds: [...secretIds],
+  });
 }
 
 /**
@@ -514,7 +518,7 @@ async function postEnvToDaemon(args: {
   }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${args.serviceKey}`,
+    Authorization: `Bearer ${args.serviceKey}`,
     ...args.providerHeaders,
   };
 
@@ -562,13 +566,17 @@ async function postEnvToDaemon(args: {
   if (args.requireAgentEnvProof) {
     if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');
     if (body.revision !== args.snapshot.revision) {
-      throw new Error(`env sync revision mismatch: expected ${args.snapshot.revision}, received ${String(body.revision)}`);
+      throw new Error(
+        `env sync revision mismatch: expected ${args.snapshot.revision}, received ${String(body.revision)}`,
+      );
     }
     if (body.agent_env_written !== true) {
       throw new Error('env sync did not confirm agent-env.sh write');
     }
     if (body.exported !== expectedExported) {
-      throw new Error(`env sync export mismatch: expected ${expectedExported}, received ${String(body.exported)}`);
+      throw new Error(
+        `env sync export mismatch: expected ${expectedExported}, received ${String(body.exported)}`,
+      );
     }
   }
   return {
@@ -613,7 +621,9 @@ export async function syncSandboxEnvForPrompt(args: {
   const t0 = performance.now();
   const timing: Record<string, number> = {};
   const lap = (label: string) => {
-    timing[label] = Math.round(performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0));
+    timing[label] = Math.round(
+      performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0),
+    );
   };
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
@@ -724,16 +734,14 @@ export async function syncSandboxEnvForPrompt(args: {
   });
   const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
   const pushedAt = lastPromptEnvPushAt.get(args.externalId);
-  if (
-    !refreshModels &&
-    pushedAt !== undefined &&
-    Date.now() - pushedAt < PROMPT_ENV_PUSH_TTL_MS
-  ) {
+  if (!refreshModels && pushedAt !== undefined && Date.now() - pushedAt < PROMPT_ENV_PUSH_TTL_MS) {
     // Byte-identical to what this process pushed to this box moments ago:
     // nothing to say, and the daemon would no-op it. Skip the round-trip.
     await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
     lap('mark');
-    console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
+    console.log(
+      `[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`,
+    );
     return;
   }
   const { opencodeState } = await postEnvToDaemon({
@@ -769,7 +777,78 @@ export async function syncSandboxEnvForPrompt(args: {
   }
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
   lap('mark');
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
+  console.log(
+    `[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`,
+  );
+}
+
+/**
+ * Converge both physical runtimes before a Pi turn starts.
+ *
+ * The worker receives model and OpenCode configuration. An already-active
+ * environment receives the same granted project-secret snapshot, but never an
+ * OpenCode refresh because it is a data runtime only. A missing environment is
+ * not provisioned here; the first workspace tool remains the lazy boundary.
+ */
+export async function syncSessionRuntimesEnvForPrompt(
+  args: Parameters<typeof syncSandboxEnvForPrompt>[0],
+): Promise<void> {
+  await syncSandboxEnvForPrompt(args);
+
+  const [environment] = await db
+    .select({
+      externalId: sessionEnvironments.externalId,
+      provider: sessionEnvironments.provider,
+      config: sessionEnvironments.config,
+    })
+    .from(sessionEnvironments)
+    .where(
+      and(
+        eq(sessionEnvironments.sessionId, args.sessionId),
+        eq(sessionEnvironments.projectId, args.projectId),
+        eq(sessionEnvironments.status, 'active'),
+      ),
+    )
+    .limit(1);
+  if (!environment?.externalId) return;
+
+  const environmentConfig = (environment.config ?? {}) as Record<string, unknown>;
+  const serviceKey =
+    typeof environmentConfig.serviceKey === 'string'
+      ? environmentConfig.serviceKey
+      : args.serviceKey;
+  if (!serviceKey) throw new Error('active environment has no service key');
+
+  const snapshot = await resolveSandboxEnvSnapshot(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
+  if (!snapshot) throw new Error('active environment has no env snapshot');
+  const networkBoundary = await resolveSessionNetworkBoundary(
+    args.projectId,
+    args.sessionId,
+    args.requestedAgent,
+  );
+  await syncProviderNetworkBoundary(
+    environment.provider as ProviderName,
+    environment.externalId,
+    networkBoundary,
+  );
+  const ingress = await resolveSandboxIngress(environment.externalId, {
+    port: SANDBOX_SERVICE_PORT,
+    transport: 'http',
+  });
+  await postEnvToDaemon({
+    previewUrl: ingress.url,
+    providerHeaders: ingress.headers,
+    serviceKey,
+    snapshot,
+    opencodeEnv: args.opencodeEnv,
+    refreshModels: false,
+    requireAgentEnvProof: true,
+    llmGatewayEnabled: false,
+  });
 }
 
 /**
@@ -779,20 +858,19 @@ export async function syncSandboxEnvForPrompt(args: {
  * returns a report from a run that STARTED after their write, so the report
  * covers it; a burst shares one trailing run instead of stacking N fan-outs.
  */
-export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
-  ProjectSecretPropagationResult
->({
-  run: (projectId, opts) => runProjectSecretPropagation(projectId, opts),
-  // 3s, not more: single-flight + burst-collapse are what break a storm (50
-  // writes → 2 runs regardless of this value); the interval only paces a
-  // slow-drip loop. The two AWAITED callers (secret-broker rotation and
-  // POST /secrets/sync) sit behind this cooldown too, so it must stay small
-  // enough that a human never notices it on those endpoints.
-  minIntervalMs: () => {
-    const configured = Number((config as any).KORTIX_ENV_SYNC_MIN_INTERVAL_MS);
-    return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 3_000;
-  },
-});
+export const propagateProjectSecretsToActiveSandboxes =
+  createCoalescedRunner<ProjectSecretPropagationResult>({
+    run: (projectId, opts) => runProjectSecretPropagation(projectId, opts),
+    // 3s, not more: single-flight + burst-collapse are what break a storm (50
+    // writes → 2 runs regardless of this value); the interval only paces a
+    // slow-drip loop. The two AWAITED callers (secret-broker rotation and
+    // POST /secrets/sync) sit behind this cooldown too, so it must stay small
+    // enough that a human never notices it on those endpoints.
+    minIntervalMs: () => {
+      const configured = Number((config as any).KORTIX_ENV_SYNC_MIN_INTERVAL_MS);
+      return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 3_000;
+    },
+  });
 
 async function runProjectSecretPropagation(
   projectId: string,
@@ -808,16 +886,54 @@ async function runProjectSecretPropagation(
     results: [],
   };
   try {
-    const allRows = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        sessionId: sessionSandboxes.sessionId,
-        provider: sessionSandboxes.provider,
-        config: sessionSandboxes.config,
-        metadata: sessionSandboxes.metadata,
-      })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+    const [workerRows, environmentRows] = await Promise.all([
+      db
+        .select({
+          externalId: sessionSandboxes.externalId,
+          sessionId: sessionSandboxes.sessionId,
+          provider: sessionSandboxes.provider,
+          config: sessionSandboxes.config,
+          metadata: sessionSandboxes.metadata,
+        })
+        .from(sessionSandboxes)
+        .where(
+          and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')),
+        ),
+      db
+        .select({
+          externalId: sessionEnvironments.externalId,
+          sessionId: sessionEnvironments.sessionId,
+          provider: sessionEnvironments.provider,
+          config: sessionEnvironments.config,
+          metadata: sessionEnvironments.metadata,
+        })
+        .from(sessionEnvironments)
+        .where(
+          and(
+            eq(sessionEnvironments.projectId, projectId),
+            eq(sessionEnvironments.status, 'active'),
+          ),
+        ),
+    ]);
+    const workerServiceKeys = new Map(
+      workerRows.map((row) => [
+        row.sessionId,
+        ((row.config ?? {}) as Record<string, unknown>).serviceKey,
+      ]),
+    );
+    const allRows = [
+      ...workerRows,
+      ...environmentRows.map((row) => {
+        const rowConfig = (row.config ?? {}) as Record<string, unknown>;
+        return {
+          ...row,
+          config:
+            typeof rowConfig.serviceKey === 'string'
+              ? rowConfig
+              : { ...rowConfig, serviceKey: workerServiceKeys.get(row.sessionId) },
+        };
+      }),
+    ];
     // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
     // API instance provisioned must not receive THIS instance's env (its
     // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
@@ -842,12 +958,18 @@ async function runProjectSecretPropagation(
     }
     report.targeted = targets.length;
     if (targets.length === 0) {
-      console.info('[env-sync] propagate: no active sandboxes found', { projectId, totalRows: rows.length });
+      console.info('[env-sync] propagate: no active sandboxes found', {
+        projectId,
+        totalRows: rows.length,
+      });
       report.failed = report.results.length;
       report.ok = report.failed === 0;
       return report;
     }
-    console.info('[env-sync] propagate: pushing to sandboxes', { projectId, targetCount: targets.length });
+    console.info('[env-sync] propagate: pushing to sandboxes', {
+      projectId,
+      targetCount: targets.length,
+    });
 
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const config = (row.config || {}) as Record<string, unknown>;
@@ -879,7 +1001,10 @@ async function runProjectSecretPropagation(
         // secret. An arming failure has to be visible there, so it stays a
         // `status: 'failed'` row rather than a warning nobody reads.
         await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
         const proof = await postEnvToDaemon({
           previewUrl: url,
           providerHeaders: headers,
@@ -913,10 +1038,7 @@ async function runProjectSecretPropagation(
           agent_env_written: false,
           reason,
         });
-        console.warn(
-          `[env-sync] hot push failed for sandbox ${row.externalId}:`,
-          reason,
-        );
+        console.warn(`[env-sync] hot push failed for sandbox ${row.externalId}:`, reason);
       }
     });
     report.synced = report.results.filter((result) => result.status === 'synced').length;
@@ -935,10 +1057,7 @@ async function runProjectSecretPropagation(
     return report;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `[env-sync] hot fan-out failed for project ${projectId}:`,
-      reason,
-    );
+    console.warn(`[env-sync] hot fan-out failed for project ${projectId}:`, reason);
     report.ok = false;
     report.failed += 1;
     report.results.push({
@@ -986,7 +1105,10 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         const snapshot =
           (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
           emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
         await postEnvToDaemon({
           previewUrl: url,
           providerHeaders: headers,
@@ -994,7 +1116,9 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
           snapshot,
           refreshModels: true,
           llmGatewayEnabled: enabled,
-          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
+          llmGatewayBaseUrl: enabled
+            ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
+            : undefined,
         });
         await markSandboxLlmGatewayMode(row.sessionId, enabled);
       } catch (err) {
@@ -1012,10 +1136,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
   }
 }
 
-async function markSandboxLlmGatewayMode(
-  sessionId: string,
-  enabled: boolean,
-): Promise<void> {
+async function markSandboxLlmGatewayMode(sessionId: string, enabled: boolean): Promise<void> {
   const [row] = await db
     .select({ config: sessionSandboxes.config })
     .from(sessionSandboxes)
@@ -1153,11 +1274,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
     const compiled =
       !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
       session?.agentName
-        ? await resolveSelectedAgentConfigForSession(
-            gitProject,
-            session.agentName,
-            input.baseRef,
-          )
+        ? await resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
         : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef);
     // `null` is a v1 project or an unreadable manifest. Pushing an empty value
     // would DELETE the agent config the box is running — a v1 project has none
@@ -1362,6 +1479,42 @@ export async function pushSessionScopeToSandbox(input: {
         ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
         : undefined,
     });
+    const [environment] = await db
+      .select({
+        externalId: sessionEnvironments.externalId,
+        provider: sessionEnvironments.provider,
+        config: sessionEnvironments.config,
+        status: sessionEnvironments.status,
+      })
+      .from(sessionEnvironments)
+      .where(eq(sessionEnvironments.sessionId, input.sessionId))
+      .limit(1);
+    if (environment?.externalId && environment.status === 'active') {
+      const environmentConfig = (environment.config ?? {}) as Record<string, unknown>;
+      const environmentServiceKey =
+        typeof environmentConfig.serviceKey === 'string'
+          ? environmentConfig.serviceKey
+          : serviceKey;
+      const boundary = await resolveSessionNetworkBoundary(input.projectId, input.sessionId);
+      await syncProviderNetworkBoundary(
+        environment.provider as ProviderName,
+        environment.externalId,
+        boundary,
+      );
+      const environmentIngress = await resolveSandboxIngress(environment.externalId, {
+        port: SANDBOX_SERVICE_PORT,
+        transport: 'http',
+      });
+      await postEnvToDaemon({
+        previewUrl: environmentIngress.url,
+        providerHeaders: environmentIngress.headers,
+        serviceKey: environmentServiceKey,
+        snapshot,
+        refreshModels: false,
+        requireAgentEnvProof: true,
+        llmGatewayEnabled: false,
+      });
+    }
     await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };
   } catch (err) {

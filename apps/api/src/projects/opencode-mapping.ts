@@ -32,7 +32,7 @@ import {
   encodeKortixUserContext,
 } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
-import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
+import { invalidateSandbox, resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
   pickCanonicalRoot,
   resolveRootSessionId,
@@ -79,49 +79,57 @@ export async function listSandboxOpencodeSessions(
   userId: string | undefined,
 ): Promise<ListResult> {
   try {
-    // Endpoint resolution itself can throw (provider preview-link API errors,
-    // rate limits, archived/deleted sandboxes). Keep it INSIDE the try so any
-    // failure degrades to a clean `unreachable` instead of rejecting up the
-    // call stack and 500ing the caller (e.g. the session list title-sync).
-    const ep = await sandboxOpencodeEndpoint(externalId, userId);
-    if (!ep) return { ok: false, reason: 'no_key' };
-    const res = await fetch(
-      `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
-      // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
-      // only ever bought riding out a wedged first connection to a freshly
-      // restored microVM (residual CH RX stall), and it costs chat-ready
-      // latency 1:1 because the FE's ensure retry can't start until this
-      // returns. Observed: 8s 'unreachable' tails on warm forks; 3s + the
-      // FE's ~1.6s backoff retry beats hanging.
-      {
-        method: 'GET',
-        headers: sandboxRuntimeRequestHeaders(ep.headers),
-        signal: AbortSignal.timeout(3_000),
-      },
-    );
-    // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
-    // failure so callers can retry rather than treat it as "empty".
-    if (res.status === 503) {
-      const bootPhase = res.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
-      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Endpoint resolution itself can throw (provider preview-link API errors,
+      // rate limits, archived/deleted sandboxes). Keep it INSIDE the try so any
+      // failure degrades to a clean `unreachable` instead of rejecting up the
+      // call stack and 500ing the caller (e.g. the session list title-sync).
+      const ep = await sandboxOpencodeEndpoint(externalId, userId);
+      if (!ep) return { ok: false, reason: 'no_key' };
+      const res = await fetch(
+        `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
+        // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
+        // only ever bought riding out a wedged first connection to a freshly
+        // restored microVM (residual CH RX stall), and it costs chat-ready
+        // latency 1:1 because the FE's ensure retry can't start until this
+        // returns. Observed: 8s 'unreachable' tails on warm forks; 3s + the
+        // FE's ~1.6s backoff retry beats hanging.
+        {
+          method: 'GET',
+          headers: sandboxRuntimeRequestHeaders(ep.headers),
+          signal: AbortSignal.timeout(3_000),
+        },
+      );
+      // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
+      // failure so callers can retry rather than treat it as "empty".
+      if (res.status === 503) {
+        const bootPhase = res.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
+        return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
+      }
+      if (res.status === 401 && attempt === 0) {
+        await res.body?.cancel();
+        invalidateSandbox(externalId);
+        continue;
+      }
+      // A second 401 means the fresh credentials are rejected: the daemon
+      // rejects every non-`/kortix/*` path without a valid X-Kortix-User-Context,
+      // and this call only carries one when `userId` was supplied. Folding that
+      // into a silent `unreachable` is what let a userId-less caller disable the
+      // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
+      // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
+      if (res.status === 401) {
+        appLogger.warn('[opencode-mapping] session list credentials rejected after refresh', {
+          externalId,
+          hasUserId: Boolean(userId),
+        });
+        return { ok: false, reason: 'unreachable' };
+      }
+      if (!res.ok) return { ok: false, reason: 'unreachable' };
+      const data = (await res.json()) as unknown;
+      const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
+      return { ok: true, sessions };
     }
-    // A 401 here is NEVER transient and never the sandbox's fault: the daemon
-    // rejects every non-`/kortix/*` path without a valid X-Kortix-User-Context,
-    // and this call only carries one when `userId` was supplied. Folding that
-    // into a silent `unreachable` is what let a userId-less caller disable the
-    // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
-    // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
-    if (res.status === 401) {
-      appLogger.warn('[opencode-mapping] daemon refused the session list (unsigned context)', {
-        externalId,
-        hasUserId: Boolean(userId),
-      });
-      return { ok: false, reason: 'unreachable' };
-    }
-    if (!res.ok) return { ok: false, reason: 'unreachable' };
-    const data = (await res.json()) as unknown;
-    const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
-    return { ok: true, sessions };
+    return { ok: false, reason: 'unreachable' };
   } catch {
     return { ok: false, reason: 'unreachable' };
   }

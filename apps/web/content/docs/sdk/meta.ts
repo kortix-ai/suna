@@ -8,6 +8,8 @@ export default defineMeta({
     'auth',
     'sign-in',
     'sessions',
+    'pi',
+    'filesystems',
     'apps',
     'react',
     'reference',

@@ -45,9 +45,9 @@
  * dimmed to "Queued". `use-session-sync.ts` states the acceptance criterion for
  * any replacement: it must read the MESSAGE, not its shape. This does.
  *
- * ATTACHMENT BYTES NEVER LEAVE THE BOX. `sanitizeParts` strips a file part's
- * `url` (base64 data URLs are what made those bodies 7-19 MB) and a tool part's
- * `state.input`/`state.output`.
+ * ATTACHMENT BYTES ARE NOT MIRRORED. `sanitizeParts` retains only authenticated
+ * attachment paths for the same project and session. It strips other file URLs
+ * and tool inputs/outputs. Original Pi image bytes live in session_attachments.
  *
  * THIS MODULE IS THE READ SIDE plus the pure projections. The WRITE side lives
  * in `session-transcript-capture.ts`, because it needs the session-lifecycle
@@ -55,9 +55,12 @@
  */
 
 import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
-import { count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, notInArray, sql } from 'drizzle-orm';
 
+import { projectPiHistory } from '../../../../../packages/shared/src/pi-history';
+import { parseSessionAttachmentReference } from '../../../../../packages/sdk/src/core/runtime/session-attachment-reference';
 import { db } from '../../shared/db';
+import { readSessionHistoryItems } from './session-history';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -80,14 +83,14 @@ export const MIRROR_MAX_MESSAGE_CHARS = 1_000_000;
 export interface MirrorMessage {
   /** OpenCode's message envelope, verbatim (`Message` in @opencode-ai/sdk). */
   info: Record<string, unknown>;
-  /** The part array, minus tool inputs/outputs and file urls. */
+  /** Parts without tool inputs/outputs or non-durable file URLs. */
   parts: Array<Record<string, unknown>>;
 }
 
 export interface MirrorSnapshot {
   opencode_session_id: string | null;
   captured_at: string;
-  /** Every message the mirror holds for this session, not just this window. */
+  /** Every visible message the mirror holds for this session, not just this window. */
   total: number;
   /** The mirror has PROVEN it holds the session's first message. */
   head_complete: boolean;
@@ -98,6 +101,24 @@ export interface MirrorSnapshot {
  *  a sibling the transcript renders (a tool's name + status, a file's name +
  *  mime). Removing them is what keeps a mirrored row small. */
 const TOOL_STATE_KEEP = new Set(['status', 'title', 'time', 'metadata']);
+type AttachmentScope = { projectId: string; sessionId: string };
+
+function ownsAttachment(url: unknown, scope?: AttachmentScope): boolean {
+  const reference = parseSessionAttachmentReference(url);
+  return !!reference && !!scope && reference.projectId === scope.projectId && reference.sessionId === scope.sessionId;
+}
+
+function mirrorToolAttachments(value: unknown, scope?: AttachmentScope) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 16).flatMap(file => {
+    if (!file || file.type !== 'file' || !ownsAttachment(file.url, scope) || typeof file.mime !== 'string' || file.mime.length > 129) return [];
+    const result: Record<string, unknown> = { type: 'file', mime: file.mime, url: file.url };
+    for (const field of ['id', 'sessionID', 'messageID', 'filename']) {
+      if (typeof file[field] === 'string') result[field] = file[field].slice(0, 255);
+    }
+    return [result];
+  });
+}
 
 /**
  * Pure: strip the unbounded fields out of a part array and bound what is left.
@@ -105,7 +126,7 @@ const TOOL_STATE_KEEP = new Set(['status', 'title', 'time', 'metadata']);
  * Everything a transcript needs to render survives — text, reasoning, tool
  * names and statuses, file names and types, step boundaries.
  */
-export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
+export function sanitizeParts(raw: unknown, scope?: AttachmentScope): Array<Record<string, unknown>> {
   if (!Array.isArray(raw)) return [];
   let budget = MIRROR_MAX_MESSAGE_CHARS;
   const out: Array<Record<string, unknown>> = [];
@@ -116,7 +137,7 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
 
     if (type === 'file') {
       // A base64 `data:` url here is the entire 7-19 MB transcript incident.
-      delete part.url;
+      if (!ownsAttachment(part.url, scope)) delete part.url;
       delete part.source;
     }
 
@@ -127,6 +148,8 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
         for (const [k, v] of Object.entries(state as Record<string, unknown>)) {
           if (TOOL_STATE_KEEP.has(k)) kept[k] = v;
         }
+        const attachments = mirrorToolAttachments((state as Record<string, unknown>).attachments, scope);
+        if (attachments.length) kept.attachments = attachments;
         // `input`/`output` are the tool's whole payload — a file read, a build
         // log, a page of HTML. The compact projection never showed them and the
         // renderer does not need them.
@@ -157,7 +180,7 @@ type RawMessage = {
  * store will not also produce is precisely the ghost this mirror exists to
  * avoid, so "no identity" means "not mirrorable".
  */
-export function mirrorRowsFromOpencodePayload(payload: unknown): MirrorMessage[] {
+export function mirrorRowsFromOpencodePayload(payload: unknown, scope?: AttachmentScope): MirrorMessage[] {
   const list = Array.isArray(payload)
     ? payload
     : typeof payload === 'object' &&
@@ -177,7 +200,7 @@ export function mirrorRowsFromOpencodePayload(payload: unknown): MirrorMessage[]
     if (!info) continue;
     const id = typeof info.id === 'string' ? info.id.trim() : '';
     if (!id) continue;
-    rows.push({ info, parts: sanitizeParts(msg.parts) });
+    rows.push({ info, parts: sanitizeParts(msg.parts, scope) });
   }
   return rows;
 }
@@ -208,48 +231,58 @@ export async function readSessionTranscriptMirror(input: {
   sessionId: string;
   limit: number;
 }): Promise<MirrorSnapshot | null> {
-  const [state] = await db
-    .select({
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-    .limit(1);
-  if (!state) return null;
+  return db.transaction(async tx => {
+    const [state] = await tx
+      .select({
+        opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+        headComplete: sessionTranscriptMirrors.headComplete,
+        capturedAt: sessionTranscriptMirrors.capturedAt,
+      })
+      .from(sessionTranscriptMirrors)
+      .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
+      .limit(1);
+    if (!state) return null;
 
-  const [totals] = await db
-    .select({ total: count() })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
-  const total = totals?.total ?? 0;
-  if (total === 0) return null;
+    const history = projectPiHistory(await readSessionHistoryItems(tx, input.sessionId));
+    const visible = and(
+      eq(sessionTranscriptMessages.sessionId, input.sessionId),
+      history.hiddenMessageIds.size > 0
+        ? notInArray(sessionTranscriptMessages.messageId, [...history.hiddenMessageIds])
+        : undefined,
+    );
 
-  // Newest `limit` rows, then flipped back into transcript order. Ordering is
-  // (message_created_at, message_id) — the order OpenCode's own
-  // `MessageV2.page()` uses, so the mirror and the live read never disagree.
-  const tail = await db
-    .select({
-      info: sessionTranscriptMessages.info,
-      parts: sessionTranscriptMessages.parts,
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId))
-    .orderBy(
-      sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
-      sql`${sessionTranscriptMessages.messageId} DESC`,
-    )
-    .limit(input.limit);
+    const [totals] = await tx
+      .select({ total: count() })
+      .from(sessionTranscriptMessages)
+      .where(visible);
+    const total = totals?.total ?? 0;
+    if (total === 0 && history.hiddenMessageIds.size === 0) return null;
 
-  return {
-    opencode_session_id: state.opencodeSessionId ?? null,
-    captured_at: new Date(state.capturedAt).toISOString(),
-    total,
-    head_complete: state.headComplete,
-    messages: tail.reverse().map((row) => ({
-      info: (row.info ?? {}) as Record<string, unknown>,
-      parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
-    })),
-  };
+    // Newest `limit` rows, then flipped back into transcript order. Ordering is
+    // (message_created_at, message_id) — the order OpenCode's own
+    // `MessageV2.page()` uses, so the mirror and the live read never disagree.
+    const tail = await tx
+      .select({
+        info: sessionTranscriptMessages.info,
+        parts: sessionTranscriptMessages.parts,
+      })
+      .from(sessionTranscriptMessages)
+      .where(visible)
+      .orderBy(
+        sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
+        sql`${sessionTranscriptMessages.messageId} DESC`,
+      )
+      .limit(input.limit);
+
+    return {
+      opencode_session_id: state.opencodeSessionId ?? null,
+      captured_at: new Date(state.capturedAt).toISOString(),
+      total,
+      head_complete: state.headComplete,
+      messages: tail.reverse().map((row) => ({
+        info: (row.info ?? {}) as Record<string, unknown>,
+        parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
+      })),
+    };
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
 }

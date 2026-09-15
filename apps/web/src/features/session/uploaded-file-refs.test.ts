@@ -443,3 +443,28 @@ describe('stageFirstPromptAttachments', () => {
     expect(await stageFirstPromptAttachments([])).toEqual([]);
   });
 });
+
+test('Pi image attachments use immutable conversation storage without uploading workspace files', async () => {
+  const file = localFile('screenshot.png', 'image/png');
+  const part = { type: 'file' as const, mime: 'image/png', filename: 'screenshot.png', url: `kortix-attachment:sha256:${'a'.repeat(64)}` };
+  const uploads: File[] = [];
+  const result = await buildPromptPartsWithUploads('Describe it.', [file], async () => { throw new Error('environment must stay off'); }, async (image, mime) => {
+    expect(mime).toBe('image/png'); uploads.push(image); return part;
+  });
+  expect(uploads).toEqual([file.file]);
+  expect(result).toEqual({ text: 'Describe it.', remoteParts: [part] });
+});
+
+test('Pi stores documents and images in input order without touching the environment', async () => {
+  const files = [localFile('notes.txt', 'text/plain'), localFile('logo.svg', 'image/svg+xml'), localFile('screenshot.png', 'image/png')];
+  const result = await buildPromptPartsWithUploads('Read it.', files, async () => { throw new Error('environment must stay off'); }, async (file, mime) => ({
+    type: 'file', mime, filename: file.name, url: `kortix-attachment:sha256:${'b'.repeat(64)}`,
+  }));
+  expect(result.text).toBe('Read it.');
+  expect(result.remoteParts.map(part => part.filename)).toEqual(['notes.txt', 'logo.svg', 'screenshot.png']);
+});
+
+test('Pi refuses arbitrary remote attachment URLs before upload or prompt admission', async () => {
+  await expect(buildPromptPartsWithUploads('Read it.', [remoteFile()], async () => [], async () => { throw new Error('must not upload'); }))
+    .rejects.toThrow('Attach a local file');
+});

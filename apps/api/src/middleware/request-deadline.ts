@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { timeout } from 'hono/timeout';
 import { HTTPException } from 'hono/http-exception';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 // ─── Request deadline guard ────────────────────────────────────────────────
 //
@@ -48,6 +49,14 @@ const DEADLINE_MS = (() => {
 })();
 
 const ENABLED = DEADLINE_MS > 0;
+const requestBudget = new AsyncLocalStorage<number>();
+
+export function remainingRequestBudgetMs(maximumMs: number, reserveMs = 1_000): number {
+  const deadline = requestBudget.getStore();
+  return deadline === undefined
+    ? maximumMs
+    : Math.max(0, Math.min(maximumMs, deadline - Date.now() - reserveMs));
+}
 
 /** Stable wire code for the API's total request-processing deadline. */
 export const REQUEST_DEADLINE_CODE = 'request_deadline' as const;
@@ -189,5 +198,5 @@ export async function requestDeadline(c: Context, next: Next): Promise<void | Re
     await next();
     return;
   }
-  return bounded(c, next);
+  return requestBudget.run(Date.now() + DEADLINE_MS, () => bounded(c, next));
 }

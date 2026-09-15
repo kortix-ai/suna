@@ -112,6 +112,13 @@ function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V>
   return Object.fromEntries(kept.map((k) => [k, map[k]])) as Record<string, V>;
 }
 
+function capSessionVariants(variants: ModelStore['variant']): ModelStore['variant'] {
+  const keys = Object.keys(variants).filter(key => key.startsWith('kortix:session-reasoning/'));
+  if (keys.length <= MAX_SESSION_ENTRIES) return variants;
+  const expired = new Set(keys.slice(0, -MAX_SESSION_ENTRIES));
+  return Object.fromEntries(Object.entries(variants).filter(([key]) => !expired.has(key)));
+}
+
 /**
  * Guarantee the persisted store's shape no matter what localStorage holds.
  * Proven live (Essentia 2026-08-26): a malformed `opencode-model-store-v1`
@@ -128,7 +135,7 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
   const out: ModelStore = {
     user: objArray<UserEntry>(raw.user),
     recent: objArray<ModelKey>(raw.recent),
-    variant: isObj(raw.variant) ? (raw.variant as ModelStore['variant']) : {},
+    variant: isObj(raw.variant) ? capSessionVariants(raw.variant as ModelStore['variant']) : {},
   };
   if (isObj(raw.selectedModel)) out.selectedModel = raw.selectedModel as ModelStore['selectedModel'];
   if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
@@ -161,6 +168,7 @@ function getStore(): ModelStore {
 function setStore(next: ModelStore) {
   const capped = {
     ...next,
+    variant: capSessionVariants(next.variant),
     sessionModel: capSessionMap(next.sessionModel),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
@@ -468,7 +476,10 @@ export function useModelStore(
   const setVariant = useCallback((model: ModelKey, value: string | undefined) => {
     const s = getStore();
     const k = `${model.providerID}/${model.modelID}`;
-    setStore({ ...s, variant: { ...s.variant, [k]: value } });
+    const variant = { ...s.variant };
+    delete variant[k];
+    if (value !== undefined) variant[k] = value;
+    setStore({ ...s, variant });
   }, []);
 
   // Per-agent persisted model selection

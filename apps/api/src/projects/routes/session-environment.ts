@@ -7,21 +7,29 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { buildCompiledPiRuntimeArtifact } from '../../git-proxy/compiled-pi-runtime-artifact';
 import {
+  SessionEnvironmentError,
+  SessionEnvironmentStopError,
   ensureSessionEnvironment,
   readSessionEnvironment,
-  SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { withProjectGitAuth } from '../lib/git';
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import { UUID_V4_REGEX } from '../lib/serializers';
+import {
+  environmentSandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
 
 const EnvironmentSchema = z.object({
   session_id: z.string(),
@@ -29,6 +37,9 @@ const EnvironmentSchema = z.object({
   external_id: z.string().nullable(),
   preview_url: z.string().nullable(),
   preview_token: z.string().nullable(),
+});
+const EnsureEnvironmentSchema = EnvironmentSchema.extend({
+  rpc_secret: z.string().nullable(),
 });
 
 interface SessionForEnvironment {
@@ -77,6 +88,12 @@ async function authorizeEnvironmentCall(
   if (!callerSession) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   }
+  // Scoped to the project AND account the caller was just authorized for.
+  // Authorization above proves the caller may act on `projectId`; without
+  // these two predicates the ROW is fetched by session id alone, so a caller
+  // authorized on their own project could pass any other project's session id
+  // and act on it — authorization checked against one object, action taken on
+  // another. Mirrors `loadProjectSessionRow` (projects/lib/access.ts).
   const [session] = await db
     .select({
       agentName: projectSessions.agentName,
@@ -84,7 +101,13 @@ async function authorizeEnvironmentCall(
       metadata: projectSessions.metadata,
     })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, sessionId),
+        eq(projectSessions.projectId, loaded.row.projectId),
+        eq(projectSessions.accountId, loaded.row.accountId),
+      ),
+    )
     .limit(1);
   if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
     return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
@@ -120,6 +143,56 @@ function serialize(info: {
   };
 }
 
+function serializeWithRpc(info: Parameters<typeof serialize>[0] & { rpcSecret: string | null }) {
+  return {
+    ...serialize(info),
+    rpc_secret: info.rpcSecret,
+  };
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/environment/resources',
+    tags: ['sessions'],
+    summary: 'Read environment files from the session’s pinned agent release',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: {
+      200: json(z.object({
+        project_id: z.string(), session_id: z.string(), agent_name: z.string(), source_sha: z.string(),
+        files: z.array(z.object({
+          placement: z.literal('environment'), source: z.string(), target: z.string(),
+          mode: z.enum(['seed', 'read_only']), content: z.string(), size: z.number(), sha256: z.string(),
+        })),
+      }), 'Pinned environment resource bytes; does not start compute'),
+      ...errors(400, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    if (gate.kind === 'error') return gate.response as never;
+    if (gate.session.metadata.sandbox_slug !== 'pi-worker') return c.json({ error: 'Session does not run on the pi worker' }, 400);
+    const identity = await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata });
+    if (!identity) return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
+    try {
+      const project = await withProjectGitAuth(gate.row as never);
+      const artifact = await buildCompiledPiRuntimeArtifact(project, identity.sha, identity.sha, gate.session.agentName);
+      c.header('cache-control', 'private, no-store');
+      return c.json({
+        project_id: gate.projectId,
+        session_id: gate.sessionId,
+        agent_name: gate.session.agentName,
+        source_sha: identity.sha,
+        files: (artifact.manifest.agent_resources ?? []).filter(file => file.placement === 'environment'),
+      });
+    } catch (error) {
+      console.warn('[session-env] pinned agent resources unavailable', { sessionId: gate.sessionId, error: error instanceof Error ? error.message : String(error) });
+      return c.json({ error: 'Pinned agent resources are unavailable' }, 503);
+    }
+  },
+);
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -131,7 +204,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
+      200: json(EnsureEnvironmentSchema, 'The session environment, provisioned or resumed'),
       ...errors(400, 403, 404, 409, 502, 504),
     },
   }),
@@ -145,11 +218,17 @@ projectsApp.openapi(
       return c.json({ error: 'Session does not run on the pi worker' }, 400);
     }
     const project = gate.row as {
+      projectId: string;
       repoUrl: string;
       defaultBranch: string;
       manifestPath: string | null;
     };
     try {
+      const identity = await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata });
+      if (!identity) {
+        return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
+      }
+      const gitProject = await withProjectGitAuth(gate.row as never);
       const info = await ensureSessionEnvironment({
         sessionId: gate.sessionId,
         projectId: gate.projectId,
@@ -157,15 +236,18 @@ projectsApp.openapi(
         userId: gate.userId,
         agentName: gate.session.agentName,
         baseRef: gate.session.baseRef || project.defaultBranch,
+        workspaceMode: workspaceModeFromSessionMetadata(gate.session.metadata),
+        sandboxSlug: environmentSandboxSlugFromSessionMetadata(gate.session.metadata) ?? 'default',
+        imageRef: identity.sha,
         gitProject: {
           projectId: gate.projectId,
-          repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath ?? 'kortix.yaml',
-          gitAuthToken: null,
+          repoUrl: gitProject.repoUrl,
+          defaultBranch: gitProject.defaultBranch,
+          manifestPath: gitProject.manifestPath ?? 'kortix.yaml',
+          gitAuthToken: gitProject.gitAuthToken,
         },
       });
-      return c.json(serialize(info));
+      return c.json(serializeWithRpc(info));
     } catch (err) {
       if (err instanceof SessionEnvironmentError) {
         return c.json({ error: err.message }, err.status as never);
@@ -211,14 +293,27 @@ projectsApp.openapi(
     },
     responses: {
       200: json(EnvironmentSchema, 'The stopped environment'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 502),
     },
   }),
   async (c) => {
     const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     if (gate.kind === 'error') return gate.response as never;
-    const info = await stopSessionEnvironment(gate.sessionId);
-    if (!info) return c.json({ error: 'No environment' }, 404);
-    return c.json(serialize(info));
+    try {
+      const info = await stopSessionEnvironment(gate.sessionId);
+      if (!info) return c.json({ error: 'No environment' }, 404);
+      return c.json(serialize(info));
+    } catch (err) {
+      if (err instanceof SessionEnvironmentStopError) {
+        return c.json(
+          {
+            error: 'Environment stop could not be confirmed',
+            provider_status: err.providerStatus,
+          },
+          502,
+        );
+      }
+      throw err;
+    }
   },
 );

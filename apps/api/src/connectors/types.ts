@@ -1,3 +1,5 @@
+import type { McpProtocolMethod } from './mcp-protocol';
+
 /**
  * Connector shared types. The normalized catalog shape every provider produces —
  * the one thing the gateway, discovery, and policy layer all speak.
@@ -40,6 +42,7 @@ export type ActionBinding =
     }
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
+  | { kind: 'mcp_protocol'; method: McpProtocolMethod }
   | { kind: 'http'; method: string; path: string }
   // Agent Computer Tunnel: relay one machine-bound RPC (`fs.read`,
   // `desktop.cua.click`, …). The gateway routes these through the shared tunnel

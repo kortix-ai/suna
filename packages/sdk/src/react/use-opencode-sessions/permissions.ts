@@ -1,3 +1,6 @@
+import { useOpenCodeSession } from './sessions';
+import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
+import { sessionAllowsAllPermissions } from '../../core/runtime/session-permissions';
 import type { PermissionRuleset } from '@opencode-ai/sdk/v2/client';
 import { getClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
@@ -76,3 +79,10 @@ export async function rejectQuestion(requestId: string): Promise<void> {
 // useSessionPolling was removed — SSE reconnects within <3s making 2s HTTP
 // polling redundant. All session status + message updates are driven by SSE
 // events via the sync store. See SSE-FIRST-MIGRATION-PLAN.md Phase 1d.
+
+/** Restore the session switch from runtime state after tab close or worker replacement. */
+export function useSessionPermissionMode(sessionID: string): boolean {
+  const { data } = useOpenCodeSession(sessionID);
+  const local = useOpenCodePendingStore(state => !!state.autoApproveAllSessions[sessionID]);
+  return sessionAllowsAllPermissions(data?.permission) ?? local;
+}

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "at": "2026-09-07T13:10:40.893Z",
+  "model": "gpt-5.6-luna",
+  "rounds": 5,
+  "node": "v22.23.1",
+  "directEnvironment": true,
+  "workerUsed": false,
+  "resources": {
+    "cpuMax": "200000 100000",
+    "memoryMax": "4294967296"
+  },
+  "persistence": {
+    "pi": "JSONL message_end append with fsync; benchmark harness, fresh agent per session",
+    "opencode": "native SQLite; fresh session per sample"
+  },
+  "method": "Alternating runtime order; one excluded warmup per runtime; same model, gateway, six workspace tool names, user prompts and system instruction. Runtime-generated prompt additions and tool schemas differ. Process readiness excludes environment provisioning.",
+  "starts": [
+    {
+      "runtime": "pi",
+      "round": 0,
+      "startupMs": 103.89948
+    },
+    {
+      "runtime": "opencode",
+      "round": 0,
+      "startupMs": 1349.246647
+    },
+    {
+      "runtime": "opencode",
+      "round": 1,
+      "startupMs": 1302.896205
+    },
+    {
+      "runtime": "pi",
+      "round": 1,
+      "startupMs": 89.07233399999996
+    },
+    {
+      "runtime": "pi",
+      "round": 2,
+      "startupMs": 89.80699400000003
+    },
+    {
+      "runtime": "opencode",
+      "round": 2,
+      "startupMs": 1351.667723
+    },
+    {
+      "runtime": "opencode",
+      "round": 3,
+      "startupMs": 1353.0985059999994
+    },
+    {
+      "runtime": "pi",
+      "round": 3,
+      "startupMs": 108.41003600000022
+    },
+    {
+      "runtime": "pi",
+      "round": 4,
+      "startupMs": 109.65428800000063
+    },
+    {
+      "runtime": "opencode",
+      "round": 4,
+      "startupMs": 1405.6456790000002
+    }
+  ],
+  "warmups": [],
+  "samples": [],
+  "summary": []
+}

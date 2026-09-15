@@ -2,18 +2,14 @@
 
 import type { FileContent } from '@/features/file-browser/types';
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
 import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
-export const fileContentKeys = {
-  all: ['runtime-files', 'content'] as const,
-  file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'content', serverUrl, filePath] as const,
-};
+export { fileContentKeys } from '@kortix/sdk/react';
 
 /**
  * Fetch the content of a single file from the active OpenCode server.
@@ -25,7 +21,7 @@ export function useFileContent(
   filePath: string | null,
   options?: { enabled?: boolean; staleTime?: number },
 ) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -49,7 +45,7 @@ export function useFileContent(
  */
 export function useInvalidateFileContent() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return (filePath?: string) => {
     if (filePath) {

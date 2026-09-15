@@ -41,7 +41,36 @@ const APP_ACCESS_RENAMES = [
   },
 ] as const;
 
-const MIGRATION_RENAMES = [...SANDBOX_DEADLINE_RENAMES, ...APP_ACCESS_RENAMES] as const;
+const SECRET_CONSUMER_RENAMES = [
+  {
+    legacyName: '20260805165801277_secret_consumer_boundary',
+    currentName: '20260805202913539_secret_consumer_boundary',
+    filename: '20260805202913539_secret_consumer_boundary.sql',
+    sha256: '9de8e240356235c49d577e219ca83518eceaacfaab16243aa9b6f15847a2e7d1',
+  },
+] as const;
+
+const PI_RUNTIME_RENAMES = [
+  {
+    legacyName: '20260828170156721_session_worker_log',
+    currentName: '20260902070000000_session_worker_log',
+    filename: '20260902070000000_session_worker_log.sql',
+    sha256: '0fafe47bb6b45c50ff4f6b56175337623cea81a2f722eec6294fb60cd35e84e5',
+  },
+  {
+    legacyName: '20260829160353474_pi_runtime_artifacts',
+    currentName: '20260902070001000_pi_runtime_artifacts',
+    filename: '20260902070001000_pi_runtime_artifacts.sql',
+    sha256: '87d0bbacf0fa853f80ad506696e3f556d45c3b934c4d25a9a1edf48ad36fd803',
+  },
+] as const;
+
+const MIGRATION_RENAMES = [
+  ...SANDBOX_DEADLINE_RENAMES,
+  ...SECRET_CONSUMER_RENAMES,
+  ...APP_ACCESS_RENAMES,
+  ...PI_RUNTIME_RENAMES,
+] as const;
 
 const REPAIR_NAMES = [
   CONNECTOR_POLICY_MIGRATION.name,
@@ -86,8 +115,7 @@ export function planMigrationLedgerRepair(
     );
   }
 
-  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES
-    .filter(({ legacyName }) => byName.has(legacyName))
+  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES.filter(({ legacyName }) => byName.has(legacyName))
     .map(({ legacyName }) => byName.get(legacyName)?.runOn)
     .filter((runOn): runOn is Date => runOn instanceof Date);
   const legacyRunOn =
@@ -142,6 +170,45 @@ async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRe
   }
 }
 
+async function reorderAppliedRenames(
+  client: pg.Client,
+  renames: MigrationLedgerRepairPlan['renames'],
+): Promise<void> {
+  const movedNames = renames
+    .map(({ currentName }) => currentName)
+    .sort();
+  if (movedNames.length === 0) return;
+
+  const firstName = movedNames[0];
+  const result = await client.query(
+    `with boundary as (
+       select coalesce(
+                max(run_on) filter (where name < $1),
+                min(run_on) - interval '1 microsecond',
+                timestamp 'epoch'
+              ) as anchor
+         from kortix_migrations.pgmigrations
+     ), ordered as (
+       select id, row_number() over (order by name, id) as position
+         from kortix_migrations.pgmigrations
+        where name >= $1
+     ), normalized as (
+       select ordered.id,
+              boundary.anchor + ordered.position * interval '1 microsecond' as run_on
+         from ordered
+         cross join boundary
+     )
+     update kortix_migrations.pgmigrations as ledger
+        set run_on = normalized.run_on
+       from normalized
+      where ledger.id = normalized.id`,
+    [firstName],
+  );
+  if ((result.rowCount ?? 0) < movedNames.length) {
+    throw new Error('Migration ledger repair could not reorder the renamed migrations.');
+  }
+}
+
 async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
@@ -189,6 +256,8 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
         );
       }
     }
+
+    await reorderAppliedRenames(client, plan.renames);
 
     await client.query('commit');
     return true;

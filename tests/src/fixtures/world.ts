@@ -366,11 +366,14 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       return u.principal;
     },
     async session(project, opts) {
+      if (opts?.piSourceSha && !/^[a-f0-9]{40}$/.test(opts.piSourceSha)) throw new Error('Pi fixture requires an immutable source SHA');
       if (databaseProjectIds.has(project.id)) {
         const id = await createDatabaseSession(env, {
           projectId: project.id,
           accountId: owner.accountId!,
           userId: owner.userId!,
+          agentName: opts?.agentName,
+          metadata: opts?.piSourceSha ? { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: opts.piSourceSha, pi_worker_sha: opts.piSourceSha } : undefined,
         });
         // No stack entry: deleting the database-only project cascades to its
         // sessions (project_sessions.project_id ON DELETE CASCADE).
@@ -383,6 +386,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         {
           initial_prompt: opts?.prompt ?? 'noop',
           ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
+          ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
+          ...(opts?.piSourceSha ? { base_ref: opts.piSourceSha } : {}),
         },
         {
           params: { projectId: project.id },

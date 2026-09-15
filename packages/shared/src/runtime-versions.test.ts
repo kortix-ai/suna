@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   AGENT_BROWSER_VERSION,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_VERSION,
   OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
   OPENCODE_VERSION,
@@ -9,12 +11,14 @@ import {
 } from "./runtime-versions";
 
 describe("runtime versions", () => {
-  test("pins OpenCode runtime surfaces from one manifest", () => {
+  test("pins runtime CLI surfaces from one manifest", () => {
     expect(OPENCODE_VERSION).toBe(RUNTIME_VERSIONS.opencode);
     expect(OPENCODE_SDK_VERSION).toBe(RUNTIME_VERSIONS.opencodeSdk);
     expect(OPENCODE_USER_AGENT).toBe(`opencode/${RUNTIME_VERSIONS.opencode}`);
     expect(AGENT_BROWSER_VERSION).toBe(RUNTIME_VERSIONS.agentBrowser);
     expect(PLAYWRIGHT_VERSION).toBe(RUNTIME_VERSIONS.playwright);
+    expect(CODEX_CLI_VERSION).toBe(RUNTIME_VERSIONS.codexCli);
+    expect(CLAUDE_CODE_VERSION).toBe(RUNTIME_VERSIONS.claudeCode);
   });
 
   test("uses exact semver pins, not ranges or dist tags", () => {
@@ -29,6 +33,8 @@ describe("runtime versions", () => {
       "opencodeSdk",
       "agentBrowser",
       "playwright",
+      "codexCli",
+      "claudeCode",
     ] as const;
 
     for (const key of versionKeys) {
@@ -44,6 +50,10 @@ describe("runtime versions", () => {
       "uvSha256Arm64",
       "bunSha256Amd64",
       "bunSha256Arm64",
+      "codexCliSha256Amd64",
+      "codexCliSha256Arm64",
+      "claudeCodeSha256Amd64",
+      "claudeCodeSha256Arm64",
     ] as const;
 
     for (const key of digestKeys) {

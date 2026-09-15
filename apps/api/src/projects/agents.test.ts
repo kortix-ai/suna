@@ -39,6 +39,7 @@ const {
   resolveGovernedAgentGrant,
   requiredConnectorsForAgent,
   workspaceFromLoadedAgents,
+  grantFromLoadedAgents,
 } =
   await import('./agents');
 
@@ -261,4 +262,19 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(workspaceFromLoadedAgents('engineer', loaded)).toBe('branch');
     expect(workspaceFromLoadedAgents('missing', loaded)).toBeNull();
   });
+});
+
+
+test('a v3 agent named meta uses its declared grants', async () => {
+  manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\ndefault_agent: meta\nagents:\n  meta:\n    secrets: none\n    connectors: none\n    kortix_cli: none\n' };
+  const loaded = await loadProjectAgents(fakeProject(), { forceRefresh: true });
+  expect(loaded.runtime).toBe('pi');
+  expect(grantFromLoadedAgents('meta', loaded)).toEqual({ agent: 'meta', env: [], connectors: [], kortixCli: [] });
+});
+
+
+test('an undeclared v3 meta agent cannot inherit platform coordinator grants', async () => {
+  manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\n' };
+  const loaded = await loadProjectAgents(fakeProject(), { forceRefresh: true });
+  expect(grantFromLoadedAgents('meta', loaded)).toEqual({ agent: 'meta', env: [], connectors: [], kortixCli: [] });
 });

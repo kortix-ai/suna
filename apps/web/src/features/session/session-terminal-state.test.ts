@@ -131,3 +131,22 @@ describe('canRenderCachedTranscriptWhileSandboxDown', () => {
     }
   });
 });
+
+describe('stopped history without a sandbox row', () => {
+  test.each([null, undefined])('keeps saved history when sandbox status is %s', (sandboxStatus) => {
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus,
+        stage: 'stopped',
+        hasCachedContent: true,
+      }),
+    ).toBe(true);
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus,
+        stage: 'stopped',
+        hasCachedContent: false,
+      }),
+    ).toBe(false);
+  });
+});

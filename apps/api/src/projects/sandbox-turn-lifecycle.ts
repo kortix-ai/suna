@@ -368,11 +368,29 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
              ended_at = coalesce(t.ended_at, now()),
              updated_at = now()
        WHERE t.state <> 'ended'
-         AND NOT EXISTS (
-           SELECT 1
-             FROM kortix.session_sandboxes s
-            WHERE s.sandbox_id = t.sandbox_id
-              AND s.status IN ('active', 'provisioning'))`);
+         AND (
+           NOT EXISTS (
+             SELECT 1
+               FROM kortix.session_sandboxes s
+              WHERE s.sandbox_id = t.sandbox_id
+                AND s.status IN ('active', 'provisioning'))
+           -- OR the turn has outlived its own grant. The clause above only
+           -- catches "the runtime is GONE", so a turn whose box is still alive
+           -- but whose end was never relayed stayed open forever: pi leaves
+           -- rows behind (its relay is newer than these rows), and the Stop
+           -- button deliberately follows the ledger so it can fail safe. The
+           -- result was Stop offered over a finished transcript for as long as
+           -- the box lived. Measured on pi.kortix.com 2026-08-30: two rows
+           -- still 'active' from the previous day, on a session whose answer
+           -- was complete, and nine such rows across four sessions earlier.
+           --
+           -- The bound is the turn's OWN grant, not a new number: a turn
+           -- allowed to run for KORTIX_SANDBOX_TURN_GRANT_MINUTES and still
+           -- open past it is over by the platform's own definition. Generous
+           -- on purpose — a long tool loop is a live turn, and this must never
+           -- cut one short.
+           OR t.started_at < now() - ${sql.raw(String(Math.round(turnGrantMs() / 1000)))} * interval '1 second'
+         )`);
     return (result as { count?: number } | null)?.count ?? 0;
   } catch (error) {
     console.warn(
@@ -936,6 +954,7 @@ export async function completeSandboxTurn(
   identity?: Partial<SandboxTurnIdentity> | null,
   error?: { isRetryable?: boolean } | null,
   graceMs = idleGraceMs(),
+  options: { allowUnidentifiedFallback?: boolean; runtimeOwnerId?: string | null } = {},
 ): Promise<SandboxTurnCompletionResult> {
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
@@ -997,11 +1016,15 @@ export async function completeSandboxTurn(
         FROM turn_candidates candidate
        WHERE ${identity?.messageId ?? null}::text IS NOT NULL
          AND candidate.value->>'messageId' = ${identity?.messageId ?? null}
+         AND (${options.runtimeOwnerId === undefined}::boolean
+           OR candidate.value->>'runtimeOwnerId' IS NULL
+           OR candidate.value->>'runtimeOwnerId' = ${options.runtimeOwnerId ?? null}::text)
     ), fallback_match AS (
       SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
              candidate.value
         FROM turn_candidates candidate
-       WHERE candidate.value->>'messageId' IS NULL
+       WHERE ${options.allowUnidentifiedFallback !== false}::boolean
+         AND candidate.value->>'messageId' IS NULL
          AND NOT EXISTS (
            SELECT 1
              FROM exact_matches exact
@@ -1091,6 +1114,9 @@ export async function completeSandboxTurn(
   const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
   const activeTurnCount = Number(rows[0]?.active_turn_count ?? 0);
   if (turns.length === 0) {
+    if (activeTurnCount > 0 && options.runtimeOwnerId !== undefined) {
+      return { outcome: 'identity_mismatch', activeTurnCount, closedTurnCount: 0 };
+    }
     if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
       return {
         outcome: 'already_closed',

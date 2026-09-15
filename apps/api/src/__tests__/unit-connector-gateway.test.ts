@@ -15,6 +15,7 @@ import {
   handleCall,
 } from '../connectors/gateway';
 import type { DefaultMode, Policy } from '../connectors/policy';
+import { mcpProtocolActions } from '../connectors/mcp-protocol';
 
 const ALICE = 'user-alice';
 
@@ -100,6 +101,101 @@ const baseInput: CallInput = {
   actionPath: 'charges.create',
   args: { amount: 500 },
 };
+
+describe('handleCall — MCP resources and prompts', () => {
+  const connector: GatewayConnector = {
+    ...STRIPE,
+    provider: 'mcp',
+    slug: 'fixture',
+    baseUrl: 'https://fixture.example/mcp',
+  };
+  const action = (path: string): GatewayAction => {
+    const normalized = mcpProtocolActions({ resources: {}, prompts: {} }).find(
+      (item) => item.path === path,
+    )!;
+    return { ...normalized, path: 'fixture.' + path, relPath: path };
+  };
+  const input = {
+    ...baseInput,
+    connectorSlug: 'fixture',
+    actionPath: 'mcp.resources.read',
+    args: { uri: 'fixture://note' },
+  };
+
+  test.each(['mcp.resources.read', 'mcp.prompts.get'])(
+    '%s uses exact-path policy gates before calling upstream',
+    async (path) => {
+      const { deps, fetchCalls, records } = makeDeps({
+        connector,
+        action: action(path),
+        enforcePolicies: true,
+        projectPolicies: [{ match: 'fixture.' + path, action: 'block' }],
+      });
+      const result = await handleCall(deps, {
+        ...input,
+        actionPath: path,
+        args: path === 'mcp.prompts.get' ? { name: 'review' } : input.args,
+      });
+      expect(result).toEqual({ status: 'denied', reason: 'policy_block' });
+      expect(fetchCalls).toHaveLength(0);
+      expect(records.at(-1)).toMatchObject({ status: 'denied', actionPath: 'fixture.' + path });
+    },
+  );
+
+  test('sensitive MCP reads require approval without sending the remote URI', async () => {
+    const { deps, fetchCalls, records } = makeDeps({
+      connector: { ...connector, sensitive: true },
+      action: action(input.actionPath),
+      enforcePolicies: true,
+      defaultMode: 'risk',
+    });
+    expect((await handleCall(deps, input)).status).toBe('pending_approval');
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)).toMatchObject({ status: 'pending_approval', risk: 'read' });
+  });
+
+  test('resource results pass through authenticated execution and record read success', async () => {
+    const data = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: { contents: [{ uri: input.args.uri, text: 'native resource' }] },
+    };
+    const { deps, fetchCalls, records } = makeDeps({
+      connector,
+      action: action(input.actionPath),
+      fetchBody: JSON.stringify(data),
+    });
+    expect(await handleCall(deps, input)).toEqual({ status: 'ok', data, risk: 'read' });
+    expect(fetchCalls[0]!.headers.Authorization).toBe('Bearer sk_live_123');
+    expect(JSON.parse(fetchCalls[0]!.body!)).toMatchObject({
+      method: 'resources/read',
+      params: input.args,
+    });
+    expect(records.at(-1)).toMatchObject({
+      status: 'ok',
+      actionPath: 'fixture.mcp.resources.read',
+      sessionId: 'sess-1',
+    });
+  });
+
+  test.each([
+    { jsonrpc: '2.0', id: 1, result: { contents: [42] } },
+    { jsonrpc: '2.0', id: 1, error: { code: -32002, message: 'sk_live_123 missing resource' } },
+  ])(
+    'protocol failures are audited as errors with no credential in the reply or audit',
+    async (data) => {
+      const { deps, records } = makeDeps({
+        connector,
+        action: action(input.actionPath),
+        fetchBody: JSON.stringify(data),
+      });
+      const result = await handleCall(deps, input);
+      expect(result.status).toBe('error');
+      expect(records.at(-1)?.status).toBe('error');
+      expect(JSON.stringify({ result, records })).not.toContain('sk_live_123');
+    },
+  );
+});
 
 describe('handleCall — happy path', () => {
   test('resolves shared credential, attaches auth, returns ok, audits', async () => {

@@ -205,6 +205,17 @@ flow(
       r.status(400);
     });
 
+    await ctx.step("POST create with server-owned pi-worker slug → 409", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/sandbox-templates",
+          { slug: "pi-worker", image: "ubuntu:22.04" },
+          { params: { projectId: p.id } },
+        );
+      r.status(409).body().matches("$.error", /server-selected Pi runtime/);
+    });
+
     await ctx.step("POST with both image+dockerfile → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -282,12 +293,12 @@ flow(
       del.status([200, 204, 400, 404, 409]);
     });
 
-    await ctx.step("NONMEMBER create → 403/404", async () => {
+    await ctx.step("NONMEMBER cannot probe the reserved pi-worker slug → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
           "/v1/projects/:projectId/sandbox-templates",
-          { slug: "nope", image: "ubuntu:22.04" },
+          { slug: "pi-worker", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { VcsFileDiff } from '@opencode-ai/sdk/v2/client';
 
-import { getClient } from '../../core/runtime/client';
+import { getWorkspaceClient } from '../../core/runtime/client';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap } from './shared';
@@ -43,16 +43,19 @@ export function useOpenCodeVcsDiff(
   const runtimeReady = useOpenCodeRuntimeReady();
   // Subscribe to the active sandbox so the key recomputes the instant the
   // runtime switches — session A's diff must never paint under session B.
-  const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
+  const workspaceUrl = useCurrentRuntime((s) => s.workspaceUrl);
+  const dataRuntimeKind = useCurrentRuntime((s) => s.dataRuntimeKind);
+  const serverId = useCurrentRuntime((s) => s.workspaceSandboxId ?? s.sandboxId) ?? undefined;
+  const workspaceReady = dataRuntimeKind !== 'environment' || Boolean(workspaceUrl);
   return useQuery<VcsFileDiff[]>({
     queryKey: opencodeKeys.vcsDiff(mode, serverId),
     queryFn: async () => {
-      const client = getClient();
+      const client = getWorkspaceClient();
       const result = await client.vcs.diff({ mode });
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: runtimeReady && options?.enabled !== false,
+    enabled: runtimeReady && workspaceReady && options?.enabled !== false,
     // Agent edits arrive as SSE events that invalidate `vcsDiffAll()`, so the
     // panel does not depend on a poll; this only bounds refetch churn from
     // remounts while a turn is running.

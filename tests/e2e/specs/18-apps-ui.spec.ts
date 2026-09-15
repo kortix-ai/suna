@@ -36,6 +36,10 @@ interface AppResponse {
   desired_state: string;
 }
 
+interface ApiHealth {
+  environment: 'dev' | 'staging' | 'prod' | 'preview';
+}
+
 test.describe('18 — Kortix Apps UI', () => {
   test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
     context,
@@ -182,9 +186,12 @@ test.describe('18 — Kortix Apps UI', () => {
       if (env.target === 'local') {
         expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
-        const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
+        const health = await api<ApiHealth>(session.access_token, 'GET', '/health');
+        expect(seededUrl.protocol).toBe('https:');
         expect(seededUrl.hostname).toMatch(
-          new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
+          new RegExp(
+            `^${health.environment}-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-[a-f0-9]{16}\\.[a-z0-9.-]+$`,
+          ),
         );
       }
 
@@ -304,4 +311,57 @@ test.describe('18 — Kortix Apps UI', () => {
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });
+});
+
+test('keeps the session after an aborted authentication check and loads Apps after reload', async ({ page }, testInfo) => {
+  test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+  test.setTimeout(90_000);
+  const runId = Date.now().toString(36);
+  const email = `e2e-auth-abort-${runId}@example.test`;
+  const user = await createAuthUser(email, authOptions);
+  const session = await signIn(email, authOptions);
+  const env = loadEnv();
+  let projectId: string | null = null;
+  let abortedChecks = 0;
+  const logoutRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/auth/v1/logout')) logoutRequests.push(request.method());
+  });
+  try {
+    const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+    const account = accounts.find((item) => item.personal_account || item.is_primary_owner);
+    expect(account).toBeTruthy();
+    const project = await createDatabaseProject(env, {
+      accountId: account!.account_id,
+      userId: user.id,
+      name: `Auth abort ${runId}`,
+      appsEnabled: false,
+    });
+    projectId = project.id;
+    await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
+    await selectAccountForUi(page, account!.account_id);
+    await page.route('**/auth/v1/user', async (route) => {
+      abortedChecks++;
+      await route.abort('aborted');
+    });
+    await page.goto(`/projects/${project.id}/apps`, { waitUntil: 'domcontentloaded' });
+    await dismissOnboarding(page);
+    await expect(page.getByText('is off for this project')).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => abortedChecks).toBeGreaterThan(0);
+    await page.unroute('**/auth/v1/user');
+    const validation = await page.request.get(`${supabaseUrl}/auth/v1/user`, {
+      headers: { authorization: `Bearer ${session.access_token}`, apikey: env.supabaseAnonKey! },
+    });
+    expect(validation.status()).toBe(200);
+    expect((await validation.json()).id).toBe(user.id);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await dismissOnboarding(page);
+    await expect(page.getByText('is off for this project')).toBeVisible();
+    expect(logoutRequests).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('auth-abort-recovered.png'), fullPage: true });
+  } finally {
+    await page.close();
+    if (projectId) await deleteDatabaseProject(env, projectId);
+    await deleteAuthUser(user.id, authOptions);
+  }
 });

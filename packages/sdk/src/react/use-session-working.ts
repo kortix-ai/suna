@@ -10,6 +10,7 @@ import {
   type SessionTurnEnded,
   getSessionTurn,
 } from '../core/rest/projects-client/sessions';
+import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import {
   type AbortReceipt,
   type SendReceipt,
@@ -19,7 +20,6 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
-import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 
@@ -159,10 +159,7 @@ const workingObserverCounts = new Map<string, number>();
  * `STREAM_OBSERVATION_MAX_MS` window. The frame's age is a fact about the
  * frame, so it lives with the frame.
  */
-export function streamObservationStamp(
-  storeStampMs: number | undefined,
-  nowMs: number,
-): number {
+export function streamObservationStamp(storeStampMs: number | undefined, nowMs: number): number {
   return storeStampMs ?? nowMs;
 }
 
@@ -415,5 +412,6 @@ export function useSessionWorking(
   // it are not re-run once per render just because `now` moved.
   const identity = `${projection.state}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these five fields define projection identity; object identity does not.
   return useMemo(() => projection, [identity]);
 }

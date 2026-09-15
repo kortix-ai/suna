@@ -11,6 +11,13 @@ import {
 const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
+  it('rejects sensitive paths before forwarding to either application', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    expect(caddy).toContain('@sensitive path /.env /.env.* /.git /.git/* /package.json /etc/passwd /v1/.env /v1/.env.*');
+    expect(caddy).toContain('handle @sensitive {\n    respond "Not found" 404\n  }');
+    expect(caddy.indexOf('handle @sensitive')).toBeLessThan(caddy.indexOf('handle @api'));
+  });
+
   it('routes every public surface through one origin', () => {
     const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');
@@ -35,7 +42,15 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy llm-gateway:8090');
     expect(caddy).toContain('handle_path /_tests/*');
     expect(caddy).toContain('root * /reports');
-    expect(caddy).toContain('handle_path /_mailpit/*');
+    // `handle`, NOT `handle_path`: stripping the prefix made Mailpit serve a
+    // page whose assets are root-absolute (`/dist/app.css`), which the frontend
+    // then answered — the UI rendered blank. The prefix must reach the upstream,
+    // and `MP_WEBROOT` (overlay) makes Mailpit emit matching asset paths.
+    expect(caddy).toContain('handle /_mailpit/*');
+    expect(caddy).not.toContain('handle_path /_mailpit/*');
+    // The bare path needs its own redirect: the matcher requires a segment
+    // after the prefix, so `/_mailpit` fell through to the frontend and 404'd.
+    expect(caddy).toContain('redir /_mailpit /_mailpit/ 308');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
@@ -110,6 +125,8 @@ describe('ephemeral self-host preview stack', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     expect(overlay).toContain('preview-edge:');
     expect(overlay).toContain('mailpit:');
+    // Without this Mailpit's UI is unusable behind the subpath.
+    expect(overlay).toContain('MP_WEBROOT: /_mailpit');
     expect(overlay).toContain('127.0.0.1:15432:5432');
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
@@ -125,6 +142,12 @@ describe('ephemeral self-host preview stack', () => {
   // because the preview App cannot create repos (403) and a seeded project's
   // history therefore exists nowhere else. The org held none of the preview's
   // repos, and `/tmp/kortix/git-cache` was simply gone.
+  it('budgets the full locale census within the preview frontend memory ceiling', () => {
+    const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
+    expect(overlay).toContain('  frontend:\n    mem_limit: 4096m');
+    expect(overlay).toContain('NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1536"');
+  });
+
   it('keeps the git mirror across a container recreate', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     // Mounted at the PARENT of git-cache so sibling caches survive too.
@@ -138,6 +161,7 @@ describe('ephemeral self-host preview stack', () => {
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
       'DAYTONA_API_KEY',
+      'PLATINUM_API_KEY',
       'KE2E_STRIPE_SECRET_KEY',
       'KE2E_STRIPE_WEBHOOK_SECRET',
       'KORTIX_GITHUB_APP_ID',
@@ -147,7 +171,6 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
-      'PLATINUM_API_KEY',
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
@@ -196,6 +219,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
@@ -212,6 +236,22 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
   });
+
+  it.each([false, true])('accepts the current deployment provider payload, platinum=%s', (platinum) => {
+    const configured = applyPreviewEnvironment(
+      'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
+      { origin: 'https://preview.example', sha: SHA, apiImage: 'api', gatewayImage: 'gateway', frontendImage: 'frontend', platinumApiUrl: 'https://provider.example' },
+      { DAYTONA_API_KEY: 'daytona', PLATINUM_API_KEY: platinum ? 'fixture-platinum' : '', MANAGED_GIT_GITHUB_OWNER: 'preview', MANAGED_GIT_GITHUB_TOKEN: 'fixture-git' },
+    );
+    expect(configured.runtimeEnv).toContain(platinum ? 'ALLOWED_SANDBOX_PROVIDERS=daytona,platinum' : 'ALLOWED_SANDBOX_PROVIDERS=daytona\n');
+    if (platinum) {
+      expect(configured.runtimeEnv).toContain('PLATINUM_API_URL=https://provider.example');
+      expect(configured.runtimeEnv).toContain('PLATINUM_API_KEY=fixture-platinum');
+    } else {
+      expect(configured.runtimeEnv).not.toContain('PLATINUM_API_KEY=');
+    }
+    expect(configured.testEnv).not.toContain('PLATINUM_API_KEY=');
+});
 
   it('offers Platinum only when its key is present, and never forwards an AWS identity', () => {
     const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';

@@ -10,6 +10,26 @@ import {
 } from './session-transcript-mirror';
 
 describe('sanitizeParts', () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+  const sessionId = '22222222-2222-4222-8222-222222222222';
+  const scope = { projectId, sessionId };
+  const url = `/projects/${projectId}/sessions/${sessionId}/attachments/${'a'.repeat(64)}`;
+  test('keeps only bounded attachment references belonging to the captured session', () => {
+    const file = { id: 'file', type: 'file', filename: 'image.png', mime: 'image/png', url };
+    expect(sanitizeParts([file], scope)).toEqual([file]);
+    for (const unsafe of [`https://evil.test${url}`, `${url}?q=1`, url.replace(sessionId, projectId), url.replace(projectId, sessionId)]) {
+      expect(sanitizeParts([{ ...file, url: unsafe }], scope)).toEqual([{ ...file, url: undefined }].map(({ url: _url, ...rest }) => rest));
+    }
+    expect(sanitizeParts([file])[0]).not.toHaveProperty('url');
+  });
+
+  test('preserves native tool images while excluding inline bytes and external files', () => {
+    const image = { id: 'image', type: 'file', mime: 'image/png', filename: 'result.png', url };
+    const state = { status: 'completed', input: {}, output: 'large output', attachments: [image, { ...image, url: 'data:image/png;base64,AAAA' }] };
+    const [part] = sanitizeParts([{ type: 'tool', state }], scope);
+    expect(part!.state).toEqual({ status: 'completed', attachments: [image] });
+    expect(sanitizeParts([{ type: 'tool', state }])[0]!.state).toEqual({ status: 'completed' });
+  });
   test('a file part keeps its name and type and LOSES its url', () => {
     // A base64 `data:` url here is the whole 7-19 MB transcript incident: the
     // mirror is read on every cold open, so one embedded screenshot would make

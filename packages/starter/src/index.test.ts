@@ -18,10 +18,11 @@ function byPath(files: StarterFile[]): Map<string, string> {
 }
 
 describe('STARTER_TEMPLATE_IDS', () => {
-  test('contains the two OpenCode templates', () => {
+  test('contains the two OpenCode templates plus the pi kit', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual([
       'minimal',
       'general-knowledge-worker',
+      'pi',
     ]);
   });
 

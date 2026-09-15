@@ -19,7 +19,7 @@ competing:
   own snapshot (`drizzle/meta/`). It never touches a database and never
   applies anything.
 - **node-pg-migrate** *applies SQL*. It doesn't know or care that drizzle-kit
-  exists — it just runs whatever `.sql` (or `.concurrent.ts`, see below) files
+  exists — it just runs the supported `.sql` and `.ts` migration files
   land in `migrations/`, in order, tracked in `kortix_migrations.pgmigrations`.
 
 If you've heard "drizzle-kit generate is broken here, hand-write everything"
@@ -50,7 +50,7 @@ aren't a schema-shape diff.
 ```
 
 - **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, custom functions, and CONCURRENTLY operations are the exception — hand-written; see below.)
-- **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches). The one exception is the `.concurrent.ts` escape hatch, same timestamp prefix, different suffix — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+- **Migration files** in `packages/db/migrations/` are **immutable and timestamp-named**. Plain migrations use `YYYYMMDDHHMMSSmmm_slug.sql`. Non-transactional migrations use the same prefix plus `.concurrent.ts` or `.nontransaction.ts` — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
 - A merged migration that fails its first hosted deployment remains immutable. A runtime correction must live in `scripts/migration-runtime-overrides.ts`, match the exact committed SHA-256, change the minimum required statement, fail closed on drift, and have an integration test. The migration runner prints each applied override.
 - **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name — **not** the `public` schema, and not the same table CI/local dev might assume by default).
 
@@ -88,6 +88,7 @@ From repo root (`DATABASE_URL` from env, or `--target=<env>` reads `<ENV>_DB_URL
 | `pnpm migrate:status` | List pending migrations (dry-run, writes nothing). Exit 1 if any pending. |
 | `pnpm migrate:create <slug>` | Scaffold a hand-written SQL migration with the house-rules template (lock_timeout/statement_timeout header, expand/contract checklist, annotation slots). |
 | `pnpm migrate:create <slug> --concurrent` | Scaffold the `.concurrent.ts` CONCURRENTLY escape hatch (`pgm.noTransaction()` pre-filled). |
+| `pnpm migrate:create <slug> --constraint-transition` | Scaffold a `.nontransaction.ts` ADD NOT VALID → VALIDATE → DROP constraint transition. |
 | `pnpm migrate:generate <slug>` | Generate SQL from a `kortix.ts` change (drizzle-kit) into a timestamped file. |
 | `pnpm migrate:fake` | Mark pending migrations as applied **without running them** (baseline existing envs). |
 | `pnpm migrate:down` | Roll back (only if the migration defines a `-- Down Migration` section; ours don't — see below). |
@@ -122,6 +123,14 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 2. Fill in the TODOs — **one statement per `pgm.sql()` call** (see the file's own comments for why).
 3. Run `pnpm --filter @kortix/db lint`, review, commit, PR.
 
+**Constraint replacement on an existing table:**
+
+1. `pnpm migrate:create workload_check --constraint-transition` creates `migrations/<ts>_workload_check.nontransaction.ts`.
+2. Add the replacement as `NOT VALID`.
+3. Validate the replacement before dropping the old constraint.
+4. Keep one statement in each `pgm.sql()` call. Each statement commits before the next one starts.
+5. Run `pnpm --filter @kortix/db lint`, review, commit, PR.
+
 **Rules (not suggestions):**
 
 - Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters. The `immutability` CI job enforces this at PR time.)
@@ -129,6 +138,7 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 - Generated/hand-written SQL is reviewed by a human before it touches a database.
 - Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — **both** `migrate:create` and `migrate:generate` pre-fill this. (`migrate:generate` did not until 2026-08-05; it renamed drizzle-kit's output through unchanged, so generated migrations were born failing the rule.)
 - A `.concurrent.ts` migration takes the **opposite** `lock_timeout` to a `.sql` one: `'180s'`, never 2–5 s. `CREATE INDEX CONCURRENTLY` waits on every older transaction and `lock_timeout` governs that wait, so a short budget fails on live prod regardless of table size. Enforced — below 120 s fails lint. See [Roll-forward safety](#lock_timeout-in-a-concurrentts-file-is-the-opposite-of-the-house-value).
+- A `.nontransaction.ts` migration only permits timeout settings and an ADD NOT VALID → VALIDATE → optional DROP constraint sequence. The linter rejects other operations.
 - Any migration that **drops or alters** a constraint, unique index, column, or enum value needs a `-- mixed-version-safe: <justification>` (or `-- enum-value-checked: <justification>` for `ADD VALUE`) comment, or CI fails it — see [Zero-downtime rules](#zero-downtime-rules-checklist). Same rule for `.concurrent.ts` (e.g. a `DROP INDEX CONCURRENTLY`) — use a `//` comment there instead of `--`.
 
 ---
@@ -144,7 +154,7 @@ New code must run against the old schema and old code against the new schema dur
 - [ ] **Change a column type** — treat as a rename; `ACCESS EXCLUSIVE` lock + full table rewrite. *(squawk: `changing-column-type`)*
 - [ ] **Add an index** on an existing table — use `pnpm migrate:create <slug> --concurrent`, never a plain `CREATE INDEX` in a normal migration. *(squawk: `require-concurrent-index-creation`, `ban-concurrent-index-creation-in-transaction`)*
 - [ ] **Drop an index** — same: `--concurrent`. *(squawk: `require-concurrent-index-deletion`)*
-- [ ] **Add a constraint** (`CHECK`, FK, unique) on an existing table — `NOT VALID` in this migration, `VALIDATE CONSTRAINT` in a follow-up (full table scan either way, but `VALIDATE` alone doesn't block writes). *(squawk: `constraint-missing-not-valid`, `adding-foreign-key-constraint`)*
+- [ ] **Add or replace a constraint** (`CHECK`, FK) on an existing table — use `--constraint-transition`. Add it `NOT VALID`, validate it in a separately committed statement, then drop an old compatible constraint if required. `VALIDATE` does not block writes. *(squawk: `constraint-missing-not-valid`, `adding-foreign-key-constraint`)*
 - [ ] **Add a foreign key** — safe only if existing data is consistent; verify first.
 - [ ] **Add an enum value** (`ALTER TYPE ... ADD VALUE`) — needs `-- enum-value-checked: <...>`. A faked/rebaselined environment can silently skip it (see [worked example #2](#worked-example-2-the-sandbox_provider-platinum-enum-drift) below).
 - [ ] **Drop a table/column/constraint/unique-index / remove NOT NULL / rename anything** — DESTRUCTIVE; needs `-- mixed-version-safe: <...>`; see below.

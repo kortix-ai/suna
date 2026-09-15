@@ -480,7 +480,14 @@ function ActivityBurstImpl({
     // the `ask` family, and two disclosures in one step means one is silently
     // dropped. Split such a group back into individual part rows.
     return merged.flatMap((step) =>
-      step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
+      step.kind === 'group' &&
+      step.step.parts.some(
+        (part) =>
+          (isToolPart(part) &&
+            part.state.status === 'completed' &&
+            !!part.state.attachments?.length) ||
+          isAnsweredQuestionPart(part),
+      )
         ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
         : [step],
     );

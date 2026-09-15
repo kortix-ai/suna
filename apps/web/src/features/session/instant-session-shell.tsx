@@ -7,11 +7,17 @@ import { createPortal } from 'react-dom';
 import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import {
+  resolveRuntimePromptOverrides,
+  runtimePromptFilesError,
+  runtimePromptOverridesEnabled,
+} from '@/features/session/composer/runtime-prompt-contract';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { resolveProjectSessionRuntimeIdentity } from '@/features/session/session-compaction';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -28,11 +34,12 @@ import {
   useFirstPromptPreviewStore,
   usePendingFilesStore,
 } from '@/stores/session-composer-handoff-store';
-import type { SessionStartStage } from '@kortix/sdk';
+import { isPiWorkerRuntimeMetadata, type SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
   readStartStash,
   startSessionWithPrompt,
+  useProjectSession,
   useRuntimeAgents,
   useSessionPrompts,
   writeStartStash,
@@ -99,6 +106,16 @@ export function InstantSessionShell({
   // waiting row at every boot stage (see below), so there is nothing there to
   // switch on.
   const ready = stage === 'ready';
+  const projectSessionRow = useProjectSession(projectId, sessionId, {
+    enabled: !!projectId && !!sessionId,
+  }).data;
+  const projectSessionRuntimeIdentity = resolveProjectSessionRuntimeIdentity(projectSessionRow);
+  const runtimeAttachmentsAllowed = projectSessionRuntimeIdentity !== 'unknown';
+  const runtimePromptOverridesAllowed = runtimePromptOverridesEnabled({
+    hasProjectSession: true,
+    projectRuntimeIdentity: projectSessionRuntimeIdentity,
+    sandboxIsPiWorker: isPiWorkerRuntimeMetadata(projectSessionRow?.metadata),
+  });
 
   // File-mention clicks come from the same store SessionChat reads. Passing the
   // handler here rather than leaving it undefined keeps the bubble identical
@@ -248,14 +265,31 @@ export function InstantSessionShell({
   const handleSend = useCallback(
     async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if (!text.trim() && !files?.length) return;
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled: runtimeAttachmentsAllowed,
+        attachmentCount: files?.length ?? 0,
+      });
+      if (fileError) {
+        const error = new Error(fileError);
+        errorToast(error.message);
+        throw error;
+      }
+      const promptOverrides = resolveRuntimePromptOverrides({
+        agentEnabled: runtimePromptOverridesAllowed,
+        modelEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimePromptOverridesAllowed,
+        overrideAgent: options.agent,
+        overrideModel: options.model,
+        overrideVariant: options.variant,
+      });
       // Hand the PICKS to the real chat through the stash (it seeds the
       // per-session model/agent stores from them). The prompt itself does not
       // travel this way any more — it becomes a durable inbox row below.
       writeStartStash(sessionId, {
         prompt: '',
-        agent: options.agent ?? null,
-        model: options.model ?? null,
-        variant: options.variant ?? null,
+        agent: promptOverrides.agent ?? null,
+        model: promptOverrides.model ?? null,
+        variant: promptOverrides.variant ?? null,
       });
       // The durable row, POSTed NOW. Attachments ride as data: URLs — there is
       // no sandbox to upload into yet. A SECOND message typed while the first
@@ -273,11 +307,7 @@ export function InstantSessionShell({
         ];
         await startSessionWithPrompt(projectId, sessionId, {
           parts,
-          overrides: {
-            ...(options.agent ? { agent: options.agent } : {}),
-            ...(options.model ? { model: options.model } : {}),
-            ...(options.variant ? { variant: options.variant } : {}),
-          },
+          overrides: promptOverrides,
         });
       } catch (error) {
         errorToast(
@@ -295,7 +325,7 @@ export function InstantSessionShell({
         setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);
       }
     },
-    [sessionId, submitted, projectId, tI18nHardcoded, onSubmit],
+    [projectId, sessionId, submitted, onSubmit, runtimePromptOverridesAllowed, runtimeAttachmentsAllowed, tI18nHardcoded],
   );
 
   const handleCommand = useCallback(
@@ -321,6 +351,9 @@ export function InstantSessionShell({
       draftScope={draftScope}
       prefill={prefill}
       boundAgentName={boundAgentName}
+      modelOverridesEnabled={runtimePromptOverridesAllowed}
+      agentOverridesEnabled={runtimePromptOverridesAllowed}
+      attachmentsEnabled={runtimeAttachmentsAllowed}
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
@@ -443,6 +476,7 @@ export function InstantSessionShell({
       sessionId={sessionId}
       projectId={projectId}
       projectSessionId={sessionId}
+      sandboxIsPiWorker={isPiWorkerRuntimeMetadata(projectSessionRow?.metadata)}
       transient
       // Side-panel content: the boot checklist while still coming up, then the
       // real (empty) Actions view once ready — so an open panel is never stuck on

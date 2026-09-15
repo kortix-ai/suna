@@ -22,8 +22,10 @@ describe('buildFastSandboxDockerfile', () => {
   test('keeps the session-critical runtime and defers heavyweight tool packs', () => {
     const dockerfile = buildFastSandboxDockerfile(DEFAULT_OPTIONS);
 
-expect(dockerfile).toContain('FROM ubuntu:24.04');
+    expect(dockerfile).toContain('FROM ubuntu:24.04');
     expect(dockerfile).toContain('opencode-ai@1.18.23');
+    expect(dockerfile).not.toContain('@openai/codex');
+    expect(dockerfile).not.toContain('@anthropic-ai/claude-code');
     expect(dockerfile).toContain(
       "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );

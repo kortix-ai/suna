@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { applyAgentScopeV2, grantSecretToAgentV2 } from './agent-config-v2';
+import { applyAgentScopeV2, grantSecretToAgentV2, readAgentBlockV2 } from './agent-config-v2';
 
 const manifest = (agents: Record<string, unknown>) => ({
   schemaVersion: 2,
@@ -182,4 +182,9 @@ describe('grantSecretToAgentV2', () => {
     );
     expect(res.ok).toBe(false);
   });
+});
+
+test('v3 agent reads retain the actual manifest version', () => {
+  const result = readAgentBlockV2({ schemaVersion: 3, raw: {kortix_version: 3, agents: {a: {config: {prompt: 'Hello'}}}}, format: 'yaml', path: 'kortix.yaml' }, 'a');
+  expect(result).toMatchObject({ ok: true, schemaVersion: 3, block: {config: {prompt: 'Hello'}} });
 });

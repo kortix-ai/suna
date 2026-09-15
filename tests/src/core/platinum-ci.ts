@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 export const PLATINUM_CI_TEMPLATE_VERSION = 'v14';
@@ -174,6 +174,7 @@ interface PlatinumExecResult {
 interface FileStat {
   ok?: boolean;
   size?: number;
+  mtime?: number;
 }
 
 export interface PlatinumWorkerObserverInput {
@@ -1014,6 +1015,40 @@ async function streamWorker(
   });
 }
 
+export async function downloadPlatinumFile(
+  api: PlatinumApi,
+  sandboxId: string,
+  source: string,
+  target: string,
+): Promise<void> {
+  const before = await stat(api, sandboxId, source);
+  const size = before?.size;
+  if (!before || typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) {
+    throw new Error('Platinum artifact is missing or has an invalid size');
+  }
+  const temporary = `${target}.${randomUUID()}.partial`;
+  const file = await open(temporary, 'wx', 0o600);
+  try {
+    let offset = 0;
+    while (offset < size) {
+      const limit = Math.min(8 * 1024 * 1024, size - offset);
+      const bytes = await api.read(sandboxId, source, offset, limit);
+      if (bytes.length === 0 || bytes.length > limit) throw new Error('Platinum artifact returned an invalid byte range');
+      await file.writeFile(bytes);
+      offset += bytes.length;
+    }
+    const after = await stat(api, sandboxId, source);
+    if (!after || after.size !== size || after.mtime !== before.mtime) {
+      throw new Error('Platinum artifact changed during download');
+    }
+    await file.close();
+    await rename(temporary, target);
+  } finally {
+    await file.close();
+    await rm(temporary, { force: true });
+  }
+}
+
 export async function downloadArtifacts(
   api: PlatinumApi,
   sandboxId: string,
@@ -1022,11 +1057,10 @@ export async function downloadArtifacts(
   if (!(await stat(api, sandboxId, '/workspace/kortix-test-results.tar.gz'))) {
     throw new Error('Platinum worker did not produce the required test-results artifact');
   }
-  const bytes = await api.read(sandboxId, '/workspace/kortix-test-results.tar.gz');
   const outputDir = resolve(root, 'tests/test-results');
   const archive = resolve(outputDir, 'platinum-worker.tar.gz');
   await mkdir(outputDir, { recursive: true });
-  await writeFile(archive, bytes);
+  await downloadPlatinumFile(api, sandboxId, '/workspace/kortix-test-results.tar.gz', archive);
   const extracted = Bun.spawn(['tar', '-xzf', archive, '-C', root], {
     stdin: 'ignore',
     stdout: 'inherit',

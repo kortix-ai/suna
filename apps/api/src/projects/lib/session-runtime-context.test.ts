@@ -7,6 +7,13 @@ import {
 } from './session-runtime-context';
 
 describe('session runtime context boundaries', () => {
+  test('extra env cannot select an agent runtime or claim an existing environment workspace', () => {
+    const base = { KORTIX_WORKLOAD: 'environment', KORTIX_WARM_SEED: '0' };
+    expect(mergeSessionSandboxEnv(base, {
+      KORTIX_WORKLOAD: 'session', KORTIX_WARM_SEED: '1',
+      KORTIX_ENVIRONMENT_REUSE_WORKSPACE: '1',
+    })).toEqual(base);
+  });
   test('serializes one deterministic JSON envelope, never per-key env vars', () => {
     const context = { workspace_id: 'org_123', locale: 'de', licensed: true };
     const serialized = serializeSessionRuntimeContext(context);
@@ -51,6 +58,25 @@ describe('session runtime context boundaries', () => {
     ).toEqual({ KORTIX_SECRET_CAPABILITIES: catalog });
     expect(
       mergeSessionSandboxEnv({}, { KORTIX_SECRET_CAPABILITIES: '{"forged":true}' }),
+    ).toEqual({});
+  });
+
+  test('trusted internal extras cannot shadow or invent the immutable Pi artifact selector', () => {
+    const base = {
+      KORTIX_PI_RUNTIME_REF: 'main',
+      KORTIX_PI_RUNTIME_SHA: 'a'.repeat(40),
+    };
+    expect(
+      mergeSessionSandboxEnv(base, {
+        KORTIX_PI_RUNTIME_REF: 'forged-ref',
+        KORTIX_PI_RUNTIME_SHA: 'b'.repeat(40),
+      }),
+    ).toEqual(base);
+    expect(
+      mergeSessionSandboxEnv({}, {
+        KORTIX_PI_RUNTIME_REF: 'forged-ref',
+        KORTIX_PI_RUNTIME_SHA: 'b'.repeat(40),
+      }),
     ).toEqual({});
   });
 });

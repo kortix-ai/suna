@@ -46,6 +46,12 @@ function makePart(command: string, output: string, description?: string): ToolPa
   } as unknown as ToolPart;
 }
 
+test('running Bash displays progress output before the command completes', () => {
+  const part = { ...makePart('long-job', ''), state: { status: 'running', input: { command: 'long-job' }, metadata: { output: 'PROGRESS_EARLY_RESULT' }, time: { start: 1 } } } as ToolPart;
+  const html = renderToStaticMarkup(withProviders(<ToolRunningContext.Provider value={true}><BashTool part={part} forceOpen /></ToolRunningContext.Provider>));
+  expect(cardText(html)).toContain('PROGRESS_EARLY_RESULT');
+});
+
 /**
  * The settled row's leading words, sliced out of the markup.
  *

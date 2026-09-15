@@ -36,7 +36,8 @@ const EMPTY_AGENTS: Agent[] = [];
  * breakpoint — would have had nothing to render. See `composer-underbar.test.tsx`.
  */
 export interface ComposerUnderbarProps {
-  onAttachClick: () => void;
+  /** Omitted when the runtime accepts text prompt parts only. */
+  onAttachClick?: () => void;
 
   /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
    *  composer.tsx) — this component does no further filtering. */
@@ -128,21 +129,26 @@ export function ComposerUnderbar({
       }
     >
       <div className="flex min-w-0 items-center gap-1">
-        <Hint side="top" label={t('attachFiles')}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-base"
-            onClick={onAttachClick}
-            aria-label={t('attachFiles')}
-            // `hit-area-1` — the same extension the toolbar's send
-            // buttons carry. The visible chip stays 32px; the pressable box
-            // grows to 40, on a mouse as well as on a finger.
-            className="text-muted-foreground hit-area-1 rounded-lg"
+        {onAttachClick && (
+          <Hint
+            side="top"
+            label={t('attachFiles')}
           >
-            <Paperclip className="size-4 shrink-0" />
-          </Button>
-        </Hint>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-base"
+              onClick={onAttachClick}
+              aria-label={t('attachFiles')}
+              // `hit-area-1` — the same extension the toolbar's send
+              // buttons carry. The visible chip stays 32px; the pressable box
+              // grows to 40, on a mouse as well as on a finger.
+              className="text-muted-foreground hit-area-1 rounded-lg"
+            >
+              <Paperclip className="size-4 shrink-0" />
+            </Button>
+          </Hint>
+        )}
 
         <AgentSelector
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}

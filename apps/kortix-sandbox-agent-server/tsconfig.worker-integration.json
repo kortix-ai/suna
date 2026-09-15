@@ -1,0 +1,11 @@
+{
+  "extends": "../kortix-worker/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["../kortix-worker/node_modules/@types"],
+    "paths": {
+      "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
+      "ws": ["./node_modules/@types/ws/index.d.mts"]
+    }
+  },
+  "include": ["src/__tests__/env-rpc-worker-integration.test.ts"]
+}

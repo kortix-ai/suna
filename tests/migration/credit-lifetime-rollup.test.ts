@@ -21,7 +21,7 @@ function psql(sql: string): string {
 }
 
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 function newAccount(): string {

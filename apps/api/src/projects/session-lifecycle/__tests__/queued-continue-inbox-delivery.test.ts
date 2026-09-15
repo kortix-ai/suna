@@ -18,9 +18,9 @@
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import type { SessionLifecycleCommandRow } from '../store';
+import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes, sessionWorkerLog } from '@kortix/db';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import type { SessionLifecycleCommandRow } from '../store';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -45,7 +45,7 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  * `WIRE_ID_BACKDATE_MS` and so the case where the mint is LIFTED above the
  * transcript rather than merely clocked past it.
  */
-const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
+const OPENCODE_MINTED_ID = `msg_${((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}AbCdEfGhIjKlMn`;
 
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
@@ -56,6 +56,8 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 /** The newest id the inbox's OWN rows say this session has already delivered,
  *  as `readDeliveredWireIdFloor` reads it back. Null = nothing delivered yet. */
 let deliveredFloor: bigint | null = null;
+let rewoundFloor: string | null = null;
+let rewoundFloorUnavailable = false;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let capturedKeys: string[] = [];
@@ -124,6 +126,10 @@ mock.module('../../../shared/db', () => ({
         where: () => {
           const limit = async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === sessionWorkerLog) {
+              if (rewoundFloorUnavailable) throw new Error('history storage unavailable');
+              return [{ floor: rewoundFloor }];
+            }
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
             // The aggregate `readDeliveredWireIdFloor` runs: always one row,
@@ -361,7 +367,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 
 mock.module('../runtime-prompt-file', () => ({
@@ -449,6 +455,8 @@ beforeEach(() => {
   };
   boxRow = null;
   deliveredFloor = null;
+  rewoundFloor = null;
+  rewoundFloorUnavailable = false;
   transcript = [];
   capturedBodies = [];
   capturedKeys = [];
@@ -491,6 +499,28 @@ beforeEach(() => {
     }
     return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
   }) as typeof fetch;
+});
+
+test.each(['assistant', 'user'])('a fresh replacement prompt clears IDs reserved by hidden Pi history before its first delivery with a visible %s', async (role) => {
+  rewoundFloor = OPENCODE_MINTED_ID;
+  transcript = [{ info: { id: NEWER_TRANSCRIPT_ID, role } }];
+  const outcome = await executeQueuedContinue(baseRow());
+  expect(outcome).toBe('succeeded');
+  expect(capturedBodies).toHaveLength(1);
+  const delivered = capturedBodies[0]!.messageID as string;
+  expect(wireIdTime(delivered)! > wireIdTime(OPENCODE_MINTED_ID)!).toBe(true);
+  expect(persistedWireIds()).toContain(delivered);
+  expect(forwardedCalls[0]?.wireMessageId).toBe(delivered);
+});
+
+test('history floor failure returns the claimed prompt to a retryable state before forwarding', async () => {
+  rewoundFloorUnavailable = true;
+  expect(await executeQueuedContinue(baseRow())).toBe('failed');
+  expect(capturedBodies).toHaveLength(0);
+  expect(failedCalls).toEqual([expect.objectContaining({
+    message: 'history placement unavailable: history storage unavailable',
+    options: expect.objectContaining({ retryable: true }),
+  })]);
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
@@ -1105,8 +1135,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const sent = capturedBodies[0].messageID as string;
     // An id OpenCode minted 60s ago, the way OpenCode mints one: a raw
     // `Date.now()` scaled into the id clock, with no backdate.
-    const openCodeId =
-      (BigInt(NOW_MS - 60_000) * BigInt(0x1000)) & BigInt(0xffffffffffff);
+    const openCodeId = (BigInt(NOW_MS - 60_000) * BigInt(0x1000)) & BigInt(0xffffffffffff);
     expect(wireIdTime(sent)!).toBeGreaterThan(openCodeId);
   });
 

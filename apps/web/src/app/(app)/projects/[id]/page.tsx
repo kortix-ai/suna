@@ -1,6 +1,10 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import {
+  resolveRuntimePromptOverrides,
+  runtimePromptFilesError,
+} from '@/features/session/composer/runtime-prompt-contract';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { stageFirstPromptAttachments } from '@/features/session/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
@@ -45,6 +49,8 @@ export default function ProjectIndexPage() {
     enabled: !!projectId,
     ...contract('config'),
   });
+  const runtimePromptOverridesAllowed =
+    projectDetail != null && projectDetail.project.experimental?.pi_worker !== true;
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
@@ -96,6 +102,24 @@ export default function ProjectIndexPage() {
   const handleSend = useCallback(
     async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
       if (!text.trim() && !files?.length) return;
+      const fileError = runtimePromptFilesError({
+        attachmentsEnabled: projectDetail != null,
+        attachmentCount: files?.length ?? 0,
+      });
+      if (fileError) {
+        errorToast(fileError);
+        return;
+      }
+      const promptOverrides = resolveRuntimePromptOverrides({
+        // The selected creation agent is the worker's compiled agent, so the
+        // first prompt may name it. Existing Pi sessions omit agent overrides.
+        agentEnabled: true,
+        modelEnabled: runtimePromptOverridesAllowed,
+        variantEnabled: runtimePromptOverridesAllowed,
+        overrideAgent: options?.agent,
+        overrideModel: options?.model,
+        overrideVariant: options?.variant,
+      });
 
       if (isBillingEnabled() && billingLoading) return;
 
@@ -139,9 +163,9 @@ export default function ProjectIndexPage() {
           ...buildNewSessionCreateInput(options),
           pending_prompt: {
             text,
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
+            agent: promptOverrides.agent ?? null,
+            model: promptOverrides.model ?? null,
+            variant: promptOverrides.variant ?? null,
             attachment_names:
               files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
             ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
@@ -165,9 +189,9 @@ export default function ProjectIndexPage() {
           // message.
           writeStartStash(sessionId, {
             prompt: '',
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
+            agent: promptOverrides.agent ?? null,
+            model: promptOverrides.model ?? null,
+            variant: promptOverrides.variant ?? null,
           });
           // RENDER-only copy for the boot shell, so the bubble is on screen
           // from the session page's first frame — see `useFirstPromptPreviewStore`.
@@ -175,7 +199,16 @@ export default function ProjectIndexPage() {
         },
       });
     },
-    [billingLoading, accountState, newSession, openUpgradeDialog, projectAccountId, tI18nComplete],
+    [
+      billingLoading,
+      accountState,
+      projectAccountId,
+      projectDetail,
+      openUpgradeDialog,
+      newSession,
+      runtimePromptOverridesAllowed,
+      tI18nComplete,
+    ],
   );
 
   return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;

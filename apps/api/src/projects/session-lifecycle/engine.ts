@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   connectorCalls,
   projectSessions,
@@ -7,80 +8,52 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { type SQL, and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
-import { mayRequeueFailedCreate } from './requeue-policy';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
-import {
-  parseRuntimeAgentNames,
-  resolveDeliverableAgent,
-  runtimeAgentRoster,
-} from './agent-availability';
-import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { serviceKeyForExternalId } from '../../platform/service-key';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
+import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
+import { db } from '../../shared/db';
 import {
   currentInstanceId,
   sandboxBelongsToThisInstance,
   sandboxInstanceId,
 } from '../instance-scope';
-import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
-import { db } from '../../shared/db';
-import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
+import { syncSessionRuntimesEnvForPrompt } from '../lib/sandbox-env-sync';
+import { readRewoundMessageFloor } from '../lib/session-history';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
-import { secretsAllowlistPayloadConflicts } from '../secrets';
-import {
-  requireConnectorsConflicts,
-  runtimeContextConflicts,
-} from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
-import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
-import { applyTriggerSessionAccess } from '../trigger-session-access';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { openSession } from '../routes/shared';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
+import { applyTriggerSessionAccess } from '../trigger-session-access';
+import {
+  MAX_WIRE_ID_CLOCK_CORRECTION,
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  newestWireIdTime,
+  wireIdTime,
+} from '../wire-message-id';
 import { resolveProjectAutomationActor } from './actor';
+import {
+  parseRuntimeAgentNames,
+  resolveDeliverableAgent,
+  runtimeAgentRoster,
+} from './agent-availability';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import * as lifecycleStore from './store';
-import {
-  MAX_RUNTIME_UNREACHABLE_RETRIES,
-  type SessionLifecycleCommandRow,
-  claimCreateSessionCommand,
-  claimDueLifecycleCommands,
-  enqueueContinueSessionCommand,
-  markCommandFailed,
-  parkPromptForUnreachableRuntime,
-  markCommandForwarded,
-  markCommandQueued,
-  requeueUnlandedPrompt,
-  markCommandSucceeded,
-  requeueForAdmission,
-  resultFromExistingCommand,
-  withNextDeliveryAttempt,
-  withRemintedWireId,
-} from './store';
-import type {
-  PromptOverridesWire,
-  PromptPartWire,
-  QueuedContinueSessionPayload,
-} from './store';
-import {
-  INBOX_ORDER_BACKOFF_MS,
-  admitInboxPrompt,
-  sessionHoldsLiveTurn,
-} from './inbox-admission';
-import { claimDueSessionInboxSiblings } from './inbox-rows';
-import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -90,15 +63,32 @@ import {
   parsePlacementTip,
   strandedPlacement,
 } from './forwarded-placement';
-import {
-  MAX_WIRE_ID_CLOCK_CORRECTION,
-  WIRE_ID_TIME_MASK,
-  WIRE_ID_TIME_SCALE,
-  mintWireMessageId,
-  newestWireIdTime,
-  wireIdTime,
-} from '../wire-message-id';
+import { requireConnectorsConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
+import { INBOX_ORDER_BACKOFF_MS, admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
+import { claimDueSessionInboxSiblings } from './inbox-rows';
+import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
+import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
+import { mayRequeueFailedCreate } from './requeue-policy';
+import {
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
+  type SessionLifecycleCommandRow,
+  claimCreateSessionCommand,
+  claimDueLifecycleCommands,
+  enqueueContinueSessionCommand,
+  markCommandFailed,
+  markCommandForwarded,
+  markCommandQueued,
+  markCommandSucceeded,
+  parkPromptForUnreachableRuntime,
+  promoteNextInboxRow,
+  requeueUnlandedPrompt,
+  requeueForAdmission,
+  resultFromExistingCommand,
+  withNextDeliveryAttempt,
+  withRemintedWireId,
+} from './store';
+import type { PromptOverridesWire, PromptPartWire, QueuedContinueSessionPayload } from './store';
 import {
   repairLegacyInlineAttachments,
   type LegacyRuntimeMessage,
@@ -680,7 +670,7 @@ export async function continueSession(
         resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' }),
       ]);
       if (!serviceKey) throw new Error('sandbox service key is unavailable');
-      await syncSandboxEnvForPrompt({
+      await syncSessionRuntimesEnvForPrompt({
         projectId: session.projectId,
         sessionId,
         externalId,
@@ -743,7 +733,13 @@ export async function drainSessionLifecycleQueue(
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
-): Promise<{ claimed: number; succeeded: number; failed: number; queued: number; released: number }> {
+): Promise<{
+  claimed: number;
+  succeeded: number;
+  failed: number;
+  queued: number;
+  released: number;
+}> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   // COALESCE a burst before claiming. A targeted kick fires per POST, and the
   // composer sends a burst's POSTs concurrently — their arrival order is the
@@ -1169,9 +1165,7 @@ async function readInboxTranscriptState(
  * at all. Bounding the scan to it keeps a long-lived session's row history out
  * of every re-mint, and the two cannot drift apart.
  */
-const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
-  MAX_WIRE_ID_CLOCK_CORRECTION / WIRE_ID_TIME_SCALE,
-);
+const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(MAX_WIRE_ID_CLOCK_CORRECTION / WIRE_ID_TIME_SCALE);
 
 /**
  * The newest wire id THIS SESSION has already put on the wire, read from our
@@ -1184,9 +1178,7 @@ const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
  * Fails OPEN (`null`), like every other read on this path: a floor that cannot
  * be read must not block a prompt, and the transcript floor still applies.
  */
-async function readDeliveredWireIdFloor(
-  row: SessionLifecycleCommandRow,
-): Promise<bigint | null> {
+async function readDeliveredWireIdFloor(row: SessionLifecycleCommandRow): Promise<bigint | null> {
   if (!row.sessionId) return null;
   // `substr(id, 5, 12)` skips the `msg_` prefix. `lpad` to 16 hex chars makes
   // the value a legal `bit(64)`, which is the only width with a bigint cast.
@@ -1265,13 +1257,16 @@ async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
+  rewoundFloor: bigint | null = null,
 ): Promise<string> {
   const submitted = wireIdTime(payload.wireMessageId ?? '');
-  const floor = transcript.read
+  const visibleFloor = transcript.read
     ? transcript.newest
     : // OpenCode's own minting rule, so an id it wrote a second ago is still
       // beaten: `Date.now()` scaled into the id clock, with no backdate.
       (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  const floor = rewoundFloor !== null && (visibleFloor === null || rewoundFloor > visibleFloor)
+    ? rewoundFloor : visibleFloor;
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
   // mid-turn user message ~4s after the POST (measured against a real sandbox
   // in `integration-inbox-midturn-forward.test.ts`), and two prompts sent
@@ -1359,7 +1354,8 @@ async function verifyLivePlacement(
 ): Promise<{ stranded: boolean; strandedBy: string | null; newest: bigint | null }> {
   const ackAtMs = Date.now();
   const transcript = await readInboxTranscriptState(row, [wireMessageId]);
-  if (!transcript.read || !transcript.tip) return { stranded: false, strandedBy: null, newest: null };
+  if (!transcript.read || !transcript.tip)
+    return { stranded: false, strandedBy: null, newest: null };
   const verdict = strandedPlacement(transcript.tip, wireMessageId);
   if (row.sessionId && verdict.createdMs !== null && verdict.createdMs >= postedAtMs - 60_000) {
     // The box stamped `created` somewhere between our POST and its ack; the
@@ -1690,10 +1686,22 @@ export async function executeQueuedContinue(
   // reason to re-mint, for the same reason a redelivery is: OpenCode already
   // holds a message under the previous id.
   const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
-  // Asked only when nothing else has already decided to re-mint, and only for a
-  // row that HAS a client id to be wrong about: an automation prompt carries
-  // none, and every id-less producer would pay for this read for nothing.
-  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
+  // Rewind hides messages but preserves their allocated IDs in the Pi journal.
+  // Place a replacement above those IDs before its first delivery.
+  let rewoundFloor: bigint | null = null;
+  if (payload.wireMessageId) {
+    try {
+      rewoundFloor = await readRewoundMessageFloor(db, row.sessionId);
+    } catch (error) {
+      await markCommandFailed(row.commandId, `history placement unavailable: ${error instanceof Error ? error.message : String(error)}`, {
+        retryable: true, attempts: row.attempts, sessionId: row.sessionId,
+      });
+      return 'failed';
+    }
+  }
+  const submittedClock = wireIdTime(payload.wireMessageId ?? '');
+  const needsHistoryPlacement = rewoundFloor !== null && (submittedClock === null || submittedClock <= rewoundFloor);
+  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited || needsHistoryPlacement;
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
     try {
@@ -1763,6 +1771,7 @@ export async function executeQueuedContinue(
     // first. Only a first delivery may do this: a re-POST's original id may
     // already be persisted.
     if (
+      !needsHistoryPlacement &&
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
       payload.wireMessageId &&
@@ -1774,7 +1783,7 @@ export async function executeQueuedContinue(
       underPlaced = true;
       tl.mark('under-placed');
     } else {
-      wireMessageId = await remintWireMessageId(row, payload, transcript);
+      wireMessageId = await remintWireMessageId(row, payload, transcript, rewoundFloor);
       tl.mark('remint');
     }
   }
@@ -1914,14 +1923,17 @@ export async function executeQueuedContinue(
       }
       const replaced = await remintForRepair(row, proof.newest);
       attempt += 1;
-      logger.warn('[session-lifecycle] forwarded prompt landed below a newer assistant — re-placed', {
-        session_id: row.sessionId,
-        command_id: row.commandId,
-        stranded_wire_id: wireMessageId,
-        stranded_by: proof.strandedBy,
-        replaced_wire_id: replaced,
-        round: round + 1,
-      });
+      logger.warn(
+        '[session-lifecycle] forwarded prompt landed below a newer assistant — re-placed',
+        {
+          session_id: row.sessionId,
+          command_id: row.commandId,
+          stranded_wire_id: wireMessageId,
+          stranded_by: proof.strandedBy,
+          replaced_wire_id: replaced,
+          round: round + 1,
+        },
+      );
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {

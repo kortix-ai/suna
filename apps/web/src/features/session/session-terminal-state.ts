@@ -50,6 +50,7 @@ export function isDormantSessionWithoutRuntime(state: SessionTerminalState): boo
 
 /** The subset of `fatal`'s inputs this decision needs. */
 export interface StoppedSandboxCacheState {
+  stage?: string | null;
   /** `sandbox.status` from the route's `fatal` gate — only `'stopped'`/`'error'` matter here. */
   sandboxStatus: string | null | undefined;
   /**
@@ -78,12 +79,15 @@ export interface StoppedSandboxCacheState {
  * Only the READ path is freed here; SENDING still waits on the runtime,
  * unchanged.
  *
- * A sandbox status outside `'stopped'`/`'error'` — or no cached content —
- * returns `false`: the terminal card stays exactly as it was, byte for byte.
+ * A stopped session can have no sandbox row. Its saved transcript remains
+ * readable. Without cached content, the terminal card remains available.
  */
 export function canRenderCachedTranscriptWhileSandboxDown(
   state: StoppedSandboxCacheState,
 ): boolean {
-  const sandboxIsDown = state.sandboxStatus === 'stopped' || state.sandboxStatus === 'error';
+  const sandboxIsDown =
+    state.sandboxStatus === 'stopped' ||
+    state.sandboxStatus === 'error' ||
+    (state.sandboxStatus == null && state.stage === 'stopped');
   return sandboxIsDown && state.hasCachedContent;
 }

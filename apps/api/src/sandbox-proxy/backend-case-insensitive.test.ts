@@ -46,6 +46,7 @@ mock.module('../shared/db', () => ({
   db: {
     select: () => ({
       from: () => ({
+        leftJoin() { return this; },
         where: () => ({
           orderBy: () => ({
             limit: async () => {

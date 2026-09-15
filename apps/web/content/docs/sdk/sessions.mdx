@@ -3,7 +3,8 @@ title: Sessions
 description: Run a session, stream its events, and handle the errors it can throw.
 ---
 
-A session is one agent run, in its own sandbox, on its own git branch.
+A session is one agent run on its own git branch. Most sessions use one
+sandbox. A Pi session separates the agent harness from its workspace compute.
 `kortix.session(projectId, sessionId)` returns the handle for everything a
 session does: start it, send prompts, stream events, and read status. This
 page covers the handle, the readiness handshake, streaming, and the typed
@@ -13,8 +14,9 @@ errors an SDK call can throw.
 const s = kortix.session(projectId, sessionId);
 ```
 
-`s` is the handle for everything a session does. The session ID, the sandbox
-ID, and the branch name are the same value. See
+`s` is the handle for everything a session does. The session ID is stable.
+Provider sandbox IDs are runtime implementation details and can differ from the
+session ID. See
 [Sessions](/docs/work/sessions) for the concept.
 
 ## Session lifecycle
@@ -24,6 +26,10 @@ ID, and the branch name are the same value. See
 | `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
+| `s.ensureWorkspaceReady(opts?)` | `POST …/sessions/:sid/environment/ensure` for Pi | Lazily resolves the runtime that owns files, PTYs, and ports |
+| `s.environment.get()` | `GET …/sessions/:sid/environment` | Reads the Pi workspace runtime state |
+| `s.environment.ensure()` | `POST …/sessions/:sid/environment/ensure` | Provisions or resumes the Pi workspace runtime |
+| `s.environment.stop()` | `POST …/sessions/:sid/environment/stop` | Stops the Pi workspace runtime without stopping the agent harness |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
 | `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
 | `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
@@ -63,8 +69,8 @@ Three more read methods round out the handle:
 
 ## Readiness is a handshake
 
-Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
-needed, waits for the runtime to boot, and returns the resolved runtime.
+Before you send a prompt, call `ensureReady()`. It provisions the control
+runtime if needed, waits for it to boot, and returns the resolved runtime.
 
 ```ts
 const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
@@ -75,6 +81,25 @@ On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
 retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
+
+### Pi control and workspace runtimes
+
+A Pi session uses two runtime addresses:
+
+- The control runtime owns Pi, the model loop, messages, and the event stream.
+- The workspace runtime owns the repository, files, PTYs, and user ports.
+
+The workspace runtime starts only when it is needed:
+
+```ts
+const workspace = await s.ensureWorkspaceReady();
+console.log(workspace.workspaceSandboxId, workspace.workspaceRuntimeUrl);
+await s.files.read('/workspace/package.json');
+```
+
+Every `s.files` method calls `ensureWorkspaceReady()` automatically. Concurrent
+calls share one environment start. Non-Pi sessions return the control runtime
+from `ensureWorkspaceReady()` and do not create a second sandbox.
 
 ### Seed a server-authorized OpenCode pin
 
@@ -112,6 +137,44 @@ For OpenCode REST sessions, the first `send()` on a handle reads the model and
 agent persisted on the Kortix session. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults.
 
+Pi sessions keep their compiled agent and use their saved model for new prompts. They do not inject the stored
+OpenCode defaults. Set a per-prompt reasoning effort with
+`await s.send('Review the change', { variant: 'high' })`. The Pi worker validates
+the effort for its selected model and preserves it during question recovery.
+Omit `variant` to use the compiled default. The React model-selection hook reads
+reasoning choices from the pinned worker config. The composer offers those
+choices after runtime readiness. Selections persist per session and model;
+Auto clears the override. Older workers without this projection hide the control.
+
+Use `format` to request validated JSON for one prompt:
+
+```ts
+const response = await s.send('Return the answer to 6 × 7', {
+  format: {
+    type: 'json_schema',
+    schema: {
+      type: 'object',
+      properties: { answer: { type: 'integer' } },
+      required: ['answer'],
+      additionalProperties: false,
+    },
+    retryCount: 2,
+  },
+});
+if (response.data?.info.error) throw new Error(response.data.info.error.name);
+console.log(response.data?.info.structured);
+```
+
+Pi saves the schema and validated result with the conversation. Invalid schemas
+return `400` before model execution. Validation defaults to two retries.
+Exhaustion returns `StructuredOutputError`. The format applies to this prompt
+only; omit it or pass `{ type: 'text' }` for the next text response.
+
+`useSession().sendParts()` and `useSession().runCommand()` preserve reasoning
+options while omitting stale Pi model and agent selections. A slash command
+uses its request variant, then its compiled command variant, then the agent
+default. Each override lasts for that turn only.
+
 Prompt choice precedence is:
 
 1. The `send()` call.
@@ -123,13 +186,27 @@ handle. To **persist** a new model for a running session server-side, use
 `changeModel`:
 
 ```ts
-const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
+const result = await s.changeModel('kortix/gpt-5.6-luna');
 ```
 
-Restarting the runtime is how the change takes effect, so an in-flight turn ends.
-`applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner, or a caller with project-manager
-permissions, may change the model; anyone else gets `403`.
+For Pi, the response contains `applies_to: 'next_prompt'`. Each accepted prompt
+stores its model and capabilities. Active turns, queued prompts, and turns
+waiting for a question or permission retain that selection through worker replacement.
+The next prompt uses the new model. The worker does not restart, and the compiled
+agent, source SHA, tools, lifecycle hooks, resources and permissions remain unchanged.
+The API validates model access and capability limits before saving the selection.
+A worker unable to read this configuration rejects a new prompt with 503 before admission.
+An older live worker returns `409 SESSION_MODEL_FIXED_AT_START`; stop and resume it
+with the current worker before changing its model.
+
+OpenCode keeps its existing restart behavior. `applied_live` reports whether that
+restart succeeded. Check `push_failed` before reporting success. Only the session
+owner or a project manager can change the model. Other callers receive 403.
+
+React hosts can use `useSession(projectId, sessionId).changeModel(model)`.
+`useSessionModelSelection({ projectSessionId, ...options }).model.change(modelKey)`
+also refreshes the session row and runtime capability display. `projectSessionId`
+is the Kortix session ID, not the native conversation ID.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.
@@ -200,12 +277,15 @@ call `ensureReady()`.
 
 ```ts
 const { ok, health } = await s.health();
+await s.ensureWorkspaceReady();
 const url = s.previewUrl(3000, '/docs');
 ```
 
 `s.health()` never throws. Call it any time, even before the session has a
-runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
-`s.ensureReady()` first, or they throw `SessionNotReadyError`. See
+runtime. `s.previewUrl()` and `s.proxyUrl()` target the workspace when it is
+resolved. Call `s.ensureWorkspaceReady()` first for a Pi session. Call
+`s.ensureReady()` first for a one-box session. Otherwise they throw
+`SessionNotReadyError`. See
 [Session readiness errors](#session-readiness-errors).
 
 ## Streaming
@@ -539,3 +619,50 @@ if (s.sendError?.kind === 'billing') {
 ```
 
 See [React hooks](/docs/sdk/react) for the rest of `useSession`.
+
+## Immutable attachments
+
+Upload immutable conversation assets without starting either sandbox:
+
+Documents use `session.attachments.file(bytes, { contentType, filename })`.
+Pass the returned part to `session.send(text, { files: [part] })`.
+Uploads and chat downloads require no sandbox. File tools create an editable
+copy in the environment. The original stays in PostgreSQL. Worker replacement
+preserves workspace edits; environment replacement restores the original.
+Files are limited to 8 MiB each and 16 files / 16 MiB per prompt.
+
+```ts
+const attachment = await session.attachments.put(bytes, { contentType: 'image/png' })
+const stored = await session.attachments.get(attachment.sha256)
+```
+
+Uploads accept 1 byte through 8 MiB. The SDK verifies downloaded bytes against
+their SHA-256. Retries preserve the original bytes and MIME type. The API rejects
+a MIME change with `409`. Access uses the session's project permissions; worker
+credentials can access only their own session. Deleting the session removes
+access to its attachments.
+
+To submit a Pi image, create its immutable reference and pass it to `send`:
+
+```ts
+const image = await session.attachments.image(bytes, {
+  contentType: 'image/png', filename: 'screenshot.png',
+})
+await session.send('Describe this image.', { files: [image] })
+```
+
+Pi supports PNG, JPEG, GIF, and WebP on image-capable models. Each prompt accepts
+up to 16 images and 16 MiB total. Images load from the same session's storage;
+arbitrary remote URLs and filesystem URLs are rejected. Worker replacement
+preserves the image references and downloads their verified bytes again.
+
+User images and native tool-result images use the same durable store. Display
+parts contain `/projects/<projectId>/sessions/<sessionId>/attachments/<sha256>`.
+Use `fetchAttachmentPart(part.url)` to load them with authentication through the
+configured API. These paths work while both sandboxes are stopped. Legacy
+`/kortix/part/...` paths still require a runtime; Pi upgrades them during replay.
+
+Stopped transcript mirrors preserve image references for their own project and
+session. The running-session composer enables native uploads when its worker
+advertises image support. Ordinary documents retain the environment upload path;
+their original bytes are not protected against environment deletion.

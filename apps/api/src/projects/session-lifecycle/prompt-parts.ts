@@ -30,7 +30,7 @@ export type SanitizedPromptParts = { parts: PromptPartWire[] } | { error: string
 
 /** Repair-and-cap. Returns `{error}` instead of throwing so both HTTP callers
  *  can map it straight onto a 400. */
-export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptParts {
+export function sanitizeInboxPromptParts(rawParts: unknown[], options: { allowSessionAttachments?: boolean } = {}): SanitizedPromptParts {
   if (rawParts.length < 1 || rawParts.length > PROMPT_MAX_PARTS) {
     return { error: `parts must hold 1..${PROMPT_MAX_PARTS} entries` };
   }
@@ -51,7 +51,7 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     return { error: 'parts must carry text' };
   }
   for (const part of parts as PromptPartWire[]) {
-    const error = validateFilePart(part);
+    const error = validateFilePart(part, options.allowSessionAttachments === true);
     if (error) return { error };
   }
   let bytes = 0;
@@ -66,12 +66,13 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
   return { parts: parts as PromptPartWire[] };
 }
 
-function validateFilePart(part: PromptPartWire): string | null {
+function validateFilePart(part: PromptPartWire, allowSessionAttachments: boolean): string | null {
   if (part.type !== 'file') return null;
   const filename = part.filename?.trim() || 'File';
   const mime = part.mime?.trim();
   const url = part.url?.trim();
   if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
+  if (allowSessionAttachments && /^kortix-attachment:sha256:[a-f0-9]{64}$/.test(url)) return null;
   const staged = url.toLowerCase().startsWith('data:');
   // A native file may arrive as a remote URL (already in the box) or staged
   // as a data: URL. A staged one is parsed HERE: past the inline budget the

@@ -1,9 +1,11 @@
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import type {
   ProjectSessionSandbox,
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { type SQL, and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -15,6 +17,7 @@ import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { db } from '../../shared/db';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -22,11 +25,17 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
+  sessionMetadataClaimsPiWorker,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  buildPiWorkerSessionSandboxEnvVars,
+  buildSessionSandboxEnvVars,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import {
   RUNTIME_IDENTITY_UNAVAILABLE,
@@ -115,6 +124,8 @@ export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
   'runtimeWakeCleanupUntilAt',
   'runtimeWakeLateStartStoppedAt',
   'runtimeWakeProgressAt',
+  'sessionRuntimeBootstrapFor',
+  'sessionRuntimeBootstrapAt',
   ...RUNTIME_READINESS_CLOCK_KEYS,
 ] as const;
 
@@ -284,6 +295,7 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      invalidateSandbox(externalId);
       // The provider had this box STOPPED: whatever turn was still open on it
       // is over. Normally applyStoppedState settled those rows already and
       // this finds nothing; it is the guard for a row that reached `stopped`
@@ -306,6 +318,11 @@ export async function resumeStoppedSandbox(
       await markComputeSessionAlive(row.sandboxId, confirmedAt).catch((err) =>
         console.warn(`[projects] compute liveness stamp failed for ${row.sandboxId}:`, err),
       );
+      if (sessionMetadataClaimsPiWorker(row.metadata) && provider.ensureSessionRuntimeStarted) {
+        await provider.ensureSessionRuntimeStarted(externalId).catch((err) => {
+          console.warn(`[projects] Pi process bootstrap after wake failed for ${row.sandboxId}:`, err);
+        });
+      }
       // A resume wakes the SAME powered-down VM, so the daemon's boot-time
       // reconcile never re-runs and the box keeps the `kortix` binary its image
       // was built with. Poke the daemon to re-converge on this deploy's runtime
@@ -411,11 +428,16 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
       externalId: sessionSandboxes.externalId,
       status: sessionSandboxes.status,
       metadata: sessionSandboxes.metadata,
+      sessionMetadata: projectSessions.metadata,
     })
     .from(sessionSandboxes)
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row || row.status !== 'stopped' || !row.externalId) return false;
+  // Background POST /log is a proxy mutation, not authority to resume Pi.
+  // Explicit /start uses resumeStoppedSandbox directly.
+  if (sessionMetadataClaimsPiWorker(row.sessionMetadata)) return false;
   return resumeStoppedSandbox({
     sandboxId: row.sandboxId,
     sessionId: row.sessionId,
@@ -436,17 +458,63 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
-): Promise<void> {
+): Promise<SessionStartResult | null> {
   const providerName = session.sandboxProvider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
-  if (sandboxCallbackUnreachableReason()) return;
+  const piWorkerClaimed = sessionMetadataClaimsPiWorker(session.metadata);
+  const piWorkerIdentity = await ensurePiWorkerIdentity({ projectId, sessionId, metadata: session.metadata });
+  if (
+    (piWorkerClaimed && !piWorkerIdentity) ||
+    (piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName))
+  ) {
+    const message =
+      piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName)
+        ? 'The persisted Pi runtime provider does not match its Daytona runtime.'
+        : 'The persisted Pi runtime identity is incomplete. Start a new session.';
+    await db
+      .update(projectSessions)
+      .set({ status: 'failed', error: message, updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, sessionId));
+    return {
+      stage: 'failed',
+      agent_name: session.agentName ?? 'default',
+      retriable: false,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'pi_runtime_identity_invalid',
+      failure: {
+        category: 'sandbox-provider',
+        message,
+        retryable: false,
+      },
+    };
+  }
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return null;
+  if (sandboxCallbackUnreachableReason()) return null;
   await db
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
-  const runtimeMetadata = { opened_at: new Date().toISOString() };
+  const sandboxSlug = sandboxSlugFromSessionMetadata(session.metadata);
+  const piWorkerModel =
+    piWorkerIdentity &&
+    session.metadata?.opencode_model_source === 'explicit' &&
+    opencodeModel
+      ? opencodeModel.replace(/^kortix\//, '')
+      : null;
+  const runtimeMetadata = {
+    opened_at: new Date().toISOString(),
+    ...(piWorkerIdentity
+      ? {
+          sandbox_slug: PI_WORKER_SANDBOX_SLUG,
+          pi_worker_boot: true,
+          pi_worker_ref: piWorkerIdentity.ref,
+          pi_worker_sha: piWorkerIdentity.sha,
+          runtimeArtifact: null,
+        }
+      : {}),
+  };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
 
@@ -459,29 +527,40 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
-    allowProjectImage: projectImageAllowedForSession(
-      session.agentName,
-      workspaceModeFromSessionMetadata(session.metadata),
-    ),
-    sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
+    allowProjectImage:
+      !piWorkerIdentity &&
+      projectImageAllowedForSession(
+        session.agentName,
+        workspaceModeFromSessionMetadata(session.metadata),
+      ),
+    sandboxSlug,
     runtimeMetadata,
     sessionMetadata,
     buildEnvVars: () =>
-      buildSessionSandboxEnvVars({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        userId: loaded.userId,
-        repoUrl: loaded.row.repoUrl,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-        opencodeModel,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-        workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
-        restoreSessionBranch: true,
-      }),
+      piWorkerIdentity
+        ? buildPiWorkerSessionSandboxEnvVars({
+            projectId,
+            sessionId,
+            agentName: session.agentName ?? 'default',
+            runtimeRef: piWorkerIdentity.ref,
+            runtimeSha: piWorkerIdentity.sha,
+            opencodeModel: piWorkerModel,
+          })
+        : buildSessionSandboxEnvVars({
+            accountId: loaded.row.accountId,
+            projectId,
+            sessionId,
+            userId: loaded.userId,
+            repoUrl: loaded.row.repoUrl,
+            baseRef: session.baseRef ?? loaded.row.defaultBranch,
+            agentName: session.agentName ?? 'default',
+            opencodeModel,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
+            llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+            workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+            restoreSessionBranch: true,
+          }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
     beforeActive: rehydrate
       ? (externalId) =>
@@ -493,6 +572,7 @@ export async function allocateRuntimeOnOpen(
           })
       : undefined,
   });
+  return null;
 }
 
 // ── Unified session-open orchestration ──────────────────────────────────────
@@ -535,6 +615,29 @@ const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 // minutes of repeated 8-second /start long-polls. Once the daemon answers, give
 // OpenCode itself a wider window to finish booting.
 const STALE_RUNTIME_UNREACHABLE_MS = 30_000;
+
+/**
+ * Decide whether a stalled wake should try starting the runtime PROCESS.
+ *
+ * Pure so the rule is testable without a provider. `attemptedForExternalId` is
+ * the guard that makes this one-shot per box-run: the recovery is only ever
+ * worth one attempt, and repeating it every poll would hammer the toolbox for
+ * a box whose runtime is broken for some other reason.
+ */
+export function shouldBootstrapSessionRuntime(input: {
+  reason: 'not_ready' | 'unreachable';
+  externalId: string;
+  attemptedForExternalId: unknown;
+  providerSupportsBootstrap: boolean;
+}): boolean {
+  // `not_ready` means the daemon ANSWERED and is still booting — a process is
+  // clearly running, so starting another one would be wrong.
+  if (input.reason !== 'unreachable') return false;
+  if (!input.providerSupportsBootstrap) return false;
+  return input.attemptedForExternalId !== input.externalId;
+}
+
+
 const STALE_OPENCODE_NOT_READY_MS = 90_000;
 
 function parseTimestampMs(value: unknown): number | null {
@@ -616,7 +719,40 @@ function removedRuntimeStillInGrace(
   return graceStartedAtMs != null && nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS;
 }
 
-async function markRuntimeWakeStarted(
+// A readiness result belongs to the state read before its network probes.
+// Do not let that result replace a restart claim or clear a newer boot clock.
+function readinessObservationMatches(row: typeof sessionSandboxes.$inferSelect): SQL {
+  return and(
+    eq(sessionSandboxes.sandboxId, row.sandboxId),
+    eq(sessionSandboxes.status, row.status),
+    sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) = ${JSON.stringify(row.metadata ?? {})}::jsonb`,
+  )!;
+}
+
+export async function claimSessionRuntimeBootstrap(
+  row: typeof sessionSandboxes.$inferSelect,
+  now = new Date(),
+): Promise<typeof sessionSandboxes.$inferSelect | null> {
+  if (!row.externalId || row.status !== 'active') return null;
+  const metadata = sandboxMetadata(row);
+  if (metadata.sessionRuntimeBootstrapFor === row.externalId) return null;
+  const boot = {
+    ...metadata,
+    sessionRuntimeBootstrapFor: row.externalId,
+    sessionRuntimeBootstrapAt: now.toISOString(),
+  };
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: opencodeReadyWaitPatch(boot, 'unreachable', undefined, now) ?? boot,
+      updatedAt: now,
+    })
+    .where(and(readinessObservationMatches(row), eq(sessionSandboxes.externalId, row.externalId)))
+    .returning();
+  return claimed ?? null;
+}
+
+export async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
 ): Promise<void> {
@@ -633,13 +769,13 @@ async function markRuntimeWakeStarted(
         },
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
   }
 }
 
-async function markOpencodeReadyWaitStarted(
+export async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
@@ -654,13 +790,13 @@ async function markOpencodeReadyWaitStarted(
     await db
       .update(sessionSandboxes)
       .set({ metadata: patch, updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }
 }
 
-async function clearRuntimeReadinessClocks(
+export async function clearRuntimeReadinessClocks(
   row: typeof sessionSandboxes.$inferSelect,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
@@ -676,7 +812,7 @@ async function clearRuntimeReadinessClocks(
         metadata: stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS),
         updatedAt: new Date(),
       })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      .where(readinessObservationMatches(row));
   } catch (err) {
     console.warn(`[start] failed to clear readiness clocks for ${row.sandboxId}:`, err);
   }
@@ -910,7 +1046,13 @@ async function preserveEstablishedRuntimeOnOpen(
 ): Promise<SessionStartResult> {
   if (!row.externalId) {
     await retireUnmaterializedRuntime(row, reason);
-    await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+    const allocationFailure = await allocateRuntimeOnOpen(
+      loaded,
+      visible.row,
+      projectId,
+      sessionId,
+    );
+    if (allocationFailure) return allocationFailure;
     return {
       stage: 'provisioning',
       agent_name: visible.row.agentName ?? 'default',
@@ -1129,7 +1271,13 @@ async function runOpenSession(args: {
         );
       }
       if (row) await retireUnmaterializedRuntime(row, 'non_usable_unmaterialized_runtime');
-      await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+      const allocationFailure = await allocateRuntimeOnOpen(
+        loaded,
+        visible.row,
+        projectId,
+        sessionId,
+      );
+      if (allocationFailure) return allocationFailure;
       log.did('provisioned');
     }
     return {
@@ -1471,7 +1619,66 @@ async function runOpenSession(args: {
       STALE_OPENCODE_BOOT_HARD_MS,
     );
     if (staleBoot) {
-      log.did('reconciled');
+      // The box is RUNNING and only the runtime process is missing — that is
+      // what `unreachable` past this budget means, and cycling the box cannot
+      // fix it. Start the process instead, once per box-run.
+      //
+      // Daytona resumes a sandbox with nothing running inside (it replaces the
+      // image ENTRYPOINT — see `ensureAppRuntimeStarted`, which exists for the
+      // App workload for exactly this reason). Measured on pi.kortix.com
+      // 2026-08-29: every resume of a stopped pi-worker session failed here and
+      // was cycled back to stopped, forever, while never-stopped boxes on the
+      // SAME snapshot stayed ready.
+      //
+      // Best-effort: on any failure we fall straight through to the existing
+      // stop-and-retry, so this can only improve on today's behaviour.
+      if (
+        shouldBootstrapSessionRuntime({
+          reason: ensured.reason === 'unreachable' ? 'unreachable' : 'not_ready',
+          externalId: runningExternalId,
+          attemptedForExternalId: sandboxMetadata(row).sessionRuntimeBootstrapFor,
+          providerSupportsBootstrap: Boolean(
+            getProvider(row.provider as SandboxProviderName).ensureSessionRuntimeStarted,
+          ),
+        })
+      ) {
+        const claimedBootstrap = await claimSessionRuntimeBootstrap(row);
+        if (!claimedBootstrap) {
+          return {
+            stage: 'starting',
+            agent_name: visible.row.agentName ?? 'default',
+            retriable: true,
+            sandbox: serializeSandboxRow(row),
+            opencode_session_id: ensured.pin,
+            runtime_url: sessionRuntimeUrlPath(runningExternalId),
+            reason: 'runtime_waking',
+          };
+        }
+        row = claimedBootstrap;
+        const provider = getProvider(row.provider as SandboxProviderName);
+        let bootstrapped = false;
+        try {
+          await provider.ensureSessionRuntimeStarted!(runningExternalId);
+          bootstrapped = true;
+        } catch (err) {
+          console.warn(
+            `[start] session runtime bootstrap failed for ${row.sandboxId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+        if (bootstrapped) {
+          log.did('reconciled');
+          return {
+            stage: 'starting',
+            agent_name: visible.row.agentName ?? 'default',
+            retriable: true,
+            sandbox: serializeSandboxRow(row),
+            opencode_session_id: ensured.pin,
+            runtime_url: sessionRuntimeUrlPath(runningExternalId),
+            reason: 'runtime_process_restarted',
+          } as any;
+        }
+      }
       log.did('reconciled');
     return preserveEstablishedRuntimeOnOpen(
         loaded,

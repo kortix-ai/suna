@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import { config } from '../config';
+
+const originalPreviewDomain = config.KORTIX_PREVIEW_BASE_DOMAIN;
 
 const SHARE_TOKEN = 'kps_11111111111141118111111111111111';
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
@@ -7,28 +10,38 @@ const SESSION_ID = '22222222-2222-4222-8222-222222222222';
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const EXTERNAL_ID = 'sandbox-external-1';
+const ENVIRONMENT_EXTERNAL_ID = 'environment-external-1';
 
 let shareRow: any;
 let personalBindingRow: { connectionId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
+let loadedSandboxIds: string[] = [];
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
-      from: () => ({
-        leftJoin: () => ({
-          where: () => ({
-            limit: async () => shareRow ? [shareRow] : [],
-          }),
-        }),
-        innerJoin: () => ({
-          where: () => ({
-            limit: async () => personalBindingRow ? [personalBindingRow] : [],
-          }),
-        }),
-      }),
+      from: () => {
+        let selectsPersonalBinding = false;
+        const query = {
+          leftJoin: () => query,
+          innerJoin: () => {
+            selectsPersonalBinding = true;
+            return query;
+          },
+          where: () => query,
+          limit: async () =>
+            selectsPersonalBinding
+              ? personalBindingRow
+                ? [personalBindingRow]
+                : []
+              : shareRow
+                ? [shareRow]
+                : [],
+        };
+        return query;
+      },
     }),
     update: () => ({
       set: () => ({
@@ -46,11 +59,14 @@ mock.module('../sandbox-proxy/backend', () => ({
     ...(serviceKey ? { Authorization: `Bearer ${serviceKey}` } : {}),
   }),
   invalidatePreviewLink: () => {},
-  loadSandbox: async () => ({
-    externalId: EXTERNAL_ID,
-    status: 'active',
-    serviceKey: 'service-key',
-  }),
+  loadSandbox: async (externalId: string) => {
+    loadedSandboxIds.push(externalId);
+    return {
+      externalId,
+      status: 'active',
+      serviceKey: 'service-key',
+    };
+  },
   markSandboxUsed: async () => {},
   resolveSandboxIngress: async () => ({
     url: 'https://preview.test',
@@ -63,6 +79,7 @@ mock.module('../sandbox-proxy/backend', () => ({
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
+  config.KORTIX_PREVIEW_BASE_DOMAIN = '';
   shareRow = {
     shareId: SHARE_ID,
     sessionId: SESSION_ID,
@@ -77,12 +94,16 @@ beforeEach(() => {
     allowWebsocket: false,
     expiresAt: null,
     revokedAt: null,
-    externalId: EXTERNAL_ID,
-    sandboxStatus: 'active',
+    workerExternalId: EXTERNAL_ID,
+    workerStatus: 'active',
+    environmentSessionId: null,
+    environmentExternalId: null,
+    environmentStatus: null,
   };
   personalBindingRow = null;
   updateCalls = 0;
   fetchUrls = [];
+  loadedSandboxIds = [];
   globalThis.fetch = (async (url: RequestInfo | URL) => {
     fetchUrls.push(String(url));
     return new Response('ok', { status: 200 });
@@ -90,6 +111,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  config.KORTIX_PREVIEW_BASE_DOMAIN = originalPreviewDomain;
   globalThis.fetch = originalFetch;
 });
 
@@ -103,11 +125,15 @@ function app() {
 
 describe('public session preview shares', () => {
   test('returns public metadata without authenticated preview auth', async () => {
-    const res = await app().request(new Request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`));
+    const res = await app().request(
+      new Request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
-    expect(body.share.public_url).toBe(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(body.share.public_url).toBe(
+      `http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`,
+    );
     expect(body.share.resource_type).toBe('preview');
   });
 
@@ -141,6 +167,21 @@ describe('public session preview shares', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('ok');
     expect(updateCalls).toBe(1);
+    expect(loadedSandboxIds).toEqual([EXTERNAL_ID]);
+  });
+
+  test('routes public shares to the session environment when one exists', async () => {
+    shareRow = {
+      ...shareRow,
+      environmentSessionId: SESSION_ID,
+      environmentExternalId: ENVIRONMENT_EXTERNAL_ID,
+      environmentStatus: 'active',
+    };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+
+    expect(res.status).toBe(200);
+    expect(loadedSandboxIds).toEqual([ENVIRONMENT_EXTERNAL_ID]);
   });
 
   test('proxies file shares through the static file server', async () => {
@@ -152,15 +193,36 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const meta = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
-    expect(meta.status).toBe(200);
-    const body = await meta.json() as any;
-    expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/file`);
-    expect(body.share.public_url).toBeNull();
-
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file`);
     expect(res.status).toBe(200);
     expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
+  });
+
+  test('file metadata reports unavailable when no isolated preview origin is configured', async () => {
+    shareRow = { ...shareRow, resourceType: 'file', port: null, filePath: '/workspace/report.html' };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'File sharing requires an isolated preview domain' });
+    expect(fetchUrls).toEqual([]);
+  });
+
+  test('file metadata returns its isolated origin and public token when configured', async () => {
+    config.KORTIX_PREVIEW_BASE_DOMAIN = 'preview.example.test';
+    shareRow = { ...shareRow, resourceType: 'file', port: null, filePath: '/workspace/report.html' };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/file`);
+    const url = new URL(body.share.public_url);
+    expect(url.protocol).toBe('https:');
+    expect(url.hostname).toBe(`${config.INTERNAL_KORTIX_ENV}-p3211-${EXTERNAL_ID}.preview.example.test`);
+    expect(url.pathname).toBe('/open');
+    expect(url.searchParams.get('public_share')).toBe(SHARE_TOKEN);
+    expect(fetchUrls).toEqual([]);
   });
 
   test('rejects file share subpaths instead of exposing the static file server', async () => {
@@ -172,7 +234,9 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/abs/workspace/app/style.css`);
+    const res = await app().request(
+      `/v1/p/public-share/${SHARE_TOKEN}/file/abs/workspace/app/style.css`,
+    );
     expect(res.status).toBe(403);
     expect(fetchUrls.length).toBe(0);
   });
@@ -186,7 +250,9 @@ describe('public session preview shares', () => {
       filePath: '/workspace/app/index.html',
     };
 
-    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/open?path=/workspace/secret.env`);
+    const res = await app().request(
+      `/v1/p/public-share/${SHARE_TOKEN}/file/open?path=/workspace/secret.env`,
+    );
     expect(res.status).toBe(200);
     expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
   });
@@ -220,5 +286,4 @@ describe('public session preview shares', () => {
     });
     expect(res.status).toBe(405);
   });
-
 });

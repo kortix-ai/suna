@@ -68,4 +68,3 @@ export function exitOnceDecided(
   }, graceMs);
   forced.unref?.();
 }
-

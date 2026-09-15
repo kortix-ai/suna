@@ -78,6 +78,27 @@ describe('classifyPart — exhaustive part model', () => {
     expect(result.tool.title).toBe('Running ls -la');
   });
 
+  test('tool — running exposes progress output without treating partial JSON as a terminal failure', () => {
+    const part = {
+      id: 'progress', sessionID: 's1', messageID: 'm1', type: 'tool', callID: 'c1', tool: 'bash',
+      state: { status: 'running', input: {}, metadata: { output: '{"error":"still working"}' }, time: { start: 1 } },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.output).toBe('{"error":"still working"}');
+    expect(result.tool.status).toBe('running');
+    expect(result.tool.error).toBeUndefined();
+  });
+
+  test.each([undefined, null, 7, { text: 'wrong shape' }])('tool — ignores non-text running output %j', output => {
+    const part = { type: 'tool', id: 'progress', sessionID: 's1', messageID: 'm1', callID: 'c1', tool: 'bash', state: { status: 'running', input: {}, metadata: { output }, time: { start: 1 } } } as Part;
+    expect((classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>).tool.output).toBeUndefined();
+  });
+
+  test('tool — completed output replaces progress even when the final result is empty', () => {
+    const part = { type: 'tool', id: 'progress', sessionID: 's1', messageID: 'm1', callID: 'c1', tool: 'bash', state: { status: 'completed', input: {}, output: '', metadata: { output: 'stale progress' }, title: '', time: { start: 1, end: 2 } } } as Part;
+    expect((classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>).tool.output).toBe('');
+  });
+
   test('tool — completed exposes output, not error', () => {
     const part = {
       id: 'p3c',

@@ -6,8 +6,8 @@ environment. Its own disk is never touched by any built-in tool.
 
 Reference: `docs/specs/2026-08-26-harness-worker-split.md`.
 
-> This is a spike. It is here to answer questions and produce numbers, not to
-> ship. Nothing in `apps/` was changed.
+> The early experiments below are historical. The current runtime lives in
+> `apps/kortix-worker`; see `docs/PI_OPENCODE_PARITY.md` for its verified scope.
 
 ---
 
@@ -511,6 +511,78 @@ round trip including harness work, not a raw RPC. The raw RPC is 16–20 ms.
 
 ---
 
+## Deployed product TTFT
+
+`bench/ttft-session.ts` is the release-evidence benchmark. It drives Pi and
+OpenCode through the same routes that `@kortix/sdk` uses:
+
+```text
+GET  /global/event
+GET  /session
+POST /session/:id/message
+```
+
+It does not call the worker-only `/turn`, `/prompt`, `/say`, or `/event`
+routes. Deployed Pi workers return `404` for the local benchmark routes.
+
+Every run requires the provider, region, model, worker allocation path, and
+workspace allocation path as structured fields. The result verifies provider,
+runtime, and model against live responses. The API does not expose region or
+allocation-cache outcomes, so the JSON identifies those two values as
+operator declarations. Do not compare two output files unless provider,
+region, and model match. Always report both lifecycle paths.
+
+```bash
+export KORTIX_BENCH_JWT="$(< /tmp/jwt.txt)"
+
+bun bench/ttft-session.ts \
+  --base https://pi.kortix.com/v1 \
+  --project <uuid> \
+  --agent <name> \
+  --base-ref <commit-or-ref> \
+  --runtime pi \
+  --provider daytona \
+  --region eu \
+  --model anthropic/claude-sonnet-4.5 \
+  --worker-path new-session \
+  --workspace-path not-observed \
+  --runs 10
+
+bun bench/ttft-session.ts \
+  --base https://pi.kortix.com/v1 \
+  --project <uuid> \
+  --agent <name> \
+  --base-ref <commit-or-ref> \
+  --runtime pi \
+  --provider daytona \
+  --region eu \
+  --model anthropic/claude-sonnet-4.5 \
+  --worker-path new-session \
+  --workspace-path cold-create \
+  --tool \
+  --runs 10
+```
+
+For `new-session`, the clock starts before `POST /projects/:id/sessions`.
+For `resume`, it starts before `POST /projects/:id/sessions/:id/start`.
+Resume requires a stopped session with the specified agent and base ref.
+It preserves the native conversation identity. `ready` is the first
+successful runtime health response. `TTFT` is the first non-empty assistant
+text event on `/global/event`. Tool mode additionally requires a completed
+Bash result containing the exact probe marker. The blocking message response
+is recorded separately as `messageResponseMs`; it is not substituted for a
+missing streaming event.
+
+The harness waits for session cleanup after each measured run. Cleanup time is
+outside the sample. A cleanup failure makes the command fail, which prevents a
+later run from silently hitting the active-session cap.
+
+The older standalone spike benchmarks below still use local-only worker routes.
+They isolate architecture components, but they are not deployed product
+protocol evidence.
+
+---
+
 ## Cold time-to-first-token — the number that isolates the architecture
 
 Total task time buries the signal: ~8 of ~11 seconds are the model thinking,
@@ -682,3 +754,17 @@ benchmark.
 - **S0.2 end-to-end** — a real turn through the deployed Kortix gateway with
   attribution visible in its log. The wiring is in `src/worker.ts`; it needs a
   key and a gateway URL to run.
+
+
+The session benchmark requires `--agent` and `--base-ref`, and sends those values,
+the declared model, and provider to session creation. `--worker-path new-session`
+measures a new logical session; it does not claim a cold provider allocation.
+`--worker-path resume --session <id>` requires a stopped benchmark session and
+calls `/start` on that session. It rejects a changed native conversation ID.
+Cleanup waits until the session reports `stopped`. Unknown runtime health fails
+the sample. Region and environment allocation cache outcomes remain declarations.
+
+Product readiness includes polling `/start` after creation. The response must
+supply a persisted native conversation ID. A ready health endpoint alone is not
+sufficient. JSON records session discovery, SSE connection, and prompt submission
+separately, so setup overhead cannot be mistaken for model latency.

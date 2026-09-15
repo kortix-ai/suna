@@ -1,10 +1,11 @@
+import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMetaAgentName, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import {
@@ -16,11 +17,14 @@ import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  piWorkerSandboxProviderMatches,
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
+  sessionMetadataClaimsPiWorker,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 import {
+  buildPiWorkerSessionSandboxEnvVars,
   buildSessionSandboxEnvVars,
   sandboxCallbackDeadTunnelReason,
   sandboxCallbackUnreachableReason,
@@ -44,6 +48,7 @@ import {
   restartClaimIsActive,
   runtimeRestartClaimMetadata,
 } from './runtime-restart-fence';
+import { deleteSessionEnvironment } from '../../platform/services/session-environment';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -87,6 +92,13 @@ export async function deleteSession(input: {
     .returning();
 
   if (!row) return { error: 'Not found', status: 404 };
+
+  // The session is soft-deleted, so nothing cascades to its environment box —
+  // without this it outlives the session that owns it, with no row and no
+  // reaper to ever remove it.
+  await deleteSessionEnvironment(sessionId).catch((err) => {
+    console.warn(`[session-delete] environment delete failed for ${sessionId}:`, err);
+  });
 
   if (sandbox) {
     await db
@@ -210,6 +222,8 @@ export async function restartSession(input: {
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sandboxId, sessionId))
     .limit(1);
+  const piWorkerClaimed = sessionMetadataClaimsPiWorker(session.metadata);
+  const piWorkerIdentity = await ensurePiWorkerIdentity({ projectId, sessionId, metadata: session.metadata });
 
   const provisionReplacementRuntime = async () => {
     const initialPrompt = session.opencodeSessionId
@@ -222,6 +236,13 @@ export async function restartSession(input: {
       typeof session.metadata?.opencode_model === 'string'
         ? (session.metadata.opencode_model as string)
         : null;
+    const sandboxSlug = sandboxSlugFromSessionMetadata(session.metadata);
+    const piWorkerModel =
+      piWorkerIdentity &&
+      session.metadata?.opencode_model_source === 'explicit' &&
+      opencodeModel
+        ? opencodeModel.replace(/^kortix\//, '')
+        : null;
 
     await db
       .update(projectSessions)
@@ -233,7 +254,18 @@ export async function restartSession(input: {
       })
       .where(eq(projectSessions.sessionId, sessionId));
 
-    const runtimeMetadata = { restarted_at: new Date().toISOString() };
+    const runtimeMetadata = {
+      restarted_at: new Date().toISOString(),
+      ...(piWorkerIdentity
+        ? {
+            sandbox_slug: PI_WORKER_SANDBOX_SLUG,
+            pi_worker_boot: true,
+            pi_worker_ref: piWorkerIdentity.ref,
+            pi_worker_sha: piWorkerIdentity.sha,
+            runtimeArtifact: null,
+          }
+        : {}),
+    };
     const rehydrate = legacyRehydrateSpec(
       session.metadata,
       loaded.row.metadata,
@@ -247,35 +279,46 @@ export async function restartSession(input: {
       providerName,
       baseRef: session.baseRef ?? loaded.row.defaultBranch,
       agentName: session.agentName ?? 'default',
-      allowProjectImage: projectImageAllowedForSession(
-        session.agentName,
-        workspaceModeFromSessionMetadata(session.metadata),
-      ),
-      sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
+      allowProjectImage:
+        !piWorkerIdentity &&
+        projectImageAllowedForSession(
+          session.agentName,
+          workspaceModeFromSessionMetadata(session.metadata),
+        ),
+      sandboxSlug,
       runtimeMetadata,
       initialTurn,
       sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
       buildEnvVars: () =>
-        buildSessionSandboxEnvVars({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          userId: loaded.userId,
-          repoUrl: loaded.row.repoUrl,
-          baseRef: session.baseRef ?? loaded.row.defaultBranch,
-          agentName: session.agentName ?? 'default',
-          opencodeModel,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-          // A restarted meta coordinator must keep its meta runtime: without
-          // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
-          // meta agent config, so the daemon clones the project over the meta
-          // workspace and wipes /workspace/AGENTS.md.
-          platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
-          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
-          restoreSessionBranch: true,
-        }),
+        piWorkerIdentity
+          ? buildPiWorkerSessionSandboxEnvVars({
+              projectId,
+              sessionId,
+              agentName: session.agentName ?? 'default',
+              runtimeRef: piWorkerIdentity.ref,
+              runtimeSha: piWorkerIdentity.sha,
+              opencodeModel: piWorkerModel,
+            })
+          : buildSessionSandboxEnvVars({
+              accountId: loaded.row.accountId,
+              projectId,
+              sessionId,
+              userId: loaded.userId,
+              repoUrl: loaded.row.repoUrl,
+              baseRef: session.baseRef ?? loaded.row.defaultBranch,
+              agentName: session.agentName ?? 'default',
+              opencodeModel,
+              defaultBranch: loaded.row.defaultBranch,
+              manifestPath: loaded.row.manifestPath,
+              llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+              // A restarted meta coordinator must keep its meta runtime: without
+              // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
+              // meta agent config, so the daemon clones the project over the meta
+              // workspace and wipes /workspace/AGENTS.md.
+              platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+              workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+              restoreSessionBranch: true,
+            }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
       beforeActive: rehydrate
         ? (externalId) =>
@@ -662,6 +705,27 @@ export async function restartSession(input: {
         status: 'provisioning',
         reason: 'restart_started',
         operation_id: restartId,
+      },
+    };
+  }
+
+  if (piWorkerClaimed && !piWorkerIdentity) {
+    return {
+      status: 409,
+      body: {
+        error: 'The persisted Pi runtime identity is incomplete. Start a new session.',
+        code: 'PI_WORKER_RUNTIME_IDENTITY_INVALID',
+        session_id: sessionId,
+      },
+    };
+  }
+  if (piWorkerIdentity && !piWorkerSandboxProviderMatches(providerName)) {
+    return {
+      status: 409,
+      body: {
+        error: 'The persisted Pi runtime provider does not match its Daytona runtime.',
+        code: 'PI_WORKER_RUNTIME_PROVIDER_INVALID',
+        session_id: sessionId,
       },
     };
   }

@@ -21,7 +21,9 @@ mock.module('../../config', () => ({
 
 mock.module('../../shared/db', () => ({ db: drizzle(client) }));
 
-const { selectMissingAppComputeCandidates, selectMissingComputeCandidates } = await import('./compute-metering');
+const { selectMissingAppComputeCandidates, selectMissingComputeCandidates } = await import(
+  './compute-metering'
+);
 const { selectOpenComputeInvariantCandidates } = await import('./compute-invariant-sweep');
 const { buildClaimComputeWindowQuery, buildReleaseComputeWindowQuery } = await import(
   '../repositories/compute-sessions'
@@ -132,9 +134,10 @@ describe('App reconcile candidate predicate', () => {
 describe('compute invariant candidate predicate', () => {
   const rendered = () => selectOpenComputeInvariantCandidates(100).toSQL();
 
-  test('joins both session sandboxes and App runtimes', () => {
+  test('joins session sandboxes, environments, and App runtimes', () => {
     const { sql } = rendered();
     expect(sql).toContain('session_sandboxes');
+    expect(sql).toContain('session_environments');
     expect(sql).toContain('app_runtimes');
     expect(sql).toMatch(/app_runtime_id/);
   });
@@ -144,5 +147,7 @@ describe('compute invariant candidate predicate', () => {
     expect(sql).toMatch(/workload_type/);
     expect(sql).toMatch(/app_runtimes"?\."?status/);
     expect(sql).toMatch(/app_runtimes"?\."?external_id/);
+    expect(sql).toMatch(/session_environments"?\."?status/);
+    expect(sql).toMatch(/session_environments"?\."?external_id/);
   });
 });

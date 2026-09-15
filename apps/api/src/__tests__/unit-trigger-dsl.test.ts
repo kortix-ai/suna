@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   KNOWN_SCHEMA_VERSION,
+  MAX_SCHEMA_VERSION,
   extractTriggers,
   parseManifestString,
   serializeManifest,
@@ -49,11 +50,14 @@ describe('kortix manifest — schema versioning', () => {
     expect(parsed.schemaVersion).toBe(2);
   });
 
-  // V2 is the current ceiling. Any later schema version must stay rejected.
+  // The current ceiling parses. Any later schema version must stay rejected.
   test('the current ceiling parses and anything above it is still rejected', () => {
-    expect(parseManifestString(`kortix_version = 2\n${MIN_PROJECT}`).schemaVersion).toBe(2);
-    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(
-      /schema version 3/,
+    expect(
+      parseManifestString(`kortix_version = ${MAX_SCHEMA_VERSION}\n${MIN_PROJECT}`).schemaVersion,
+    ).toBe(MAX_SCHEMA_VERSION);
+    const futureVersion = MAX_SCHEMA_VERSION + 1;
+    expect(() => parseManifestString(`kortix_version = ${futureVersion}\n${MIN_PROJECT}`)).toThrow(
+      new RegExp(`schema version ${futureVersion}`),
     );
   });
 
@@ -771,7 +775,8 @@ prompt = "Hello"
  * connector provider. Keep them locked together.
  */
 describe('[[triggers]] — runtime parser ⇄ schema gate agreement', () => {
-  const { validateManifest } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
+  type ManifestSchemaModule = typeof import('@kortix/manifest-schema');
+  const { validateManifest } = require('@kortix/manifest-schema') as ManifestSchemaModule;
 
   function schemaTriggerErrors(block: string): string[] {
     return validateManifest(manifestWith(block))
@@ -889,7 +894,9 @@ describe('[[triggers]] — type = "monitor"', () => {
 
   test('a stream monitor parses its run + mode and defaults session_mode to reuse', () => {
     const { specs, errors } = extractTriggers(
-      monitorManifest('    run: ./monitors/checkout-errors.ts\n    mode: stream\n    prompt: "{{ line }}"\n'),
+      monitorManifest(
+        '    run: ./monitors/checkout-errors.ts\n    mode: stream\n    prompt: "{{ line }}"\n',
+      ),
     );
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
@@ -923,23 +930,26 @@ describe('[[triggers]] — type = "monitor"', () => {
 
   test('an explicit session_mode still wins over the monitor default', () => {
     const { specs } = extractTriggers(
-      monitorManifest('    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n'),
+      monitorManifest(
+        '    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n',
+      ),
     );
     expect(specs[0]?.sessionMode).toBe('fresh');
   });
 
   test('a monitor without run or mode is a parse error', () => {
-    expect(extractTriggers(monitorManifest('    mode: stream\n    prompt: go\n')).errors[0]?.error).toMatch(
-      /must declare a `run` command/,
-    );
-    expect(extractTriggers(monitorManifest('    run: ./m.ts\n    prompt: go\n')).errors[0]?.error).toMatch(
-      /mode must be "poll" or "stream"/,
-    );
+    expect(
+      extractTriggers(monitorManifest('    mode: stream\n    prompt: go\n')).errors[0]?.error,
+    ).toMatch(/must declare a `run` command/);
+    expect(
+      extractTriggers(monitorManifest('    run: ./m.ts\n    prompt: go\n')).errors[0]?.error,
+    ).toMatch(/mode must be "poll" or "stream"/);
   });
 
   test('mode = poll requires an interval, and it must clear the 30s floor', () => {
     expect(
-      extractTriggers(monitorManifest('    run: ./m.ts\n    mode: poll\n    prompt: go\n')).errors[0]?.error,
+      extractTriggers(monitorManifest('    run: ./m.ts\n    mode: poll\n    prompt: go\n'))
+        .errors[0]?.error,
     ).toMatch(/interval must be a duration string/);
     expect(
       extractTriggers(
@@ -951,7 +961,9 @@ describe('[[triggers]] — type = "monitor"', () => {
   test('expect_event_within must clear the 5m floor', () => {
     expect(
       extractTriggers(
-        monitorManifest('    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n'),
+        monitorManifest(
+          '    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n',
+        ),
       ).errors[0]?.error,
     ).toMatch(/expect_event_within must be at least 300s/);
   });
@@ -1011,12 +1023,15 @@ describe('[[triggers]] — type = "monitor"', () => {
       ...manifest,
       raw: { ...manifest.raw, triggers: [triggerSpecToTomlEntry(original)] },
     });
-    const reparsed = extractTriggers(parseManifestString(rewritten, 'yaml', 'kortix.yaml')).specs[0]!;
+    const reparsed = extractTriggers(parseManifestString(rewritten, 'yaml', 'kortix.yaml'))
+      .specs[0]!;
     expect(reparsed).toEqual(original);
   });
 
   test('a stream monitor with an explicit fresh mode round-trips that mode', () => {
-    const manifest = monitorManifest('    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n');
+    const manifest = monitorManifest(
+      '    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n',
+    );
     const original = extractTriggers(manifest).specs[0]!;
     const entry = triggerSpecToTomlEntry(original);
     expect(entry.session_mode).toBe('fresh');

@@ -50,6 +50,12 @@ interface Fixture {
 }
 
 const FIXTURES: Fixture[] = [
+  ...([2, 3] as const).flatMap((version) => ['pi', 'opencode'].map((runtime): Fixture => ({
+    name: `v${version}: explicit runtime ${runtime} must match the version`,
+    format: 'yaml',
+    input: `kortix_version: ${version}\nruntime: ${runtime}\ndefault_agent: w\nagents:\n  w: {}\n`,
+    valid: runtime === (version === 3 ? 'pi' : 'opencode'),
+  }))),
   // ─── v1 ──────────────────────────────────────────────────────────────
   {
     name: 'v1: comprehensive manifest (project/env/opencode/sandbox/triggers/connectors/agents/channels)',
@@ -220,6 +226,13 @@ channels:
     valid: false,
     input:
       'kortix_version = 1\n[[sandbox.templates]]\nslug = "default"\nimage = "python:3.12-slim"\n',
+  },
+  {
+    name: 'v1: sandbox template slug reserved ("pi-worker")',
+    format: 'toml',
+    valid: false,
+    input:
+      'kortix_version = 1\n[[sandbox.templates]]\nslug = "pi-worker"\nimage = "python:3.12-slim"\n',
   },
   {
     name: 'v1: cron trigger missing cron/run_at',
@@ -540,6 +553,19 @@ connectors:
     format: 'yaml',
     valid: true,
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    secrets: [STRIPE_KEY]\n',
+  },
+  {
+    name: 'v2: agent sandbox cannot select the server-owned pi-worker runtime',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    sandbox: pi-worker\n',
+  },
+  {
+    name: 'v2: sandbox default cannot select the server-owned pi-worker runtime',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nsandbox:\n  default: pi-worker\n',
   },
   {
     name: 'v2: canonical required connector subset accepted',

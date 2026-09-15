@@ -20,7 +20,7 @@ import {
   SESSION_SYNC_PAGE_SIZE,
   type SessionSyncReason,
 } from '../../core/session-sync/session-sync-controller';
-import { fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
+import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
 import { applyPartDiagnostics } from './diagnostics';
@@ -112,6 +112,12 @@ export function createEventHandler(deps: {
     // match any `applyEvent` case (falls through to its `default`) — the
     // assertion below just widens past that one extra union member.
     applySyncEvent(event as OpenCodeSdkEvent);
+
+    if (event.type === 'session.next.revert.staged' || event.type === 'session.next.revert.cleared' || event.type === 'session.next.revert.committed') {
+      for (const queryKey of [fileListKeys.all, fileContentKeys.all, binaryBlobKeys.all, gitStatusKeys.all, opencodeKeys.vcsDiffAll()]) {
+        void queryClient.invalidateQueries({ queryKey, type: 'active' });
+      }
+    }
 
     switch (event.type) {
       // ---- Message events — handled by sync store only ----

@@ -68,7 +68,7 @@ Subcommands:
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
-                                    --connect attaches the OpenCode TUI as
+                                    --connect opens the runtime terminal as
                                     soon as it's ready (implies --wait); on an
                                     interactive terminal without it, you're
                                     asked whether to connect after creation.
@@ -101,8 +101,9 @@ Subcommands:
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.
-  connect [<session-id>]            Attach local OpenCode to the running
-                                    session sandbox. Pass args after --.
+  connect [<session-id>]            Connect to the selected session runtime.
+                                    Pi uses the Kortix terminal; OpenCode uses
+                                    its TUI. Pass OpenCode args after --.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
@@ -179,8 +180,8 @@ Subcommands:
   warm                              Pre-create the session you are about to
                                     use, so the box is already up.
                                     --exclude <session-id>, --json.
-  model <session-id> <model-id>     Change the model a session runs. A live
-                                    box restarts, ending the turn in flight.
+  model <session-id> <model-id>     Pi: save the model for new prompts.
+                                    OpenCode: restart a live runtime.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
@@ -680,6 +681,7 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {

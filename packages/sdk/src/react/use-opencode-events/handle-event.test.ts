@@ -68,6 +68,7 @@ mock.module('../../platform/ui', () => ({
 let singletonSessionGetImpl: () => Promise<{ data?: unknown }> = async () => ({ data: undefined });
 mock.module('../../core/runtime/client', () => ({
   getClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
+  getWorkspaceClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
 }));
 
 const { createEventHandler } = await import('./handle-event');
@@ -768,6 +769,17 @@ function countInvalidations(
 }
 
 describe('vcs diff invalidation', () => {
+  test.each(['session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed'] as const)('%s refreshes open workspace files and diffs', type => {
+    const { handleEvent, queryClient } = buildHandler();
+    const keys = [fileListKeys.all, fileContentKeys.all, gitStatusKeys.all, opencodeKeys.vcsDiffAll()];
+    const counters = keys.map(key => countInvalidations(queryClient, key));
+    const base = { sessionID: 'ses_1', timestamp: 1 };
+    if (type === 'session.next.revert.staged') handleEvent({ id: 'rewind-event', type, properties: { ...base, revert: { messageID: 'msg_1' } } });
+    else if (type === 'session.next.revert.cleared') handleEvent({ id: 'rewind-event', type, properties: base });
+    else handleEvent({ id: 'rewind-event', type, properties: { ...base, messageID: 'msg_1' } });
+    expect(counters.map(counter => counter.n)).toEqual([1, 1, 1, 1]);
+  });
+
   test('busy → idle invalidates the vcs diff — the agent just finished editing', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
@@ -1283,4 +1295,14 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
     } as never);
     expect(calls).toEqual([]);
   });
+});
+
+test.each(['session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed'] as const)('%s refreshes open binary file previews', type => {
+  const { handleEvent, queryClient } = buildHandler();
+  const counter = countInvalidations(queryClient, ['opencode-files', 'binary-blob']);
+  const base = { sessionID: 'ses_1', timestamp: 1 };
+  if (type === 'session.next.revert.staged') handleEvent({ id: 'binary-rewind', type, properties: { ...base, revert: { messageID: 'msg_1' } } });
+  else if (type === 'session.next.revert.cleared') handleEvent({ id: 'binary-rewind', type, properties: base });
+  else handleEvent({ id: 'binary-rewind', type, properties: { ...base, messageID: 'msg_1' } });
+  expect(counter.n).toBe(1);
 });

@@ -11,6 +11,19 @@
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
+/** The template slug reserved for the server-selected Pi runtime. */
+export const PI_WORKER_SANDBOX_SLUG = 'pi-worker';
+
+/** Every slug a project manifest may not define as a custom sandbox template. */
+export const RESERVED_SANDBOX_TEMPLATE_SLUGS = [
+  RESERVED_SANDBOX_SLUG,
+  PI_WORKER_SANDBOX_SLUG,
+] as const;
+
+export function isReservedSandboxTemplateSlug(slug: string): boolean {
+  return (RESERVED_SANDBOX_TEMPLATE_SLUGS as readonly string[]).includes(slug);
+}
+
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -356,3 +369,44 @@ export const AGENT_THEME_COLORS_V2 = [
   'info',
 ] as const;
 export const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
+
+// ─── Schema versions ──────────────────────────────────────────────────────
+//
+// v1  TOML or YAML, `[[agents]]` ARRAY, grants default to `all`.
+// v2  YAML only,    `agents:` MAP,      grants default to `none`, runtime
+//     is `opencode`, project config lives in `.kortix/opencode`.
+// v3  The same body, with `runtime` fixed to `pi`; config lives in `.kortix/pi`.
+//
+// v3 deliberately adds NO new syntax. A pi project should not have to restate
+// `runtime: pi` in a file whose version already says so, and its agents should
+// not live in a directory named after the runtime it does not use. Everything
+// else — the agents map, deny-by-default grants, permission trees — is v2, so
+// every v2 validator and reader applies unchanged.
+
+/** Highest `kortix_version` this build understands. */
+export const KNOWN_SCHEMA_VERSION = 3;
+
+/**
+ * Does this version use the v2-shaped body (`agents:` map, deny-by-default
+ * grants, YAML-only)? True for v2 and up.
+ *
+ * Written as `>= 2`, never `=== 2 || === 3`: every one of these call sites is
+ * asking "is this the modern body?", and an equality list is a gate that
+ * silently starts failing the day v4 lands.
+ */
+export function manifestUsesAgentMap(version: number): boolean {
+  return version >= 2;
+}
+
+/** The runtime selected by a supported manifest version. */
+export function manifestDefaultRuntime(version: number): 'opencode' | 'pi' {
+  return version >= 3 ? 'pi' : 'opencode';
+}
+
+/**
+ * Where this project's agents, skills, and commands live when the manifest
+ * names no `config_dir` — `.kortix/pi` from v3, `.kortix/opencode` before it.
+ */
+export function manifestDefaultConfigDir(version: number): string {
+  return version >= 3 ? '.kortix/pi' : '.kortix/opencode';
+}

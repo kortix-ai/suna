@@ -222,6 +222,7 @@ export async function resolveEffectiveModel(params: {
   accountId: string;
   projectId: string;
   agentName?: string | null;
+  configuredAgentModel?: string | null;
   explicit?: string | null;
   freeModelsOnly: boolean;
 }): Promise<{ model: string | null; source: ModelSource }> {
@@ -236,8 +237,11 @@ export async function resolveEffectiveModel(params: {
     if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
   }
   const defaults = await getAccountModelDefaults(params.accountId, params.projectId);
+  const configuredAgentModel = params.configuredAgentModel
+    ? toWireModel(params.configuredAgentModel)
+    : null;
   const chain = chooseEffectiveModel({
-    agentDefault: params.agentName ? defaults.agents[params.agentName] : null,
+    agentDefault: (params.agentName ? defaults.agents[params.agentName] : null) ?? configuredAgentModel,
     projectDefault: defaults.projects[params.projectId],
     accountDefault: defaults.account,
     freeModelsOnly: params.freeModelsOnly,

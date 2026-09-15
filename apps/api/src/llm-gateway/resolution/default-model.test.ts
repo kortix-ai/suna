@@ -113,6 +113,30 @@ describe('isModelServableForAccount — never 500s a passive servability check',
 });
 
 describe('resolveEffectiveModel — the /model-defaults GET + picker resolution path', () => {
+  test('the compiled agent model precedes project and account defaults', async () => {
+    accountDefaults = { account: 'account/model', agents: {}, projects: { p1: 'project/model' } };
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, agentName: 'reviewer', configuredAgentModel: 'kortix/gpt-5.6-luna', freeModelsOnly: false }))
+      .toEqual({ model: 'gpt-5.6-luna', source: 'agent' });
+  });
+
+  test('an agent preference overrides its compiled model', async () => {
+    accountDefaults.agents.reviewer = 'openai/gpt-5.5';
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, agentName: 'reviewer', configuredAgentModel: 'kortix/gpt-5.6-luna', freeModelsOnly: false }))
+      .toEqual({ model: 'openai/gpt-5.5', source: 'agent' });
+  });
+
+  test('an explicit session selection overrides its compiled model', async () => {
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, explicit: 'openai/gpt-5.5', configuredAgentModel: 'kortix/gpt-5.6-luna', freeModelsOnly: false }))
+      .toEqual({ model: 'openai/gpt-5.5', source: 'explicit' });
+  });
+
+  test('a compiled model does not bypass managed-model entitlement', async () => {
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, configuredAgentModel: 'kortix/gpt-5.6-luna', freeModelsOnly: true }))
+      .toEqual({ model: null, source: 'platform' });
+  });
   test('nothing configured → platform default, no resolution/secrets calls at all', async () => {
     const result = await resolveEffectiveModel({
       ...PRINCIPAL_BASE,

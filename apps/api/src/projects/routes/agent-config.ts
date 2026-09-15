@@ -1,35 +1,10 @@
-// Full v2 agent-config CRUD — the dashboard "agent builder" surface (spec
-// docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
-// 2026-07-05: "one home per concern").
-//
-// TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
-// (connectors/secrets/skills/kortix_cli/workspace/enabled); the agent's own
-// native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
-// OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
-// color/hidden/permission) plus the prompt itself. This route is the ONE
-// place that merges them into a single wire shape (`block.opencode = {...}`)
-// so the dashboard editor's data binding never has to know two files exist —
-// see agent-editor.tsx. GET reads both; PUT writes governance to kortix.yaml
-// and behavior to the `.md` in ONE atomic commit (commitMultipleFilesToBranch)
-// after validating BOTH halves, so a bad request never partially lands and a
-// mid-write failure can never strand kortix.yaml and the `.md` out of sync.
-//
-// Distinct from ./agent-scope.ts, which writes ONLY the grant subset
-// (secrets/connectors) into a v1 `[[agents]]` entry.
-//
-// v2-only by construction: a v1 (`[[agents]]`) manifest has no representation
-// for the governance field space, so PUT refuses a v1 project with a clear
-// 400 (the UI degrades to the limited scope editor + an "upgrade to v2"
-// hint instead of ever calling PUT here). GET still works on a v1 project — it
-// reports schemaVersion:1 + a null block so the UI can branch.
-//
-// Manager-gated on project.customize.write (same leaf the model/scope editors
-// and every other customize mutation use), threaded through
-// assertProjectCapability so the agent-grant fold fires.
+// The editor projects YAML configuration or legacy Markdown into the same
+// behavior contract. Saves update the declared source in one Git commit.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import {
+  manifestUsesAgentMap,
   type AgentBlockV2,
   type ManifestIssue,
   SLUG_RE,
@@ -55,6 +30,8 @@ import {
   readAgentBlockV2,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
+import { readYamlAgentBehavior, updateYamlAgentBehavior } from '../lib/agent-config-editor';
+import { readAgentPrompt } from '../lib/read-agent-prompt';
 import { projectsApp } from '../lib/app';
 import {
   KNOWN_BEHAVIOR_KEYS,
@@ -75,11 +52,8 @@ const GrantSetSchema = z.union([
   z.array(z.string().min(1).max(200)).max(500),
 ]);
 
-// The KORTIX layer — governance only (spec §2.2 redirect). No model, no
-// description, no behavior: those all moved into `opencode` (defined in
-// ../lib/compile-agent-config alongside its canonical KNOWN_BEHAVIOR_KEYS —
-// see that module for why), which this route writes to the `.md`, never to
-// kortix.yaml.
+// Keep the editor's existing wire contract. Its behavior projection is written
+// back to YAML config or legacy Markdown according to the manifest declaration.
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -183,22 +157,29 @@ projectsApp.openapi(
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
     let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
-    if (read.schemaVersion === 2) {
-      const mdPath = agentMarkdownPath(manifest.raw, agentName);
-      const { frontmatter, body } = await readAgentMarkdown(
-        loaded.row,
-        loaded.row.defaultBranch,
-        mdPath,
-      );
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+    if (manifestUsesAgentMap(read.schemaVersion)) {
+      const { config, resources, ...wireBlock } = read.block ?? {};
+      try {
+        let opencode: Record<string, unknown>;
+        if (config !== undefined) {
+          const gitProject = await withProjectGitAuth(loaded.row);
+          opencode = await readYamlAgentBehavior(config, (path) => readAgentPrompt(gitProject, path, loaded.row.defaultBranch));
+        } else {
+          const mdPath = agentMarkdownPath(manifest.raw, agentName);
+          const { frontmatter, body } = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
+          opencode = pickBehaviorFields(frontmatter);
+          if (body.trim()) opencode.prompt = body;
+        }
+        block = { ...wireBlock, opencode };
+      } catch (error) {
+        return c.json({ error: (error as Error).message, code: 'config_read' }, 400);
+      }
     }
 
     return c.json({
       agent: agentName,
       schema_version: read.schemaVersion,
-      editable: read.schemaVersion === 2,
+      editable: manifestUsesAgentMap(read.schemaVersion),
       default_agent: read.defaultAgent,
       block,
     });
@@ -392,6 +373,16 @@ projectsApp.openapi(
       }
     }
 
+    const existingBlock = readAgentBlockV2(manifest, agentName);
+    if (!existingBlock.ok) return c.json({ error: existingBlock.error, code: 'invalid_config' }, 400);
+    if (existingBlock.block?.resources !== undefined) governanceBlock.resources = existingBlock.block.resources;
+    if (existingBlock.block?.config !== undefined) governanceBlock.config = existingBlock.block.config;
+    let yamlBehaviorFile: { path: string; content: string } | null = null;
+    if (governanceBlock.config !== undefined && opencodeDraft !== undefined) {
+      const updated = updateYamlAgentBehavior(governanceBlock.config, opencodeDraft);
+      governanceBlock.config = updated.config;
+      yamlBehaviorFile = updated.file;
+    }
     const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
     if (!applied.ok) {
       return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
@@ -410,7 +401,7 @@ projectsApp.openapi(
     let mdPath: string | null = null;
     let nextFrontmatter: Record<string, unknown> | null = null;
     let nextBody: string | null = null;
-    if (opencodeDraft !== undefined) {
+    if (opencodeDraft !== undefined && governanceBlock.config === undefined) {
       mdPath = agentMarkdownPath(applied.raw, agentName);
       const existing = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
       const draftRecord: Record<string, unknown> = { ...opencodeDraft };
@@ -438,7 +429,7 @@ projectsApp.openapi(
     const behaviorWrite =
       mdPath && nextFrontmatter && nextBody !== null
         ? { path: mdPath, content: serializeAgentMarkdown(nextFrontmatter, nextBody) }
-        : null;
+        : yamlBehaviorFile;
 
     // ONE atomic commit for both homes. Two sequential single-file commits
     // (governance then behavior) would let a bad `.md` write fail AFTER the
@@ -446,13 +437,16 @@ projectsApp.openapi(
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
     // every file in one tree/commit, same helper the marketplace install/
     // uninstall paths use for their own atomic multi-file writes (r10.ts).
+    if (behaviorWrite?.path === manifestPath) {
+      return c.json({ error: 'The prompt file cannot overwrite the project manifest', code: 'invalid_config' }, 400);
+    }
     const files = [
       { path: manifestPath, content: serializeManifest(manifest) },
       ...(behaviorWrite ? [behaviorWrite] : []),
     ];
     const message = behaviorWrite
       ? `chore: update agent ${agentName} governance + behavior`
-      : `chore: update agent ${agentName} governance`;
+      : `chore: update agent ${agentName} configuration`;
 
     try {
       const gitProject = await withProjectGitAuth(loaded.row);
@@ -481,16 +475,17 @@ projectsApp.openapi(
 
     const read = readAgentBlockV2(manifest, agentName);
     const responseOpencode =
-      nextFrontmatter !== null
+      governanceBlock.config !== undefined && opencodeDraft !== undefined
+        ? opencodeDraft
+        : nextFrontmatter !== null
         ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
         : undefined;
+    const { config, resources, ...wireBlock } = read.ok ? read.block ?? {} : governanceBlock;
     return c.json({
       ok: true,
       agent: agentName,
       schema_version: manifest.schemaVersion,
-      block: read.ok
-        ? { ...(read.block ?? {}), ...(responseOpencode ? { opencode: responseOpencode } : {}) }
-        : governanceBlock,
+      block: { ...wireBlock, ...(responseOpencode ? { opencode: responseOpencode } : {}) },
     });
   },
 );

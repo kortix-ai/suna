@@ -18,6 +18,7 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../sandbox-proxy/backend', () => ({
+  invalidateSandbox: () => {},
   resolveServiceKey: async () => 'svc-key',
   resolveSandboxIngress: async () => ({
     url: 'https://sandbox.test',

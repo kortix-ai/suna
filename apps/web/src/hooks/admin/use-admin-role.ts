@@ -39,9 +39,9 @@ export function isAdminRevokedError(err: unknown): boolean {
 }
 
 export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse>>) => {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
-  return useQuery<AdminRoleResponse>({
+  const query = useQuery<AdminRoleResponse>({
     queryKey: [ADMIN_ROLE_QUERY_KEY, user?.id],
     queryFn: async () => {
       if (!user) {
@@ -50,7 +50,6 @@ export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse
 
       return getAdminRole();
     },
-    enabled: !!user && options?.enabled !== false,
     // Previously: staleTime 5min + refetchOnMount:false + refetchOnFocus:false
     // meant a `{isAdmin:true}` value cached once was served for 5 minutes
     // regardless of route changes, which caused every admin-gated hook to
@@ -63,5 +62,8 @@ export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse
     refetchOnWindowFocus: true,
     refetchOnMount: true,
     ...options,
+    enabled: !authLoading && !!user && options?.enabled !== false,
   });
+
+  return { ...query, isLoading: authLoading || query.isLoading };
 };

@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
+import '@/features/session/tool/tools/list-tool';
 
 /**
  * Task 16 follow-up. `ToolPartRenderer` is the funnel every tool call passes
@@ -69,6 +70,29 @@ const UNREGISTERED = {
     metadata: {},
   },
 } as unknown as ToolPart;
+
+test.each([
+  ['mcp_list', 'MCP Discovery'],
+  ['mcp_call', 'MCP Tool'],
+  ['mcp_read_resource', 'MCP Resource'],
+  ['mcp_get_prompt', 'MCP Prompt'],
+  ['mcp_disconnect', 'Disconnect MCP'],
+])('renders %s with its server and MCP output', (tool, label) => {
+  const part = {
+    ...UNREGISTERED,
+    tool,
+    state: {
+      ...UNREGISTERED.state,
+      input: { server: 'fixture', kind: 'tools', connectionId: 'private-routing-id' },
+      output: 'MCP_RESULT_MARKER',
+    },
+  } as ToolPart;
+  const html = renderPanel(part, { defaultOpen: true });
+  expect(html).toContain(label!);
+  expect(html).toContain('fixture');
+  expect(html).toContain('MCP_RESULT_MARKER');
+  expect(html).not.toContain('private-routing-id');
+});
 
 describe('ToolPartRenderer forwards the open props to every branch', () => {
   test('a thrown error opens with defaultOpen — the error text IS the content', () => {
@@ -196,4 +220,36 @@ describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => 
   test('no body-bearing call site drops forceOpen', () => {
     expect(gapsFor('forceOpen')).toEqual([]);
   });
+});
+
+describe('tool result attachments', () => {
+  const file = {
+    type: 'file',
+    id: 'tool-image-1',
+    messageID: 'message-1',
+    sessionID: 's1',
+    mime: 'image/png',
+    filename: 'capture.png',
+    url: '/kortix/part/s1/message-1/tool-image-1',
+  };
+  test('renders a completed tool image through the shared attachment tiles', () => {
+    const part = {
+      ...UNREGISTERED,
+      state: { ...UNREGISTERED.state, status: 'completed', attachments: [file] },
+    } as ToolPart;
+    const html = renderPanel(part);
+    expect(html).toContain('capture.png');
+    expect(html).toContain('justify-start');
+    expect(html).not.toContain('data:image/png;base64');
+  });
+  test.each(['running', 'error'] as const)(
+    'does not present %s output as a completed attachment',
+    (status) => {
+      const part = {
+        ...UNREGISTERED,
+        state: { ...UNREGISTERED.state, status, error: 'Capture failed', attachments: [file] },
+      } as unknown as ToolPart;
+      expect(renderPanel(part)).not.toContain('capture.png');
+    },
+  );
 });

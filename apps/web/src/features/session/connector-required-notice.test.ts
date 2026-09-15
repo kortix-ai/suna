@@ -65,8 +65,8 @@ describe('connectorNoticeCopy', () => {
  * The card shipped correct and rendered nothing for weeks.
  *
  * It was mounted with `error={sessionState?.sendError}`. The SDK sets
- * `sendError` only inside `useSession.send()`; this app has always sent through
- * `sendParts`, so that value is permanently null. And `TurnErrorDisplay`
+ * `sendError` only inside `useSession.send()`; this app sends through the
+ * durable prompt inbox, so that value is permanently null. And `TurnErrorDisplay`
  * deliberately `return null`s for `kind: 'connector'` to leave the remedy to
  * this card — so a refused turn produced NO card and NO pill. The server
  * refused correctly, the SDK classified correctly, and the user saw silence.
@@ -90,5 +90,13 @@ describe('ConnectorRequiredNotice is wired to a value that is actually set', () 
     // The other half of the invariant: feeding the card a state nobody writes
     // would fail exactly the same way, silently.
     expect(SESSION_CHAT).toContain('setCommandError(result.error)');
+  });
+
+  test('retry re-enters the durable composer send path', () => {
+    const resend = SESSION_CHAT.split('resend={')[1]?.split('className="mt-2"')[0];
+
+    expect(resend).toBeTruthy();
+    expect(resend).toContain('void handleSend(');
+    expect(resend).not.toContain('.sendParts(');
   });
 });

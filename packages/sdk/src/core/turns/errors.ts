@@ -66,6 +66,53 @@ function messageFieldFromJsonish(str: string): string | undefined {
   return typeof literal === 'string' && literal.trim() ? literal.trim() : undefined;
 }
 
+function isHtmlTagBoundary(char: string | undefined): boolean {
+  return char === undefined || char === '>' || char === '/' || char.charCodeAt(0) <= 32;
+}
+
+function startsHtmlTag(lower: string, offset: number, name: 'script' | 'style'): boolean {
+  const prefix = `<${name}`;
+  return lower.startsWith(prefix, offset) && isHtmlTagBoundary(lower[offset + prefix.length]);
+}
+
+/** Remove tags and non-visible script/style bodies with one forward scan. */
+function visibleHtmlText(str: string, lower: string): string {
+  const chunks: string[] = [];
+  let cursor = 0;
+  while (cursor < str.length) {
+    const tagStart = str.indexOf('<', cursor);
+    if (tagStart === -1) {
+      chunks.push(str.slice(cursor));
+      break;
+    }
+    chunks.push(str.slice(cursor, tagStart));
+
+    const hiddenTag = startsHtmlTag(lower, tagStart, 'script')
+      ? 'script'
+      : startsHtmlTag(lower, tagStart, 'style')
+        ? 'style'
+        : undefined;
+    if (hiddenTag) {
+      const openEnd = str.indexOf('>', tagStart + hiddenTag.length + 1);
+      if (openEnd === -1) break;
+      const closeStart = lower.indexOf(`</${hiddenTag}>`, openEnd + 1);
+      if (closeStart === -1) break;
+      cursor = closeStart + hiddenTag.length + 3;
+      chunks.push(' ');
+      continue;
+    }
+
+    const tagEnd = str.indexOf('>', tagStart + 1);
+    if (tagEnd === -1) {
+      chunks.push(str.slice(tagStart));
+      break;
+    }
+    chunks.push(' ');
+    cursor = tagEnd + 1;
+  }
+  return chunks.join(' ');
+}
+
 /**
  * A gateway or CDN error page (`<html><title>502 Bad Gateway</title>…`). The
  * title is the sentence; failing that, the visible text, capped so a whole
@@ -73,13 +120,18 @@ function messageFieldFromJsonish(str: string): string | undefined {
  */
 function textFromHtml(str: string): string | undefined {
   if (!/^\s*<(?:!doctype|html|head|body)\b/i.test(str)) return undefined;
-  const title = str.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
+  const lower = str.toLowerCase();
+  const titleStart = lower.indexOf('<title');
+  const titleOpenEnd = titleStart === -1 ? -1 : str.indexOf('>', titleStart + 6);
+  const titleEnd = titleOpenEnd === -1 ? -1 : lower.indexOf('</title>', titleOpenEnd + 1);
+  const title =
+    titleEnd === -1
+      ? undefined
+      : str.slice(titleOpenEnd + 1, titleEnd).includes('<')
+        ? undefined
+        : str.slice(titleOpenEnd + 1, titleEnd).trim();
   if (title) return title;
-  const text = str
-    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = visibleHtmlText(str, lower).replace(/\s+/g, ' ').trim();
   return text ? text.slice(0, 200) : undefined;
 }
 

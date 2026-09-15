@@ -33,7 +33,7 @@ export function useFileHistory(
   },
 ) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const limit = options?.limit ?? 50;
   const skip = options?.skip ?? 0;
 
@@ -69,7 +69,7 @@ export function useFileCommitDiff(
   options?: { enabled?: boolean },
 ) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useQuery<FileCommitDiff>({
     queryKey:
@@ -91,7 +91,7 @@ export function useFileAtCommit(
   options?: { enabled?: boolean },
 ) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useQuery<string>({
     queryKey:

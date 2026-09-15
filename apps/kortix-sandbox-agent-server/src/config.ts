@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { manifestConfigDir } from '../../../packages/manifest-schema/src/manifest-config-dir'
 
 /**
  * Env contract for kortix-sandbox-agent-server.
@@ -77,6 +78,10 @@ const Schema = z.object({
   // a short-lived download descriptor at the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_PIN: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
+  KORTIX_ENV_RPC_SECRET: z.string().optional(),
+  KORTIX_ENVIRONMENT_HISTORY: BoolFlag.default(false),
+  KORTIX_AGENT_STATE_DIR: z.string().optional(),
+  KORTIX_SESSION_ID: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
   // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
@@ -106,7 +111,8 @@ const Schema = z.object({
   // ── Monitor box (docs/specs/2026-08-12-monitors.md) ──────────────────────
   // `monitor` selects the daemon's monitor mode: it clones the repo, skips
   // opencode entirely, and supervises the project's monitor processes instead.
-  // Anything else (including unset) is the normal session daemon.
+  // `environment` serves workspace operations without an agent runtime.
+  // Unset selects the OpenCode session daemon.
   KORTIX_WORKLOAD: z.string().default(''),
   // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
   // JSON. The daemon deliberately does not parse the manifest: one parser means
@@ -157,6 +163,12 @@ export type Config = {
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
+  /** Purpose-bound HMAC key for worker-to-environment RPC. */
+  envRpcSecret?: string
+  /** Internal checkpoint RPC opt-in; disabled until rewind coordination ships. */
+  environmentHistory?: boolean
+  agentStateDir?: string
+  sessionId?: string
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
@@ -198,6 +210,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
+    KORTIX_ENV_RPC_SECRET: env.KORTIX_ENV_RPC_SECRET,
+    KORTIX_ENVIRONMENT_HISTORY: env.KORTIX_ENVIRONMENT_HISTORY,
+    KORTIX_AGENT_STATE_DIR: env.KORTIX_AGENT_STATE_DIR,
+    KORTIX_SESSION_ID: env.KORTIX_SESSION_ID,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
@@ -235,6 +251,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
+    envRpcSecret: parsed.KORTIX_ENV_RPC_SECRET,
+    environmentHistory: parsed.KORTIX_ENVIRONMENT_HISTORY,
+    agentStateDir: parsed.KORTIX_AGENT_STATE_DIR,
+    sessionId: parsed.KORTIX_SESSION_ID,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
@@ -393,8 +413,7 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
 }
 
 /**
- * Pluck `opencode.config_dir` out of the project manifest without dragging in a
- * full parser. Resolves kortix.yaml first, then legacy kortix.toml, and reads
+ * Resolve shared config_dir with the canonical directory helper and Bun parsers. Resolves kortix.yaml first, then legacy kortix.toml, and reads
  * the field from whichever format it found. Falls back to the default if the
  * manifest is absent or anything's off.
  */
@@ -405,12 +424,14 @@ async function readOpencodeConfigDirFromManifest(
   const fallback = '.kortix/opencode'
   const manifest = await readProjectManifest(fs, projectTarget)
   if (!manifest) return fallback
-  const rawValue = extractNestedString(manifest.body, manifest.format, 'opencode', 'config_dir')
-  if (!rawValue) return fallback
-  const raw = rawValue.trim().replace(/\/+$/, '')
-  // Reject absolute paths and parent traversal — matches the API's validator.
-  if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return fallback
-  return raw
+  try {
+    const parsed = manifest.format === 'yaml' ? Bun.YAML.parse(manifest.body) : Bun.TOML.parse(manifest.body)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback
+    const raw = manifestConfigDir(parsed as Record<string, unknown>)
+    return isPlainRelativePath(raw) ? raw : fallback
+  } catch {
+    return fallback
+  }
 }
 
 /**

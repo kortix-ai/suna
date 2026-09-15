@@ -321,6 +321,72 @@ export class DaytonaProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * Bring the SESSION runtime process back in an already-running box.
+   *
+   * Daytona resumes the box and starts nothing inside it — the same fact
+   * `ensureAppRuntimeStarted` above exists for, applied to the other workload.
+   * Without this a stopped session never returns: measured on pi.kortix.com
+   * 2026-08-29, every resume of a stopped pi-worker session failed with
+   * `runtime_unreachable_timeout` and was cycled back to stopped, while
+   * never-stopped boxes on the SAME snapshot (`kortix-piworker-preview-…`)
+   * stayed ready. Restarting the BOX cannot fix a box that is already fine.
+   *
+   * Idempotent by construction:
+   *  - the port probe returns early when the runtime is already listening, so
+   *    calling this on a healthy box does nothing;
+   *  - the detached entrypoint inherits the locked descriptor for its lifetime;
+   *    a losing caller exits 0 rather than failing the wake;
+   *  - the worker binds before restoring history, fencing a simultaneous
+   *    provider entrypoint before either process can claim the same turn.
+   *
+   * `setsid` + full redirection detaches the worker from the exec channel —
+   * the entrypoint `exec`s the worker in the FOREGROUND, so without this the
+   * toolbox call would block until the 15s timeout and then reap the very
+   * process it just started.
+   *
+   * Best-effort by contract: the caller falls through to its existing
+   * stop-and-retry, so a failure here can only ever leave today's behaviour.
+   */
+  async ensureSessionRuntimeStarted(externalId: string): Promise<void> {
+    const daytona = getDaytona();
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId}) for session runtime bootstrap`,
+    );
+    // `sh -c`, single string: the guest image is Alpine with no bash. The probe
+    // uses node (guaranteed present — it is what the worker runs on) rather
+    // than curl, which the pi-worker image does not ship.
+    const probe = "require('node:net').connect({port:process.env.PORT,host:'127.0.0.1'}).on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))";
+    const script = [
+      'export PORT=${KORTIX_SERVICE_PORT:-8000}',
+      'if [ -n "${KORTIX_PI_RUNTIME_SHA:-}" ]; then export KORTIX_PI_RUNTIME_REF=$KORTIX_PI_RUNTIME_SHA; fi',
+      `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
+      'echo already-listening; exit 0; fi',
+      'exec 9>/tmp/kortix-pi-worker.lock',
+      'flock -n 9',
+      'launch_status=$?',
+      'if [ "$launch_status" -eq 1 ]; then echo lock-held; exit 0; fi',
+      'if [ "$launch_status" -ne 0 ]; then exit "$launch_status"; fi',
+      `if node -e ${shellQuote(probe)} 2>/dev/null; then`,
+      'echo already-listening; exit 0; fi',
+      'setsid /usr/local/bin/pi-worker-entrypoint </dev/null 9>&9 >>/tmp/kortix-pi-worker.log 2>&1 &',
+      'echo launched',
+    ].join('\n');
+    const command = `sh -c ${shellQuote(script)}`;
+    const result = await withTimeout(
+      sandbox.process.executeCommand(command, undefined, undefined, 15),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona session runtime bootstrap(${externalId})`,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Daytona session runtime bootstrap failed for ${externalId}: exit ${result.exitCode}: ${String(result.result).slice(0, 500)}`,
+      );
+    }
+  }
+
   async exec(
     externalId: string,
     command: string[],
@@ -350,7 +416,17 @@ export class DaytonaProvider implements SandboxProvider {
       `Daytona get(${externalId})`,
     );
     await withTimeout(
-      sandbox.start(),
+      (async () => {
+        try {
+          await sandbox.start(PROVIDER_CALL_TIMEOUT_MS / 1000);
+        } catch (error) {
+          if ((error as { statusCode?: number } | null)?.statusCode !== 409) throw error;
+          const current = await daytona.get(externalId);
+          if (current.state === SandboxState.STARTED) return;
+          if (!['starting', 'pending_start', 'restoring'].includes(String(current.state))) throw error;
+          await current.waitUntilStarted(PROVIDER_CALL_TIMEOUT_MS / 1000);
+        }
+      })(),
       PROVIDER_CALL_TIMEOUT_MS,
       `Daytona start(${externalId})`,
     ).catch((err) => reportIfDiskQuotaError(err, 'resume'));

@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
+import { z } from 'zod';
 import type { BillingState } from './billing/services/billing-state';
 
 // === Request Schemas (Router) ===
@@ -93,6 +93,8 @@ export interface AuthVariables {
   tokenProjectId?: string;
   /** Set for session-scoped sandbox connector PATs. */
   sessionId?: string;
+  /** Exact physical runtime represented by a session-scoped PAT. */
+  sessionRuntimeKind?: 'worker' | 'environment';
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
   /** Per-agent authorization grant — non-null only for agent-session tokens.

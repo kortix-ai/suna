@@ -21,6 +21,8 @@ import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
+import { storeSessionAttachments } from '../lib/session-attachment-store';
+import { sessionMetadataClaimsPiWorker } from '../lib/session-sandbox-metadata';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -365,8 +367,10 @@ projectsApp.openapi(
         ? (body.pending_prompt as Record<string, unknown>)
         : null;
     const conversion = rawPendingPrompt
-      ? convertPendingPromptToInboxRow({
+      ? await convertPendingPromptToInboxRow({
           pendingPrompt: rawPendingPrompt,
+          signal: c.req.raw.signal,
+          piWorker: sessionMetadataClaimsPiWorker(candidate.metadata),
           projectId,
           accountId: loaded.row.accountId,
           sessionId,
@@ -389,6 +393,7 @@ projectsApp.openapi(
         .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER))
         .returning();
       if (row && conversion?.rowValues) {
+        await storeSessionAttachments(tx, sessionId, conversion.attachments ?? []);
         // A re-claim after a failed response cannot double-insert: the claim
         // CAS above already refused (marker gone), so this insert runs at most
         // once per session. The idempotency key still guards the create path's
