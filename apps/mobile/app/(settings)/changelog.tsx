@@ -19,6 +19,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { getFullChangelog, type ChangelogChange, type ChangelogEntry } from '@/lib/platform/client';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const CHANGE_ICONS: Record<string, typeof Sparkles> = {
   feature: Sparkles,
@@ -30,14 +31,16 @@ const CHANGE_ICONS: Record<string, typeof Sparkles> = {
   deprecation: AlertTriangle,
 };
 
+// Theme-invariant brand accents (global.css declares these byte-identical in
+// light/dark) — closest accent hue to each change type's old literal.
 const CHANGE_COLORS: Record<string, string> = {
-  feature: '#10B981',
-  fix: '#F87171',
-  improvement: '#60A5FA',
-  breaking: '#F59E0B',
-  upstream: '#A78BFA',
-  security: '#FB7185',
-  deprecation: '#FB923C',
+  feature: THEME.accent.green,
+  fix: THEME.accent.red,
+  improvement: THEME.accent.blue,
+  breaking: THEME.accent.orange,
+  upstream: THEME.accent.purple,
+  security: THEME.accent.red,
+  deprecation: THEME.accent.orange,
 };
 
 export default function ChangelogScreen() {
@@ -108,10 +111,20 @@ export default function ChangelogScreen() {
           <Pressable
             onPress={handleUpdate}
             className="mt-4 flex-row items-center justify-center self-start rounded-xl px-5 py-2.5 active:opacity-90"
-            style={{ backgroundColor: isDark ? '#F8F8F8' : '#121215' }}
+            style={{ backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground }}
           >
-            <Icon as={ArrowDownToLine} size={15} className={isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'} strokeWidth={2.5} />
-            <Text className={`ml-2 font-roobert-semibold text-sm ${isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'}`}>
+            {/* Sits on the filled (foreground-colored) button — invert vs. the
+                usual isDark mapping so it reads dark-on-light / light-on-dark. */}
+            <Icon
+              as={ArrowDownToLine}
+              size={15}
+              color={isDark ? THEME.light.foreground : THEME.dark.foreground}
+              strokeWidth={2.5}
+            />
+            <Text
+              className="ml-2 font-roobert-semibold text-sm"
+              style={{ color: isDark ? THEME.light.foreground : THEME.dark.foreground }}
+            >
               Update to v{latestVersion}
             </Text>
           </Pressable>
@@ -119,9 +132,9 @@ export default function ChangelogScreen() {
 
         {/* Update success */}
         {updateResult?.success && (
-          <View className="mt-4 flex-row items-center self-start rounded-xl bg-emerald-400/15 px-4 py-2.5">
-            <Icon as={Check} size={15} className="text-emerald-500" strokeWidth={2.5} />
-            <Text className="ml-2 font-roobert-medium text-sm text-emerald-500">
+          <View className="mt-4 flex-row items-center self-start rounded-xl bg-kortix-green/15 px-4 py-2.5">
+            <Icon as={Check} size={15} className="text-kortix-green" strokeWidth={2.5} />
+            <Text className="ml-2 font-roobert-medium text-sm text-kortix-green">
               Updated to v{updateResult.currentVersion}. Refresh to see changes.
             </Text>
           </View>
@@ -132,7 +145,7 @@ export default function ChangelogScreen() {
           <View
             className="mt-4 rounded-2xl border px-4 py-3.5"
             style={{
-              borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08),
             }}
           >
             <View className="flex-row items-center mb-2">
@@ -151,13 +164,13 @@ export default function ChangelogScreen() {
             </View>
             <View
               className="h-1.5 rounded-full overflow-hidden"
-              style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+              style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
             >
               <View
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.max(phaseProgress, 2)}%`,
-                  backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                  backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                 }}
               />
             </View>
@@ -169,8 +182,8 @@ export default function ChangelogScreen() {
           <View
             className="mt-4 rounded-2xl border px-4 py-3.5"
             style={{
-              borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
-              backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)',
+              borderColor: isDark ? withAlpha(THEME.dark.destructive, 0.2) : withAlpha(THEME.light.destructive, 0.15),
+              backgroundColor: isDark ? withAlpha(THEME.dark.destructive, 0.05) : withAlpha(THEME.light.destructive, 0.03),
             }}
           >
             <View className="flex-row items-center">
@@ -230,13 +243,14 @@ function VersionCard({
   isLatest: boolean;
   isDark: boolean;
 }) {
+  // The old literal (rgb 219,39,119, a magenta/rose) has no matching accent
+  // token; `THEME.accent.red` (hue 360) is the closest available hue (rose's
+  // hue is ~333) and is theme-invariant, matching the original's single value.
   const borderColor = isLatest
-    ? isDark ? 'rgba(219,39,119,0.35)' : 'rgba(219,39,119,0.25)'
-    : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
+    ? withAlpha(THEME.accent.red, isDark ? 0.35 : 0.25)
+    : isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
 
-  const bgColor = isLatest
-    ? isDark ? 'rgba(219,39,119,0.04)' : 'rgba(219,39,119,0.02)'
-    : undefined;
+  const bgColor = isLatest ? withAlpha(THEME.accent.red, isDark ? 0.04 : 0.02) : undefined;
 
   return (
     <View
@@ -249,8 +263,8 @@ function VersionCard({
           v{entry.version}
         </Text>
         {isCurrent && (
-          <View className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5">
-            <Text className="text-[10px] font-roobert-medium text-emerald-600 dark:text-emerald-400">Current</Text>
+          <View className="ml-2 rounded-full bg-kortix-green/15 px-2 py-0.5">
+            <Text className="text-[10px] font-roobert-medium text-kortix-green">Current</Text>
           </View>
         )}
         {isLatest && (
@@ -293,12 +307,12 @@ function VersionCard({
 
 function ChangeRow({ change }: { change: ChangelogChange }) {
   const ChangeIcon = CHANGE_ICONS[change.type] || Zap;
-  const color = CHANGE_COLORS[change.type] || '#60A5FA';
+  const color = CHANGE_COLORS[change.type] || THEME.accent.blue;
 
   return (
     <View className="flex-row items-start py-1">
       <View className="mt-0.5 mr-2.5">
-        <Icon as={ChangeIcon} size={13} style={{ color }} strokeWidth={2.2} />
+        <Icon as={ChangeIcon} size={13} color={color} strokeWidth={2.2} />
       </View>
       <Text className="flex-1 font-roobert text-[13px] text-foreground/90 leading-[18px]">
         {change.text}

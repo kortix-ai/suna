@@ -14,7 +14,6 @@ import {
   View,
   Modal,
   TextInput,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Platform,
@@ -24,6 +23,8 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Fuse from 'fuse.js';
+import { Button } from '@/components/ui/button';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 import type { Session } from '@/lib/opencode/types';
 import { searchFiles } from '@/lib/utils/file-search';
@@ -85,7 +86,7 @@ export function CommandPalette({
   const [fileSearchMode, setFileSearchMode] = useState(false);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fileSearchSeq = useRef(0);
 
   // Auto-focus and reset on open
@@ -368,14 +369,15 @@ export function CommandPalette({
 
   // ── Colors ──────────────────────────────────────────────────────────────
 
-  const bgColor = isDark ? '#121215' : '#FFFFFF';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const hoverBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const sectionColor = isDark ? '#666' : '#999';
+  const bgColor = isDark ? THEME.dark.popover : THEME.light.popover;
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  // Original literals (`#888`/`#999`, `#666`/`#999`) had their light/dark
+  // branches swapped relative to their own lightness — measurably closer to
+  // the *other* mode's mutedForeground token (same finding as the identical
+  // `#888`/`#999` pair in SessionChatInput's command palette, task 26).
+  const mutedColor = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
+  const sectionColor = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
 
   return (
     <Modal
@@ -386,23 +388,22 @@ export function CommandPalette({
       statusBarTranslucent
     >
       {/* Backdrop */}
-      <TouchableOpacity
-        activeOpacity={1}
+      <Button
+        variant="ghost"
         onPress={onClose}
+        className="h-auto w-auto flex-1 items-stretch justify-start rounded-none p-0 active:bg-transparent"
         style={{
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          justifyContent: 'flex-start',
+          backgroundColor: 'rgba(0,0,0,0.5)', // hex-allowlist: fixed modal scrim, matches gorhom's own SheetBackdrop default (opacity 0.5 black), not a themed surface
         }}
       >
         {/* Content card — tap doesn't propagate to backdrop */}
-        <TouchableOpacity
-          activeOpacity={1}
+        <Button
+          variant="ghost"
           onPress={() => {}}
+          className="h-auto w-auto items-stretch justify-start rounded-2xl p-0 active:bg-transparent"
           style={{
             marginTop: insets.top + 12,
             marginHorizontal: 16,
-            borderRadius: 16,
             backgroundColor: bgColor,
             borderWidth: 1,
             borderColor,
@@ -411,7 +412,7 @@ export function CommandPalette({
             // Shadow
             ...Platform.select({
               ios: {
-                shadowColor: '#000',
+                shadowColor: '#000', // hex-allowlist: universal shadow ink, not a themed surface color
                 shadowOffset: { width: 0, height: 8 },
                 shadowOpacity: 0.25,
                 shadowRadius: 24,
@@ -432,9 +433,15 @@ export function CommandPalette({
             }}
           >
             {fileSearchMode ? (
-              <TouchableOpacity onPress={exitFileSearchMode} hitSlop={8} style={{ marginRight: 8 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={exitFileSearchMode}
+                hitSlop={8}
+                className="h-auto w-auto mr-2 p-0 active:bg-transparent active:opacity-70"
+              >
                 <Ionicons name="arrow-back" size={18} color={mutedColor} />
-              </TouchableOpacity>
+              </Button>
             ) : (
               <Ionicons
                 name="search-outline"
@@ -469,9 +476,15 @@ export function CommandPalette({
               }}
             />
             {hasQuery && (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => setQuery('')}
+                hitSlop={8}
+                className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
+              >
                 <Ionicons name="close-circle" size={18} color={mutedColor} />
-              </TouchableOpacity>
+              </Button>
             )}
           </View>
 
@@ -541,7 +554,6 @@ export function CommandPalette({
                     onPress={item.onSelect}
                     fgColor={fgColor}
                     mutedColor={mutedColor}
-                    hoverBg={hoverBg}
                   />
                 ))}
 
@@ -556,8 +568,7 @@ export function CommandPalette({
                         onPress={() => handleSessionPress(s.id)}
                         fgColor={fgColor}
                         mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+                          />
                     ))}
                   </>
                 )}
@@ -576,8 +587,7 @@ export function CommandPalette({
                         onPress={item.onSelect}
                         fgColor={fgColor}
                         mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+                          />
                     ))}
                   </>
                 )}
@@ -593,8 +603,7 @@ export function CommandPalette({
                         onPress={() => handleSessionPress(s.id)}
                         fgColor={fgColor}
                         mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+                          />
                     ))}
                   </>
                 )}
@@ -612,8 +621,7 @@ export function CommandPalette({
                       }}
                       fgColor={fgColor}
                       mutedColor={mutedColor}
-                      hoverBg={hoverBg}
-                    />
+                      />
                   </>
                 )}
 
@@ -623,22 +631,23 @@ export function CommandPalette({
                       No commands or sessions found
                     </RNText>
                     {sandboxUrl && (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
                         onPress={() => setFileSearchMode(true)}
-                        style={{ marginTop: 8 }}
+                        className="h-auto w-auto mt-2 p-0 active:bg-transparent active:opacity-70"
                       >
-                        <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? '#60a5fa' : '#2563eb' }}>
+                        <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: THEME.accent.blue }}>
                           Search files instead →
                         </RNText>
-                      </TouchableOpacity>
+                      </Button>
                     )}
                   </View>
                 )}
               </>
             )}
           </ScrollView>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </Button>
+      </Button>
     </Modal>
   );
 }
@@ -671,27 +680,18 @@ function CommandRow({
   onPress,
   fgColor,
   mutedColor,
-  hoverBg,
 }: {
   icon: string;
   label: string;
   onPress: () => void;
   fgColor: string;
   mutedColor: string;
-  hoverBg: string;
 }) {
   return (
-    <TouchableOpacity
+    <Button
+      variant="ghost"
       onPress={onPress}
-      activeOpacity={0.6}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 11,
-        marginHorizontal: 6,
-        borderRadius: 10,
-      }}
+      className="h-auto flex-row items-center justify-start mx-1.5 rounded-[10px] px-4 py-2.5 active:opacity-70"
     >
       <Ionicons
         name={icon as any}
@@ -709,7 +709,7 @@ function CommandRow({
       >
         {label}
       </RNText>
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -719,27 +719,18 @@ function SessionRow({
   onPress,
   fgColor,
   mutedColor,
-  hoverBg,
 }: {
   session: Session;
   timeLabel: string;
   onPress: () => void;
   fgColor: string;
   mutedColor: string;
-  hoverBg: string;
 }) {
   return (
-    <TouchableOpacity
+    <Button
+      variant="ghost"
       onPress={onPress}
-      activeOpacity={0.6}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 11,
-        marginHorizontal: 6,
-        borderRadius: 10,
-      }}
+      className="h-auto flex-row items-center justify-start mx-1.5 rounded-[10px] px-4 py-2.5 active:opacity-70"
     >
       <Ionicons
         name="chatbubble-outline"
@@ -770,7 +761,7 @@ function SessionRow({
           {timeLabel}
         </RNText>
       ) : null}
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -791,17 +782,10 @@ function FileRow({
   const dirPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
 
   return (
-    <TouchableOpacity
+    <Button
+      variant="ghost"
       onPress={onPress}
-      activeOpacity={0.6}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 11,
-        marginHorizontal: 6,
-        borderRadius: 10,
-      }}
+      className="h-auto flex-row items-center justify-start mx-1.5 rounded-[10px] px-4 py-2.5 active:opacity-70"
     >
       <Ionicons
         name="document-outline"
@@ -834,6 +818,6 @@ function FileRow({
           </RNText>
         ) : null}
       </View>
-    </TouchableOpacity>
+    </Button>
   );
 }

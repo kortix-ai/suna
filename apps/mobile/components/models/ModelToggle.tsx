@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Lock, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { ModeLogo } from './ModeLogo';
 import type { Model } from '@/api/types';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface ModelToggleProps {
   models: Model[];
@@ -24,15 +25,16 @@ export function ModelToggle({
 }: ModelToggleProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const c = isDark ? THEME.dark : THEME.light;
 
   const colors = {
-    bg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-    bgPressed: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    selected: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    text: isDark ? '#f8f8f8' : '#121215',
-    muted: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)',
-    border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-    accent: isDark ? '#ffffff' : '#000000',
+    // Exact match for the app's low-alpha "pressed/selected" overlay token.
+    selected: c.hover,
+    muted: withAlpha(c.foreground, 0.45),
+    border: c.border,
+    accent: c.foreground,
+    // Contrast color against the accent-filled radio (background inverts vs. foreground).
+    onAccent: c.background,
   };
 
   const basicModel = React.useMemo(() => {
@@ -104,7 +106,7 @@ export function ModelToggle({
             ]}
           >
             {isBasicSelected && (
-              <Check size={14} strokeWidth={3} color={isDark ? '#000000' : '#ffffff'} />
+              <Check size={14} strokeWidth={3} color={colors.onAccent} />
             )}
           </View>
         </View>
@@ -135,7 +137,7 @@ export function ModelToggle({
             ]}
           >
             {isAdvancedSelected ? (
-              <Check size={14} strokeWidth={3} color={isDark ? '#000000' : '#ffffff'} />
+              <Check size={14} strokeWidth={3} color={colors.onAccent} />
             ) : !canAccessAdvanced ? (
               <Lock size={14} strokeWidth={2} color={colors.muted} />
             ) : null}
@@ -146,7 +148,7 @@ export function ModelToggle({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = {
   container: {
     gap: 8,
   },
@@ -181,6 +183,6 @@ const styles = StyleSheet.create({
   locked: {
     opacity: 0.5,
   },
-});
+} as const;
 
 export default ModelToggle;

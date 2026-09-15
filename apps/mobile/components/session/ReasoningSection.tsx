@@ -3,11 +3,12 @@
  * Adapted from frontend design with React Native animations
  */
 
-import { ShimmerText } from '@/components/ui/ShimmerText';
+import { ShimmerText } from '@/components/kortix/ShimmerText';
 import { Icon } from '@/components/ui/icon';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { Text } from '@/components/ui/text';
 import { cn } from '@/lib/utils/utils';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { ChevronDown } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -67,7 +68,7 @@ export function ReasoningSection({
     () => ({
       fontSize: isCompact ? 12 : 13,
       lineHeight: isCompact ? 18 : 22,
-      color: isDark ? 'rgba(248,248,248,0.55)' : 'rgba(18,18,21,0.55)',
+      color: isDark ? withAlpha(THEME.dark.foreground, 0.55) : withAlpha(THEME.light.foreground, 0.55),
       fontFamily: 'Roobert-Regular',
     }),
     [isCompact, isDark],
@@ -76,7 +77,7 @@ export function ReasoningSection({
     () => ({
       fontSize: isCompact ? 12 : 13,
       lineHeight: isCompact ? 18 : 20,
-      color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)',
+      color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5),
       fontFamily: 'Roobert-Regular',
     }),
     [isCompact, isDark],
@@ -177,7 +178,7 @@ export function ReasoningSection({
           className={cn('mt-1 pl-4', 'ml-0')}
           style={{
             borderLeftWidth: 2,
-            borderLeftColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+            borderLeftColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1),
           }}
         >
           {hasContent ? (

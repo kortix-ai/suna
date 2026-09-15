@@ -47,18 +47,12 @@ import { SvgUri } from 'react-native-svg';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetFlatList,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ToolkitIcon } from '@/components/settings/connections/ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // Drawer view states
 type DrawerView = 'apps' | 'connector' | 'tools';
@@ -103,9 +97,9 @@ function ActiveConnectionCard({
           className="absolute inset-0 z-10 items-center justify-center rounded-2xl"
           style={{
             backgroundColor:
-              colorScheme === 'dark' ? 'rgba(24, 24, 27, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+              colorScheme === 'dark' ? withAlpha(THEME.dark.card, 0.8) : withAlpha(THEME.light.card, 0.8),
           }}>
-          <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+          <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         </View>
       )}
       <View className="flex-row items-center gap-3">
@@ -140,9 +134,9 @@ function ActiveConnectionCard({
           </Text>
           {connection && (
             <View className="flex-row items-center gap-1">
-              <Icon as={CheckCircle2} size={12} className="text-green-600 dark:text-green-400" />
+              <Icon as={CheckCircle2} size={12} className="text-kortix-green" />
               <Text
-                className="text-xs font-medium text-green-600 dark:text-green-400"
+                className="text-xs font-medium text-kortix-green"
                 numberOfLines={1}>
                 {connection.connection_name}
               </Text>
@@ -169,7 +163,7 @@ function ActiveConnectionCard({
             {isDeleting ? (
               <ActivityIndicator
                 size="small"
-                color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+                color={colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive}
               />
             ) : (
               <Icon as={Trash2} size={18} className="text-destructive" />
@@ -182,6 +176,7 @@ function ActiveConnectionCard({
 }
 
 export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: ConnectionsScreenProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const router = useRouter();
@@ -559,12 +554,6 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
     );
   }, [apps, browseAppsSearchQuery]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    []
-  );
 
   const handleCustomMcpSave = (config: any) => {
     // Check if this is the initial discovery call (with tool objects) or the final save (with tool names)
@@ -652,7 +641,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
   if (isLoadingAgent || isLoadingApps) {
     return (
       <View className="items-center justify-center py-12">
-        <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">
           Loading connections...
         </Text>
@@ -801,18 +790,11 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseBrowseApps}
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         backgroundStyle={{
-          backgroundColor: getSheetBg(colorScheme === 'dark'),
+          backgroundColor: sheetBg,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-          marginTop: 8,
-          marginBottom: 0,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -828,7 +810,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
                   paddingHorizontal: 24,
                   paddingTop: 16,
                   paddingBottom: 16,
-                  backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+                  backgroundColor: sheetBg,
                 }}>
                 <Text className="mb-2 font-roobert-semibold text-xl text-foreground">
                   {t('connections.composioApps')}
@@ -839,22 +821,14 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
 
                 {/* Search Bar */}
                 <View>
-                  <View
-                    className="flex-row items-center rounded-2xl border border-border bg-card px-4"
-                    style={{
-                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    }}>
+                  <View className="flex-row items-center rounded-2xl border border-border bg-card px-4">
                     <Icon as={Search} size={18} className="text-muted-foreground" />
                     <TextInput
                       value={browseAppsSearchQuery}
                       onChangeText={setBrowseAppsSearchQuery}
                       placeholder={t('composio.searchApps')}
-                      placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                      placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                       className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
-                      style={{
-                        color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
-                      }}
                     />
                     {browseAppsSearchQuery.length > 0 && (
                       <Pressable onPress={() => setBrowseAppsSearchQuery('')} className="ml-2">
@@ -872,7 +846,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
                   style={{ paddingHorizontal: 24 }}>
                   <ActivityIndicator
                     size="small"
-                    color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'}
+                    color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground}
                   />
                   <Text className="mt-4 font-roobert text-sm text-muted-foreground">
                     {t('connections.loadingConnections')}
@@ -912,9 +886,9 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
                                 <Icon
                                   as={CheckCircle2}
                                   size={12}
-                                  className="text-green-600 dark:text-green-400"
+                                  className="text-kortix-green"
                                 />
-                                <Text className="text-xs font-medium text-green-600 dark:text-green-400">
+                                <Text className="text-xs font-medium text-kortix-green">
                                   {t('triggers.connected')}
                                 </Text>
                               </View>
@@ -994,18 +968,11 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseCustomMcp}
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         backgroundStyle={{
-          backgroundColor: getSheetBg(colorScheme === 'dark'),
+          backgroundColor: sheetBg,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-          marginTop: 8,
-          marginBottom: 0,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
@@ -1018,19 +985,12 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 16,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+              backgroundColor: sheetBg,
             }}>
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="mb-1 font-roobert-semibold text-xl">
+            <Text className="mb-1 font-roobert-semibold text-xl text-foreground">
               {t('connections.customMcp.title')}
             </Text>
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {t('connections.customMcp.description')}
             </Text>
           </View>
@@ -1055,7 +1015,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
               paddingHorizontal: 24,
               paddingTop: 16,
               paddingBottom: 24,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+              backgroundColor: sheetBg,
             }}>
             <Pressable
               onPress={() => customMcpButtonHandler?.()}
@@ -1067,7 +1027,7 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
                 {customMcpButtonLoading && (
                   <ActivityIndicator
                     size="small"
-                    color={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+                    color={colorScheme === 'dark' ? THEME.dark.background : THEME.light.background}
                   />
                 )}
                 <Text
@@ -1091,18 +1051,11 @@ export function ConnectionsScreen({ agentId, onUpdate, onUpgradePress }: Connect
         enableDynamicSizing={false}
         enablePanDownToClose
         onDismiss={handleCloseToolsSheet}
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         backgroundStyle={{
-          backgroundColor: getSheetBg(colorScheme === 'dark'),
+          backgroundColor: sheetBg,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-          marginTop: 8,
-          marginBottom: 0,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(colorScheme === 'dark')}
         style={{
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,

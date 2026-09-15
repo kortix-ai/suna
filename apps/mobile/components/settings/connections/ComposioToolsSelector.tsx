@@ -1,10 +1,10 @@
 import * as React from 'react';
-import { View, Pressable, ActivityIndicator, Alert, FlatList, TextInput } from 'react-native';
+import { View, Pressable, ActivityIndicator, Alert, FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { CheckCircle2, Search, AlertCircle, Save, X, Pencil } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
   useComposioToolsBySlug,
@@ -41,7 +41,6 @@ export function ComposioToolsContent({
   useBottomSheetFlatList = false,
 }: ComposioToolsContentProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const queryClient = useQueryClient();
   const toolkitSlug = app.slug || connection.toolkit_slug || '';
   const {
@@ -292,42 +291,27 @@ export function ComposioToolsContent({
       <View style={{ flex: 1 }}>
         {/* Fixed Header */}
         <View
+          className="bg-popover"
           style={{
             paddingHorizontal: 24,
             paddingTop: 16,
             paddingBottom: 16,
-            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
           }}>
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="mb-1 font-roobert-semibold text-xl">
+          <Text className="mb-1 font-roobert-semibold text-xl text-foreground">
             {app.name || connection.toolkit_name || app.slug}
           </Text>
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-            }}
-            className="mb-4 font-roobert text-sm">
+          <Text className="mb-4 font-roobert text-sm text-muted-foreground">
             {connection.connection_name}
           </Text>
 
           {/* Search Bar */}
-          <View
-            className="flex-row items-center rounded-2xl border border-border bg-card px-4"
-            style={{
-              backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-              borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-            }}>
+          <View className="flex-row items-center rounded-2xl border border-border bg-input px-4">
             <Icon as={Search} size={18} className="text-muted-foreground" />
-            <TextInput
+            <Input
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder={t('composio.searchTools')}
-              placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-              className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
-              style={{
-                color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
-              }}
+              className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={() => setSearchQuery('')} className="ml-2">
@@ -403,11 +387,11 @@ export function ComposioToolsContent({
 
         {/* Fixed Footer Button */}
         <View
+          className="bg-popover"
           style={{
             paddingHorizontal: 24,
             paddingTop: 16,
             paddingBottom: 24,
-            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
           }}>
           <Pressable
             onPress={handleSaveTools}
@@ -418,7 +402,7 @@ export function ComposioToolsContent({
                 : 'bg-primary active:opacity-80'
             }`}>
             {isSaving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator size="small" color="white" />
             ) : (
               <Icon as={Save} size={18} className="text-primary-foreground" />
             )}
@@ -443,16 +427,10 @@ export function ComposioToolsContent({
       {/* Header with title, description and edit button */}
       <View className="mb-4 flex-row items-center justify-between">
         <View className="flex-1">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="font-roobert-semibold text-xl">
+          <Text className="font-roobert-semibold text-xl text-foreground">
             {app.name || connection.toolkit_name || app.slug}
           </Text>
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-            }}
-            className="font-roobert text-sm">
+          <Text className="font-roobert text-sm text-muted-foreground">
             {connection.connection_name}
           </Text>
         </View>
@@ -467,22 +445,13 @@ export function ComposioToolsContent({
 
       {/* Sticky Search Bar */}
       <View className="mb-4">
-        <View
-          className="flex-row items-center rounded-2xl border border-border bg-card px-4"
-          style={{
-            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-          }}>
+        <View className="flex-row items-center rounded-2xl border border-border bg-input px-4">
           <Icon as={Search} size={18} className="text-muted-foreground" />
-          <TextInput
+          <Input
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={t('composio.searchTools')}
-            placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-            className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
-            style={{
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
-            }}
+            className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} className="ml-2">
@@ -574,7 +543,7 @@ export function ComposioToolsContent({
               : 'bg-primary active:opacity-80'
           }`}>
           {isSaving ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="white" />
           ) : (
             <Icon as={Save} size={18} className="text-primary-foreground" />
           )}

@@ -1,20 +1,23 @@
-import { Stack, useRouter, Redirect } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
+import { AppStack, usePushTransition } from '@/components/navigation/stack-transitions';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 /**
  * Auth Layout
- * 
+ *
  * Stack navigation for authentication screens.
  * CRITICAL: Authenticated users should NEVER see auth screens.
- * This layout immediately redirects authenticated users to /home.
+ * This layout immediately redirects authenticated users to /projects.
  */
 export default function AuthLayout() {
   const { colorScheme } = useColorScheme();
   const { isAuthenticated, isLoading } = useAuthContext();
+  const pushTransition = usePushTransition();
 
   // While auth is loading, show nothing to prevent flash
   if (isLoading) {
@@ -22,7 +25,7 @@ export default function AuthLayout() {
       <View 
         style={{ 
           flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
+          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -35,22 +38,24 @@ export default function AuthLayout() {
   // CRITICAL: Authenticated users should NEVER be on auth screens
   // Redirect them immediately to home
   if (isAuthenticated) {
-    log.log('🚫 Auth layout: user is authenticated, redirecting to /projects');
-    return <Redirect href="/projects" />;
+    log.log('🚫 Auth layout: user is authenticated, redirecting to the last project');
+    return <Redirect href="/" />;
   }
 
   return (
-    <Stack
+    <AppStack
       screenOptions={{
         headerShown: false,
         contentStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
+          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
         },
-        animation: 'slide_from_right',
+        // Same push/pop as every stack (components/navigation/stack-transitions).
+        ...pushTransition,
       }}
     >
-      <Stack.Screen name="index" />
-    </Stack>
+      <AppStack.Screen name="index" />
+      <AppStack.Screen name="email" />
+    </AppStack>
   );
 }
 

@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -17,7 +18,7 @@ const THEME_PREFERENCE_KEY = '@theme_preference';
 type ThemePreference = 'light' | 'dark' | 'system';
 
 export default function ThemeScreen() {
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
 
@@ -31,14 +32,9 @@ export default function ThemeScreen() {
   const loadThemePreference = async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-      if (saved) {
-        setThemePreference(saved as ThemePreference);
-      } else {
-        const currentTheme = colorScheme || 'light';
-        setThemePreference(currentTheme === 'dark' ? 'dark' : 'light');
-      }
+      setThemePreference(parseThemePreference(saved));
     } catch {
-      setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
+      setThemePreference(DEFAULT_THEME_PREFERENCE);
     }
   };
 

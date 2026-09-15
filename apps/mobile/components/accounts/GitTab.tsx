@@ -1,38 +1,33 @@
 /**
- * Account → Git (web parity: GitHubConnectionCard). List connected GitHub App
- * installations, connect a new one (opens the install URL), configure, and
- * disconnect.
+ * Account → Git (web parity: GitHubConnectionCard). Connected GitHub App
+ * installations; connect a new one (opens the install URL); tap a connection
+ * to configure or disconnect it. Settings-list layout: see apps/mobile/design.md.
  */
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, RefreshControl } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Alert, Linking, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Github, ExternalLink, Unplug, Shield } from 'lucide-react-native';
+import { AlertCircle, Github, RotateCw } from 'lucide-react-native';
+
 import { Text } from '@/components/ui/text';
-import { useThemeColors } from '@/lib/theme-colors';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
 import { listGitHubInstallations, deleteGitHubInstallation } from '@/lib/projects/projects-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
-import { accountColors, SkeletonRow, type AccountCaps } from './account-shared';
+import type { AccountCaps } from './account-shared';
 
-function permissionLabel(value: unknown): string | null {
-  if (typeof value !== 'string' || !value) return null;
-  return `Contents ${value}`;
+function repositoryScope(selection: string | null | undefined): string {
+  if (selection === 'selected') return 'Selected repos';
+  if (selection === 'all') return 'All repos';
+  return 'Connected';
 }
 
-export function GitTab({ account, can, isDark }: { account: AccountDetail; can: AccountCaps; isDark: boolean }) {
-  const c = accountColors(isDark);
-  const theme = useThemeColors();
-  const insets = useSafeAreaInsets();
+export function GitTab({ account, can }: { account: AccountDetail; can: AccountCaps; isDark: boolean }) {
   const accountId = account.account_id;
   const canManage = can['account.write'];
   const queryClient = useQueryClient();
   const [connecting, setConnecting] = useState(false);
-
-  const sectionTitle = { fontSize: 15.5, fontFamily: 'Roobert-Medium' as const, color: c.fg };
-  const countBadge = { minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: c.avatarBg, alignItems: 'center' as const };
-  const countText = { fontSize: 11, fontFamily: 'Roobert-Medium' as const, color: c.muted };
 
   const installationsQuery = useQuery({
     queryKey: ['github-installations', accountId],
@@ -46,7 +41,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
       haptics.success();
       queryClient.invalidateQueries({ queryKey: ['github-installations', accountId] });
     },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to disconnect GitHub.'),
+    onError: (e: any) => Alert.alert('Unable to disconnect', e?.message || 'Try again in a moment.'),
   });
 
   const installations = installationsQuery.data?.installations ?? [];
@@ -60,111 +55,94 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
       if (res.error) throw res.error;
       const installUrl = res.data?.install_url;
       if (!installUrl) {
-        Alert.alert('Unavailable', res.data?.configured === false ? 'The GitHub App is not configured.' : 'GitHub install URL unavailable.');
+        Alert.alert('GitHub unavailable', res.data?.configured === false ? 'The GitHub App is not configured.' : 'The GitHub install link is unavailable.');
         return;
       }
       await Linking.openURL(installUrl);
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || 'Failed to start GitHub setup.');
+      Alert.alert('Unable to connect GitHub', e?.message || 'Try again in a moment.');
     } finally {
       setConnecting(false);
     }
   };
 
   const confirmDisconnect = (installationId: string, owner: string | null) => {
-    Alert.alert('Disconnect GitHub', `New imports from ${owner ?? 'this GitHub account'} will stop working until it's connected again. Existing projects keep their repository link.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: () => { haptics.medium(); disconnect.mutate(installationId); } },
-    ]);
+    Alert.alert(
+      `Disconnect ${owner ?? 'GitHub'}?`,
+      'New imports from this account stop working. Existing projects keep their repository link.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Disconnect', style: 'destructive', onPress: () => { haptics.medium(); disconnect.mutate(installationId); } },
+      ],
+    );
+  };
+
+  // Row press → action sheet with the actions this connection supports.
+  const openConnectionActions = (inst: (typeof installations)[number]) => {
+    const id = inst.installation_id ?? '';
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+    if (inst.installation_url) {
+      buttons.push({ text: 'Configure on GitHub', onPress: () => { void Linking.openURL(inst.installation_url!); } });
+    }
+    if (canManage && id) {
+      buttons.push({ text: 'Disconnect', style: 'destructive', onPress: () => confirmDisconnect(id, inst.owner_login) });
+    }
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    haptics.selection();
+    Alert.alert(inst.owner_login ?? 'GitHub', undefined, buttons);
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 40 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={installationsQuery.isRefetching} onRefresh={() => installationsQuery.refetch()} tintColor={c.muted} />}
-    >
-      {/* ── Git connections ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={sectionTitle}>Git connections</Text>
-        <View style={countBadge}><Text style={countText}>{installations.length}</Text></View>
-        <View style={{ flex: 1 }} />
-        {canManage && (
-          <TouchableOpacity onPress={handleConnect} disabled={connecting} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
-            {connecting ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Github size={14} color={theme.primaryForeground} />}
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{connecting ? 'Connecting' : 'Connect'}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <Text style={{ fontSize: 12, color: c.muted, marginTop: 4 }}>Connect one or more GitHub users or organizations to import repositories.</Text>
+    <SettingsPage>
+      {canManage && (
+        <SettingsGroup>
+          <SettingsRow
+            icon={Github}
+            label={connecting ? 'Opening GitHub…' : 'Connect GitHub'}
+            external
+            onPress={connecting ? undefined : () => void handleConnect()}
+          />
+        </SettingsGroup>
+      )}
 
-      <View style={{ marginTop: 10 }}>
-        {installationsQuery.isLoading ? (
-          <View><SkeletonRow isDark={isDark} /><SkeletonRow isDark={isDark} /></View>
-        ) : installationsQuery.isError ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: 'rgba(217,119,6,0.08)' }}>
-            <Github size={15} color="#d97706" />
-            <Text style={{ flex: 1, fontSize: 12.5, color: '#d97706' }}>GitHub status unavailable: {(installationsQuery.error as Error)?.message}</Text>
-          </View>
-        ) : installations.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingVertical: 30, gap: 12 }}>
-            <Github size={26} color={c.muted} />
-            <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>No GitHub connections. Connect the Kortix GitHub App to import repositories.</Text>
-          </View>
-        ) : (
-          <View>
-            {installations.map((inst, i) => {
-              const contents = permissionLabel(inst.permissions?.contents);
-              const repoSel = inst.repository_selection === 'selected' ? 'Selected repositories' : inst.repository_selection === 'all' ? 'All repositories' : null;
-              const id = inst.installation_id ?? '';
-              const meta = [inst.owner_type, repoSel, contents].filter(Boolean).join(' · ');
-              return (
-                <View key={id || inst.owner_login || 'gh'} style={{ paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>
-                      <Github size={18} color={c.fg} />
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inst.owner_login ?? 'GitHub App'}</Text>
-                        <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: 'rgba(34,197,94,0.12)' }}>
-                          <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: '#16a34a' }}>Connected</Text>
-                        </View>
-                      </View>
-                      {!!meta && <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }} numberOfLines={1}>{meta}</Text>}
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                    {inst.installation_url && (
-                      <TouchableOpacity onPress={() => { haptics.tap(); Linking.openURL(inst.installation_url!); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
-                        <ExternalLink size={13} color={c.muted} />
-                        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Configure</Text>
-                      </TouchableOpacity>
-                    )}
-                    {canManage && id && (
-                      <TouchableOpacity onPress={() => { haptics.tap(); confirmDisconnect(id, inst.owner_login); }} disabled={disconnect.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
-                        {disconnect.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Unplug size={13} color="#ef4444" />}
-                        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Disconnect</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </View>
-
-      <View style={{ height: 1, backgroundColor: c.border, marginVertical: 22 }} />
-
-      {/* ── Note ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
-        <Shield size={15} color={c.muted} style={{ marginTop: 1 }} />
-        <Text style={{ flex: 1, fontSize: 12, lineHeight: 17, color: c.muted }}>
-          Kortix stores the GitHub App installation on the account. It's a platform credential — individual projects link to repos through it.
+      {installationsQuery.isLoading ? (
+        <View className="items-center py-12">
+          <KortixLoader />
+        </View>
+      ) : installationsQuery.isError ? (
+        <SettingsGroup>
+          <SettingsRow icon={AlertCircle} label="GitHub status unavailable" destructive />
+          <SettingsRow
+            icon={RotateCw}
+            label="Try again"
+            right={null}
+            onPress={() => {
+              haptics.tap();
+              installationsQuery.refetch();
+            }}
+          />
+        </SettingsGroup>
+      ) : installations.length === 0 ? (
+        <Text variant="muted" className="py-10 text-center">
+          No GitHub connections yet.
         </Text>
-      </View>
-    </ScrollView>
+      ) : (
+        <SettingsGroup title="GitHub connections">
+          {installations.map((inst) => (
+            <SettingsRow
+              key={inst.installation_id || inst.owner_login || 'gh'}
+              icon={Github}
+              label={inst.owner_login ?? 'GitHub App'}
+              value={repositoryScope(inst.repository_selection)}
+              onPress={
+                inst.installation_url || (canManage && inst.installation_id)
+                  ? () => openConnectionActions(inst)
+                  : undefined
+              }
+            />
+          ))}
+        </SettingsGroup>
+      )}
+    </SettingsPage>
   );
 }

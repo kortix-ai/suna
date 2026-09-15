@@ -1,7 +1,7 @@
 import '@/global.css';
 
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
-import { NAV_THEME } from '@/lib/utils/theme';
+import { NAV_THEME, THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
 import {
@@ -17,17 +17,19 @@ import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import { ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider } from 'expo-router/react-navigation';
 import { PortalHost } from '@rn-primitives/portal';
-import { ToastProvider } from '@/components/ui/toast-provider';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import { ToastProvider } from '@/components/kortix/toast-provider';
+import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import {
   GlobalUpgradeSheet,
   SandboxUpgradeGateListener,
 } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
-import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
+import { SplashScreen, useRouter, useSegments } from 'expo-router';
+import { AppStack, fadeTransition, usePushTransition } from '@/components/navigation/stack-transitions';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -40,8 +42,8 @@ import { supabase } from '@/api/supabase';
 import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
-import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 import { installHapticsGate } from '@/lib/haptics';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
@@ -86,8 +88,8 @@ SplashScreen.preventAutoHideAsync();
 export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
+  const pushTransition = usePushTransition();
   const { colorScheme, setColorScheme } = useColorScheme();
-  const appearanceThemeId = useAppearanceStore((s) => s.themeId);
   const [i18nInitialized, setI18nInitialized] = useState(false);
   const router = useRouter();
 
@@ -143,17 +145,11 @@ export default function RootLayout() {
         if (!isMounted) return;
 
         themeLoadedRef.current = true;
-
-        if (saved === 'system' || saved === 'dark' || saved === 'light') {
-          setColorScheme(saved);
-        } else if (!colorScheme) {
-          setColorScheme('light');
-        }
+        // No saved choice → light mode (DEFAULT_THEME_PREFERENCE).
+        setColorScheme(parseThemePreference(saved));
       } catch {
         if (!isMounted) return;
-        if (!colorScheme) {
-          setColorScheme('light');
-        }
+        setColorScheme(DEFAULT_THEME_PREFERENCE);
       }
     };
 
@@ -170,7 +166,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'ios') {
       const activeScheme = colorScheme ?? 'light';
-      const backgroundColor = activeScheme === 'dark' ? '#121215' : '#F5F5F5';
+      // Nearest THEME tokens to the old literals (light: --muted L=96.1% is an
+      // exact match for F5F5F5; the dark surface token (L=7.8%) is the closest achromatic
+      // match to 121215's ~18,18,21 — see the (settings) layout for the same pair).
+      const backgroundColor = activeScheme === 'dark' ? THEME.dark.surface : THEME.light.muted;
       SystemUI.setBackgroundColorAsync(backgroundColor);
     }
   }, [colorScheme]);
@@ -303,16 +302,34 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, [checkAndApplyUpdates]);
 
-  // Re-apply status bar style on foreground — iOS resets the bar appearance
-  // when the app suspends/resumes and the declarative <StatusBar/> doesn't
-  // re-render unless the React tree updates.
+  // Keep the status bar visible with icons that contrast with the theme.
+  // - iOS resets the bar appearance on suspend/resume, and the declarative
+  //   <StatusBar/> only re-applies when the React tree updates.
+  // - Android: KeyboardProvider replaces React Native's StatusBarManager with
+  //   react-native-keyboard-controller's compat module, which silently drops
+  //   setStyle/setHidden while `currentActivity` is null. A call that races
+  //   the activity attach is lost, the icons keep Expo Go's previous colour
+  //   (white on our light header) and the bar reads as empty on some phones.
+  //   Re-applying shortly after mount lands once the activity exists.
   useEffect(() => {
     const desired: 'light' | 'dark' = (colorScheme ?? 'light') === 'dark' ? 'light' : 'dark';
-    setStatusBarStyle(desired, true);
+    const apply = () => {
+      StatusBar.setHidden(false);
+      setStatusBarStyle(desired, false);
+      // Android navigation buttons follow the same contrast. Takes effect on
+      // 3-button phones once the contrast scrim is off (`enforceContrast:
+      // false` in app.json — dev and store builds, not Expo Go).
+      if (Platform.OS === 'android') NavigationBar.setStyle(desired);
+    };
+    apply();
+    const retries = [150, 600, 1500].map((ms) => setTimeout(apply, ms));
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') setStatusBarStyle(desired, true);
+      if (state === 'active') apply();
     });
-    return () => sub.remove();
+    return () => {
+      retries.forEach(clearTimeout);
+      sub.remove();
+    };
   }, [colorScheme]);
   // ==========================================
   // END OTA UPDATE SYSTEM
@@ -553,7 +570,7 @@ export default function RootLayout() {
         }
       } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
         // Thread sharing is no longer supported in-app; ignore share deep links.
-        console.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
+        log.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
         isHandlingDeepLink = false;
       } else {
         log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
@@ -588,7 +605,6 @@ export default function RootLayout() {
   }
 
   const activeColorScheme = colorScheme ?? 'light';
-  const appearanceThemeClass = `theme-${appearanceThemeId}`;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -608,101 +624,66 @@ export default function RootLayout() {
                                 <StatusBar
                                   style={activeColorScheme === 'dark' ? 'light' : 'dark'}
                                 />
-                                <View className={`flex-1 ${appearanceThemeClass}`}>
+                                <View className="flex-1">
                                   <AuthProtection>
-                                    <Stack
+                                    {/* Push/pop transition for every stack: AppStack +
+                                        usePushTransition (components/navigation/stack-transitions).
+                                        iOS native push; Android layered card, mirrored on back.
+                                        `fadeTransition` is reserved for root swaps — screens with
+                                        no spatial relationship to each other (auth ⇄ tabs). */}
+                                    <AppStack
                                       screenOptions={{
                                         headerShown: false,
-                                        animation: 'fade',
+                                        gestureEnabled: true,
+                                        ...pushTransition,
                                       }}>
-                                      <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                      <Stack.Screen name="setting-up" />
-                                      <Stack.Screen name="onboarding" />
-                                      <Stack.Screen
-                                        name="home"
-                                        options={{
-                                          gestureEnabled: false,
-                                        }}
+                                      <AppStack.Screen name="index" options={{ animation: 'none' }} />
+                                      <AppStack.Screen
+                                        name="(tabs)"
+                                        options={{ ...fadeTransition, gestureEnabled: false }}
                                       />
-                                      <Stack.Screen
-                                        name="projects"
-                                        options={{
-                                          gestureEnabled: false,
-                                        }}
-                                      />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="auth"
-                                        options={{
-                                          gestureEnabled: false,
-                                          animation: 'fade',
-                                        }}
+                                        options={{ ...fadeTransition, gestureEnabled: false }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
+                                        name="projects/[id]"
+                                        // Back never leaves a project: no swipe-back.
+                                        // Only the project menu's All projects opens the
+                                        // list (ProjectLeftDrawer). Pages inside the
+                                        // project swipe back on their own stack.
+                                        options={{ gestureEnabled: false }}
+                                      />
+                                      <AppStack.Screen
                                         name="(settings)"
                                         options={{
-                                          animation:
-                                            Platform.OS === 'ios' ? 'default' : 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
                                           presentation: 'card',
+                                          fullScreenGestureEnabled: true,
                                         }}
                                       />
-                                      <Stack.Screen
-                                        name="plans"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
+                                      <AppStack.Screen
+                                        name="account-settings"
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
-                                        name="billing"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
-                                      <Stack.Screen
-                                        name="usage"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
-                                      <Stack.Screen
+                                      <AppStack.Screen name="plans" />
+                                      <AppStack.Screen name="billing" />
+                                      <AppStack.Screen
                                         name="accounts/index"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]/groups/[groupId]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen
+                                      <AppStack.Screen
                                         name="accounts/[id]/members/[userId]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen name="trigger-detail" />
-                                      <Stack.Screen name="worker-config" />
-                                    </Stack>
+                                    </AppStack>
                                   </AuthProtection>
                                 </View>
                                 <SandboxUpgradeGateListener />
@@ -759,8 +740,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /projects');
-      router.replace('/projects');
+      log.log('🚫 Authenticated user on auth screen, redirecting to the last project');
+      router.replace('/');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

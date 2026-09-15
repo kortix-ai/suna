@@ -14,10 +14,11 @@ import { Icon } from '@/components/ui/icon';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
 import { supabase } from '@/api/supabase';
 import { haptics } from '@/lib/haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -122,7 +123,7 @@ export default function NameEditScreen() {
                 setError(null);
               }}
               placeholder={t('nameEdit.yourNamePlaceholder')}
-              placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+              placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
               className="text-[34px] font-roobert-semibold text-foreground text-center tracking-tight"
               editable={!isLoading}
               maxLength={100}

@@ -5,10 +5,13 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, TouchableOpacity, FlatList, TextInput, SectionList } from 'react-native';
+import { View, FlatList, SectionList } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
+import { THEME } from '@/lib/utils/theme';
 import type { FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 
 interface ModelSelectorProps {
@@ -65,32 +68,35 @@ export function ModelSelector({
   );
 
   return (
-    <View className={`rounded-t-2xl ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
+    <View className="rounded-t-2xl bg-popover">
       {/* Handle */}
       <View className="items-center pt-3 pb-1">
-        <View className={`h-1 w-10 rounded-full ${isDark ? 'bg-zinc-700' : 'bg-zinc-300'}`} />
+        <View className="h-1 w-10 rounded-full bg-border" />
       </View>
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 py-3">
-        <Text className={`text-base font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+        <Text className="text-base font-semibold text-foreground">
           Model
         </Text>
-        <TouchableOpacity onPress={onClose} hitSlop={12}>
-          <Ionicons name="close" size={20} color={isDark ? '#a1a1aa' : '#71717a'} />
-        </TouchableOpacity>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={onClose}
+          hitSlop={12}
+          className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
+        >
+          <Ionicons name="close" size={20} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+        </Button>
       </View>
 
       {/* Search */}
       <View className="px-4 pb-2">
-        <TextInput
+        <Input
           value={search}
           onChangeText={setSearch}
           placeholder="Search models..."
-          placeholderTextColor={isDark ? '#52525b' : '#a1a1aa'}
-          className={`rounded-lg px-3 py-2.5 text-sm ${
-            isDark ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-900'
-          }`}
+          className="rounded-lg"
           autoCapitalize="none"
           autoCorrect={false}
         />
@@ -104,11 +110,7 @@ export function ModelSelector({
         style={{ maxHeight: 400 }}
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }) => (
-          <Text
-            className={`text-xs font-medium uppercase tracking-wider px-4 pt-3 pb-1 ${
-              isDark ? 'text-zinc-500' : 'text-zinc-400'
-            }`}
-          >
+          <Text className="text-xs font-medium uppercase tracking-wider px-4 pt-3 pb-1 text-muted-foreground">
             {section.title}
           </Text>
         )}
@@ -119,19 +121,17 @@ export function ModelSelector({
           const hasVariants = item.variants && Object.keys(item.variants).length > 0;
 
           return (
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={() => handleSelect(item)}
-              className={`flex-row items-center rounded-xl px-4 py-3 mb-0.5 ${
-                isSelected ? (isDark ? 'bg-zinc-800' : 'bg-zinc-100') : ''
+              className={`h-auto flex-row items-center justify-start rounded-xl px-4 py-3 mb-0.5 active:opacity-60 ${
+                isSelected ? 'bg-accent' : ''
               }`}
-              activeOpacity={0.6}
             >
               <View className="flex-1">
                 <Text
                   className={`text-sm ${
-                    isSelected
-                      ? isDark ? 'text-white font-semibold' : 'text-zinc-900 font-semibold'
-                      : isDark ? 'text-zinc-300' : 'text-zinc-700'
+                    isSelected ? 'text-foreground font-semibold' : 'text-muted-foreground'
                   }`}
                 >
                   {item.modelName}
@@ -140,22 +140,22 @@ export function ModelSelector({
 
               <View className="flex-row items-center">
                 {hasVariants && (
-                  <View className={`rounded px-1.5 py-0.5 mr-2 ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-                    <Text className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  <View className="rounded px-1.5 py-0.5 mr-2 bg-muted">
+                    <Text className="text-[10px] text-muted-foreground">
                       Thinking
                     </Text>
                   </View>
                 )}
                 {isSelected && (
-                  <Ionicons name="checkmark" size={18} color={isDark ? '#22c55e' : '#16a34a'} />
+                  <Ionicons name="checkmark" size={18} color={THEME.accent.green} />
                 )}
               </View>
-            </TouchableOpacity>
+            </Button>
           );
         }}
         ListEmptyComponent={
           <View className="items-center py-8">
-            <Text className={`text-sm ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+            <Text className="text-sm text-muted-foreground">
               No models found
             </Text>
           </View>

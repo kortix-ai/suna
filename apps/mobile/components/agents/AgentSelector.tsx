@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
-import { Platform, TouchableOpacity, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
 import { ModeLogo } from '@/components/models/ModeLogo';
 
@@ -50,32 +50,36 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
 
   if (compact) {
     return (
-      <TouchableOpacity
+      <Pressable
         onPress={onPress}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
-        hitSlop={ANDROID_HIT_SLOP}
-        activeOpacity={0.7}>
+        style={({ pressed }) => [
+          { flexDirection: 'row', alignItems: 'center', gap: 3 },
+          pressed && { opacity: 0.7 },
+        ]}
+        hitSlop={ANDROID_HIT_SLOP}>
         <ModeLogo mode={mode} height={10} />
         <Icon as={ChevronDown} size={9} className="text-foreground/60" strokeWidth={2} />
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        borderRadius: 14,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-      }}
-      hitSlop={ANDROID_HIT_SLOP}
-      activeOpacity={0.7}>
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 4,
+          borderRadius: 14,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+        },
+        pressed && { opacity: 0.7 },
+      ]}
+      hitSlop={ANDROID_HIT_SLOP}>
       <ModeLogo mode={mode} height={11} />
       <Icon as={ChevronDown} size={9} className="text-foreground/50" strokeWidth={2} />
-    </TouchableOpacity>
+    </Pressable>
   );
 }

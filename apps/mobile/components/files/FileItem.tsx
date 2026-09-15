@@ -41,6 +41,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { SandboxFile } from '@/api/types';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -61,7 +62,7 @@ function getExt(name: string): string {
  * Mirrors web's `text-muted-foreground` usage on file icons.
  */
 export function getMutedIconColor(isDark: boolean): string {
-  return isDark ? '#a1a1aa' : '#71717a';
+  return isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 }
 
 /**
@@ -225,7 +226,7 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
         {/* Text Content */}
         <View className="flex-1 min-w-0">
           <Text
-            style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+            style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
             className="text-base font-roobert-medium"
             numberOfLines={1}
           >
@@ -233,7 +234,7 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
           </Text>
           {file.type === 'directory' && (
             <Text
-              style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+              style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5) }}
               className="text-xs font-roobert mt-0.5"
             >
               Folder
@@ -246,7 +247,7 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
       <Icon
         as={ChevronRight}
         size={20}
-        color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
+        color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3)}
         strokeWidth={2}
         className="flex-shrink-0"
       />

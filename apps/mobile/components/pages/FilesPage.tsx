@@ -8,8 +8,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
-  TouchableOpacity,
-  Text as RNText,
   Pressable,
   ScrollView,
   Alert,
@@ -18,9 +16,10 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
+import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   Upload,
   FolderPlus,
@@ -42,14 +41,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
 } from 'react-native-reanimated';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetTextInput,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import * as Clipboard from 'expo-clipboard';
 import { haptics } from '@/lib/haptics';
 import * as DocumentPicker from 'expo-document-picker';
@@ -74,9 +66,17 @@ import {
 } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+
+// `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
+// legacy touchable, which itself just proxies react-native-gesture-handler's
+// touchable on Android (and RN's own on iOS) for correct gesture arbitration
+// inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
+const BottomSheetTouchable = GestureHandlerPressable;
 
 interface FilesTabState {
   viewMode?: 'list' | 'grid';
@@ -154,6 +154,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   { page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onFileSelectionChange, onRequestMenu },
   ref,
 ) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -162,8 +163,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const setTabState = useTabStore((s) => s.setTabState);
   const savedTabState = useTabStore((s) => s.tabStateById[page.id] as FilesTabState | undefined);
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#777';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const themeColors = useThemeColors();
 
   // View mode state
@@ -241,18 +242,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const renameMutation = useOpenCodeRenameFile();
 
   // Bottom sheet backdrop
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const openCreateFolder = useCallback(() => {
     setNewFolderName('');
@@ -366,7 +355,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     [],
   );
 
-  // File context actions (exposed via ref for BottomBar menu)
+  // File context actions (exposed via ref for menu)
   const handleOpenSelectedFile = useCallback(() => {
     if (!selectedFile) return;
     if (selectedFile.type === 'directory') {
@@ -585,7 +574,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     }
   }, [sandboxUrl, writeFileMutation, currentPath, newFileName, fileNameExists]);
 
-  // Expose actions to parent via ref (for BottomBar menu)
+  // Expose actions to parent via ref (for menu)
   useImperativeHandle(ref, () => ({
     showHidden,
     viewMode,
@@ -610,7 +599,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   // No sandbox available
   if (!sandboxUrl) {
     return (
-      <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
+      <View style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.muted }}>
         <PageHeader
           title={page.label}
           onOpenDrawer={onOpenDrawer}
@@ -631,12 +620,15 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.muted }}>
       <PageHeader
         title={
           isSearchOpen ? (
             <View className="flex-1 flex-row items-center" style={{ gap: 8 }}>
               <Icon as={Search} size={16} color={mutedColor} strokeWidth={2} />
+              {/* Kept as raw TextInput (not <Input>): needs `ref.focus()` to
+                  autofocus on open, and `@/components/ui/input`'s Input is not
+                  forwardRef — see apps/mobile/CLAUDE.md. */}
               <TextInput
                 ref={searchInputRef}
                 value={searchQuery}
@@ -717,8 +709,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         style={{
           borderBottomWidth: 1,
           borderBottomColor: isDark
-            ? 'rgba(248, 248, 248, 0.1)'
-            : 'rgba(18, 18, 21, 0.1)',
+            ? withAlpha(THEME.dark.foreground, 0.1)
+            : withAlpha(THEME.light.foreground, 0.1),
         }}
       >
         {/* Breadcrumbs */}
@@ -744,8 +736,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   isAtRoot
                     ? fgColor
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.4)'
-                      : 'rgba(18, 18, 21, 0.4)'
+                      ? withAlpha(THEME.dark.foreground, 0.4)
+                      : withAlpha(THEME.light.foreground, 0.4)
                 }
                 strokeWidth={2}
               />
@@ -754,8 +746,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   color: isAtRoot
                     ? fgColor
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.5)'
-                      : 'rgba(18, 18, 21, 0.5)',
+                      ? withAlpha(THEME.dark.foreground, 0.5)
+                      : withAlpha(THEME.light.foreground, 0.5),
                   marginLeft: 6,
                 }}
                 className={`text-sm ${isAtRoot ? 'font-roobert-medium' : 'font-roobert'}`}
@@ -772,8 +764,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   size={12}
                   color={
                     isDark
-                      ? 'rgba(248, 248, 248, 0.25)'
-                      : 'rgba(18, 18, 21, 0.25)'
+                      ? withAlpha(THEME.dark.foreground, 0.25)
+                      : withAlpha(THEME.light.foreground, 0.25)
                   }
                   strokeWidth={2}
                   style={{ marginHorizontal: 2 }}
@@ -790,8 +782,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                       color: segment.isLast
                         ? fgColor
                         : isDark
-                          ? 'rgba(248, 248, 248, 0.5)'
-                          : 'rgba(18, 18, 21, 0.5)',
+                          ? withAlpha(THEME.dark.foreground, 0.5)
+                          : withAlpha(THEME.light.foreground, 0.5),
                     }}
                     className={`text-sm ${segment.isLast ? 'font-roobert-medium' : 'font-roobert'}`}
                     numberOfLines={1}
@@ -814,8 +806,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="text-sm mt-4 font-roobert"
               style={{
                 color: isDark
-                  ? 'rgba(248, 248, 248, 0.5)'
-                  : 'rgba(18, 18, 21, 0.5)',
+                  ? withAlpha(THEME.dark.foreground, 0.5)
+                  : withAlpha(THEME.light.foreground, 0.5),
               }}
             >
               Loading files...
@@ -827,11 +819,11 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="w-16 h-16 rounded-2xl items-center justify-center mb-4"
               style={{
                 backgroundColor: isDark
-                  ? 'rgba(239, 68, 68, 0.1)'
-                  : 'rgba(239, 68, 68, 0.05)',
+                  ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.1)
+                  : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05),
               }}
             >
-              <Icon as={AlertCircle} size={32} color="#ef4444" strokeWidth={2} />
+              <Icon as={AlertCircle} size={32} color={isDark ? THEME.dark.destructive : THEME.light.destructive} strokeWidth={2} />
             </View>
             <Text
               className="text-lg font-roobert-semibold text-center mb-2"
@@ -843,8 +835,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="text-sm text-center mb-6 font-roobert"
               style={{
                 color: isDark
-                  ? 'rgba(248, 248, 248, 0.5)'
-                  : 'rgba(18, 18, 21, 0.5)',
+                  ? withAlpha(THEME.dark.foreground, 0.5)
+                  : withAlpha(THEME.light.foreground, 0.5),
               }}
             >
               {error?.message || 'An error occurred'}
@@ -852,11 +844,11 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             <Pressable
               onPress={() => { haptics.tap(); refetch(); }}
               className="px-8 py-3.5 rounded-full active:opacity-80"
-              style={{ backgroundColor: isDark ? '#f8f8f8' : '#121215' }}
+              style={{ backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground }}
             >
               <Text
                 className="text-sm font-roobert-medium"
-                style={{ color: isDark ? '#121215' : '#f8f8f8' }}
+                style={{ color: isDark ? THEME.light.foreground : THEME.dark.foreground }}
               >
                 Retry
               </Text>
@@ -883,8 +875,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="w-20 h-20 rounded-3xl items-center justify-center mb-6"
               style={{
                 backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.04)'
-                  : 'rgba(18, 18, 21, 0.03)',
+                  ? withAlpha(THEME.dark.foreground, 0.04)
+                  : withAlpha(THEME.light.foreground, 0.03),
               }}
             >
               <Icon
@@ -893,8 +885,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 strokeWidth={1.2}
                 color={
                   isDark
-                    ? 'rgba(248, 248, 248, 0.15)'
-                    : 'rgba(18, 18, 21, 0.15)'
+                    ? withAlpha(THEME.dark.foreground, 0.15)
+                    : withAlpha(THEME.light.foreground, 0.15)
                 }
               />
             </View>
@@ -908,8 +900,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="text-sm font-roobert text-center mb-8"
               style={{
                 color: isDark
-                  ? 'rgba(248, 248, 248, 0.35)'
-                  : 'rgba(18, 18, 21, 0.35)',
+                  ? withAlpha(THEME.dark.foreground, 0.35)
+                  : withAlpha(THEME.light.foreground, 0.35),
                 lineHeight: 20,
               }}
             >
@@ -944,8 +936,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 style={{
                   borderRadius: 9999,
                   backgroundColor: isDark
-                    ? 'rgba(248, 248, 248, 0.1)'
-                    : 'rgba(18, 18, 21, 0.06)',
+                    ? withAlpha(THEME.dark.foreground, 0.1)
+                    : withAlpha(THEME.light.foreground, 0.06),
                 }}
               >
                 <Icon
@@ -968,8 +960,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 style={{
                   borderRadius: 9999,
                   backgroundColor: isDark
-                    ? 'rgba(248, 248, 248, 0.1)'
-                    : 'rgba(18, 18, 21, 0.06)',
+                    ? withAlpha(THEME.dark.foreground, 0.1)
+                    : withAlpha(THEME.light.foreground, 0.06),
                 }}
               >
                 <Icon
@@ -1005,11 +997,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {folders.length > 0 && (
               <View className="px-4 pt-4">
                 <Text
-                  className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
+                  className="font-roobert-medium mb-3 uppercase tracking-wider"
                   style={{
+                    fontSize: 12,
                     color: isDark
-                      ? 'rgba(248, 248, 248, 0.4)'
-                      : 'rgba(18, 18, 21, 0.4)',
+                      ? withAlpha(THEME.dark.foreground, 0.4)
+                      : withAlpha(THEME.light.foreground, 0.4),
                   }}
                 >
                   Folders
@@ -1037,11 +1030,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {regularFiles.length > 0 && (
               <View className="px-4 pt-2">
                 <Text
-                  className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
+                  className="font-roobert-medium mb-3 uppercase tracking-wider"
                   style={{
+                    fontSize: 12,
                     color: isDark
-                      ? 'rgba(248, 248, 248, 0.4)'
-                      : 'rgba(18, 18, 21, 0.4)',
+                      ? withAlpha(THEME.dark.foreground, 0.4)
+                      : withAlpha(THEME.light.foreground, 0.4),
                   }}
                 >
                   Files
@@ -1082,11 +1076,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {folders.length > 0 && (
               <View className="mb-2">
                 <Text
-                  className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
+                  className="font-roobert-medium mb-2 uppercase tracking-wider px-1"
                   style={{
+                    fontSize: 12,
                     color: isDark
-                      ? 'rgba(248, 248, 248, 0.4)'
-                      : 'rgba(18, 18, 21, 0.4)',
+                      ? withAlpha(THEME.dark.foreground, 0.4)
+                      : withAlpha(THEME.light.foreground, 0.4),
                   }}
                 >
                   Folders
@@ -1106,11 +1101,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {regularFiles.length > 0 && (
               <View>
                 <Text
-                  className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
+                  className="font-roobert-medium mb-2 uppercase tracking-wider px-1"
                   style={{
+                    fontSize: 12,
                     color: isDark
-                      ? 'rgba(248, 248, 248, 0.4)'
-                      : 'rgba(18, 18, 21, 0.4)',
+                      ? withAlpha(THEME.dark.foreground, 0.4)
+                      : withAlpha(THEME.light.foreground, 0.4),
                   }}
                 >
                   Files
@@ -1134,22 +1130,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         ref={createFolderSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setNewFolderName('')}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -1164,8 +1155,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="w-10 h-10 rounded-xl items-center justify-center mr-3"
               style={{
                 backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.08)'
-                  : 'rgba(18, 18, 21, 0.05)',
+                  ? withAlpha(THEME.dark.foreground, 0.08)
+                  : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
               <Icon as={FolderPlus} size={20} color={fgColor} strokeWidth={1.8} />
@@ -1178,11 +1169,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 New Folder
               </Text>
               <Text
-                className="text-xs font-roobert mt-0.5"
+                className="font-roobert mt-0.5"
                 style={{
+                  fontSize: 12,
                   color: isDark
-                    ? 'rgba(248, 248, 248, 0.4)'
-                    : 'rgba(18, 18, 21, 0.4)',
+                    ? withAlpha(THEME.dark.foreground, 0.4)
+                    : withAlpha(THEME.light.foreground, 0.4),
                 }}
                 numberOfLines={1}
               >
@@ -1197,7 +1189,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onChangeText={setNewFolderName}
             placeholder="Enter folder name"
             placeholderTextColor={
-              isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'
+              isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)
             }
             autoFocus
             autoCapitalize="none"
@@ -1206,14 +1198,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onSubmitEditing={handleCreateFolder}
             style={{
               backgroundColor: isDark
-                ? 'rgba(248, 248, 248, 0.06)'
-                : 'rgba(18, 18, 21, 0.04)',
+                ? withAlpha(THEME.dark.foreground, 0.06)
+                : withAlpha(THEME.light.foreground, 0.04),
               borderWidth: 1,
               borderColor: folderNameExists
-                ? 'rgba(239, 68, 68, 0.6)'
+                ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.6)
                 : isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.08)',
+                  ? withAlpha(THEME.dark.foreground, 0.1)
+                  : withAlpha(THEME.light.foreground, 0.08),
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -1225,8 +1217,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           />
           {folderNameExists && (
             <Text
-              className="text-xs font-roobert mb-4"
-              style={{ color: '#ef4444', paddingLeft: 4 }}
+              className="font-roobert mb-4"
+              style={{ fontSize: 12, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), paddingLeft: 4 }}
             >
               A file or folder with that name already exists
             </Text>
@@ -1241,8 +1233,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 newFolderName.trim() && !folderNameExists
                   ? themeColors.primary
                   : isDark
-                    ? 'rgba(248, 248, 248, 0.08)'
-                    : 'rgba(18, 18, 21, 0.06)',
+                    ? withAlpha(THEME.dark.foreground, 0.08)
+                    : withAlpha(THEME.light.foreground, 0.06),
               borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
@@ -1256,8 +1248,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   newFolderName.trim() && !folderNameExists
                     ? themeColors.primaryForeground
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.3)'
-                      : 'rgba(18, 18, 21, 0.3)',
+                      ? withAlpha(THEME.dark.foreground, 0.3)
+                      : withAlpha(THEME.light.foreground, 0.3),
               }}
             >
               {createFolderMutation.isPending ? 'Creating...' : 'Create Folder'}
@@ -1271,22 +1263,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         ref={newFileSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setNewFileName('')}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
@@ -1297,8 +1284,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               className="w-10 h-10 rounded-xl items-center justify-center mr-3"
               style={{
                 backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.08)'
-                  : 'rgba(18, 18, 21, 0.05)',
+                  ? withAlpha(THEME.dark.foreground, 0.08)
+                  : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
               <Icon as={FilePlus} size={20} color={fgColor} strokeWidth={1.8} />
@@ -1308,9 +1295,10 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 New File
               </Text>
               <Text
-                className="text-xs font-roobert mt-0.5"
+                className="font-roobert mt-0.5"
                 style={{
-                  color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+                  fontSize: 12,
+                  color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
                 }}
                 numberOfLines={1}
               >
@@ -1325,7 +1313,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onChangeText={setNewFileName}
             placeholder="Enter file name (e.g. notes.md)"
             placeholderTextColor={
-              isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'
+              isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)
             }
             autoFocus
             autoCapitalize="none"
@@ -1334,14 +1322,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onSubmitEditing={handleCreateFile}
             style={{
               backgroundColor: isDark
-                ? 'rgba(248, 248, 248, 0.06)'
-                : 'rgba(18, 18, 21, 0.04)',
+                ? withAlpha(THEME.dark.foreground, 0.06)
+                : withAlpha(THEME.light.foreground, 0.04),
               borderWidth: 1,
               borderColor: fileNameExists
-                ? 'rgba(239, 68, 68, 0.6)'
+                ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.6)
                 : isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.08)',
+                  ? withAlpha(THEME.dark.foreground, 0.1)
+                  : withAlpha(THEME.light.foreground, 0.08),
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -1353,8 +1341,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           />
           {fileNameExists && (
             <Text
-              className="text-xs font-roobert mb-4"
-              style={{ color: '#ef4444', paddingLeft: 4 }}
+              className="font-roobert mb-4"
+              style={{ fontSize: 12, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), paddingLeft: 4 }}
             >
               A file or folder with that name already exists
             </Text>
@@ -1369,8 +1357,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 newFileName.trim() && !fileNameExists
                   ? themeColors.primary
                   : isDark
-                    ? 'rgba(248, 248, 248, 0.08)'
-                    : 'rgba(18, 18, 21, 0.06)',
+                    ? withAlpha(THEME.dark.foreground, 0.08)
+                    : withAlpha(THEME.light.foreground, 0.06),
               borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
@@ -1384,8 +1372,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   newFileName.trim() && !fileNameExists
                     ? themeColors.primaryForeground
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.3)'
-                      : 'rgba(18, 18, 21, 0.3)',
+                      ? withAlpha(THEME.dark.foreground, 0.3)
+                      : withAlpha(THEME.light.foreground, 0.3),
               }}
             >
               {writeFileMutation.isPending ? 'Creating...' : 'Create File'}
@@ -1399,22 +1387,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         ref={renameSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setRenameName(''); setRenameFile(null); }}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -1434,8 +1417,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   className="w-10 h-10 rounded-xl items-center justify-center mr-3"
                   style={{
                     backgroundColor: isDark
-                      ? 'rgba(248, 248, 248, 0.08)'
-                      : 'rgba(18, 18, 21, 0.05)',
+                      ? withAlpha(THEME.dark.foreground, 0.08)
+                      : withAlpha(THEME.light.foreground, 0.05),
                   }}
                 >
                   <Icon
@@ -1455,11 +1438,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 Rename
               </Text>
               <Text
-                className="text-xs font-roobert mt-0.5"
+                className="font-roobert mt-0.5"
                 style={{
+                  fontSize: 12,
                   color: isDark
-                    ? 'rgba(248, 248, 248, 0.4)'
-                    : 'rgba(18, 18, 21, 0.4)',
+                    ? withAlpha(THEME.dark.foreground, 0.4)
+                    : withAlpha(THEME.light.foreground, 0.4),
                 }}
                 numberOfLines={1}
               >
@@ -1474,7 +1458,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onChangeText={setRenameName}
             placeholder="Enter new name"
             placeholderTextColor={
-              isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'
+              isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)
             }
             autoFocus
             autoCapitalize="none"
@@ -1483,14 +1467,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             onSubmitEditing={handleConfirmRename}
             style={{
               backgroundColor: isDark
-                ? 'rgba(248, 248, 248, 0.06)'
-                : 'rgba(18, 18, 21, 0.04)',
+                ? withAlpha(THEME.dark.foreground, 0.06)
+                : withAlpha(THEME.light.foreground, 0.04),
               borderWidth: 1,
               borderColor: renameNameExists
-                ? 'rgba(239, 68, 68, 0.6)'
+                ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.6)
                 : isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.08)',
+                  ? withAlpha(THEME.dark.foreground, 0.1)
+                  : withAlpha(THEME.light.foreground, 0.08),
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -1502,8 +1486,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           />
           {renameNameExists && (
             <Text
-              className="text-xs font-roobert mb-4"
-              style={{ color: '#ef4444', paddingLeft: 4 }}
+              className="font-roobert mb-4"
+              style={{ fontSize: 12, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), paddingLeft: 4 }}
             >
               A file or folder with that name already exists
             </Text>
@@ -1523,8 +1507,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   backgroundColor: canRename
                     ? themeColors.primary
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.08)'
-                      : 'rgba(18, 18, 21, 0.06)',
+                      ? withAlpha(THEME.dark.foreground, 0.08)
+                      : withAlpha(THEME.light.foreground, 0.06),
                   borderRadius: 9999,
                   paddingVertical: 15,
                   alignItems: 'center',
@@ -1537,8 +1521,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                     color: canRename
                       ? themeColors.primaryForeground
                       : isDark
-                        ? 'rgba(248, 248, 248, 0.3)'
-                        : 'rgba(18, 18, 21, 0.3)',
+                        ? withAlpha(THEME.dark.foreground, 0.3)
+                        : withAlpha(THEME.light.foreground, 0.3),
                   }}
                 >
                   {renameMutation.isPending ? 'Renaming...' : 'Rename'}
@@ -1595,9 +1579,9 @@ function FileRowCard({
       className="flex-row items-center rounded-xl border active:opacity-70"
       style={{
         borderColor: isDark
-          ? 'rgba(248, 248, 248, 0.1)'
-          : 'rgba(18, 18, 21, 0.1)',
-        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+          ? withAlpha(THEME.dark.foreground, 0.1)
+          : withAlpha(THEME.light.foreground, 0.1),
+        backgroundColor: isDark ? THEME.dark.popover : THEME.light.popover,
         paddingHorizontal: 12,
         paddingVertical: 10,
       }}

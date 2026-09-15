@@ -6,7 +6,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   RefreshControl,
   Alert,
@@ -14,11 +14,10 @@ import {
   ActionSheetIOS,
   Keyboard,
   Platform,
-  Switch,
-  TextInput,
   Image,
   Text as RNText,
 } from 'react-native';
+import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -27,20 +26,21 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 import { Text } from '@/components/ui/text';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+// `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
+// legacy touchable, which itself just proxies react-native-gesture-handler's
+// touchable on Android (and RN's own on iOS) for correct gesture arbitration
+// inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
+const BottomSheetTouchable = GestureHandlerPressable;
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   FolderGit2,
   MessageSquare,
@@ -66,7 +66,7 @@ import {
 
 import { FileItem } from '@/components/files/FileItem';
 import { FileViewer } from '@/components/files/FileViewer';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { useOpenCodeFiles, useOpenCodeFileContent, useOpenCodeUploadFile, fileKeys } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
@@ -87,13 +87,14 @@ import {
   type KortixTaskStatus,
 } from '@/lib/kortix';
 import { useTabStore } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { formatCost, formatTokens } from '@kortix/sdk';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
 } from '@/lib/opencode/hooks/use-project-session-stats';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,16 +117,16 @@ type Tab = 'files' | 'sessions' | 'tasks' | 'about';
 // Task status config — aligned with web's unified agent_task system.
 // Pipeline: todo → [START] → in_progress → input_needed/awaiting_review → [APPROVE] → completed
 const STATUS_CONFIG: Record<string, { icon: typeof Circle; color: string; label: string }> = {
-  todo: { icon: Circle, color: '#71717a', label: 'Planned' },
-  in_progress: { icon: Loader2, color: '#60a5fa', label: 'Running' },
-  input_needed: { icon: AlertTriangle, color: '#a78bfa', label: 'Input Needed' },
-  awaiting_review: { icon: AlertTriangle, color: '#f59e0b', label: 'Awaiting Review' },
-  completed: { icon: CheckCircle2, color: '#22c55e', label: 'Completed' },
-  cancelled: { icon: Ban, color: '#71717a', label: 'Cancelled' },
+  todo: { icon: Circle, color: THEME.light.mutedForeground, label: 'Planned' },
+  in_progress: { icon: Loader2, color: THEME.accent.blue, label: 'Running' },
+  input_needed: { icon: AlertTriangle, color: THEME.accent.purple, label: 'Input Needed' },
+  awaiting_review: { icon: AlertTriangle, color: THEME.accent.orange, label: 'Awaiting Review' },
+  completed: { icon: CheckCircle2, color: THEME.accent.green, label: 'Completed' },
+  cancelled: { icon: Ban, color: THEME.light.mutedForeground, label: 'Cancelled' },
   // Agent statuses (separate enum, but reused for visual parity)
-  running: { icon: Loader2, color: '#60a5fa', label: 'Running' },
-  failed: { icon: AlertTriangle, color: '#ef4444', label: 'Failed' },
-  stopped: { icon: Ban, color: '#71717a', label: 'Stopped' },
+  running: { icon: Loader2, color: THEME.accent.blue, label: 'Running' },
+  failed: { icon: AlertTriangle, color: THEME.accent.red, label: 'Failed' },
+  stopped: { icon: Ban, color: THEME.light.mutedForeground, label: 'Stopped' },
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -149,6 +150,7 @@ export function ProjectDetailPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ProjectDetailPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -382,12 +384,12 @@ export function ProjectDetailPage({
     resetNewTaskForm,
   ]);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const mutedStrong = isDark ? '#a1a1aa' : '#71717a';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const bg = isDark ? '#121215' : '#F8F8F8';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const mutedStrong = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  const bg = isDark ? THEME.light.foreground : THEME.dark.foreground;
 
   const sessionList = useMemo(() => {
     const rows = sessions ?? [];
@@ -588,12 +590,6 @@ export function ProjectDetailPage({
     );
   }, [project, deleteProject, onBack]);
 
-  const renderBackdrop = useMemo(
-    () => (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    []
-  );
 
   // Loading
   if (isLoading) {
@@ -618,22 +614,22 @@ export function ProjectDetailPage({
         }}>
         <FolderGit2
           size={48}
-          color={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}
+          color={isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.05)}
           style={{ marginBottom: 12 }}
         />
         <RNText style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>
           Project not found
         </RNText>
-        <TouchableOpacity onPress={onBack} style={{ marginTop: 12 }}>
+        <Pressable onPress={onBack} style={{ marginTop: 12 }}>
           <RNText
             style={{
               fontSize: 13,
               fontFamily: 'Roobert-Medium',
-              color: isDark ? '#60a5fa' : '#2563eb',
+              color: THEME.accent.blue,
             }}>
             Go back
           </RNText>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }
@@ -642,9 +638,9 @@ export function ProjectDetailPage({
     <View style={{ flex: 1, backgroundColor: bg }}>
       <PageHeader
         title={
-          <TouchableOpacity
+          <Pressable
             onPress={() => handleEdit('name')}
-            activeOpacity={0.7}
+            className="active:opacity-70"
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <FolderGit2 size={16} color={mutedStrong} />
             <Text
@@ -653,20 +649,20 @@ export function ProjectDetailPage({
               numberOfLines={1}>
               {project.name}
             </Text>
-            <Pencil size={12} color={isDark ? '#3f3f46' : '#d4d4d8'} />
-          </TouchableOpacity>
+            <Pencil size={12} color={isDark ? THEME.dark.border : THEME.light.border} />
+          </Pressable>
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          <TouchableOpacity
+          <Pressable
             onPress={handleDelete}
             style={{ padding: 6, marginRight: 4 }}
             hitSlop={8}>
-            <Trash2 size={18} color={isDark ? '#52525b' : '#a1a1aa'} />
-          </TouchableOpacity>
+            <Trash2 size={18} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+          </Pressable>
         }
       />
 
@@ -682,7 +678,7 @@ export function ProjectDetailPage({
           const active = tab === t.id;
           const Icon = t.icon;
           return (
-            <TouchableOpacity
+            <Pressable
               key={t.id}
               onLayout={(e) => {
                 tabLayoutsRef.current[index] = {
@@ -697,7 +693,7 @@ export function ProjectDetailPage({
                   tabScrollRef.current.scrollTo({ x: Math.max(0, layout.x - 16), animated: true });
                 }
               }}
-              activeOpacity={0.7}
+              className="active:opacity-70"
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -721,11 +717,11 @@ export function ProjectDetailPage({
                   style={{
                     backgroundColor: active
                       ? isDark
-                        ? 'rgba(255,255,255,0.1)'
-                        : 'rgba(0,0,0,0.06)'
+                        ? withAlpha(THEME.dark.foreground, 0.1)
+                        : withAlpha(THEME.light.foreground, 0.06)
                       : isDark
-                        ? 'rgba(255,255,255,0.05)'
-                        : 'rgba(0,0,0,0.03)',
+                        ? withAlpha(THEME.dark.foreground, 0.05)
+                        : withAlpha(THEME.light.foreground, 0.03),
                     borderRadius: 10,
                     paddingHorizontal: 6,
                     paddingVertical: 1,
@@ -740,7 +736,7 @@ export function ProjectDetailPage({
                   </RNText>
                 </View>
               )}
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </ScrollView>
@@ -756,9 +752,9 @@ export function ProjectDetailPage({
             <View>
               {/* Breadcrumb / back navigation */}
               {canGoUp && (
-                <TouchableOpacity
+                <Pressable
                   onPress={handleFileGoUp}
-                  activeOpacity={0.7}
+                  className="active:opacity-70"
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -773,7 +769,7 @@ export function ProjectDetailPage({
                     numberOfLines={1}>
                     {filePath.split('/').pop() || filePath}
                   </RNText>
-                </TouchableOpacity>
+                </Pressable>
               )}
 
               {filesLoading && folders.length === 0 && regularFiles.length === 0 && (
@@ -845,10 +841,10 @@ export function ProjectDetailPage({
                   overflow: 'hidden',
                 }}>
               {sessionList.map((s: any, i: number) => (
-                <TouchableOpacity
+                <Pressable
                   key={s.id}
                   onPress={() => handleSessionPress(s.id)}
-                  activeOpacity={0.7}
+                  className="active:opacity-70"
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -858,7 +854,7 @@ export function ProjectDetailPage({
                     borderBottomWidth: i < sessionList.length - 1 ? 1 : 0,
                     borderBottomColor: border,
                   }}>
-                  <MessageSquare size={14} color={isDark ? '#3f3f46' : '#d4d4d8'} />
+                  <MessageSquare size={14} color={isDark ? THEME.dark.border : THEME.light.border} />
                   <RNText
                     numberOfLines={1}
                     style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg }}>
@@ -868,11 +864,11 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 11,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#3f3f46' : '#a1a1aa',
+                      color: isDark ? THEME.dark.border : THEME.dark.mutedForeground,
                     }}>
                     {ago(s.time?.updated)}
                   </RNText>
-                </TouchableOpacity>
+                </Pressable>
               ))}
               </View>
             </View>
@@ -884,14 +880,14 @@ export function ProjectDetailPage({
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
               <ListTodo
                 size={32}
-                color={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}
+                color={isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.05)}
                 style={{ marginBottom: 10 }}
               />
               <RNText
                 style={{
                   fontSize: 14,
                   fontFamily: 'Roobert-Medium',
-                  color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)',
+                  color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5),
                   marginBottom: 4,
                 }}>
                 No tasks yet
@@ -900,7 +896,7 @@ export function ProjectDetailPage({
                 style={{
                   fontSize: 12,
                   fontFamily: 'Roobert',
-                  color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
+                  color: isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25),
                   textAlign: 'center',
                   marginBottom: 18,
                   paddingHorizontal: 20,
@@ -908,9 +904,9 @@ export function ProjectDetailPage({
                 }}>
                 Create tasks so Kortix knows what to work on next.
               </RNText>
-              <TouchableOpacity
+              <Pressable
                 onPress={openNewTaskSheet}
-                activeOpacity={0.85}
+                className="active:opacity-[85%]"
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -929,7 +925,7 @@ export function ProjectDetailPage({
                   }}>
                   New task
                 </RNText>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : (
             <>
@@ -947,13 +943,13 @@ export function ProjectDetailPage({
                     <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedStrong }}>
                       {Math.round((taskStats.done / taskStats.total) * 100)}% complete
                       {'  '}
-                      <RNText style={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }}>
+                      <RNText style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3) }}>
                         {taskStats.done}/{taskStats.total}
                       </RNText>
                     </RNText>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={openNewTaskSheet}
-                      activeOpacity={0.85}
+                      className="active:opacity-[85%]"
                       hitSlop={6}
                       style={{
                         flexDirection: 'row',
@@ -973,12 +969,12 @@ export function ProjectDetailPage({
                         }}>
                         New task
                       </RNText>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                   <View
                     style={{
                       height: 6,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                       borderRadius: 3,
                       overflow: 'hidden',
                     }}>
@@ -986,7 +982,7 @@ export function ProjectDetailPage({
                       style={{
                         height: '100%',
                         width: `${(taskStats.done / taskStats.total) * 100}%`,
-                        backgroundColor: '#22c55e',
+                        backgroundColor: THEME.accent.green,
                         borderRadius: 3,
                       }}
                     />
@@ -999,34 +995,28 @@ export function ProjectDetailPage({
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                   borderRadius: 9999,
                   paddingHorizontal: 14,
                   height: 38,
                   marginBottom: 10,
                 }}>
-                <Search size={14} color={isDark ? '#71717a' : '#a1a1aa'} />
-                <TextInput
+                <Search size={14} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+                <Input
                   value={taskSearch}
                   onChangeText={setTaskSearch}
                   placeholder="Search tasks..."
-                  placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-                  style={{
-                    flex: 1,
-                    marginLeft: 6,
-                    fontSize: 14,
-                    fontFamily: 'Roobert',
-                    color: fg,
-                    paddingVertical: 0,
-                  }}
+                  placeholderTextColor={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground}
+                  className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none"
+                  style={{ marginLeft: 6, fontSize: 14, fontFamily: 'Roobert', color: fg }}
                   autoCorrect={false}
                   autoCapitalize="none"
                   returnKeyType="search"
                 />
                 {taskSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setTaskSearch('')} hitSlop={8}>
-                    <XIcon size={14} color={isDark ? '#71717a' : '#a1a1aa'} />
-                  </TouchableOpacity>
+                  <Pressable onPress={() => setTaskSearch('')} hitSlop={8}>
+                    <XIcon size={14} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+                  </Pressable>
                 )}
               </View>
 
@@ -1055,13 +1045,13 @@ export function ProjectDetailPage({
                   const StatusIcon = sc.icon;
                   const isTerminal = t.status === 'completed' || t.status === 'cancelled';
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       key={t.id}
                       onPress={() => {
                         setSelectedTask(t);
                         taskSheetRef.current?.present();
                       }}
-                      activeOpacity={0.7}
+                      className="active:opacity-70"
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
@@ -1088,11 +1078,11 @@ export function ProjectDetailPage({
                         style={{
                           fontSize: 11,
                           fontFamily: 'Roobert',
-                          color: isDark ? '#3f3f46' : '#a1a1aa',
+                          color: isDark ? THEME.dark.border : THEME.dark.mutedForeground,
                         }}>
                         {ago(t.updated_at)}
                       </RNText>
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -1138,16 +1128,16 @@ export function ProjectDetailPage({
                     </RNText>
                   </View>
                   {!contextEditing ? (
-                    <TouchableOpacity
+                    <Pressable
                       onPress={startContextEdit}
                       hitSlop={8}
                       disabled={contextLoading}
                     >
                       <Pencil size={14} color={mutedStrong} />
-                    </TouchableOpacity>
+                    </Pressable>
                   ) : (
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <TouchableOpacity
+                      <Pressable
                         onPress={cancelContextEdit}
                         disabled={contextSaving}
                         hitSlop={6}
@@ -1156,8 +1146,8 @@ export function ProjectDetailPage({
                           paddingVertical: 5,
                           borderRadius: 8,
                           backgroundColor: isDark
-                            ? 'rgba(255,255,255,0.06)'
-                            : 'rgba(0,0,0,0.04)',
+                            ? withAlpha(THEME.dark.foreground, 0.06)
+                            : withAlpha(THEME.light.foreground, 0.04),
                         }}
                       >
                         <RNText
@@ -1165,8 +1155,8 @@ export function ProjectDetailPage({
                         >
                           Cancel
                         </RNText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
+                      </Pressable>
+                      <Pressable
                         onPress={saveContext}
                         disabled={contextSaving}
                         hitSlop={6}
@@ -1194,33 +1184,29 @@ export function ProjectDetailPage({
                             Save
                           </RNText>
                         )}
-                      </TouchableOpacity>
+                      </Pressable>
                     </View>
                   )}
                 </View>
 
                 {/* Body */}
                 {contextEditing ? (
-                  <TextInput
+                  <Textarea
                     value={contextDraft}
                     onChangeText={setContextDraft}
-                    multiline
                     placeholder={'# Project context\n\nWhat the agent should know about this project...'}
                     placeholderTextColor={muted}
+                    className="rounded-[10px] border-primary shadow-none"
                     style={{
                       fontSize: 13,
                       fontFamily: monoFont,
                       color: fg,
                       lineHeight: 20,
                       minHeight: 180,
-                      textAlignVertical: 'top',
                       padding: 10,
-                      borderRadius: 10,
                       backgroundColor: isDark
-                        ? 'rgba(255,255,255,0.03)'
-                        : 'rgba(0,0,0,0.02)',
-                      borderWidth: 1,
-                      borderColor: themeColors.primary,
+                        ? withAlpha(THEME.dark.foreground, 0.03)
+                        : withAlpha(THEME.light.foreground, 0.02),
                     }}
                     autoFocus
                   />
@@ -1229,7 +1215,7 @@ export function ProjectDetailPage({
                     <ActivityIndicator color={muted} />
                   </View>
                 ) : contextError || !contextContent ? (
-                  <TouchableOpacity onPress={startContextEdit} activeOpacity={0.7}>
+                  <Pressable onPress={startContextEdit} className="active:opacity-70">
                     <RNText
                       style={{
                         fontSize: 13,
@@ -1241,7 +1227,7 @@ export function ProjectDetailPage({
                       No CONTEXT.md yet — tap to create. Agents read this file first when working on
                       the project.
                     </RNText>
-                  </TouchableOpacity>
+                  </Pressable>
                 ) : (
                   <SelectableMarkdownText
                     style={{
@@ -1276,17 +1262,17 @@ export function ProjectDetailPage({
                 <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
                   Description
                 </RNText>
-                <TouchableOpacity onPress={() => handleEdit('description')} hitSlop={8}>
+                <Pressable onPress={() => handleEdit('description')} hitSlop={8}>
                   <Pencil size={14} color={mutedStrong} />
-                </TouchableOpacity>
+                </Pressable>
               </View>
-              <TouchableOpacity onPress={() => handleEdit('description')} activeOpacity={0.7}>
+              <Pressable onPress={() => handleEdit('description')} className="active:opacity-70">
                 {project.description ? (
                   <RNText
                     style={{
                       fontSize: 14,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#a1a1aa' : '#52525b',
+                      color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
                       lineHeight: 20,
                     }}>
                     {project.description}
@@ -1296,13 +1282,13 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 13,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#3f3f46' : '#a1a1aa',
+                      color: isDark ? THEME.dark.border : THEME.dark.mutedForeground,
                       fontStyle: 'italic',
                     }}>
                     No description — tap to add
                   </RNText>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {/* Details */}
@@ -1326,7 +1312,7 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 13,
                       fontFamily: 'Menlo',
-                      color: isDark ? '#71717a' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                     }}>
                     {project.path}
                   </RNText>
@@ -1339,7 +1325,7 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 13,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#71717a' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                     }}>
                     Created {ago(project.created_at)}
                   </RNText>
@@ -1352,7 +1338,7 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 13,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#71717a' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                     }}>
                     {sessionList.length} session{sessionList.length !== 1 ? 's' : ''}
                   </RNText>
@@ -1365,7 +1351,7 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 13,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#71717a' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                     }}>
                     {taskStats.done}/{taskStats.total} tasks complete
                   </RNText>
@@ -1378,7 +1364,7 @@ export function ProjectDetailPage({
                     style={{
                       fontSize: 12,
                       fontFamily: 'Menlo',
-                      color: isDark ? '#52525b' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                     }}>
                     {project.opencode_id}
                   </RNText>
@@ -1409,19 +1395,14 @@ export function ProjectDetailPage({
         snapPoints={['85%']}
         enableDynamicSizing={false}
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
         onDismiss={() => setSelectedTask(null)}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}>
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
         <BottomSheetScrollView
           contentContainerStyle={{
             paddingHorizontal: 20,
@@ -1461,7 +1442,7 @@ export function ProjectDetailPage({
                       }}>
                       {selectedTask.title}
                     </RNText>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => {
                         Alert.alert(
                           'Delete task',
@@ -1484,8 +1465,8 @@ export function ProjectDetailPage({
                       }}
                       hitSlop={10}
                       style={{ padding: 4 }}>
-                      <Trash2 size={18} color={isDark ? '#52525b' : '#a1a1aa'} />
-                    </TouchableOpacity>
+                      <Trash2 size={18} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+                    </Pressable>
                   </View>
 
                   {/* Status pill + owner agent */}
@@ -1507,7 +1488,7 @@ export function ProjectDetailPage({
                         borderRadius: 999,
                         borderWidth: 1,
                         borderColor: currentStatus.color,
-                        backgroundColor: `${currentStatus.color}15`,
+                        backgroundColor: withAlpha(currentStatus.color, 0.08),
                       }}>
                       <CurrentIcon size={12} color={currentStatus.color} />
                       <RNText
@@ -1530,7 +1511,7 @@ export function ProjectDetailPage({
                   {(canStart || canApprove) && (
                     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
                       {canStart && (
-                        <TouchableOpacity
+                        <Pressable
                           onPress={() => {
                             if (isBusy) return;
                             startTask.mutate(
@@ -1538,7 +1519,7 @@ export function ProjectDetailPage({
                               { onSuccess: (updated: KortixTask) => setSelectedTask(updated) }
                             );
                           }}
-                          activeOpacity={0.7}
+                          className="active:opacity-70"
                           disabled={isBusy}
                           style={{
                             flex: 1,
@@ -1555,17 +1536,17 @@ export function ProjectDetailPage({
                           <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: bg }}>
                             {startTask.isPending ? 'Starting…' : 'Start task'}
                           </RNText>
-                        </TouchableOpacity>
+                        </Pressable>
                       )}
                       {canApprove && (
-                        <TouchableOpacity
+                        <Pressable
                           onPress={() => {
                             if (isBusy) return;
                             approveTask.mutate(selectedTask.id, {
                               onSuccess: (updated: KortixTask) => setSelectedTask(updated),
                             });
                           }}
-                          activeOpacity={0.7}
+                          className="active:opacity-70"
                           disabled={isBusy}
                           style={{
                             flex: 1,
@@ -1575,31 +1556,31 @@ export function ProjectDetailPage({
                             gap: 6,
                             paddingVertical: 11,
                             borderRadius: 10,
-                            backgroundColor: '#22c55e',
+                            backgroundColor: THEME.accent.green,
                             opacity: isBusy ? 0.5 : 1,
                           }}>
-                          <CheckCircle2 size={14} color="#FFFFFF" />
+                          <CheckCircle2 size={14} color="#FFFFFF" /> {/* hex-allowlist: icon on a fixed accent.green fill, never themed */}
                           <RNText
                             style={{
                               fontSize: 13,
                               fontFamily: 'Roobert-Medium',
-                              color: '#FFFFFF',
+                              color: '#FFFFFF', // hex-allowlist: text on a fixed accent.green fill, never themed
                             }}>
                             {approveTask.isPending ? 'Approving…' : 'Approve'}
                           </RNText>
-                        </TouchableOpacity>
+                        </Pressable>
                       )}
                     </View>
                   )}
 
                   {/* Worker session link */}
                   {!!selectedTask.owner_session_id && (
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => {
                         taskSheetRef.current?.dismiss();
                         handleSessionPress(selectedTask.owner_session_id!);
                       }}
-                      activeOpacity={0.7}
+                      className="active:opacity-70"
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
@@ -1620,11 +1601,11 @@ export function ProjectDetailPage({
                         style={{
                           fontSize: 10,
                           fontFamily: monoFont,
-                          color: isDark ? '#3f3f46' : '#a1a1aa',
+                          color: isDark ? THEME.dark.border : THEME.dark.mutedForeground,
                         }}>
                         {selectedTask.owner_session_id.slice(-8)}
                       </RNText>
-                    </TouchableOpacity>
+                    </Pressable>
                   )}
 
                   {/* Description — rendered as markdown (ported from web ca81efc) */}
@@ -1674,8 +1655,8 @@ export function ProjectDetailPage({
                         marginBottom: 16,
                         borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: isDark ? 'rgba(245,158,11,0.3)' : 'rgba(245,158,11,0.25)',
-                        backgroundColor: isDark ? 'rgba(245,158,11,0.06)' : 'rgba(245,158,11,0.04)',
+                        borderColor: isDark ? withAlpha(THEME.accent.orange, 0.3) : withAlpha(THEME.accent.orange, 0.25),
+                        backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.06) : withAlpha(THEME.accent.orange, 0.04),
                         padding: 14,
                       }}>
                       <View
@@ -1685,12 +1666,12 @@ export function ProjectDetailPage({
                           gap: 6,
                           marginBottom: 8,
                         }}>
-                        <AlertTriangle size={12} color={isDark ? '#fbbf24' : '#d97706'} />
+                        <AlertTriangle size={12} color={THEME.accent.orange} />
                         <RNText
                           style={{
                             fontSize: 11,
                             fontFamily: 'Roobert-Medium',
-                            color: isDark ? '#fbbf24' : '#d97706',
+                            color: THEME.accent.orange,
                             textTransform: 'uppercase',
                             letterSpacing: 0.5,
                           }}>
@@ -1710,15 +1691,15 @@ export function ProjectDetailPage({
                         marginBottom: 16,
                         borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: isDark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.2)',
-                        backgroundColor: isDark ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.03)',
+                        borderColor: isDark ? withAlpha(THEME.accent.green, 0.25) : withAlpha(THEME.accent.green, 0.2),
+                        backgroundColor: isDark ? withAlpha(THEME.accent.green, 0.04) : withAlpha(THEME.accent.green, 0.03),
                         padding: 14,
                       }}>
                       <RNText
                         style={{
                           fontSize: 11,
                           fontFamily: 'Roobert-Medium',
-                          color: isDark ? '#34d399' : '#059669',
+                          color: THEME.accent.green,
                           textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           marginBottom: 8,
@@ -1735,14 +1716,14 @@ export function ProjectDetailPage({
                             paddingTop: 10,
                             borderTopWidth: 1,
                             borderTopColor: isDark
-                              ? 'rgba(16,185,129,0.15)'
-                              : 'rgba(16,185,129,0.15)',
+                              ? withAlpha(THEME.accent.green, 0.15)
+                              : withAlpha(THEME.accent.green, 0.15),
                           }}>
                           <RNText
                             style={{
                               fontSize: 10,
                               fontFamily: 'Roobert-Medium',
-                              color: isDark ? 'rgba(52,211,153,0.7)' : 'rgba(5,150,105,0.7)',
+                              color: isDark ? withAlpha(THEME.accent.green, 0.7) : withAlpha(THEME.accent.green, 0.7),
                               textTransform: 'uppercase',
                               letterSpacing: 0.5,
                               marginBottom: 4,
@@ -1784,7 +1765,7 @@ export function ProjectDetailPage({
                       const SIcon = sc.icon;
                       const isCurrent = selectedTask.status === s;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={s}
                           onPress={() => {
                             if (isCurrent || isBusy) return;
@@ -1797,7 +1778,7 @@ export function ProjectDetailPage({
                               }
                             );
                           }}
-                          activeOpacity={0.7}
+                          className="active:opacity-70"
                           disabled={isBusy}
                           style={{
                             flexDirection: 'row',
@@ -1808,7 +1789,7 @@ export function ProjectDetailPage({
                             borderRadius: 10,
                             borderWidth: 1,
                             borderColor: isCurrent ? sc.color : border,
-                            backgroundColor: isCurrent ? `${sc.color}15` : cardBg,
+                            backgroundColor: isCurrent ? withAlpha(sc.color, 0.08) : cardBg,
                           }}>
                           <SIcon size={15} color={sc.color} />
                           <RNText
@@ -1821,7 +1802,7 @@ export function ProjectDetailPage({
                             {sc.label}
                           </RNText>
                           {isCurrent && <CheckCircle2 size={14} color={sc.color} />}
-                        </TouchableOpacity>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -1861,7 +1842,7 @@ export function ProjectDetailPage({
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -1869,16 +1850,11 @@ export function ProjectDetailPage({
           setEditValue('');
         }}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}>
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
         <BottomSheetView
           style={{
             paddingHorizontal: 24,
@@ -1890,7 +1866,7 @@ export function ProjectDetailPage({
             <View
               className="mr-3 h-10 w-10 items-center justify-center rounded-xl"
               style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.08)' : 'rgba(18, 18, 21, 0.05)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05),
               }}>
               <Icon
                 as={editField === 'name' ? FolderGit2 : Pencil}
@@ -1904,9 +1880,9 @@ export function ProjectDetailPage({
                 {editField === 'name' ? 'Rename' : 'Edit description'}
               </Text>
               <Text
-                className="mt-0.5 font-roobert text-xs"
+                className="mt-0.5 font-roobert"
                 style={{
-                  color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+                  color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
                 }}
                 numberOfLines={1}>
                 {project?.name}
@@ -1919,7 +1895,7 @@ export function ProjectDetailPage({
             value={editValue}
             onChangeText={setEditValue}
             placeholder={editField === 'name' ? 'Enter project name' : 'Enter description'}
-            placeholderTextColor={isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             autoFocus
             autoCapitalize="none"
             autoCorrect={false}
@@ -1927,9 +1903,9 @@ export function ProjectDetailPage({
             returnKeyType={editField === 'name' ? 'done' : 'default'}
             onSubmitEditing={editField === 'name' ? handleSaveEdit : undefined}
             style={{
-              backgroundColor: isDark ? 'rgba(248, 248, 248, 0.06)' : 'rgba(18, 18, 21, 0.04)',
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.08)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -1954,8 +1930,8 @@ export function ProjectDetailPage({
                   backgroundColor: canSave
                     ? themeColors.primary
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.08)'
-                      : 'rgba(18, 18, 21, 0.06)',
+                      ? withAlpha(THEME.dark.foreground, 0.08)
+                      : withAlpha(THEME.light.foreground, 0.06),
                   borderRadius: 9999,
                   paddingVertical: 15,
                   alignItems: 'center',
@@ -1967,8 +1943,8 @@ export function ProjectDetailPage({
                     color: canSave
                       ? themeColors.primaryForeground
                       : isDark
-                        ? 'rgba(248, 248, 248, 0.3)'
-                        : 'rgba(18, 18, 21, 0.3)',
+                        ? withAlpha(THEME.dark.foreground, 0.3)
+                        : withAlpha(THEME.light.foreground, 0.3),
                   }}>
                   {updateProject.isPending ? 'Saving...' : 'Save'}
                 </Text>
@@ -1983,21 +1959,16 @@ export function ProjectDetailPage({
         ref={newTaskSheetRef}
         snapPoints={['75%', '95%']}
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}>
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
         <BottomSheetScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
@@ -2027,7 +1998,7 @@ export function ProjectDetailPage({
               style={{
                 fontSize: 13,
                 fontFamily: 'Roobert',
-                color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)',
+                color: isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.25),
               }}>
               ›
             </RNText>
@@ -2047,7 +2018,7 @@ export function ProjectDetailPage({
             onChangeText={setNewTaskTitle}
             autoFocus
             placeholder="Task title"
-            placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25)}
             style={{
               fontSize: 22,
               fontFamily: 'Roobert-Semibold',
@@ -2065,7 +2036,7 @@ export function ProjectDetailPage({
             onChangeText={setNewTaskDescription}
             multiline
             placeholder="Add description..."
-            placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25)}
             style={{
               fontSize: 14,
               fontFamily: 'Roobert',
@@ -2099,7 +2070,7 @@ export function ProjectDetailPage({
                   }}>
                   Verification condition
                 </RNText>
-                <TouchableOpacity
+                <Pressable
                   onPress={() => {
                     setShowVerification(false);
                     setNewTaskVerification('');
@@ -2113,21 +2084,21 @@ export function ProjectDetailPage({
                     }}>
                     Remove
                   </RNText>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               <BottomSheetTextInput
                 value={newTaskVerification}
                 onChangeText={setNewTaskVerification}
                 multiline
                 placeholder="How will we know this task is actually done?"
-                placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+                placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.25)}
                 style={{
                   fontSize: 13,
                   fontFamily: 'Roobert',
                   color: fg,
                   paddingVertical: 10,
                   paddingHorizontal: 12,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                  backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02),
                   borderRadius: 10,
                   minHeight: 56,
                   textAlignVertical: 'top',
@@ -2136,7 +2107,7 @@ export function ProjectDetailPage({
               />
             </View>
           ) : (
-            <TouchableOpacity
+            <Pressable
               onPress={() => setShowVerification(true)}
               hitSlop={6}
               style={{ alignSelf: 'flex-start', marginBottom: 14 }}>
@@ -2148,7 +2119,7 @@ export function ProjectDetailPage({
                 }}>
                 + Add verification condition
               </RNText>
-            </TouchableOpacity>
+            </Pressable>
           )}
 
           {/* Attachment strip */}
@@ -2167,7 +2138,7 @@ export function ProjectDetailPage({
                     borderRadius: 10,
                     borderWidth: 1,
                     borderColor: border,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02),
                     overflow: 'hidden',
                     position: 'relative',
                   }}
@@ -2184,7 +2155,7 @@ export function ProjectDetailPage({
                         height: 64,
                         alignItems: 'center',
                         justifyContent: 'center',
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                        backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
                       }}
                     >
                       <FileIcon size={22} color={mutedStrong} />
@@ -2209,7 +2180,7 @@ export function ProjectDetailPage({
                       {f.name}
                     </RNText>
                   </View>
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => removeTaskFile(i)}
                     hitSlop={8}
                     style={{
@@ -2219,13 +2190,13 @@ export function ProjectDetailPage({
                       width: 18,
                       height: 18,
                       borderRadius: 9,
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)',
+                      backgroundColor: isDark ? withAlpha(THEME.light.foreground, 0.7) : withAlpha(THEME.light.foreground, 0.6),
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <XIcon size={10} color="#FFFFFF" />
-                  </TouchableOpacity>
+                    <XIcon size={10} color="#FFFFFF" /> {/* hex-allowlist: icon on a fixed near-black badge, never themed */}
+                  </Pressable>
                 </View>
               ))}
             </ScrollView>
@@ -2249,7 +2220,7 @@ export function ProjectDetailPage({
               marginBottom: 14,
             }}
           >
-            <TouchableOpacity
+            <Pressable
               onPress={openAttachmentPicker}
               hitSlop={6}
               style={{
@@ -2261,7 +2232,7 @@ export function ProjectDetailPage({
                 borderRadius: 9999,
                 borderWidth: 1,
                 borderColor: border,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02),
               }}
             >
               <Paperclip size={13} color={mutedStrong} />
@@ -2274,7 +2245,7 @@ export function ProjectDetailPage({
               >
                 Attach{newTaskFiles.length > 0 ? ` (${newTaskFiles.length})` : ''}
               </RNText>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {/* Toggles */}
@@ -2304,15 +2275,7 @@ export function ProjectDetailPage({
                   Start the task immediately after creating.
                 </RNText>
               </View>
-              <Switch
-                value={autoRun}
-                onValueChange={setAutoRun}
-                trackColor={{
-                  false: isDark ? '#333' : '#ddd',
-                  true: themeColors.primary,
-                }}
-                thumbColor="#fff"
-              />
+              <Switch checked={autoRun} onCheckedChange={setAutoRun} />
             </View>
             <View
               style={{
@@ -2339,15 +2302,7 @@ export function ProjectDetailPage({
                   Keep this open to add more tasks back-to-back.
                 </RNText>
               </View>
-              <Switch
-                value={createMore}
-                onValueChange={setCreateMore}
-                trackColor={{
-                  false: isDark ? '#333' : '#ddd',
-                  true: themeColors.primary,
-                }}
-                thumbColor="#fff"
-              />
+              <Switch checked={createMore} onCheckedChange={setCreateMore} />
             </View>
           </View>
 
@@ -2367,8 +2322,8 @@ export function ProjectDetailPage({
                   backgroundColor: canSubmit
                     ? themeColors.primary
                     : isDark
-                      ? 'rgba(248, 248, 248, 0.08)'
-                      : 'rgba(18, 18, 21, 0.06)',
+                      ? withAlpha(THEME.dark.foreground, 0.08)
+                      : withAlpha(THEME.light.foreground, 0.06),
                   borderRadius: 9999,
                   paddingVertical: 15,
                   opacity: canSubmit ? 1 : 0.55,
@@ -2389,8 +2344,8 @@ export function ProjectDetailPage({
                     color: canSubmit
                       ? themeColors.primaryForeground
                       : isDark
-                        ? 'rgba(248, 248, 248, 0.4)'
-                        : 'rgba(18, 18, 21, 0.4)',
+                        ? withAlpha(THEME.dark.foreground, 0.4)
+                        : withAlpha(THEME.light.foreground, 0.4),
                   }}>
                   {uploadingAttachments
                     ? 'Uploading…'
@@ -2435,8 +2390,8 @@ function ProjectTotalsCard({
   cardBg: string;
   border: string;
 }) {
-  const labelColor = isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)';
-  const dimValue = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const labelColor = isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4);
+  const dimValue = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const items = [
     { label: 'Sessions', value: String(totalSessions), dim: false },
     { label: 'Messages', value: String(messageCount), dim: loading },
@@ -2504,12 +2459,12 @@ function EmptyState({
   sub?: string;
   isDark: boolean;
 }) {
-  const muted = isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.25)';
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.25);
   return (
     <View style={{ padding: 40, alignItems: 'center' }}>
       <Icon
         size={32}
-        color={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}
+        color={isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.05)}
         style={{ marginBottom: 10 }}
       />
       <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 4 }}>
@@ -2520,7 +2475,7 @@ function EmptyState({
           style={{
             fontSize: 12,
             fontFamily: 'Roobert',
-            color: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+            color: isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.15),
             textAlign: 'center',
           }}>
           {sub}

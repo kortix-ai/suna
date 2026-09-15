@@ -7,13 +7,9 @@ import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { View, Alert, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { getSheetBg } from '@/lib/theme-colors';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface ThreadActionsDrawerProps {
   isOpen: boolean;
@@ -38,10 +34,7 @@ const ActionRow = React.memo(function ActionRow({
 }: ActionRowProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  const iconColor = destructive ? '#ef4444' : isDark ? '#f8f8f8' : '#121215';
-  const textColor = destructive ? '#ef4444' : isDark ? '#f8f8f8' : '#121215';
-  const bgPressed = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)';
+  const textClass = destructive ? 'text-destructive' : 'text-foreground';
 
   return (
     <Pressable
@@ -49,32 +42,19 @@ const ActionRow = React.memo(function ActionRow({
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onPress();
       }}
-      className="flex-row items-center gap-4 px-6 py-2 active:opacity-70"
-      style={({ pressed }) => ({
-        backgroundColor: pressed ? bgPressed : 'transparent',
-      })}
+      className="flex-row items-center gap-4 px-6 py-2 active:bg-hover active:opacity-70"
       android_ripple={{
-        color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+        color: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.06),
         borderless: false,
       }}
     >
       <View
-        className="w-10 h-10 rounded-2xl items-center justify-center"
-        style={{
-          backgroundColor: destructive
-            ? isDark
-              ? 'rgba(239, 68, 68, 0.15)'
-              : 'rgba(239, 68, 68, 0.1)'
-            : isDark
-              ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(0, 0, 0, 0.05)',
-        }}
+        className={`w-10 h-10 rounded-2xl items-center justify-center ${destructive ? 'bg-destructive/10' : 'bg-muted'}`}
       >
-        <Icon as={icon} size={20} color={iconColor} strokeWidth={2} />
+        <Icon as={icon} size={20} className={textClass} strokeWidth={2} />
       </View>
       <Text
-        style={{ color: textColor }}
-        className="font-roobert-medium text-base flex-1"
+        className={`font-roobert-medium text-base flex-1 ${textClass}`}
       >
         {label}
       </Text>
@@ -89,6 +69,7 @@ export function ThreadActionsDrawer({
   onFiles,
   onDelete,
 }: ThreadActionsDrawerProps) {
+  const sheetBg = useSheetBackground();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -144,20 +125,6 @@ export function ThreadActionsDrawer({
     }, 100);
   }, [onDelete, t]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    []
-  );
-
-  const separatorColor = isDark ? '#27272A' : '#E4E4E7';
 
   return (
     <BottomSheetModal
@@ -165,18 +132,13 @@ export function ThreadActionsDrawer({
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       {...Platform.select({
         android: {
           android_keyboardInputMode: 'adjustResize' as const,

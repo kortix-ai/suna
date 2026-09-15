@@ -51,7 +51,12 @@ const PackageCard = memo(({
     <View className="relative">
       {pkg.popular && (
         <View className="absolute -top-2 left-4 z-10 h-5 px-3 items-center justify-center rounded-full bg-primary">
-          <Text className="text-[11px] font-roobert-semibold text-primary-foreground tracking-wide">POPULAR</Text>
+          <Text
+            className="font-roobert-semibold text-primary-foreground tracking-wide"
+            style={{ fontSize: 11 }}
+          >
+            POPULAR
+          </Text>
         </View>
       )}
       <Pressable

@@ -1,11 +1,13 @@
 import * as React from 'react';
-import { View, Pressable, ActivityIndicator, FlatList, TextInput } from 'react-native';
+import { View, Pressable, ActivityIndicator, FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { ArrowLeft, Search, CheckCircle2, X } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
+import { THEME } from '@/lib/utils/theme';
 import {
   useComposioApps,
   useComposioConnections,
@@ -122,22 +124,13 @@ export function ComposioAppsContent({
     <>
       {/* Search Bar */}
       <View className="mb-4">
-        <View
-          className="flex-row items-center rounded-2xl border border-border bg-card px-4"
-          style={{
-            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-          }}>
+        <View className="flex-row items-center rounded-2xl border border-border bg-input px-4">
           <Icon as={Search} size={18} className="text-muted-foreground" />
-          <TextInput
+          <Input
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={t('composio.searchApps')}
-            placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-            className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
-            style={{
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
-            }}
+            className="ml-3 h-auto flex-1 border-0 bg-transparent py-3 font-roobert text-base text-foreground shadow-none"
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} className="ml-2">
@@ -152,7 +145,10 @@ export function ComposioAppsContent({
   // Loading component
   const renderLoading = () => (
     <View className="items-center justify-center py-12">
-      <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+      <ActivityIndicator
+        size="small"
+        color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground}
+      />
       <Text className="mt-4 font-roobert text-sm text-muted-foreground">
         {t('connections.loadingConnections')}
       </Text>
@@ -184,13 +180,12 @@ export function ComposioAppsContent({
           <View className="mb-6 flex-row items-center">
             {onBack && (
               <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-                <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                <Icon as={ArrowLeft} size={20} className="text-foreground" />
               </Pressable>
             )}
             <View className="ml-3 flex-1">
               <Text
-                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                className="font-roobert-semibold text-xl">
+                className="font-roobert-semibold text-xl text-foreground">
                 {t('connections.composioApps')}
               </Text>
             </View>
@@ -227,11 +222,11 @@ export function ComposioAppsContent({
       <View style={{ flex: 1 }}>
         {/* Sticky header and search bar */}
         <View
+          className="bg-popover"
           style={{
             paddingHorizontal: 24,
             paddingTop: 24,
             paddingBottom: 16,
-            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
           }}>
           {renderHeader()}
         </View>
@@ -287,13 +282,12 @@ export function ComposioAppsContent({
         <View className="mb-6 flex-row items-center">
           {onBack && (
             <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-              <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              <Icon as={ArrowLeft} size={20} className="text-foreground" />
             </Pressable>
           )}
           <View className="ml-3 flex-1">
             <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="font-roobert-semibold text-xl">
+              className="font-roobert-semibold text-xl text-foreground">
               {t('connections.composioApps')}
             </Text>
           </View>
@@ -389,15 +383,15 @@ const AppCard = React.memo(
             {app.description}
           </Text>
           {isConnected && (
-            <Text className="mt-1 font-roobert-medium text-xs text-blue-600 dark:text-blue-400">
+            <Text className="mt-1 font-roobert-medium text-xs text-kortix-blue">
               Connected
             </Text>
           )}
         </View>
 
         {(app.connected || isConnected) && (
-          <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500">
-            <Icon as={CheckCircle2} size={16} className="text-white" />
+          <View className="h-6 w-6 items-center justify-center rounded-full bg-kortix-green">
+            <Icon as={CheckCircle2} size={16} className="text-white" /> {/* hex-allowlist: icon on a fixed kortix-green tile, never themed */}
           </View>
         )}
       </Pressable>

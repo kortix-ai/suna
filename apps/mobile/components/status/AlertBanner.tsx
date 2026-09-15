@@ -29,19 +29,19 @@ const variantStyles: Record<AlertBannerVariant, {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-amber-500',
+    iconColor: 'text-kortix-orange',
   },
   error: {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-red-500',
+    iconColor: 'text-destructive',
   },
   info: {
     bg: 'bg-muted',
     border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
-    iconColor: 'text-blue-500',
+    iconColor: 'text-kortix-blue',
   },
 };
 

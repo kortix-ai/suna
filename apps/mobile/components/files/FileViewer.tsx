@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { X, Download, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,6 +35,8 @@ import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCode
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -277,31 +279,24 @@ export function FileViewer({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleCloseGuarded}>
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         {/* Drag handle indicator (visible on iOS pageSheet) */}
         <View
           style={{
             alignItems: 'center',
             paddingTop: 8,
             paddingBottom: 4,
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-            }}
-          />
+          <View style={sheetHandleIndicatorStyle(isDark)} />
         </View>
         {/* Header */}
         <View
           style={{
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
             borderBottomWidth: 1,
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+            borderBottomColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.1),
           }}>
           <Animated.View
             entering={FadeIn.duration(200)}
@@ -309,14 +304,14 @@ export function FileViewer({
             className="flex-row items-center justify-between px-4 py-4">
             <View className="mr-4 min-w-0 flex-1">
               <Text
-                style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+                style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
                 className="font-roobert-medium text-base"
                 numberOfLines={1}>
                 {file.name}
               </Text>
               {canNavigate && (
                 <Text
-                  style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                  style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5) }}
                   className="mt-0.5 font-roobert text-xs">
                   {currentIndex + 1} of {fileList?.length}
                 </Text>
@@ -328,7 +323,7 @@ export function FileViewer({
               <View className="flex-row items-center gap-2">
                 <Pressable onPress={handleCancelEdit} className="px-2 py-2" hitSlop={8}>
                   <Text
-                    style={{ color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}
+                    style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.6 : 0.5) }}
                     className="font-roobert-medium text-sm">
                     Cancel
                   </Text>
@@ -339,17 +334,17 @@ export function FileViewer({
                   hitSlop={6}
                   className="flex-row items-center rounded-full px-3.5 py-2"
                   style={{
-                    backgroundColor: isDark ? '#f8f8f8' : '#121215',
+                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     opacity: writeMutation.isPending || !dirty ? 0.5 : 1,
                     gap: 6,
                   }}>
                   {writeMutation.isPending ? (
                     <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                   ) : (
-                    <Icon as={Check} size={16} color={isDark ? '#121215' : '#f8f8f8'} strokeWidth={2.4} />
+                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} strokeWidth={2.4} />
                   )}
                   <Text
-                    style={{ color: isDark ? '#121215' : '#f8f8f8' }}
+                    style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
                     className="font-roobert-medium text-sm">
                     {writeMutation.isPending ? 'Saving…' : 'Save'}
                   </Text>
@@ -367,7 +362,7 @@ export function FileViewer({
                       <Icon
                         as={ChevronLeft}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                         strokeWidth={2}
                       />
                     </AnimatedPressable>
@@ -379,7 +374,7 @@ export function FileViewer({
                       <Icon
                         as={ChevronRight}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                         strokeWidth={2}
                       />
                     </AnimatedPressable>
@@ -387,7 +382,7 @@ export function FileViewer({
                 )}
                 {canEdit && (
                   <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
-                    <Icon as={Pencil} size={20} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2} />
                   </AnimatedPressable>
                 )}
                 <AnimatedPressable
@@ -401,7 +396,7 @@ export function FileViewer({
                     <Icon
                       as={Download}
                       size={22}
-                      color={isDark ? '#f8f8f8' : '#121215'}
+                      color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                       strokeWidth={2}
                     />
                   )}
@@ -416,7 +411,7 @@ export function FileViewer({
                   onPress={handleCloseGuarded}
                   style={closeAnimatedStyle}
                   className="p-2">
-                  <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2} />
                 </AnimatedPressable>
               </View>
             )}
@@ -448,7 +443,7 @@ export function FileViewer({
                   fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                   fontSize: 13,
                   lineHeight: 19,
-                  color: isDark ? '#f8f8f8' : '#121215',
+                  color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                 }}
               />
             </KeyboardAvoidingView>

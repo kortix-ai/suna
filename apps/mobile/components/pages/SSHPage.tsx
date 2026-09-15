@@ -23,10 +23,11 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { getSSHConnection, setupSSH, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Cached SSH Meta ────────────────────────────────────────────────────────
 
@@ -116,8 +117,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
     }
   }, [savedScrollY]);
 
-  const codeBg = isDark ? '#0A0A0A' : '#18181B';
-  const codeBorder = isDark ? '#27272A' : '#3F3F46';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const copyToClipboard = useCallback(async (text: string, field: string) => {
     await Clipboard.setStringAsync(text);
@@ -224,7 +225,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 className="flex-row items-center justify-center self-start rounded-full px-5 py-2.5 active:opacity-90"
                 style={{ backgroundColor: themeColors.primary }}
               >
-                <Icon as={Key} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                <Icon as={Key} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
                 <Text className="ml-2 font-roobert-semibold text-sm" style={{ color: themeColors.primaryForeground }}>
                   Generate SSH Keys
                 </Text>
@@ -232,7 +233,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
 
               {/* Cached reconnect command */}
               {cachedMeta && (
-                <View className="rounded-xl border p-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
+                <View className="rounded-xl border p-3" style={{ borderColor: withAlpha(fg, 0.06), backgroundColor: withAlpha(fg, isDark ? 0.02 : 0.01) }}>
                   <View className="flex-row items-center justify-between mb-2">
                     <Text className="font-roobert-medium text-xs text-muted-foreground">Reconnect command</Text>
                     <Pressable
@@ -240,8 +241,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                       className="flex-row items-center px-2 py-1 active:opacity-70"
                       hitSlop={4}
                     >
-                      <Icon as={copiedField === 'cached' ? Check : Copy} size={11} className={copiedField === 'cached' ? 'text-emerald-500' : 'text-muted-foreground'} strokeWidth={2.2} />
-                      <Text className={`ml-1 font-roobert-medium text-[10px] ${copiedField === 'cached' ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+                      <Icon as={copiedField === 'cached' ? Check : Copy} size={11} className={copiedField === 'cached' ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+                      <Text className={`ml-1 font-roobert-medium text-[10px] ${copiedField === 'cached' ? 'text-kortix-green' : 'text-muted-foreground'}`}>
                         {copiedField === 'cached' ? 'Copied' : 'Copy'}
                       </Text>
                     </Pressable>
@@ -265,7 +266,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
           )}
 
           {error && (
-            <View className="mt-5 rounded-2xl border px-4 py-3" style={{ borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)', backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)' }}>
+            <View className="mt-5 rounded-2xl border px-4 py-3" style={{ borderColor: withAlpha(destructiveColor, isDark ? 0.2 : 0.15), backgroundColor: withAlpha(destructiveColor, isDark ? 0.05 : 0.03) }}>
               <Text className="font-roobert-medium text-sm text-destructive">{error}</Text>
               <Pressable onPress={() => { haptics.tap(); handleGenerate(); }} className="mt-2 active:opacity-70">
                 <Text className="font-roobert-medium text-xs text-primary">Try again</Text>
@@ -287,7 +288,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               </View>
 
               {/* AI Agent Shortcut */}
-              <View className="rounded-xl border p-3.5" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
+              <View className="rounded-xl border p-3.5" style={{ borderColor: withAlpha(fg, 0.06), backgroundColor: withAlpha(fg, isDark ? 0.02 : 0.01) }}>
                 <View className="flex-row items-center mb-2" style={{ gap: 8 }}>
                   <Icon as={Code2} size={16} className="text-muted-foreground" strokeWidth={2} />
                   <Text className="font-roobert-semibold text-sm text-foreground flex-1">Let your AI agent do it</Text>
@@ -296,8 +297,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                     className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
                     hitSlop={4}
                   >
-                    <Icon as={copiedField === 'agent' ? Check : Copy} size={12} className={copiedField === 'agent' ? 'text-emerald-500' : 'text-muted-foreground'} strokeWidth={2.2} />
-                    <Text className={`ml-1 font-roobert-medium text-[11px] ${copiedField === 'agent' ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+                    <Icon as={copiedField === 'agent' ? Check : Copy} size={12} className={copiedField === 'agent' ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+                    <Text className={`ml-1 font-roobert-medium text-[11px] ${copiedField === 'agent' ? 'text-kortix-green' : 'text-muted-foreground'}`}>
                       {copiedField === 'agent' ? 'Copied' : 'Copy'}
                     </Text>
                   </Pressable>
@@ -315,8 +316,6 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 copyField="one-liner"
                 copiedField={copiedField}
                 onCopy={copyToClipboard}
-                codeBg={codeBg}
-                codeBorder={codeBorder}
                 badge="Contains private key"
               />
 
@@ -328,8 +327,6 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 copyField="reconnect"
                 copiedField={copiedField}
                 onCopy={copyToClipboard}
-                codeBg={codeBg}
-                codeBorder={codeBorder}
               />
 
               {/* VS Code / Cursor Config */}
@@ -340,8 +337,6 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 copyField="config-cmd"
                 copiedField={copiedField}
                 onCopy={copyToClipboard}
-                codeBg={codeBg}
-                codeBorder={codeBorder}
               />
 
               {/* Raw Keys (collapsible) */}
@@ -362,8 +357,6 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                       copyField="pk"
                       copiedField={copiedField}
                       onCopy={copyToClipboard}
-                      codeBg={codeBg}
-                      codeBorder={codeBorder}
                     />
                     <CodeSection
                       title="Public Key"
@@ -371,8 +364,6 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                       copyField="pub"
                       copiedField={copiedField}
                       onCopy={copyToClipboard}
-                      codeBg={codeBg}
-                      codeBorder={codeBorder}
                     />
                   </View>
                 )}
@@ -414,8 +405,6 @@ function CodeSection({
   copyField,
   copiedField,
   onCopy,
-  codeBg,
-  codeBorder,
   badge,
 }: {
   title: string;
@@ -424,8 +413,6 @@ function CodeSection({
   copyField: string;
   copiedField: string | null;
   onCopy: (text: string, field: string) => void;
-  codeBg: string;
-  codeBorder: string;
   badge?: string;
 }) {
   const isCopied = copiedField === copyField;
@@ -435,9 +422,9 @@ function CodeSection({
       <View className="flex-row items-center mb-1.5">
         <Text className="font-roobert-semibold text-[15px] text-foreground flex-1">{title}</Text>
         {!!badge && (
-          <View className="flex-row items-center rounded-md mr-2 px-1.5 py-0.5" style={{ backgroundColor: 'rgba(245,158,11,0.1)' }}>
-            <Icon as={ShieldAlert} size={10} style={{ color: '#f59e0b' }} strokeWidth={2.2} />
-            <Text className="ml-1 font-roobert-medium text-[10px]" style={{ color: '#f59e0b' }}>{badge}</Text>
+          <View className="flex-row items-center rounded-md mr-2 px-1.5 py-0.5 bg-kortix-orange/10">
+            <Icon as={ShieldAlert} size={10} className="text-kortix-orange" strokeWidth={2.2} />
+            <Text className="ml-1 font-roobert-medium text-[10px] text-kortix-orange">{badge}</Text>
           </View>
         )}
         <Pressable
@@ -445,8 +432,8 @@ function CodeSection({
           className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
           hitSlop={4}
         >
-          <Icon as={isCopied ? Check : Copy} size={12} className={isCopied ? 'text-emerald-500' : 'text-muted-foreground'} strokeWidth={2.2} />
-          <Text className={`ml-1 font-roobert-medium text-[11px] ${isCopied ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+          <Icon as={isCopied ? Check : Copy} size={12} className={isCopied ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+          <Text className={`ml-1 font-roobert-medium text-[11px] ${isCopied ? 'text-kortix-green' : 'text-muted-foreground'}`}>
             {isCopied ? 'Copied' : 'Copy'}
           </Text>
         </Pressable>
@@ -455,8 +442,8 @@ function CodeSection({
         <Text className="mb-2 font-roobert text-xs text-muted-foreground">{description}</Text>
       )}
       <View
-        className="rounded-xl overflow-hidden"
-        style={{ backgroundColor: codeBg, borderWidth: 1, borderColor: codeBorder, maxHeight: 150 }}
+        className="rounded-xl overflow-hidden bg-terminal-surface border border-terminal-border"
+        style={{ maxHeight: 150 }}
       >
         <ScrollView
           nestedScrollEnabled
@@ -472,15 +459,20 @@ function CodeSection({
 
 // ─── Syntax Highlighted Code ────────────────────────────────────────────────
 
+// Fixed syntax-highlighter palette rendered only on the always-dark
+// `terminal-surface` code block (never inverts with app theme). These are
+// light pastel tones chosen for contrast on a near-black ground — not the
+// app's saturated brand accents (THEME.accent.*), which would be unreadable
+// here.
 const TOKEN_COLORS = {
-  command: '#7DD3FC',    // sky-300 — commands like mkdir, ssh, cat, chmod
-  flag: '#C4B5FD',      // violet-300 — flags like -i, -o, -p
-  path: '#86EFAC',      // emerald-300 — paths like ~/.ssh/kortix_sandbox
-  string: '#FDE68A',    // amber-200 — quoted strings and heredoc delimiters
-  number: '#FCA5A5',    // red-300 — numbers like ports
-  keyword: '#F9A8D4',   // pink-300 — keywords like Host, HostName, Port
-  comment: '#6B7280',   // gray-500
-  default: '#D4D4D8',   // zinc-300
+  command: '#7DD3FC', // hex-allowlist: sky-300, light pastel blue (#7DD3FC) — commands like mkdir, ssh, cat, chmod
+  flag: '#C4B5FD', // hex-allowlist: violet-300, light pastel violet (#C4B5FD) — flags like -i, -o, -p
+  path: '#86EFAC', // hex-allowlist: emerald-300, light pastel green (#86EFAC) — paths like ~/.ssh/kortix_sandbox
+  string: '#FDE68A', // hex-allowlist: amber-200, light pastel amber (#FDE68A) — quoted strings and heredoc delimiters
+  number: '#FCA5A5', // hex-allowlist: red-300, light pastel red (#FCA5A5) — numbers like ports
+  keyword: '#F9A8D4', // hex-allowlist: pink-300, light pastel pink (#F9A8D4) — keywords like Host, HostName, Port
+  comment: '#6B7280', // hex-allowlist: gray-500, mid grey (#6B7280)
+  default: '#D4D4D8', // hex-allowlist: zinc-300, light grey (#D4D4D8)
 };
 
 const COMMANDS = new Set(['mkdir', 'cat', 'chmod', 'ssh', 'touch', 'echo']);

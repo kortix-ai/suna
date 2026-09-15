@@ -9,10 +9,11 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text as RNText, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Pressable, ActivityIndicator } from 'react-native';
 import { ChevronRight, Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProjectAgentsForTrigger,
   useProjectModelCatalogForTrigger,
@@ -22,11 +23,12 @@ import { haptics } from '@/lib/haptics';
 const MONO = 'Menlo';
 
 function useFieldColors(isDark: boolean) {
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   return {
-    fg: isDark ? '#F8F8F8' : '#121215',
-    muted: isDark ? '#9b9b9b' : '#6e6e6e',
-    border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
-    inputBg: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+    fg,
+    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
+    border: withAlpha(fg, isDark ? 0.1 : 0.12),
+    inputBg: withAlpha(fg, isDark ? 0.05 : 0.03),
   };
 }
 
@@ -60,20 +62,19 @@ export function AgentPickerField({
   return (
     <View>
       <FieldLabel muted={muted}>Agent</FieldLabel>
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); setOpen((v) => !v); }}
-        activeOpacity={0.7}
-        style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}
+        style={({ pressed }) => ({ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', opacity: pressed ? 0.7 : 1 })}
       >
-        <RNText style={{ flex: 1, fontSize: 14, color: fg, fontFamily: MONO }} numberOfLines={1}>
+        <Text style={{ flex: 1, fontSize: 14, color: fg, fontFamily: MONO }} numberOfLines={1}>
           {value || 'default'}
-        </RNText>
+        </Text>
         {isLoading ? (
           <ActivityIndicator size="small" color={muted} />
         ) : (
           <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
         )}
-      </TouchableOpacity>
+      </Pressable>
       {open && (
         <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
           {agents.length === 0 && !isLoading && (
@@ -84,20 +85,19 @@ export function AgentPickerField({
           {agents.map((a, i) => {
             const selected = value === a.name;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={a.name}
                 onPress={() => { haptics.selection(); onChange(a.name); setOpen(false); }}
-                activeOpacity={0.6}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border, opacity: pressed ? 0.6 : 1 })}
               >
                 <View style={{ flex: 1 }}>
-                  <RNText style={{ fontSize: 13.5, fontFamily: MONO, color: fg }}>{a.name}</RNText>
+                  <Text style={{ fontSize: 13.5, fontFamily: MONO, color: fg }}>{a.name}</Text>
                   {a.description ? (
-                    <RNText style={{ fontSize: 11.5, color: muted, marginTop: 2 }} numberOfLines={1}>{a.description}</RNText>
+                    <Text style={{ fontSize: 11.5, color: muted, marginTop: 2 }} numberOfLines={1}>{a.description}</Text>
                   ) : null}
                 </View>
                 {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </View>
@@ -142,47 +142,48 @@ export function ModelPickerField({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Model</Text>
         {value && (
-          <TouchableOpacity onPress={() => { haptics.tap(); onChange(null); }} hitSlop={6}>
+          <Pressable
+            onPress={() => { haptics.tap(); onChange(null); }}
+            hitSlop={6}
+            style={({ pressed }) => ({ opacity: pressed ? 0.2 : 1 })}
+          >
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>Use default</Text>
-          </TouchableOpacity>
+          </Pressable>
         )}
       </View>
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); setOpen((v) => !v); }}
-        activeOpacity={0.7}
-        style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginTop: 6 }}
+        style={({ pressed }) => ({ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginTop: 6, opacity: pressed ? 0.7 : 1 })}
       >
-        <RNText style={{ flex: 1, fontSize: 14, color: fg }} numberOfLines={1}>
+        <Text style={{ flex: 1, fontSize: 14, color: fg }} numberOfLines={1}>
           {current?.modelName ?? 'Default'}
-        </RNText>
+        </Text>
         {isLoading ? (
           <ActivityIndicator size="small" color={muted} />
         ) : (
           <ChevronRight size={16} color={muted} style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }} />
         )}
-      </TouchableOpacity>
+      </Pressable>
       {open && (
         <View style={{ marginTop: 8, borderRadius: 11, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-          <TouchableOpacity
+          <Pressable
             onPress={() => { haptics.selection(); onChange(null); setOpen(false); }}
-            activeOpacity={0.6}
-            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11 }}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, opacity: pressed ? 0.6 : 1 })}
           >
-            <RNText style={{ flex: 1, fontSize: 13.5, color: fg }}>Default</RNText>
+            <Text style={{ flex: 1, fontSize: 13.5, color: fg }}>Default</Text>
             {value == null && <Check size={15} color={theme.primary} strokeWidth={3} />}
-          </TouchableOpacity>
+          </Pressable>
           {models.map((m) => {
             const selected = value === m.modelID;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={m.modelID}
                 onPress={() => { haptics.selection(); onChange(m.modelID); setOpen(false); }}
-                activeOpacity={0.6}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: 1, borderTopColor: border }}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: 1, borderTopColor: border, opacity: pressed ? 0.6 : 1 })}
               >
-                <RNText style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.modelName}</RNText>
+                <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.modelName}</Text>
                 {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </View>

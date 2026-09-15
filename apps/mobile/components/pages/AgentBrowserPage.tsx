@@ -10,6 +10,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Text as RNText } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { WebViewHttpErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import * as Linking from 'expo-linking';
@@ -25,8 +26,9 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const BROWSER_VIEWER_PORT = 9224;
 const BROWSER_STREAM_PORT = 9223;
@@ -45,16 +47,16 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [authToken, setAuthToken] = useState<string | null>(null);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
-  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = withAlpha(fg, 0.4);
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   // Build viewer URL — auto-focus the primary session
   const viewerUrl = useMemo(() => {
@@ -173,10 +175,10 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 }}>
         <View style={{
           width: 6, height: 6, borderRadius: 3,
-          backgroundColor: isConnected ? '#22C55E' : isLoading && isReady ? '#F59E0B' : muted,
+          backgroundColor: isConnected ? THEME.accent.green : isLoading && isReady ? THEME.accent.orange : muted,
         }} />
         <RNText
-          style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isConnected ? '#22C55E' : muted }}
+          style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isConnected ? THEME.accent.green : muted }}
           numberOfLines={1}
         >
           {isConnected ? 'Connected' : isLoading && isReady ? 'Connecting...' : 'Idle'}
@@ -217,7 +219,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         </View>
       ) : hasError ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-          <AlertTriangle size={32} color="#F59E0B" />
+          <AlertTriangle size={32} color={THEME.accent.orange} />
           <RNText style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, marginTop: 12 }}>
             Browser unavailable
           </RNText>
@@ -230,7 +232,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
               flexDirection: 'row', alignItems: 'center', gap: 6,
               marginTop: 16, paddingHorizontal: 16, paddingVertical: 10,
               borderRadius: 10, borderWidth: 1,
-              borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+              borderColor: withAlpha(fg, 0.1),
             }}
           >
             <RefreshCw size={14} color={fg} />
@@ -248,7 +250,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           onLoadStart={() => setIsLoading(true)}
           onLoadEnd={() => setIsLoading(false)}
           onError={() => { setIsLoading(false); setHasError(true); }}
-          onHttpError={(e) => {
+          onHttpError={(e: WebViewHttpErrorEvent) => {
             if (e.nativeEvent.statusCode >= 400) {
               setIsLoading(false);
               setHasError(true);
@@ -258,7 +260,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           injectedJavaScript={injectedJS}
           startInLoadingState
           renderLoading={() => (
-            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#0a0a0a' : '#F5F6F8' }}>
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: bgColor }}>
               <ActivityIndicator size="small" color={muted} />
             </View>
           )}
@@ -271,7 +273,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           scrollEnabled={false}
           bounces={false}
           overScrollMode="never"
-          style={{ flex: 1, backgroundColor: isDark ? '#0a0a0a' : '#F5F6F8' }}
+          style={{ flex: 1, backgroundColor: bgColor }}
         />
       )}
       </PageContent>

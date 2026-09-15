@@ -1,19 +1,20 @@
 import * as React from 'react';
-import { Pressable, View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
+import { Pressable, View, Alert, Keyboard, ScrollView, type TextInput } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
   withSpring
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
 
@@ -167,7 +168,7 @@ export function NameEditPage({
                 fallbackText={name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
               />
               <View className="mt-6 w-full">
-                <TextInput
+                <Input
                   ref={inputRef}
                   value={name}
                   onChangeText={(text) => {
@@ -175,8 +176,7 @@ export function NameEditPage({
                     setError(null);
                   }}
                   placeholder={t('nameEdit.yourNamePlaceholder')}
-                  placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                  className="text-3xl font-roobert-semibold text-foreground text-center tracking-tight"
+                  className="h-auto border-0 bg-transparent px-0 py-0 text-3xl font-roobert-semibold text-foreground text-center tracking-tight shadow-none"
                   editable={!isLoading}
                   maxLength={100}
                   autoCapitalize="words"

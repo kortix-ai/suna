@@ -30,6 +30,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { getFileIconComponent } from '@/components/files/FileItem';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { MentionItem } from './useMentions';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -61,15 +62,15 @@ export function MentionSuggestions({
   const isDark = colorScheme === 'dark';
 
   // Theme tokens — mirror web's bg-popover / border-border/60 / bg-accent / muted-foreground
-  const bgColor = isDark ? '#1F1F1F' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(58,58,58,0.6)' : 'rgba(220,221,222,0.6)';
-  const fgColor = isDark ? '#EBEBEB' : '#121215';
-  const mutedFg = isDark ? 'rgba(235,235,235,0.5)' : 'rgba(18,18,21,0.5)';
-  const mutedFg35 = isDark ? 'rgba(235,235,235,0.35)' : 'rgba(18,18,21,0.35)';
-  const accentBg = isDark ? '#212121' : '#E5E7EB';
-  const iconMuted = isDark ? 'rgba(235,235,235,0.5)' : 'rgba(18,18,21,0.5)';
-  const agentBadgeBg = isDark ? 'rgba(235,235,235,0.1)' : 'rgba(18,18,21,0.08)';
-  const agentBadgeFg = isDark ? 'rgba(235,235,235,0.6)' : 'rgba(18,18,21,0.6)';
+  const bgColor = isDark ? THEME.dark.popover : THEME.light.popover;
+  const borderColor = isDark ? withAlpha(THEME.dark.border, 0.6) : withAlpha(THEME.light.border, 0.6);
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedFg = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const mutedFg35 = isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.35);
+  const accentBg = isDark ? THEME.dark.accent : THEME.light.accent;
+  const iconMuted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const agentBadgeBg = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const agentBadgeFg = isDark ? withAlpha(THEME.dark.foreground, 0.6) : withAlpha(THEME.light.foreground, 0.6);
 
   // Hooks must run on every render — declare before any early return.
   const spin = useSharedValue(0);
@@ -122,7 +123,7 @@ export function MentionSuggestions({
         marginHorizontal: 16,
         marginBottom: 8,
         maxHeight: 288,
-        shadowColor: '#000',
+        shadowColor: '#000', // hex-allowlist: universal shadow ink, not a themed surface color
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: isDark ? 0.3 : 0.08,
         shadowRadius: 12,

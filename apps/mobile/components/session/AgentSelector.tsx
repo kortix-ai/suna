@@ -3,10 +3,12 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { View, TouchableOpacity, FlatList } from 'react-native';
+import { View, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
+import { THEME } from '@/lib/utils/theme';
 import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 
 interface AgentSelectorProps {
@@ -34,20 +36,26 @@ export function AgentSelector({
   );
 
   return (
-    <View className={`rounded-t-2xl ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
+    <View className="rounded-t-2xl bg-popover">
       {/* Handle */}
       <View className="items-center pt-3 pb-1">
-        <View className={`h-1 w-10 rounded-full ${isDark ? 'bg-zinc-700' : 'bg-zinc-300'}`} />
+        <View className="h-1 w-10 rounded-full bg-border" />
       </View>
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 py-3">
-        <Text className={`text-base font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+        <Text className="text-base font-semibold text-foreground">
           Agent
         </Text>
-        <TouchableOpacity onPress={onClose} hitSlop={12}>
-          <Ionicons name="close" size={20} color={isDark ? '#a1a1aa' : '#71717a'} />
-        </TouchableOpacity>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={onClose}
+          hitSlop={12}
+          className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
+        >
+          <Ionicons name="close" size={20} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+        </Button>
       </View>
 
       {/* List */}
@@ -59,26 +67,24 @@ export function AgentSelector({
         renderItem={({ item }) => {
           const isSelected = item.name === selected?.name;
           return (
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={() => handleSelect(item.name)}
-              className={`flex-row items-center rounded-xl px-4 py-3 mb-1 ${
-                isSelected ? (isDark ? 'bg-zinc-800' : 'bg-zinc-100') : ''
+              className={`h-auto flex-row items-center justify-start rounded-xl px-4 py-3 mb-1 active:opacity-60 ${
+                isSelected ? 'bg-accent' : ''
               }`}
-              activeOpacity={0.6}
             >
               <View className="flex-1">
                 <Text
                   className={`text-sm capitalize ${
-                    isSelected
-                      ? isDark ? 'text-white font-semibold' : 'text-zinc-900 font-semibold'
-                      : isDark ? 'text-zinc-300' : 'text-zinc-700'
+                    isSelected ? 'text-foreground font-semibold' : 'text-muted-foreground'
                   }`}
                 >
                   {item.name}
                 </Text>
                 {item.description && (
                   <Text
-                    className={`text-xs mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}
+                    className="text-xs mt-0.5 text-muted-foreground"
                     numberOfLines={1}
                   >
                     {item.description}
@@ -86,9 +92,9 @@ export function AgentSelector({
                 )}
               </View>
               {isSelected && (
-                <Ionicons name="checkmark" size={18} color={isDark ? '#22c55e' : '#16a34a'} />
+                <Ionicons name="checkmark" size={18} color={THEME.accent.green} />
               )}
-            </TouchableOpacity>
+            </Button>
           );
         }}
       />

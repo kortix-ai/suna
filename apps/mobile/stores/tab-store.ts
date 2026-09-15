@@ -117,10 +117,11 @@ interface TabState {
   setTabState: (tabId: string, patch: Record<string, unknown>) => void;
   clearTabState: (tabId: string) => void;
   /**
-   * Switch the store to a project's tab scope: snapshots the current flat
-   * state under the old scope key and hydrates the flat state from the new
-   * scope (empty for a never-visited project). Tabs are remembered PER
-   * PROJECT, not globally. No-op when already on the scope.
+   * Open a project's tab scope on its home: snapshots the current flat state
+   * under the old scope key and hydrates the flat state from the new scope
+   * (empty for a never-visited project). Open tabs and history are remembered
+   * PER PROJECT; the active page or thread is not. Opening a project, again
+   * or after a restart, always shows project home.
    */
   setScope: (key: string) => void;
 }
@@ -142,12 +143,18 @@ export const useTabStore = create<TabState>()(
 
       setScope: (key) => {
         const s = get();
-        if (s.scopeKey === key) return;
+        const home = { activeSessionId: null, activePageId: null, showTabsOverview: false };
+
+        // Reopening the same project: only drop the active page or thread.
+        if (s.scopeKey === key) {
+          set(home);
+          return;
+        }
 
         // Migration / first run: no scope owned the flat state yet — adopt it
         // as this scope's state so pre-scoping tabs aren't lost.
         if (!s.scopeKey) {
-          set({ scopeKey: key, showTabsOverview: false });
+          set({ scopeKey: key, ...home });
           return;
         }
 
@@ -155,8 +162,8 @@ export const useTabStore = create<TabState>()(
         const scopes: Record<string, TabScopeSnapshot> = {
           ...s.scopes,
           [s.scopeKey]: {
-            activeSessionId: s.activeSessionId,
-            activePageId: s.activePageId,
+            activeSessionId: null,
+            activePageId: null,
             openTabIds: s.openTabIds,
             openPageIds: s.openPageIds,
             openTabOrder: s.openTabOrder,
@@ -169,15 +176,13 @@ export const useTabStore = create<TabState>()(
         set({
           scopeKey: key,
           scopes,
-          activeSessionId: next.activeSessionId,
-          activePageId: next.activePageId,
           openTabIds: next.openTabIds,
           openPageIds: next.openPageIds,
           openTabOrder: next.openTabOrder,
           sessionHistory: next.sessionHistory,
           historyIndex: next.historyIndex,
           tabStateById: next.tabStateById,
-          showTabsOverview: false,
+          ...home,
         });
       },
 
@@ -418,9 +423,9 @@ export const useTabStore = create<TabState>()(
     {
       name: 'kortix-tab-state',
       storage: createJSONStorage(() => AsyncStorage),
+      // The active page or thread is not persisted: a restart opens project
+      // home. ProjectScreen's route stack owns where back goes.
       partialize: (state) => ({
-        activeSessionId: state.activeSessionId,
-        activePageId: state.activePageId,
         openTabIds: state.openTabIds,
         openPageIds: state.openPageIds,
         openTabOrder: state.openTabOrder,
@@ -443,12 +448,10 @@ export const useTabStore = create<TabState>()(
         state.tabStateById = state.tabStateById && typeof state.tabStateById === 'object'
           ? state.tabStateById
           : {};
-        if (state.activeSessionId !== null && typeof state.activeSessionId !== 'string') {
-          state.activeSessionId = null;
-        }
-        if (state.activePageId !== null && typeof state.activePageId !== 'string') {
-          state.activePageId = null;
-        }
+        // Storage written by older builds still holds the last active page or
+        // thread. Drop it so a restart opens project home.
+        state.activeSessionId = null;
+        state.activePageId = null;
         if (state.scopeKey != null && typeof state.scopeKey !== 'string') {
           state.scopeKey = null;
         }

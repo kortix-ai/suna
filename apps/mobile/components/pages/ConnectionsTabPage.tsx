@@ -5,15 +5,13 @@
  */
 
 import React from 'react';
-import { View, TouchableOpacity } from 'react-native';
-import { Text as RNText } from 'react-native';
+import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { ConnectionsPageContent } from '@/components/settings/ConnectionsPage';
+import { THEME } from '@/lib/utils/theme';
 
 interface ConnectionsTabPageProps {
   page: PageTab;
@@ -34,11 +32,10 @@ export function ConnectionsTabPage({
 }: ConnectionsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
+    <View style={{ flex: 1, backgroundColor: bgColor }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}

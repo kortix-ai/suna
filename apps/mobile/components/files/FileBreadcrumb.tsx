@@ -10,6 +10,7 @@ import { Icon } from '@/components/ui/icon';
 import { ChevronRight, Folder } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface BreadcrumbSegment {
   name: string;
@@ -56,8 +57,8 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
           as={Folder}
           size={14}
           color={segments.length === 0
-            ? (isDark ? '#f8f8f8' : '#121215')
-            : (isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)')
+            ? (isDark ? THEME.dark.foreground : THEME.light.foreground)
+            : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.4)
           }
           strokeWidth={2}
         />
@@ -69,7 +70,7 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
           <Icon
             as={ChevronRight}
             size={12}
-            color={isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.25)'}
+            color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.25)}
             strokeWidth={2}
             style={{ marginHorizontal: 2 }}
           />
@@ -81,8 +82,8 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
             <Text
               style={{
                 color: segment.isLast
-                  ? (isDark ? '#f8f8f8' : '#121215')
-                  : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'),
+                  ? (isDark ? THEME.dark.foreground : THEME.light.foreground)
+                  : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5),
               }}
               className={`text-sm ${segment.isLast ? 'font-roobert-medium' : 'font-roobert'}`}
               numberOfLines={1}

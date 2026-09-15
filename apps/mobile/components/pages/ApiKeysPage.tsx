@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
   StyleSheet,
   Keyboard,
-  TouchableOpacity,
   Linking,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -36,15 +35,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
-import { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken, getServerUrl } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import {
   useApiKeys,
   useCreateApiKey,
@@ -58,6 +58,7 @@ import {
   type APIKeyRegenerateResponse,
   type APIKeyStatus,
 } from '@/hooks/useApiKeys';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Public Links Types ─────────────────────────────────────────────────────
 
@@ -91,10 +92,9 @@ export function ApiKeysTabPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.light.foreground : THEME.dark.foreground }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
@@ -179,10 +179,10 @@ function ApiKeysContent() {
     onError: (err: any) => Alert.alert('Error', err?.message || 'Failed to revoke public link'),
   });
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
 
   // Separate sandbox vs user keys
   const { sandboxKeys, userKeys } = useMemo(() => {
@@ -304,10 +304,6 @@ function ApiKeysContent() {
     );
   }, [revokeShareMutation]);
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   // ── List Data ──
 
@@ -416,7 +412,7 @@ function ApiKeysContent() {
                     <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, lineHeight: 16 }}>
                       Pass your key as a Bearer token:
                     </Text>
-                    <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' }}>
+                    <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03), borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' }}>
                       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: fg }}>
                         Authorization: Bearer kortix_...
                       </Text>
@@ -488,7 +484,7 @@ function ApiKeysContent() {
               <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted, marginTop: 12, textAlign: 'center' }}>
                 Failed to load API keys
               </Text>
-              <Pressable onPress={() => { haptics.tap(); refetch(); }} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+              <Pressable onPress={() => { haptics.tap(); refetch(); }} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Try Again</Text>
               </Pressable>
             </View>
@@ -501,7 +497,6 @@ function ApiKeysContent() {
         sheetRef={createSheetRef}
         isDark={isDark}
         theme={theme}
-        renderBackdrop={renderBackdrop}
         sandboxUuid={sandboxUuid}
         onCreated={(result) => {
           setCreatedKey(result);
@@ -514,7 +509,6 @@ function ApiKeysContent() {
         sheetRef={secretSheetRef}
         isDark={isDark}
         theme={theme}
-        renderBackdrop={renderBackdrop}
         createdKey={createdKey}
         onDone={() => {
           secretSheetRef.current?.dismiss();
@@ -527,7 +521,6 @@ function ApiKeysContent() {
         sheetRef={createLinkSheetRef}
         isDark={isDark}
         theme={theme}
-        renderBackdrop={renderBackdrop}
         sandboxId={sandboxId}
         onCreated={() => refetchShares()}
       />
@@ -548,15 +541,15 @@ function SandboxTokenCard({
   isRegenerating: boolean;
   onRegenerate: () => void;
 }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
 
   return (
     <View style={{ padding: 14, borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor, marginTop: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}>
           <Bot size={16} color={muted} />
         </View>
         <View style={{ flex: 1 }}>
@@ -565,7 +558,7 @@ function SandboxTokenCard({
             <StatusDot status={apiKey.status} isDark={isDark} />
           </View>
         </View>
-        <Pressable onPress={onRegenerate} disabled={isRegenerating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
+        <Pressable onPress={onRegenerate} disabled={isRegenerating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04) }}>
           {isRegenerating ? (
             <ActivityIndicator size="small" color={muted} />
           ) : (
@@ -594,8 +587,8 @@ function ApiKeyRow({
   onRevoke: () => void;
   onDelete: () => void;
 }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const expired = isKeyExpired(apiKey.expires_at);
 
   return (
@@ -606,10 +599,10 @@ function ApiKeyRow({
         gap: 10,
         paddingVertical: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
       }}
     >
-      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}>
         <Key size={14} color={muted} />
       </View>
       <View style={{ flex: 1 }}>
@@ -624,7 +617,7 @@ function ApiKeyRow({
           {apiKey.expires_at && (
             <>
               <Text style={{ fontSize: 11, color: muted }}>·</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: expired ? '#ca8a04' : muted }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: expired ? THEME.accent.orange : muted }}>
                 {expired ? 'Expired' : 'Expires'} {formatKeyDate(apiKey.expires_at)}
               </Text>
             </>
@@ -646,9 +639,9 @@ function ApiKeyRow({
 
 function StatusDot({ status, isDark }: { status: APIKeyStatus; isDark: boolean }) {
   const config: Record<APIKeyStatus, { color: string; label: string }> = {
-    active: { color: '#34d399', label: 'Active' },
-    revoked: { color: '#ef4444', label: 'Revoked' },
-    expired: { color: '#ca8a04', label: 'Expired' },
+    active: { color: THEME.accent.green, label: 'Active' },
+    revoked: { color: isDark ? THEME.dark.destructive : THEME.light.destructive, label: 'Revoked' },
+    expired: { color: THEME.accent.orange, label: 'Expired' },
   };
   const c = config[status] || config.active;
 
@@ -666,25 +659,24 @@ function CreateApiKeySheet({
   sheetRef,
   isDark,
   theme,
-  renderBackdrop,
   sandboxUuid,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
-  renderBackdrop: (props: any) => React.ReactElement;
   sandboxUuid?: string;
   onCreated: (result: APIKeyCreateResponse) => void;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createKey = useCreateApiKey();
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -738,18 +730,18 @@ function CreateApiKeySheet({
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             <Key size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
@@ -764,7 +756,7 @@ function CreateApiKeySheet({
           value={title}
           onChangeText={setTitle}
           placeholder="e.g. CI/CD Pipeline"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           autoFocus
           style={{ ...inputStyle, marginBottom: 16 }}
         />
@@ -775,7 +767,7 @@ function CreateApiKeySheet({
           value={description}
           onChangeText={setDescription}
           placeholder="What is this key for?"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           style={{ ...inputStyle, marginBottom: 16 }}
         />
 
@@ -790,7 +782,7 @@ function CreateApiKeySheet({
                 paddingHorizontal: 12,
                 paddingVertical: 8,
                 borderRadius: 10,
-                backgroundColor: expiration === opt.value ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                backgroundColor: expiration === opt.value ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
               }}
             >
               <Text style={{
@@ -813,7 +805,7 @@ function CreateApiKeySheet({
             justifyContent: 'center',
             paddingVertical: 14,
             borderRadius: 9999,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
             ...(!title.trim() ? {} : { backgroundColor: theme.primary }),
           }}
         >
@@ -836,25 +828,24 @@ function SecretKeySheet({
   sheetRef,
   isDark,
   theme,
-  renderBackdrop,
   createdKey,
   onDone,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
-  renderBackdrop: (props: any) => React.ReactElement;
   createdKey: APIKeyCreateResponse | APIKeyRegenerateResponse | null;
   onDone: () => void;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [copied, setCopied] = useState(false);
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   const secretKey = createdKey && 'secret_key' in createdKey ? createdKey.secret_key : '';
 
@@ -871,9 +862,9 @@ function SecretKeySheet({
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Semibold', color: fg, marginBottom: 4 }}>
@@ -915,8 +906,8 @@ function SecretKeySheet({
         </View>
 
         {/* Warning */}
-        <View style={{ padding: 12, borderRadius: 12, backgroundColor: isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)', borderWidth: 1, borderColor: isDark ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.12)', marginBottom: 20 }}>
-          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? '#fbbf24' : '#b45309', lineHeight: 18 }}>
+        <View style={{ padding: 12, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.08) : withAlpha(THEME.accent.orange, 0.06), borderWidth: 1, borderColor: isDark ? withAlpha(THEME.accent.orange, 0.15) : withAlpha(THEME.accent.orange, 0.12), marginBottom: 20 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: THEME.accent.orange, lineHeight: 18 }}>
             Store this key securely. It cannot be retrieved after closing this dialog.
           </Text>
         </View>
@@ -952,8 +943,8 @@ function PublicLinkRow({
   onRevoke: () => void;
   onOpen: () => void;
 }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -990,10 +981,10 @@ function PublicLinkRow({
         gap: 10,
         paddingVertical: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
       }}
     >
-      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}>
         <ExternalLink size={14} color={muted} />
       </View>
       <View style={{ flex: 1 }}>
@@ -1002,7 +993,7 @@ function PublicLinkRow({
             Port {share.port}
           </Text>
           {share.label ? (
-            <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+            <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
               <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: muted }}>{share.label}</Text>
             </View>
           ) : null}
@@ -1020,7 +1011,7 @@ function PublicLinkRow({
         </View>
       </View>
       <Pressable onPress={handleCopy} hitSlop={8} style={{ padding: 6 }}>
-        {copied ? <Check size={15} color="#34d399" /> : <Copy size={15} color={muted} />}
+        {copied ? <Check size={15} color={THEME.accent.green} /> : <Copy size={15} color={muted} />}
       </Pressable>
       <Pressable onPress={() => { haptics.tap(); onOpen(); }} hitSlop={8} style={{ padding: 6 }}>
         <ExternalLink size={15} color={muted} />
@@ -1038,24 +1029,23 @@ function CreatePublicLinkSheet({
   sheetRef,
   isDark,
   theme,
-  renderBackdrop,
   sandboxId,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
-  renderBackdrop: (props: any) => React.ReactElement;
   sandboxId?: string;
   onCreated: () => void;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   const [port, setPort] = useState('8000');
   const [ttl, setTtl] = useState('1h');
@@ -1132,18 +1122,18 @@ function CreatePublicLinkSheet({
       ref={sheetRef}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             <ExternalLink size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
@@ -1154,8 +1144,8 @@ function CreatePublicLinkSheet({
 
         {/* Success result */}
         {resultUrl && (
-          <View style={{ backgroundColor: isDark ? 'rgba(52,211,153,0.08)' : 'rgba(52,211,153,0.06)', borderWidth: 1, borderColor: isDark ? 'rgba(52,211,153,0.15)' : 'rgba(52,211,153,0.12)', borderRadius: 12, padding: 12, marginBottom: 16 }}>
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#34d399', marginBottom: 8 }}>Link created</Text>
+          <View style={{ backgroundColor: isDark ? withAlpha(THEME.accent.green, 0.08) : withAlpha(THEME.accent.green, 0.06), borderWidth: 1, borderColor: isDark ? withAlpha(THEME.accent.green, 0.15) : withAlpha(THEME.accent.green, 0.12), borderRadius: 12, padding: 12, marginBottom: 16 }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: THEME.accent.green, marginBottom: 8 }}>Link created</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1, backgroundColor: inputBg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: fg }} numberOfLines={1} ellipsizeMode="middle">{resultUrl}</Text>
@@ -1173,7 +1163,7 @@ function CreatePublicLinkSheet({
           value={port}
           onChangeText={(t) => setPort(t.replace(/[^0-9]/g, ''))}
           placeholder="8000"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           keyboardType="numeric"
           style={{ ...inputStyle, marginBottom: 16 }}
         />
@@ -1189,7 +1179,7 @@ function CreatePublicLinkSheet({
                 paddingHorizontal: 12,
                 paddingVertical: 8,
                 borderRadius: 10,
-                backgroundColor: ttl === opt.value ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                backgroundColor: ttl === opt.value ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
               }}
             >
               <Text style={{
@@ -1209,7 +1199,7 @@ function CreatePublicLinkSheet({
           value={label}
           onChangeText={setLabel}
           placeholder="e.g. channels-master"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           style={{ ...inputStyle, marginBottom: 20 }}
         />
 
@@ -1222,7 +1212,7 @@ function CreatePublicLinkSheet({
             justifyContent: 'center',
             paddingVertical: 14,
             borderRadius: 9999,
-            backgroundColor: (!sandboxId || !port) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
+            backgroundColor: (!sandboxId || !port) ? (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06)) : theme.primary,
           }}
         >
           {createMutation.isPending ? (

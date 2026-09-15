@@ -1,31 +1,37 @@
 /**
- * Account → Groups (web parity: iam/groups-tab). List + search + create + delete
- * groups; tap a group to open its detail (members + project access).
+ * Account → Groups (web parity: iam/groups-tab). Search, create, and open a
+ * group; the group detail screen owns rename / members / project access /
+ * delete. Settings-list layout: see apps/mobile/design.md.
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert, RefreshControl } from 'react-native';
+import { Alert, RefreshControl, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
-import { Search, X, Plus, Users, Trash2, ChevronRight } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { AlertCircle, Plus, RotateCw } from 'lucide-react-native';
+
 import { Text } from '@/components/ui/text';
-import { SheetTextInput } from '@/components/ui/SheetInput';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/kortix/avatar';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SearchBar } from '@/components/kortix/SearchBar';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { haptics } from '@/lib/haptics';
-import { listGroups, createGroup, deleteGroup } from '@/lib/accounts/groups-client';
+import { listGroups, createGroup } from '@/lib/accounts/groups-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
-import { Pill, PrimaryButton, SkeletonList, accountColors, type AccountCaps } from './account-shared';
+import { SheetCloseButton, type AccountCaps } from './account-shared';
+
+function memberCount(n: number | null | undefined): string {
+  const count = n ?? 0;
+  return `${count} member${count === 1 ? '' : 's'}`;
+}
 
 export function GroupsTab({ account, can, isDark }: { account: AccountDetail; can: AccountCaps; isDark: boolean }) {
-  const c = accountColors(isDark);
-  const theme = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const sheetBg = useSheetBackground();
   const router = useRouter();
   const accountId = account.account_id;
   const canCreate = can['group.create'];
@@ -33,135 +39,145 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
 
   const query = useQuery({ queryKey: ['account-groups', accountId], queryFn: () => listGroups(accountId), staleTime: 30_000 });
   const [search, setSearch] = useState('');
-  const [busyId, setBusyId] = useState<string | null>(null);
   const createRef = React.useRef<BottomSheetModal>(null);
 
-  const del = useMutation({
-    mutationFn: (groupId: string) => deleteGroup(accountId, groupId),
-    onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to delete group.'),
-    onSettled: () => setBusyId(null),
-  });
-
+  const groups = query.data ?? [];
   const filtered = useMemo(() => {
-    const all = query.data ?? [];
     const q = search.trim().toLowerCase();
-    return q ? all.filter((g) => g.name.toLowerCase().includes(q) || (g.description?.toLowerCase().includes(q) ?? false)) : all;
-  }, [query.data, search]);
-
-  const confirmDelete = (groupId: string, name: string) => Alert.alert('Delete group', `Delete "${name}"? Any permission policies attached to this group will be removed.`, [
-    { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); setBusyId(groupId); del.mutate(groupId); } },
-  ]);
+    return q
+      ? groups.filter((g) => g.name.toLowerCase().includes(q) || (g.description?.toLowerCase().includes(q) ?? false))
+      : groups;
+  }, [groups, search]);
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={c.muted} />}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: c.fg }}>Groups</Text>
-          {canCreate && (
-            <TouchableOpacity onPress={() => { haptics.tap(); createRef.current?.present(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
-              <Plus size={14} color={theme.primaryForeground} />
-              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Create</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 14 }}>Bundle members together and attach the whole group to projects with a role.</Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
-          <Search size={15} color={c.muted} />
-          <TextInput value={search} onChangeText={setSearch} placeholder="Search by name…" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
-          {search.length > 0 && <TouchableOpacity onPress={() => { haptics.tap(); setSearch(''); }} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
-        </View>
+      <SettingsPage
+        refreshControl={
+          <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
+        }>
+        {canCreate && (
+          <SettingsGroup>
+            <SettingsRow
+              icon={Plus}
+              label="Create group"
+              right={null}
+              onPress={() => {
+                haptics.tap();
+                createRef.current?.present();
+              }}
+            />
+          </SettingsGroup>
+        )}
 
         {query.isLoading ? (
-          <SkeletonList count={3} isDark={isDark} bare />
+          <View className="items-center py-12">
+            <KortixLoader />
+          </View>
         ) : query.isError ? (
-          <View style={{ paddingVertical: 20, gap: 10 }}>
-            <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load groups'}</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); query.refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingVertical: 36, gap: 10 }}>
-            <Users size={26} color={c.muted} />
-            <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{search ? 'No groups match your search' : 'No groups yet. Create one to bulk-add members to projects.'}</Text>
-          </View>
+          <SettingsGroup>
+            <SettingsRow icon={AlertCircle} label="Couldn't load groups" destructive />
+            <SettingsRow
+              icon={RotateCw}
+              label="Try again"
+              right={null}
+              onPress={() => {
+                haptics.tap();
+                query.refetch();
+              }}
+            />
+          </SettingsGroup>
+        ) : groups.length === 0 ? (
+          <Text variant="muted" className="py-10 text-center">
+            No groups yet.
+          </Text>
         ) : (
-          <View>
-            {filtered.map((g, i) => (
-              <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); router.push(`/accounts/${accountId}/groups/${g.group_id}`); }} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>
-                  <Users size={16} color={c.muted} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.name}</Text>
-                    <Pill label={g.source} isDark={isDark} />
-                  </View>
-                  <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }} numberOfLines={1}>
-                    {g.description ? `${g.description} · ` : ''}{g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'} · {g.project_count ?? 0} project{(g.project_count ?? 0) === 1 ? '' : 's'}
-                  </Text>
-                </View>
-                {canCreate && (busyId === g.group_id ? <ActivityIndicator size="small" color={c.muted} /> : (
-                  <TouchableOpacity onPress={() => { haptics.tap(); confirmDelete(g.group_id, g.name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+          <>
+            <SearchBar value={search} onChangeText={setSearch} onClear={() => setSearch('')} placeholder="Search groups" />
+            {filtered.length === 0 ? (
+              <Text variant="muted" className="py-10 text-center">
+                No groups match "{search.trim()}".
+              </Text>
+            ) : (
+              <SettingsGroup title="Groups">
+                {filtered.map((g) => (
+                  <SettingsRow
+                    key={g.group_id}
+                    leading={<Avatar variant="custom" size={28} fallbackText={g.name} />}
+                    label={g.name}
+                    value={memberCount(g.member_count)}
+                    onPress={() => {
+                      haptics.tap();
+                      router.push(`/accounts/${accountId}/groups/${g.group_id}`);
+                    }}
+                  />
                 ))}
-                <ChevronRight size={16} color={c.muted} />
-              </TouchableOpacity>
-            ))}
-          </View>
+              </SettingsGroup>
+            )}
+          </>
         )}
-      </ScrollView>
+      </SettingsPage>
 
       <BottomSheetModal
         ref={createRef}
-        snapPoints={['52%']}
+        snapPoints={['46%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
-        <CreateGroupSheet accountId={accountId} isDark={isDark}
+        <CreateGroupSheet
+          accountId={accountId}
+          isDark={isDark}
           onClose={() => createRef.current?.dismiss()}
-          onCreated={(groupId) => { queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); createRef.current?.dismiss(); router.push(`/accounts/${accountId}/groups/${groupId}`); }} />
+          onCreated={(groupId) => {
+            queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+            createRef.current?.dismiss();
+            router.push(`/accounts/${accountId}/groups/${groupId}`);
+          }}
+        />
       </BottomSheetModal>
     </View>
   );
 }
 
 function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId: string; onCreated: (groupId: string) => void; onClose: () => void; isDark: boolean }) {
-  const c = accountColors(isDark);
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const create = useMutation({
     mutationFn: () => createGroup(accountId, { name: name.trim(), description: description.trim() || undefined }),
     onSuccess: (g) => { haptics.success(); onCreated(g.group_id); },
-    onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to create group.'),
+    onError: (e: any) => Alert.alert('Unable to create group', e?.message || 'Try again in a moment.'),
   });
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
-        <Users size={18} color={c.fg} />
-        <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>Create a group</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+      <View className="flex-row items-center gap-3 px-5 pb-2 pt-1">
+        <Text variant="large" className="flex-1">
+          Create group
+        </Text>
+        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
       </View>
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 16 }}>Groups bundle members together. Attach the group to projects with a role.</Text>
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Group name</Text>
-        <SheetTextInput value={name} onChangeText={setName} placeholder="Engineering" />
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 6 }}>Description (optional)</Text>
-        <SheetTextInput value={description} onChangeText={setDescription} placeholder="Engineers shipping the platform" />
+      <BottomSheetScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, gap: 12 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <SheetTextInput value={name} onChangeText={setName} placeholder="Group name" accessibilityLabel="Group name" maxLength={128} />
+        <SheetTextInput value={description} onChangeText={setDescription} placeholder="Description (optional)" accessibilityLabel="Description" maxLength={256} />
       </BottomSheetScrollView>
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-        <PrimaryButton label="Create group" onPress={() => { haptics.tap(); create.mutate(); }} disabled={!name.trim() || create.isPending} pending={create.isPending} />
+      <View className="px-5 pt-3" style={{ paddingBottom: insets.bottom + 16 }}>
+        <Button
+          size="lg"
+          className="rounded-full"
+          disabled={!name.trim() || create.isPending}
+          onPress={() => { haptics.tap(); create.mutate(); }}
+        >
+          <Text>{create.isPending ? 'Creating…' : 'Create group'}</Text>
+        </Button>
       </View>
     </View>
   );

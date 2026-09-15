@@ -14,6 +14,7 @@ import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useThemeStore } from '@/stores/theme-store';
+import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -26,13 +27,13 @@ interface ThemePageProps {
 }
 
 export function ThemePage({ visible, onClose }: ThemePageProps) {
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
   const [themePreference, setThemePreference] = React.useState<ThemePreference | null>(null);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
   const isMountedRef = React.useRef(true);
-  const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const transitionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -56,19 +57,12 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
       if (!isMountedRef.current) return;
-      if (saved) {
-        const preference = saved as ThemePreference;
-        setThemePreference(preference);
-        setColorScheme(preference === 'system' ? 'system' : preference);
-      } else {
-        const currentTheme = colorScheme || 'light';
-        const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
-        setThemePreference(derivedPreference);
-      }
+      const preference = parseThemePreference(saved);
+      setThemePreference(preference);
+      setColorScheme(preference);
     } catch {
       if (!isMountedRef.current) return;
-      const derivedPreference = colorScheme === 'dark' ? 'dark' : 'light';
-      setThemePreference(derivedPreference);
+      setThemePreference(DEFAULT_THEME_PREFERENCE);
     }
   };
 

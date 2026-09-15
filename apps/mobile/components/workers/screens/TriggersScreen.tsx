@@ -20,6 +20,7 @@ import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -75,9 +76,9 @@ function TriggerCard({
           className="absolute inset-0 z-10 items-center justify-center rounded-2xl"
           style={{
             backgroundColor:
-              colorScheme === 'dark' ? 'rgba(24, 24, 27, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+              colorScheme === 'dark' ? withAlpha(THEME.dark.card, 0.8) : withAlpha(THEME.light.card, 0.8),
           }}>
-          <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+          <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         </View>
       )}
       <View className="flex-row items-center justify-between">
@@ -104,7 +105,7 @@ function TriggerCard({
             {isToggling ? (
               <ActivityIndicator
                 size="small"
-                color={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+                color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
               />
             ) : (
               <Icon
@@ -131,7 +132,7 @@ function TriggerCard({
             {isDeleting ? (
               <ActivityIndicator
                 size="small"
-                color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+                color={colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive}
               />
             ) : (
               <Icon as={Trash2} size={18} className="text-muted-foreground" />
@@ -256,7 +257,7 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
   if (isLoading) {
     return (
       <View className="items-center justify-center py-12">
-        <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading triggers...</Text>
       </View>
     );

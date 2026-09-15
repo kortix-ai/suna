@@ -8,6 +8,8 @@ import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/li
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 interface CreditPurchaseModalProps {
   open: boolean;
@@ -44,6 +46,7 @@ export function CreditPurchaseModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { colorScheme } = useColorScheme();
 
   const handlePurchase = async (amount: number) => {
     if (amount < 10) {
@@ -205,12 +208,18 @@ export function CreditPurchaseModal({
                     <Text className="text-xl font-roobert-semibold text-foreground">
                       ${pkg.amount}
                     </Text>
-                    <Text className="text-xs font-roobert text-muted-foreground mt-1">
+                    <Text
+                      className="font-roobert text-muted-foreground mt-1"
+                      style={{ fontSize: 12, lineHeight: 16 }}
+                    >
                       Credits
                     </Text>
                     {pkg.popular && (
                       <View className="mt-1 bg-primary/10 px-2 py-0.5 rounded-full">
-                        <Text className="text-[10px] font-roobert-medium text-primary">
+                        <Text
+                          className="font-roobert-medium text-primary"
+                          style={{ fontSize: 10 }}
+                        >
                           Popular
                         </Text>
                       </View>
@@ -245,7 +254,15 @@ export function CreditPurchaseModal({
               >
                 {isProcessing ? (
                   <View className="flex-row items-center gap-2">
-                    <ActivityIndicator size="small" color="#fff" />
+                    {/* Button fill is `bg-primary`, near-white in dark mode, so a
+                        hardcoded white spinner was invisible there. `primaryForeground`
+                        is the token that pairs with it -- near-white in light mode
+                        (hsl(60 0% 98%)), near-black in dark (hsl(180 0% 9%)) -- and it
+                        matches the `text-primary-foreground` label beside it. */}
+                    <ActivityIndicator
+                      size="small"
+                      color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
+                    />
                     <Text className="text-sm font-roobert-medium text-primary-foreground">
                       Processing...
                     </Text>

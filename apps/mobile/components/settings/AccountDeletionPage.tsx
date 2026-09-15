@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView, TextInput } from 'react-native';
+import { Pressable, View, Alert, ScrollView } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -9,10 +9,11 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { Trash2, Calendar, XCircle, AlertTriangle, CheckCircle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { 
   useAccountDeletionStatus, 
   useRequestAccountDeletion, 
@@ -28,7 +29,6 @@ interface AccountDeletionPageProps {
 
 export function AccountDeletionPage({ visible, onClose }: AccountDeletionPageProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
@@ -235,12 +235,11 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   <Text className="mb-3 text-sm font-roobert-medium text-foreground">
                     {t('accountDeletion.typeDeleteToConfirm', { text: t('accountDeletion.deletePlaceholder') })}
                   </Text>
-                  <TextInput
+                  <Input
                     value={confirmText}
                     onChangeText={(text) => setConfirmText(text.toUpperCase())}
                     placeholder={t('accountDeletion.deletePlaceholder')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                    className="bg-card border border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide"
+                    className="h-auto bg-card border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide shadow-none"
                     autoCapitalize="characters"
                     autoCorrect={false}
                     returnKeyType="done"

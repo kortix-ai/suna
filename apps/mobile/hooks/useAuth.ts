@@ -777,12 +777,15 @@ export function useAuth() {
           },
         });
 
-        if (magicLinkError) {
+        // Only a redirect-related error gets the redirect hint. A network
+        // failure ("Network request timed out") used to be logged as a rejected
+        // redirect, which pointed debugging at the wrong layer.
+        if (magicLinkError && /redirect/i.test(magicLinkError.message)) {
           log.error('❌ Supabase rejected redirect URL:', {
             message: magicLinkError.message,
             status: magicLinkError.status,
             attemptedUrl: emailRedirectTo,
-            hint: 'Make sure kortix://auth/callback is in Supabase Dashboard → Auth → Redirect URLs',
+            hint: 'Add kortix://** to Auth → Redirect URLs (local: supabase/config.toml additional_redirect_urls)',
           });
         }
 

@@ -7,11 +7,13 @@
  */
 
 import React from 'react';
-import { View, TextInput, Switch } from 'react-native';
+import { View, TextInput } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Switch } from '@/components/ui/switch';
 import { Info } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 interface JSONSchema {
   title?: string;
@@ -28,6 +30,12 @@ interface DynamicConfigFormProps {
 
 export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigFormProps) {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedTextColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
+  const bgColor = isDark ? THEME.dark.card : THEME.light.card;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   if (!schema || !schema.properties || Object.keys(schema.properties).length === 0) {
     return (
@@ -66,10 +74,10 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
               style={{
                 fontSize: 14,
                 fontWeight: '600',
-                color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                color: textColor,
                 marginBottom: 8,
               }}>
-              {label} {isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
+              {label} {isRequired && <Text style={{ color: destructiveColor }}>*</Text>}
             </Text>
 
             {type === 'number' || type === 'integer' ? (
@@ -86,16 +94,16 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                   }
                 }}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                placeholderTextColor={mutedTextColor}
                 keyboardType="numeric"
                 style={{
                   padding: 12,
                   borderRadius: 12,
                   borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  borderColor,
+                  backgroundColor: bgColor,
                   fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  color: textColor,
                 }}
               />
             ) : type === 'array' ? (
@@ -106,24 +114,22 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                   handleChange(items);
                 }}
                 placeholder={examples[0] ? String(examples[0]) : 'comma,separated,values'}
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                placeholderTextColor={mutedTextColor}
                 style={{
                   padding: 12,
                   borderRadius: 12,
                   borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  borderColor,
+                  backgroundColor: bgColor,
                   fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  color: textColor,
                 }}
               />
             ) : type === 'boolean' ? (
               <View className="flex-row items-center gap-3">
                 <Switch
-                  value={Boolean(current)}
-                  onValueChange={handleChange}
-                  trackColor={{ false: 'hsl(var(--muted))', true: 'hsl(var(--primary))' }}
-                  thumbColor={colorScheme === 'dark' ? '#f8f8f8' : '#ffffff'}
+                  checked={Boolean(current)}
+                  onCheckedChange={handleChange}
                 />
                 <Text className="flex-1 font-roobert text-sm text-foreground">
                   {description || label}
@@ -134,15 +140,15 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                 value={String(current || '')}
                 onChangeText={handleChange}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                placeholderTextColor={mutedTextColor}
                 style={{
                   padding: 12,
                   borderRadius: 12,
                   borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  borderColor,
+                  backgroundColor: bgColor,
                   fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  color: textColor,
                 }}
               />
             )}

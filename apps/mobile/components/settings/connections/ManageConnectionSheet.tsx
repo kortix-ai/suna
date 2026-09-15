@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Pressable, Alert, ActivityIndicator, StyleSheet, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pencil, Trash2, Calendar, Link2, Unlink, Monitor } from 'lucide-react-native';
@@ -23,8 +23,10 @@ import {
 } from '@/hooks/useConnections';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { log } from '@/lib/logger';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface ManageConnectionSheetProps {
   connection: ConnectorConnection | null;
@@ -33,6 +35,7 @@ interface ManageConnectionSheetProps {
 }
 
 export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: ManageConnectionSheetProps) {
+  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const renameSheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
@@ -71,12 +74,6 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
     }
   }, [connection]);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   // ── Rename ──
   const handleOpenRename = useCallback(() => {
@@ -153,10 +150,17 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   }, [connection, disconnect, onDismiss]);
 
   // ── Colors ──
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  // fg/muted mirror the app-wide "old near-black-on-white / near-white-on-black"
+  // literal pair — same derivation as lib/theme-colors.ts's `theme.primary`
+  // (light -> THEME.light.primary, dark -> THEME.dark.foreground, NOT
+  // THEME.dark.primary, which would visibly dim this text/icon in dark mode).
+  const fg = theme.primary;
+  const muted = withAlpha(theme.primary, 0.5);
+  const subtleBg = withAlpha(theme.primary, isDark ? 0.04 : 0.02);
+  const borderColor = withAlpha(theme.primary, isDark ? 0.08 : 0.06);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const hoverBg = isDark ? THEME.dark.hover : THEME.light.hover;
+  const activeBg = isDark ? THEME.dark.active : THEME.light.active;
 
 
   const formatDate = (iso: string | null) => {
@@ -175,18 +179,13 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         enableDynamicSizing
         enablePanDownToClose
         onDismiss={onDismiss}
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{ padding: 20, paddingBottom: insets.bottom + 20 }}
@@ -215,7 +214,10 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                         width: 6,
                         height: 6,
                         borderRadius: 3,
-                        backgroundColor: connection.status === 'active' ? '#34d399' : '#ef4444',
+                        backgroundColor:
+                          connection.status === 'active'
+                            ? THEME.accent.green
+                            : destructiveColor,
                       }}
                     />
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
@@ -275,9 +277,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                         paddingHorizontal: 14,
                         paddingVertical: 6,
                         borderRadius: 9999,
-                        backgroundColor: isLinked
-                          ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)')
-                          : theme.primary,
+                        backgroundColor: isLinked ? activeBg : theme.primary,
                       }}
                     >
                       {(linkSandbox.isPending || unlinkSandbox.isPending) ? (
@@ -308,15 +308,15 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                   gap: 8,
                   paddingVertical: 14,
                   borderRadius: 9999,
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)',
+                  backgroundColor: withAlpha(destructiveColor, isDark ? 0.1 : 0.06),
                 }}
               >
                 {disconnect.isPending ? (
-                  <ActivityIndicator size="small" color="#ef4444" />
+                  <ActivityIndicator size="small" color={destructiveColor} />
                 ) : (
-                  <Trash2 size={16} color="#ef4444" />
+                  <Trash2 size={16} color={destructiveColor} />
                 )}
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: destructiveColor }}>
                   Disconnect
                 </Text>
               </Pressable>
@@ -330,22 +330,17 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         ref={renameSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setRenameDraft('')}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView
           style={{
@@ -380,16 +375,16 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
             value={renameDraft}
             onChangeText={setRenameDraft}
             placeholder="Enter new name"
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={withAlpha(theme.primary, isDark ? 0.25 : 0.3)}
             autoFocus
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={handleConfirmRename}
             style={{
-              backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+              backgroundColor: hoverBg,
               borderWidth: 1,
-              borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+              borderColor: activeBg,
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -409,9 +404,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
               justifyContent: 'center',
               paddingVertical: 14,
               borderRadius: 9999,
-              backgroundColor: !renameDraft.trim()
-                ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)')
-                : theme.primary,
+              backgroundColor: !renameDraft.trim() ? hoverBg : theme.primary,
               opacity: !renameDraft.trim() ? 0.5 : 1,
             }}
           >

@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore } from '@/stores/tab-store';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import * as Haptics from 'expo-haptics';
 import { ExternalLink, Globe } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -45,7 +46,7 @@ export function SandboxPreviewCard({ port, title, description, path }: SandboxPr
   }, [sandboxId, port, path]);
 
   const displayTitle = title || `localhost:${port}`;
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   return (
     <Pressable
