@@ -14,10 +14,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
-  Animated,
   StyleSheet,
-  ActionSheetIOS,
-  Alert,
   Image,
   Keyboard,
   useWindowDimensions,
@@ -41,9 +38,8 @@ import {
 import { Icon } from '@/components/ui/icon';
 import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import { getAuthToken } from '@/api/config';
+import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
+import { useAttachmentPicker } from './useAttachmentPicker';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -56,18 +52,7 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface AttachedFile {
-  /** Local URI on device (file:// or content://) */
-  uri: string;
-  /** Display name */
-  name: string;
-  /** MIME type */
-  mimeType: string;
-  /** File size in bytes (may be undefined for some pickers) */
-  size?: number;
-  /** True if this is an image and should show a preview thumbnail */
-  isImage: boolean;
-}
+export type { AttachedFile } from '@/lib/session/attachments';
 
 export interface PromptOptions {
   agent?: string;
@@ -224,7 +209,7 @@ export function SessionChatInput({
   onStop,
   isBusy = false,
   disabled = false,
-  placeholder = 'Ask anything...',
+  placeholder = 'Ask anything',
   agent,
   agents = [],
   model,
@@ -296,100 +281,7 @@ export function SessionChatInput({
     setAttachedFiles((prev) => [...prev, ...files]);
   }, []);
 
-  const handleAttachPress = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Photo Library', 'Camera', 'Browse Files'],
-          cancelButtonIndex: 0,
-        },
-        async (buttonIndex) => {
-          if (buttonIndex === 1) {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
-              allowsMultipleSelection: true,
-              quality: 0.9,
-            });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.fileName || a.uri.split('/').pop() || 'image.jpg',
-                mimeType: a.mimeType || 'image/jpeg',
-                size: a.fileSize,
-                isImage: true,
-              })));
-            }
-          } else if (buttonIndex === 2) {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status !== 'granted') {
-              Alert.alert('Permission required', 'Camera access is needed to take photos.');
-              return;
-            }
-            const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
-            if (!result.canceled) {
-              addFiles([{
-                uri: result.assets[0].uri,
-                name: result.assets[0].fileName || `photo_${Date.now()}.jpg`,
-                mimeType: result.assets[0].mimeType || 'image/jpeg',
-                size: result.assets[0].fileSize,
-                isImage: true,
-              }]);
-            }
-          } else if (buttonIndex === 3) {
-            const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.name,
-                mimeType: a.mimeType || 'application/octet-stream',
-                size: a.size,
-                isImage: (a.mimeType || '').startsWith('image/'),
-              })));
-            }
-          }
-        },
-      );
-    } else {
-      // Android: use a simple Alert for choice
-      Alert.alert('Attach file', 'Choose source', [
-        {
-          text: 'Photo Library',
-          onPress: async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
-              allowsMultipleSelection: true,
-              quality: 0.9,
-            });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.fileName || a.uri.split('/').pop() || 'image.jpg',
-                mimeType: a.mimeType || 'image/jpeg',
-                size: a.fileSize,
-                isImage: true,
-              })));
-            }
-          },
-        },
-        {
-          text: 'Browse Files',
-          onPress: async () => {
-            const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
-            if (!result.canceled) {
-              addFiles(result.assets.map((a) => ({
-                uri: a.uri,
-                name: a.name,
-                mimeType: a.mimeType || 'application/octet-stream',
-                size: a.size,
-                isImage: (a.mimeType || '').startsWith('image/'),
-              })));
-            }
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  }, [addFiles]);
+  const handleAttachPress = useAttachmentPicker(addFiles);
 
   const availableAutoAlgorithms = useMemo(
     () =>
@@ -469,73 +361,6 @@ export function SessionChatInput({
     [],
   );
 
-  // ── Animated placeholder ────────────────────────────────────────────────
-  const placeholderVariants = useMemo(
-    () => [
-      placeholder,
-      'Ask about any file in this project',
-      'Ask for changed files and diffs',
-      'Ask to compact when context is full',
-      'Reference files with @',
-    ],
-    [placeholder],
-  );
-
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (text.trim().length > 0) return;
-
-    const interval = setInterval(() => {
-      // Exit: fade out + slide up
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: -8,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Switch text
-        setPlaceholderIndex((i) => (i + 1) % placeholderVariants.length);
-        // Reset position to below
-        slideAnim.setValue(8);
-        // Enter: fade in + slide up to center
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-          Animated.timing(slideAnim, {
-            toValue: 0,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      });
-    }, 6000);
-
-    return () => clearInterval(interval);
-  }, [text, placeholderVariants.length, fadeAnim, slideAnim]);
-
-  // Reset animation when user clears input
-  useEffect(() => {
-    if (text.trim().length === 0) {
-      fadeAnim.setValue(1);
-      slideAnim.setValue(0);
-    }
-  }, [text, fadeAnim, slideAnim]);
-
-  const showAnimatedPlaceholder = text.trim().length === 0 && !inputSlot && !stagedCommand;
-  // ────────────────────────────────────────────────────────────────────────
-
   const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
   const hasDraftText = text.trim().length > 0;
   const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
@@ -611,38 +436,8 @@ export function SessionChatInput({
     if (filesToUpload.length > 0 && sandboxUrl) {
       setIsUploading(true);
       try {
-        const xmlParts: string[] = [];
-
-        // Upload files. The server (/file/upload) guarantees collision-free
-        // destinations — if two files share a name it auto-suffixes and
-        // returns the actual written path. (Ported from web 04f8296.)
-        await Promise.all(
-          filesToUpload.map(async (f, idx) => {
-            const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const optimisticPath = `/workspace/uploads/${safeName}`;
-
-            const formData = new FormData();
-            formData.append('path', '/workspace/uploads');
-            formData.append('file', { uri: f.uri, name: safeName, type: f.mimeType } as any);
-
-            const token = await getAuthToken();
-            const res = await fetch(`${sandboxUrl}/file/upload`, {
-              method: 'POST',
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-              body: formData,
-            });
-
-            // Use the server-returned path (collision-free) or fall back to optimistic
-            const uploadedPath = res.ok
-              ? ((await res.json() as Array<{ path: string }>)[0]?.path ?? optimisticPath)
-              : optimisticPath;
-
-            xmlParts[idx] = `<file path="${uploadedPath}" mime="${f.mimeType}" filename="${f.name}">\nThis file has been uploaded and is available at the path above.\n</file>`;
-          }),
-        );
-
-        const xmlBlock = xmlParts.join('\n');
-        const finalText = xmlBlock ? `${trimmed}\n\n${xmlBlock}` : trimmed;
+        const xmlBlock = await uploadAttachments(sandboxUrl, filesToUpload);
+        const finalText = withAttachments(trimmed, xmlBlock);
         onSend(finalText, options, trackedMentions);
       } catch {
         // Upload failed — still send the message without file refs
@@ -818,32 +613,15 @@ export function SessionChatInput({
             )}
 
             <>
-                {/* TextInput + animated placeholder wrapper */}
+                {/* TextInput */}
                 <View style={{ position: 'relative' }}>
-                  {showAnimatedPlaceholder && (
-                    <Animated.Text
-                      pointerEvents="none"
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        top: Platform.OS === 'ios' ? 5 : 3,
-                        fontSize: 14,
-                        color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
-                        opacity: fadeAnim,
-                        transform: [{ translateY: slideAnim }],
-                        zIndex: 1,
-                      }}
-                    >
-                      {placeholderVariants[placeholderIndex]}
-                    </Animated.Text>
-                  )}
                   <TextInput
                     ref={inputRef}
                     value={text}
                     onChangeText={handleTextChange}
                     onSelectionChange={handleSelectionChange}
-                    placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : ''}
-                    placeholderTextColor={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground}
+                    placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : placeholder}
+                    placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                     multiline
                     maxLength={10000}
                     style={{

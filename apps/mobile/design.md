@@ -155,7 +155,24 @@ locally, EAS for stores).
 | Email screen | back `PlatformButton`-style header, `PillInput` fields (44pt, matches `Button size="lg"`), primary pill, bottom pinned secondary pills + legal links |
 | Fields | `PillInput` on full screens, `SheetTextInput` inside bottom sheets — never `<Input>` restyled by class |
 
-## 4. Colour and theme
+## 4. Project home
+
+`/projects/[id]` with no chat open (`components/session/ProjectHome.tsx`,
+COR-34). It matches the web project home: simple and clean, nothing extra.
+
+| Element | Value |
+| --- | --- |
+| Greeting | `ProjectGreeting`: `KortixLogo` (38pt) over one sentence, `gap-4`. Centred on the screen; centred in the area above the keyboard while typing |
+| Message | Always "Give {project name} something real to work on." (web `HOME_GREETINGS[0]`, pinned by `lib/session/project-greeting.test.ts`). No rotation, no variants. `Text variant="lead"`, centred; the name is `text-foreground`, the rest muted. Unknown name → "it" |
+| Chat input | `Composer`: one borderless `rounded-3xl` card (light `bg-background` + `LIGHT_SHADOW`, dark `bg-card`). Text field on top (16pt Roobert, plain "Ask anything" placeholder, no animation). Row below: add (`Button variant="secondary" size="icon"`, `+`) · model pill (`Button variant="secondary"`, model name) · spacer · send (`Button size="icon"`, secondary when empty, primary when there is something to send). All `rounded-full` |
+| Chat input position | Pinned to the bottom with `px-3`, above the dock (`insets.bottom + 72`); follows the keyboard to 8pt above it. Text, files, and model stay until the send succeeds |
+| Add (`+`) | `useAttachmentPicker`: photo library, camera (iOS), files. Files show as chips (thumbnail · name · remove). They upload after the new session connects |
+| Model pill | Project gateway catalog (`useProjectModelCatalog`), label = the pick or the project default. Opens `ModelPickerSheet` (one `SettingsGroup` of checked rows). Sent as `opencode_model`. Hidden when the project has no LLM gateway |
+| Chrome | Floating menu button (top left) and the project dock. They belong to the project screen, not to the home |
+| Never | Starter chips, recent-session lists, cards, widgets, subtitles |
+| New chat, no messages | `SessionPage`'s `FreshSessionHero` renders the same `ProjectGreeting` |
+
+## 5. Colour and theme
 
 - Every screen follows the resolved colour scheme (NativeWind `useColorScheme`).
   No screen is "always dark".
@@ -164,7 +181,7 @@ locally, EAS for stores).
 - Skia and other native renderers cannot parse `hsl(0 0% 100%)`; pass
   `withAlpha(token, 1)` (comma form) to them.
 
-## 5. Checklist before handing off a screen
+## 6. Checklist before handing off a screen
 
 - [ ] Settings screen uses `SettingsPage` / `SettingsGroup` / `SettingsRow`
 - [ ] No uppercase or letter-spaced group titles

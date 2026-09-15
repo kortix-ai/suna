@@ -62,7 +62,7 @@ import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
-import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { ProjectGreeting } from '@/components/session/ProjectGreeting';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
@@ -898,7 +898,6 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
           projectName={projectName}
           opacity={heroOpacity}
           visible={showFreshHero}
-          isDark={isDark}
         />
       </View>
 
@@ -996,27 +995,20 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   );
 }
 
-// Shared by the two nested spans below — RN nested <Text> doesn't inherit
-// styles from the ui/Text base classes, so the face/size must be restated on
-// the inner span. Mirrors ProjectHome's hero typography.
-const HERO_TEXT_CLASS = 'font-roobert-medium text-2xl tracking-tight text-center';
-
 /**
- * FreshSessionHero — Kortix symbol with the greeting beneath it, centered in
- * the message area. Same hero as ProjectHome, with session-specific copy.
+ * FreshSessionHero — the project greeting centred in the message area of a
+ * chat with no messages yet. Same `ProjectGreeting` as ProjectHome, so a new
+ * chat opens onto the surface the project home showed.
  */
 function FreshSessionHero({
   projectName,
   opacity,
   visible,
-  isDark,
 }: {
   projectName?: string;
   opacity: Animated.Value;
   visible: boolean;
-  isDark: boolean;
 }) {
-  const displayName = projectName?.trim() || 'this project';
   const translateY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
@@ -1046,12 +1038,8 @@ function FreshSessionHero({
         opacity,
       }}
     >
-      <Animated.View style={{ transform: [{ translateY }], alignItems: 'center', gap: 16 }}>
-        <KortixLogo size={38} color={isDark ? 'dark' : 'light'} />
-        <Text className={`${HERO_TEXT_CLASS} text-muted-foreground`}>
-          Give <Text className={`${HERO_TEXT_CLASS} text-foreground`}>{displayName}</Text> something
-          real to work on.
-        </Text>
+      <Animated.View style={{ transform: [{ translateY }] }}>
+        <ProjectGreeting projectName={projectName} />
       </Animated.View>
     </Animated.View>
   );

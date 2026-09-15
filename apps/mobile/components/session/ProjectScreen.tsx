@@ -2,7 +2,7 @@
  * ProjectScreen — single-column project screen.
  *
  * Presents the project screen as one column that switches between three states:
- *   - project home (ProjectHome — greeting + composer + recent sessions)
+ *   - project home (ProjectHome — Kortix symbol, fixed greeting, composer)
  *   - a thread (the existing SessionPage — reused verbatim)
  *   - a tool page (Files / Terminal / Browser / … — the existing page components)
  *
@@ -43,7 +43,8 @@ import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptShee
 import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
 import { SessionShareSheet } from '@/components/session/SessionShareSheet';
 import { TabsOverview } from '@/components/session/TabsOverview';
-import { ProjectHome } from '@/components/session/ProjectHome';
+import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
+import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import { ProjectDock } from '@/components/session/ProjectDock';
 import { ProjectMoreSheet } from '@/components/session/ProjectMoreSheet';
@@ -65,7 +66,7 @@ import { log } from '@/lib/logger';
 import {
   useProjectSessions,
   useCreateProjectSession,
-  useProject,
+  useProjectName,
   useChangeRequests,
   projectKeys,
 } from '@/lib/projects/hooks';
@@ -208,6 +209,31 @@ async function sendOpencodePrompt(
   }
 }
 
+/** A project-home prompt waiting for its session's sandbox. */
+interface PendingPrompt {
+  text: string;
+  files: AttachedFile[];
+}
+
+/**
+ * Upload a pending prompt's files into the now-running sandbox, then send the
+ * prompt with their `<file>` references. An upload failure still sends the
+ * text, like the thread composer.
+ */
+async function deliverPendingPrompt(
+  sandboxUrl: string,
+  opencodeSessionId: string,
+  { text, files }: PendingPrompt
+): Promise<boolean> {
+  let fileBlock = '';
+  try {
+    fileBlock = await uploadAttachments(sandboxUrl, files);
+  } catch (err: any) {
+    log.error('[connect] attachment upload failed:', err?.message || err);
+  }
+  return sendOpencodePrompt(sandboxUrl, opencodeSessionId, withAttachments(text, fileBlock));
+}
+
 // ─── Main screen ────────────────────────────────────────────────────────────
 
 export function ProjectScreen() {
@@ -261,9 +287,9 @@ export function ProjectScreen() {
   // effect from immediately re-driving (and re-looping) a known-failed session.
   const erroredSessionRef = useRef<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
-  const { data: project } = useProject(projectId);
+  const loadedProjectName = useProjectName(projectId);
   const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
-  const projectName = project?.name || 'Your project';
+  const projectName = loadedProjectName || 'Your project';
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
     return `${(ps && PROJECT_SESSION_STATUS_LABELS[ps.status]) || 'Provisioning'}…`;
@@ -344,7 +370,7 @@ export function ProjectScreen() {
   );
 
   // Composer prompts awaiting their session's OpenCode root, keyed by session id.
-  const pendingPromptsRef = useRef<Record<string, string>>({});
+  const pendingPromptsRef = useRef<Record<string, PendingPrompt>>({});
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
@@ -372,7 +398,7 @@ export function ProjectScreen() {
       const pending = pendingPromptsRef.current[ps.session_id];
       if (pending) {
         delete pendingPromptsRef.current[ps.session_id];
-        void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id, pending);
+        void deliverPendingPrompt(ps.sandbox_url, ps.opencode_session_id, pending);
       }
       return true;
     },
@@ -798,13 +824,22 @@ export function ProjectScreen() {
   const [isDashboardSending, setIsDashboardSending] = useState(false);
 
   const handleDashboardSend = useCallback(
-    async (text: string) => {
+    async ({ text, files, model }: ProjectHomeSubmit) => {
       if (!projectId || isDashboardSending) return;
-      if (!text.trim()) return;
+      if (!text.trim() && files.length === 0) return;
 
       setIsDashboardSending(true);
       try {
-        const session = await createProjectSession.mutateAsync({ initial_prompt: text });
+        // Files must upload into the session's sandbox, which does not exist
+        // yet. Those sends stash the prompt and deliver it once the session
+        // connects (connectToProjectSession). Text-only sends keep the
+        // server-side initial_prompt. The model is baked in at create.
+        const hasFiles = files.length > 0;
+        const session = await createProjectSession.mutateAsync({
+          ...(hasFiles ? {} : { initial_prompt: text }),
+          ...(model ? { opencode_model: model } : {}),
+        });
+        if (hasFiles) pendingPromptsRef.current[session.session_id] = { text, files };
         setActiveProjectSessionId(session.session_id);
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
@@ -1048,7 +1083,7 @@ export function ProjectScreen() {
              "···" tools menu. */
           <SessionPage
             sessionId={activeSessionId}
-            projectName={project?.name}
+            projectName={loadedProjectName}
             onBack={handleBack}
             onOpenDrawer={() => setDrawerOpen(true)}
             chrome="floating"
@@ -1081,9 +1116,11 @@ export function ProjectScreen() {
             />
           </View>
         ) : (
-          /* Project home — greeting + composer + recent sessions */
+          /* Project home — Kortix symbol, fixed greeting, composer */
           <ProjectHome
             projectId={projectId}
+            projectName={loadedProjectName}
+            sending={isDashboardSending}
             onSubmitNewSession={handleDashboardSend}
             onOpenDrawer={() => setDrawerOpen(true)}
           />

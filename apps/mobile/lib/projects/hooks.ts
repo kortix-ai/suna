@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { composerModelOptions } from '@/lib/session/composer-model';
 import {
   archiveProject,
   buildSandboxTemplate,
@@ -34,6 +35,7 @@ import {
   getProject,
   getProjectDetail,
   getProjectLlmCatalog,
+  getProjectModelPicker,
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
@@ -101,6 +103,7 @@ export const projectKeys = {
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
   llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
+  modelPicker: (projectId: string | null | undefined) => ['project-model-picker', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
@@ -195,6 +198,32 @@ export function useProject(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 20_000,
   });
+}
+
+/**
+ * The project's name, on first paint when possible. `useProject` has no cache
+ * the first time a project opens, but the projects list it was opened from
+ * already holds the name, so read that until the detail loads. Without it the
+ * project home's greeting swaps "Give it …" for the real name mid-transition.
+ *
+ * Name only, on purpose: list rows are not seeded into `useProject` as
+ * placeholder data, because its consumers (DevPage, SettingsNavPage) key their
+ * loading states off `isLoading`.
+ */
+export function useProjectName(projectId: string | null): string | undefined {
+  const queryClient = useQueryClient();
+  const { data } = useProject(projectId);
+  if (data?.name) return data.name;
+  if (!projectId) return undefined;
+  const lists = queryClient.getQueriesData<{ project_id: string; name: string }[]>({
+    queryKey: ['projects'],
+  });
+  for (const [, list] of lists) {
+    if (!Array.isArray(list)) continue;
+    const row = list.find((p) => p.project_id === projectId);
+    if (row?.name) return row.name;
+  }
+  return undefined;
 }
 
 // ── Settings (web parity: customize/sections/settings-view) ───────────────────
@@ -714,6 +743,25 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
   const gatewayDisabled = (query.error as { code?: string } | null)?.code === 'llm_gateway_disabled';
   const models = useMemo(() => flattenTriggerModelCatalog(query.data?.models), [query.data]);
   return { models, isLoading: query.isLoading, gatewayDisabled };
+}
+
+/** The project home composer's model choices and the project default.
+ *  Reads `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full
+ *  runtime projection (7134 models on 2026-09-16) with no `enabled` flags and
+ *  no `defaultModel`, so the pill read "Default" and offered models the project
+ *  does not serve. `/model-picker` is the bounded, connection-aware list (8–13
+ *  models) with both fields. 404 `llm_gateway_disabled` leaves the list empty,
+ *  which hides the pill. */
+export function useProjectModelCatalog(projectId: string | null) {
+  const query = useQuery({
+    queryKey: projectKeys.modelPicker(projectId),
+    queryFn: () => getProjectModelPicker(projectId!),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const models = useMemo(() => composerModelOptions(query.data?.models), [query.data]);
+  return { models, defaultModel: query.data?.defaultModel };
 }
 
 // ── Change requests (web parity) ──────────────────────────────────────────────
