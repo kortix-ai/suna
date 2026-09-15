@@ -2,7 +2,7 @@
   "source": "https://models.dev/api.json",
   "fetched_at": "2026-08-25T16:21:02.770Z",
   "provider_count": 200,
-  "model_count": 7291,
+  "model_count": 7293,
   "providers": [
     {
       "id": "hpc-ai",
@@ -73132,6 +73132,72 @@
             "input": 0.5,
             "output": 1.5
           }
+        },
+        {
+          "id": "openai/gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
+          "family": "gpt-astra",
+          "attachment": true,
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            }
+          ],
+          "tool_call": true,
+          "structured_output": true,
+          "temperature": false,
+          "knowledge": "2026-04-30",
+          "last_updated": "2026-09-04",
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "open_weights": false,
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cache_read": 1,
+            "cache_write": 12.5,
+            "tiers": [
+              {
+                "input": 20,
+                "output": 75,
+                "cache_read": 2,
+                "cache_write": 25,
+                "tier": {
+                  "type": "context",
+                  "size": 272000
+                }
+              }
+            ],
+            "context_over_200k": {
+              "input": 20,
+              "output": 75,
+              "cache_read": 2,
+              "cache_write": 25
+            }
+          },
+          "released": "2026-09-04"
         }
       ]
     },
@@ -97278,6 +97344,72 @@
             "input": 0.1,
             "output": 0
           }
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "description": "GPT-6 Astra is OpenAI's most capable model for complex reasoning, coding, computer use, research, and document creation.",
+          "family": "gpt-astra",
+          "attachment": true,
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            }
+          ],
+          "tool_call": true,
+          "structured_output": true,
+          "temperature": false,
+          "knowledge": "2026-04-30",
+          "last_updated": "2026-09-04",
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "open_weights": false,
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cache_read": 1,
+            "cache_write": 12.5,
+            "tiers": [
+              {
+                "input": 20,
+                "output": 75,
+                "cache_read": 2,
+                "cache_write": 25,
+                "tier": {
+                  "type": "context",
+                  "size": 272000
+                }
+              }
+            ],
+            "context_over_200k": {
+              "input": 20,
+              "output": 75,
+              "cache_read": 2,
+              "cache_write": 25
+            }
+          },
+          "released": "2026-09-04"
         }
       ]
     },

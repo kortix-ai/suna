@@ -19,6 +19,19 @@ test('global boundary renders NOTHING for a transient runtime-not-ready state', 
   expect(source).not.toContain('Starting your session');
 });
 
+// The silent retry used to run forever. A runtime that never comes up left a
+// blank window — a dead end on desktop, which has no browser Back or reload
+// button. After the budget, the error card and its Try again take over.
+test('the silent retry stops when its budget is spent', async () => {
+  const source = await Bun.file(import.meta.dir + '/error.tsx').text();
+  expect(source).toContain("from '@/lib/runtime-not-ready-budget'");
+  expect(source).toContain('recordRuntimeNotReady(');
+  expect(source).toContain('isRuntimeNotReadyExhausted(');
+  // The blank branch is gated on the budget, not on the error type alone.
+  expect(source).toContain('if (runtimeNotReady && !retryExhausted)');
+  expect(source).not.toMatch(/if \(runtimeNotReady\) \{\s*\/\/ Render NOTHING/);
+});
+
 test('a genuine crash still shows the recoverable error card', async () => {
   const source = await Bun.file(import.meta.dir + '/error.tsx').text();
   expect(source).toContain('autoAppErrorJsxTextSomethingWentWrong493afd7e');
