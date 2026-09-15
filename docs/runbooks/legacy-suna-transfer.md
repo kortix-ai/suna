@@ -812,3 +812,11 @@ Canary `00b64340-d36a-40fc-a751-e03526c21e4b` used command
 2026-09-15T19:25:36.503Z. The stop helper returned `already-stopped`. After this
 proof, the operator enabled the override for both migration sources and resumed
 64/80/90 capacity probes. Twenty-three focused tests pass with 132 assertions.
+
+Post-bypass capacity samples: 64 pipelines completed 52 imports in 120.1 s;
+80 completed 65 in 120.1 s. During the 90-pipeline probe, 50 completed in 90.1 s,
+then pressure backoff reduced admissions. One long readback disconnected; its
+retry verified at 19:34:05 UTC. One source Daytona capture returned 5xx. Both
+operations started at earlier concurrency levels, so these events do not prove
+a fixed 90-pipeline capacity ceiling. The probe restored 80, the best measured
+window without pressure failures. Automatic backoff/recovery remains enabled.
