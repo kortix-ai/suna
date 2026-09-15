@@ -988,3 +988,32 @@ verified. Routing/create-policy tests report three passed, zero failed, 16
 assertions; the importer build passes. Bidirectional selection is unit-tested;
 no artificial production Daytona outage was induced. Failed pre-existing
 Platinum creates remain in the recovery ledger and have not been switched.
+
+### Platinum primary, Daytona fallback, recurring recovery probes — 2026-09-15
+
+The user clarified that Daytona is fallback only. `destination-routing.json` now
+records Platinum as primary and Daytona as fallback. New imports remain on
+Daytona while Platinum recovery is unconfirmed. The routing monitor returns new
+imports to Platinum only after a fresh successful full-import recovery probe,
+with no recent matching Platinum provisioning errors. A success from before the
+last routing change cannot trigger a return. Initial return admissions are 16;
+normal verified-import scaling then resumes.
+
+`run-platinum-recovery-probes.ts` runs one probe at a time, waiting five minutes
+after each finishes. Each probe selects a failed Platinum migration creation with
+no remote/native runtime IDs in either the provider record or local proof, checks
+owner/provider/archive evidence, claims its queue row, and restarts through the
+existing API. Full import verification and stop precede the success receipt.
+Existing initialized destinations are excluded. Two singleton leases prevent
+duplicate probe supervisors and overlapping probes.
+
+The first probe is session `5f418f13-eef0-416f-ba5b-ac221999a352`; it reached
+`ready` with external/native IDs during inspection. Full verification was still
+running; readiness alone does not authorize returning bulk traffic to Platinum.
+Admissions recovered to 120 and the operator requested 128.
+
+Routing tests: two passed, zero failed, nine assertions. Cases include both
+fallback directions, two unavailable providers, fresh primary recovery, no probe,
+recent Platinum failure, obsolete recovery receipts, and receipt expiry. The
+probe build passes. Cache reclamation removed another 5,847,355,994 bytes from
+1,309 verified workspace tar caches; free disk measured 30 GiB afterward.
