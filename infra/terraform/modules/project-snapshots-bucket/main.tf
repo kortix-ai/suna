@@ -121,3 +121,15 @@ resource "aws_s3_bucket_policy" "this" {
 
   depends_on = [aws_s3_bucket_public_access_block.this]
 }
+
+# Sandboxes are not in AWS (Daytona: New York / Los Angeles; Platinum: its own
+# hosts), so a plain presigned GET is one TCP flow from the box all the way to
+# this bucket's region. Acceleration ends that flow at the nearest AWS edge —
+# short handshake, fast loss recovery — and carries the rest on the backbone.
+# Opt-in per environment; the API flips its presigned URLs with
+# KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE.
+resource "aws_s3_bucket_accelerate_configuration" "this" {
+  count  = var.transfer_acceleration ? 1 : 0
+  bucket = aws_s3_bucket.this.id
+  status = "Enabled"
+}

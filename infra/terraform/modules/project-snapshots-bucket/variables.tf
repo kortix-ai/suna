@@ -41,6 +41,12 @@ variable "kms_key_arn" {
   default     = ""
 }
 
+variable "transfer_acceleration" {
+  description = "Enable S3 Transfer Acceleration: sandbox downloads presigned for <bucket>.s3-accelerate.amazonaws.com end at the nearest AWS edge and cross the distance to the bucket on AWS's backbone (about USD 0.04/GB extra). Pair with KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true on the API. Bucket names with dots are not eligible."
+  type        = bool
+  default     = false
+}
+
 variable "force_destroy" {
   description = "Allow `terraform destroy` to empty the bucket. Keep false outside disposable environments."
   type        = bool

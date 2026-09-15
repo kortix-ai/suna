@@ -573,6 +573,13 @@ const envSchema = z.object({
    */
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  // S3 Transfer Acceleration for the SANDBOX downloads only: presigned URLs
+  // target <bucket>.s3-accelerate.amazonaws.com, so a box's connection ends at
+  // the nearest AWS edge and the distance to the bucket rides AWS's backbone.
+  // Needs `transfer_acceleration = true` on the bucket (Terraform module).
+  // Ignored when a custom public endpoint (MinIO) is set. The API's own calls
+  // stay on the regional endpoint.
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: optBoolFalse,
   /** Optional key prefix inside the bucket (e.g. `dev/`), namespacing environments that share one bucket. */
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: optStr,
@@ -1212,6 +1219,7 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
