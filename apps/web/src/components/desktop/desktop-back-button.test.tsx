@@ -115,6 +115,22 @@ describe('only the desktop shell shows Back', () => {
     expect(unlayered(shown!.index!)).toBe(true);
   });
 
+  // A top row on a full-screen frame (`/new`, the onboarding wizard) spans the
+  // window edge to edge. On desktop its ends meet the traffic lights (macOS,
+  // left) and the web-drawn window controls (Win/Linux, right).
+  test('a band row clears the window controls on both platforms', () => {
+    const row = css.match(/html\[data-desktop='true'\]\s+\.kx-desktop-band-row\s*\{([^}]*)\}/);
+    const macRow = css.match(
+      /html\[data-desktop-platform='macos'\]\s+\.kx-desktop-band-row\s*\{([^}]*)\}/,
+    );
+    expect(row?.[1]).toMatch(/padding-left:[^;]*var\(--kx-titlebar-control-left\)/);
+    expect(row?.[1]).toMatch(/padding-right:[^;]*var\(--kx-titlebar-controls-width\)/);
+    // macOS centres the row on the lights' midline, like every band control.
+    expect(macRow?.[1]).toMatch(/top:\s*var\(--kx-titlebar-control-top\)/);
+    expect(unlayered(row!.index!)).toBe(true);
+    expect(unlayered(macRow!.index!)).toBe(true);
+  });
+
   // Below `md` the auth mark pins to the top-left corner. On desktop that
   // corner is the band — traffic lights on macOS, Back on every platform.
   test('the auth mark moves below the band on desktop', () => {

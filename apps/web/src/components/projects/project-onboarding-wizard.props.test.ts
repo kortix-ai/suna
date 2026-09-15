@@ -117,6 +117,36 @@ describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () 
  * visual collision that no functional test could see. These pin the flow layout
  * that makes the overlap unrepresentable.
  */
+/**
+ * The desktop shell has no browser toolbar, and the project shell's wizard has
+ * no Skip. Before this control, the only way out on desktop was to finish
+ * every step.
+ */
+describe('ProjectOnboardingWizard: desktop Close', () => {
+  test('renders unconditionally, so the project shell gets it too', () => {
+    expect(code).toContain("from '@/components/desktop/desktop-close-button'");
+    const closeAt = code.indexOf('<DesktopCloseButton');
+    expect(closeAt).toBeGreaterThan(-1);
+    // Not nested inside the opt-in Skip block, which ends with its Button.
+    const skipAt = code.indexOf('{onSkip && (');
+    expect(skipAt).toBeGreaterThan(-1);
+    expect(closeAt).toBeGreaterThan(code.indexOf('</Button>', skipAt));
+  });
+
+  test('closing stamps onboarding, exactly like Skip', () => {
+    // An unstamped close reopens the wizard on the next project load.
+    const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
+    expect(close).toContain('onClose={skip}');
+    expect(code.match(/completeThenNotify\(/g)?.length).toBe(2);
+  });
+
+  test('the chrome bar clears the window controls on desktop', () => {
+    const bar = code.match(/<div className="[^"]*grid h-14[^"]*"/)?.[0];
+    expect(bar).toBeDefined();
+    expect(bar).toContain('kx-desktop-band-row');
+  });
+});
+
 describe('wizard chrome: the skip control is mobile-safe', () => {
   const chromeStart = code.indexOf('grid h-14');
   const chrome =

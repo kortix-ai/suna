@@ -1467,6 +1467,30 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
 html[data-desktop='true'] .kx-desktop-back {
   display: flex;
 }
+
+/* A top row on a full-screen frame with no product navigation: `/new` and the
+   onboarding wizard's chrome bar. The row spans the window, so on desktop its
+   ends meet the traffic lights (macOS, left) and the web-drawn window controls
+   (Win/Linux, right). This insets both ends past them; the free end keeps the
+   row's own gutter.
+
+   `--kx-band-row-gutter` is that gutter, the row's `sm` side padding. The
+   element sets it when it is not the default. `top` moves only a positioned
+   row (`/new`); the wizard's bar is in flow and keeps its place.
+
+   Unlayered, so it beats the row's own `px-*` utilities. */
+html[data-desktop='true'] .kx-desktop-band-row {
+  padding-left: max(
+    var(--kx-band-row-gutter, calc(var(--spacing) * 4)),
+    var(--kx-titlebar-control-left)
+  );
+  padding-right: calc(
+    var(--kx-band-row-gutter, calc(var(--spacing) * 4)) + var(--kx-titlebar-controls-width)
+  );
+}
+html[data-desktop-platform='macos'] .kx-desktop-band-row {
+  top: var(--kx-titlebar-control-top);
+}
 /* Below `md` the auth mark pins to the top-left corner. On desktop that corner
    is the band (traffic lights on macOS, Back on every platform), so the mark
    moves below it. */
