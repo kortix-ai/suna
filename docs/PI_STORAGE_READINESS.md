@@ -8,7 +8,7 @@ Pi runs in the worker. Files and commands use the environment. No Durable Object
 | Data | Durable location | What history stores | After sandbox loss |
 |---|---|---|---|
 | Conversation and native Pi state | PostgreSQL `session_worker_log` | Ordered JSON mutations, message identities, tool state, and attachment references | The replacement worker replays the log |
-| Stopped-session display | PostgreSQL `session_transcript_mirrors` and `session_transcript_messages` | Bounded message envelopes; same-session attachment URLs | Text and preserved image references load through the API |
+| Stopped-session display | PostgreSQL `session_transcript_mirrors` and `session_transcript_messages` | Bounded message envelopes; same-session attachment URLs | Text, images, and original file downloads load through the API |
 | Uploaded chat images and tool images | PostgreSQL `session_attachments.content` (`bytea`) | MIME, filename, and a SHA-256 reference; no repeated base64 payload | Exact bytes remain readable without either sandbox |
 | Ordinary Pi composer uploads | PostgreSQL `session_attachments.content`; editable copies under environment `uploads/.kortix-attachments` | MIME, original filename, immutable reference | Chat downloads work while stopped. A file tool restores the original into a replacement environment. Later edits need workspace backup |
 | Edited code, generated documents, downloads | Environment filesystem | Tool history and paths; not a backup of the files | Only committed and pushed Git content can be restored today |
@@ -60,7 +60,7 @@ OpenCode attachment parity. Missing images and MIME conflicts fail explicitly.
 Inline first-prompt bytes and their inbox command commit in one database transaction.
 Separate uploads can exist without a subsequent message when the user cancels.
 Per-session orphan cleanup and aggregate storage quotas remain necessary before
-expanding this store to arbitrary files. A deleted session becomes inaccessible;
+production rollout. A deleted session becomes inaccessible;
 physical row deletion cascades to its attachment rows. Stopping a sandbox does not
 delete the session or its attachments.
 
@@ -169,8 +169,9 @@ Frontend typecheck passes. Focused lint reports zero errors and two existing war
 To test the attachment path on the preview: attach two PNGs, send a prompt, and
 check that text appears incrementally. Reload the conversation and open each
 image. Stop the session through the SDK/API, then reopen its history. Saved
-images must remain readable during startup. Ordinary documents still require
-the environment disk; do not delete that disk to test their persistence.
+images must remain readable during startup. Uploaded document originals also
+remain downloadable. Later workspace edits still require the environment disk.
+Do not delete that disk to test persistence of edited or generated files.
 
 ## Ordinary file attachment implementation
 
@@ -190,3 +191,33 @@ the environment disk; do not delete that disk to test their persistence.
   edits remains the backup task above. No automatic environment deletion is enabled.
 - Original bytes are private. Public attachment sharing, document previews,
   generated-file capture, aggregate quotas, and orphan retention remain unfinished.
+
+Verified on preview source `5ef50b70c04ca3ff615c47b8415e98e880139f35`:
+
+- A real SDK upload stores a 163,851-byte CSV before an environment exists.
+- The browser uploads a PDF, SVG, and another CSV with the same filename.
+  The prompt contains immutable references. The response produces 167 text deltas
+  and six visible rendering states. The environment remains absent.
+- One Bash call verifies all four original hashes in a newly started environment.
+  A subsequent Read call selects the first CSV from conversation context.
+  Daemon health reports `workload: environment` and `opencode: disabled`.
+- PostgreSQL contains four asset rows with exact MIME types and byte counts.
+  The transcript mirror retains four file parts. The worker log omits file base64.
+- Two stop/resume checks preserve all 10 and then 13 message envelopes exactly.
+  Resumes take 3,664 ms and 3,766 ms. These are individual samples, not a benchmark.
+- With runtime start held, the stopped browser downloads the PDF, SVG, and CSV
+  with exact filenames and bytes. The fixture worker and environment are stopped.
+
+Local gates: SDK 3,001 tests, worker 930 tests, SDK packed-install smoke, and
+SDK/worker/daemon/web typechecks pass. Focused web lint reports zero errors.
+Regression tests cover custom environment tools, replay, edits/deletions,
+replacement installs, queued prompts, cancellation, corrupt bytes, and symlinks.
+Preview Linux tests pass 157/157. Deployed `SESS-29` and `SESS-31` pass 2/2 with
+zero skips ([report](https://pi.kortix.com/_tests/20260915145224-fa1omr/report.html)).
+Browser journey 29 passes on the same preview SHA. The full deployed census and
+other host/provider flows are not rerun for this slice.
+
+Manual check: attach a CSV and PDF to a YAML v3 session. Ask Pi to keep them
+without using tools. Then ask it to read the CSV. Reload and download each tile.
+Stop the session through the SDK/API and repeat the downloads during startup.
+The downloaded originals must stay unchanged after workspace edits.
