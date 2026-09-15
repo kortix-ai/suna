@@ -39,6 +39,7 @@ export function projectThread(input: { ref: string; thread: JsonRow; project?: J
   const dispositions: Array<{ source_id: string; disposition: string; native_id?: string }> = [];
   const toolResults = new Map<string, JsonRow[]>();
   const toolParts = new Map<string, Part[]>();
+  const messagesBySourceId = new Map<string, Message>();
   const unresolved: string[] = [];
   let lastUser = '';
   for (const row of rows) {
@@ -103,7 +104,7 @@ export function projectThread(input: { ref: string; thread: JsonRow; project?: J
     }
     if (!parts.length && !user && content.role === 'assistant' && content.content === null) add({ type: 'text', text: '' });
     if (!parts.length) { add({ type: 'text', text: '[Legacy message has no runtime-compatible content; original record retained in archive.]' }); unresolved.push(`empty-content:${sourceId}`); }
-    messages.push({ info, parts });
+    const message = { info, parts };messages.push(message);messagesBySourceId.set(sourceId,message);
     dispositions.push({ source_id: sourceId, disposition: 'native-message', native_id: id });
   }
   for (const [callId, results] of toolResults) {
@@ -113,7 +114,14 @@ export function projectThread(input: { ref: string; thread: JsonRow; project?: J
       part.state = { status: 'completed', input: state.input, output: text(object(row.content).content), title: part.tool, metadata: { legacy_source_message_id: row.message_id }, time: { start: object(state.time).start, end: timestamp(row.created_at) } };
       dispositions.push({ source_id: String(row.message_id), disposition: 'native-tool-result', native_id: part.id });
     } else {
-      for (const row of results) { dispositions.push({ source_id: String(row.message_id), disposition: 'raw-archive-unmatched-tool' }); unresolved.push(`ambiguous-tool-result:${row.message_id}`); }
+      for (const row of results) {
+        const sourceId=String(row.message_id),metadata=object(row.metadata),anchor=messagesBySourceId.get(text(metadata.assistant_message_id));
+        const execution=object(object(metadata.frontend_content).tool_execution);
+        if(anchor&&anchor.info.role==='assistant'&&execution.function_name&&execution.result!=null&&execution.arguments&&typeof execution.arguments==='object'&&!Array.isArray(execution.arguments)){
+          const at=timestamp(row.created_at),part={id:`prt_${at.toString(16).padStart(12,'0')}${sourceId.replaceAll('-','')}ffff${digest(input.ref).slice(0,8)}`,sessionID,messageID:anchor.info.id,type:'tool',callID:text(execution.tool_call_id)||`legacy-${sourceId}`,tool:text(execution.function_name),state:{status:'completed',input:execution.arguments,output:text(execution.result),title:text(execution.function_name),metadata:{legacy_source_message_id:sourceId,legacy_assistant_message_id:text(metadata.assistant_message_id)},time:{start:at,end:at}}} as Part;
+          anchor.parts.push(part);dispositions.push({source_id:sourceId,disposition:'native-tool-result-anchored',native_id:part.id});
+        }else{dispositions.push({source_id:sourceId,disposition:'raw-archive-unmatched-tool'});unresolved.push(`ambiguous-tool-result:${sourceId}`);}
+      }
     }
   }
   const created = input.thread.created_at ? timestamp(input.thread.created_at) : rows.length ? timestamp(rows[0]!.created_at) : 0;

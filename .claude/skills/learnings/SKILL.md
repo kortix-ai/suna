@@ -21,6 +21,24 @@ linked, not inlined.
 
 ## Register
 
+### Stop verified migration sessions before the active-session cap (2026-09-15)
+
+**When:** importing many sessions into one project, check the native message count
+and owner before stopping a verified sandbox. Confirm `stopped` by session GET.
+*Near-miss:* the Suna destination reached its 100 active-session limit and
+blocked 27 prepared imports. None of those 27 lost their checkpoint.
+*Enforcer:* `stop-one-verified-session.ts` runs after each verified apply;
+`stop-verified-sessions.ts` checks message counts before bulk release.
+
+### Anchor legacy tool results only to their exact assistant message (2026-09-15)
+
+**When:** projecting a legacy `tool` row without assistant `tool_calls`, use its
+`assistant_message_id` and `frontend_content.tool_execution` only if they link
+to a projected assistant. Otherwise retain the row in review.
+*Near-miss:* one seven-result legacy thread remained ambiguous despite exact
+assistant links in metadata. The pilot retained all seven as native tool parts.
+*Enforcer:* `projection.test.ts` asserts the anchored disposition and tool part.
+
 ### Compare cloned source inventories before declaring Storage bytes lost (2026-09-15)
 
 **When:** a legacy Storage metadata row returns missing bytes, search each
