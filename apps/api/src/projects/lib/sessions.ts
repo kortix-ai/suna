@@ -48,7 +48,8 @@ import {
   requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
-  workspaceFromLoadedAgents,
+  repositoryAccessFromLoadedAgents,
+  legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
@@ -68,7 +69,6 @@ import {
   resolveManifestRuntime,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
@@ -103,7 +103,6 @@ import { sessionCreatedAuditAttribution } from './session-audit';
 import {
   projectImageAllowedForSession,
   resolveSessionSandboxSlug,
-  workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
@@ -462,7 +461,7 @@ export async function buildSessionSandboxEnvVars(input: {
   manifestPath?: string;
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
-  workspaceMode?: WorkspaceModeV2 | null;
+  repositoryAccess?: boolean;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -493,7 +492,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitAuthToken: null,
     };
     compiledAgentConfig =
-      !workspaceModeAllowsFullRepository(input.workspaceMode)
+      !(input.repositoryAccess ?? true)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
@@ -665,7 +664,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
-      workspaceMode: input.workspaceMode,
+      repositoryAccess: input.repositoryAccess,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
@@ -1056,8 +1055,8 @@ export async function createProjectSession(input: {
       },
     };
   }
-  const workspaceMode = workspaceFromLoadedAgents(agentName, loadedAgents) ?? 'branch';
-  if (workspaceMode === 'read') {
+  const repositoryAccess = repositoryAccessFromLoadedAgents(agentName, loadedAgents);
+  if (legacyReadWorkspaceFromLoadedAgents(agentName, loadedAgents)) {
     return {
       error: {
         status: 409,
@@ -1557,7 +1556,9 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
-    workspace_mode: workspaceMode,
+    repository_access: repositoryAccess,
+    // Rollback compatibility: older API replicas must also enforce this restriction.
+    workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
     audit_v2: {
       actor_type: auditAttribution.actorType,
@@ -1870,7 +1871,7 @@ export async function createProjectSession(input: {
             opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
-            workspaceMode,
+            repositoryAccess,
           }),
         )
         .then((envVars) => {
@@ -1895,7 +1896,7 @@ export async function createProjectSession(input: {
       // fire-and-forget so they never block the IIFE itself.
       const branchAlreadyCreated =
         body.branch_already_created === true || body.branchAlreadyCreated === true;
-      const branchPromise: Promise<void> = branchAlreadyCreated
+      const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
         ? Promise.resolve()
         : projectWithGitAuthPromise
             .then((projectWithGitAuth) =>
@@ -1934,7 +1935,7 @@ export async function createProjectSession(input: {
         agentName,
         allowProjectImage: piWorkerBoot
           ? false
-          : projectImageAllowedForSession(agentName, workspaceMode),
+          : projectImageAllowedForSession(agentName, repositoryAccess),
         // v0 pins the worker to Daytona: the entrypoint override in
         // ensurePiWorkerImage is only exercised there so far. Lift once the
         // other adapters' entrypoint handling is verified.

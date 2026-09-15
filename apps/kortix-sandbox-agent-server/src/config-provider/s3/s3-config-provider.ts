@@ -571,13 +571,14 @@ export async function downloadAndExtractProjectSnapshot(
   gunzip.on('error', (err) => {
     decoderError ??= err
   })
-  gunzip.pipe(parser)
-  // The sink can finish while gunzip -> parser still holds unscanned headers.
-  // Listen before streaming so no settle event is missed; await it after.
-  const scanned = new Promise<void>((resolve) => {
-    for (const event of ['end', 'close', 'abort', 'error']) parser.once(event, () => resolve())
+  // The file sink can finish before the decompressor/parser. Its completion
+  // does not prove that the archive guard has inspected every header.
+  const guardFinished = new Promise<void>((resolve) => {
+    parser.once('end', resolve)
+    parser.once('error', () => resolve())
     gunzip.once('error', () => resolve())
   })
+  gunzip.pipe(parser)
 
   await mkdir(dirname(file), { recursive: true })
   const t0 = Date.now()
@@ -609,19 +610,7 @@ export async function downloadAndExtractProjectSnapshot(
   }
   const downloadMs = Date.now() - t0
   try {
-    // Fail closed: nothing is extracted until every header has been scanned.
-    const scanBudgetMs = Math.max(5_000, options.timeoutMs - (Date.now() - t0))
-    let scanTimer: ReturnType<typeof setTimeout> | undefined
-    const scanTimedOut = await Promise.race([
-      scanned.then(() => false),
-      new Promise<boolean>((resolve) => {
-        scanTimer = setTimeout(() => resolve(true), scanBudgetMs)
-      }),
-    ])
-    clearTimeout(scanTimer)
-    if (scanTimedOut) {
-      throw new ConfigProviderError('extract', 'timeout', `archive header scan did not finish within ${scanBudgetMs}ms`)
-    }
+    await guardFinished
     // The bytes ARE the published object (digest verified). Now the guard's
     // verdict on its headers is final, and a decoder error means the object
     // itself is not a valid gzip tar — never a transport problem.

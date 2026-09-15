@@ -24,7 +24,7 @@ import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
@@ -461,7 +461,7 @@ export async function allocateRuntimeOnOpen(
     agentName: session.agentName ?? 'default',
     allowProjectImage: projectImageAllowedForSession(
       session.agentName,
-      workspaceModeFromSessionMetadata(session.metadata),
+      repositoryAccessFromSessionMetadata(session.metadata),
     ),
     sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
@@ -479,7 +479,7 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
-        workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+        repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),

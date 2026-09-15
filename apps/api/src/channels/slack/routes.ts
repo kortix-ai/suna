@@ -97,6 +97,9 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
+  if (!c.req.header('x-slack-request-timestamp') || !c.req.header('x-slack-signature')) {
+    return c.json({ error: 'Invalid signature' }, 401);
+  }
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ error: 'OAuth mode not configured' }, 503);

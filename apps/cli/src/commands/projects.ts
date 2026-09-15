@@ -788,7 +788,7 @@ agents:
     secrets: all                  # renamed from v1's "env" — names | "all" | "none"
     kortix_cli: all                # kortix_cli leaf names | "all" | "none"
     skills: all                    # names of .kortix/opencode/skills/* this agent may invoke | "all" | "none"
-    workspace: runtime             # optional — runtime | read | branch
+    repository_access: false       # optional — true (default) | false
 \`\`\`
 
 That's the WHOLE block. No \`description\`, no \`model\`, no \`opencode:\` sub-object, no \`mode\`/\`temperature\`/\`permission\`/\`prompt\` — every one of those is a hard schema error if authored here. They already live in the \`.md\` and are staying there.

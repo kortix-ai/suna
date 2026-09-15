@@ -238,6 +238,9 @@ for (const runtime of runtimes) {
               '[role="tablist"][aria-orientation="vertical"] [role="tab"]',
             ),
           );
+          // Cold dev routes can load the mono font after the dialog appears.
+          // Finish font loading within the journey deadline before capture.
+          await page.evaluate(async () => { await document.fonts.ready; });
           await page.screenshot({
             path: test.info().outputPath(`settings-${theme.toLowerCase()}.png`),
             scale: "css",
@@ -249,8 +252,7 @@ for (const runtime of runtimes) {
           .click();
         await expect(page).toHaveURL(/\/customize\/agents/);
         await page
-          .getByRole("link", { name: /Kortix/i })
-          .last()
+          .locator(`a[href="/projects/${project.id}/customize/agents/kortix"]`)
           .click();
         await expect(page).toHaveURL(/\/customize\/agents\/kortix/);
         await expectSeparateRows(

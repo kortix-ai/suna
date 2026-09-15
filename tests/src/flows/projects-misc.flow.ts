@@ -381,10 +381,10 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const project = await team.project();
+    const project = await team.project({ seed: true });
 
     await ctx.step(
-      'GET reports schema_version 2 / editable true for a synthesized blank manifest',
+      'GET reports schema_version 2 / editable true for a seeded manifest',
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -394,6 +394,42 @@ flow(
         r.status(200).body().has('$.schema_version', 2).has('$.editable', true);
       },
     );
+
+    for (const access of [false, true]) {
+      await ctx.step(`set repository_access=${access} and read back the saved policy`, async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const saved = await ctx.client.as(ctx.P.OWNER).put(
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { repository_access: access }, { params },
+        );
+        saved.status(200).body().has('$.block.repository_access', access);
+        const read = await ctx.client.as(ctx.P.OWNER).get(
+          '/v1/projects/:projectId/agents/:agentName/config', { params },
+        );
+        read.status(200).body().has('$.block.repository_access', access);
+        if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
+      });
+    }
+    await ctx.step('legacy runtime saves a disabled repository policy', async () => {
+      const saved = await ctx.client.as(ctx.P.OWNER).put(
+        '/v1/projects/:projectId/agents/:agentName/config', { workspace: 'runtime' },
+        { params: { projectId: project.id, agentName: 'kortix' } },
+      );
+      saved.status(200).body().has('$.block.repository_access', false);
+    });
+    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }]) {
+      await ctx.step('invalid or conflicting repository policy is rejected without widening access', async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const rejected = await ctx.client.as(ctx.P.OWNER).put(
+          '/v1/projects/:projectId/agents/:agentName/config', body, { params },
+        );
+        rejected.status(400);
+        const read = await ctx.client.as(ctx.P.OWNER).get(
+          '/v1/projects/:projectId/agents/:agentName/config', { params },
+        );
+        read.status(200).body().has('$.block.repository_access', false);
+      });
+    }
 
     await ctx.step('PUT a body with unrecognized top-level keys → 400', async () => {
       const r = await ctx.client
