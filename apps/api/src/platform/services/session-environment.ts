@@ -32,7 +32,6 @@ import { withTimeout } from '../../shared/with-timeout';
 import { ensureSandboxImage } from '../../snapshots/builder';
 import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
@@ -146,7 +145,7 @@ export interface EnsureSessionEnvironmentInput {
   agentName: string;
   baseRef: string;
   gitProject: GitBackedProject;
-  workspaceMode?: WorkspaceModeV2 | null;
+  repositoryAccess?: boolean;
 }
 
 /**
@@ -230,7 +229,7 @@ export async function ensureSessionEnvironment(
         restoreSessionBranch: true,
         defaultBranch: input.gitProject.defaultBranch,
         manifestPath: input.gitProject.manifestPath,
-        workspaceMode: input.workspaceMode,
+        repositoryAccess: input.repositoryAccess,
       }),
     ]);
     const provider = getProvider('daytona');

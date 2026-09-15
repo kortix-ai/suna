@@ -11,6 +11,7 @@ import {
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
 const password = process.env.E2E_ADMIN_PASSWORD || "E2eAccountAccess123!";
 const authOptions = { supabaseUrl, password, envFiles: ["apps/api/.env"] };
 
@@ -133,7 +134,7 @@ test.describe("09 - Admin console", () => {
 insert into kortix.platform_user_roles (account_id, role)
 values ('${synthetic.id}'::uuid, 'super_admin'::kortix.platform_role)
 on conflict (account_id) do update set role = excluded.role;
-`);
+`, [], databaseUrl);
     }
     try {
       const session = await signIn(adminEmail, authOptions);
@@ -158,6 +159,8 @@ on conflict (account_id) do update set role = excluded.role;
       if (synthetic) {
         await runDatabaseSql(
           `delete from kortix.platform_user_roles where account_id = '${synthetic.id}'::uuid;`,
+          [],
+          databaseUrl,
         );
         await deleteAuthUser(synthetic.id, authOptions);
       }

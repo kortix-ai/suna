@@ -24,8 +24,7 @@ import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 import { createCoalescedRunner } from './env-sync-coalescer';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
-  workspaceModeAllowsFullRepository,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
@@ -1151,7 +1150,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       gitAuthToken: null,
     };
     const compiled =
-      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+      !repositoryAccessFromSessionMetadata(session?.metadata) &&
       session?.agentName
         ? await resolveSelectedAgentConfigForSession(
             gitProject,

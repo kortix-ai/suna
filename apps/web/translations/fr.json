@@ -19299,6 +19299,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "Accès au dépôt du projet",
+    "enabled": "Les nouvelles sessions reçoivent le dépôt du projet. Les permissions Git restent applicables. Les sessions existantes conservent leur accès.",
+    "disabled": "Les nouvelles sessions fonctionnent sans le dépôt du projet. Elles peuvent créer des fichiers et utiliser les outils autorisés. Les sessions existantes conservent leur accès."
+  },
   "modelAccess": {
     "manageProvider": "Paramètres de {name}",
     "enableProviderAction": "Activer le fournisseur",

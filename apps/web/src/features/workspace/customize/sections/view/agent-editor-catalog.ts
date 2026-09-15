@@ -40,18 +40,6 @@ export const THEME_COLOR_SWATCH: Record<(typeof THEME_COLORS)[number], string> =
   error: 'bg-kortix-red',
   info: 'bg-kortix-blue',
 };
-export const WORKSPACE_MODES = ['runtime', 'read', 'branch'] as const;
-/** Display names — see AGENT_MODE_LABEL. */
-export const WORKSPACE_MODE_LABEL: Record<(typeof WORKSPACE_MODES)[number], string> = {
-  runtime: 'Runtime',
-  read: 'Read',
-  branch: 'Branch',
-};
-export const WORKSPACE_MODE_HELP: Record<(typeof WORKSPACE_MODES)[number], string> = {
-  runtime: 'Edits the live project files directly.',
-  read: 'Reads the project files. Cannot change them.',
-  branch: 'Works on its own branch. You review and merge the result.',
-};
 export const PERMISSION_ACTIONS = ['allow', 'ask', 'deny'] as const;
 /** Display names — see AGENT_MODE_LABEL. */
 export const PERMISSION_ACTION_LABEL: Record<(typeof PERMISSION_ACTIONS)[number], string> = {

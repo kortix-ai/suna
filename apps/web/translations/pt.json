@@ -19296,6 +19296,11 @@
       }
     }
   },
+  "repositoryAccess": {
+    "label": "Acesso ao repositório do projeto",
+    "enabled": "As novas sessões recebem o repositório do projeto. As permissões do Git continuam em vigor. As sessões existentes mantêm a sua configuração de acesso.",
+    "disabled": "As novas sessões são executadas sem o repositório do projeto. Podem criar arquivos e usar ferramentas autorizadas. As sessões existentes mantêm a sua configuração de acesso."
+  },
   "modelAccess": {
     "manageProvider": "Configurações de {name}",
     "enableProviderAction": "Ativar provedor",
