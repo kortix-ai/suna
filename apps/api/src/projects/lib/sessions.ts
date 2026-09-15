@@ -664,7 +664,6 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       repositoryAccess: input.repositoryAccess,
-      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
@@ -1713,9 +1712,7 @@ export async function createProjectSession(input: {
       // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
-      // just means the daemon's fetch fallback. Deliberately NOT tied to
-      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
-      // deploy-dev pins to an explicit `false`.
+      // just means the daemon's fetch fallback.
       // The worker path never clones: the scaffold/delta hint is pure waste
       // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =

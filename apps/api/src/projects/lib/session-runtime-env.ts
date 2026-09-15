@@ -12,8 +12,6 @@ export interface SessionRuntimeEnvInput {
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
-  /** Enables the rollback-safe fresh-session Git fast path. */
-  fastColdBootEnabled?: boolean;
   /** Experimental compiled checkout and OpenCode launcher rollout mode. */
   compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
@@ -100,7 +98,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
   // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // fast-cold-boot / compiled-boot experiments; measured 2026-08-27 on dev,
+  // compiled-boot experiment; measured 2026-08-27 on dev,
   // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
@@ -150,7 +148,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
-    ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',

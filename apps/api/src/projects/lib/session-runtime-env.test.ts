@@ -108,11 +108,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
-  test('enables compiled checkout independently from the legacy fast-cold-boot flag', () => {
+  test('enables compiled checkout for a fresh session', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledBootMode: 'prefer',
-      fastColdBootEnabled: false,
       freshSession: true,
       baseSha: 'a'.repeat(40),
     });
@@ -120,7 +119,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
     expect(env.KORTIX_SESSION_FRESH).toBe('1');
     expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
   });
 
   test('emits required mode for strict compiled runtime verification', () => {
@@ -181,35 +179,12 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env).not.toHaveProperty('KORTIX_SESSION_BRANCH_RESTORE');
   });
 
-  test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
-    const baseSha = 'a'.repeat(40);
-    const gitDeltaBundleBase64 = 'R0lUIEJVTkRMRQ==';
-    const gitDeltaParentSha = 'b'.repeat(40);
-    const gitDeltaParentCommitBase64 = 'dHJlZSBkZWFkYmVlZgo=';
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: true,
-      freshSession: true,
-      baseSha,
-      gitDeltaBundleBase64,
-      gitDeltaParentSha,
-      gitDeltaParentCommitBase64,
-    });
-
-    expect(env.KORTIX_SESSION_FRESH).toBe('1');
-    expect(env.KORTIX_BASE_SHA).toBe(baseSha);
-    expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe(gitDeltaBundleBase64);
-    expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe(gitDeltaParentSha);
-    expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe(gitDeltaParentCommitBase64);
-  });
-
-  test('sends fresh-session and base-tip hints even with the experiment disabled', () => {
+  test('sends fresh-session and base-tip hints for a fresh session', () => {
     // 2026-08-27: the fresh-session fast path is the default boot
     // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
     // mode stays gated here (see the compiled-boot tests above).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      fastColdBootEnabled: false,
       freshSession: true,
       baseSha: 'a'.repeat(40),
       gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -223,7 +198,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
     expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
   });
 
   test('marks a remote delta and ships the OpenCode config-dir hint for fresh sessions only', () => {
@@ -273,7 +247,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     for (const env of [
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
-        fastColdBootEnabled: true,
         freshSession: false,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -283,7 +256,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
         repositoryAccess: false,
-        fastColdBootEnabled: true,
         freshSession: true,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
@@ -297,41 +269,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
     }
-  });
-});
-
-describe('buildSessionRuntimeEnv — OpenCode executable prefetch', () => {
-  test('enables prefetch through the single fast cold boot flag', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: true,
-      freshSession: false,
-    });
-
-    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
-    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
-  });
-
-  test('omits prefetch when the fast cold boot flag is disabled', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      fastColdBootEnabled: false,
-      freshSession: true,
-    });
-
-    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
-  });
-
-  test('keeps prefetch enabled for runtime-only sessions', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      repositoryAccess: false,
-      fastColdBootEnabled: true,
-      freshSession: true,
-    });
-
-    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
-    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
   });
 });
 
