@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
+
+**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
+every API route that calls a daemon path the daemon does not serve, and give
+each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
+"sandbox not found". Never pick 502 for a permanent refusal: the `index.ts`
+edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
+twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
+pins the daemon marker and the 501 mapping.
+
 ### A raw `sql` subquery must QUALIFY every outer column — Drizzle unqualifies them in a single-table select (2026-09-15)
 
 **When:** writing `` sql`(select … from ${inner} where … = ${outer.col})` `` as a
@@ -244,6 +254,7 @@ snapshot worker would spin forever without publishing.
 caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
 *Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
 image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
+
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
@@ -521,6 +532,16 @@ reproduced the failure; `project-access-boundary.test.ts` pins the wiring.
 AuthProvider declares initial readiness only after bootstrap validation and
 cleanup finish, not from an earlier `INITIAL_SESSION` event. Keep the signed-out
 redirect above the pending gate and use the user-scoped key for admin bypass.
+
+### Daemon routes negotiate capability across mixed builds (2026-09-07)
+
+**When:** the API calls a sandbox daemon route. Never assume the API and the daemon
+share a build. A health response without `capabilities` means an older daemon: use
+a route it already serves (`/file/append`), never a stale classification.
+*Incident:* `/file/append` reached a stale daemon, fell through to OpenCode's SPA as
+`200 text/html`, and five retries dead-lettered the first prompt.
+*Enforcers:* `readRuntimeJson` non-JSON guard and `file.import` negotiation
+(`runtime-prompt-file.test.ts`); daemon `/kortix/*` and `/file/*` JSON 404 (`files-routes.test.ts`).
 
 ### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 

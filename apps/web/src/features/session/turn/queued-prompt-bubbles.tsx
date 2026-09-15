@@ -30,6 +30,7 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
+import type { SentAttachment } from '../sent-attachment-previews';
 import {
   type AttachmentUploadStatus,
   BUBBLE_SURFACE,
@@ -45,12 +46,12 @@ export interface QueuedPromptRow {
   lastError?: string;
   /**
    * The row's files, by NAME and TYPE. A queued row is the only thing on
-   * screen for a prompt whose bytes are still travelling to the box, and on a
-   * warm box that is the whole upload window: drawn text-only, a send of
+   * screen for a prompt waiting on runtime delivery, and on a warm box that is
+   * the whole delivery window: drawn text-only, a send of
    * three files read as a send of none (2026-09-04, browser-measured).
    */
-  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** What the strip says about them — see `AttachmentUploadStatus`. */
+  attachments?: ReadonlyArray<SentAttachment>;
+  /** A failed accepted send remains visible until retry. */
   uploadStatus?: AttachmentUploadStatus;
 }
 
@@ -280,11 +281,12 @@ function QueuedBubble({
 }) {
   const failed = state === 'failed';
   const queuedTiles: NormalizedAttachment[] = (row.attachments ?? []).map((file, index) => ({
-    key: `queued:${row.id}:${index}:${file.filename}`,
+    key: file.id ? `attachment:${file.id}` : `queued:${row.id}:${index}:${file.filename}`,
+    ...(file.id ? { id: file.id } : {}),
     filename: file.filename,
     mime: file.mime,
-    // No `src`/`path`: nothing to preview until the runtime holds the bytes.
-    pending: true,
+    // No `src`/`path`: nothing to open until the runtime holds the bytes. A
+    // file this tab sent draws its picture from its identity.
   }));
   return (
     <div
@@ -296,11 +298,11 @@ function QueuedBubble({
           to its right, revealed on hover — never floating in space. The
           column is width-reserved (`w-6`) so nothing shifts on hover. */}
       {/* The row's files, ABOVE the bubble exactly where the sent message will
-          draw them, every tile pending: the bytes are still on their way. Same
-          strip and the same "Uploading N files…" line the boot shell shows, so
-          the warm-box path stops being the one path with no tiles. */}
-      {queuedTiles.length > 0 && (
-        <MessageAttachments attachments={queuedTiles} pending status={row.uploadStatus} />
+          draw them. The browser upload already completed before acceptance;
+          unavailable runtime previews remain stable and inert. */}
+      {/* A text-only shell send kept failed still states its failure, with Retry. */}
+      {(queuedTiles.length > 0 || row.uploadStatus?.state === 'failed') && (
+        <MessageAttachments attachments={queuedTiles} status={row.uploadStatus} />
       )}
       <div className="flex w-full items-center justify-end gap-1">
         <div

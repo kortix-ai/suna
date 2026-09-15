@@ -786,6 +786,8 @@ export interface SessionPromptPart {
   text?: string;
   mime?: string;
   url?: string;
+  /** Completed private project upload. Legacy URL parts remain supported. */
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;

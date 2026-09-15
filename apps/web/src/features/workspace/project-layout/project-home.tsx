@@ -18,6 +18,7 @@ import {
   listProjectSandboxes,
   type SandboxTemplate,
 } from '@kortix/sdk';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
@@ -55,7 +56,8 @@ export function ProjectHome({
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
-  ) => void;
+    attachments?: AttachmentSubmission,
+  ) => void | Promise<void>;
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -121,21 +123,40 @@ export function ProjectHome({
     : null;
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      onSend(text, files, {
-        ...options,
-        ...(metaSelected
-          ? { sandbox_slug: META_SANDBOX_SLUG }
-          : selectedSlug
-            ? { sandbox_slug: selectedSlug }
-            : {}),
-      });
+    (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options: ComposerOptions,
+      attachments?: AttachmentSubmission,
+    ) => {
+      return onSend(
+        text,
+        files,
+        {
+          ...options,
+          ...(metaSelected
+            ? { sandbox_slug: META_SANDBOX_SLUG }
+            : selectedSlug
+              ? { sandbox_slug: selectedSlug }
+              : {}),
+        },
+        attachments,
+      );
     },
     [metaSelected, selectedSlug, onSend],
   );
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
+
+  // Send rejects on failure so the composer keeps its attachment handles.
+  // These callers have no composer draft; the session hook shows the error.
+  const sendOutsideComposer = useCallback(
+    (text: string, options: ComposerOptions) => {
+      void Promise.resolve(handleSend(text, undefined, options)).catch(() => undefined);
+    },
+    [handleSend],
+  );
 
   useEffect(() => {
     if (!pendingPrefill) return;
@@ -147,17 +168,17 @@ export function ProjectHome({
     // the command palette) omits the flag and keeps the old prefill-only
     // behavior below.
     if (pendingPrefill.autoSend) {
-      handleSend(pendingPrefill.text, undefined, {});
+      sendOutsideComposer(pendingPrefill.text, {});
       return;
     }
     setPrefill({ text: pendingPrefill.text, id: Date.now() });
-  }, [pendingPrefill, projectId, consumePrefill, handleSend]);
+  }, [pendingPrefill, projectId, consumePrefill, sendOutsideComposer]);
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
     },
-    [handleSend],
+    [sendOutsideComposer],
   );
 
   const applySuggestion = (s: string) => {

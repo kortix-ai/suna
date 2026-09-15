@@ -1012,6 +1012,19 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+// Session delete releases prompt attachment references. The contract DB mock
+// does not model those tables; the release SQL is covered by
+// integration-prompt-attachments.test.ts.
+const releasedAttachmentSessions: string[] = [];
+const realPromptAttachments = await import('../projects/prompt-attachments');
+mock.module('../projects/prompt-attachments', () => ({
+  ...realPromptAttachments,
+  releasePromptAttachmentsForSession: async (input: { sessionId: string }) => {
+    releasedAttachmentSessions.push(input.sessionId);
+    return 0;
+  },
+}));
+
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
@@ -4378,6 +4391,7 @@ describe('project session API contract', () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(sessionRow?.status).toBe('stopped');
     expect(sessionRow?.branchName).toBe(SESSION_ID);
+    expect(releasedAttachmentSessions).toContain(SESSION_ID);
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {

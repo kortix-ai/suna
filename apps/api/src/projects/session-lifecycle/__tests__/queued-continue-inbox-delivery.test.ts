@@ -365,6 +365,8 @@ mock.module('../../lib/sandbox-env-sync', () => ({
 }));
 
 mock.module('../runtime-prompt-file', () => ({
+  // The materializer imports it for handle-backed parts; these rows carry none.
+  importRuntimePromptAttachment: async () => null,
   writeRuntimePromptFile: async (input: {
     targetPath: string;
     filename: string;

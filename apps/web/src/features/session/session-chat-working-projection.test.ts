@@ -45,10 +45,12 @@ describe('the composer reads ONE working answer', () => {
   });
 
   test('the send receipt names the optimistic turn only when the session was idle', () => {
+    // Through the end of `handleSend`: a send kept on screen after a failed
+    // upload returns its id early, before the POST.
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
     expect(send).toContain(
       'const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;',
@@ -114,10 +116,12 @@ describe('the composer reads ONE working answer', () => {
     // `clearSendReceipt` is keyed by session, so an unguarded clear from an
     // older send's failure deleted a NEWER send's receipt while its POST was
     // still on the wire.
+    // Through the end of `handleSend`: a send kept on screen after a failed
+    // upload returns its id early, before the POST.
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
     expect(send).toContain('clearSendReceipt(messageID)');
   });

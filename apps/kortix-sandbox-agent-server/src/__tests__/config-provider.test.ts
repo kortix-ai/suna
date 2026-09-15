@@ -739,6 +739,40 @@ describe('archive safety guards', () => {
     expect(existsSync(`${stage}.tgz`)).toBe(false)
   })
 
+  test('the guard verdict is awaited when the header scan lags the download', async () => {
+    // Thousands of headers before the bad entry: the stage file finishes
+    // writing long before the tee'd gunzip -> parser reaches the traversal.
+    const lagRoot = join(root, 'lag')
+    const checkout = join(lagRoot, 'checkout')
+    mkdirSync(checkout, { recursive: true })
+    writeFileSync(join(lagRoot, 'outside.txt'), 'must not be written\n')
+    const names: string[] = []
+    for (let i = 0; i < 4_000; i++) {
+      const name = `f${i}.txt`
+      writeFileSync(join(checkout, name), `${i}\n`)
+      names.push(name)
+    }
+    const lagPath = join(root, 'lag.tar.gz')
+    await tar.create({ cwd: checkout, file: lagPath, gzip: true, preservePaths: true }, [...names, '../outside.txt'])
+    const bytes = readFileSync(lagPath)
+    api.archive = { ...archive, path: lagPath, bytes, sha256: sha256(bytes), entries: names.length + 1 }
+    const descriptor: ProjectSnapshotDescriptor = {
+      format: PROJECT_SNAPSHOT_FORMAT,
+      commit_sha: archive.sha,
+      ref: 'main',
+      repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID },
+      tree: { url: `${api.url}/tree/x.tree.tar.gz`, sha256: api.archive.sha256, bytes: bytes.byteLength, entries: names.length + 1, expires_at: '' },
+      blobs: { url: `${api.url}/blobs/x.blobs.pack`, sha256: archive.blobs.sha256, bytes: archive.blobs.bytes.byteLength, expires_at: '' },
+    }
+    const stage = join(root, 'ws', '.kortix-snapshot-lag')
+    await expect(downloadAndExtractProjectSnapshot(descriptor, stage, { timeoutMs: 30_000 })).rejects.toMatchObject({
+      stage: 'extract',
+      reason: 'malformed',
+      message: expect.stringContaining('unsafe archive entry'),
+    })
+    expect(existsSync(stage)).toBe(false)
+  })
+
   test('a .git/config that names a remote, filter, or hooksPath is refused at verify', async () => {
     const target = join(root, 'ws')
     const tainted = join(root, 'tainted-stage')

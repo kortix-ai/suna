@@ -290,7 +290,7 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession(command);
+  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -508,6 +508,8 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        accountId: session.accountId,
+        projectId: session.projectId,
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -2069,6 +2071,7 @@ async function executeQueuedCreate(
     requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
   }
   return executeCreateSession({
+    attachmentSourceCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2098,6 +2101,7 @@ async function executeCreateSession(
     ...(command.metadata ?? {}),
   };
   const result = await createProjectSession({
+    attachmentSourceCommandId: command.attachmentSourceCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -2408,6 +2412,8 @@ async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    accountId?: string;
+    projectId?: string;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed'> {
   const parts: PromptPartWire[] =
@@ -2418,6 +2424,8 @@ async function postPrompt(
         externalId,
         sessionId: callerSessionId,
         userId,
+        accountId: prompt.accountId,
+        projectId: prompt.projectId,
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
       })

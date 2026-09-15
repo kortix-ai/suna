@@ -1532,7 +1532,9 @@
       "bringKey": "Usa la tua chiave",
       "barTitle": "Nessun modello collegato",
       "barDescription": "collegane uno per iniziare a chattare",
-      "connectModel": "Collega modello"
+      "connectModel": "Collega modello",
+      "imagesUnsupported": "{model} non può leggere le immagini",
+      "imagesUnsupportedHint": "rimuovile o scegli un altro modello"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt salvato",
@@ -9332,7 +9334,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Nessuna domanda",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Ricaricare",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gestisci il piano",
+    "composerAttachments": {
+      "couldNotAttach": "Impossibile allegare i file",
+      "couldNotRetry": "Impossibile riprovare l’allegato",
+      "couldNotSend": "Invio non riuscito",
+      "failedBlocksSend": "Riprova o rimuovi l’allegato non riuscito.",
+      "uploadFailed": "Caricamento non riuscito. Controlla la connessione.",
+      "retryNamed": "Riprova il caricamento di {name}",
+      "didNotUpload": "{name} non è stato caricato.",
+      "billingRequired": "Il tuo piano o i tuoi crediti non consentono caricamenti in questo momento.",
+      "budgetExceeded": "Troppi caricamenti non inviati. I caricamenti inutilizzati scadono entro 24 ore.",
+      "tooLarge": "Questo file supera i 50 MiB.",
+      "expired": "Questo caricamento è scaduto. Rimuovilo e allega di nuovo il file.",
+      "checkConnection": "Controlla la connessione, poi riprova."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Caricamento allegato avviato",
+      "text40078a553439": "Blocco dell’allegato caricato",
+      "text4c7f8000aabd": "Caricamento allegato completato",
+      "text91420d2587c2": "Caricamento allegato rimosso",
+      "text3aab5b3be2b9": "Descrittore dell’allegato di runtime risolto",
       "text0005b85debac": "Pacchetto audio riprodotto per gli eventi della sessione.",
       "text000c02c11c7a": "Istruzioni riutilizzabili che i tuoi agenti caricano quando necessario.",
       "text0017bda47853": "URL copiato",

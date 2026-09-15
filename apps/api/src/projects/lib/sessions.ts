@@ -8,6 +8,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -820,6 +821,7 @@ async function loadParentSessionSharing(
 }
 
 export async function createProjectSession(input: {
+  attachmentSourceCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1621,10 +1623,26 @@ export async function createProjectSession(input: {
         // its first prompt durable, or neither does. No conflict handling —
         // `sessionId` is fresh here, so the idempotency key cannot collide
         // without the projectSessions PK colliding first.
-        await tx
+        const insertPrompt = tx
           .insert(sessionLifecycleCommands)
-          .values(pendingPromptConversion.rowValues)
-          .returning({ commandId: sessionLifecycleCommands.commandId });
+          .values(pendingPromptConversion.rowValues);
+        // Only a handle prompt reads its payload back, for binding. A legacy
+        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+        if ((pendingPromptConversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const [promptCommand] = await insertPrompt.returning({
+            commandId: sessionLifecycleCommands.commandId,
+            accountId: sessionLifecycleCommands.accountId,
+            projectId: sessionLifecycleCommands.projectId,
+            actorUserId: sessionLifecycleCommands.actorUserId,
+            payload: sessionLifecycleCommands.payload,
+          });
+          if (promptCommand) {
+            const { bindPromptAttachments } = await import('../prompt-attachments');
+            await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
+          }
+        } else {
+          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
+        }
       }
       if (validatedConnectorBindings.bindings.length > 0) {
         await tx
@@ -1663,6 +1681,9 @@ export async function createProjectSession(input: {
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
+    if (error instanceof HTTPException && error.status < 500) {
+      return { error: { status: error.status, body: await error.getResponse().json() } };
+    }
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
   }

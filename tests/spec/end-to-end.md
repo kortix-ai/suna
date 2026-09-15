@@ -291,6 +291,49 @@ paths. The user message renders every attachment before and after reload, with t
 same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
 rewritten in place before the next prompt.
 
+`SESS-29` Eager private attachment uploads. A project accepts bytes before any
+session exists. Initiation returns an opaque handle with a server-selected
+transport. Direct mode, the default, returns a short-lived signed Storage upload
+URL. The client sends the whole file in one PUT with no Authorization header.
+Initiation with the same `attachment_id` re-signs that upload and creates no
+second upload. The chunk route returns 409 in direct mode. Chunked mode, which
+only the preview deployment selects, returns `chunk_size`. Indexed API requests
+then carry at most that many bytes, and a replayed chunk duplicates no bytes.
+Completion before the bytes arrive returns 409. Completion streams the stored
+object once, verifies its exact size, records its SHA-256 and returns canonical
+filename, MIME and size. A direct upload whose size differs from its declaration
+fails with 400, and a later completion returns 409.
+Warm claim and follow-up enqueue persist handle-only file parts, not base64.
+Identical follow-up submissions reuse the same command. A repeat claim of a
+consumed warm session returns 409, with or without attachments.
+Missing handles return 404, incomplete uploads 409 and oversize declarations 413.
+Bound files cannot be deleted. Removing an unbound upload is idempotent.
+Initiation returns 402 with the billing body when the account cannot run.
+Initiation returns 429 `attachment_budget_exceeded` above 40 unfinished uploads or
+500 MiB of unsent bytes per user. The SDK retries neither refusal.
+The internal descriptor route accepts only a live session sandbox credential.
+It binds the exact running command, attachment reference and part index before it
+returns the canonical path, byte count, SHA-256 and short-lived download URL.
+User JWTs and ordinary project PATs return 403.
+Session delete and project archive release every attachment reference they hold.
+A delivered prompt releases its references 1 hour after its command closes.
+An attachment with no reference is due for the next maintenance sweep.
+
+Browser composer contract (`28-eager-composer-attachments.spec.ts`): picker,
+drop and paste start the private upload before Send. Send stays enabled while
+uploads run. Send and Enter refuse only a failed or aborted attachment, and the
+Send tooltip reads "Retry or remove the failed attachment." A tile whose upload
+still runs 400 ms after attach shows a determinate progress ring. A failed tile
+keeps its picture or name under a scrim that states the localized reason. Retry
+appears only for a connection failure; a billing, budget, size or expiry refusal
+offers only Remove. Removing a tile while it uploads aborts the upload and
+deletes the unbound upload. A retry reuses the same attachment handle. An
+accepted first prompt carries handle-only parts and sends no file bytes again. A
+refused first prompt keeps the captured attachments while new selections remain
+in the composer. The sent message shows its tiles from the first frame, with no
+progress ring and no busy state. Drafts never store File bytes, blob URLs, data
+URLs, signed download URLs, or upload handles.
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots

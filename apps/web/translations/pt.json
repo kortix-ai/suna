@@ -1532,7 +1532,9 @@
       "bringKey": "Usar sua própria chave",
       "barTitle": "Nenhum modelo conectado",
       "barDescription": "conecte um para começar a conversar",
-      "connectModel": "Conectar modelo"
+      "connectModel": "Conectar modelo",
+      "imagesUnsupported": "{model} não consegue ler imagens",
+      "imagesUnsupportedHint": "remova-as ou escolha outro modelo"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt salvo",
@@ -9332,7 +9334,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Sem perguntas",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recarregar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gerenciar plano",
+    "composerAttachments": {
+      "couldNotAttach": "Não foi possível anexar os arquivos",
+      "couldNotRetry": "Não foi possível tentar o anexo novamente",
+      "couldNotSend": "Não foi possível enviar",
+      "failedBlocksSend": "Tente novamente ou remova o anexo que falhou.",
+      "uploadFailed": "Falha no envio. Verifique sua conexão.",
+      "retryNamed": "Tentar enviar {name} novamente",
+      "didNotUpload": "{name} não foi enviado.",
+      "billingRequired": "Seu plano ou seus créditos não permitem envios agora.",
+      "budgetExceeded": "Há muitos envios não enviados. Envios não usados expiram em até 24 horas.",
+      "tooLarge": "Este arquivo tem mais de 50 MiB.",
+      "expired": "Este envio expirou. Remova-o e anexe o arquivo novamente.",
+      "checkConnection": "Verifique sua conexão e tente novamente."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Envio do anexo iniciado",
+      "text40078a553439": "Bloco do anexo enviado",
+      "text4c7f8000aabd": "Envio do anexo concluído",
+      "text91420d2587c2": "Envio do anexo removido",
+      "text3aab5b3be2b9": "Descritor de anexo do runtime resolvido",
       "text0005b85debac": "Pacote de som reproduzido para eventos de sessão.",
       "text000c02c11c7a": "Instruções reutilizáveis que seus agentes carregam sob demanda.",
       "text0017bda47853": "URL copiada",

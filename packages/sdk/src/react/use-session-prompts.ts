@@ -522,6 +522,12 @@ export async function startSessionWithPrompt(
   input: {
     parts: SessionPromptPart[];
     overrides?: SessionPromptOverrides;
+    /**
+     * When the user pressed Send, in milliseconds since epoch. Defaults to the
+     * POST time. A caller whose POST waited (for uploads) passes the Send time,
+     * so the server orders this prompt before messages sent after it.
+     */
+    clientSentAtMs?: number;
   },
   adapters?: StartSessionWithPromptAdapters,
 ): Promise<CreateSessionPromptResult> {
@@ -538,7 +544,7 @@ export async function startSessionWithPrompt(
       clientMessageId,
       messageId: mintSessionWireMessageId(sessionId, clientMessageId),
       parts: input.parts,
-      clientSentAtMs: now(),
+      clientSentAtMs: input.clientSentAtMs ?? now(),
       ...(input.overrides ? { overrides: input.overrides } : {}),
       remintOnDelivery: true,
     });

@@ -187,7 +187,7 @@ describe('projectQueueRows', () => {
 // A warm box mounts the transcript within seconds, and until the runtime
 // echoes the prompt the queued row is the ONLY thing on screen for it. Drawn
 // text-only it read as a send of no files (2026-09-04, browser-measured).
-test('a queued row carries its attachment names and an uploading status', () => {
+test('a queued row carries attachment names without restarting upload progress', () => {
   const { queued } = projectQueueRows({
     prompts: [
       {
@@ -212,7 +212,7 @@ test('a queued row carries its attachment names and an uploading status', () => 
     { filename: 'a.jpg', mime: 'image/jpeg' },
     { filename: 'b.pdf', mime: 'application/pdf' },
   ]);
-  expect(queued[0]?.uploadStatus).toEqual({ state: 'uploading' });
+  expect(queued[0]?.uploadStatus).toBeUndefined();
 });
 
 test('a failed row names the failure on its attachments', () => {
@@ -261,7 +261,26 @@ test('a text-only row carries no attachment fields at all', () => {
 // The API writes `last_error` on rows it keeps `queued` and retries, and never
 // clears it on success. Read as a failure, every transient retry said "upload
 // failed" (review finding, 2026-09-05).
-test('a queued row with a stale last_error is still uploading, not failed', () => {
+test('a failed row with no last_error is failed with no invented message', () => {
+  const { failed } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'failed-quiet',
+        client_message_id: 'client-quiet',
+        message_id: null,
+        wire_message_id: null,
+        text: 'with a file',
+        state: 'failed',
+        reason: null,
+        last_error: null,
+        attachments: [{ filename: 'a.png', mime: 'image/png' }],
+      } as never,
+    ],
+  });
+  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed' });
+});
+
+test('a queued row with a stale last_error does not invent upload progress or failure', () => {
   const { queued } = projectQueueRows({
     prompts: [
       {
@@ -279,5 +298,5 @@ test('a queued row with a stale last_error is still uploading, not failed', () =
       },
     ],
   });
-  expect(queued[0]?.uploadStatus).toEqual({ state: 'uploading' });
+  expect(queued[0]?.uploadStatus).toBeUndefined();
 });
