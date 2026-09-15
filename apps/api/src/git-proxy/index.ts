@@ -67,6 +67,7 @@ import {
   COMPILED_PI_RUNTIME_FORMAT,
 } from './compiled-pi-runtime';
 import { prebuildManifestRuntime } from './compiled-prebuild';
+import { afterPushCompletion } from './push-completion';
 import {
   COMPILED_CHECKOUT_CONTENT_TYPE,
   COMPILED_CHECKOUT_FORMAT,
@@ -358,7 +359,9 @@ async function forwardAuthorized(
     if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
   });
 
-  // Build-on-push warming: a successful push (git-receive-pack) to the managed
+  // The upstream can send HTTP 200 before receive-pack updates refs. Wait for
+  // its response stream to finish before refreshing the mirror and compiling.
+  // Build-on-push warming: a completed push (git-receive-pack) to the managed
   // git may have advanced the project's default-branch tip. Kick the
   // fire-and-forget warms that make the FIRST session on the new commit fast
   // (the fast-boot git hint below, and the compiled/pi-worker artifact
@@ -370,8 +373,9 @@ async function forwardAuthorized(
   // The per-project provider PIN is read here so a prebuild targets the
   // provider(s) a session on this project will actually use (pinned provider =>
   // that one; no pin => every enabled provider).
-  if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
-    void (async () => {
+  let responseBody = res.body;
+  if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300 && responseBody) {
+    responseBody = afterPushCompletion(responseBody, async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
         const projectPin =
@@ -460,10 +464,10 @@ async function forwardAuthorized(
           err instanceof Error ? err.message : err,
         );
       }
-    })();
+    });
   }
 
-  return new Response(res.body, { status: res.status, headers: respHeaders });
+  return new Response(responseBody, { status: res.status, headers: respHeaders });
 }
 
 // ── ref policy on push ────────────────────────────────────────────────────

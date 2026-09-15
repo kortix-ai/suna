@@ -2141,3 +2141,67 @@ Shippable to production: **NOT YET**. This checkpoint does not complete the
 shared OpenCode/Pi configuration adapter, working-file backup and seven-day
 deletion, broader cron parity, or the direct-environment performance comparison.
 No main merge, dev deployment, or production deployment occurred.
+
+## 2026-09-15 — Explicit YAML configuration and custom source
+
+`agents.<name>.config` now owns shared behavior and explicit prompt/source paths.
+The compiler resolves them at the selected commit. A root `config_dir` works
+for both versions. YAML v3 selects Pi; v2 selects OpenCode. Native extension
+code remains runtime-specific. See [the authoring contract](PI_CUSTOM_AGENTS.md#configuration-ownership).
+
+Commits `6a864f9d93`, `5d89006da7`, and `9d405788e0` implement the schema,
+compiler, editor, and standalone daemon dependency correction. `ca5b67db59`
+also prevents explicit OpenCode prompt failures from silently selecting defaults.
+
+Preview run [34991155308](https://github.com/kortix-ai/suna/actions/runs/34991155308)
+deploys `9d405788e090aa877e2ebf371b2d0921f87b4c13`. The API health, source checkout,
+and API/gateway/frontend image tags match. The real browser editor sends a PUT,
+receives `200`, and reads back the new prompt. Git stores it in the declared
+prompt file. Custom source and resource declarations remain intact.
+
+The fresh live session uses source `4e86b7467e2d8e824caa2df6fdfc26b857515314`:
+
+| Check | Observed result |
+| --- | --- |
+| Worker start | 4,062 ms from `ensureReady`; one observation, not a benchmark distribution |
+| Explicit custom source | Factory imports `shared/yaml-marker.ts` from outside the config directory; returns `YAML_CODE_V1` |
+| Bundled worker file | Reads `{currency: "EUR", contract: 1}` without an environment; environment GET returns `404` |
+| Hooks | Initialization is true; pre-tool count is 1; event count is 12 |
+| Release pinning | Browser changes default-branch prompt to V2; pinned session still uses V1 |
+| Environment RPC | Reads the compiled seed, writes and reads a working file, and executes a shell check |
+| Source separation | No agent source checkout or `.git` directory exists in the runtime-only environment |
+| Runtime separation | Environment health reports `workload: environment`, `opencode: disabled` |
+| Restart | Stop/resume preserves all six messages exactly |
+| Streaming | 127 `message.part.delta` events |
+| Cleanup | Owned worker and environment stop after verification |
+
+Project: `adb8bd66-c6d2-41bd-bd1a-b0913754d7bb`.
+Session: `945195f8-2723-47a8-9394-e02e6614de1f`.
+Evidence: `/tmp/pi-yaml-live.json`, `/tmp/pi-yaml-editor.png`.
+
+Local verification includes 608 focused regression tests, 73 shared compiler
+tests, 930 worker tests, and 1,318 daemon tests, all passing. Manifest, API, and
+daemon typechecks pass. The source-only standalone build passes with Bun 1.3.11.
+`pnpm test -- --id GH-18` passes the real local Git, artifact, editor, invalid-input,
+and pinned-resource flow. The route gate reports 631 covered routes, 23 allowed
+exclusions, and zero uncovered routes.
+
+The preview GH-18 run fails during setup: GitHub rejects new repository creation
+with a secondary rate limit. It reaches none of the flow's test steps. Report:
+[20260915160026-w00j9d](https://pi.kortix.com/_tests/20260915160026-w00j9d/report.html).
+The existing-project browser and runtime checks above pass independently.
+
+The initial post-push editor read exposed early prebuild scheduling. Warming now
+starts after upstream stream completion. Four stream tests cover ordering,
+cancellation, failure, and nonblocking compilation; the combined Git regression
+suite passes 40 tests. The final PR records the deployed revision and retest.
+
+To test: use the YAML example in `PI_CUSTOM_AGENTS.md`, commit its referenced
+files, and start the named agent. Call a pure custom tool, then an environment
+tool. Edit its Instructions in Customize, then compare old and new sessions.
+Stop and reopen the old session; verify its original code and history remain.
+
+This completes the explicit YAML authoring/compiler/editor slice. It does not
+complete native OpenCode resource adapters, working-file backup and seven-day
+deletion, child agents, or all remaining runtime parity. No Durable Objects,
+main merge, dev deployment, or production deployment are part of this checkpoint.

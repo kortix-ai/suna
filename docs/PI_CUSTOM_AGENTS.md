@@ -71,7 +71,9 @@ OpenCode configuration. Pi code and OpenCode plugins are different APIs; changin
 versions does not translate extension code. Pi resource placement currently remains
 v3-only; an OpenCode adapter for those declarations is still outstanding.
 
-The API compiles after a source push, or on demand if that exact artifact is absent.
+The API starts prebuilding after the Git push response finishes, when the upstream
+has updated its refs. Compilation runs in the background. If the exact artifact
+is still absent at session start, the API compiles it on demand.
 A running session keeps its selected agent and source SHA. Editing files in its
 environment does not modify the worker. Commit configuration changes and create a
 session from the new commit. Declare agents on the configured project default
@@ -481,7 +483,7 @@ migration, concurrent HTTP writes, and browser submission/reload. See
 
 ## Dependencies and compilation
 
-Relative imports stay inside the configured source directory. The compiler bundles
+Relative imports stay inside the repository. The compiler bundles
 reachable source into the `.mjs` artifact without executing project code. It
 supports TypeScript, JavaScript, JSON, and imported Markdown/text. It rejects
 compile-time macros and unresolved imports. It does not perform TypeScript type

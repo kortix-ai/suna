@@ -6935,3 +6935,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Enforcer:** `apps/kortix-sandbox-agent-server/src/egress-shim/blocked-headers.test.ts` rejects workspace dependencies and lock drift. The build verifies the shared source from an isolated directory with Bun 1.3.11.
 
 **Follow-up:** `34990233820` exposed a type-only path from the shared configuration type into parser dependencies. Keep daemon helpers in leaf modules that have no runtime **or type** dependency on the full manifest validator. Isolated verification must run `typecheck` before `build`, as the production Docker stage does.
+
+### Start push prebuilds after the upstream response completes (2026-09-15)
+
+**Near-miss:** the Pi YAML live check initially read the previous agent manifest after a successful Git push. Inspection found prebuilds starting at HTTP headers, before the streamed receive-pack operation finished.
+**Rule:** wait for upstream response completion before refreshing Git refs and starting prebuilds. Keep the response streamed. Do not wait for compilation before finishing the client response.
+**Enforcer:** `push-completion.test.ts` verifies progress streaming, completion ordering, cancellation, upstream failure, and detached compilation. `compiled-prebuild-wiring.test.ts` checks the route uses that completion boundary. Real Git protocol tests preserve successful pushes and policy rejections.
