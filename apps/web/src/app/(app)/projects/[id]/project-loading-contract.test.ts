@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 const WEB_ROOT = resolve(import.meta.dir, '../../../../..');
 const LOADING = resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/loading.tsx');
+const SESSION_LOADING = resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/sessions/[sessionId]/loading.tsx');
 
 /**
  * Modules too heavy to sit in the loading boundary's payload. ProjectHome is on
@@ -26,6 +29,11 @@ function importedSpecifiers(source: string): string[] {
   ];
 }
 
+async function renderBoundary(): Promise<string> {
+  const { default: Boundary } = await import(LOADING);
+  return renderToStaticMarkup(createElement(Boundary));
+}
+
 describe('project home loading boundary', () => {
   test('exists', () => {
     expect(existsSync(LOADING)).toBe(true);
@@ -45,10 +53,34 @@ describe('project home loading boundary', () => {
     expect(offenders).toEqual([]);
   });
 
-  test("matches ProjectHome's root container so the handover does not shift layout", () => {
-    const source = readFileSync(LOADING, 'utf8');
+  test('a session opened from the sidebar falls back to this boundary', () => {
+    // The path in the bug report: no first-prompt preview, so the session
+    // boundary paints whatever LOADING paints.
+    const source = readFileSync(SESSION_LOADING, 'utf8');
 
-    expect(source).toContain('relative flex min-h-0 flex-1 flex-col overflow-hidden');
-    expect(source).toContain('px-4.5');
+    expect(importedSpecifiers(source)).toContain('../../loading');
+    expect(source).toContain('return <ProjectHomeLoading />');
+  });
+
+  test('paints the Kortix mark sized to the content pane', async () => {
+    const markup = await renderBoundary();
+
+    expect(markup).toContain('data-slot="project-pending-screen"');
+    expect(markup).toContain('flex-1');
+    // The viewport variant would overflow the pane beside the sidebar.
+    expect(markup).not.toContain('min-h-svh');
+  });
+
+  // Rendered, not grepped: a source-text check passes while an extracted
+  // placeholder component still paints grey bars.
+  test('paints no skeleton', async () => {
+    const markup = await renderBoundary();
+    const skeletonImports = importedSpecifiers(readFileSync(LOADING, 'utf8')).filter((specifier) =>
+      /skeleton/i.test(specifier),
+    );
+
+    // Exactly one pulsing node: the mark. The old skeleton had five bars.
+    expect(markup.match(/animate-pulse/g) ?? []).toHaveLength(1);
+    expect(skeletonImports).toEqual([]);
   });
 });
