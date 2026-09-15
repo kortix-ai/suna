@@ -140,25 +140,32 @@ async function compileArtifact(
   const checkout = join(root, 'checkout');
   const stagedArchive = join(root, 'checkout.tar.gz');
   try {
-    await runGit(
-      [
-        'clone',
-        '--depth',
-        '1',
-        '--branch',
-        ref,
-        '--single-branch',
-        '--no-tags',
-        pathToFileURL(mirror).href,
-        checkout,
-      ],
-      undefined,
-      false,
-      undefined,
-      undefined,
-      undefined,
-      120_000,
-    );
+    if (/^[a-f0-9]{40}$/.test(ref)) {
+      await runGit(['init', checkout], undefined, false);
+      await runGit(['remote', 'add', 'origin', pathToFileURL(mirror).href], checkout, false);
+      await runGit(['fetch', '--depth', '1', '--no-tags', 'origin', sourceSha], checkout, false, undefined, undefined, undefined, 120_000);
+      await runGit(['checkout', '--detach', 'FETCH_HEAD'], checkout, false);
+    } else {
+      await runGit(
+        [
+          'clone',
+          '--depth',
+          '1',
+          '--branch',
+          ref,
+          '--single-branch',
+          '--no-tags',
+          pathToFileURL(mirror).href,
+          checkout,
+        ],
+        undefined,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        120_000,
+      );
+    }
     const checkoutSha = (
       await runGit(['rev-parse', '--verify', 'HEAD'], checkout, false)
     ).stdout.trim();

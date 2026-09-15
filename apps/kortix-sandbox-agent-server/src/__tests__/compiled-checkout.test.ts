@@ -196,7 +196,7 @@ describe('materializeRepo compiled boot', () => {
     expect(git(target, 'config', '--get', 'kortix.adopted-session')).toBe('session-1')
   })
 
-  test('falls back to the existing clone path when the compiled checkout is unavailable', async () => {
+  test.each(['branch', 'commit', 'resume', 'missing'])('clone fallback preserves the requested %s when the compiled checkout is unavailable', async (kind) => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'kortix-daemon-fallback-source-'))
     const targetRoot = mkdtempSync(join(tmpdir(), 'kortix-daemon-fallback-target-'))
     roots.push(sourceRoot, targetRoot)
@@ -208,24 +208,42 @@ describe('materializeRepo compiled boot', () => {
     git(source, 'add', '-A')
     git(source, 'commit', '-m', 'fallback source')
     const sha = git(source, 'rev-parse', 'HEAD')
+    let restoredSha = sha
+    if (kind === 'resume') {
+      git(source, 'checkout', '-b', 'session-2')
+      writeFileSync(join(source, 'README.md'), 'session work\n')
+      git(source, 'commit', '-am', 'save session work')
+      restoredSha = git(source, 'rev-parse', 'HEAD')
+      git(source, 'checkout', 'main')
+    }
+    if (kind !== 'branch') {
+      writeFileSync(join(source, 'README.md'), 'moved main\n')
+      git(source, 'commit', '-am', 'move main')
+    }
+    const base = kind === 'branch' ? 'main' : kind === 'missing' ? 'a'.repeat(40) : sha
     const cfg = loadConfig({
       KORTIX_PROJECT_AUTO_CLONE: '1',
       KORTIX_PROJECT_TARGET: target,
       KORTIX_PROJECT_ID: '33333333-3333-4333-8333-333333333333',
       KORTIX_REPO_URL: `file://${source}`,
-      KORTIX_DEFAULT_BRANCH: 'main',
+      KORTIX_DEFAULT_BRANCH: base,
       KORTIX_BRANCH_NAME: 'session-2',
-      KORTIX_SESSION_FRESH: '1',
-      KORTIX_BASE_SHA: sha,
+      KORTIX_SESSION_FRESH: kind === 'resume' ? '0' : '1',
+      KORTIX_BASE_SHA: kind === 'missing' ? base : sha,
       KORTIX_TOKEN: 'sandbox-token',
       KORTIX_COMPILED_BOOT_MODE: 'prefer',
     } as NodeJS.ProcessEnv)
 
+    if (kind === 'missing') {
+      await expect(materializeRepo(cfg)).rejects.toThrow()
+      expect(() => readFileSync(join(target, 'README.md'), 'utf8')).toThrow()
+      return
+    }
     await materializeRepo(cfg)
 
-    expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('clone fallback\n')
+    expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe(kind === 'resume' ? 'session work\n' : 'clone fallback\n')
     expect(git(target, 'branch', '--show-current')).toBe('session-2')
-    expect(git(target, 'rev-parse', 'HEAD')).toBe(sha)
+    expect(git(target, 'rev-parse', 'HEAD')).toBe(restoredSha)
   })
 
   test('required mode rejects an unavailable artifact before the clone path', async () => {

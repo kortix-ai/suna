@@ -479,6 +479,7 @@ flow('GH-18', {
     'POST /v1/git/:project/git-upload-pack',
     'POST /v1/git/:project/git-receive-pack',
     'GET /v1/git/:project/compiled-runtime',
+    'GET /v1/git/:project/compiled-checkout',
     'GET /v1/git/:project/compiled-pi-runtime',
     'GET /v1/projects/:projectId/sessions/:sessionId/environment/resources',
     'PATCH /v1/projects/:projectId/features',
@@ -613,6 +614,25 @@ flow('GH-18', {
       await git(['-C', repo, 'add', 'assets/template.txt']);
       await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Move OpenCode default branch']);
       await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
+      const checkout = await client.get('/v1/git/:project/compiled-checkout', {
+        params: { project: `${project.id}.git` }, query: { ref: source, sha: source }, timeoutMs: 120_000,
+      });
+      checkout.status(200).headerEquals('x-kortix-artifact-source-sha', source);
+      const raw = await fetch(`${ctx.env.apiUrl}/git/${project.id}.git/compiled-checkout?ref=${source}&sha=${source}`, {
+        headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120_000),
+      });
+      assert.equal(raw.status, 200);
+      const archive = Buffer.from(await raw.arrayBuffer());
+      checkout.headerEquals('x-kortix-artifact-sha256', createHash('sha256').update(archive).digest('hex'));
+      const archivePath = join(root, 'checkout.tar.gz');
+      const extracted = join(root, 'checkout');
+      await writeFile(archivePath, archive);
+      await mkdir(extracted);
+      const extraction = Bun.spawn(['tar', '-xzf', archivePath, '-C', extracted], { stdout: 'pipe', stderr: 'pipe' });
+      const [exit, error] = await Promise.all([extraction.exited, new Response(extraction.stderr).text()]);
+      assert.equal(exit, 0, error);
+      assert.equal(await git(['-C', extracted, 'rev-parse', 'HEAD']), source);
+      assert.equal(await Bun.file(join(extracted, 'assets/template.txt')).text(), 'new default branch template');
       for (const [index, session] of sessions.entries()) {
         const params = { projectId: project.id, sessionId: session.id };
         const resource = await client.get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params, timeoutMs: 120_000 });

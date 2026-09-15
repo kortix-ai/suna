@@ -69,8 +69,13 @@ afterEach(() => {
 });
 
 describe('buildCompiledCheckoutArtifact', () => {
-  test('compiles an exact shallow checkout with working Git state', async () => {
-    const { project, sha } = makeProject();
+  test.each(['branch', 'commit'])('compiles an exact shallow checkout from a %s with working Git state', async (kind) => {
+    const { project, sha, source } = makeProject();
+    const ref = kind === 'commit' ? sha : 'main';
+    if (kind === 'commit') {
+      writeFileSync(join(source, 'README.md'), 'third\n');
+      git(['commit', '-am', 'move main after the session pin'], source);
+    }
     const cache = mkdtempSync(join(tmpdir(), 'kortix-compiled-cache-'));
     const mirrors = mkdtempSync(join(tmpdir(), 'kortix-compiled-mirrors-'));
     roots.push(cache, mirrors);
@@ -79,7 +84,7 @@ describe('buildCompiledCheckoutArtifact', () => {
 
     const artifact = await buildCompiledCheckoutArtifact(
       project,
-      'main',
+      ref,
       sha,
       `https://api.kortix.test/v1/git/${project.projectId}.git`,
     );
@@ -108,7 +113,7 @@ describe('buildCompiledCheckoutArtifact', () => {
       .toEqual({
         format: COMPILED_CHECKOUT_FORMAT,
         project_id: project.projectId,
-        ref: 'main',
+        ref,
         source_sha: sha,
         shallow: true,
       });

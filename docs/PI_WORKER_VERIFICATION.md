@@ -2277,3 +2277,8 @@ The full daemon also exceeded Bun's resolver limit for a `data:` URL. Deferred
 loading now uses an in-memory Blob URL. The regression boots the complete daemon
 through Node and checks its HTTP readiness. A manifest-only check or a small
 mock bundle does not prove that the executable artifact starts.
+
+Compiled checkout and clone fallback fetch commit pins as commits. A missing
+commit fails startup instead of creating an empty repository. Replacement
+checkout still restores the remote session branch. GH-18 verifies the downloaded
+checkout's Git HEAD and working file bytes after the default branch moves.
