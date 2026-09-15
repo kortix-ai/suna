@@ -225,7 +225,7 @@ export async function npmInstall(specs, {
         written++;
       } catch (e) { problems.push(`${name}: could not write ${rel} (${e?.message ?? e})`); }
     }
-    installed.set(name, { version: picked.version, files: written });
+    installed.set(name, { version: picked.version, files: written, bin: binOf(name, entries) });
     onProgress?.(`added ${name}@${picked.version} (${written} files)`);
 
     if (depth < maxDepth) {
@@ -245,6 +245,67 @@ export async function npmInstall(specs, {
   };
 }
 
+/**
+ * A package's `bin` entries, as npm would put them on PATH.
+ *
+ * Read out of the tarball rather than off the filesystem: the package.json is
+ * already in hand, and a second read of a file just written is a round trip
+ * for nothing.
+ */
+export function binOf(name, entries) {
+  const pkgEntry = entries.find(([p]) => p.replace(/^\.\//, "") === "package/package.json");
+  if (!pkgEntry) return {};
+  let json;
+  try { json = JSON.parse(new TextDecoder().decode(pkgEntry[1])); } catch { return {}; }
+  const bin = json?.bin;
+  if (typeof bin === "string") return { [name.split("/").pop()]: bin.replace(/^\.\//, "") };
+  if (bin && typeof bin === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(bin)) if (typeof v === "string") out[k] = v.replace(/^\.\//, "");
+    return out;
+  }
+  return {};
+}
+
+/**
+ * THE LOCAL BINS, THE WAY npm PUTS THEM ON PATH.
+ *
+ * `npm run build` whose script is `tsc -p .` works because npm prepends
+ * `node_modules/.bin` to PATH. This shell has no PATH to prepend to and no
+ * process to exec, so the resolution happens here: a leading token that names
+ * an installed package's bin becomes `node <the file that bin points at>`,
+ * which this runtime can actually run.
+ */
+export function resolveScript(script, bins) {
+  const text = String(script ?? "").trim();
+  const lead = text.split(/\s+/)[0] ?? "";
+  const target = bins[lead];
+  if (!target) return text;
+  return `node ${target}${text.slice(lead.length)}`;
+}
+
+/** Every `bin` an installed tree offers, as `name -> node_modules/pkg/file`. */
+export async function installedBins(fs, cwd) {
+  const out = {};
+  let names = [];
+  try { names = (await fs.readdirWithFileTypes(`${cwd}/node_modules`)).filter((e) => e.isDirectory).map((e) => e.name); }
+  catch { return out; }
+  for (const dir of names) {
+    const scoped = dir.startsWith("@")
+      ? (await fs.readdirWithFileTypes(`${cwd}/node_modules/${dir}`).catch(() => [])).filter((e) => e.isDirectory).map((e) => `${dir}/${e.name}`)
+      : [dir];
+    for (const name of scoped) {
+      let json;
+      try { json = JSON.parse(new TextDecoder().decode(await fs.readFileBuffer(`${cwd}/node_modules/${name}/package.json`))); } catch { continue; }
+      const bin = json?.bin;
+      const add = (k, v) => { out[k] = `node_modules/${name}/${String(v).replace(/^\.\//, "")}`; };
+      if (typeof bin === "string") add(name.split("/").pop(), bin);
+      else if (bin && typeof bin === "object") for (const [k, v] of Object.entries(bin)) if (typeof v === "string") add(k, v);
+    }
+  }
+  return out;
+}
+
 /** The packages a package.json asks for, which is what a bare `npm install` means. */
 export function dependenciesOf(json) {
   const out = [];
@@ -257,7 +318,7 @@ export function dependenciesOf(json) {
  * rest — a stub that pretended to run `npm run build` would be worse than not
  * being here.
  */
-export function npmCommand(defineCommand, { fetch: guardedFetch } = {}) {
+export function npmCommand(defineCommand, { fetch: guardedFetch, run = null } = {}) {
   return defineCommand("npm", async (args, ctx) => {
     const cwd = ctx.cwd || "/workspace";
     const sub = args[0] ?? "";
@@ -277,10 +338,49 @@ export function npmCommand(defineCommand, { fetch: guardedFetch } = {}) {
       }
       return { stdout: lines.length ? `${lines.join("\n")}\n` : "(no packages installed)\n", stderr: "", exitCode: 0 };
     }
+    // `npm run` — A PACKAGE SCRIPT IS A SHELL COMMAND, AND THERE IS A SHELL.
+    //
+    // This used to be refused on the grounds that a cell has no process to run
+    // scripts in. That is true of a CHILD process and false of the shell the
+    // cell already is: `npm run build` whose script is `node build.js` is a
+    // line this bash can run, and now does. What still cannot work is a script
+    // that shells out to something native — and that fails as the command not
+    // being found, which is the honest answer rather than a refusal up front.
+    if (sub === "run" || sub === "run-script" || sub === "test" || sub === "start") {
+      const pkg = await readJson(`${cwd}/package.json`);
+      const scripts = pkg?.scripts ?? {};
+      const name = sub === "run" || sub === "run-script" ? rest[0] : sub;
+      if (!name) {
+        const names = Object.keys(scripts);
+        return { stdout: names.length ? `available scripts:\n${names.map((n) => `  ${n}  ${scripts[n]}`).join("\n")}\n` : "no scripts in package.json\n", stderr: "", exitCode: 0 };
+      }
+      if (!scripts[name]) {
+        return { stdout: "", stderr: `npm: no script named '${name}' in package.json\n`, exitCode: 1 };
+      }
+      if (typeof run !== "function") {
+        return { stdout: "", stderr: "npm: this shell cannot run scripts here\n", exitCode: 1 };
+      }
+      const bins = await installedBins(ctx.fs, cwd).catch(() => ({}));
+      const out = [];
+      let code = 0;
+      // pre/post are npm's own contract, and a build that depends on `prebuild`
+      // silently skipping it is a build that produces the wrong thing.
+      for (const stage of [`pre${name}`, name, `post${name}`]) {
+        if (!scripts[stage]) continue;
+        const line = resolveScript(scripts[stage], bins);
+        out.push(`> ${stage}\n> ${line}\n`);
+        const r = await run(line, { cwd });
+        if (r?.stdout) out.push(r.stdout);
+        if (r?.stderr) out.push(r.stderr);
+        code = r?.exitCode ?? 0;
+        if (code !== 0) break;
+      }
+      return { stdout: out.join(""), stderr: "", exitCode: code };
+    }
     if (sub !== "install" && sub !== "i" && sub !== "add") {
       return {
         stdout: "",
-        stderr: `npm: this cell runs 'install', 'ls' and 'version'. It fetches packages from the registry and unpacks them — there is no process here to run scripts in, so '${sub || "npm"}' needs the machine tool.\n`,
+        stderr: `npm: this cell runs 'install', 'run', 'ls' and 'version'. There is no child process here, so '${sub || "npm"}' needs the machine tool.\n`,
         exitCode: 1,
       };
     }

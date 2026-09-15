@@ -59,7 +59,7 @@ export function cellFs(sql) {
   // and its engine permits dynamic evaluation — measured on a live cell
   // 2026-09-11 — so a script the model writes runs here rather than needing a
   // machine. No interpreter is shipped and nothing is compiled to wasm.
-  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD }, fetch: net, customCommands: [wgetCommand(net), nodeCommand(defineCommand, { fetch: net }), npmCommand(defineCommand, { fetch: net })] });
+  const bash = new Bash({ fs, cwd: CELL_CWD, env: { HOME: CELL_CWD, PWD: CELL_CWD }, fetch: net, customCommands: [wgetCommand(net), nodeCommand(defineCommand, { fetch: net }), npmCommand(defineCommand, { fetch: net, run: (line, opts) => bash.exec(line, { cwd: opts?.cwd ?? CELL_CWD }) })] });
   // Snapshot the whole tree. Rows not in the tree are gone; everything else is
   // upserted. One statement each, inside the one commit the request already pays.
   async function persist() {

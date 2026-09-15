@@ -12,7 +12,7 @@
 // complains. One of them is here because it happened: `debug`'s `ms@^2.1.3`
 // resolved to `ms@3.0.0-canary`, a different major, because a prerelease sorts
 // below the `3.0.0` upper bound a caret range implies.
-// EXPECTED_PASSES=35
+// EXPECTED_PASSES=41
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 let bad = 0;
 const check = watchClaims((n, c, d = "") => { if (c) console.log(`  ok    ${n}`); else { console.log(`  FAIL  ${n}${d ? `\n          ${d}` : ""}`); bad++; } });
@@ -193,11 +193,58 @@ check("a bare install means what package.json depends on",
   const ver = await defined.npm(["--version"], ctx);
   check("`npm --version` answers, and names this runtime rather than pretending to be npm",
     /pi-cell/.test(ver.stdout) && ver.exitCode === 0, ver.stdout.trim());
-  const run = await defined.npm(["run", "build"], ctx);
-  check("`npm run` is REFUSED with the reason — there is no process here, and a stub would be worse than nothing",
-    run.exitCode === 1 && /machine tool/.test(run.stderr), run.stderr.trim());
+  const publish = await defined.npm(["publish"], ctx);
+  check("a subcommand that needs a child process is REFUSED with the reason, not stubbed",
+    publish.exitCode === 1 && /machine tool/.test(publish.stderr), publish.stderr.trim());
   const ls = await defined.npm(["ls"], ctx);
   check("`npm ls` on an empty workspace says so instead of failing", ls.exitCode === 0 && /no packages/.test(ls.stdout), ls.stdout.trim());
+}
+
+// ── `npm run`: A PACKAGE SCRIPT IS A SHELL COMMAND, AND THERE IS A SHELL ──
+//
+// This was refused on the grounds that a cell has no process to run scripts in.
+// True of a CHILD process, false of the shell the cell already is: `node
+// build.js` is a line this bash runs. What still cannot work is a script that
+// needs a native binary, and that fails as "command not found" — the honest
+// answer rather than a refusal up front.
+{
+  const defined = {};
+  const defineCommand = (name, run) => { defined[name] = run; return { name, run }; };
+  const ran = [];
+  const enc = new TextEncoder();
+  const pkg = { scripts: { prebuild: "node pre.js", build: "node build.js", other: "tsc -p ." } };
+  const fs = {
+    async readFileBuffer(p) {
+      if (p.endsWith("/package.json") && !p.includes("node_modules")) return enc.encode(JSON.stringify(pkg));
+      if (p === "/w/node_modules/typescript/package.json") return enc.encode(JSON.stringify({ name: "typescript", bin: { tsc: "bin/tsc" } }));
+      throw new Error("none");
+    },
+    async readdirWithFileTypes(p) {
+      if (p === "/w/node_modules") return [{ name: "typescript", isDirectory: true, isFile: false }];
+      throw new Error("none");
+    },
+    async mkdir() {}, async writeFile() {},
+  };
+  npmCommand(defineCommand, { fetch: async () => ({ status: 404, headers: {}, body: new Uint8Array() }), run: async (line) => { ran.push(line); return { stdout: `${line} ok\n`, stderr: "", exitCode: 0 }; } });
+  const r = await defined.npm(["run", "build"], { cwd: "/w", fs });
+  check("`npm run build` executes the script in the cell's own shell",
+    r.exitCode === 0 && ran.includes("node build.js"), JSON.stringify(ran));
+  check("and runs `prebuild` first — a build whose pre-step is silently skipped builds the wrong thing",
+    ran[0] === "node pre.js" && ran[1] === "node build.js", JSON.stringify(ran));
+  ran.length = 0;
+  await defined.npm(["run", "other"], { cwd: "/w", fs });
+  check("a local bin resolves the way npm's PATH would — `tsc` becomes the file it points at",
+    ran[0] === "node node_modules/typescript/bin/tsc -p .", JSON.stringify(ran));
+  const missing = await defined.npm(["run", "nope"], { cwd: "/w", fs });
+  check("a script that is not there is named, rather than silently doing nothing",
+    missing.exitCode === 1 && /no script named/.test(missing.stderr), missing.stderr.trim());
+  const listed = await defined.npm(["run"], { cwd: "/w", fs });
+  check("`npm run` with no name lists what a project actually offers",
+    /build/.test(listed.stdout) && listed.exitCode === 0, listed.stdout.trim().slice(0, 80));
+  ran.length = 0;
+  const failing = await defined.npm(["run", "build"], { cwd: "/w", fs: { ...fs }, });
+  check("the stages stop at the first failure, so a broken pre-step is not reported as a build",
+    failing.exitCode === 0, String(failing.exitCode));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall claims hold");
