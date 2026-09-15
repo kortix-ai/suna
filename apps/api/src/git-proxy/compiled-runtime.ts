@@ -182,12 +182,15 @@ if (opencodeConfigArchiveBase64 && manifest.opencode_config_archive_sha256) {
 }
 
 const daemonSource = ${JSON.stringify(agentBundle)};
+const daemonUrl = URL.createObjectURL(new Blob([daemonSource], {type: "text/javascript"}));
 try {
-  const daemon = await import("data:text/javascript;base64," + Buffer.from(daemonSource).toString("base64"));
+  const daemon = await import(daemonUrl);
   if (typeof daemon.startCompiledRuntime === "function") await daemon.startCompiledRuntime();
 } catch (error) {
   process.stderr.write("Compiled Kortix daemon failed: " + error.message + "\\n");
   process.exit(1);
+} finally {
+  URL.revokeObjectURL(daemonUrl);
 }
 `;
 }

@@ -6959,3 +6959,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** preview `dc75d054ae` downloaded the compiled daemon, but Node rejected its static `bun:sqlite` import before the Bun trampoline ran. The previous test bundle used only Node-compatible imports.
 **Rule:** load the native daemon module only after selecting its runtime. Verify the real bundle and a native import through the older launch command. Treat commit SHAs as commits when creating session branches; never prefix them with `refs/heads/`.
 **Enforcer:** `compiled-runtime.test.ts` runs SQLite through the Node-to-Bun path and checks startup failures. `compiled-agent-bundle.test.ts` compiles the real daemon and checks its deferred startup export. `e2e-project-session-branch-git.test.ts` verifies pinned commits through GitHub and a real Git repository after its main branch moves.
+
+### Boot the complete artifact, not only a small substitute (2026-09-15)
+
+**Incident:** preview `4421bc829f` failed with Bun `NameTooLong` when importing the full daemon as a base64 data URL. Small native-module fixtures and manifest checks passed.
+**Rule:** use a Blob URL for deferred in-memory module loading. Verify the complete artifact through the provider's launch command and assert its HTTP readiness before deployment.
+**Enforcer:** `compiled-agent-bundle.test.ts` compiles the real daemon, launches the resulting artifact with Node, and checks the execution-only HTTP health response after the Bun trampoline.

@@ -2272,3 +2272,8 @@ trampoline could run. The compiled launcher now defers daemon module loading
 until Bun starts. Tests exercise a native SQLite import and the real daemon
 bundle. Session branch creation now accepts full commit SHAs through both the
 GitHub refs API and Git transport.
+
+The full daemon also exceeded Bun's resolver limit for a `data:` URL. Deferred
+loading now uses an in-memory Blob URL. The regression boots the complete daemon
+through Node and checks its HTTP readiness. A manifest-only check or a small
+mock bundle does not prove that the executable artifact starts.
