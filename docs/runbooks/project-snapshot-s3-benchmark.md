@@ -548,6 +548,75 @@ hundred milliseconds shorter and the trickling tail should disappear with the
 distance; that case could not be measured because the test account's policy
 denied US buckets, and it is where S3 would pull clearly ahead of Git.
 
+### Real S3, bucket in the boxes' region (us-east-2): plain vs Transfer Acceleration, 2026-09-15
+
+Same local topology (this branch at `fe7aee341b`, worktree API on the laptop
+behind a cloudflared quick tunnel, Daytona `us` target, 400-file fixture) with
+the object store a **real bucket in Ohio** built from the repo's module in a
+throwaway account (`transfer_acceleration = true`; API on the SDK default
+chain through `AWS_PROFILE` → `credential_process`, no static key). The
+fixture's objects were rebuilt into that bucket and verified (`tree`
+1,576,450 B / 652 entries, `blobs` 1,600,272 B). Three runs, arms alternating,
+one warm-up discarded each. Every round records where its box sat (ipinfo) and
+an in-box `curl` first-byte probe (`--probe-hosts`); runs B and C also record
+the daemon's retry log (`--daemon-log`). Bucket destroyed afterwards.
+
+| Run | Arm | Rounds / failures / fallbacks | Acquisition p50 / p95 (min / max) | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor | S3 rounds retried |
+|---|---|---|---|---|---|---|---|
+| A | Git (`git` mode) | 30 / 0 / 0 | 1,055 / 1,364 ms (453 / 1,385) | 1,080 / 1,391 ms | 6,240 / 9,950 ms | — | — |
+| A | **S3 v2 + presign, accelerated** (`<bucket>.s3-accelerate`) | 30 / 0 / **1** | **275 / 2,186 ms** (218 / 2,778) | 315 / 2,221 ms | 9,862 / 14,474 ms | env 23, proxy 6 | **7 / 30** |
+| C | S3 v2 + presign, accelerated (S3 arm only) | 20 / 0 / 0 | 555 / 1,451 ms (212 / 2,343) | 590 / 1,502 ms | 9,850 / 10,588 ms | env 11, proxy 9 | **9 / 20** |
+| B | Git (`git` mode) | 30 / 0 / 0 | 976 / 1,338 ms (572 / 1,339) | 1,004 / 1,363 ms | 6,052 / 7,657 ms | — | — |
+| B | **S3 v2 + presign, plain** (`<bucket>.s3.us-east-2`) | 30 / 0 / 0 | **288 / 1,367 ms** (218 / 2,043) | 320 / 1,401 ms | 9,956 / 13,633 ms | env 28, proxy 2 | 2 / 30 |
+
+Single-attempt S3 rounds only — A: 23 rounds, 269 / 582 ms (max 1,194); C:
+11 rounds, 302 / 555 ms; B: 28 rounds, 288 / 716 ms (max 857). A retried
+round costs 1,205–1,367 ms at the median (max 2,343): the backoff (300–550 ms)
+plus a proxy descriptor round trip plus the second download. Hydration `ok`
+79/79 (import p50 95–167 ms); extractor `tar` throughout.
+
+**Where the boxes were (ipinfo, 140 boots):** New York City 103, Ashburn 27,
+Chicago 6, Los Angeles 4. In-box first byte, p50 over the rounds: accelerate
+host 69–95 ms (TCP connect 13–16 ms), regional Ohio host 77–84 ms (connect
+26–31 ms), `s3.us-east-1` ~35 ms, `s3.us-west-2` ~227 ms; the laptop's tunnel
+(the Git bundle's path) 202–245 ms; `dev-api.kortix.com` 235–351 ms. So
+acceleration shortens the handshake by ~15 ms and gains nothing at first byte
+from these boxes, and the Git arm's network distance on this topology is the
+same as to the dev API — the Git numbers are representative.
+
+**The retries are one thing.** All 13 retry events the daemon logged in runs B
+and C read `download / unavailable: transfer closed after N of 1,576,450
+bytes`, N 3.5–53.6 KB short: Bun's fetch (1.3.14, the daemon's runtime)
+delivered `close` before `end` on a `Content-Length` body of a keep-alive
+HTTP/1.1 response. The accelerate host is a CloudFront edge (`Via: …
+cloudfront.net`, `X-Cache: Miss from cloudfront`); the regional host is plain
+S3 and shows the same signature at a lower rate. The daemon's short-close guard
+catches it and the retry (a fresh proxy descriptor) succeeds; one round in run
+A failed three times and fell back to Git (859 ms). It only happens on the
+boot-time request: from a kept New York box, 30 `curl` fetches and 90 Bun
+1.3.14 fetches of the same presigned accelerate URL (warm keep-alive; under
+four busy CPU loops; `Connection: close` per request) were all 1,576,450
+bytes. Rate: 7/30 and 9/20 accelerated, 2/30 plain (the earlier plain Ohio
+run, 2026-09-15 afternoon: 2/20).
+
+**Full boot** (`runtimeReady`) is 9.9 s on S3 against 6.1 s on Git in every
+run although S3 materializes the repository 700 ms earlier: the daemon's early
+root-list poll lands in OpenCode's bind→handler window (`opencode-listening`
+6.2 s vs 2.1 s in-guest), the fix for which was reverted out of this PR
+(`14ccfd135a` → `fe7aee341b`). `repo-materialized` is the acquisition
+comparison; `runtimeReady` is not.
+
+Reading: from a bucket in the boxes' own region the S3 boot acquires the
+project **3.4–3.8× faster than the Git bundle at the median** (275–288 ms vs
+976–1,055 ms) and its floor is 218 ms against Git's 453. Transfer Acceleration
+adds nothing here (same ~270–300 ms clean median, no first-byte gain) and
+triples the boot-time retry rate, which is what puts the accelerated p95
+(2,186 ms) above Git's (1,364) — keep it off; with the plain endpoint the p95s
+are level (1,367 vs 1,338) and every boot stays on S3. The retry cost is the
+remaining lever: a short close on the env-presigned URL is transient and the
+URL is still valid, so retrying it in place (no backoff, no proxy descriptor)
+would cut an affected boot from ~1.3 s to ~0.6 s.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
