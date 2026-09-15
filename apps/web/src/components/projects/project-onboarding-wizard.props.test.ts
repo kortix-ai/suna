@@ -140,10 +140,15 @@ describe('ProjectOnboardingWizard: desktop Close', () => {
     expect(code.match(/completeThenNotify\(/g)?.length).toBe(2);
   });
 
-  test('the chrome bar clears the window controls on desktop', () => {
-    const bar = code.match(/<div className="[^"]*grid h-14[^"]*"/)?.[0];
-    expect(bar).toBeDefined();
-    expect(bar).toContain('kx-desktop-band-row');
+  test('the chrome bar sits below the title-bar band on desktop', () => {
+    // The bar is in flow, so it takes the shared spacer rather than a `top`.
+    const spacerAt = code.indexOf('<div className="kx-titlebar-spacer" aria-hidden />');
+    const barAt = code.indexOf('grid h-14');
+    expect(spacerAt).toBeGreaterThan(-1);
+    expect(barAt).toBeGreaterThan(spacerAt);
+    // Nothing between them: the spacer is the bar's own offset.
+    expect(code.slice(spacerAt, barAt)).not.toContain('</div>');
+    expect(code).not.toContain('kx-desktop-band-row');
   });
 });
 

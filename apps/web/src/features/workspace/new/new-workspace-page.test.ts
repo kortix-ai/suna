@@ -144,11 +144,14 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(code).toContain("from '@/components/desktop/desktop-close-button'");
   });
 
-  test('the top row clears the window controls on desktop', () => {
-    // macOS traffic lights sit top-left; Win/Linux controls sit top-right.
+  test('the top row sits below the title-bar band on desktop', () => {
+    // The band holds the macOS traffic lights and the Win/Linux controls. The
+    // email used to sit directly under the lights.
     const row = code.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
     expect(row).toBeDefined();
     expect(row).toContain('kx-desktop-band-row');
+    // The old side indents and their gutter variable are gone.
+    expect(row).not.toContain('--kx-band-row-gutter');
   });
 });
 

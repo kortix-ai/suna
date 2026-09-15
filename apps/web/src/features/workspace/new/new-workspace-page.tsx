@@ -290,10 +290,10 @@ export function NewWorkspacePage() {
           the row spans the viewport without overflowing left. Sits ahead of
           the <form> so it stays reachable regardless of form state.
 
-          `kx-desktop-band-row` keeps both ends clear of the window controls on
-          desktop and puts the row on the traffic lights' midline on macOS. The
-          gutter variable is this row's `sm:px-6`. */}
-      <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 [--kx-band-row-gutter:calc(var(--spacing)*6)] sm:top-4 sm:px-6">
+          `kx-desktop-band-row` moves the row below the title-bar band on
+          desktop, clear of the macOS traffic lights and the Win/Linux window
+          controls. */}
+      <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
         {/* Create-into account lives here — not in the form body. One account
             collapses to muted identity text (email when none); two or more
             opens the Select on click. */}

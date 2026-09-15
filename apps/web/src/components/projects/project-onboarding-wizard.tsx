@@ -293,9 +293,11 @@ export function ProjectOnboardingWizard({
               centred (both side tracks are equal) while each control reserves its
               own space at every width. Do not go back to absolute centring.
 
-              `kx-desktop-band-row` insets both ends past the window controls on
-              desktop: the macOS traffic lights otherwise cover the Back arrow. */}
-            <div className="kx-desktop-band-row grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-4">
+              On desktop `.kx-titlebar-spacer` above the bar drops it below the
+              title-bar band: the macOS traffic lights otherwise cover the Back
+              arrow. */}
+            <div className="kx-titlebar-spacer" aria-hidden />
+            <div className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-4">
               <div className="flex justify-start">
                 {index > 0 && (
                   <Button

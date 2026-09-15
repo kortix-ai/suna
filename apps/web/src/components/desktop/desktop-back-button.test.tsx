@@ -115,20 +115,15 @@ describe('only the desktop shell shows Back', () => {
     expect(unlayered(shown!.index!)).toBe(true);
   });
 
-  // A top row on a full-screen frame (`/new`, the onboarding wizard) spans the
-  // window edge to edge. On desktop its ends meet the traffic lights (macOS,
-  // left) and the web-drawn window controls (Win/Linux, right).
-  test('a band row clears the window controls on both platforms', () => {
+  // A positioned top row on a full-screen frame (`/new`, the `/projects/start`
+  // sign-out) starts in the title-bar band: traffic lights on macOS, the
+  // web-drawn window controls on Win/Linux. On desktop it drops below the band.
+  test('a band row sits below the title-bar band on desktop', () => {
     const row = css.match(/html\[data-desktop='true'\]\s+\.kx-desktop-band-row\s*\{([^}]*)\}/);
-    const macRow = css.match(
-      /html\[data-desktop-platform='macos'\]\s+\.kx-desktop-band-row\s*\{([^}]*)\}/,
-    );
-    expect(row?.[1]).toMatch(/padding-left:[^;]*var\(--kx-titlebar-control-left\)/);
-    expect(row?.[1]).toMatch(/padding-right:[^;]*var\(--kx-titlebar-controls-width\)/);
-    // macOS centres the row on the lights' midline, like every band control.
-    expect(macRow?.[1]).toMatch(/top:\s*var\(--kx-titlebar-control-top\)/);
+    expect(row?.[1]).toMatch(/top:\s*calc\(\s*var\(--kx-titlebar-inset\)/);
+    // Below the band there is nothing to indent past: the row keeps its padding.
+    expect(row?.[1]).not.toMatch(/padding/);
     expect(unlayered(row!.index!)).toBe(true);
-    expect(unlayered(macRow!.index!)).toBe(true);
   });
 
   // Below `md` the auth mark pins to the top-left corner. On desktop that
