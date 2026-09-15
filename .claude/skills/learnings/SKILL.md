@@ -21,6 +21,59 @@ linked, not inlined.
 
 ## Register
 
+### Preserve unlinked legacy tool rows as labeled native history (2026-09-15)
+
+**When:** a legacy tool row has no exact assistant or call link, keep its source
+role and metadata in the raw archive. If it is a source-compressed result, or
+its referenced assistant is absent from cutoff history, put its exact source
+content in a labeled native history message. Do not guess an assistant anchor.
+*Near-miss:* 171 compressed tool rows and one missing-assistant result blocked
+five production threads despite their source content being available.
+*Enforcer:* `projection.test.ts` covers both dispositions; the production pilot
+verified all six compressed rows in native history and retained 106 raw rows.
+
+### Retain malformed source tool arguments without inventing JSON (2026-09-15)
+
+**When:** legacy tool arguments are invalid JSON, put the exact string in
+`state.input.legacy_arguments` and keep the original row in the raw archive.
+Do not drop the full thread when the source has no matching tool result.
+*Near-miss:* one 234-row Suna thread remained in projection review because
+one 59-character argument string was malformed.
+*Enforcer:* `projection.test.ts` asserts the native error part keeps the string;
+production reassessment released that thread with zero unresolved rows.
+
+### Rotate a dead-lettered create key only after proving no session exists (2026-09-15)
+
+**When:** retrying a session create that hit a temporary cap, inspect the
+idempotency command. A `dead_lettered` command replays its old error forever.
+Require no bound `session_id`, an exact cap error, and owner GET 404. Keep the
+same destination session UUID and record one fresh idempotency key in the ledger.
+*Near-miss:* 27 Suna creates kept returning the stored 100-session error after
+the project had one running session. One rotated pilot imported successfully.
+*Enforcer:* production key rotation verifies command, destination absence, and
+archive checkpoint before permitting a new key.
+
+### Verify native attachment references by authenticated bytes (2026-09-15)
+
+**When:** comparing imported native file parts, expect the runtime proxy to
+replace a large inline `data:` URL with `/kortix/part/`. Verify session,
+message, and part IDs, then fetch the reference as the owner. Compare MIME,
+byte count, and SHA-256 with the captured source bytes.
+*Near-miss:* two production sessions stayed in apply review because their
+byte-identical images changed URL representation after import.
+*Enforcer:* production apply rejects any attachment reference or byte mismatch
+before setting `verified`; both reviewed sessions passed readback.
+
+### Preserve the original Daytona lifecycle state during source capture (2026-09-15)
+
+**When:** capturing a legacy workspace, record the source box state. Capture a
+`started` box in place. Start and return a `stopped` box to `stopped`. Start and
+return an `archived` box to `archived`. Hold transient/error states in review.
+*Near-miss:* 14 prepared captures blocked because boxes were no longer archived;
+some were actively used and must not be stopped by the transfer.
+*Enforcer:* production capture records initial/final states and requires a
+state-preservation timestamp before the batch marks capture complete.
+
 ### Keep a thread in review when any image archive is pending (2026-09-15)
 
 **When:** preparing or reassessing a legacy thread, treat a pending image URL

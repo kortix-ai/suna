@@ -144,6 +144,16 @@ original usage remains in the raw records. `ready_for_apply` is always false.
 Native import success does not prove complete attachment conversion or coverage
 of all source formats.
 
+A source-compressed tool row without an assistant or call link becomes a labeled
+native history message with its exact source content. Its raw archive retains
+the original `tool` role and metadata. A tool row whose assistant ID is absent
+from cutoff history uses the same visible fallback; never attach it to a guessed
+assistant. A linked result without a source function name uses
+`legacy_unknown`, with the missing-name fact recorded in the part metadata.
+Malformed tool arguments remain as the exact original string in the native
+error part. These conversions preserve source information but change how the
+current runtime presents an unlinked tool row.
+
 ## Source manifest
 
 Record the complete source set before preparing destination writes:
@@ -280,8 +290,9 @@ An approved 404 exception has four history artifacts and a fresh provider 404
 proof. Its queue state is `verified-approved-404-file-skip`. It does not claim
 that files were restored. A missing sandbox reference has no such exception.
 Keep it in `workspace-discovery` until an exact project, account, owner, and
-sandbox relation is found. Keep an active source sandbox in `capture-review`;
-do not stop a current user's source work to clear a queue.
+sandbox relation is found. Capture a `started` source box in place with two
+matching inventories. Return a `stopped` or `archived` box to its original
+state. Keep restoring, archiving, and error states in `capture-review`.
 
 Image URLs require a matching Storage inventory row and byte-verified private
 archive. A pending image keeps its thread in `projection-review`, even when the
@@ -289,11 +300,44 @@ native projector reports no unresolved content block. Tool results require an
 exact assistant link. The projector supports both legacy tool metadata formats.
 Unmatched rows remain in review with their raw record archived.
 
+The runtime proxy can replace an imported inline image URL with
+`/kortix/part/`. Verify that reference's session, message, and part IDs.
+Fetch its bytes as the session owner and compare MIME, count, and SHA-256 with
+the source archive. Two production apply reviews passed after this exact
+readback; URL-string equality alone blocked their byte-identical images.
+
 The project allows 100 active sessions. The private runner stops verified
 sessions before that cap blocks later imports. Requeue only failures whose
 attempt logs show the cap, and reuse their prepared checkpoints. The current
 operator batch uses 16 capture and 16 apply workers. Measure provider and API
 errors before increasing concurrency again.
+
+An admission refusal can dead-letter the create command. Replaying its
+idempotency key returns the stored error even after active sessions stop.
+Before using a fresh key, verify that the old command has no bound session,
+its error is the exact cap refusal, and owner GET returns 404. Keep the prepared
+destination session UUID. Record the new key and command evidence in its ledger
+proof. One production pilot passed this path without creating a duplicate.
+
+One production pilot resumed a stopped Trimaran session to `ready` with the
+same native conversation. The owner API returned all six native messages.
+The sandbox download matched the source hash for its one regular file. Marko's
+browser showed the title, historical response, UUID folder, and PDF file.
+The file view issued an authenticated `/file/content` request that returned
+HTTP 200. The pilot returned to `stopped` with six messages unchanged. This
+pilot proves that path; it does not verify the remaining queue items.
+
+A compressed-tool production pilot retained all 106 source rows in its private
+archive and imported 19 native messages. All six unlinked compressed tool rows
+appeared as labeled history messages. Its empty `/workspace` still had a
+captured root-directory manifest, a restored UUID folder, and file-count
+readback. The session returned to `stopped` after owner verification.
+
+Three source capture pilots verified the lifecycle paths. A `started` Suna box
+yielded 216 files and remained `started`. A `stopped` Trimaran box yielded 22
+files and returned to `stopped`. An `archived` Suna box yielded 98 files and
+returned to `archived`. Every pilot checked the tarball digest and two matching
+workspace inventories. These pilots do not establish a provider snapshot.
 
 ## Rehearsal and GO gates
 

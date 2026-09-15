@@ -58,6 +58,47 @@ test('legacy metadata tool results retain exact assistant links and result bytes
  expect((part.state as any).input).toEqual({});
 });
 
+test('malformed legacy tool arguments remain readable in a native error part',()=>{
+ const assistant=row(2,'assistant',{role:'assistant',content:'tool failed',tool_calls:[{id:'broken',function:{name:'legacy_search',arguments:'{"query":'}}]});
+ const result=projectThread({ref,thread,rows:[row(1,'user',{content:'search'}),assistant],runtimeVersion:'1.18.23'});
+ expect(result.audit.unresolved).toEqual([]);
+ const part=result.runtime.messages[1]!.parts.find(x=>x.type==='tool')!;
+ expect((part.state as any).input).toEqual({legacy_arguments:'{"query":'});
+ expect((part.state as any).status).toBe('error');
+});
+
+test('unlinked compressed tool content becomes a labeled native history message',()=>{
+ const tool=row(3,'tool','original compressed tool output', {compressed:true,compressed_content:'summary'});
+ const result=projectThread({ref,thread,rows:[row(1,'user',{content:'search'}),row(2,'assistant',{content:'working'}),tool],runtimeVersion:'1.18.23'});
+ expect(result.audit.unresolved).toEqual([]);
+ expect(result.runtime.messages).toHaveLength(3);
+ expect(result.audit.dispositions.find(x=>x.source_id===tool.message_id)?.disposition).toBe('native-compressed-tool-message');
+ expect(result.runtime.messages[2]!.parts[0]!.text).toContain('original compressed tool output');
+ expect(result.runtime.messages[2]!.parts[0]!.text).toContain(tool.message_id);
+});
+
+test('exact linked tool results with no source function name retain an unknown label',()=>{
+ const assistant=row(2,'assistant',{content:'answer'});
+ const tool=row(3,'tool','raw result', {assistant_message_id:assistant.message_id,tool_call_id:'call',result:'exact result'});
+ const result=projectThread({ref,thread,rows:[row(1,'user',{content:'ask'}),assistant,tool],runtimeVersion:'1.18.23'});
+ expect(result.audit.unresolved).toEqual([]);
+ const part=result.runtime.messages[1]!.parts.find(x=>x.type==='tool')!;
+ expect(part.tool).toBe('legacy_unknown');
+ expect((part.state as any).output).toBe('exact result');
+ expect((part.state as any).metadata.legacy_function_name_missing).toBe(true);
+});
+
+test('a tool result with a missing source assistant remains visible as native history',()=>{
+ const missing='00000000-0000-4000-8000-ffffffffffff';
+ const tool=row(3,'tool',{role:'tool',content:'raw result'}, {assistant_message_id:missing,function_name:'legacy_search',tool_call_id:'orphan-call',result:{answer:7}});
+ const result=projectThread({ref,thread,rows:[row(1,'user',{content:'ask'}),row(2,'assistant',{content:'answer'}),tool],runtimeVersion:'1.18.23'});
+ expect(result.audit.unresolved).toEqual([]);
+ expect(result.audit.dispositions.find(x=>x.source_id===tool.message_id)?.disposition).toBe('native-orphan-tool-message');
+ expect(result.runtime.messages).toHaveLength(3);
+ expect(result.runtime.messages[2]!.parts[0]!.text).toContain('raw result');
+ expect(result.runtime.messages[2]!.parts[0]!.text).toContain(missing);
+});
+
 test('unknown content blocks are retained and flagged rather than discarded', () => {
   const result = projectThread({ ref, thread, rows: [row(1, 'user', { content: [{ type: 'image_url', image_url: { url: 'https://source.invalid/a.png' } }] })], runtimeVersion: '1.18.23' });
   expect(result.runtime.messages[0]!.parts[0]!.text).toContain('https://source.invalid/a.png');
