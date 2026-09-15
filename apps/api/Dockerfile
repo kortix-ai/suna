@@ -294,6 +294,7 @@ COPY packages/sdk ./packages/sdk
 # trees + package.json must be present in the image. Without them the Sandbox
 # panel throws "Failed to list sandbox templates: ENOENT … package.json".
 COPY apps/kortix-sandbox-agent-server/package.json ./apps/kortix-sandbox-agent-server/package.json
+COPY apps/kortix-sandbox-agent-server/bun.lock ./apps/kortix-sandbox-agent-server/bun.lock
 COPY apps/kortix-sandbox-agent-server/src ./apps/kortix-sandbox-agent-server/src
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/cli/src ./apps/cli/src

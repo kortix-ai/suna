@@ -32,4 +32,7 @@ test('daemon artifacts include the shared MCP config source and pinned dependenc
     const dockerfile = readFileSync(join(import.meta.dir, '../../../..', name, 'Dockerfile'), 'utf8');
     expect(dockerfile).toContain('COPY packages/sdk/src/core/pi/mcp.ts /repo/packages/sdk/src/core/pi/mcp.ts');
   }
+  const apiDockerfile = readFileSync(join(import.meta.dir, '../../../../api/Dockerfile'), 'utf8');
+  const runtime = apiDockerfile.slice(apiDockerfile.lastIndexOf('\nFROM '));
+  expect(runtime).toContain('COPY apps/kortix-sandbox-agent-server/bun.lock ./apps/kortix-sandbox-agent-server/bun.lock');
 });

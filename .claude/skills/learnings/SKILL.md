@@ -6424,3 +6424,9 @@ A merge with the grant provenance guard treated an intentionally pinned Pi commi
 **Incident:** preview Edit generated a message ID from visible history after rewind. Pi rejected it because discarded messages still reserved higher IDs. The inbox retained the replacement without running it.
 **Rule:** read the session's immutable history selections before delivery. Place replacement IDs above both visible and discarded messages, then persist the assigned ID before forwarding. A storage failure returns the claimed command to a retryable state.
 **Enforcer:** `queued-continue-inbox-delivery.test.ts` covers visible user and assistant tips, persisted placement, and storage failure. `session-history.test.ts` checks session isolation. Preview verification submits an edited message through the real browser and checks the streamed answer and reloaded history.
+
+### Ship every snapshot fingerprint input in the API runtime image (2026-09-15)
+
+**Incident:** preview MCP discovery could not start an environment. Snapshot fingerprinting failed because the API image omitted the daemon's `bun.lock`.
+**Rule:** when adding a fingerprint input, include it in the final API image. Build-stage availability does not prove runtime availability. Verify a fresh environment through the deployed API.
+**Enforcer:** `scaffold-fingerprint-closure.test.ts` checks the runtime-stage lockfile copy. Live Pi verification provisions an environment before exercising MCP calls.
