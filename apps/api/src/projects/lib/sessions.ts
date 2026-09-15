@@ -501,6 +501,22 @@ export async function buildSessionSandboxEnvVars(input: {
   // value to the sandbox. Every OTHER secret is project-wide (secret
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
+  // Per-session secret policy, read by sessionId inside the builder so all three
+  // call sites (create, restart, open/ensure) are covered — no caller can
+  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
+  // so a backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB).
+  const [sessionPolicyRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      createdBy: projectSessions.createdBy,
+      metadata: projectSessions.metadata,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+  const resourceSourceSha = input.platformMetaAgent ? undefined : agentResourceSourceSha(sessionPolicyRow?.metadata);
+  const configRef = resourceSourceSha ?? input.baseRef;
   let agentGrantEnv: string[] | 'all' | undefined;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
@@ -526,11 +542,11 @@ export async function buildSessionSandboxEnvVars(input: {
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
-            input.baseRef,
+            configRef,
           )
           : await resolveCompiledAgentConfigForSession(
               gitProject,
-              input.baseRef,
+              configRef,
             ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
@@ -555,20 +571,6 @@ export async function buildSessionSandboxEnvVars(input: {
     });
   }
 
-  // Per-session secret policy, read by sessionId inside the builder so all three
-  // call sites (create, restart, open/ensure) are covered — no caller can
-  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
-  // so a backend-vouched session only receives the secrets the wrapper named
-  // (null → passthrough, byte-identical to pre-KaaB).
-  const [sessionPolicyRow] = await db
-    .select({
-      secretsAllowlist: projectSessions.secretsAllowlist,
-      createdBy: projectSessions.createdBy,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
-    .limit(1);
   const grantEnvForSession = input.platformMetaAgent
     ? []
     : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
@@ -695,7 +697,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
-      agentResourcesSha: input.platformMetaAgent ? undefined : agentResourceSourceSha(sessionPolicyRow?.metadata),
+      agentResourcesSha: resourceSourceSha,
       workspaceMode: input.workspaceMode,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,

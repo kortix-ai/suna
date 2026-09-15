@@ -6947,3 +6947,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Near-miss:** the Pi YAML preview test supplied an explicit model. Custom code and prompts passed, but a later session without that override used the platform model. Session metadata replaced the bundle's configured model on SDK prompts.
 **Rule:** verify omitted and explicit model inputs separately. Read the selected source revision before saving the session default. Assert the persisted choice and the model that produces the response.
 **Enforcer:** `e2e-project-session-contract.test.ts` checks v2/v3 source pinning and request overrides through the session route. `default-model.test.ts` checks configured model precedence, saved preferences, and entitlement.
+
+### Required runtime capabilities must exist before first readiness (2026-09-15)
+
+**Incident:** Pi preview `dab26628aa` booted OpenCode from a last-ready image. The old daemon reported ready without installing declared resources or loading the custom tool. Its background update took effect only after restart.
+**Rule:** converge required runtime capabilities before reporting ready. Use the pinned compiled daemon for resource-bearing branch sessions. Restricted sessions must use an image fingerprint that includes the baked daemon. Pin configuration and checkout hints to the same resource revision.
+**Enforcer:** `session-runtime-env.test.ts`, `e2e-project-session-contract.test.ts`, `session-sandbox.test.ts`, and the snapshot freshness/fingerprint tests cover first boot, replacement, moved branches, restricted workspaces, and image selection. Live verification must call the custom tool on the first boot and read its actual tool result.

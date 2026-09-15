@@ -491,3 +491,24 @@ test('only declared resources add an immutable resource pin, including restricte
     expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
   }
 });
+
+test.each([true, false])('resource-bearing OpenCode boots its pinned compiled daemon on fresh=%s', freshSession => {
+  const pin = 'a'.repeat(40);
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession, restoreSessionBranch: !freshSession, compiledBootMode: 'off', agentResourcesSha: pin });
+  expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
+  expect(env.KORTIX_BASE_SHA).toBe(pin);
+  expect(env.KORTIX_BASE_REF).toBe(pin);
+  expect(env.KORTIX_DEFAULT_BRANCH).toBe(pin);
+});
+test('resource source pin rejects Git hints prepared for a newer branch tip', () => {
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, agentResourcesSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), gitDeltaBundleBase64: 'moved', gitDeltaBundleRemote: true, gitDeltaParentSha: 'c'.repeat(40), gitDeltaParentCommitBase64: 'parent', projectSnapshotMode: 'prefer-s3', projectSnapshotPin: 'moved-snapshot' });
+  expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
+  for (const key of ['KORTIX_GIT_DELTA_BUNDLE_BASE64', 'KORTIX_GIT_DELTA_BUNDLE_REMOTE', 'KORTIX_GIT_DELTA_PARENT_SHA', 'KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64', 'KORTIX_PROJECT_SNAPSHOT_PIN']) expect(env).not.toHaveProperty(key);
+});
+
+test.each(['read', 'runtime'] as const)('resource pin does not grant repository access to %s workspaces', workspaceMode => {
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, workspaceMode, agentResourcesSha: 'a'.repeat(40), freshSession: true, compiledBootMode: 'required' });
+  expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
+  expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
+  for (const key of ['KORTIX_REPO_URL', 'KORTIX_COMPILED_BOOT_MODE', 'KORTIX_BASE_SHA']) expect(env).not.toHaveProperty(key);
+});

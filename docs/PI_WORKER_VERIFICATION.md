@@ -2250,3 +2250,19 @@ API. The Pi environment must report OpenCode disabled.
 Workspace backup, safe seven-day cleanup, portable custom hooks, and the remaining
 runtime parity audit remain separate work. This checkpoint enables no Durable
 Objects and does not authorize a merge to main.
+
+### First-boot image compatibility
+
+The first preview session exposed an older image reporting ready before its
+daemon update took effect. The custom tool and declared files were unavailable
+until restart. Compiler and HTTP tests alone did not catch this.
+
+Resource-bearing OpenCode branch sessions now require the compiled daemon before
+readiness. Their configuration, checkout base, and resource bytes use the saved
+commit. Git hints for a different revision are discarded. Replacement sessions
+retain that identity. Restricted workspaces receive no Git credentials or checkout;
+they require an image whose fingerprint includes the current baked daemon.
+
+The regression tests cover fresh and replacement boots, moved branches,
+restricted workspaces, and simultaneous compiled/baked fingerprint requests.
+Preview verification and its exact source SHA are recorded in PR #6998.

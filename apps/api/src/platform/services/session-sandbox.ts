@@ -341,6 +341,9 @@ export async function provisionSessionSandbox(opts: {
             source: 'session-start',
             provider: targetProvider,
             allowProjectImage: opts.allowProjectImage,
+            ...(opts.extraEnvVars?.KORTIX_AGENT_RESOURCES_SHA ? {
+              requireCurrentRuntime: opts.extraEnvVars.KORTIX_COMPILED_BOOT_MODE !== 'required',
+            } : {}),
           });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.

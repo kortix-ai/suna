@@ -599,6 +599,7 @@ export async function refreshTemplateState(
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  opts: { requireCurrentRuntime?: boolean } = {},
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -616,7 +617,9 @@ export async function computeTemplateIdentity(
    */
   swapKey: string;
 }> {
-  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint(
+    opts.requireCurrentRuntime ? 'off' : config.KORTIX_COMPILED_BOOT_MODE,
+  );
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
   const hashInputs = {
     dockerfile: userDockerfile,
@@ -967,8 +970,7 @@ const runtimeVersionKey = () =>
 const sandboxVersionStr = () =>
   `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:codex:${CODEX_CLI_VERSION}:claude:${CLAUDE_CODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
-let runtimeFingerprintCache: { key: string; value: string } | null = null;
-let runtimeFingerprintInflight: Promise<string> | null = null;
+const runtimeFingerprintCache = new Map<string, Promise<string>>();
 let nonAgentFingerprintCache: { key: string; value: string } | null = null;
 let nonAgentFingerprintInflight: Promise<string> | null = null;
 
@@ -987,26 +989,24 @@ let nonAgentFingerprintInflight: Promise<string> | null = null;
  * the warm-base name from this fingerprint so a new release (SANDBOX_VERSION
  * bump / runtime source change) automatically gets a fresh warm base.
  */
-export async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  const key = runtimeVersionKey();
-  if (runtimeFingerprintCache?.key === key) return runtimeFingerprintCache.value;
-  if (runtimeFingerprintInflight) return runtimeFingerprintInflight;
+export async function currentRuntimeArtifactFingerprint(
+  mode: 'off' | 'shadow' | 'prefer' | 'required' = config.KORTIX_COMPILED_BOOT_MODE,
+): Promise<string> {
+  const key = `${runtimeVersionKey()}:${snapshotEmbedsAgentForBootMode(mode)}`;
+  const cached = runtimeFingerprintCache.get(key);
+  if (cached) return cached;
 
-  runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
+  const fingerprint = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: runtimeArtifactsForBootMode(mode),
   })
-    .then((value) => {
-      runtimeFingerprintCache = { key, value };
-      runtimeFingerprintInflight = null;
-      return value;
-    })
     .catch((err) => {
-      runtimeFingerprintInflight = null;
+      runtimeFingerprintCache.delete(key);
       throw err;
     });
-  return runtimeFingerprintInflight;
+  runtimeFingerprintCache.set(key, fingerprint);
+  return fingerprint;
 }
 
 export function runtimeArtifactsForBootMode(

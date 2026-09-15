@@ -234,6 +234,7 @@ export async function ensureSandboxImage(
     source?: SnapshotBuildSource;
     /** False when the session may not receive full repository bytes. */
     allowProjectImage?: boolean;
+    requireCurrentRuntime?: boolean;
     /**
      * The provider the SESSION will run on (its sandbox provider). Build there,
      * not on the template row's last-built provider — otherwise a template built
@@ -252,7 +253,9 @@ export async function ensureSandboxImage(
     throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
   }
 
-  const identity = await computeTemplateIdentity(project, template);
+  const identity = await computeTemplateIdentity(project, template, {
+    requireCurrentRuntime: opts.requireCurrentRuntime,
+  });
   const blockingPreparation = (opts.source ?? 'session-start') !== 'session-start';
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
@@ -318,9 +321,11 @@ export async function ensureSandboxImage(
   // So boot off the last image this template lineage actually shipped and let
   // the new one bake behind us. The runtime assets the deploy actually changed
   // converge at boot (see last-ready-image.ts for why that is safe and where it
-  // stops being safe). Pre-builds and explicit manual/CR builds skip this and
+  // stops being safe). Sessions with required baked-daemon capabilities skip
+  // this shortcut because readiness cannot precede their installation.
+  // Pre-builds and explicit manual/CR builds skip this and
   // build inline — producing the new image IS their job.
-  if (canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' })) {
+  if (canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start', requireCurrentRuntime: opts.requireCurrentRuntime })) {
     const servable = await findServableLastReadyImage(provider, {
       project,
       template,
@@ -1647,5 +1652,4 @@ export function kickProjectTemplatePrebuilds(
 }
 
 // ─── Per-project COLD rootfs warm ────────────────────────────────────────────
-
 

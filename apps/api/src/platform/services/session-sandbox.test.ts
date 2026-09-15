@@ -676,6 +676,19 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
+  test.each([undefined, 'required'])(
+    'resource-bearing sessions require a current image unless compiled boot supplies the daemon (%s)',
+    async (mode) => {
+      const opened = waitFor(resolve => { onComputeOpened = resolve; });
+      await provisionSessionSandbox({ ...baseOpts(), extraEnvVars: {
+        KORTIX_AGENT_RESOURCES_SHA: 'a'.repeat(40),
+        ...(mode ? {KORTIX_COMPILED_BOOT_MODE: mode} : {}),
+      } });
+      await opened;
+      expect(imageRequests[0]?.requireCurrentRuntime).toBe(mode !== 'required');
+    },
+  );
+
   test('a restricted workspace cannot boot an activated template id', async () => {
     activeRouting = {
       activeProvider: 'platinum',

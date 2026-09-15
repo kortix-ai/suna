@@ -1355,6 +1355,24 @@ describe('project session API contract', () => {
     expect(lastSessionInsertValues).toBeNull();
   });
 
+  test.each(['branch', 'runtime'] as const)('persisted resources pin the %s boot configuration after the source branch moves', async workspaceMode => {
+    const pin = 'a'.repeat(40);
+    const manifest = (prompt: string) => ({ path: 'kortix.yaml', content: `kortix_version: 2\ndefault_agent: default\nagents:\n  default:\n    secrets: none\n    config:\n      prompt: ${prompt}\n` });
+    manifestFile = manifest('Moved source');
+    manifestsByRef[pin] = manifest('Pinned source');
+    sessionRow!.metadata = { agent_resources_sha: pin };
+    const { buildSessionSandboxEnvVars } = await import('../projects/lib/sessions');
+    const env = await buildSessionSandboxEnvVars({
+      accountId: ACCOUNT_ID, projectId: PROJECT_ID, sessionId: SESSION_ID,
+      userId: USER_ID, repoUrl: projectRow.repoUrl!, defaultBranch: 'main',
+      baseRef: 'main', agentName: 'default', workspaceMode, restoreSessionBranch: true,
+      llmGatewayEnabled: false,
+    });
+    expect(JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG!).agent.default.prompt).toBe('Pinned source');
+    expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe(pin);
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe(workspaceMode === 'branch' ? '1' : '0');
+  });
+
   test('v3 selects Pi with the pi_worker feature disabled', async () => {
     enablePiWorker();
     projectRow.metadata = { experimental: { pi_worker: false, llm_gateway: true } };

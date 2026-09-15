@@ -92,6 +92,7 @@ export function auditRelayEnvPassthrough(
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
   const compiledBootMode = input.compiledBootMode ?? 'off';
+  const gitHintMatchesResources = !input.agentResourcesSha || !input.baseSha || input.baseSha === input.agentResourcesSha;
   const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
@@ -113,14 +114,14 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_SESSION_FRESH: '1',
           ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
-          ...(input.gitDeltaBundleBase64
+          ...(gitHintMatchesResources && input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
             : {}),
-          ...(input.gitDeltaBundleRemote ? { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' } : {}),
-          ...(input.gitDeltaParentSha
+          ...(gitHintMatchesResources && input.gitDeltaBundleRemote ? { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' } : {}),
+          ...(gitHintMatchesResources && input.gitDeltaParentSha
             ? { KORTIX_GIT_DELTA_PARENT_SHA: input.gitDeltaParentSha }
             : {}),
-          ...(input.gitDeltaParentCommitBase64
+          ...(gitHintMatchesResources && input.gitDeltaParentCommitBase64
             ? { KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: input.gitDeltaParentCommitBase64 }
             : {}),
         }
@@ -141,7 +142,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // the archive would disclose files that mode withholds.
   const snapshotMode = input.projectSnapshotMode ?? 'git';
   const projectSnapshotEnv: Record<string, string> =
-    allowsFullRepository && input.freshSession && snapshotMode !== 'git'
+    allowsFullRepository && input.freshSession && gitHintMatchesResources && snapshotMode !== 'git'
       ? {
           KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
           ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
@@ -159,7 +160,15 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
-    ...(input.agentResourcesSha ? { KORTIX_AGENT_RESOURCES_SHA: input.agentResourcesSha } : {}),
+    ...(input.agentResourcesSha ? {
+      KORTIX_AGENT_RESOURCES_SHA: input.agentResourcesSha,
+      ...(allowsFullRepository ? {
+        KORTIX_COMPILED_BOOT_MODE: 'required',
+        KORTIX_BASE_SHA: input.agentResourcesSha,
+        KORTIX_BASE_REF: input.agentResourcesSha,
+        KORTIX_DEFAULT_BRANCH: input.agentResourcesSha,
+      } : {}),
+    } : {}),
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
