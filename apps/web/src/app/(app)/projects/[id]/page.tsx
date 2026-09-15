@@ -23,9 +23,8 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
-  attachmentFailureReason,
   postWhenUploaded,
-  SENT_FAILURE_COPY,
+  sentFailureMessage,
   type AttachmentSubmission,
 } from '@/features/session/composer/attachment-submission';
 import { getProjectDetail } from '@kortix/sdk';
@@ -156,6 +155,39 @@ export default function ProjectIndexPage() {
           throw error;
         }
       }
+      // This page unmounts with the navigation; the held POST does not. A
+      // failure stays on the session page as the first prompt's failed status.
+      // Keyed by the created session: a send made on the session page meanwhile
+      // queues behind this POST. It starts at most once per Send.
+      let heldPostStarted = false;
+      const startHeldPost = (held: AttachmentSubmission, sessionId: string) => {
+        if (heldPostStarted) return;
+        heldPostStarted = true;
+        void postWhenUploaded(
+          sessionId,
+          held,
+          async (attachmentParts) =>
+            startSessionWithPrompt(projectId, sessionId, {
+              parts: [{ type: 'text' as const, text }, ...promptFileParts(files, attachmentParts)],
+              overrides: {
+                ...(options?.agent ? { agent: options.agent } : {}),
+                ...(options?.model ? { model: options.model } : {}),
+                ...(options?.variant ? { variant: options.variant } : {}),
+              },
+              clientSentAtMs: sentAtMs,
+            }),
+          (uploadStatus) =>
+            useFirstPromptPreviewStore
+              .getState()
+              .setFirstPromptPreview(sessionId, text, files ?? [], uploadStatus),
+          (error) => sentFailureMessage(error, tComposerAttachments),
+        );
+      };
+      // A refused create can still open the session: the connector gate's Retry
+      // creates it with these same options. By then the Promise below has
+      // rejected, so nothing after the `await` runs, and the composer has taken
+      // the uploads back, so its unmount would delete them.
+      let refused = false;
       const sessionId = await new Promise<string>((resolve, reject) => {
         newSession({
           create: {
@@ -182,6 +214,7 @@ export default function ProjectIndexPage() {
           // Create failed (already surfaced by the hook). Reject so the
           // composer restores its submitted draft and keeps every handle.
           onError: () => {
+            refused = true;
             setSending(false);
             reject(new Error('Session creation failed'));
           },
@@ -208,6 +241,12 @@ export default function ProjectIndexPage() {
             useFirstPromptPreviewStore
               .getState()
               .setFirstPromptPreview(sessionId, text, files ?? []);
+            // A connector-gate Retry of a held send: hand the uploads off again
+            // and POST from here. A ready send's create carried the prompt.
+            if (refused && heldAttachments) {
+              heldAttachments.resubmit();
+              startHeldPost(heldAttachments, sessionId);
+            }
             resolve(sessionId);
           },
         });
@@ -216,29 +255,7 @@ export default function ProjectIndexPage() {
         attachments?.release();
         return;
       }
-      // This page unmounts with the navigation; the held POST does not. A
-      // failure stays on the session page as the first prompt's failed status.
-      // Keyed by the created session: a send made on the session page meanwhile
-      // queues behind this POST.
-      void postWhenUploaded(
-        sessionId,
-        heldAttachments,
-        async (attachmentParts) =>
-          startSessionWithPrompt(projectId, sessionId, {
-            parts: [{ type: 'text' as const, text }, ...promptFileParts(files, attachmentParts)],
-            overrides: {
-              ...(options?.agent ? { agent: options.agent } : {}),
-              ...(options?.model ? { model: options.model } : {}),
-              ...(options?.variant ? { variant: options.variant } : {}),
-            },
-            clientSentAtMs: sentAtMs,
-          }),
-        (uploadStatus) =>
-          useFirstPromptPreviewStore
-            .getState()
-            .setFirstPromptPreview(sessionId, text, files ?? [], uploadStatus),
-        (error) => tComposerAttachments(SENT_FAILURE_COPY[attachmentFailureReason(error)]),
-      );
+      startHeldPost(heldAttachments, sessionId);
     },
     [
       billingLoading,

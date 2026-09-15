@@ -45,15 +45,25 @@ export function isUploadRequest(request: { method: string; path: string }): bool
  */
 export const PROXY_IMPORT_ATTEMPT_TIMEOUT_MS = 130_000;
 
-export function isFileImportRequest(request: { method: string; path: string }): boolean {
-  return request.method.toUpperCase() === 'POST' && /^\/file\/import(?:$|[/?#])/.test(request.path);
+/**
+ * Only the daemon (:8000) serves `/file/import`. The same path on any other port
+ * is the user's own server: it keeps the generic attempt timeout, the retry
+ * budget and 5xx retries. `port` is the EFFECTIVE upstream port (Platinum
+ * reroutes 4096 → 8000); without it the request is not an import.
+ */
+export function isFileImportRequest(request: { method: string; path: string; port?: number }): boolean {
+  return (
+    request.port === 8000 &&
+    request.method.toUpperCase() === 'POST' &&
+    /^\/file\/import(?:$|[/?#])/.test(request.path)
+  );
 }
 
 // Per-attempt upstream fetch timeout, shrunk to whatever budget remains so the
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
 export function proxyAttemptTimeoutMs(
   budgetRemainingMs: number,
-  request?: { method: string; path: string },
+  request?: { method: string; path: string; port?: number },
 ): number {
   // Upload handlers cannot return response headers until the multipart body has
   // been received and written. Treating that whole interval as a connection

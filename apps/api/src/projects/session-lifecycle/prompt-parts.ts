@@ -42,16 +42,20 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     ...(typeof part?.text === 'string' ? { text: part.text } : {}),
     ...(typeof part?.mime === 'string' ? { mime: part.mime.trim() } : {}),
     ...(typeof part?.url === 'string' ? { url: part.url.trim() } : {}),
-    ...(part?.attachment_id === undefined ? {} : { attachment_id: part.attachment_id }),
+    // `null` reads as absent: clients that serialize an empty handle as null
+    // sent it before handles existed, and the field was dropped then.
+    ...(part?.attachment_id == null ? {} : { attachment_id: part.attachment_id }),
     ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
     ...(typeof part?.name === 'string' ? { name: part.name } : {}),
     ...(part?.source === undefined ? {} : { source: part.source }),
   }));
   const text = flattenPromptText(parts);
-  if (parts.filter((part) => part.type === 'file').length > MAX_PROMPT_ATTACHMENT_FILES) {
+  // The file cap is the staged-attachment cap, so it counts handles only.
+  // Legacy data-URL and URL file parts keep the part and byte caps.
+  const ids = parts.filter((part) => part.type === 'file' && part.attachment_id !== undefined).map((part) => part.attachment_id);
+  if (ids.length > MAX_PROMPT_ATTACHMENT_FILES) {
     return { error: `attachments supports at most ${MAX_PROMPT_ATTACHMENT_FILES} files` };
   }
-  const ids = parts.filter((part) => part.type === 'file' && part.attachment_id !== undefined).map((part) => part.attachment_id);
   if (new Set(ids).size !== ids.length) return { error: 'duplicate attachment_id' };
   if (!text && !parts.some((part) => part.type !== 'text')) {
     return { error: 'parts must carry text' };

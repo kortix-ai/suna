@@ -17,6 +17,11 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 
 let composer!: ComponentProps<typeof ComposerChatInput>;
 const posted: string[] = [];
+// Every state update the shell makes. The static render ignores them, so they are recorded here.
+const stateUpdates: unknown[] = [];
+let inboxPrompts: Array<Record<string, unknown>> = [
+  { prompt_id: 'row-1', text: 'first prompt', attachments: [], state: 'queued' },
+];
 const startSessionWithPrompt = mock(
   async (_projectId: string, _sessionId: string, input: { parts: Array<{ text?: string }> }) => {
     posted.push(input.parts[0]?.text ?? '');
@@ -25,8 +30,22 @@ const startSessionWithPrompt = mock(
 );
 const realSdkReact = await import('@kortix/sdk/react');
 const realToast = await import('@/components/ui/toast');
+const realReact = await import('react');
+// Read before the mock: `mock.module` patches this namespace in place.
+const realUseState = realReact.useState;
 const passChildren = ({ children }: { children?: ReactNode }) => children;
 
+mock.module('react', () => ({
+  ...realReact,
+  useState: <S,>(initial: S | (() => S)) => {
+    const [value, setValue] = realUseState(initial);
+    const record = (next: S | ((current: S) => S)) => {
+      stateUpdates.push(next);
+      setValue(next);
+    };
+    return [value, record] as const;
+  },
+}));
 mock.module('@/features/session/composer-chat-input', () => ({
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
@@ -50,7 +69,8 @@ mock.module('@/features/session/session-wallpaper-layer', () => ({
 }));
 mock.module('@/features/session/session-welcome', () => ({ SessionWelcome: () => null }));
 mock.module('@/features/workspace/project-layout/project-home', () => ({
-  ProjectHomeWelcomeBody: () => null,
+  // Before the first send the hero composer renders inside the welcome body.
+  ProjectHomeWelcomeBody: ({ composer }: { composer?: ReactNode }) => composer ?? null,
 }));
 mock.module('@/stores/kortix-computer-store', () => ({
   useKortixComputerStore: (select: (state: { openFileInComputer: () => void }) => unknown) =>
@@ -66,9 +86,7 @@ mock.module('@kortix/sdk/react', () => ({
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
-  useSessionPrompts: () => ({
-    prompts: [{ prompt_id: 'row-1', text: 'first prompt', attachments: [], state: 'queued' }],
-  }),
+  useSessionPrompts: () => ({ prompts: inboxPrompts }),
   readStartStash: () => null,
   writeStartStash: () => {},
 }));
@@ -93,6 +111,7 @@ const noUploads = (): AttachmentSubmission => ({
   readyAtSend: true,
   whenReady: async () => [],
   retry: () => {},
+  resubmit: () => {},
   release: () => {},
 });
 
@@ -121,6 +140,7 @@ test('boot-shell extra sends POST in Enter order', async () => {
       return [imagePart];
     },
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   };
 
@@ -140,6 +160,59 @@ test('boot-shell extra sends POST in Enter order', async () => {
   expect(posted).toEqual(['with image', 'text two', 'text three']);
 });
 
+function renderFirstSend(onSubmit: () => void) {
+  inboxPrompts = [];
+  try {
+    renderToStaticMarkup(
+      createElement(InstantSessionShell, {
+        projectId: 'project-1',
+        sessionId: 'session-shell-first',
+        stage: 'provisioning',
+        onSubmit,
+      }),
+    );
+  } finally {
+    inboxPrompts = [{ prompt_id: 'row-1', text: 'first prompt', attachments: [], state: 'queued' }];
+  }
+  stateUpdates.length = 0;
+}
+
+test('a refused first text-only send paints nothing, and the composer that sent it keeps the draft', async () => {
+  const onSubmit = mock(() => {});
+  renderFirstSend(onSubmit);
+  let updatesAtPost: unknown[] | undefined;
+  startSessionWithPrompt.mockImplementationOnce(async () => {
+    updatesAtPost = [...stateUpdates];
+    throw new Error('Forbidden');
+  });
+
+  await expect(
+    Promise.resolve(composer.onSend('ask @[agent:writer]', undefined, {}, noUploads())),
+  ).rejects.toThrow('Forbidden');
+
+  // The hero composer stays mounted: no bubble before the POST, and no prefill afterwards,
+  // which would bring its mention chips back as plain text.
+  expect(updatesAtPost).toEqual([]);
+  expect(stateUpdates).toEqual([]);
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
+test('an accepted first text-only send paints after its POST', async () => {
+  const onSubmit = mock(() => {});
+  renderFirstSend(onSubmit);
+  let updatesAtPost: unknown[] | undefined;
+  startSessionWithPrompt.mockImplementationOnce(async () => {
+    updatesAtPost = [...stateUpdates];
+    return { state: 'queued' };
+  });
+
+  await Promise.resolve(composer.onSend('hello', undefined, {}, noUploads()));
+
+  expect(updatesAtPost).toEqual([]);
+  expect(stateUpdates).toEqual([{ text: 'hello', files: [] }]);
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+});
+
 test('a send made while a boot-shell text-only POST is in flight POSTs after that POST settles', async () => {
   let answerPost!: () => void;
   const answered = new Promise<void>((resolve) => {
@@ -155,6 +228,7 @@ test('a send made while a boot-shell text-only POST is in flight POSTs after tha
     readyAtSend: true,
     whenReady: async () => [imagePart],
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   };
 

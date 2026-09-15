@@ -1159,10 +1159,11 @@ export async function forwardToSandbox(
   // retrying up to 4 times and the SDK retrying up to 3 on top, one user action
   // could deposit up to 12 copies and still report failure.
   // An attachment import is the same class: the daemon downloads the file and
-  // does not observe a disconnect, so a replay downloads it a second time.
+  // does not observe a disconnect, so a replay downloads it a second time. Only
+  // on the daemon port — `/file/import` elsewhere is the user's own route.
   const uploadDelivery =
     isUploadRequest({ method, path: remainingPath }) ||
-    isFileImportRequest({ method, path: remainingPath });
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.
@@ -1423,6 +1424,7 @@ export async function forwardToSandbox(
         proxyAttemptTimeoutMs(budgetRemainingMs, {
           method,
           path: remainingPath,
+          port: upstreamPort,
         }),
       );
       let upstream: Response;

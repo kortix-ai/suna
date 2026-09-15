@@ -1622,13 +1622,25 @@ export async function createProjectSession(input: {
         // its first prompt durable, or neither does. No conflict handling —
         // `sessionId` is fresh here, so the idempotency key cannot collide
         // without the projectSessions PK colliding first.
-        const [promptCommand] = await tx
+        const insertPrompt = tx
           .insert(sessionLifecycleCommands)
-          .values(pendingPromptConversion.rowValues)
-          .returning();
-        if (promptCommand && (promptCommand.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
-          const { bindPromptAttachments } = await import('../prompt-attachments');
-          await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
+          .values(pendingPromptConversion.rowValues);
+        // Only a handle prompt reads its payload back, for binding. A legacy
+        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+        if ((pendingPromptConversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const [promptCommand] = await insertPrompt.returning({
+            commandId: sessionLifecycleCommands.commandId,
+            accountId: sessionLifecycleCommands.accountId,
+            projectId: sessionLifecycleCommands.projectId,
+            actorUserId: sessionLifecycleCommands.actorUserId,
+            payload: sessionLifecycleCommands.payload,
+          });
+          if (promptCommand) {
+            const { bindPromptAttachments } = await import('../prompt-attachments');
+            await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
+          }
+        } else {
+          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
         }
       }
       if (validatedConnectorBindings.bindings.length > 0) {

@@ -34,7 +34,7 @@ import {
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
-import { revokeUnsentPreview } from '../sent-attachment-previews';
+import { disownSentAttachmentPreviews, revokeUnsentPreview } from '../sent-attachment-previews';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -1353,9 +1353,14 @@ function ComposerImpl({
             attachedFilesRef.current = plan.attachedFiles;
             setAttachedFiles(plan.attachedFiles);
           }
-          // The draft was cleared at hand-off; the editor holds it again, so save it.
+          // The tray draws these files again, so the sent cache no longer owns their pictures.
+          disownSentAttachmentPreviews(sentFiles);
+          // The draft was cleared at hand-off; the editor holds it again, so save it. Only where
+          // Send clears the editor: project home (`clearOnSend={false}`) keeps its draft on screen,
+          // and a connector-gate Retry that sends it later must not bring it back as a saved draft.
           const restoredDoc = editorRef.current?.getDocument();
-          if (restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);
+          if (clearOnSend && restoredDoc)
+            handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);
         },
       });
       return 'sent';
@@ -1404,6 +1409,8 @@ function ComposerImpl({
     // A stash whose dispatch no host took comes back as it left: merged into
     // whatever the user typed since, with its files back in the tray.
     const restoreStashedDraft = (stash: StashedDraft, withText: boolean) => {
+      // The stash handed its pictures to the sent cache at capture. The tray draws them again.
+      disownSentAttachmentPreviews(stash.files);
       const editor = editorRef.current;
       const plan = planFailedSendRecovery({
         clearOnSend: true,

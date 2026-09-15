@@ -147,6 +147,83 @@ test('project-home send with an unfinished upload navigates and paints before th
   ]);
 });
 
+test('a held send refused for a connector posts its prompt after the gate Retry opens the session', async () => {
+  let finishUpload: (() => void) | undefined;
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async (url, init) => {
+      if (init?.method === 'PUT') return Response.json({ received_bytes: 5, size: 5 });
+      if (String(url).endsWith('/complete'))
+        return new Promise<Response>((resolve) => {
+          finishUpload = () => resolve(Response.json(metadata));
+        });
+      return Response.json({ ...metadata, upload: { kind: 'chunked', chunk_size: 65536 } });
+    },
+  });
+  const controller = createPromptAttachmentController('project-1');
+  const [uploadId] = controller.addMany([new File(['hello'], 'brief.pdf', { type: 'application/pdf' })]);
+  const files = [briefFile(uploadId!)];
+  const attachments = captureAttachmentSubmission(
+    files,
+    { ...controller, attachments: controller.getSnapshot().attachments },
+    (work) => work,
+  )!;
+  expect(attachments.readyAtSend).toBe(false);
+
+  const sent = Promise.resolve(home.onSend('read this', files, {}, attachments));
+  await settle();
+  const options = newSession.mock.calls[0]![0];
+  // The create is refused with a connector requirement: the hook opens the gate and reports it.
+  options.onError?.();
+  await expect(sent).rejects.toThrow('Session creation failed');
+  // `runComposerSend` returns the uploads to the tray.
+  controller.reclaim(attachments.submittedIds);
+
+  // The gate's Retry creates the session with the same options, and navigation unmounts the composer.
+  options.onNavigate?.('session-gate');
+  controller.dispose();
+  finishUpload!();
+  await settle();
+
+  expect(startSessionWithPrompt).toHaveBeenCalledTimes(1);
+  const { clientSentAtMs } = startSessionWithPrompt.mock.calls[0]![2] as { clientSentAtMs?: unknown };
+  expect(startSessionWithPrompt.mock.calls[0]).toEqual([
+    'project-1',
+    'session-gate',
+    { parts: [{ type: 'text', text: 'read this' }, filePart], overrides: {}, clientSentAtMs },
+  ]);
+});
+
+test('a ready send refused for a connector posts nothing more after the gate Retry: the create carries the prompt', async () => {
+  const events: string[] = [];
+  const attachments: AttachmentSubmission = {
+    submittedIds: ['attachment-1'],
+    readyAtSend: true,
+    whenReady: async () => [filePart],
+    retry: () => {},
+    resubmit: () => {
+      events.push('resubmit');
+    },
+    release: () => {
+      events.push('release');
+    },
+  };
+  const files = [briefFile('attachment-1')];
+
+  const sent = Promise.resolve(home.onSend('read this', files, {}, attachments));
+  await settle();
+  const options = newSession.mock.calls[0]![0];
+  expect(options.create?.pending_prompt?.parts).toEqual([{ type: 'text', text: 'read this' }, filePart]);
+  options.onError?.();
+  await expect(sent).rejects.toThrow('Session creation failed');
+  options.onNavigate?.('session-gate-ready');
+  await settle();
+
+  expect(startSessionWithPrompt).not.toHaveBeenCalled();
+  expect(events).toEqual([]);
+});
+
 test('the held first prompt carries its Send time, earlier than a message sent after navigation', async () => {
   let finishUpload!: () => void;
   const uploaded = new Promise<void>((resolve) => {
@@ -160,6 +237,7 @@ test('the held first prompt carries its Send time, earlier than a message sent a
       return [filePart];
     },
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   };
   const files = [briefFile('attachment-1')];
@@ -196,6 +274,7 @@ test('an upload that fails after navigation keeps the first prompt on screen, ma
     retry: () => {
       events.push('retry');
     },
+    resubmit: () => {},
     release: () => {
       events.push('release');
     },
@@ -229,6 +308,7 @@ test('uploads already finished at Send keep the create carrying the prompt', asy
     readyAtSend: true,
     whenReady: async () => [filePart],
     retry: () => {},
+    resubmit: () => {},
     release: () => {
       events.push('release');
     },
@@ -258,6 +338,7 @@ test('project-home held first prompt and a session-page send for the same sessio
       return [filePart];
     },
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   };
   const sent = Promise.resolve(home.onSend('read this', [briefFile('attachment-1')], {}, attachments));
@@ -275,6 +356,7 @@ test('project-home held first prompt and a session-page send for the same sessio
       readyAtSend: true,
       whenReady: async () => [],
       retry: () => {},
+      resubmit: () => {},
       release: () => {},
     },
     async () => {

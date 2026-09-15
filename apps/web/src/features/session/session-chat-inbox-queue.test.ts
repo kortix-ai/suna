@@ -98,7 +98,9 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // localized and never says "Upload failed".
     const kept = flat(between(send, 'const markHeldSendFailed = (error: unknown) => {', 'const deliver = async'));
     expect(kept).toContain('useHeldSendFailureStore.getState().setHeldSendFailure(sessionId, messageID, {');
-    expect(kept).toContain('message: tComposerAttachments(SENT_FAILURE_COPY[attachmentFailureReason(error)]),');
+    // A 4xx refusal shows its own classified words; every other failure its reason copy
+    // (`sentFailureMessage`, tested in `attachment-submission.test.ts`).
+    expect(kept).toContain('message: sentFailureMessage(error, tComposerAttachments, classified.message),');
     expect(kept).toContain('overrides: { ...overrides, clientMessageId },');
     // An upload that fails after the paint keeps the message: no removal, no draft restore.
     const upload = between(send, 'attachmentParts = await attachments.whenReady();', 'const parts: SessionPromptPart[]');
@@ -111,6 +113,11 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     const failedPost = between(send, 'if (!result.ok) {', 'setCommandError(result.error);');
     expect(failedPost).toContain('if (!result.error) {');
     expect(failedPost).toContain('if (await inboxRowExists().catch(() => false)) {');
+    // A `failed` row with this send's key is a refusal, never proof the send landed
+    // (`inboxHoldsLivePrompt`, tested in `inbox-live-prompt.test.ts`).
+    expect(between(send, 'const inboxRowExists = async () => {', 'const deliver = async')).toContain(
+      'return inboxHoldsLivePrompt(prompts, clientMessageId);',
+    );
     expect(failedPost).toContain('markHeldSendFailed(result.cause);');
     expect(chat).not.toContain('setHeldSendFailures');
     // An accepted POST releases the send's uploads.
@@ -140,20 +147,27 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     const held = send.indexOf('void postWhenUploaded(');
     expect(paint).toBeGreaterThan(-1);
     expect(held).toBeGreaterThan(paint);
-    // A text-only first send mounts the real chat only once its POST is accepted; a
-    // failure takes the bubble back. A send with uploads is never taken back, so it
-    // mounts the chat at once.
+    // A first send that is not detached paints and mounts the real chat only once its
+    // POST is accepted. Until then the hero composer that sent it stays mounted, so a
+    // refusal leaves the draft there, mention chips included. A send with uploads is
+    // never taken back, so it paints and mounts the chat at once.
+    const flat = (source: string) => source.replace(/\s+/g, ' ');
+    expect(send).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
     const inline = 'await deliverInOrder(sessionId, () => post([]));';
     const textOnly = send.slice(send.indexOf(inline));
     expect(send.indexOf(inline)).toBeGreaterThan(-1);
-    expect(textOnly.indexOf('if (first) onSubmit?.();')).toBeGreaterThan(-1);
-    expect(textOnly.indexOf('if (first) onSubmit?.();')).toBeLessThan(textOnly.indexOf('} catch (error) {'));
+    const refused = between(textOnly, '} catch (error) {', 'throw error;');
+    expect(refused).not.toContain('setSubmission(');
+    expect(refused).not.toContain('setPrefill(');
+    expect(flat(textOnly.slice(textOnly.indexOf('throw error;')))).toContain(
+      "if (first) { // Only now does the page mount the real chat: the server holds the prompt. playSound('send'); setSubmission({ text, files: files ?? [] }); onSubmit?.(); }",
+    );
     expect(send.slice(0, send.indexOf(inline)).match(/onSubmit\?\.\(\)/g)).toHaveLength(1);
     // A send with uploads, or one behind an earlier send of this session, is
     // delivered detached; the ordering itself is tested in
     // `instant-session-shell-delivery.test.tsx`.
     expect(
-      between(send, 'if (attachments && deliversDetached(sessionId, attachments)) {', 'void postWhenUploaded('),
+      between(send, 'if (attachments && detached) {', 'void postWhenUploaded('),
     ).toContain('onSubmit?.();');
     expect(send.replace(/\s+/g, ' ').match(/void postWhenUploaded\( sessionId, attachments,/g)).toHaveLength(2);
     // A later send with uploads keeps its bubble, marked failed, instead of vanishing.
@@ -166,7 +180,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(stamp).toBeGreaterThan(-1);
     expect(stamp).toBeLessThan(held);
     expect(
-      between(send, 'const post = async', 'if (attachments && deliversDetached(sessionId, attachments)) {'),
+      between(send, 'const post = async', 'if (attachments && detached) {'),
     ).toContain('clientSentAtMs: sentAtMs,');
     // The failed status lives in the first-prompt preview, which SessionChat
     // also draws, so it survives the crossfade that unmounts this shell.

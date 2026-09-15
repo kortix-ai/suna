@@ -313,6 +313,7 @@ describe('OptimisticTurn upload status', () => {
         retry: () => {
           events.push('retry');
         },
+        resubmit: () => {},
         release: () => {},
       },
       overrides: { clientMessageId: 'client-1' },

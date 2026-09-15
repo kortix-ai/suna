@@ -46,6 +46,7 @@ describe('useHeldSendFailureStore', () => {
       readyAtSend: false,
       whenReady: async () => [],
       retry,
+      resubmit: () => {},
       release: () => {},
     },
     overrides: { clientMessageId: 'client-1' },

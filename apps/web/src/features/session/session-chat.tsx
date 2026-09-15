@@ -84,6 +84,7 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { inboxHoldsLivePrompt } from '@/features/session/inbox-live-prompt';
 import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   resolveFirstPromptHandover,
@@ -105,9 +106,8 @@ import type { AttachedFile, TrackedMention } from '@/features/session/session-ch
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import {
-  attachmentFailureReason,
   deliverAfterPaint,
-  SENT_FAILURE_COPY,
+  sentFailureMessage,
   type AttachmentSubmission,
 } from '@/features/session/composer/attachment-submission';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -4052,7 +4052,7 @@ export function SessionChat({
           setCommandError(classified);
         }
         useHeldSendFailureStore.getState().setHeldSendFailure(sessionId, messageID, {
-          message: tComposerAttachments(SENT_FAILURE_COPY[attachmentFailureReason(error)]),
+          message: sentFailureMessage(error, tComposerAttachments, classified.message),
           send: {
             text,
             files,
@@ -4063,11 +4063,12 @@ export function SessionChat({
         });
       };
       // `clientMessageId` is the POST's idempotency key, so the row is
-      // addressable by exactly the thing this send already holds.
+      // addressable by exactly the thing this send already holds. A `failed`
+      // row with that key is a refusal, never proof the send landed.
       const inboxRowExists = async () => {
         if (!projectId || !projectSessionId) return false;
         const { prompts } = await listSessionPrompts(projectId, projectSessionId);
-        return prompts.some((prompt) => prompt.client_message_id === clientMessageId);
+        return inboxHoldsLivePrompt(prompts, clientMessageId);
       };
 
       const deliver = async (detached: boolean): Promise<string> => {

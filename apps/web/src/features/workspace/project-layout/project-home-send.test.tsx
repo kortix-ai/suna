@@ -89,6 +89,7 @@ test('composer Send forwards attachment handles and propagates a failed create',
     readyAtSend: true,
     whenReady: async () => [handle],
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   };
   // The composer keeps its selection only when it observes the rejection.

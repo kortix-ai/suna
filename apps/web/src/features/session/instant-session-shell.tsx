@@ -35,10 +35,9 @@ import {
   usePendingFilesStore,
 } from '@/stores/session-composer-handoff-store';
 import {
-  attachmentFailureReason,
   deliversDetached,
   postWhenUploaded,
-  SENT_FAILURE_COPY,
+  sentFailureMessage,
   type AttachmentSubmission,
 } from '@/features/session/composer/attachment-submission';
 import { deliverInOrder } from '@/features/session/composer/delivery-chain';
@@ -259,12 +258,7 @@ export function InstantSessionShell({
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
-  const [prefill, setPrefill] = useState<{
-    text: string;
-    id: number;
-    files?: AttachedFile[];
-    mode?: 'merge';
-  } | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
   // The first send swaps the hero composer for the docked one, which remounts
   // it. The upload controller lives here, so a held send outlives that remount
   // and a failed one can return its uploads to the composer on screen.
@@ -298,16 +292,24 @@ export function InstantSessionShell({
       // upload is ready. A SECOND message typed while the first boots POSTs the
       // same way, and every POST of this session leaves in Send order through
       // its delivery chain: a text-only send never overtakes an upload.
+      //
+      // One exception: a first send that is not detached (no uploads, nothing
+      // earlier still delivering) paints after its POST. The hero composer that
+      // sent it stays mounted until then, so a refusal leaves the draft, mention
+      // chips included, in that composer. A prefill carries text only.
       const first = !submitted;
+      // Read before this send joins the session's delivery chain.
+      const detached = !!attachments && deliversDetached(sessionId, attachments);
       const extraId = `shell-extra-${Date.now()}`;
-      playSound('send');
-      if (first) {
-        setSubmission({ text, files: files ?? [] });
-      } else {
+      if (!first) {
+        playSound('send');
         setExtraSends((prev) => [
           ...prev,
           { id: extraId, text, attachments: sentAttachmentsOf(files ?? []) },
         ]);
+      } else if (detached) {
+        playSound('send');
+        setSubmission({ text, files: files ?? [] });
       }
       const post = async (attachmentParts: SessionPromptPart[]) => {
         await startSessionWithPrompt(projectId, sessionId, {
@@ -324,9 +326,8 @@ export function InstantSessionShell({
       // session, is never taken back, and it never holds the composer: it POSTs
       // from its place in the chain, detached, so the next Send paints at once.
       // A failure marks the message failed, with Retry.
-      if (attachments && deliversDetached(sessionId, attachments)) {
-        const describe = (error: unknown) =>
-          tComposerAttachments(SENT_FAILURE_COPY[attachmentFailureReason(error)]);
+      if (attachments && detached) {
+        const describe = (error: unknown) => sentFailureMessage(error, tComposerAttachments);
         if (first) {
           // The first prompt's status lives in the first-prompt preview, which
           // SessionChat also draws, so it survives the crossfade.
@@ -363,24 +364,23 @@ export function InstantSessionShell({
       }
       try {
         await deliverInOrder(sessionId, () => post([]));
-        // Only now does the page mount the real chat: the server holds the prompt.
-        if (first) onSubmit?.();
       } catch (error) {
-        // The server never got it: take the bubble back and return the draft.
-        if (first) {
-          setSubmission(null);
-          setPrefill({ text, id: Date.now(), files: files ?? [], mode: 'merge' });
-        } else {
-          // The docked composer that sent this is still mounted; it restores
-          // its own draft.
-          setExtraSends((prev) => prev.filter((extra) => extra.id !== extraId));
-        }
+        // The server never got it. The composer that sent it is still mounted
+        // and restores its own draft: the hero composer for a first send, which
+        // painted nothing, or the docked one, whose bubble is taken back.
+        if (!first) setExtraSends((prev) => prev.filter((extra) => extra.id !== extraId));
         errorToast(
           error instanceof Error
             ? error.message
             : tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'),
         );
         throw error;
+      }
+      if (first) {
+        // Only now does the page mount the real chat: the server holds the prompt.
+        playSound('send');
+        setSubmission({ text, files: files ?? [] });
+        onSubmit?.();
       }
     },
     [sessionId, submitted, projectId, tI18nHardcoded, tComposerAttachments, onSubmit],

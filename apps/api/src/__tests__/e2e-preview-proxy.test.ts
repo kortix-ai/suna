@@ -1649,7 +1649,8 @@ describe('Preview proxy: long-turn completion timeout', () => {
     }) as any;
 
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/sandbox-file-import-001/${TEST_PORT}/file/import`, {
+    // Only the daemon port serves `/file/import`; on another port it is the user's own route.
+    const res = await app.request(`/v1/p/sandbox-file-import-001/8000/file/import`, {
       method: 'POST',
       headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
       body: JSON.stringify({ command_id: 'c', attachment_id: 'a', part_index: 0 }),

@@ -287,7 +287,7 @@ test('chunked completion answers when the file is ready, without waiting for chu
     1,
     new TextEncoder().encode('o!'),
   );
-  // Chunk removal is cleanup: a slow Storage DELETE must not hold the 90 s completion bound.
+  // Chunk removal is cleanup: a slow Storage DELETE must not hold the 85 s completion bound.
   hangDelete = true;
   const answer = await Promise.race([
     attachments.completePromptAttachment(scope, handle.attachment_id),

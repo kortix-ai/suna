@@ -5,6 +5,7 @@ import { configureKortix, createPromptAttachmentController } from '@kortix/sdk';
 import type { AttachedFile } from './composer/types';
 import {
   adoptSentAttachmentPreviews,
+  disownSentAttachmentPreviews,
   firstPromptAttachments,
   holdConvertedPreview,
   rememberFirstPromptAttachments,
@@ -93,6 +94,40 @@ describe('sent attachment previews', () => {
     revokeUnsentPreview('blob:unsent');
 
     expect(revoked).toEqual(['blob:unsent']);
+  });
+
+  test('a refused send disowns its pictures unrevoked, and the tray can revoke them later', () => {
+    const file = local('upload-refused', 'a.png', 'blob:refused');
+    adoptSentAttachmentPreviews([file]);
+
+    disownSentAttachmentPreviews([file]);
+    // The tray tile draws this URL again after reclaim.
+    expect(revoked).toEqual([]);
+    expect(sentAttachmentPreview('upload-refused')).toBeUndefined();
+
+    revokeUnsentPreview('blob:refused');
+    expect(revoked).toEqual(['blob:refused']);
+  });
+
+  test('a refused HEIC send revokes its JPEG only when no tile holds it', () => {
+    // The tile that made the JPEG is still mounted: it keeps the JPEG and revokes it itself.
+    const dropHeld = holdConvertedPreview('upload-held', 'blob:jpeg-held');
+    adoptSentAttachmentPreviews([local('upload-held', 'held.heic', 'blob:heic-held', 'image/heic')]);
+    disownSentAttachmentPreviews([local('upload-held', 'held.heic', 'blob:heic-held', 'image/heic')]);
+    expect(revoked).toEqual([]);
+    dropHeld();
+    expect(revoked).toEqual(['blob:jpeg-held']);
+
+    // The tile unmounted at Send and converts again on remount: nothing else frees the old JPEG.
+    revoked.length = 0;
+    const dropGone = holdConvertedPreview('upload-gone', 'blob:jpeg-gone');
+    const heic = local('upload-gone', 'gone.heic', 'blob:heic-gone', 'image/heic');
+    adoptSentAttachmentPreviews([heic]);
+    dropGone();
+    expect(revoked).toEqual([]);
+    disownSentAttachmentPreviews([heic]);
+    expect(revoked).toEqual(['blob:jpeg-gone']);
+    expect(sentAttachmentPreview('upload-gone')).toBeUndefined();
   });
 
   test('a file that is not an image hands over nothing', () => {

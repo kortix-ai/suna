@@ -492,7 +492,35 @@ describe('POST /file/import', () => {
       })
 
       assertImportFailureWarning(response)
-      expect(await fs.readdir(path.join(outside, COMMAND_ID))).toEqual([])
+      expect(await fs.readdir(outside)).toEqual([])
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a symlinked uploads directory without creating directories outside the workspace', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-import-outside-'))
+    try {
+      // An existing outside directory and a dangling link: mkdir -p follows neither.
+      for (const linkTarget of [outside, path.join(outside, 'missing')]) {
+        await fs.rm(path.join(workspace, 'uploads'), { recursive: true, force: true })
+        await fs.symlink(linkTarget, path.join(workspace, 'uploads'))
+        globalThis.fetch = Object.assign(
+          async (input: Parameters<typeof fetch>[0]) =>
+            String(input).startsWith('http://api.test/')
+              ? Response.json(descriptor())
+              : new Response(bytes),
+          { preconnect: originalFetch.preconnect },
+        )
+        const response = await request(buildOpencodeApp(config(), opencode(), Date.now()), {
+          command_id: COMMAND_ID,
+          attachment_id: ATTACHMENT_ID,
+          part_index: 0,
+        })
+
+        assertImportFailureWarning(response)
+        expect(await fs.readdir(outside)).toEqual([])
+      }
     } finally {
       await fs.rm(outside, { recursive: true, force: true })
     }

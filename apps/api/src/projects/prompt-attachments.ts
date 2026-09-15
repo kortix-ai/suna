@@ -37,20 +37,29 @@ const BUCKET = 'staged-files';
 const STORAGE_TIMEOUT_MS = 20_000;
 /**
  * Upper bound on the Storage work of one `complete` request. Direct mode: the
- * verifying download. Chunked mode: assembly stops starting reads at 50 s; the
+ * verifying download. Chunked mode: assembly stops starting reads at 45 s; the
  * last read and the final object write take at most 20 s each, and chunk
  * removal runs after the answer. The whole request, database waits included,
- * has its own 105 s deadline (middleware/request-deadline.ts). The SDK request
- * timeout (120 s) is longer, so a live server always answers first.
+ * has its own 95 s deadline (middleware/request-deadline.ts), under Cloudflare's
+ * 100 s proxy timeout. The SDK request timeout (120 s) is longer, so a live
+ * server always answers first.
  */
-const COMPLETE_BOUND_MS = 90_000;
+const COMPLETE_BOUND_MS = 85_000;
 /** A crashed chunked finalizer's row is reclaimable after this. It exceeds
  * COMPLETE_BOUND_MS, so a live finalizer is never overtaken. */
 const FINALIZE_LEASE_MS = 2 * 60_000;
 /** Lifetime reported for a direct upload URL. Storage signs for 2 hours by
  * default; a shorter report makes the client re-sign before Storage refuses. */
 const DIRECT_UPLOAD_URL_TTL_MS = 60 * 60_000;
-const CLEANUP_BATCH_SIZE = 20;
+/** Rows claimed per cleanup batch. In direct mode one batch is one Storage call. */
+const CLEANUP_BATCH_SIZE = 100;
+/** Storage API rejects a DELETE that names more than 1000 objects. */
+const STORAGE_REMOVE_MAX_NAMES = 1000;
+/** Cleanup starts no Storage call after this. Every API process runs it each
+ * 5-minute maintenance tick, with no leader lock, beside the other maintenance
+ * tasks. A call started inside the budget can still run to its 20 s Storage
+ * timeout, so a tick ends within about 50 s. A failed removal ends it at once. */
+const CLEANUP_BUDGET_MS = 30_000;
 /** Chunked assembly holds one whole file in memory; this bounds it per process. */
 const MAX_CHUNKED_FINALIZATIONS = 2;
 let chunkedFinalizations = 0;
@@ -876,14 +885,26 @@ function noReferences() {
       .where(eq(promptAttachmentReferences.attachmentId, promptAttachments.attachmentId)),
   );
 }
-async function removeObjects(row: Row, now = new Date()) {
-  // Direct mode stores one object. Chunked mode also stores derivable chunk objects.
+/** Direct mode stores one object. Chunked mode also stores derivable chunk objects. */
+function objectNames(row: Row): string[] {
   const chunkCount = chunkedMode() ? Math.ceil(row.sizeBytes / chunkBytes()) : 0;
-  const paths = [
-    filePath(row),
-    ...Array.from({ length: chunkCount }, (_, i) => chunkPath(row, i)),
-  ];
-  const { data, error } = await storage().remove(paths);
+  return [filePath(row), ...Array.from({ length: chunkCount }, (_, i) => chunkPath(row, i))];
+}
+/** Called only after the rows' objects are removed. */
+async function dropRemovedMetadata(attachmentIds: string[], now: Date) {
+  await db
+    .delete(promptAttachments)
+    .where(
+      and(
+        inArray(promptAttachments.attachmentId, attachmentIds),
+        eq(promptAttachments.status, 'deleting'),
+        lt(promptAttachments.expiresAt, now),
+        noReferences(),
+      ),
+    );
+}
+async function removeObjects(row: Row, now = new Date()) {
+  const { data, error } = await storage().remove(objectNames(row));
   if (error)
     throw new PromptAttachmentError(
       'attachment_storage_unavailable',
@@ -893,16 +914,7 @@ async function removeObjects(row: Row, now = new Date()) {
   // Missing objects are a successful deletion. Supabase returns only existing
   // keys, so an absent item in its response is not evidence of failure.
   void data;
-  await db
-    .delete(promptAttachments)
-    .where(
-      and(
-        eq(promptAttachments.attachmentId, row.attachmentId),
-        eq(promptAttachments.status, 'deleting'),
-        lt(promptAttachments.expiresAt, now),
-        noReferences(),
-      ),
-    );
+  await dropRemovedMetadata([row.attachmentId], now);
 }
 
 export async function deletePromptAttachment(scope: PromptAttachmentScope, attachmentId: string) {
@@ -957,29 +969,42 @@ const RELEASE_BATCH_SIZE = 200;
 
 /** Drop the references of the selected commands. An attachment left with no
  * reference expires now, so the cleanup sweep removes its object, then its
- * metadata (KEEP 4). Two statements: a crash between them leaves the attachment
- * to its own TTL. */
+ * metadata (KEEP 4). One transaction: a failure keeps every reference, and the
+ * retried delete or the next delivery sweep releases them again. */
 async function releaseCommandReferences(
   commands: SQLWrapper,
   expireAt: Date,
 ): Promise<number> {
-  const released = await db
-    .delete(promptAttachmentReferences)
-    .where(inArray(promptAttachmentReferences.commandId, commands))
-    .returning({ attachmentId: promptAttachmentReferences.attachmentId });
-  const ids = [...new Set(released.map((reference) => reference.attachmentId))];
-  if (ids.length > 0)
-    await db
-      .update(promptAttachments)
-      .set({ expiresAt: expireAt })
-      .where(
-        and(
-          inArray(promptAttachments.attachmentId, ids),
-          gt(promptAttachments.expiresAt, expireAt),
-          noReferences(),
-        ),
-      );
-  return released.length;
+  return db.transaction(async (tx) => {
+    const released = await tx
+      .delete(promptAttachmentReferences)
+      .where(inArray(promptAttachmentReferences.commandId, commands))
+      .returning({ attachmentId: promptAttachmentReferences.attachmentId });
+    const ids = [...new Set(released.map((reference) => reference.attachmentId))].sort();
+    if (ids.length > 0) {
+      // bindPromptAttachments locks these rows in attachment_id order. An
+      // unordered UPDATE could lock them in another order and deadlock a
+      // release racing a bind of the same files. The UPDATE then takes a fresh
+      // READ COMMITTED snapshot, so it sees references that bind committed.
+      await tx
+        .select({ attachmentId: promptAttachments.attachmentId })
+        .from(promptAttachments)
+        .where(inArray(promptAttachments.attachmentId, ids))
+        .orderBy(asc(promptAttachments.attachmentId))
+        .for('update');
+      await tx
+        .update(promptAttachments)
+        .set({ expiresAt: expireAt })
+        .where(
+          and(
+            inArray(promptAttachments.attachmentId, ids),
+            gt(promptAttachments.expiresAt, expireAt),
+            noReferences(),
+          ),
+        );
+    }
+    return released.length;
+  });
 }
 
 /** Terminal successful delivery plus the grace period releases a command's
@@ -1040,20 +1065,12 @@ export async function releasePromptAttachmentsForProject(projectId: string): Pro
   );
 }
 
-export async function cleanupExpiredPromptAttachments(
-  now = new Date(),
-): Promise<{ deleted: number; errors: number }> {
-  let releaseErrors = 0;
-  // Delivered prompts release first, so their files expire in this same sweep.
-  await releaseDeliveredPromptAttachments(now).catch((error) => {
-    releaseErrors = 1;
-    console.warn(
-      '[prompt-attachments] reference release failed:',
-      error instanceof Error ? error.message : error,
-    );
-  });
-  const rows = await db.transaction(async (tx) => {
-    const rows = await tx
+/** Claims one batch: its expired, unreferenced rows become `deleting`. */
+async function claimExpiredPromptAttachments(
+  now: Date,
+): Promise<{ claimed: number; rows: Row[] }> {
+  return db.transaction(async (tx) => {
+    const candidates = await tx
       .select()
       .from(promptAttachments)
       .where(
@@ -1071,32 +1088,90 @@ export async function cleanupExpiredPromptAttachments(
       .orderBy(asc(promptAttachments.expiresAt))
       .limit(CLEANUP_BATCH_SIZE)
       .for('update', { skipLocked: true });
-    if (!rows.length) return [];
+    if (!candidates.length) return { claimed: 0, rows: [] };
     // READ COMMITTED gives this statement a fresh reference snapshot. The
     // candidate SELECT can predate a binder's commit even after tuple locking.
-    return tx
+    const rows = await tx
       .update(promptAttachments)
       .set({ status: 'deleting' })
       .where(
         and(
           inArray(
             promptAttachments.attachmentId,
-            rows.map((row) => row.attachmentId),
+            candidates.map((row) => row.attachmentId),
           ),
           noReferences(),
         ),
       )
       .returning();
+    return { claimed: candidates.length, rows };
   });
+}
+
+/** Removes a claimed batch with as few Storage calls as the name cap allows,
+ * then drops the metadata of each call's rows. `stopped` ends the sweep: a
+ * failed call or the spent budget leaves the remaining rows `deleting` and
+ * expired, so the next tick claims them again. */
+async function removeClaimedPromptAttachments(
+  rows: Row[],
+  now: Date,
+  deadline: number,
+): Promise<{ deleted: number; errors: number; stopped: boolean }> {
   let deleted = 0,
-    errors = releaseErrors;
-  for (const row of rows) {
-    try {
-      await removeObjects(row, now);
-      deleted++;
-    } catch {
-      errors++;
+    calls = 0,
+    next = 0;
+  while (next < rows.length) {
+    // Whole rows share a call; a row with more names than one call holds takes several.
+    const group: Row[] = [];
+    const names: string[] = [];
+    while (next < rows.length) {
+      const rowNames = objectNames(rows[next]!);
+      if (group.length && names.length + rowNames.length > STORAGE_REMOVE_MAX_NAMES) break;
+      group.push(rows[next++]!);
+      names.push(...rowNames);
     }
+    try {
+      for (let offset = 0; offset < names.length; offset += STORAGE_REMOVE_MAX_NAMES) {
+        // The sweep checks the budget before each claim, so a batch's first call always runs.
+        if (calls++ > 0 && performance.now() >= deadline)
+          return { deleted, errors: 0, stopped: true };
+        // Missing objects are a successful deletion (see removeObjects).
+        const { error } = await storage().remove(
+          names.slice(offset, offset + STORAGE_REMOVE_MAX_NAMES),
+        );
+        if (error) throw error;
+      }
+      await dropRemovedMetadata(group.map((row) => row.attachmentId), now);
+      deleted += group.length;
+    } catch {
+      return { deleted, errors: rows.length - deleted, stopped: true };
+    }
+  }
+  return { deleted, errors: 0, stopped: false };
+}
+
+export async function cleanupExpiredPromptAttachments(
+  now = new Date(),
+): Promise<{ deleted: number; errors: number }> {
+  const deadline = performance.now() + CLEANUP_BUDGET_MS;
+  let deleted = 0,
+    errors = 0;
+  // Delivered prompts release first, so their files expire in this same sweep.
+  await releaseDeliveredPromptAttachments(now).catch((error) => {
+    errors = 1;
+    console.warn(
+      '[prompt-attachments] reference release failed:',
+      error instanceof Error ? error.message : error,
+    );
+  });
+  // Batches repeat until one is short (the backlog is drained), a removal fails
+  // (retrying the same rows at once would fail again), or the budget is spent.
+  for (;;) {
+    const { claimed, rows } = await claimExpiredPromptAttachments(now);
+    const removal = await removeClaimedPromptAttachments(rows, now, deadline);
+    deleted += removal.deleted;
+    errors += removal.errors;
+    if (removal.stopped || claimed < CLEANUP_BATCH_SIZE || performance.now() >= deadline) break;
   }
   return { deleted, errors };
 }

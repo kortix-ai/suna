@@ -125,6 +125,34 @@ function parseDescriptor(
   return row as PromptAttachmentDescriptor
 }
 
+/**
+ * Refuse an inbox directory whose EXISTING components resolve outside the
+ * workspace. `mkdir -p` follows a symlinked component, so without this check it
+ * creates directories outside the workspace before the post-create realpath
+ * check rejects the target. A missing component ends the walk: everything below
+ * it is created inside a directory this walk verified.
+ */
+async function assertInboxContained(workspace: string, commandId: string): Promise<void> {
+  let lexical = path.resolve(workspace)
+  let expected = await fs.realpath(lexical)
+  for (const segment of ['uploads', '.kortix-inbox', commandId]) {
+    lexical = path.join(lexical, segment)
+    expected = path.join(expected, segment)
+    let real: string
+    try {
+      real = await fs.realpath(lexical)
+    } catch (error) {
+      // A dangling symlink also reports ENOENT; only an absent entry may be created.
+      const absent =
+        (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+        !(await fs.lstat(lexical).then(() => true, () => false))
+      if (absent) return
+      throw new Error('attachment target escapes workspace')
+    }
+    if (real !== expected) throw new Error('attachment target escapes workspace')
+  }
+}
+
 async function verifiedFileDigest(filePath: string, expectedSize: number): Promise<string | null> {
   let handle: fs.FileHandle | undefined
   try {
@@ -550,6 +578,8 @@ export function createFilesRouter(cfg: Config): Hono {
         api.protocol,
       )
       if (!descriptor) throw new Error('descriptor validation failed')
+      // Before the digest read and before any mkdir: both follow symlinks.
+      await assertInboxContained(workspace, request.command_id)
 
       if ((await verifiedFileDigest(descriptor.target_path, descriptor.size_bytes)) === descriptor.sha256) {
         importComplete = true

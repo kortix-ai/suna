@@ -1,10 +1,10 @@
 /**
- * Delivery cost and admission for prompt attachments, with a scripted fake
- * database and a fake Storage HTTP origin. `integration-prompt-attachments.test.ts`
- * owns the real-PostgreSQL semantics: which references a release removes, the
- * budget aggregate, and the cleanup scan.
+ * Delivery cost, admission, and cleanup cost for prompt attachments, with a
+ * scripted fake database and a fake Storage HTTP origin.
+ * `integration-prompt-attachments.test.ts` owns the real-PostgreSQL semantics:
+ * which references a release removes, the budget aggregate, and the cleanup scan.
  */
-import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
@@ -15,10 +15,13 @@ const configModule = mockConfigModule({
   PROMPT_ATTACHMENT_UPLOAD_MODE: 'direct',
   PROMPT_ATTACHMENT_CHUNK_BYTES: 65536,
 });
+const config = configModule.config as Record<string, unknown>;
 mock.module('../config', () => configModule);
 
 type Op = 'select' | 'insert' | 'update' | 'delete' | 'execute';
 const events: string[] = [];
+/** Each executed statement with its builder calls, e.g. `for(update)`. */
+const queries: { op: Op; calls: string[] }[] = [];
 let results: Partial<Record<Op, unknown[][]>> = {};
 let inTransaction = false;
 function respond(op: Op): unknown[] {
@@ -26,13 +29,21 @@ function respond(op: Op): unknown[] {
   return results[op]?.shift() ?? [];
 }
 function chain(op: Op) {
+  const calls: string[] = [];
   const builder: object = new Proxy(() => {}, {
     get(_target, property) {
       if (property === 'then') {
-        const result = Promise.resolve().then(() => respond(op));
+        const result = Promise.resolve().then(() => {
+          queries.push({ op, calls });
+          return respond(op);
+        });
         return result.then.bind(result);
       }
-      return () => builder;
+      return (...args: unknown[]) => {
+        const literals = args.filter((arg) => typeof arg === 'string');
+        calls.push(`${String(property)}(${literals.join(',')})`);
+        return builder;
+      };
     },
   });
   return builder;
@@ -78,12 +89,24 @@ mock.module('../billing/services/billing-gate', () => ({
 
 const storage: { method: string; path: string }[] = [];
 const objects = new Map<string, Uint8Array>();
+/** The object names of each Storage DELETE, in call order. */
+const removals: string[][] = [];
+let failRemove = false;
+let onRemove: (() => void) | undefined;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(
   async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
     const path = decodeURIComponent(new URL(request.url).pathname);
     storage.push({ method: request.method, path });
+    if (request.method === 'DELETE') {
+      events.push(`${inTransaction ? 'tx:' : ''}storage:DELETE`);
+      removals.push(((await request.json()) as { prefixes: string[] }).prefixes);
+      onRemove?.();
+      return failRemove
+        ? Response.json({ message: 'injected remove failure' }, { status: 503 })
+        : Response.json([]);
+    }
     if (path.startsWith('/storage/v1/object/upload/sign/'))
       return Response.json({ url: `${path.slice('/storage/v1'.length)}?token=upload-token` });
     if (path.startsWith('/storage/v1/object/sign/'))
@@ -143,8 +166,14 @@ const command = { commandId, projectId: scope.projectId, accountId: scope.accoun
 
 beforeEach(() => {
   events.length = 0;
+  queries.length = 0;
   storage.length = 0;
   objects.clear();
+  removals.length = 0;
+  failRemove = false;
+  onRemove = undefined;
+  config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'direct';
+  config.PROMPT_ATTACHMENT_CHUNK_BYTES = 65536;
   results = {};
   billing = { ok: true };
   billingChecks.length = 0;
@@ -265,4 +294,126 @@ test("begin with inactive billing returns the prompt path's billing error", asyn
   });
   expect(storage).toEqual([]);
   expect(events).toEqual([]);
+});
+
+// Cleanup runs on every API process each maintenance tick. Its Storage cost per
+// row must not bound the tick, and a Storage outage must end the tick at once.
+/** One cleanup claim, as `CLEANUP_BATCH_SIZE` in prompt-attachments.ts. */
+const CLEANUP_BATCH = 100;
+function expiredRows(count: number, overrides: Record<string, unknown> = {}) {
+  return Array.from({ length: count }, () =>
+    attachmentRow(crypto.randomUUID(), {
+      status: 'deleting',
+      expiresAt: new Date(Date.now() - 60_000),
+      ...overrides,
+    }),
+  );
+}
+/** Scripts one claim per batch: the candidate SELECT and the `deleting` UPDATE. */
+function scriptClaims(...batches: ReturnType<typeof expiredRows>[]) {
+  results.select = [...batches];
+  results.update = [...batches];
+}
+const fileNames = (rows: ReturnType<typeof expiredRows>) => rows.map((row) => `${row.objectPath}/file`);
+
+test('cleanup removes one batch of objects with a single Storage call, then drops their metadata', async () => {
+  const rows = expiredRows(3);
+  scriptClaims(rows);
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({ deleted: 3, errors: 0 });
+  expect(removals).toEqual([fileNames(rows)]);
+  // The claim commits first; no Storage call holds its row locks.
+  expect(events.slice(events.indexOf('tx:db:select') - 1)).toEqual([
+    'tx:begin',
+    'tx:db:select',
+    'tx:db:update',
+    'tx:end',
+    'storage:DELETE',
+    'db:delete',
+  ]);
+});
+
+test('cleanup claims the next batch in the same tick while a full batch was found', async () => {
+  const first = expiredRows(CLEANUP_BATCH);
+  const second = expiredRows(3);
+  scriptClaims(first, second);
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({
+    deleted: CLEANUP_BATCH + 3,
+    errors: 0,
+  });
+  expect(removals).toEqual([fileNames(first), fileNames(second)]);
+  // A short batch means the backlog is empty: no third claim.
+  expect(events.filter((event) => event === 'tx:db:select')).toHaveLength(2);
+  expect(events.filter((event) => event === 'db:delete')).toHaveLength(2);
+});
+
+test('the cleanup time budget stops claiming batches', async () => {
+  let clock = 1_000_000;
+  const now = spyOn(performance, 'now').mockImplementation(() => clock);
+  // A slow Storage call spends the whole budget.
+  onRemove = () => {
+    clock += 31_000;
+  };
+  scriptClaims(expiredRows(CLEANUP_BATCH), expiredRows(CLEANUP_BATCH));
+  try {
+    expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({
+      deleted: CLEANUP_BATCH,
+      errors: 0,
+    });
+  } finally {
+    now.mockRestore();
+  }
+  expect(removals).toHaveLength(1);
+  expect(events.filter((event) => event === 'tx:db:select')).toHaveLength(1);
+});
+
+test('a Storage failure keeps the batch metadata, ends the tick, and the next tick retries', async () => {
+  const rows = expiredRows(CLEANUP_BATCH);
+  scriptClaims(rows);
+  failRemove = true;
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({
+    deleted: 0,
+    errors: CLEANUP_BATCH,
+  });
+  // One failed call, not one per row, and the same rows are not reclaimed in this tick.
+  expect(removals).toEqual([fileNames(rows)]);
+  expect(events).not.toContain('db:delete');
+  expect(events.filter((event) => event === 'tx:db:select')).toHaveLength(1);
+
+  // The rows stay `deleting` and expired, so the next tick claims them again.
+  events.length = 0;
+  removals.length = 0;
+  failRemove = false;
+  scriptClaims(rows);
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({
+    deleted: CLEANUP_BATCH,
+    errors: 0,
+  });
+  expect(removals).toEqual([fileNames(rows)]);
+  expect(events.filter((event) => event === 'db:delete')).toHaveLength(1);
+});
+
+test('chunked cleanup splits object names across Storage calls of at most 1000 names', async () => {
+  config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
+  // 50 MiB in 64 KiB chunks: the file plus 800 chunk objects per row.
+  const rows = expiredRows(2, { sizeBytes: 50 * 1024 * 1024 });
+  scriptClaims(rows);
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({ deleted: 2, errors: 0 });
+  expect(removals.map((names) => names.length)).toEqual([801, 801]);
+  expect(removals.flat()).toContain(`${rows[1]!.objectPath}/chunks/799`);
+});
+
+test('a session release locks the released attachments in attachment_id order before expiring them', async () => {
+  results.delete = [[{ attachmentId: ids[2]! }, { attachmentId: ids[0]! }, { attachmentId: ids[2]! }]];
+  expect(
+    await attachments.releasePromptAttachmentsForSession({
+      sessionId,
+      projectId: scope.projectId,
+      accountId: scope.accountId,
+    }),
+  ).toBe(3);
+  expect(events).toEqual(['tx:begin', 'tx:db:delete', 'tx:db:select', 'tx:db:update', 'tx:end']);
+  // The same lock order as bindPromptAttachments, so a racing bind cannot deadlock.
+  const lock = queries.find((query) => query.op === 'select')!;
+  expect(lock.calls).toContain('orderBy()');
+  expect(lock.calls.at(-1)).toBe('for(update)');
 });

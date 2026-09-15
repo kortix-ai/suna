@@ -421,10 +421,15 @@ describe('the composer submits through the latch', () => {
     expect(send.replace(/\s+/g, ' ')).toContain(
       'controller: promptAttachments, active: activeSubmissionIdsRef.current, send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission),',
     );
-    // A refused send saves the restored draft again.
-    expect(send.slice(send.indexOf('onFailed: () => {'))).toContain(
-      'handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
+    const failed = send.slice(send.indexOf('onFailed: () => {')).replace(/\s+/g, ' ');
+    // A refused send saves the restored draft again, only where Send clears the draft. Project
+    // home (`clearOnSend={false}`) keeps it in the editor, and a connector-gate Retry that sends
+    // it must not bring it back as a saved draft.
+    expect(failed).toContain(
+      'if (clearOnSend && restoredDoc) handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
     );
+    // The tray shows the refused files again: the sent cache lets go of their pictures, unrevoked.
+    expect(failed).toContain('disownSentAttachmentPreviews(sentFiles);');
     // The host releases after its POST: the composer never forgets an upload.
     expect(code()).not.toContain('.forget(');
   });

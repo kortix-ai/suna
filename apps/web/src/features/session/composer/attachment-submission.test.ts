@@ -18,6 +18,7 @@ import {
   postWhenUploaded,
   runComposerSend,
   SENT_FAILURE_COPY,
+  sentFailureMessage,
   stageComposerFiles,
   takeNewBillingRefusals,
   type AttachmentSubmission,
@@ -177,6 +178,7 @@ describe('postWhenUploaded', () => {
       retry: () => {
         events.push('retry');
       },
+      resubmit: () => {},
       release: () => {
         events.push('release');
       },
@@ -253,6 +255,7 @@ describe('deliverAfterPaint', () => {
     readyAtSend: ids.length === 0,
     whenReady: async () => [],
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   });
   /** An upload that finishes, or fails, only when the test says so. */
@@ -554,6 +557,7 @@ describe('runComposerSend', () => {
     readyAtSend: false,
     whenReady: async () => [],
     retry: () => {},
+    resubmit: () => {},
     release: () => {},
   });
 
@@ -743,6 +747,36 @@ describe('stageComposerFiles', () => {
       }),
     ).toThrow('up to 20 attachments');
     expect(objectUrls).toBe(0);
+  });
+});
+
+describe('sentFailureMessage', () => {
+  const words = (key: string) => `words:${key}`;
+
+  test('a 4xx refusal shows its own message, not a connection hint', () => {
+    const refusal = new ApiError('You do not have access to this session', { status: 403 });
+    expect(sentFailureMessage(refusal, words)).toBe('You do not have access to this session');
+    // The caller's classified message wins over the raw one.
+    expect(sentFailureMessage(refusal, words, 'Classified refusal')).toBe('Classified refusal');
+    expect(sentFailureMessage(new ApiError('Slow down', { status: 429 }), words)).toBe('Slow down');
+    // A refusal with no words of its own falls back to the reason copy.
+    expect(sentFailureMessage(new ApiError('', { status: 409 }), words)).toBe('words:checkConnection');
+  });
+
+  test('a network or server failure asks to check the connection', () => {
+    expect(sentFailureMessage(new TypeError('Failed to fetch'), words)).toBe('words:checkConnection');
+    expect(sentFailureMessage(new ApiError('Bad gateway', { status: 502 }), words, 'Classified')).toBe(
+      'words:checkConnection',
+    );
+  });
+
+  test('a billing refusal keeps its reason copy', () => {
+    expect(sentFailureMessage(new BillingError(402, { message: 'Upgrade' }), words)).toBe(
+      'words:billingRequired',
+    );
+    expect(
+      sentFailureMessage(new ApiError('Payment required', { status: 402 }), words, 'Classified'),
+    ).toBe('words:billingRequired');
   });
 });
 

@@ -30,6 +30,11 @@ export interface AttachmentSubmission {
   whenReady: (options?: { signal?: AbortSignal }) => Promise<SessionPromptPart[]>;
   /** Restart this send's failed uploads with the same File and `attachment_id`. */
   retry: () => void;
+  /**
+   * Hand this send's uploads off again after `reclaim` returned them to the tray: a refused send
+   * that a later Retry delivers (the connector gate) needs them to outlive the composer.
+   */
+  resubmit: () => void;
   /** Release this send's uploads after its prompt POST is accepted. */
   release: () => void;
 }
@@ -127,6 +132,26 @@ export const SENT_FAILURE_COPY = {
 } as const satisfies Record<AttachmentFailureReason, string>;
 
 /**
+ * The line under "Couldn't send" for a painted send's failure. A 4xx refusal with no copy of its
+ * own (400, 403, 409, 429) is not a connection problem: it says what the server said, or
+ * `ownMessage` when the caller already classified the error. Every other failure uses its copy.
+ */
+export function sentFailureMessage(
+  error: unknown,
+  words: (key: (typeof SENT_FAILURE_COPY)[AttachmentFailureReason]) => string,
+  ownMessage?: string,
+): string {
+  const reason = attachmentFailureReason(error);
+  // Read by field, as `attachmentFailureReason` does.
+  const { status, message } = (error ?? {}) as { status?: unknown; message?: unknown };
+  if (reason === 'connection' && typeof status === 'number' && status >= 400 && status < 500) {
+    const own = ownMessage ?? (typeof message === 'string' ? message : '');
+    if (own.trim()) return own;
+  }
+  return words(SENT_FAILURE_COPY[reason]);
+}
+
+/**
  * Billing refusals among `items` that `seen` has not recorded yet. The composer opens the
  * plan dialog for them once; a failed tile stays in later snapshots without a second dialog.
  */
@@ -150,6 +175,7 @@ const NO_UPLOADS: AttachmentSubmission = {
   readyAtSend: true,
   whenReady: async () => [],
   retry: () => {},
+  resubmit: () => {},
   release: () => {},
 };
 
@@ -183,6 +209,7 @@ export function captureAttachmentSubmission(
     retry: () => {
       for (const id of submittedIds) controller.retry(id);
     },
+    resubmit: () => controller.submit(submittedIds),
     release: () => controller.forget(submittedIds),
   };
 }

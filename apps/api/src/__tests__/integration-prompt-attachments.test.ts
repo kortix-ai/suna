@@ -436,7 +436,11 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
   // Replay the READ COMMITTED interleaving deterministically: candidate SELECT
   // sees no reference, binding commits without changing the attachment tuple,
   // then cleanup acquires the tuple lock and receives its stale candidate.
-  const intercepted = spyOn(db, 'transaction').mockImplementationOnce((work) =>
+  // The sweep's first transaction is the delivery release, which runs as is;
+  // the second is the batch claim this test intercepts.
+  const intercepted = spyOn(db, 'transaction')
+    .mockImplementationOnce((work) => transaction(work))
+    .mockImplementationOnce((work) =>
     transaction(async (tx) => {
       const proxy = new Proxy(tx, {
         get(target, property) {

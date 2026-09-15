@@ -77,20 +77,21 @@ describe('requestDeadline exempts the streaming secret relay', () => {
 });
 
 /**
- * Attachment completion verifies up to 50 MiB under its own 90 s Storage bound
+ * Attachment completion verifies up to 50 MiB under its own 85 s Storage bound
  * (`COMPLETE_BOUND_MS`). The general deadline (25 s; 55 s on staging) would
  * answer 503 while that verify still runs, and the SDK retry would start a
  * second one. Completion is not exempt either: a longer deadline bounds the
- * whole request, database waits included, and answers before the SDK's 120 s
- * completion request timeout.
+ * whole request, database waits included. It answers before Cloudflare's 100 s
+ * proxy timeout, so the client never gets a 524 and re-downloads the object.
  */
 describe('attachment completion has its own request deadline', () => {
   const project = '/v1/projects/00000000-0000-4000-a000-000000000001';
 
-  test('POST complete is bounded at 105 s, not exempt', () => {
+  test('POST complete is bounded at 95 s, under the 100 s Cloudflare proxy timeout', () => {
     const complete = ctx(`${project}/attachments/attachment-1/complete`);
     expect(isExempt(complete)).toBe(false);
-    expect(requestDeadlineMs(complete)).toBe(105_000);
+    expect(requestDeadlineMs(complete)).toBe(95_000);
+    expect(requestDeadlineMs(complete)!).toBeLessThan(100_000);
   });
 
   test('the other attachment routes keep the general deadline', () => {

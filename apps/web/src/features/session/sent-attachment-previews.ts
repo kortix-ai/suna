@@ -71,6 +71,22 @@ export function adoptSentAttachmentPreviews(files: readonly AttachedFile[]): voi
   }
 }
 
+/**
+ * A refused send: its files are back in the composer tray, which draws their object URLs again.
+ * The cache lets go of them without revoking. A HEIC send's JPEG is revoked unless a tile still
+ * holds it: a tile that unmounted at Send converts again when it remounts.
+ */
+export function disownSentAttachmentPreviews(files: readonly AttachedFile[]): void {
+  for (const file of files) {
+    if (file.kind !== 'local' || !file.uploadId) continue;
+    const url = previews.get(file.uploadId);
+    if (!url) continue;
+    previews.delete(file.uploadId);
+    if (url !== file.localUrl && convertedPreviews.get(file.uploadId) !== url)
+      revokeUnsentPreview(url);
+  }
+}
+
 /** The composer revokes its object URLs through this. A URL a Send took stays alive. */
 export function revokeUnsentPreview(url: string): void {
   for (const owned of previews.values()) if (owned === url) return;
