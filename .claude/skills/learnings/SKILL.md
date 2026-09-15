@@ -6920,3 +6920,10 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** preview `980464f436` returned exact image bytes and saved message references, but the page replaced history with a stopped card when `/start` omitted the sandbox row.
 **Rule:** use transcript availability and the stopped session stage together. A missing sandbox row does not mean missing history. Keep the empty-session restart screen when no history exists.
 **Enforcer:** two failing-then-passing presentation cases and browser journey 29. The browser reads the exact image blob, reloads, and checks that no sandbox or environment row was created.
+
+### Test staged attachments and already-uploaded references separately (2026-09-15)
+
+**When:** extending attachment formats or changing prompt admission.
+**Near-miss:** Pi document staging and direct SDK sends passed, but the real composer received HTTP 400 for an immutable SVG reference. The shared inbox sanitizer still required non-native files to carry a data URL.
+**Rule:** verify both data-URL staging and immutable-reference admission through the real prompt-inbox route. Enable reference formats from the loaded session runtime, not a caller-supplied flag. Keep OpenCode defaults unchanged.
+**Enforcer:** `prompt-parts.test.ts` checks Pi-only references, malformed digests, and remote URLs. `SESS-31` submits stored PDF, text, CSV, ZIP, and SVG references through HTTP.

@@ -452,13 +452,20 @@ flow(
         stored.status(200);
         if (stored.text() !== file.bytes.toString() || stored.header('content-type') !== file.part.mime) throw new Error('document bytes or MIME changed');
       }
+      const referenced = await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+        client_message_id: `document-references-${sessionId}`,
+        message_id: `msg_${Date.now().toString(16).padStart(12, '0')}${'D'.repeat(14)}`,
+        parts: files.map(file => ({ ...file.part, url: `kortix-attachment:sha256:${file.sha256}` })),
+      }, { params });
+      referenced.status(202);
+      if ((await readPrompts()).json<any>().prompts.length !== 4) throw new Error('immutable file references did not reach the inbox');
       const invalid = await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
         client_message_id: `unsafe-document-${sessionId}`,
         message_id: `msg_${Date.now().toString(16).padStart(12, '0')}${'C'.repeat(14)}`,
         parts: [{ ...files[0]!.part, url: 'https://example.com/report.pdf' }],
       }, { params });
       invalid.status(400);
-      if ((await readPrompts()).json<any>().prompts.length !== 3) throw new Error('unsafe document URL created a prompt');
+      if ((await readPrompts()).json<any>().prompts.length !== 4) throw new Error('unsafe document URL created a prompt');
     });
     await ctx.step(
       "anonymous and nonmember callers cannot read the staged image",

@@ -553,7 +553,7 @@ projectsApp.openapi(
       // dropped turn is worse than a refused request.
       return c.json({ error: 'message_id must be an OpenCode wire message id' }, 400);
     }
-    const sanitized = sanitizeInboxPromptParts(rawParts);
+    const sanitized = sanitizeInboxPromptParts(rawParts, { allowSessionAttachments: sessionMetadataClaimsPiWorker(metadata) });
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
