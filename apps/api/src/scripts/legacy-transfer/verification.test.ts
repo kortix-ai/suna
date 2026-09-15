@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test';
-import {assertWorkspaceVerified,assertApprovedMissingSandboxException,assertApprovedNoReferenceWorkspaceException} from './verification';
+import {assertApprovedUnrecoverableWorkspaceException,assertWorkspaceVerified,assertApprovedMissingSandboxException,assertApprovedNoReferenceWorkspaceException} from './verification';
 const valid = {workspace_status:'captured',source_sandbox_id:'source-box',workspace_api_verified_files:1,remote_archive_verified_at:'2026-09-15T00:00:00.000Z',remote_archive_files:6,workspace_capture:{archive_sha256:'a'.repeat(64),entries:4,files:1},workspace_restore:{restored_entries:4,regular_files:1,metadata_verified:true,root_directory_verified:true,exact_inventory_verified:true,file_hashes_verified:true,target:'/workspace/project'}};
 test('missing references and unapproved skips cannot complete a file migration',()=>{
  for(const workspace_status of ['no-source-sandbox-reference','unresolved-source-sandbox','capture-pending','skipped']) expect(()=>assertWorkspaceVerified('project',{workspace_status})).toThrow('Workspace is unresolved');
@@ -39,4 +39,15 @@ test('a scoped missing-reference waiver verifies history without file proof',()=
  expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,source_sandbox_id:'box'})).toThrow();
  expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,approved_exception:{...proof.approved_exception,source_mapping_problems:[]}})).toThrow();
  expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,remote_archive_files:6})).toThrow();
+});
+
+
+test('unrecoverable workspace waiver is scoped and never claims restored files',()=>{
+ const proof={workspace_status:'approved-unrecoverable-workspace-skip',source_sandbox_id:'box',files_status:'unavailable',approved_exception:{source_ref:'source',source_project_id:'project',source_sandbox_id:'box',reason:'unrecoverable-missing-volume',authorized_at:'2026-09-15T00:00:00Z',provider_state:'error',recoverable:false},remote_archive_files:4,remote_archive_verified_at:'2026-09-15T00:00:00Z',owner_verified:true,marko_access_verified:true,native_messages_verified:true};
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',proof)).not.toThrow();
+ expect(()=>assertWorkspaceVerified('project',proof)).toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('other','project',proof)).toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','other',proof)).toThrow();
+ for(const patch of [{source_sandbox_id:'other'},{files_status:'restored'},{workspace_capture:{}},{workspace_restore:{}},{remote_archive_files:6},{owner_verified:false},{marko_access_verified:false},{native_messages_verified:false}])expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...proof,...patch})).toThrow();
+ for(const patch of [{recoverable:true},{provider_state:'archived'},{authorized_at:''},{reason:'missing-sandbox-reference'}])expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...proof,approved_exception:{...proof.approved_exception,...patch}})).toThrow();
 });

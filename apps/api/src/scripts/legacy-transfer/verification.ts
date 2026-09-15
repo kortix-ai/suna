@@ -74,3 +74,29 @@ export function assertApprovedNoReferenceWorkspaceException(projectId: string, p
     throw new Error('Approved no-reference history evidence is incomplete');
   }
 }
+
+/** A scoped unrecoverable-provider waiver must not claim a restored workspace. */
+export function assertApprovedUnrecoverableWorkspaceException(sourceRef: string, projectId: string, proof: {
+  workspace_status?: string;
+  source_sandbox_id?: string | null;
+  files_status?: string;
+  approved_exception?: { source_ref?: string; source_project_id?: string; source_sandbox_id?: string; reason?: string; authorized_at?: string; provider_state?: string; recoverable?: boolean };
+  workspace_capture?: unknown;
+  workspace_restore?: unknown;
+  remote_archive_files?: number;
+  remote_archive_verified_at?: string;
+  owner_verified?: boolean;
+  marko_access_verified?: boolean;
+  native_messages_verified?: boolean;
+}): void {
+  const exception = proof.approved_exception;
+  if (proof.workspace_status !== 'approved-unrecoverable-workspace-skip' || proof.files_status !== 'unavailable' ||
+      !proof.source_sandbox_id || exception?.source_ref !== sourceRef || exception.source_project_id !== projectId ||
+      exception.source_sandbox_id !== proof.source_sandbox_id || exception.reason !== 'unrecoverable-missing-volume' ||
+      !exception.authorized_at || exception.provider_state !== 'error' || exception.recoverable !== false ||
+      proof.workspace_capture != null || proof.workspace_restore != null || proof.remote_archive_files !== 4 ||
+      !proof.remote_archive_verified_at || proof.owner_verified !== true || proof.marko_access_verified !== true ||
+      proof.native_messages_verified !== true) {
+    throw new Error('Approved unrecoverable workspace history evidence is incomplete');
+  }
+}

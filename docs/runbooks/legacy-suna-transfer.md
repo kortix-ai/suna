@@ -689,3 +689,21 @@ Import retries apply archive permissions only to expected final artifacts.
 Interrupted-upload staging files may belong to root and must not enter the
 runtime user's permission command through a wildcard. Native import failures
 save a private diagnostic containing the exit code and command output.
+
+### Explicit unrecoverable-volume exception — 2026-09-15
+
+The user authorized a history-only import for Trimaran source project
+`de55c5ec-752e-46a2-8da3-31b699dc8c7d`, sandbox
+`1af0b1dc-e5e7-450c-b761-bef63778e4ed`. Fresh source API checks confirmed the
+project/owner mapping, provider `error` state, `recoverable: false`, and the
+missing-volume error. This exception does not broaden either earlier skip policy.
+The verifier requires an exact source/project/sandbox match, explicit authorization,
+four durable history artifacts, and verified history, owner, and Marko access.
+It rejects capture or restore evidence for this exception.
+
+Destination session `7c49e6b8-3753-4ff5-a9d0-4518dbf423b8` imported 1,529 source
+rows as 239 native messages on Platinum. It retains the original owner and title.
+Its status is `verified-approved-unrecoverable-file-skip`, with
+`files_status: unavailable`. A hash-verified `FILES_UNAVAILABLE.txt` notice lives
+in `/workspace/de55c5ec-752e-46a2-8da3-31b699dc8c7d/`. The notice is a migration
+artifact, not a restored source file. Stop readback passed after the import.

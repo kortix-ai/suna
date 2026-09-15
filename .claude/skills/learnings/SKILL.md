@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Recheck externally archiving sandboxes without starving later work (2026-09-15)
+
+**When:** an archive worker observes an existing archive transition, schedule a
+later recheck and let other stopped sessions enter the queue. Reserve each new
+archive request before awaiting the provider; cap migration-requested transitions
+at eight. *Incident:* eight externally archiving Daytona sandboxes occupied every
+selection slot for 45 minutes. Later stopped Platinum sessions were never selected.
+*Enforcer:* the private archive worker uses recheck timestamps and request reservations.
+
 ### Scope retry permission changes to committed transfer artifacts (2026-09-15)
 
 **When:** retrying a sandbox import, name the expected archive files explicitly.
