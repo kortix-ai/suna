@@ -6977,3 +6977,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** a Pi project with shared `opencode.jsonc` failed compilation on preview `970661a235`. The API runs Bun 1.2.23, which has no `Bun.JSONC`; local and preview-host tests ran Bun 1.3.14.
 **Rule:** use an explicit JSONC parser dependency in the API. Reject parser errors, and test comments, trailing commas, and malformed input against the deployed runtime version.
 **Enforcer:** `compile-pi-commands.test.ts` disables `Bun.JSONC` for its compatibility case. GH-18 includes a shared JSONC command and verifies it in the downloaded Pi artifact.
+
+### Bound SSE connection setup independently from stream lifetime (2026-09-15)
+
+**Incident:** preview `9ad0bb908d` completed an OpenCode custom tool and response, but the API turn stayed active. The cold daemon never logged a successful event subscription. A separate request and the resumed daemon subscribed successfully. Tests reproduced an indefinitely pending response-header request that also prevented periodic reconciliation.
+**Rule:** bound event-subscription response headers to five seconds. Clear that deadline once connected so a healthy stream can remain open. Start terminal reconciliation before the first subscription succeeds, and stop both mechanisms during shutdown.
+**Enforcer:** `event-loop-boot-race.test.ts` verifies a stalled first connection, recovery and idle-event delivery, reconciliation before connection, shutdown, and a healthy stream that outlives the connection deadline.

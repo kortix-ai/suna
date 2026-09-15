@@ -2286,3 +2286,10 @@ checkout's Git HEAD and working file bytes after the default branch moves.
 The API's Bun version can differ from the worker and daemon versions. Shared
 JSONC command configuration uses `jsonc-parser`, not `Bun.JSONC`. The live artifact
 flow verifies comments and trailing commas; malformed configuration fails compilation.
+
+The next OpenCode cold test loaded its custom tool and helper, but the completed
+turn stayed active. The daemon had not subscribed to OpenCode events. Event
+connection setup now has a five-second header deadline; established streams
+retain their full lifetime. Terminal reconciliation starts before the first
+connection succeeds. Regression tests reproduce the stalled connection and
+verify recovery, continued streaming, and shutdown.

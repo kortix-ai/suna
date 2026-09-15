@@ -65,6 +65,7 @@ type OpencodeEventHandlers = {
 
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
+  connectTimeoutMs?: number
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -89,15 +90,28 @@ export function startOpencodeEventLoop(
   // from "an established subscription dropped" (real fault, back off). See the
   // retry loop below.
   let everConnected = false
-  let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  const reconcileTimer = handlers.onReconcile
+    ? setInterval(() => handlers.onReconcile?.(), options.reconcileIntervalMs ?? 30_000)
+    : null
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
-    abortController = new AbortController()
-    const res = await fetch(url, {
-      headers: { Accept: 'text/event-stream' },
-      signal: abortController.signal,
-    })
+    const controller = new AbortController()
+    abortController = controller
+    const connectTimeoutMs = options.connectTimeoutMs ?? 5_000
+    const connectTimer = setTimeout(() => {
+      logger.warn('[opencode-events] subscription headers timed out', { connectTimeoutMs })
+      controller.abort(new DOMException('OpenCode event subscription timed out', 'TimeoutError'))
+    }, connectTimeoutMs)
+    let res: Response
+    try {
+      res = await fetch(url, {
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(connectTimer)
+    }
     if (!res.ok || !res.body) {
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
@@ -108,12 +122,6 @@ export function startOpencodeEventLoop(
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
     // reconnect after the turn already relayed is a no-op.
     handlers.onConnected?.()
-    if (!reconcileTimer && handlers.onReconcile) {
-      reconcileTimer = setInterval(
-        () => handlers.onReconcile?.(),
-        options.reconcileIntervalMs ?? 30_000,
-      )
-    }
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()

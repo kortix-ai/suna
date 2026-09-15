@@ -71,6 +71,90 @@ function eventServerWithFrame(frame: string) {
 const cfg = { workspace: '/workspace' } as never
 
 describe('event-loop boot race — the SSE subscribe must not sleep through opencode becoming ready', () => {
+  test('retries a cold subscription that never returns response headers', async () => {
+    let attempts = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        attempts++
+        if (attempts === 1) {
+          return new Promise<Response>((resolve) => {
+            req.signal.addEventListener('abort', () => resolve(new Response(null, { status: 408 })), { once: true })
+          })
+        }
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"type":"session.idle","properties":{"sessionID":"ses_recovered"}}\n\n'))
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } })
+      },
+    })
+    servers.push(server)
+    const idle: string[] = []
+    const loop = startOpencodeEventLoop(fakeOpencode(server.port!), cfg, {
+      onSessionIdle: (id) => idle.push(id),
+    }, { connectTimeoutMs: 25 })
+    loops.push(loop)
+    const deadline = Date.now() + 1_000
+    while (!idle.length && Date.now() < deadline) await Bun.sleep(10)
+    expect(idle).toEqual(['ses_recovered'])
+    expect(attempts).toBe(2)
+  })
+
+  test('reconciles completed turns before the first subscription succeeds and stops reconciliation on shutdown', async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        return new Promise<Response>((resolve) => {
+          req.signal.addEventListener('abort', () => resolve(new Response(null, { status: 408 })), { once: true })
+        })
+      },
+    })
+    servers.push(server)
+    let reconciliations = 0
+    const loop = startOpencodeEventLoop(fakeOpencode(server.port!), cfg, {
+      onReconcile: () => { reconciliations++ },
+    }, { reconcileIntervalMs: 10, connectTimeoutMs: 100 })
+    loops.push(loop)
+    const deadline = Date.now() + 300
+    while (reconciliations < 2 && Date.now() < deadline) await Bun.sleep(10)
+    expect(reconciliations).toBeGreaterThanOrEqual(2)
+    loop.stop()
+    const stoppedCount = reconciliations
+    await Bun.sleep(50)
+    expect(reconciliations).toBe(stoppedCount)
+  })
+
+  test('keeps an established stream alive beyond the connection deadline', async () => {
+    let attempts = 0
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        attempts++
+        return new Response(new ReadableStream<Uint8Array>({
+          start(stream) {
+            controller = stream
+            stream.enqueue(new TextEncoder().encode(': connected\n\n'))
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } })
+      },
+    })
+    servers.push(server)
+    const idle: string[] = []
+    const loop = startOpencodeEventLoop(fakeOpencode(server.port!), cfg, {
+      onSessionIdle: (id) => idle.push(id),
+    }, { connectTimeoutMs: 25 })
+    loops.push(loop)
+    await loop.connected
+    await Bun.sleep(80)
+    controller!.enqueue(new TextEncoder().encode('data: {"type":"session.idle","properties":{"sessionID":"ses_late"}}\n\n'))
+    const deadline = Date.now() + 1_000
+    while (!idle.length && Date.now() < deadline) await Bun.sleep(10)
+    expect(idle).toEqual(['ses_late'])
+    expect(attempts).toBe(1)
+  })
+
   test('subscribes promptly after several pre-connect refusals', async () => {
     const { port } = flakyEventServer(8)
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
