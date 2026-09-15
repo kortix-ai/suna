@@ -779,32 +779,30 @@ export function startProxy(
   // Attachment offload (attachment-offload.ts): inline image bytes out of the
   // transcript store, only while no turn runs. Every 5 min, and right after a
   // memory-guard abort.
-  const offloadDbPath = opencodeDbPath(OPENCODE_HOME);
-  const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME);
-  let offloadRunning = false;
+  const offloadDbPath = opencodeDbPath(OPENCODE_HOME)
+  const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME)
+  let offloadRunning = false
+  let stopped = false
   const runOffloadIfIdle = async (why: string): Promise<void> => {
-    if (currentCfg.workload === 'environment' || offloadRunning) return;
-    if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return;
-    offloadRunning = true;
+    if (currentCfg.workload === 'environment' || stopped || offloadRunning) return
+    if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return
+    offloadRunning = true
     try {
-      if ((await turnInFlight()) !== false) return;
-      const result = await runAttachmentOffloadPass({
-        dbPath: offloadDbPath,
-        sidecarDir: offloadSidecarDir,
-      });
-      if (result.offloaded > 0)
-        logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result });
+      if ((await turnInFlight()) !== false || stopped) return
+      const result = await runAttachmentOffloadPass({ dbPath: offloadDbPath, sidecarDir: offloadSidecarDir })
+      if (result.offloaded > 0) logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result })
     } catch (err) {
       logger.warn('[offload] pass threw', { err: (err as Error).message });
     } finally {
       offloadRunning = false;
     }
-  };
-  const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000);
-  offloadTimer.unref?.();
-  setTimeout(() => void runOffloadIfIdle('boot'), 90_000).unref?.();
+  }
+  const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000)
+  offloadTimer.unref?.()
+  const offloadBootTimer = setTimeout(() => void runOffloadIfIdle('boot'), 90_000)
+  offloadBootTimer.unref?.()
 
-  resourceMonitor = startResourceMonitor({
+  const proxyResourceMonitor = startResourceMonitor({
     opencodePid: () => opencode.getPid(),
     opencodeState: () => opencode.getState(),
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
@@ -834,7 +832,8 @@ export function startProxy(
         void runOffloadIfIdle('memory-guard');
       },
     },
-  });
+  })
+  resourceMonitor = proxyResourceMonitor
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
   // is the only thing that knows, so it answers the question rather than the
@@ -973,7 +972,12 @@ export function startProxy(
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId });
     },
     async stop() {
-      server.stop(true);
+      stopped = true
+      clearTimeout(offloadBootTimer)
+      clearInterval(offloadTimer)
+      proxyResourceMonitor.stop()
+      if (resourceMonitor === proxyResourceMonitor) resourceMonitor = null
+      server.stop(true)
     },
   };
 }

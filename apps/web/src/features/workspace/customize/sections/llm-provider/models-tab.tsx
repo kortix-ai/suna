@@ -6,18 +6,16 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * ## What this screen is for
  *
- * Exactly one thing: turning models on and off in the model menu. Everything
- * here is subordinate to that, including the two default scopes, which are
- * settings ABOUT a model that is already on.
+ * Explicit model disables block inference. Legacy picker-only preferences
+ * remain distinct and are labeled so a hidden model is not mistaken for a
+ * blocked model. Default scopes apply to models offered by the picker.
  *
  * ## The row shows real numbers, not a paraphrase
  *
  * A row is the model's name, its capability icons (reasoning / tool calling /
  * vision), its default tags, and the catalog's own figures — context window
- * and price per 1M tokens — the same `ModelCapabilityIcons` /
- * `formatTokenCount` / `formatPricePerMillion` `provider-detail.tsx` uses for
- * the "Add provider" catalog. One catalog, one set of facts, everywhere it's
- * shown. The wire id kept its one real use, pasting it into a config, and
+ * and price per 1M tokens. Provider links open this same grouped list.
+ * The wire id keeps its use in configuration and
  * lives in a "Copy model ID" item in the row's own menu: one click for the
  * few who need it, no line for everyone who does not.
  */
@@ -27,9 +25,11 @@ import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
+import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
 import {
+  useModelAccess,
   useModelDefaults,
   useModelEnablement,
   useProjectModels,
@@ -42,6 +42,7 @@ import {
   StarIcon as Star,
 } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
+import { ProviderAccessMenu } from './provider-access-menu';
 
 import {
   DropdownMenu,
@@ -73,10 +74,13 @@ import { formatPricePerMillion, formatTokenCount } from './utils';
 export function ModelsTab({
   projectId,
   search: hostSearch,
+  canWrite = false,
 }: {
   projectId: string;
   search?: string;
+  canWrite?: boolean;
 }) {
+  const tAccess = useTranslations('modelAccess');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [ownSearch, setOwnSearch] = useState('');
   const search = hostSearch ?? ownSearch;
@@ -88,6 +92,7 @@ export function ModelsTab({
   // is the one and only thing deciding whether it appears there.
   const models = useProjectModels(projectId);
   const enablement = useModelEnablement(projectId);
+  const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
   // the default, so the control for that belongs on the same screen.
@@ -159,9 +164,17 @@ export function ModelsTab({
             <Button
               variant="ghost"
               size="sm"
-              disabled={enablement.isUpdating}
+              disabled={!canWrite || enablement.isUpdating || access.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => void enablement.resetToDefaults()}
+              onClick={() =>
+                void enablement
+                  .resetToDefaults()
+                  .catch((error: unknown) =>
+                    errorToast(
+                      error instanceof Error ? error.message : tAccess('resetError'),
+                    ),
+                  )
+              }
             >
               {tI18nComplete.raw('text5eed7e9fc8f3')}
             </Button>
@@ -192,14 +205,25 @@ export function ModelsTab({
                   name={group.providerName}
                   size="small"
                 />
-                <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+                <span className="text-muted-foreground text-xs font-medium">
+                  {group.providerName}
+                </span>
                 <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
                   {group.rows.length}
                 </span>
+                <ProviderAccessMenu
+                  access={access}
+                  providerId={group.providerID}
+                  name={group.providerName}
+                  canWrite={canWrite}
+                />
               </div>
               <div className="bg-popover overflow-hidden rounded-md border">
                 {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
                   const enabled = !!model.enabled;
+                  const providerDisabled = access.data?.disabledProviders.includes(group.providerID) ?? false;
+                  const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
+                  const hiddenFromPicker = !!access.data && !enabled && !providerDisabled && !modelDisabled;
                   // `auto` resolves to this one, so turning it off would break
                   // every default request — the server refuses it with a 409.
                   // Lock the switch and say why instead of letting the click
@@ -222,6 +246,7 @@ export function ModelsTab({
                     // carries its own accessible name instead.
                     <div
                       key={wireId}
+                      data-model-id={wireId}
                       className={cn(
                         'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
                         i > 0 && 'border-border border-t',
@@ -233,6 +258,12 @@ export function ModelsTab({
                           <span className="text-foreground truncate text-sm">
                             {model.modelName}
                           </span>
+                          {hiddenFromPicker && (
+                            <Hint label={tAccess('hiddenHint')}>
+                              <Tag>{tAccess('hidden')}</Tag>
+                            </Hint>
+                          )}
+                          {modelDisabled && !providerDisabled && <Tag>{tAccess('disabled')}</Tag>}
                           <ModelCapabilityIcons
                             reasoning={model.capabilities?.reasoning}
                             toolCall={model.capabilities?.toolcall}
@@ -296,7 +327,7 @@ export function ModelsTab({
                       `useDialogDepth`, so it stacks above the modal this tab
                       lives in without any per-call-site z-index.
                     */}
-                      {enabled && (
+                      {canWrite && (enabled || hiddenFromPicker) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -312,8 +343,22 @@ export function ModelsTab({
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-90">
+                            {hiddenFromPicker && (
+                              <DropdownMenuItem
+                                disabled={access.isUpdating}
+                                onSelect={() =>
+                                  void access
+                                    .setEnabled({ target: 'model', id: wireId, enabled: false })
+                                    .catch((error: unknown) =>
+                                      errorToast(error instanceof Error ? error.message : tAccess('modelError')),
+                                    )
+                                }
+                              >
+                                {tAccess('disableModel')}
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
-                              disabled={isProjectDefault || defaults.isUpdating}
+                              disabled={!enabled || isProjectDefault || defaults.isUpdating}
                               onSelect={() =>
                                 void defaults.setProjectDefault(wireToModelKey(wireId))
                               }
@@ -323,7 +368,7 @@ export function ModelsTab({
                               {isProjectDefault && <Check className="ml-auto size-3.5" />}
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              disabled={isAccountDefault || defaults.isUpdating}
+                              disabled={!enabled || isAccountDefault || defaults.isUpdating}
                               onSelect={() =>
                                 void defaults.setAccountDefault(wireToModelKey(wireId))
                               }
@@ -350,14 +395,30 @@ export function ModelsTab({
                       )}
                       <Switch
                         checked={enabled}
-                        disabled={enablement.isUpdating || isProjectDefault}
+                        disabled={
+                          !canWrite ||
+                          access.isLoading ||
+                          access.isUpdating ||
+                          (isProjectDefault && enabled) ||
+                          access.data?.disabledProviders.includes(group.providerID)
+                        }
                         aria-label={
                           isProjectDefault
                             ? tI18nComplete('texta931b0c34b16', { value0: model.modelName })
-                            : `Offer ${model.modelName}`
+                            : `Enable ${model.modelName}`
                         }
-                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : undefined}
-                        onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                        title={isProjectDefault ? tI18nComplete.raw('textecb89227d17e') : hiddenFromPicker ? tAccess('hiddenShort') : undefined}
+                        onCheckedChange={(next) =>
+                          void access
+                            .setEnabled({ target: 'model', id: wireId, enabled: next })
+                            .catch((error: unknown) =>
+                              errorToast(
+                                error instanceof Error
+                                  ? error.message
+                                  : tAccess('modelError'),
+                              ),
+                            )
+                        }
                         className="mt-0.5 shrink-0"
                       />
                     </div>

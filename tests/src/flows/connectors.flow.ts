@@ -372,6 +372,7 @@ flow(
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/connectors/projects/:projectId/discover/connectors',
       'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
+      'GET /v1/connectors/projects/:projectId/discover/sections',
     ],
   },
   async (ctx) => {
@@ -406,6 +407,61 @@ flow(
         });
       detail.status(200).body().exists('$.item').exists('$.variants');
     });
+    await ctx.step(
+      'browse sections state each section total that its category filter returns',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/discover/sections', {
+            params: { projectId: p.id },
+            query: { perCategory: '6', maxCategories: '12' },
+          });
+        r.status([200, 502]);
+        if (r.statusCode !== 200) return;
+        r.body().exists('$.popular').exists('$.sections').exists('$.categories');
+        const body = r.json<{
+          popular: unknown[];
+          sections: Array<{ key: string; total: number; items: unknown[] }>;
+          categories: Array<{ key: string; count: number }>;
+        }>();
+        if (body.popular.length > 6) {
+          throw new Error(`Popular carried ${body.popular.length} cards over a 6-card slice`);
+        }
+        if (body.sections.length === 0 || body.sections.length > 12) {
+          throw new Error(`expected 1..12 sections, got ${body.sections.length}`);
+        }
+        for (const section of body.sections) {
+          if (section.items.length > 6 || section.total < section.items.length) {
+            throw new Error(
+              `section ${section.key} reports total ${section.total} over ${section.items.length} cards`,
+            );
+          }
+          const facet = body.categories.find((category) => category.key === section.key);
+          if (facet?.count !== section.total) {
+            throw new Error(`category facet for ${section.key} disagrees with its section total`);
+          }
+        }
+        // The regression: headings counted one 48-item page of a ~5500-item
+        // catalogue. The largest section of the complete index is far bigger.
+        const largest = [...body.sections].sort((a, b) => b.total - a.total)[0];
+        if (largest.total <= largest.items.length) {
+          throw new Error(`largest section ${largest.key} reports only ${largest.total}`);
+        }
+        const opened = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/discover/connectors', {
+            params: { projectId: p.id },
+            query: { category: largest.key, limit: '24' },
+          });
+        opened.status(200);
+        const page = opened.json<{ total?: number }>();
+        if (page.total !== largest.total) {
+          throw new Error(
+            `section ${largest.key} heading says ${largest.total}, its category filter returns ${page.total}`,
+          );
+        }
+      },
+    );
     await ctx.step('NONMEMBER cannot browse or resolve catalogue records', async () => {
       const list = await ctx.client
         .as(ctx.P.NONMEMBER)
@@ -413,6 +469,12 @@ flow(
           params: { projectId: p.id },
         });
       list.status(403);
+      const sections = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/connectors/projects/:projectId/discover/sections', {
+          params: { projectId: p.id },
+        });
+      sections.status(403);
       const detail = await ctx.client
         .as(ctx.P.NONMEMBER)
         .get('/v1/connectors/projects/:projectId/discover/connectors/detail', {
@@ -922,6 +984,7 @@ flow(
     routes: [
       'GET /v1/connectors/connect-status',
       'GET /v1/connectors/projects/:projectId/connect/toolkits',
+      'GET /v1/connectors/projects/:projectId/connect/sections',
       'POST /v1/connectors/projects/:projectId/connectors',
       'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
@@ -1111,6 +1174,69 @@ flow(
         if (body.toolkits.some((item) => !item.categories?.includes('developer-tools'))) {
           throw new Error(
             'Composio returned an item outside the requested developer-tools category',
+          );
+        }
+      },
+    );
+
+    await ctx.step(
+      'Composio browse sections state each category total that its View all filter returns',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/sections', {
+            params: { projectId: p.id },
+            query: { perCategory: '6', maxCategories: '12' },
+          });
+        if (!composioConfigured) {
+          r.status(501);
+          return;
+        }
+        r.status(200).body().has('$.provider', 'composio').exists('$.sections').exists('$.categories');
+        const body = r.json<{
+          sections: Array<{
+            key: string;
+            total: number;
+            toolkits: Array<{ slug: string; categories?: string[] }>;
+          }>;
+          categories: Array<{ key: string; count: number }>;
+        }>();
+        if (body.sections.length === 0 || body.sections.length > 12) {
+          throw new Error(`expected 1..12 sections, got ${body.sections.length}`);
+        }
+        const totals = body.sections.map((section) => section.total);
+        if (totals.some((total, index) => index > 0 && total > totals[index - 1])) {
+          throw new Error(`sections are not ordered largest first: ${totals.join(',')}`);
+        }
+        const largest = body.sections[0];
+        // The regression: a total equal to the loaded card count (`· 1`). The
+        // largest Composio category holds hundreds of toolkits.
+        if (largest.toolkits.length > 6 || largest.total <= largest.toolkits.length) {
+          throw new Error(
+            `largest section ${largest.key} reports total ${largest.total} over ${largest.toolkits.length} cards`,
+          );
+        }
+        for (const section of body.sections) {
+          if (section.toolkits.some((item) => !item.categories?.includes(section.key))) {
+            throw new Error(`section ${section.key} carried a toolkit outside its category`);
+          }
+          const facet = body.categories.find((category) => category.key === section.key);
+          if (facet?.count !== section.total) {
+            throw new Error(`category facet for ${section.key} disagrees with its section total`);
+          }
+        }
+
+        const viewAll = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+            params: { projectId: p.id },
+            query: { category: largest.key, limit: '20' },
+          });
+        viewAll.status(200);
+        const opened = viewAll.json<{ total?: number }>();
+        if (opened.total !== largest.total) {
+          throw new Error(
+            `section ${largest.key} heading says ${largest.total}, View all returns ${opened.total}`,
           );
         }
       },
@@ -1919,7 +2045,10 @@ flow(
   {
     domain: 'connectors',
     requires: ['database'],
+    // Includes managed Git writes and ten sequential manifest reads on deployed targets.
+    timeoutMs: 300_000,
     routes: [
+      'POST /v1/accounts/tokens',
       'POST /v1/connectors/projects/:projectId/call',
       'GET /v1/connectors/projects/:projectId/catalog',
       'GET /v1/connectors/projects/:projectId/connectors',
@@ -1929,13 +2058,6 @@ flow(
     ],
   },
   async (ctx) => {
-    // The session-bound token is minted the way apps/api mints it: an
-    // `account_tokens` row whose secret hash is scrypt(secret, API_KEY_SECRET).
-    // The local runner pins that secret; the preview harness exports the
-    // self-host one; any other target must provide KE2E_API_KEY_SECRET.
-    const apiKeySecret =
-      process.env.KE2E_API_KEY_SECRET ??
-      (ctx.env.target === 'local' ? 'local-flow-runner-api-key-secret' : null);
     const team = await ctx.fixtures.team();
     // `managedGit` on the LOCAL target is a local bare repository (no GitHub),
     // which is what the gateway's manifest read needs; the capability gate is
@@ -1952,7 +2074,7 @@ flow(
     );
     declare.status(200);
 
-    const { randomUUID, randomBytes, scryptSync } = await import('node:crypto');
+    const { randomUUID } = await import('node:crypto');
     const { Client: PgClient } = await import('pg');
     const databaseUrl = ctx.env.databaseUrl as string;
     const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
@@ -1960,19 +2082,11 @@ flow(
       connectionString: databaseUrl,
       ssl: local ? false : { rejectUnauthorized: false },
     });
-    await db.connect();
 
     const sessionId = randomUUID();
     const openapiSlug = `ke2e-openapi-${Date.now().toString(36)}`;
-    const secret = `kortix_pat_${randomBytes(24).toString('hex')}`;
-    // Asserted skip: the agent declaration above already proved the manifest
-    // write on this target, so a target that cannot mint a session token skips
-    // AFTER a passing assertion, not before running anything.
-    if (!apiKeySecret) {
-      ctx.skip('KE2E_API_KEY_SECRET is required to mint a session-bound token on this target');
-    }
-    const secretHash = `scrypt:v1:${scryptSync(secret, apiKeySecret as string, 32).toString('hex')}`;
-    const session = ctx.client.withBearer(secret, 'SESSION_TOKEN');
+    let tokenId: string | null = null;
+    let session = ctx.client;
     const call = (connector: string, action: string) =>
       session.post(
         '/v1/connectors/projects/:projectId/call',
@@ -1989,7 +2103,15 @@ flow(
     const HEX40 = /^[0-9a-f]{40}$/;
 
     try {
+      await db.connect();
       await ctx.step('seed a Slack-born session, its sandbox row, and a session-bound token', async () => {
+        const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+          name: `CONN-27 session ${sessionId.slice(0, 8)}`,
+        });
+        minted.status(201);
+        const credential = minted.json<{ token_id: string; secret_key: string }>();
+        tokenId = credential.token_id;
+        session = ctx.client.withBearer(credential.secret_key, 'SESSION_TOKEN');
         await db.query(
           `INSERT INTO kortix.project_sessions
              (session_id, account_id, project_id, branch_name, agent_name, status, metadata, created_by, visibility)
@@ -2006,22 +2128,21 @@ flow(
           ],
         );
         await db.query(
-          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id)
-           VALUES ($1::uuid, $1, $2, $3, 'active', $4)`,
-          [sessionId, team.id, p.id, `ke2e-${sessionId}`],
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sessionId, team.id, p.id],
         );
         // The stale narrow grant a token minted before the manifest changed
         // would hold: only `stripe`, no provenance at all.
         await db.query(
-          `INSERT INTO kortix.account_tokens
-             (account_id, user_id, name, public_key, secret_key_hash, project_id, session_id, agent_grant)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+          `UPDATE kortix.account_tokens
+             SET account_id = $2, user_id = $3, project_id = $4,
+                 session_id = $5, agent_grant = $6::jsonb
+           WHERE token_id = $1`,
           [
+            tokenId,
             team.id,
             ownerUserId,
-            `Session ${sessionId.slice(0, 8)}`,
-            `kortix_pk_${randomBytes(16).toString('hex')}`,
-            secretHash,
             p.id,
             sessionId,
             JSON.stringify({ agent: 'kortix', connectors: ['stripe'], kortixCli: [], env: [] }),
@@ -2223,7 +2344,7 @@ flow(
       );
     } finally {
       await db
-        .query(`DELETE FROM kortix.account_tokens WHERE session_id = $1`, [sessionId])
+        .query(`DELETE FROM kortix.account_tokens WHERE token_id = $1`, [tokenId])
         .catch(() => undefined);
       await db
         .query(`DELETE FROM kortix.session_sandboxes WHERE session_id = $1`, [sessionId])

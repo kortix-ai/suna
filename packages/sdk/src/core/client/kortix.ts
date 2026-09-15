@@ -357,6 +357,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
     modelPicker: P.getProjectModelPicker,
+    modelAccess: P.getProjectModelAccess,
+    setModelAccess: P.setProjectModelAccess,
     sandboxHealth: P.getProjectSandboxHealth,
     sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
@@ -461,6 +463,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
       modelPicker: () => P.getProjectModelPicker(projectId),
+      modelAccess: () => P.getProjectModelAccess(projectId),
+      setModelAccess: (change: P.ProjectModelAccessChange) => P.setProjectModelAccess(projectId, change),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
@@ -652,6 +656,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         discover: {
           list: (...a: DropFirst<Parameters<typeof P.listDiscoverConnectors>>) =>
             P.listDiscoverConnectors(projectId, ...a),
+          /** The browse page: Popular plus a fixed top slice of each section,
+           *  with each section's true total, in one request. */
+          sections: (...a: DropFirst<Parameters<typeof P.listDiscoverSections>>) =>
+            P.listDiscoverSections(projectId, ...a),
           detail: (...a: DropFirst<Parameters<typeof P.getDiscoverConnector>>) =>
             P.getDiscoverConnector(projectId, ...a),
         },

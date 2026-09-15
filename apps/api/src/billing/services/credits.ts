@@ -13,39 +13,7 @@ import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
 import { requireModelPricing } from '../../router/config/models';
-
-const CREDIT_GRANT_DUPLICATE_MARKERS = [
-  'kortix_unique_stripe_event',
-  'idx_kortix_credit_ledger_idempotency',
-];
-
-function errorChainText(error: unknown): string {
-  const parts: string[] = [];
-  const seen = new Set<unknown>();
-  let current: unknown = error;
-
-  while (current && typeof current === 'object' && !seen.has(current)) {
-    seen.add(current);
-    const record = current as Record<string, unknown>;
-    for (const key of ['name', 'message', 'code', 'constraint', 'constraint_name', 'detail']) {
-      const value = record[key];
-      if (typeof value === 'string' && value) parts.push(value);
-    }
-    current = record.cause;
-  }
-
-  if (parts.length === 0 && error != null) parts.push(String(error));
-  return parts.join('\n');
-}
-
-function isDuplicateCreditGrantError(error: unknown): boolean {
-  const text = errorChainText(error).toLowerCase();
-  const hasDuplicateSignal =
-    text.includes('duplicate key') || text.includes('unique constraint') || text.includes('23505');
-  return (
-    hasDuplicateSignal && CREDIT_GRANT_DUPLICATE_MARKERS.some((marker) => text.includes(marker))
-  );
-}
+import { isDuplicateCreditGrantError } from './credit-duplicate-error';
 
 export async function getBalance(accountId: string) {
   const row = await getCreditBalance(accountId);
@@ -360,6 +328,17 @@ export async function resetExpiringCredits(
   });
 
   if (error) {
+    // The same reset arriving twice is idempotent by design, and the RPC
+    // refusing the second copy is not a fault — do not page for it, and do not
+    // run the fallback, whose insert would collide on the same constraint and
+    // whose account write would re-apply a grant that already landed.
+    if (isDuplicateCreditGrantError(error)) {
+      console.info('[Credits] Reset already applied; leaving the existing grant alone', {
+        accountId,
+        stripeEventId: stripeEventId ?? null,
+      });
+      return;
+    }
     console.error('[Credits] Reset expiring credits error, using drizzle fallback:', error);
 
     const account = await getCreditAccount(accountId);
@@ -385,8 +364,20 @@ export async function resetExpiringCredits(
         stripeEventId: stripeEventId ?? null,
       });
     } catch (ledgerErr) {
-      const msg = ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr);
-      if (!msg.includes('duplicate key')) {
+      // A duplicate here is the idempotency key DOING ITS JOB: this reset was
+      // already written, and `kortix_unique_stripe_event` refused the second
+      // copy. It is a no-op, not a failure.
+      //
+      // The check used to be `ledgerErr.message.includes('duplicate key')`, and
+      // a Drizzle error's `message` is only `Failed query: insert into
+      // "kortix"."credit_ledger" … params: …` — the pg detail, the constraint
+      // name and SQLSTATE 23505 all hang off `cause`. So the guard never
+      // matched and every duplicate was logged as an error: PROD 2026-09-04 →
+      // 2026-09-08, 1,118 of them for ONE free account (3049dd09), roughly one
+      // every nine minutes, each one a correctly-refused re-grant of the same
+      // `free_tier_rotation_…` event. `errorChainText` (used by
+      // `isDuplicateCreditGrantError` a few lines up) already walks the chain.
+      if (!isDuplicateCreditGrantError(ledgerErr)) {
         console.error('[Credits] Reset ledger entry failed:', ledgerErr);
       }
     }

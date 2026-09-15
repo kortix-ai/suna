@@ -88,7 +88,10 @@ describe('local test runner contract', () => {
     expect(source).toContain("'--no-sort'");
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
     expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
-    expect(source).toContain("runWorkspaceTests(['@kortix/cli', 'kortixd'], 1)");
+    expect(source).toContain("KORTIX_ATTACHMENT_OFFLOAD: '0'");
+    expect(source).toContain("await runWorkspaceTests(['@kortix/cli'], 1)");
+    expect(source).toContain("await runWorkspaceTests(['kortixd'], 1)");
+    expect(source).not.toContain("['@kortix/cli', 'kortixd']");
     expect(source).not.toContain("'@kortix/sandbox-agent-server'");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');

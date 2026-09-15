@@ -207,6 +207,12 @@ describe('humanizeCategory', () => {
     expect(humanizeCategory('life-sciences')).toBe('Life sciences');
   });
 
+  // The Discover feed ships snake_case too (`open_data`, `developer_tools`).
+  test('a snake_case catalogue value reads as a phrase, not an identifier', () => {
+    expect(humanizeCategory('open_data')).toBe('Open data');
+    expect(humanizeCategory('machine_learning')).toBe('Machine learning');
+  });
+
   test('a single-word value is only capitalized', () => {
     expect(humanizeCategory('productivity')).toBe('Productivity');
     expect(humanizeCategory('code')).toBe('Code');

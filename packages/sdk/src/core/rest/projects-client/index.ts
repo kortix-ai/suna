@@ -53,3 +53,4 @@ export type {
 } from './shared';
 
 export * from './session-attachments';
+export * from './model-access';

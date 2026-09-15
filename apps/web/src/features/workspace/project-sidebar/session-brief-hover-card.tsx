@@ -57,8 +57,6 @@ interface SessionBrief {
 
 interface SessionBriefInteractionProps {
   projectId: string;
-  reviewEnabled: boolean;
-  onOpenChangeRequest: (changeRequestId: string) => void;
 }
 
 function useStatusLabel(status: SessionDisplayStatus): string {
@@ -111,14 +109,10 @@ function RelativeCreatedTime({ createdAt }: { createdAt: string }) {
 function ChangeRequestRow({
   changeRequest,
   projectId,
-  reviewEnabled,
-  onOpenChangeRequest,
   onDismiss,
 }: {
   changeRequest: ChangeRequest;
   projectId: string;
-  reviewEnabled: boolean;
-  onOpenChangeRequest: (changeRequestId: string) => void;
   onDismiss: () => void;
 }) {
   const className = menuRow('sm', 'default', 'cursor-pointer py-1.5 text-left');
@@ -129,30 +123,14 @@ function ChangeRequestRow({
     </>
   );
 
-  // Same split the footer change-requests pill makes: with the Review Center on,
-  // every change opens in the unified inbox; with it off, the legacy per-CR
-  // dialog is still the only detail view there is.
-  if (reviewEnabled) {
-    const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
-    const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
-    return (
-      <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
-        {content}
-      </HoverPrefetchLink>
-    );
-  }
-
+  // Every change opens in the Review Center inbox, the same place the footer
+  // Review pill leads.
+  const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
+  const href = `${capabilityTabHref(projectId, 'review')}?id=${encodeURIComponent(reviewItemId)}`;
   return (
-    <button
-      type="button"
-      className={className}
-      onClick={() => {
-        onDismiss();
-        onOpenChangeRequest(changeRequest.cr_id);
-      }}
-    >
+    <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
       {content}
-    </button>
+    </HoverPrefetchLink>
   );
 }
 
@@ -175,8 +153,6 @@ function SessionBriefContent({
   source,
   changeRequests,
   projectId,
-  reviewEnabled,
-  onOpenChangeRequest,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
@@ -214,8 +190,6 @@ function SessionBriefContent({
               <ChangeRequestRow
                 changeRequest={changeRequest}
                 projectId={projectId}
-                reviewEnabled={reviewEnabled}
-                onOpenChangeRequest={onOpenChangeRequest}
                 onDismiss={onDismiss}
               />
             </li>

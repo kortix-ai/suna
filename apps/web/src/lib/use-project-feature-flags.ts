@@ -14,13 +14,17 @@ import { useFeatureFlag } from '@kortix/sdk/react';
  *
  * The calls are enumerated, never looped, so the hook count is fixed. They all
  * read the same `qk.project.detail(projectId)` cache entry, so this costs one
- * fetch, not ten. `flag-map-coverage.test.ts` pins the map against the SDK's
+ * fetch, not ten. `menu-registry.flags.test.ts` pins the map against the SDK's
  * `FEATURE_FLAG_KEYS`, so a new flag cannot be silently un-gated.
+ *
+ * The map is `Partial` because `FeatureFlagKey` still carries deprecated
+ * graduated keys that the API no longer serves; they have no member here, and
+ * `requiresFlag` may only name a served key (pinned by the same test).
  *
  * Fail-closed: every member is `false` until the project detail resolves.
  */
 export function useProjectFeatureFlags(projectId: string | null | undefined): {
-  flags: Record<FeatureFlagKey, boolean>;
+  flags: Partial<Record<FeatureFlagKey, boolean>>;
   isLoading: boolean;
 } {
   const agentTunnel = useFeatureFlag(projectId, 'agent_tunnel');
@@ -29,7 +33,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const teams = useFeatureFlag(projectId, 'teams');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
-  const reviewCenter = useFeatureFlag(projectId, 'review_center');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
@@ -45,7 +48,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agentmail_email: agentmailEmail.enabled,
       teams: teams.enabled,
       llm_gateway: llmGateway.enabled,
-      review_center: reviewCenter.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,

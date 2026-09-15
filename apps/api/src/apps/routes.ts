@@ -422,9 +422,19 @@ projectsApp.openapi(
     if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
       return c.json({ error: 'App access denied' }, 403);
     }
-    if (row.accessMode === 'public' || row.accessMode === 'password') {
+    // A PASSWORD App gets the bare URL: the door is the password prompt, and a
+    // Kortix session cannot stand in for knowing the secret.
+    if (row.accessMode === 'password') {
       return c.json({ url: appPublicUrl(row), expires_at: new Date(Date.now() + 5 * 60_000).toISOString() });
     }
+    // A PUBLIC App gets a real session URL, the same as a gated one.
+    //
+    // It used to get the bare URL, which meant a public App could never
+    // recognise anyone: no access link, so no identity cookie, so no viewer
+    // header — `public` silently also meant `anonymous`. Opening it from Kortix
+    // now carries who you are, while the bare URL underneath stays shareable
+    // with someone who has no Kortix account at all. The gate does not GATE a
+    // public App either way; this only decides whether it can greet you.
     const session = appAccessSessionUrl(appPublicUrl(row), row, loaded.userId);
     return c.json({ url: session.url, expires_at: session.expiresAt.toISOString() });
   },

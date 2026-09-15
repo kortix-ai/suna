@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+    <title>Kortix</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body {
+        margin: 0;
+        background: #141414;
+        color: rgba(255, 255, 255, 0.92);
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+      }
+      form {
+        box-sizing: border-box;
+        padding: 24px 24px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 20px;
+      }
+      p { margin: 0; }
+      .sub { color: rgba(255, 255, 255, 0.6); }
+      fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      legend {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      .option {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .option:has(input[type="radio"]:checked) {
+        border-color: rgba(255, 255, 255, 0.4);
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .option-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .option-head input { margin: 0; accent-color: #ffffff; }
+      .option-text {
+        display: flex;
+        flex-direction: column;
+      }
+      .option-title { font-weight: 500; }
+      .option-detail {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      input[type="text"] {
+        box-sizing: border-box;
+        width: 100%;
+        height: 30px;
+        padding: 0 9px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: #0a0a0a;
+        color: inherit;
+        font: inherit;
+        outline: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      input[type="text"]:focus { border-color: rgba(255, 255, 255, 0.45); }
+      #error {
+        margin-top: -8px;
+        font-size: 12px;
+        color: #ff6b6b;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      #error:empty { display: none; }
+      .hint {
+        margin-top: -8px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+      }
+      .hint:empty { display: none; }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      button {
+        height: 30px;
+        padding: 0 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        cursor: default;
+      }
+      button.primary {
+        min-width: 96px;
+        background: #ffffff;
+        border-color: #ffffff;
+        color: #0a0a0a;
+      }
+      button:disabled { opacity: 0.5; }
+      button:focus-visible,
+      .option:has(input[type="radio"]:focus-visible) { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 1px; }
+      /* The card carries the ring; a square outline around a round radio reads as a glitch. */
+      input[type="radio"]:focus-visible { outline: none; }
+    </style>
+  </head>
+  <body>
+    <form id="form" autocomplete="off" novalidate>
+      <header>
+        <h1 id="title"></h1>
+        <p class="sub" id="subtitle"></p>
+      </header>
+      <fieldset>
+        <legend>Kortix instance</legend>
+        <div class="option">
+          <label class="option-head">
+            <input type="radio" name="instance" value="default" id="opt-default" checked />
+            <span class="option-text">
+              <span class="option-title" id="default-title"></span>
+              <span class="option-detail" id="default-host"></span>
+            </span>
+          </label>
+        </div>
+        <div class="option">
+          <label class="option-head">
+            <input type="radio" name="instance" value="custom" id="opt-custom" />
+            <span class="option-text">
+              <span class="option-title">Self-hosted</span>
+              <span class="option-detail">A Kortix instance your team runs</span>
+            </span>
+          </label>
+          <input
+            id="url"
+            type="text"
+            inputmode="url"
+            placeholder="https://kortix.your-company.com"
+            autocapitalize="off"
+            spellcheck="false"
+            aria-label="Self-hosted instance URL"
+          />
+        </div>
+      </fieldset>
+      <div id="error" role="alert" aria-live="assertive"></div>
+      <p class="hint" id="hint"></p>
+      <div class="actions">
+        <button type="button" id="secondary"></button>
+        <button type="submit" class="primary" id="primary">Continue</button>
+      </div>
+    </form>
+    <script>
+      // Values arrive from the main process via preload (contextBridge); the
+      // page never sees Node. Every string is set with textContent — hosts and
+      // error text can come from the network and must never be parsed as HTML.
+      const api = window.kortixInstance;
+      const $ = (id) => document.getElementById(id);
+
+      // Everything that differs between the three moments, in one place.
+      //   secondary      the left button: 'quit' or 'cancel'
+      //   closeOnEscape  false on first launch — there is no app behind it
+      //   retry          label the primary "Try Again" while the current choice is selected
+      const MODES = {
+        setup: (init) => ({
+          title: 'Connect to Kortix',
+          subtitle: 'Use Kortix Cloud, or connect to a Kortix instance your team hosts.',
+          hint: `You can change this later in ${init.menuPath}.`,
+          secondary: 'quit',
+          closeOnEscape: false,
+          retry: false,
+        }),
+        change: () => ({
+          title: 'Change Kortix instance',
+          subtitle: 'Kortix reloads on the instance you choose.',
+          hint: '',
+          secondary: 'cancel',
+          closeOnEscape: true,
+          retry: false,
+        }),
+        unreachable: (init) => ({
+          title: `Can’t reach ${init.host}`,
+          subtitle: 'Try again, or connect to a different instance.',
+          hint: '',
+          secondary: 'quit',
+          closeOnEscape: true,
+          retry: true,
+        }),
+      };
+
+      const state = {
+        mode: null,
+        current: { kind: 'default', url: '' },
+        busy: false,
+        // The URL whose reachability check failed; submitting it again saves it anyway.
+        unreachableUrl: null,
+      };
+
+      const selected = () => ($('opt-custom').checked ? 'custom' : 'default');
+      const typedUrl = () => $('url').value.trim();
+
+      function primaryLabel() {
+        if (state.busy) return 'Checking…';
+        const kind = selected();
+        if (kind === 'custom' && typedUrl() === state.unreachableUrl) return 'Continue Anyway';
+        const isCurrent = kind === state.current.kind && (kind === 'default' || typedUrl() === state.current.url);
+        return state.mode.retry && isCurrent ? 'Try Again' : 'Continue';
+      }
+
+      let reportedHeight = 0;
+      function render() {
+        $('primary').textContent = primaryLabel();
+        $('primary').disabled = state.busy || (selected() === 'custom' && !typedUrl());
+        for (const id of ['opt-default', 'opt-custom', 'url']) $(id).disabled = state.busy;
+        // The window fits the form. Not documentElement.scrollHeight: it never
+        // drops below the viewport, so the window could grow but never shrink.
+        const height = Math.ceil($('form').getBoundingClientRect().height);
+        if (height !== reportedHeight) {
+          reportedHeight = height;
+          api.resize(height);
+        }
+      }
+
+      function setError(text) {
+        $('error').textContent = text || '';
+      }
+
+      api.onInit((init) => {
+        state.mode = MODES[init.mode](init);
+        state.current = init.current;
+        $('title').textContent = state.mode.title;
+        $('subtitle').textContent = state.mode.subtitle;
+        $('hint').textContent = state.mode.hint;
+        $('secondary').textContent = state.mode.secondary === 'quit' ? 'Quit' : 'Cancel';
+        $('default-title').textContent = init.defaultInstance.title;
+        $('default-host').textContent = init.defaultInstance.host;
+        if (init.current.kind === 'custom') {
+          $('opt-custom').checked = true;
+          $('url').value = init.current.url;
+        }
+        setError(init.error);
+        render();
+        (selected() === 'custom' ? $('url') : $('opt-default')).focus();
+      });
+
+      for (const radio of [$('opt-default'), $('opt-custom')]) {
+        radio.addEventListener('change', () => {
+          setError('');
+          render();
+          if (selected() === 'custom') $('url').focus();
+        });
+      }
+
+      $('url').addEventListener('focus', () => {
+        if (selected() === 'custom') return;
+        $('opt-custom').checked = true;
+        setError('');
+        render();
+      });
+
+      $('url').addEventListener('input', () => {
+        setError('');
+        render();
+      });
+
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (state.busy) return;
+        const kind = selected();
+        const url = typedUrl();
+        const force = kind === 'custom' && url === state.unreachableUrl;
+        state.busy = kind === 'custom' && !force;
+        setError('');
+        render();
+        let result;
+        try {
+          result = await api.submit({ kind, url, force });
+        } catch (err) {
+          result = { ok: false, error: String((err && err.message) || err) };
+        }
+        state.busy = false;
+        if (result.ok) return; // the main process closes this window
+        state.unreachableUrl = result.unreachable ? url : null;
+        setError(result.error);
+        render();
+        if (kind === 'custom') $('url').focus();
+      });
+
+      $('secondary').addEventListener('click', () => api[state.mode.secondary]());
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && state.mode?.closeOnEscape) api.cancel();
+      });
+    </script>
+  </body>
+</html>

@@ -23,7 +23,7 @@ const repoRoot = join(import.meta.dir, '../../../../../..');
 const require_ = createRequire(import.meta.url);
 
 const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.js')) as {
-  MAC_TITLEBAR: { band: number; control: number; lightSize: number };
+  MAC_TITLEBAR: { band: number; control: number; lightSize: number; lightFrame: number };
   macBandMetrics: () => {
     band: number;
     lightsEnd: number;
@@ -109,7 +109,9 @@ describe('macOS title-bar band: CSS mirrors the Electron geometry', () => {
   test('the app control and the traffic lights share a centre line', () => {
     const controlCentre =
       cssVarPx(block, '--kx-titlebar-control-top') + chrome.MAC_TITLEBAR.control / 2;
-    const lightCentre = chrome.macTrafficLightPosition().y + chrome.MAC_TITLEBAR.lightSize / 2;
+    // `trafficLightPosition.y` is the top of the 24px button frame; the circle
+    // is centred in it.
+    const lightCentre = chrome.macTrafficLightPosition().y + chrome.MAC_TITLEBAR.lightFrame / 2;
     expect(controlCentre).toBe(lightCentre);
     expect(controlCentre).toBe(metrics.band / 2);
   });
@@ -131,13 +133,15 @@ describe('no app control overlaps the macOS traffic lights', () => {
   const block = macVarBlock();
   const light = chrome.macTrafficLightPosition();
   const size = chrome.MAC_TITLEBAR.lightSize;
+  /** The visible circle sits centred in the button frame that `light.y` places. */
+  const circleTop = light.y + (chrome.MAC_TITLEBAR.lightFrame - size) / 2;
 
   /** The whole three-light cluster, as a window-space rect. */
   const lights = {
     left: light.x,
     right: chrome.macBandMetrics().lightsEnd,
-    top: light.y,
-    bottom: light.y + size,
+    top: circleTop,
+    bottom: circleTop + size,
   };
 
   const overlaps = (r: { left: number; right: number; top: number; bottom: number }) =>
@@ -216,9 +220,12 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
     expect(macVarBlock()).toMatch(
       /--kx-titlebar-control-size:\s*calc\(\s*28px\s*\/\s*var\(--kx-desktop-zoom\)/,
     );
-    const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
-    expect(shell).toContain('h-[var(--kx-titlebar-control-size)]');
-    expect(shell).not.toContain('h-[28px]');
+    const control = readFileSync(
+      join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+      'utf8',
+    );
+    expect(control).toContain('h-[var(--kx-titlebar-control-size)]');
+    expect(control).not.toContain('h-[28px]');
   });
 
   // Win/Linux draws its OWN min/max/close in CSS, so that cluster shrinks by
@@ -240,6 +247,14 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
 
 describe('nothing re-hard-codes the band', () => {
   const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
+  const control = readFileSync(
+    join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+    'utf8',
+  );
+  const backButton = readFileSync(
+    join(repoRoot, 'apps/web/src/components/desktop/desktop-back-button.tsx'),
+    'utf8',
+  );
   const sessionHeader = readFileSync(
     join(repoRoot, 'apps/web/src/features/session/header/session-site-header.tsx'),
     'utf8',
@@ -251,9 +266,12 @@ describe('nothing re-hard-codes the band', () => {
     expect(main).not.toMatch(/trafficLightPosition:\s*\{/);
   });
 
-  test('the shell toggle is placed by the band variables', () => {
-    expect(shell).toContain('top-[var(--kx-titlebar-control-top)]');
-    expect(shell).toContain('left-[var(--kx-titlebar-control-left)]');
+  test('every in-band control is placed by the band variables', () => {
+    expect(control).toContain('top-[var(--kx-titlebar-control-top)]');
+    expect(control).toContain('left-[var(--kx-titlebar-control-left)]');
+    // The shell toggle and Back take the one class, so neither can drift.
+    expect(shell).toContain('TITLEBAR_CONTROL_CLASS');
+    expect(backButton).toContain('TITLEBAR_CONTROL_CLASS');
     // The old literals, and the platform branch they needed.
     expect(shell).not.toContain('top-[12px]');
     expect(shell).not.toContain('left-[4.5rem]');

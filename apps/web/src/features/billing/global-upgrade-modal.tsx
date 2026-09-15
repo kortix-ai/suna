@@ -19,6 +19,7 @@ import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
+import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import {
   invalidateAccountState,
@@ -45,7 +46,7 @@ import {
   UserPlusIcon as UserPlus,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 export interface UpgradePlansModalProps {
   open: boolean;
@@ -395,23 +396,21 @@ function CreditTopUpModal({
   );
 }
 
-const UpgradeModalHostedContext = createContext(false);
-
 export function UpgradeModalHost({ children }: { children: ReactNode }) {
   return (
-    <UpgradeModalHostedContext.Provider value={true}>
+    <>
       {children}
-      {isBillingEnabled() && <UpgradeModalRenderer />}
-    </UpgradeModalHostedContext.Provider>
+      {isBillingEnabled() && <GlobalUpgradeModal />}
+    </>
   );
 }
 
 export function GlobalUpgradeModal() {
-  const hosted = useContext(UpgradeModalHostedContext);
-  return hosted ? null : <UpgradeModalRenderer />;
+  const selected = useUpgradeModalHost();
+  return selected ? <GlobalUpgradeModalContent /> : null;
 }
 
-function UpgradeModalRenderer() {
+function GlobalUpgradeModalContent() {
   const {
     isOpen,
     closeUpgradeDialog,

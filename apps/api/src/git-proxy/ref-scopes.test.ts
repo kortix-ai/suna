@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 
 const SESSION_ID = 'sess-1';
-const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'u1', tokenId: 'tok-1' };
 const monitor: GitPrincipal = { kind: 'monitor' };
 const user: GitPrincipal = { kind: 'user', userId: 'u1', tokenId: 'tok-1' };
 const internal: GitPrincipal = { kind: 'internal' };
@@ -57,6 +57,25 @@ const ANY: GitRefScope = 'project.gitops.ref.any';
 const DEL: GitRefScope = 'project.gitops.ref.delete';
 
 describe('principalHoldsRefScope — session', () => {
+  test('a wildcard grant cannot exceed the effective IAM role', async () => {
+    iamAllows = false;
+    const c = ctxWithGrant({ agent: 'main', kortixCli: 'all' });
+    expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);
+    expect(await principalHoldsRefScope(c, session, PROJECT, DEL)).toBe(false);
+    expect(iamAsked).toEqual([ANY, DEL]);
+  });
+
+  test('an explicit ref grant cannot exceed the effective IAM role', async () => {
+    iamAllows = false;
+    expect(await principalHoldsRefScope(ctxWithGrant({ agent: 'main', kortixCli: [ANY] }), session, PROJECT, ANY)).toBe(false);
+  });
+
+  test('a session without a launching identity cannot widen', async () => {
+    const unbound: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+    expect(await principalHoldsRefScope(ctxWithGrant({ agent: 'main', kortixCli: 'all' }), unbound, PROJECT, ANY)).toBe(false);
+    expect(iamAsked).toEqual([]);
+  });
+
   test('an UNGOVERNED project (null grant) does NOT widen a session', async () => {
     const c = ctxWithGrant(null);
     expect(await principalHoldsRefScope(c, session, PROJECT, ANY)).toBe(false);

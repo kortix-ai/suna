@@ -1452,6 +1452,28 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
   app-region: no-drag;
 }
 
+/* Back on frames with no product navigation (AuthFrame). The desktop shell has
+   no browser toolbar, so a consent or status screen without an in-page exit is
+   a dead end there. The web keeps the browser's own Back, so the control stays
+   hidden unless the shell set data-desktop before first paint.
+
+   Both rules MUST stay unlayered: the control is a Button, whose `flex`
+   utility lives in a cascade layer and would otherwise show it on the web.
+   Placement comes from the band variables on the element itself, the same as
+   the project shell's sidebar toggle. */
+.kx-desktop-back {
+  display: none;
+}
+html[data-desktop='true'] .kx-desktop-back {
+  display: flex;
+}
+/* Below `md` the auth mark pins to the top-left corner. On desktop that corner
+   is the band (traffic lights on macOS, Back on every platform), so the mark
+   moves below it. */
+html[data-desktop='true'] .kx-auth-mobile-logo {
+  top: calc(var(--kx-titlebar-inset) + 1rem);
+}
+
 /* Reusable title-bar spacer: a blank, draggable strip the height of the OS
    window-control zone. Used by full-screen surfaces (e.g. the Customize modal)
    whose own header has a fixed height and so can't just grow its top padding.

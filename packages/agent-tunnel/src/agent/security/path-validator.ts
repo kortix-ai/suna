@@ -14,7 +14,7 @@ import { realpathSync } from 'fs';
 function resolveExistingRoot(path: string): string {
   const normalized = normalize(resolve(path));
   try {
-    return realpathSync(normalized);
+    return resolvePathForValidation(normalized);
   } catch {
     return normalized;
   }
@@ -86,22 +86,8 @@ export function validateWritePath(
   allowedPaths: string[],
   blockedPaths: string[] = [],
 ): string {
-  const resolved = validatePath(path, allowedPaths, blockedPaths);
-
-  let parent = dirname(normalize(resolve(path)));
-  while (parent && parent !== dirname(parent)) {
-    try {
-      const resolvedParent = realpathSync(parent);
-      assertAllowedResolvedPath(path, resolvedParent, allowedPaths, blockedPaths);
-      return resolved;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT') {
-        throw new Error(`Access denied: cannot resolve parent for "${path}" (${code})`);
-      }
-      parent = dirname(parent);
-    }
-  }
-
-  throw new Error(`Access denied: cannot resolve parent for "${path}"`);
+  // Resolve the complete destination through its nearest existing ancestor.
+  // Checking the parent against an exact-file allowlist would reject the file
+  // that the user approved. validatePath also resolves missing allowlist roots.
+  return validatePath(path, allowedPaths, blockedPaths);
 }

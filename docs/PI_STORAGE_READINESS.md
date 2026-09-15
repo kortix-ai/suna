@@ -16,9 +16,10 @@ Pi runs in the worker. Files and commands use the environment. No Durable Object
 | Compiled Pi bundle | PostgreSQL `pi_runtime_artifacts`; API disk is a cache | Artifact identity and source commit | The worker downloads the saved `.mjs` bundle |
 | Declared helper files | Source Git plus compiled environment resource release | Resource identity and installation mode | Restore read-only helpers; seed files need the original disk to preserve edits/deletions |
 
-The current bundle and attachment stores use PostgreSQL. S3/CDN storage is an
-architecture direction, not a requirement of this deployment. Git does not
-automatically contain every working file. Ordinary uploads and generated files
+The Pi bundle and attachment stores use PostgreSQL. The upstream repository
+snapshot system optionally stores committed Git archives in S3 for faster checkout.
+It does not back up uploads, uncommitted edits, or the Pi conversation. This
+preview does not configure an S3 bucket. Ordinary uploads and generated files
 are not durable chat attachments merely because a message mentions them.
 
 ```mermaid

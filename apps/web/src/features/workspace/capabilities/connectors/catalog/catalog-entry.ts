@@ -1,8 +1,7 @@
 import type { UiTranslator } from '@/i18n/translator';
 import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
-import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
-import { sortByPicks } from './connector-picks';
+import { POPULAR_SECTION } from './connector-categories';
 
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
@@ -153,62 +152,7 @@ export function isCatalogEntryConnected(
   return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
 }
 
-/** The synthetic first section. Not a catalogue category — see
- *  `catalogSections` below. Defined in `connector-categories.ts` (which this
- *  module already imports from, so it cannot import back) and re-exported here
- *  because this is where it is used. */
+/** The synthetic first browse section. Not a catalogue category — see
+ *  `browseSections` in `browse-sections.ts`. Defined in `connector-categories.ts`
+ *  and re-exported here for the modules that already import this one. */
 export { POPULAR_SECTION };
-
-/**
- * The catalogue as ordered sections: Popular first, then the curated browse
- * order (`groupIntoSections`, which is `CURATED_SECTIONS` then the uncurated
- * tail by size then `Other`).
- *
- * Popular stays above all of it because it is not a category — it is the
- * highest-ranked apps across every category, which is the one row that answers
- * "what do people actually connect?" before the user has picked a subject. It
- * only exists on the Discover source; Easy Connect ranks nothing, so there
- * Productivity leads.
- *
- * Popular is synthesised rather than read as a category, because `popularity`
- * is a per-item rank and no catalogue publishes a "popular" bucket. Entries in
- * it are NOT removed from their real sections — an app is both popular and a
- * developer tool, and hiding it from Developer tools to avoid repeating it
- * would make that section lie about what it contains. `groupIntoSections`
- * already duplicates items across the sections they claim, so this is the same
- * rule applied one level up.
- *
- * A section is emitted only when it has entries, so a catalogue with no ranked
- * items (Easy Connect, whose `popularity` is uniformly `null`) simply has no
- * Popular section instead of an empty heading.
- */
-export function catalogSections(
-  entries: readonly CatalogEntry[],
-  opts: {
-    popularCap: number;
-    /** Key sections by the catalogue's own category slug rather than the curated
-     *  bucket. Set for any source whose sections are opened by asking the server
-     *  for that key — see `sectionKeysForEntry`. */
-    rawCategoryKeys?: boolean;
-  },
-): Array<{ category: string; items: CatalogEntry[] }> {
-  const ranked = entries
-    .filter((entry) => entry.popularity !== null)
-    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-    .slice(0, opts.popularCap);
-
-  // Picks are applied HERE and nowhere else, which scopes them to the Discovery
-  // tab: this is the only caller that builds sections. The All tab reads
-  // `groupIntoSections` directly and keeps raw feed order, so the two tabs
-  // never disagree about what "first" means — one is opinionated, one is not.
-  //
-  // Popular is deliberately left alone. It is already ordered, by `popularity`,
-  // and re-sorting it by picks would replace a real ranking with a guess.
-  const sections = groupIntoSections(entries, (entry) => entry.categories, {
-    raw: opts.rawCategoryKeys,
-  }).map((section) => ({
-    category: section.category,
-    items: sortByPicks(section.category, section.items),
-  }));
-  return ranked.length > 0 ? [{ category: POPULAR_SECTION, items: ranked }, ...sections] : sections;
-}

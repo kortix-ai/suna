@@ -225,9 +225,9 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
     expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
-    // The self-host token-hash secret reaches the flows (CONN-27 mints a real
-    // session-bound token with it); it is never a shared or default value.
-    expect(configured.testEnv).toContain('KE2E_API_KEY_SECRET=tokenhash');
+    // Session-token fixtures use the token API; its signing secret stays private.
+    expect(configured.testEnv).not.toContain('KE2E_API_KEY_SECRET');
+    expect(configured.testEnv).not.toContain('tokenhash');
     expect(configured.testEnv).toContain(`KE2E_PREVIEW_AUTHORIZATION=approved:${SHA}`);
     expect(configured.testEnv).toContain('E2E_MAILPIT_URL=https://preview.example/_mailpit');
     expect(configured.testEnv).toContain(
@@ -251,6 +251,46 @@ describe('ephemeral self-host preview stack', () => {
       expect(configured.runtimeEnv).not.toContain('PLATINUM_API_KEY=');
     }
     expect(configured.testEnv).not.toContain('PLATINUM_API_KEY=');
+});
+
+  it('offers Platinum only when its key is present, and never forwards an AWS identity', () => {
+    const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
+    const input = {
+      origin: 'https://preview.example',
+      sha: SHA,
+      apiImage: `kortix/kortix-api:pr-${SHA}`,
+      gatewayImage: `kortix/kortix-gateway:pr-${SHA}`,
+      frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
+    };
+    const secrets = {
+      DAYTONA_API_KEY: 'daytona',
+      KORTIX_GITHUB_APP_ID: '12345',
+      KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
+      KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
+      MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
+      MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
+    };
+
+    // Without a Platinum key: exactly the old posture.
+    const plain = applyPreviewEnvironment(base, input, secrets);
+    expect(plain.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona\n');
+    expect(plain.runtimeEnv).not.toContain('PLATINUM_API_KEY');
+
+    // With it: Platinum offered SECOND so Daytona stays the default for unpinned sessions.
+    const wired = applyPreviewEnvironment(
+      base,
+      { ...input, platinumApiUrl: 'https://api.platinum.dev' },
+      { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+    );
+    expect(wired.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona,platinum\n');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
+
+    // The preview pipeline holds no cloud identity (infra/scripts/test-ecs-preview-runtime.py):
+    // AWS credentials are outside the allowlist, so the project-snapshot bucket is never named.
+    expect(() => validatePreviewRuntimeSecrets({ AWS_ACCESS_KEY_ID: 'ASIAEXAMPLE' })).toThrow('AWS_ACCESS_KEY_ID');
+    expect(wired.runtimeEnv).not.toContain('AWS_');
+    expect(wired.runtimeEnv).not.toContain('KORTIX_PROJECT_SNAPSHOT_S3_BUCKET');
   });
 
   it('fails before boot when managed GitHub cannot run every target flow', () => {

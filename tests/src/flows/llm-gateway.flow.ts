@@ -457,3 +457,95 @@ flow(
     });
   },
 );
+
+flow('GW-ACCESS-1', {
+  domain: 'llm-gateway',
+  routes: [
+    'GET /v1/projects/:projectId/model-access',
+    'PUT /v1/projects/:projectId/model-access',
+    'PATCH /v1/projects/:projectId/experimental',
+    'PUT /v1/projects/:projectId/gateway/routing-policy',
+    'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/llm/chat/completions',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const member = await team.addMember('member');
+  const project = await team.project();
+  await team.grantProjectRole(project.id, member.userId!, 'user');
+  const params = { projectId: project.id };
+  const path = '/v1/projects/:projectId/model-access';
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const gateway = new Client(ctx.env.gatewayUrl);
+  let key = '';
+  const set = (target: 'provider' | 'model', id: string, enabled: boolean) =>
+    owner.put(path, { target, id, enabled }, { params });
+  const request = (model: string) => gateway.withBearer(key, 'PROJECT_GATEWAY_KEY')
+    .post('/v1/llm/chat/completions', { model, messages: [{ role: 'user', content: 'Reply OK' }], max_tokens: 4 });
+
+  await ctx.step('new project has no explicit restrictions and uses a non-managed default', async () => {
+    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params })).status(200);
+    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+      defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
+    }, { params })).status(200);
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
+    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'model access verification' }, { params });
+    minted.status(200).body().exists('$.secret_key');
+    key = minted.json<{ secret_key: string }>().secret_key;
+  });
+  await ctx.step('anonymous and nonmember requests cannot read or change access', async () => {
+    for (const actor of [ctx.P.ANON, ctx.P.NONMEMBER]) {
+      (await ctx.client.as(actor).get(path, { params })).status(actor === ctx.P.ANON ? 401 : [403, 404]);
+      (await ctx.client.as(actor).put(path, { target: 'provider', id: 'openai', enabled: false }, { params }))
+        .status(actor === ctx.P.ANON ? 401 : [403, 404]);
+    }
+    (await ctx.client.as(member).get(path, { params })).status(200);
+    (await ctx.client.as(member).put(path, { target: 'provider', id: 'openai', enabled: false }, { params })).status(403);
+  });
+  await ctx.step('default model and provider are protected without writing a restriction', async () => {
+    (await set('provider', 'codex', false)).status(409).body().has('$.code', 'cannot_disable_default');
+    (await set('model', 'kortix/codex/gpt-5.6-sol', false)).status(409).body().has('$.code', 'cannot_disable_default');
+    (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', []).has('$.disabledModels', []);
+  });
+  await ctx.step('managed disable persists and blocks a direct managed request', async () => {
+    (await set('provider', 'kortix', false)).status(200).body().has('$.disabledProviders', ['kortix']);
+    (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', ['kortix']);
+    (await request('glm-5.3-flash')).status(400).body().has('$.error.code', 'provider_disabled');
+    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    picker.status(200);
+    for (const [id, model] of Object.entries(picker.json<any>().models)) {
+      if (!id.includes('/') && (model as any).enabled !== false) throw new Error(`Disabled managed model remains enabled: ${id}`);
+    }
+  });
+  await ctx.step('concurrent provider and model changes both persist', async () => {
+    const responses = await Promise.all([set('provider', 'openai', false), set('model', 'custom-test/model', false)]);
+    responses.forEach((response) => response.status(200));
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', ['kortix', 'openai']).has('$.disabledModels', ['custom-test/model']);
+    (await request('openai/future-model')).status(400).body().has('$.error.code', 'provider_disabled');
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_disabled');
+  });
+  await ctx.step('re-enabling a provider preserves individual model restrictions', async () => {
+    (await set('provider', 'custom-test', false)).status(200);
+    (await set('provider', 'custom-test', true)).status(200).body().has('$.disabledModels', ['custom-test/model']);
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_disabled');
+    (await set('model', 'kortix/custom-test/model', true)).status(200).body().has('$.disabledModels', []);
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_not_found');
+  });
+  await ctx.step('invalid changes and selecting a disabled default leave policy unchanged', async () => {
+    (await owner.put(path, { target: 'provider', id: 'bad/provider', enabled: false }, { params })).status(400);
+    (await set('model', 'auto', false)).status(400);
+    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+      defaultModel: 'openai/gpt-5.5', visionModel: null, defaultFallback: null, rules: [],
+    }, { params })).status(409).body().has('$.code', 'model_disabled');
+    (await owner.get(path, { params })).status(200).body().has('$.defaultModel', 'codex/gpt-5.6-sol');
+  });
+  await ctx.step('re-enable clears provider restrictions and preserves the project gateway flag', async () => {
+    (await set('provider', 'openai', true)).status(200);
+    (await set('provider', 'kortix', true)).status(200);
+    (await owner.get(path, { params })).status(200).body()
+      .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
+  });
+});

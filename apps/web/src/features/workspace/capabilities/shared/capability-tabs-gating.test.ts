@@ -33,18 +33,19 @@ const stillLoading = () =>
   Object.fromEntries(CAPABILITY_TAB_GATE_ACTIONS.map((action) => [action, { allowed: false }]));
 
 describe('visibleCapabilityTabs', () => {
-  test('a manager with the review flag on sees every tab', () => {
-    expect(visibleCapabilityTabs(allowExcept(), { reviewEnabled: true }).map((t) => t.key)).toEqual(
+  test('a manager sees every tab', () => {
+    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
     );
   });
 
-  // Review is the one flag-gated tab — the `review_center` flag hides it
-  // regardless of permissions, and the flag defaults OFF (a flag is a fact the
-  // project detail holds, not a probe in flight).
-  test('the review flag hides Review and nothing else', () => {
-    const keys = visibleCapabilityTabs(allowExcept()).map((t) => t.key);
-    expect(keys).not.toContain('review');
+  // Review Center graduated out of the flag system: Review follows its read
+  // leaf like every other tab, with no flag in front of it.
+  test('Review is visible with no flag, and only its read leaf hides it', () => {
+    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toContain('review');
+    const keys = visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_REVIEW_READ)).map(
+      (t) => t.key,
+    );
     expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
@@ -115,9 +116,9 @@ describe('CapabilityTabs gate wiring', () => {
     expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
     expect(bar).not.toContain('CAPABILITY_TABS.map');
-    // The flag reaches the gate from the bar itself, so a page cannot forget it.
-    expect(bar).toContain("useFeatureFlag(projectId, 'review_center')");
-    expect(bar).toContain('visibleCapabilityTabs(caps, { reviewEnabled })');
+    // Permissions are the only gate: no feature flag reaches the bar.
+    expect(bar).toContain('visibleCapabilityTabs(caps)');
+    expect(bar).not.toContain('useFeatureFlag');
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

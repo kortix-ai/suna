@@ -181,3 +181,5 @@ export {
   useKortixAppViewer,
   type KortixAppViewerState,
 } from './use-kortix-app-viewer';
+
+export { useModelAccess } from './use-model-access';

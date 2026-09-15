@@ -150,16 +150,16 @@ function sidebar(page: Page): Locator {
 
 async function openWorkspacePicker(page: Page): Promise<Locator> {
   const trigger = sidebar(page).getByRole("button", {
-    name: "Switch workspace",
+    name: "Switch project",
     exact: true,
   });
   await expect(trigger).toBeVisible({ timeout: 60_000 });
   await trigger.click();
   await page
-    .getByRole("menuitem", { name: "Switch Workspace", exact: true })
+    .getByRole("menuitem", { name: "Switch Project", exact: true })
     .click();
   const picker = page.getByRole("menu", {
-    name: "Switch Workspace",
+    name: "Switch Project",
     exact: true,
   });
   await expect(picker).toBeVisible();

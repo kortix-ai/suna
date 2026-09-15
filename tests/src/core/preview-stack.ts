@@ -29,6 +29,7 @@ export interface PreviewStackInput {
   apiImage: string;
   gatewayImage: string;
   frontendImage: string;
+  /** Platinum API base URL, offered as a second session provider when PLATINUM_API_KEY is present. */
   platinumApiUrl?: string;
 }
 
@@ -344,6 +345,10 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
+    // Daytona stays FIRST: the API takes the first allowed provider for an
+    // unpinned session, so the preview gate's behaviour does not change.
+    // Platinum is offered when its key is present so a session can be pinned
+    // to it ({"provider":"platinum"} on create) for provider-parity checks.
     ALLOWED_SANDBOX_PROVIDERS: rawSecrets.PLATINUM_API_KEY ? 'daytona,platinum' : 'daytona',
     ...(rawSecrets.PLATINUM_API_KEY
       ? {
@@ -388,10 +393,6 @@ export function applyPreviewEnvironment(
     KE2E_SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
     KE2E_INTERNAL_SERVICE_KEY: internalServiceKey,
-    // The self-host API's token-hash secret, so a flow can mint a real
-    // session-bound account token the way the API does (CONN-27). Generated
-    // per preview by the self-host secrets registry; never a shared value.
-    ...(runtime.API_KEY_SECRET ? { KE2E_API_KEY_SECRET: runtime.API_KEY_SECRET } : {}),
     KE2E_STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     KE2E_STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
     E2E_AGENTMAIL_API_KEY: '',

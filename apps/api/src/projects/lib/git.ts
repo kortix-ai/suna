@@ -12,7 +12,7 @@ import {
   getProjectSecretValueForConsumer,
 } from '../secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
@@ -931,6 +931,8 @@ async function authorizeGitProxyUncached(
         kind: 'session',
         sessionId: sessionRow.sessionId,
         branch: sessionRow.branchName ?? sessionRow.sessionId,
+        userId: result.userId ?? null,
+        tokenId: result.tokenId ?? null,
       };
     }
     if (result.accountId !== project.accountId) {
@@ -1020,7 +1022,11 @@ async function authorizeGitProxyUncached(
       // `account_tokens`; a sandbox key carries no grant of its own. Missing row
       // (or a project with no per-agent governance) reads null = default-deny.
       const [grantRow] = await db
-        .select({ agentGrant: accountTokens.agentGrant })
+        .select({
+          agentGrant: accountTokens.agentGrant,
+          userId: accountTokens.userId,
+          tokenId: accountTokens.tokenId,
+        })
         .from(accountTokens)
         .where(
           and(
@@ -1038,6 +1044,8 @@ async function authorizeGitProxyUncached(
           kind: 'session',
           sessionId: sandbox.sessionId,
           branch: sandbox.branchName ?? sandbox.sessionId,
+          userId: grantRow?.userId ?? null,
+          tokenId: grantRow?.tokenId ?? null,
         },
         agentGrant: grantRow?.agentGrant ?? null,
       };

@@ -33,7 +33,7 @@ The same switches are available to scripts and agents through `kortix projects f
 ```bash
 kortix projects features            # every flag: key, state, origin, stability
 kortix projects features enable apps
-kortix projects features disable voice
+kortix projects features disable teams
 kortix projects features reset apps  # drop the override; follow the platform default
 kortix projects features --json      # the full catalog as JSON
 ```
@@ -109,7 +109,7 @@ this.
 
 ## Every flag
 
-Registry order — the same order **Settings → Experimental** shows.
+Registry order — the same order **Settings → Feature flags** shows.
 
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|
@@ -118,13 +118,13 @@ Registry order — the same order **Settings → Experimental** shows.
 | `connectors_api_discover` | Connectors API Discover | Experimental | Off | `routes` |
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
-| `voice` | Voice | Experimental | Off | `behavioral` |
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
-| `review_center` | Review Center | Experimental | Off | `routes` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
+| `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
+| `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -145,12 +145,8 @@ refs). An explicit project choice always wins.
   starts and continues sessions.
 - **`teams`** — connect a Microsoft Teams bot so chats and channels start and
   continue sessions. See [Slack & channels](/docs/connect/slack).
-- **`voice`** — give the agent a live voice call it can start and hold. See
-  [Slack & channels](/docs/connect/slack).
 - **`llm_gateway`** — route the project through the managed Kortix LLM
   gateway. See [Models](/docs/project/models).
-- **`review_center`** — one inbox for change requests, approvals, and agent
-  output.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
@@ -159,6 +155,24 @@ refs). An explicit project choice always wins.
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`warm_sessions`** — keep one sandbox booted while a project is open, so a
   new session starts without a cold boot.
+- **`secrets_egress`** — offer network enforcement for a secret: the sandbox
+  holds a handle, and Kortix substitutes the real value only on requests to
+  approved hosts. See [Secrets](/docs/project/secrets).
+- **`pi_worker`** — compile a pi-based worker runtime and the OpenCode
+  compiled-boot artifacts on every push. Sessions boot on the worker only when
+  the manifest also sets `runtime: pi`.
+
+### Graduated flags
+
+A graduated feature is on for every project and has no switch.
+
+- **Review Center** graduated out of the flag system. The Review tab, the
+  sidebar Review row, and the command-palette row show for every project; the
+  `project.review.read` and `project.review.act` permissions still apply.
+  `review_center` is no longer a flag key: `PATCH /v1/projects/:id/features`
+  answers `400` `Unknown feature flag`, and `kortix projects features enable
+  review_center` prints that error and exits `1`. A stored override from before
+  graduation has no effect.
 
 ## Side effects of a toggle
 
@@ -166,7 +180,7 @@ Some flags converge platform state after the write commits.
 
 | Flag | Effect after the toggle |
 |---|---|
-| `voice`, `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
+| `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
 | `agent_tunnel` | Kortix re-syncs the account's computer connectors. |
 | `llm_gateway` | Kortix propagates the new provider mode to active sandboxes. |
 

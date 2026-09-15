@@ -192,7 +192,7 @@ async function push(...args: string[]): Promise<{ code: number; output: string }
 
 describe('a session principal', () => {
   beforeAll(() => {
-    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
   });
 
   test('is refused pushing the default branch, as a git rejection', async () => {
@@ -311,11 +311,23 @@ describe('a user principal', () => {
 
 describe('a session GRANTED project.gitops.ref.any', () => {
   beforeAll(() => {
-    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID };
+    principal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'user-1', tokenId: 'tok-1' };
     agentGrant = { agent: 'main', kortixCli: ['project.gitops.ref.any'] };
   });
   afterAll(() => {
     agentGrant = null;
+  });
+
+  test('cannot push another branch when IAM denies the granted scope', async () => {
+    iamAllowsHuman = false;
+    try {
+      const { code, output } = await push('--force', 'origin', 'HEAD:refs/heads/shared');
+      expect(code).not.toBe(0);
+      expect(output).toContain('[remote rejected]');
+      expect(upstreamReceived).toEqual([]);
+    } finally {
+      iamAllowsHuman = true;
+    }
   });
 
   test('CAN push another branch — the scope is what makes it deliberate', async () => {

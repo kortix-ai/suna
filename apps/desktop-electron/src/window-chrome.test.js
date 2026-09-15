@@ -52,7 +52,16 @@ describe('desktop window chrome', () => {
 describe('macOS title-bar band geometry', () => {
   test('traffic lights are vertically centered in the band', () => {
     const { y } = macTrafficLightPosition();
-    expect(y + MAC_TITLEBAR.lightSize / 2).toBe(MAC_TITLEBAR.band / 2);
+    expect(y + MAC_TITLEBAR.lightFrame / 2).toBe(MAC_TITLEBAR.band / 2);
+  });
+
+  // #6178 measured the lights at y 24–36 with `trafficLightPosition.y = 18`.
+  // Reading `y` as the circle's top predicted 18–30 and left the lights 6px
+  // below every control in the band.
+  test('the model reproduces the measured light position', () => {
+    const circleTop = 18 + (MAC_TITLEBAR.lightFrame - MAC_TITLEBAR.lightSize) / 2;
+    expect([circleTop, circleTop + MAC_TITLEBAR.lightSize]).toEqual([24, 36]);
+    expect(macTrafficLightPosition().y).toBe(8);
   });
 
   test('the light cluster is three lights wide', () => {
@@ -64,7 +73,7 @@ describe('macOS title-bar band geometry', () => {
   test('the app control shares the lights’ centre line', () => {
     const { controlTop } = macBandMetrics();
     const { y } = macTrafficLightPosition();
-    expect(controlTop + MAC_TITLEBAR.control / 2).toBe(y + MAC_TITLEBAR.lightSize / 2);
+    expect(controlTop + MAC_TITLEBAR.control / 2).toBe(y + MAC_TITLEBAR.lightFrame / 2);
   });
 
   test('the app control clears the lights by the full gutter', () => {

@@ -1,18 +1,11 @@
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  visibleCapabilityTabs,
-  type CapabilityTabFlags,
-} from '@/features/workspace/capabilities/shared/capability-tabs';
+import { visibleCapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
-
-const ALL_FLAGS_OFF: CapabilityTabFlags = {
-  reviewEnabled: false,
-};
 
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
@@ -43,21 +36,18 @@ describe('menu registry feature-flag gating', () => {
     }
   });
 
-  test('Review Center is reachable behind its flag and removed features stay absent', () => {
-    // Review is a capability tab since 2026-09-02, gated by the bar itself
-    // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
-    // declaration — a flag that hides the tab hides every way in. Voice and
+  test('Review Center is reachable with no flag and removed features stay absent', () => {
+    // Review is a capability tab since 2026-09-02 and graduated out of the flag
+    // system, so neither the tab nor its palette row declares a flag. Voice and
     // Marketplace have no flag any more: both were removed from the product.
-    const keysFor = (flags: CapabilityTabFlags) =>
-      visibleCapabilityTabs({}, flags).map((tab) => tab.key);
+    const keys = visibleCapabilityTabs({}).map((tab) => tab.key);
+    expect(keys).toContain('review');
+    expect(keys).not.toContain('voice');
+    expect(keys).not.toContain('marketplace');
 
-    const off = keysFor(ALL_FLAGS_OFF);
-    expect(off).not.toContain('review');
-    expect(off).not.toContain('voice');
-    expect(off).not.toContain('marketplace');
-
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).toContain('review');
-    expect(keysFor({ ...ALL_FLAGS_OFF, reviewEnabled: true })).not.toContain('marketplace');
+    const reviewRow = menuRegistry.find((item) => item.id === 'proj-review-inbox');
+    expect(reviewRow).toBeDefined();
+    expect(reviewRow?.requiresFlag).toBeUndefined();
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.

@@ -172,12 +172,12 @@ test.describe("19 — Feature flags UI", () => {
       const flags = before.experimental_features.filter((f) => f.available);
       expect(flags.length).toBeGreaterThan(0);
 
-      // Toggle target: prefer `review_center` — it is always available, defaults
-      // OFF, and its toggle effects are pure web/DB (no connector
+      // Toggle target: prefer `connectors_api_discover` — it is always
+      // available, defaults OFF, and has no toggle effect (no connector
       // materialization, no sandbox env fan-out). Fall back to any available
       // flag that is currently off, so the spec survives a registry change.
       const target =
-        flags.find((f) => f.key === "review_center" && !f.enabled) ??
+        flags.find((f) => f.key === "connectors_api_discover" && !f.enabled) ??
         flags.find((f) => !f.enabled);
       if (!target) throw new Error("no available feature flag is currently off");
 

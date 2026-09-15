@@ -46,6 +46,18 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+## Disable providers or models
+
+Open **Customize → Models → Providers**. Open the **⋯** menu in the **Kortix** row and choose **Disable provider** to use only your own providers. Kortix appears in the same list as other providers, with its model count and credit-billing description. Every provider uses the same menu. Only disabled providers show a status badge. Choose **Enable provider** from the menu to restore access.
+
+Open the **Models** tab to enable or disable individual models. A disabled provider blocks all of its models, including models added later. Re-enabling the provider preserves individual model choices. Credentials stay saved throughout.
+
+The project default and its provider cannot be disabled. Select a different enabled default first. Project managers can change access; readers can inspect it.
+
+These controls apply to new requests through the Kortix gateway, including saved session selections and fallback candidates. A request already sent to an upstream finishes normally. Disabled targets return `provider_disabled` or `model_disabled`; choose an enabled model to continue. Native OpenCode mode does not use this gateway policy.
+
+Existing picker-only visibility preferences remain separate. Resetting the model list does not remove explicit access restrictions.
+
 ## Thinking effort
 
 The composer's thinking control sets the session's model **variant** in both
@@ -124,3 +136,7 @@ A connected provider key applies to the whole project. There is no private,
 per-user key — setting a personal override for a provider key fails with a
 `llm_credentials_project_wide` error. Update the shared key on the
 [secrets](/docs/project/secrets) page instead.
+
+Models hidden by older picker preferences show **Hidden from picker**. Direct requests remain allowed. Open that model’s menu and choose **Disable model** to block inference too.
+
+Provider model-count links open the **Models** tab. All provider groups appear together in the same list used to enable or disable models and set defaults. Search narrows the list. Connect a provider before managing its models.

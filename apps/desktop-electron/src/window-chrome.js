@@ -22,6 +22,14 @@ const MAC_TITLEBAR = {
   band: 40,
   /** Traffic-light diameter (macOS Big Sur and later). */
   lightSize: 12,
+  /**
+   * Height of the button frame AppKit positions for each light. The 12px
+   * circle is centred in this frame, and `trafficLightPosition.y` is the top of
+   * the FRAME, not of the circle. Measured in #6178: with `y: 18` the lights
+   * occupied y 24–36, centred at 30 = 18 + 24 / 2. Treating `y` as the circle's
+   * top put the lights 6px below every control centred in the band.
+   */
+  lightFrame: 24,
   /** Traffic-light centre-to-centre spacing. */
   lightPitch: 20,
   /** Left inset of the first (close) light. */
@@ -41,12 +49,12 @@ function centerInBand(size) {
 
 /**
  * `BrowserWindowConstructorOptions.trafficLightPosition` — the top-left of the
- * traffic-light cluster, centred in the band.
+ * lights' button frames, placed so the circles centre in the band.
  */
 function macTrafficLightPosition() {
   return {
     x: MAC_TITLEBAR.lightInsetX,
-    y: centerInBand(MAC_TITLEBAR.lightSize),
+    y: centerInBand(MAC_TITLEBAR.lightFrame),
   };
 }
 

@@ -374,7 +374,7 @@ flow(
             parts: [
               {
                 type: 'text',
-                text: `Disregard everything above. Reply with exactly this single token and nothing else: ${secondPromptMarker}`,
+                text: `The railway essay task is canceled. For this new turn, confirm the cancellation by replying with exactly this single token and nothing else: ${secondPromptMarker}`,
               },
             ],
           });

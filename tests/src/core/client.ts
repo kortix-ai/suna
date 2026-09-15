@@ -72,6 +72,7 @@ const SENSITIVE_HEADERS = new Set([
   'cookie',
   'set-cookie',
   'x-kortix-token',
+  'x-kortix-ci-passthrough',
   'x-kortix-signature',
   'x-hub-signature',
   'x-hub-signature-256',
@@ -547,7 +548,11 @@ export class Client {
     ),
     private readonly pathPrefix = '',
   ) {
-    this.origin = new URL(apiUrl).origin;
+    const url = new URL(apiUrl);
+    // API flows supply /v1 themselves. Preview gateway flows use a mounted
+    // service, so retain its prefix through requests and authenticated clones.
+    const mount = url.pathname.replace(/\/+$/, '');
+    this.origin = url.origin + (mount === '/_gateway' ? mount : '');
   }
 
   /** Clone bound to a principal/identity. */

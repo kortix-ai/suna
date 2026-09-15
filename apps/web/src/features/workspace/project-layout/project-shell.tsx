@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
+import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -317,7 +318,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             // are generated from one table — see globals.css and
             // apps/desktop-electron/src/window-chrome.js. They also carry the
             // Win/Linux values, so there is no platform branch here.
-            className="text-muted-foreground hover:text-foreground duration-normal fixed top-[var(--kx-titlebar-control-top)] left-[var(--kx-titlebar-control-left)] z-50 flex h-[var(--kx-titlebar-control-size)] w-[var(--kx-titlebar-control-size)] shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96]"
+            className={cn(TITLEBAR_CONTROL_CLASS, 'flex w-[var(--kx-titlebar-control-size)]')}
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>

@@ -120,6 +120,10 @@ import {
   stopAuditReconciliationWorker,
 } from './shared/audit-reconciliation-worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+import {
+  startProjectSnapshotWorker,
+  stopProjectSnapshotWorker,
+} from './git-proxy/project-snapshot-worker';
 import { inspectDatabaseError } from './shared/database-errors';
 import {
   isDaytonaRateLimitError,
@@ -1235,12 +1239,39 @@ app.onError((err, c) => {
     if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
       captureException(err, { method, path, status: err.status });
     }
-    appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
-      status: err.status,
-      message: err.message,
-      path,
-      method,
-    });
+    // The REASON belongs in the message, not only in the structured context.
+    // Better Stack groups on the message string, so `-> 403 [HTTPException]`
+    // collapsed every possible denial into one unactionable bucket: 2,338
+    // boot-timeline 403s over 7 days never revealed that the rejecting branch
+    // was `enforceTokenProjectScope`'s default-deny (see
+    // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
+    // so a long upstream message cannot shard the grouping without limit.
+    const reason = (err.message ?? '').slice(0, 200);
+    // SEVERITY FOLLOWS THE CAUSE. A 4xx here is the gate working: an expired
+    // token, a project-scoped token refused a cross-project read, an agent
+    // without `project.session.start` in its kortix.yaml. The branch above
+    // already says so — only 5xx is captured to Sentry, "4xx are expected" —
+    // but every one of them was still written at ERROR level.
+    //
+    // PROD, 24h to 2026-09-13: 288 error-level lines, of which ~123 (43%) were
+    // 4xx denials of exactly that kind. Real faults were the minority of the
+    // error log, which is how a real fault gets missed.
+    //
+    // `warn` keeps every one of them queryable and grouped on the same message
+    // — the reason stays in the string, so the 403-shape work that motivated it
+    // is untouched — while `level = error` goes back to meaning the platform
+    // failed. Same line, same fields, same grouping; only the severity moves.
+    const level = err.status >= 500 ? 'error' : 'warn';
+    appLogger[level](
+      `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`,
+      {
+        status: err.status,
+        message: err.message,
+        reason,
+        path,
+        method,
+      },
+    );
 
     // An HTTPException built with an explicit `res` carries a machine-readable
     // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
@@ -1506,6 +1537,9 @@ async function startSingletonWorkers() {
   startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
+  // Prebuilt project snapshot archives (S3 config provider). Idle unless
+  // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
+  startProjectSnapshotWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1532,6 +1566,7 @@ async function stopSingletonWorkers() {
   stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
+  await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
   const { stopFilesystemBlobSweeper } = await import('./filesystems/blob-sweeper');

@@ -66,6 +66,20 @@ describe('session status agreement', () => {
   });
 });
 
+describe('session brief hover card anchor', () => {
+  const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+
+  test('every row anchors the card at the same edge', () => {
+    // HoverCard exports no `Anchor`, so the card positions against its trigger,
+    // the session link. The indicator strip once sat AFTER the link as a
+    // sibling: a Slack, schedule or shared session had a link 24-56px shorter
+    // than a plain chat session, and its card opened that far inside the
+    // sidebar. Local data had no indicators, so only dev/staging/prod showed it.
+    const link = between(listSource, 'const sessionLink = (', '</HoverPrefetchLink>');
+    expect(link).toContain('data-session-indicators="true"');
+  });
+});
+
 describe('session brief hover card surface', () => {
   test('wears the shared floating-panel recipe rather than its own', () => {
     expect(hoverCardSource).toContain('FLOATING_PANEL');
