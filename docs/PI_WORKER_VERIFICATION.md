@@ -2282,3 +2282,7 @@ Compiled checkout and clone fallback fetch commit pins as commits. A missing
 commit fails startup instead of creating an empty repository. Replacement
 checkout still restores the remote session branch. GH-18 verifies the downloaded
 checkout's Git HEAD and working file bytes after the default branch moves.
+
+The API's Bun version can differ from the worker and daemon versions. Shared
+JSONC command configuration uses `jsonc-parser`, not `Bun.JSONC`. The live artifact
+flow verifies comments and trailing commas; malformed configuration fails compilation.

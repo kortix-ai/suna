@@ -525,7 +525,9 @@ flow('GH-18', {
       await mkdir(join(repo, 'agents'), { recursive: true });
       await writeFile(join(repo, 'prompts/reader.md'), 'Artifact fixture reader.\n');
       await writeFile(join(repo, 'agents/reader.ts'), `export default () => ({thinkingLevel: 'low'});`);
-      await git(['-C', repo, 'add', 'kortix.yaml', 'prompts', 'agents', 'assets']);
+      await mkdir(join(repo, '.kortix/shared'), { recursive: true });
+      await writeFile(join(repo, '.kortix/shared/opencode.jsonc'), '{/* shared commands */ "command": {"inspect": {"template": "Inspect $ARGUMENTS",},},}');
+      await git(['-C', repo, 'add', 'kortix.yaml', 'prompts', 'agents', 'assets', '.kortix/shared']);
       await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Declare Pi runtime']);
       sha = await git(['-C', repo, 'rev-parse', 'HEAD']);
       await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
@@ -541,6 +543,9 @@ flow('GH-18', {
       assert.equal(raw.status, 200);
       const content = Buffer.from(await raw.arrayBuffer());
       assert.ok(content.toString('utf8').includes('kortix-worker starting'));
+      const marker = content.toString('utf8').split('\n').find(line => line.startsWith('// kortix-manifest-base64url:'))!;
+      const manifest = JSON.parse(Buffer.from(marker.split(':')[1]!, 'base64url').toString('utf8'));
+      assert.deepEqual(JSON.parse(manifest.command_config), [{ name: 'inspect', template: 'Inspect $ARGUMENTS', source: 'command', hints: ['$ARGUMENTS'] }]);
       artifact.headerEquals('x-kortix-artifact-sha256', createHash('sha256').update(content).digest('hex'));
     });
     await ctx.step('Anonymous downloads fail and a mismatched source SHA returns 409', async () => {

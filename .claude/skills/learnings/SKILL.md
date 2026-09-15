@@ -6971,3 +6971,9 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Incident:** the compiled daemon started on preview `8b3642aa21`, but compiled checkout returned 503 because `git clone --branch` received a commit SHA. Clone fallback also treated an unavailable commit as an empty repository.
 **Rule:** fetch commit pins as commits, preserve remote session work on resume, and fail on unavailable pins. Never initialize an empty workspace to recover a missing pinned commit.
 **Enforcer:** API and daemon `compiled-checkout.test.ts` cover named branches, historical commits, moved main, resume, and unavailable commits. GH-18 downloads and extracts a pinned checkout through HTTP and verifies Git HEAD and working file bytes.
+
+### Test compiler features against the API container's Bun version (2026-09-15)
+
+**Incident:** a Pi project with shared `opencode.jsonc` failed compilation on preview `970661a235`. The API runs Bun 1.2.23, which has no `Bun.JSONC`; local and preview-host tests ran Bun 1.3.14.
+**Rule:** use an explicit JSONC parser dependency in the API. Reject parser errors, and test comments, trailing commas, and malformed input against the deployed runtime version.
+**Enforcer:** `compile-pi-commands.test.ts` disables `Bun.JSONC` for its compatibility case. GH-18 includes a shared JSONC command and verifies it in the downloaded Pi artifact.

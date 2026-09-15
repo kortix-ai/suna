@@ -4,6 +4,7 @@
  * The I/O entrypoint reads every byte by Git SHA. The worker never scans its
  * environment or follows the project's moving branch at runtime.
  */
+import { parse, printParseErrorCode, type ParseError } from 'jsonc-parser';
 import {
   manifestCandidatePaths,
   manifestDefaultConfigDir,
@@ -134,7 +135,9 @@ function commandsFromConfig(raw: string | null): Map<string, CompiledPiCommand> 
   if (!raw?.trim()) return commands;
   let parsed: unknown;
   try {
-    parsed = Bun.JSONC.parse(raw);
+    const errors: ParseError[] = [];
+    parsed = parse(raw, errors, { allowTrailingComma: true });
+    if (errors.length) throw new Error(`${printParseErrorCode(errors[0]!.error)} at offset ${errors[0]!.offset}`);
   } catch (error) {
     throw new Error(`Pi command config is invalid JSONC: ${String((error as Error).message)}`);
   }

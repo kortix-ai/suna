@@ -31,6 +31,24 @@ afterEach(() => {
 });
 
 describe('compilePiCommands', () => {
+  test('parses JSONC without Bun.JSONC in the deployed API runtime', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Bun, 'JSONC');
+    Object.defineProperty(Bun, 'JSONC', { value: undefined, ...(descriptor ? {} : { configurable: true }) });
+    try {
+      expect(compilePiCommands({
+        configRaw: '{/* shared config */ "command": {"review": {"template": "Read https://example.test/$ARGUMENTS",},},}',
+        markdownFiles: {}, configDir: '.kortix/shared',
+      })).toEqual([{ name: 'review', template: 'Read https://example.test/$ARGUMENTS', source: 'command', hints: ['$ARGUMENTS'] }]);
+    } finally {
+      if (descriptor) Object.defineProperty(Bun, 'JSONC', descriptor);
+      else delete (Bun as Partial<typeof Bun>).JSONC;
+    }
+  });
+
+  test.each(['{"command":', '{"command": {} garbage}', '{"command": {"review": {"template": "broken}}}'])('rejects malformed JSONC %s', (configRaw) => {
+    expect(() => compilePiCommands({ configRaw, markdownFiles: {}, configDir: '.kortix/shared' })).toThrow('invalid JSONC');
+  });
+
   test('combines JSONC and markdown commands with markdown taking precedence', () => {
     expect(
       compilePiCommands({
