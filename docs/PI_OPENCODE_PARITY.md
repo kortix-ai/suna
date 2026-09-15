@@ -1,6 +1,6 @@
 # Pi runtime parity audit
 
-Updated: 2026-09-14. Canonical branch: `pi-worker`.
+Updated: 2026-09-15. Canonical branch: `pi-worker`.
 Draft PR: [#6998](https://github.com/kortix-ai/suna/pull/6998).
 Preview: [pi.kortix.com](https://pi.kortix.com).
 
@@ -8,6 +8,9 @@ Preview: [pi.kortix.com](https://pi.kortix.com).
 preview. The missing capabilities below remain part of the objective.
 A passing deployment workflow does not prove the full preview test suite ran.
 Push deployments deliberately skip that suite; run target-full separately.
+
+The [storage and readiness audit](./PI_STORAGE_READINESS.md) records exact data
+locations, attachment gaps, prebuild behavior, and the remaining implementation order.
 
 ## Runtime selection and ownership
 
@@ -72,6 +75,8 @@ extensions. The native Pi lifecycle surface is documented in
 
 | Capability | Current behavior | Required work |
 |---|---|---|
+| Ordinary chat files | Images use immutable session storage. Other composer uploads use environment paths | Durable original bytes, stable private history references, lazy file materialization, quotas, cleanup, and public-share policy |
+| Idle environment deletion | Working files and rewind checkpoints depend on the original disk | Backup/restore proof before enabling seven-day deletion; preserve uncommitted files |
 | Rewind and restore | Whole-turn rewind and restore coordinate PostgreSQL history with environment file receipts. Default and custom environment tools record checkpoints. SDK events and existing Edit/Restore controls are connected. Replacement prompt IDs sort above IDs reserved by discarded history | Checkpoints still depend on the original environment disk. Interrupted operations without a complete record refuse rewind. Detached writers and external effects are outside rollback |
 | Session fork and children | No durable fork or child execution contract | Child runtime identity, copied history boundary, environment policy, billing, and UI |
 | Subagents / coordinator | Pi exposes the selected compiled agent | Durable child execution and the equivalent coordinator behavior |

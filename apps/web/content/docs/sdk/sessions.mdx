@@ -649,6 +649,13 @@ up to 16 images and 16 MiB total. Images load from the same session's storage;
 arbitrary remote URLs and filesystem URLs are rejected. Worker replacement
 preserves the image references and downloads their verified bytes again.
 
-The existing session composer enables uploads when its running worker advertises
-image support. First-prompt creation screens remain gated. Documents retain the
-environment upload path. Native tool-result images are not implemented yet.
+User images and native tool-result images use the same durable store. Display
+parts contain `/projects/<projectId>/sessions/<sessionId>/attachments/<sha256>`.
+Use `fetchAttachmentPart(part.url)` to load them with authentication through the
+configured API. These paths work while both sandboxes are stopped. Legacy
+`/kortix/part/...` paths still require a runtime; Pi upgrades them during replay.
+
+Stopped transcript mirrors preserve image references for their own project and
+session. The running-session composer enables native uploads when its worker
+advertises image support. Ordinary documents retain the environment upload path;
+their original bytes are not protected against environment deletion.

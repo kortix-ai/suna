@@ -22,6 +22,14 @@ linked, not inlined.
 ## Register
 
 
+### Preserve durable image references in stopped transcripts (2026-09-15)
+
+**When:** sanitizing session history or changing attachment display paths.
+**Incident:** the Pi mirror removed every file URL, including private image references whose bytes survived in PostgreSQL.
+**Rule:** retain bounded attachment references for the same project and session. Resolve them through the authenticated API without runtime startup. Keep inline bytes out of the mirror.
+**Enforcer:** mirror scope tests, worker legacy-replay tests, SDK attachment transport tests, and `SESS-33`. A fresh preview browser verifies exact image blob bytes while both sandboxes remain stopped.
+
+
 ### Diagnose disposable PostgreSQL startup failures before changing tests (2026-09-15)
 
 **When:** a local migration test reports that PostgreSQL did not become ready.

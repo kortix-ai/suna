@@ -799,9 +799,17 @@ the Pi worker when needed. Each image is at most 8 MiB; one prompt accepts up to
 bytes stay out of the worker journal and load again after worker replacement.
 Arbitrary remote URLs and local filesystem URLs are not valid Pi image inputs.
 
-The existing session composer enables image upload when the running worker
-advertises support. First-prompt creation screens remain gated. Documents use
-the existing environment upload path. Native tool-result images remain pending.
+User images and native tool-result images persist as immutable session assets.
+History contains references, not inline base64. Display parts use
+`/projects/<projectId>/sessions/<sessionId>/attachments/<sha256>`.
+`fetchAttachmentPart(part.url)` reads those parts through the configured API with
+authentication. It does not require a running worker or environment. Legacy
+`/kortix/part/...` references still use the active runtime; Pi upgrades them during replay.
+
+Stopped transcript mirrors preserve image references for their own project and
+session. The running-session composer enables native uploads when its worker
+advertises image support. Ordinary documents still use the environment upload
+path; this does not protect their bytes against environment deletion.
 
 Custom Pi callbacks use `context.state.open(name, {schemaVersion, initialValue, migrate?})`
 for durable session state. Namespace handles expose `read()` and atomic `update()`.
