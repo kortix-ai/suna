@@ -7,7 +7,7 @@ import type { Config } from './config'
 export const COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1'
 export const COMPILED_RUNTIME_CONTENT_TYPE =
   'application/vnd.kortix.compiled-runtime.v1+javascript'
-const MAX_RUNTIME_BYTES = 16 * 1024 * 1024
+const MAX_RUNTIME_BYTES = 24 * 1024 * 1024
 const DOWNLOAD_TIMEOUT_MS = 15_000
 const MANIFEST_MARKER = '// kortix-manifest-base64url:'
 

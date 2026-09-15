@@ -483,3 +483,11 @@ describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
     expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
   });
 });
+
+test('only declared resources add an immutable resource pin, including restricted and replacement environments', () => {
+  expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_AGENT_RESOURCES_SHA');
+  for (const workspaceMode of ['runtime', 'branch'] as const) {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, workspaceMode, restoreSessionBranch: true, agentResourcesSha: 'a'.repeat(40) });
+    expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
+  }
+});

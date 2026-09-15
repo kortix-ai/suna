@@ -2213,3 +2213,40 @@ This completes the explicit YAML authoring/compiler/editor slice. It does not
 complete native OpenCode resource adapters, working-file backup and seven-day
 deletion, child agents, or all remaining runtime parity. No Durable Objects,
 main merge, dev deployment, or production deployment are part of this checkpoint.
+
+## Shared environment resources for OpenCode
+
+YAML v2 now accepts `resources.environment` with the same source, target, and
+mode fields as v3. OpenCode installs these files in its existing single sandbox.
+Pi keeps its worker/environment split. Worker resources remain Pi-only.
+
+Session creation pins v2 resources in server-owned `agent_resources_sha` metadata.
+Create and PATCH reject forged pins. Provisioning reads the saved pin for every
+replacement. The resource API selects only that agent's files at that commit.
+The OpenCode `.mjs` contains the resource bytes and their digest. Matching compiled
+boot installs them without another HTTP download. Other boot paths use the
+resource API. No pin means no resource request or installation.
+
+Cold and warm startup gate custom-code readiness on installation. Missing or
+corrupt resources leave the sandbox unready. Seed receipts preserve existing
+edits and deletions on the same disk. They do not provide workspace backups.
+
+Local checks at this checkpoint:
+
+- Focused schema/compiler/session/installer suite: 661 pass, 0 fail.
+- `pnpm test -- --domain git`: 17/17 pass, including expanded `GH-18`.
+- API, daemon, and manifest typechecks pass.
+- Isolated daemon source typechecks without the workspace dependency tree.
+  Bun 1.3.11 builds its 381-module, 2.0 MB server bundle.
+- The full package lane and live preview verification are recorded in PR #6998.
+
+To test, declare a seed under `/workspace` and a helper under
+`/opt/kortix/helpers`. An OpenCode custom tool should read the helper when its
+module loads. Start the agent, edit one seed, delete another, move the default
+branch, then stop and reopen the session. The helper retains its pinned content;
+the seed edit and deletion remain. Run equivalent Pi code through the environment
+API. The Pi environment must report OpenCode disabled.
+
+Workspace backup, safe seven-day cleanup, portable custom hooks, and the remaining
+runtime parity audit remain separate work. This checkpoint enables no Durable
+Objects and does not authorize a merge to main.

@@ -367,13 +367,15 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     },
     async session(project, opts) {
       if (opts?.piSourceSha && !/^[a-f0-9]{40}$/.test(opts.piSourceSha)) throw new Error('Pi fixture requires an immutable source SHA');
+      if (opts?.openCodeResourceSourceSha && !/^[a-f0-9]{40}$/.test(opts.openCodeResourceSourceSha)) throw new Error('OpenCode resource fixture requires an immutable source SHA');
+      if (opts?.piSourceSha && opts?.openCodeResourceSourceSha) throw new Error('A session fixture must select one runtime');
       if (databaseProjectIds.has(project.id)) {
         const id = await createDatabaseSession(env, {
           projectId: project.id,
           accountId: owner.accountId!,
           userId: owner.userId!,
           agentName: opts?.agentName,
-          metadata: opts?.piSourceSha ? { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: opts.piSourceSha, pi_worker_sha: opts.piSourceSha } : undefined,
+          metadata: opts?.piSourceSha ? { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: opts.piSourceSha, pi_worker_sha: opts.piSourceSha } : opts?.openCodeResourceSourceSha ? { sandbox_slug: 'default', agent_resources_sha: opts.openCodeResourceSourceSha } : undefined,
         });
         // No stack entry: deleting the database-only project cascades to its
         // sessions (project_sessions.project_id ON DELETE CASCADE).
@@ -387,7 +389,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           initial_prompt: opts?.prompt ?? 'noop',
           ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
           ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
-          ...(opts?.piSourceSha ? { base_ref: opts.piSourceSha } : {}),
+          ...((opts?.piSourceSha ?? opts?.openCodeResourceSourceSha) ? { base_ref: opts?.piSourceSha ?? opts?.openCodeResourceSourceSha } : {}),
         },
         {
           params: { projectId: project.id },

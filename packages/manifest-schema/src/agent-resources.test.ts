@@ -24,7 +24,20 @@ test('agent resources accept explicit worker files and environment destinations'
   ).toBe(true);
 });
 
-test('OpenCode resource declarations fail explicitly until its resource adapter exists', () => {
+test('the same environment resources validate with YAML versions two and three', () => {
+  const resources = {
+    environment: [
+      { source: 'assets/seed.txt', target: '/workspace/seed.txt', mode: 'seed' },
+      { source: 'assets/helper.py', target: '/opt/kortix/helpers/helper.py', mode: 'read_only' },
+    ],
+  };
+  for (const version of [2, 3]) {
+    const source = manifest(resources).replace('"kortix_version":3', '"kortix_version":' + version);
+    expect(validateManifest(source, 'yaml').valid).toBe(true);
+  }
+});
+
+test('OpenCode rejects Pi worker resources explicitly', () => {
   const result = validateManifest(
     manifest({ worker: { rules: 'rules.json' } }).replace(
       '"kortix_version":3',
@@ -35,7 +48,7 @@ test('OpenCode resource declarations fail explicitly until its resource adapter 
   expect(result.valid).toBe(false);
   expect(
     result.issues.some(
-      (issue) => issue.path === 'agents.reporter.resources' && issue.message.includes('OpenCode'),
+      (issue) => issue.path === 'agents.reporter.resources.worker' && issue.message.includes('OpenCode'),
     ),
   ).toBe(true);
 });
@@ -108,4 +121,11 @@ test('generated JSON schema rejects traversal, secrets, whitespace and incompati
       environment: [{ source: 'x', mode: 'read_only', target: '/opt/kortix/helpers/check.py' }],
     }),
   ).toBe(true);
+});
+
+test('the generated OpenCode schema allows environment resources and rejects worker resources', () => {
+  const validate = new Ajv().compile(agentResourcesSchema(2));
+  expect(validate({ environment: [{ source: 'x', mode: 'seed', target: '/workspace/x' }] })).toBe(true);
+  expect(validate({ worker: {} })).toBe(false);
+  expect(validate({ environment: [{ source: 'x', mode: 'seed', target: '/etc/x' }] })).toBe(false);
 });

@@ -240,3 +240,87 @@ describe("buildCompiledRuntimeArtifact", () => {
     ).rejects.toThrow(/source moved/);
   });
 });
+
+test('OpenCode bundles declared environment files at the pinned commit and validates cached resource metadata', async () => {
+  const { project, source } = makeProject();
+  const cache = mkdtempSync(join(tmpdir(), 'opencode-resources-cache-'));
+  const mirrors = mkdtempSync(join(tmpdir(), 'opencode-resources-mirror-'));
+  roots.push(cache, mirrors);
+  process.env.KORTIX_COMPILED_BOOT_CACHE_DIR = cache;
+  process.env.KORTIX_GIT_CACHE_DIR = mirrors;
+  mkdirSync(join(source, 'assets'));
+  writeFileSync(join(source, 'assets', 'seed.txt'), 'pinned seed');
+  writeFileSync(join(source, 'assets', 'helper.py'), 'print(42)');
+  writeFileSync(join(source, 'kortix.yaml'), JSON.stringify({
+    kortix_version: 2, default_agent: 'kortix', agents: {
+      kortix: { config: { prompt: 'Use the template.' }, resources: { environment: [
+        { source: 'assets/seed.txt', target: '/workspace/seed.txt', mode: 'seed' },
+        { source: 'assets/helper.py', target: '/opt/kortix/helpers/helper.py', mode: 'read_only' },
+      ] } },
+      other: { config: { prompt: 'Another agent.' }, resources: { environment: [
+        { source: 'assets/helper.py', target: '/workspace/other.py', mode: 'seed' },
+      ] } },
+      disabled: { enabled: false, resources: { environment: [
+        { source: 'missing', target: '/workspace/disabled', mode: 'seed' },
+      ] } },
+    },
+  }));
+  git(['add', '.'], source); git(['commit', '-m', 'Declare resource files'], source);
+  const sha = git(['rev-parse', 'HEAD'], source);
+  writeFileSync(join(source, 'assets', 'seed.txt'), 'new seed');
+  git(['commit', '-am', 'Move default branch'], source);
+  const first = await buildCompiledRuntimeArtifact(project, sha, sha);
+  expect(Object.keys(first.environmentResources ?? {})).toEqual(['kortix', 'other']);
+  expect(Buffer.from(first.environmentResources!.kortix[0].content, 'base64').toString()).toBe('pinned seed');
+  expect(first.environmentResources!.other[0].target).toBe('/workspace/other.py');
+  expect(first.manifest.agent_resources_sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(readFileSync(first.path, 'utf8')).toContain('export const environmentResources = ');
+  const printed = JSON.parse(execFileSync(process.execPath, [first.path, '--manifest'], { encoding: 'utf8' }));
+  expect(printed.agent_resources_sha256).toBe(first.manifest.agent_resources_sha256);
+  expect((await buildCompiledRuntimeArtifact(project, sha, sha)).cacheHit).toBe(true);
+  const metadataPath = first.path.replace('.server.mjs', '.runtime.json');
+  const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+  metadata.environmentResources.kortix[0].content = Buffer.from('tampered').toString('base64');
+  writeFileSync(metadataPath, JSON.stringify(metadata));
+  const repaired = await buildCompiledRuntimeArtifact(project, sha, sha);
+  expect(repaired.cacheHit).toBe(false);
+  expect(repaired.environmentResources).toEqual(first.environmentResources);
+});
+
+
+test("the executable OpenCode artifact exposes its own verified resource map before loading the daemon", async () => {
+  const { project, source } = makeProject();
+  writeFileSync(join(source, "kortix.yaml"), "kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix:\n    resources:\n      environment:\n        - {source: seed.txt, target: /workspace/seed.txt, mode: seed}\n");
+  writeFileSync(join(source, "seed.txt"), "compiled payload");
+  git(["add", "-A"], source);
+  git(["commit", "-m", "Executable resource bundle"], source);
+  const sha = git(["rev-parse", "HEAD"], source);
+  const artifact = await buildCompiledRuntimeArtifact(project, sha, sha);
+  const configRoot = mkdtempSync(join(tmpdir(), "kortix-config-runtime-"));
+  roots.push(configRoot);
+  const result = execFileSync(process.execPath, ["-e", `await import(${JSON.stringify(artifact.path)}); console.log(JSON.stringify(globalThis[Symbol.for("kortix.compiled.environment-resources")]));`], {
+    encoding: "utf8", env: { PATH: process.env.PATH, KORTIX_COMPILED_CONFIG_ROOT: configRoot },
+  });
+  const bundled = JSON.parse(result.trim().split("\n").at(-1)!);
+  expect(bundled).toEqual({projectId: project.projectId, sourceSha: sha, agents: artifact.environmentResources});
+  expect(Buffer.from(bundled.agents.kortix[0].content, "base64").toString()).toBe("compiled payload");
+});
+
+test("OpenCode rejects combined resource payloads above 8 MiB across agents", async () => {
+  const { project, source } = makeProject();
+  writeFileSync(join(source, "kortix.yaml"), "kortix_version: 2\ndefault_agent: first\nagents:\n  first:\n    resources:\n      environment:\n        - {source: payload, target: /workspace/a, mode: seed}\n  second:\n    resources:\n      environment:\n        - {source: payload, target: /workspace/b, mode: seed}\n");
+  writeFileSync(join(source, "payload"), Buffer.alloc(4 * 1024 * 1024 + 1, 65));
+  git(["add", "-A"], source);
+  git(["commit", "-m", "Oversized combined resources"], source);
+  const sha = git(["rev-parse", "HEAD"], source);
+  await expect(buildCompiledRuntimeArtifact(project, sha, sha)).rejects.toThrow("OpenCode runtime resources exceed 8 MiB");
+}, 30_000);
+
+test("OpenCode rejects missing declared environment files during compilation", async () => {
+  const { project, source } = makeProject();
+  writeFileSync(join(source, "kortix.yaml"), "kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix:\n    resources:\n      environment:\n        - {source: missing.txt, target: /workspace/template.txt, mode: seed}\n");
+  git(["add", "-A"], source);
+  git(["commit", "-m", "Missing environment resource"], source);
+  const sha = git(["rev-parse", "HEAD"], source);
+  await expect(buildCompiledRuntimeArtifact(project, sha, sha)).rejects.toThrow("must be an existing regular Git file");
+});

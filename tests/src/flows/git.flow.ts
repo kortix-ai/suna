@@ -478,6 +478,7 @@ flow('GH-18', {
     'GET /v1/git/:project/info/refs',
     'POST /v1/git/:project/git-upload-pack',
     'POST /v1/git/:project/git-receive-pack',
+    'GET /v1/git/:project/compiled-runtime',
     'GET /v1/git/:project/compiled-pi-runtime',
     'GET /v1/projects/:projectId/sessions/:sessionId/environment/resources',
     'PATCH /v1/projects/:projectId/features',
@@ -596,6 +597,37 @@ flow('GH-18', {
       assert.equal(body.files[0].sha256, createHash('sha256').update(bytes).digest('hex'));
       (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(401);
       (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(403);
+    });
+    await ctx.step('YAML v2 bundles the same environment declarations and each OpenCode session reads its pinned agent files', async () => {
+      const declaration = 'kortix_version: 2\ndefault_agent: reader\nagents:\n  reader:\n    config:\n      prompt: Read the environment files.\n    resources:\n      environment:\n        - source: assets/template.txt\n          target: /workspace/template.txt\n          mode: seed\n  other:\n    config:\n      prompt: Read the helper.\n    resources:\n      environment:\n        - source: assets/rules.json\n          target: /opt/kortix/helpers/rules.json\n          mode: read_only\n';
+      await writeFile(join(repo, 'kortix.yaml'), declaration);
+      await git(['-C', repo, 'add', 'kortix.yaml']);
+      await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Select OpenCode environment resources']);
+      const source = await git(['-C', repo, 'rev-parse', 'HEAD']);
+      await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
+      (await client.get('/v1/git/:project/compiled-runtime', {
+        params: { project: `${project.id}.git` }, query: { ref: source, sha: source }, timeoutMs: 120_000,
+      })).status(200).headerEquals('x-kortix-artifact-source-sha', source);
+      const sessions = await Promise.all(['reader', 'other'].map(agentName => ctx.fixtures.session(project, { agentName, openCodeResourceSourceSha: source })));
+      await writeFile(join(repo, 'assets/template.txt'), 'later OpenCode template');
+      await git(['-C', repo, 'add', 'assets/template.txt']);
+      await git(['-C', repo, '-c', 'user.name=Kortix Test', '-c', 'user.email=test@kortix.test', 'commit', '-m', 'Move OpenCode default branch']);
+      await git(['-C', repo, 'push', 'origin', 'HEAD:main']);
+      for (const [index, session] of sessions.entries()) {
+        const params = { projectId: project.id, sessionId: session.id };
+        const resource = await client.get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params, timeoutMs: 120_000 });
+        resource.status(200);
+        const body = resource.json<any>();
+        assert.equal(body.source_sha, source);
+        assert.equal(body.agent_name, index === 0 ? 'reader' : 'other');
+        assert.equal(body.files.length, 1);
+        assert.equal(body.files[0].target, index === 0 ? '/workspace/template.txt' : '/opt/kortix/helpers/rules.json');
+        const bytes = Buffer.from(body.files[0].content, 'base64');
+        assert.equal(bytes.toString(), index === 0 ? 'new default branch template' : '{"currency":"EUR"}');
+        assert.equal(body.files[0].sha256, createHash('sha256').update(bytes).digest('hex'));
+        (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(401);
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/sessions/:sessionId/environment/resources', { params })).status(403);
+      }
     });
   } finally {
     await rm(root, { recursive: true, force: true });

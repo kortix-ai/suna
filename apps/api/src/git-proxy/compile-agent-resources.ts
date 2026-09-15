@@ -6,6 +6,7 @@ import {
   manifestFormatForPath,
   parseManifestText,
   validateAgentResources,
+  validateManifest,
   type AgentResources,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
@@ -42,7 +43,7 @@ export async function compileAgentResources(
   for (const entry of entries) {
     const bytes = Buffer.from(await read(entry.source));
     size += bytes.length;
-    if (size > MAX_BYTES) throw new Error(`Pi agent "${agentName}" resources exceed 8 MiB`);
+    if (size > MAX_BYTES) throw new Error(`Agent "${agentName}" resources exceed 8 MiB`);
     assets.push({
       ...entry,
       content: bytes.toString('base64'),
@@ -65,8 +66,36 @@ export async function resolveCompiledAgentResources(
   );
   if (!found) throw new Error('Agent resources require a manifest at the pinned source SHA');
   const manifest = parseManifestText(found.content, manifestFormatForPath(found.path));
+  return compileAgentResources(manifest, agentName, gitResourceReader(project, sourceSha));
+}
+
+export async function resolveOpenCodeEnvironmentResources(
+  project: GitBackedProject,
+  sourceSha: string,
+): Promise<Record<string, CompiledAgentResource[]>> {
+  const found = await readManifestFromRepo(project, manifestCandidatePaths(project.manifestPath).map(p => p.path), sourceSha);
+  if (!found) return {};
+  const format = manifestFormatForPath(found.path);
+  const manifest = parseManifestText(found.content, format);
+  if (Number(manifest.kortix_version) !== 2) return {};
+  const validation = validateManifest(found.content, format);
+  if (!validation.valid) throw new Error('Invalid OpenCode resource manifest: ' + validation.issues.filter(i => i.severity === 'error').map(i => i.message).join('; '));
+  const resources: Record<string, CompiledAgentResource[]> = Object.create(null);
+  const read = gitResourceReader(project, sourceSha);
+  let total = 0;
+  for (const [name, agent] of Object.entries((manifest.agents ?? {}) as Record<string, { enabled?: boolean; resources?: AgentResources }>)) {
+    if (agent.enabled === false || !agent.resources?.environment?.length) continue;
+    const files = await compileAgentResources(manifest, name, read);
+    total += files.reduce((sum, file) => sum + file.size, 0);
+    if (total > MAX_BYTES) throw new Error('OpenCode runtime resources exceed 8 MiB');
+    resources[name] = files;
+  }
+  return resources;
+}
+
+function gitResourceReader(project: GitBackedProject, sourceSha: string) {
   let mirror: string | undefined;
-  return compileAgentResources(manifest, agentName, async (path) => {
+  return async (path: string): Promise<Uint8Array> => {
     mirror ??= await refreshMirror(project);
     const listed = await runGit(['ls-tree', '-z', sourceSha, '--', path], mirror, false);
     const match = /^(100644|100755) blob ([a-f0-9]{40})\t([^\0]+)\0$/.exec(listed.stdout);
@@ -87,5 +116,5 @@ export async function resolveCompiledAgentResources(
       timeout: 30000,
     });
     return stdout;
-  });
+  };
 }

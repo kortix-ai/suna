@@ -8,6 +8,7 @@ export const PI_WORKER_RUNTIME_METADATA_KEYS = [
   'pi_worker_sha',
   'environment_sandbox_slug',
   'runtimeArtifact',
+  'agent_resources_sha',
 ] as const;
 
 export interface PiWorkerRuntimeIdentity {

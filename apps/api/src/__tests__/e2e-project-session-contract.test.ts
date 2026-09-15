@@ -650,10 +650,20 @@ function applySandboxUpdates(
   row: SandboxRowFixture,
   updates: Partial<typeof sessionSandboxes.$inferSelect>,
 ): SandboxRowFixture {
-  let metadata = updates.metadata;
+  const metadata = applyMetadataUpdates(row.metadata, updates.metadata);
+  return {
+    ...row,
+    ...updates,
+    metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
+
+function applyMetadataUpdates(current: unknown, update: unknown): Record<string, unknown> {
+  let metadata = update;
   if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
     const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
-    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    const merged = { ...((current ?? {}) as Record<string, unknown>) };
     for (const key of query.sql.matchAll(/- '([^']+)'/g)) delete merged[key[1]!];
     for (const param of query.params) {
       if (typeof param !== 'string' || !param.startsWith('{')) continue;
@@ -665,12 +675,7 @@ function applySandboxUpdates(
     }
     metadata = merged;
   }
-  return {
-    ...row,
-    ...updates,
-    metadata: metadata === undefined ? row.metadata : metadata,
-    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-  };
+  return (metadata === undefined ? current : metadata) as Record<string, unknown>;
 }
 
 mock.module('../shared/db', () => ({
@@ -984,6 +989,7 @@ mock.module('../shared/db', () => ({
               sessionRow = {
                 ...sessionRow,
                 ...updates,
+                metadata: applyMetadataUpdates(sessionRow.metadata, updates.metadata),
                 updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
               };
               return [sessionRow];
@@ -1022,6 +1028,7 @@ mock.module('../shared/db', () => ({
                   sessionRow = {
                     ...sessionRow,
                     ...updates,
+                    metadata: applyMetadataUpdates(sessionRow.metadata, updates.metadata),
                     updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                   };
                   return [sessionRow];
@@ -1046,6 +1053,7 @@ mock.module('../shared/db', () => ({
                 sessionRow = {
                   ...sessionRow,
                   ...updates,
+                  metadata: applyMetadataUpdates(sessionRow.metadata, updates.metadata),
                   updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                 };
                 return [sessionRow];
@@ -1323,6 +1331,29 @@ describe('project session API contract', () => {
       await flushUntil(() => sandboxProvisionCalls === 1);
     },
   );
+
+  test('OpenCode resource source is server-owned and reaches provisioning from the persisted session', async () => {
+    enablePiWorker();
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 2\ndefault_agent: default\nagents:\n  default:\n    config:\n      prompt: Use the declared files.\n    resources:\n      environment:\n        - source: seed.txt\n          target: /workspace/seed.txt\n          mode: seed\n' };
+    const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'pinned-release' }),
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ metadata: { agent_resources_sha: 'a'.repeat(40) } });
+    expect(lastSessionInsertValues).toMatchObject({ metadata: { agent_resources_sha: 'a'.repeat(40) } });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput?.extraEnvVars?.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
+  });
+
+  test('callers cannot forge the resource source in session metadata', async () => {
+    const response = await createApp().request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metadata: { agent_resources_sha: 'b'.repeat(40) } }),
+    });
+    expect(response.status).toBe(400);
+    expect(lastSessionInsertValues).toBeNull();
+  });
 
   test('v3 selects Pi with the pi_worker feature disabled', async () => {
     enablePiWorker();
@@ -2780,6 +2811,10 @@ describe('project session API contract', () => {
       {
         body: { metadata: { pi_worker_sha: 'a'.repeat(40) } },
         message: 'metadata key is server-managed: pi_worker_sha',
+      },
+      {
+        body: { metadata: { agent_resources_sha: 'a'.repeat(40) } },
+        message: 'metadata key is server-managed: agent_resources_sha',
       },
       {
         body: { random: 'field' },

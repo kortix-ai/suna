@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installEnvironmentResources, prepareEnvironmentResources } from '../environment-resources';
+import { installEnvironmentResources, prepareEnvironmentResources, prepareOpenCodeEnvironmentResources } from '../environment-resources';
 import { loadConfig } from '../config';
 
 const roots: string[] = [];
@@ -173,4 +173,56 @@ test('aborted installation writes nothing and a successful authenticated downloa
     },
   );
   expect(await readFile(join(options.workspace, 'x'), 'utf8')).toBe('original');
+});
+
+test('OpenCode skips resource IO without a pin and rejects a moved release before installation', async () => {
+  const options = await fixture();
+  const cfg = loadConfig({ KORTIX_WORKSPACE: options.workspace, KORTIX_PROJECT_ID: 'project', KORTIX_API_URL: 'https://api.kortix.test/v1', KORTIX_TOKEN: 'test-token' });
+  const env = { KORTIX_SESSION_ID: 'session', KORTIX_AGENT_NAME: 'agent', KORTIX_AGENT_STATE_DIR: options.state };
+  let requests = 0;
+  const fetchImpl = async () => {
+    requests++;
+    return Response.json({ project_id: 'project', session_id: 'session', agent_name: 'agent', source_sha: 'a'.repeat(40), files: [resource('/workspace/resource.txt')] });
+  };
+  await prepareOpenCodeEnvironmentResources(cfg, env, { fetchImpl });
+  expect(requests).toBe(0);
+  await expect(prepareOpenCodeEnvironmentResources(cfg, { ...env, KORTIX_AGENT_RESOURCES_SHA: 'main' }, { fetchImpl })).rejects.toThrow(/identity/);
+  expect(requests).toBe(0);
+  await expect(prepareOpenCodeEnvironmentResources(cfg, { ...env, KORTIX_AGENT_RESOURCES_SHA: 'b'.repeat(40) }, { fetchImpl })).rejects.toThrow(/identity/);
+  expect(await Bun.file(join(options.workspace, 'resource.txt')).exists()).toBe(false);
+  await prepareOpenCodeEnvironmentResources(cfg, { ...env, KORTIX_AGENT_RESOURCES_SHA: 'a'.repeat(40) }, { fetchImpl });
+  expect(await readFile(join(options.workspace, 'resource.txt'), 'utf8')).toBe('original');
+  await writeFile(join(options.workspace, 'resource.txt'), 'edited');
+  await prepareOpenCodeEnvironmentResources(cfg, { ...env, KORTIX_AGENT_RESOURCES_SHA: 'a'.repeat(40) }, { fetchImpl });
+  expect(await readFile(join(options.workspace, 'resource.txt'), 'utf8')).toBe('edited');
+  await rm(join(options.workspace, 'resource.txt'));
+  await prepareOpenCodeEnvironmentResources(cfg, { ...env, KORTIX_AGENT_RESOURCES_SHA: 'a'.repeat(40) }, { fetchImpl });
+  expect(await Bun.file(join(options.workspace, 'resource.txt')).exists()).toBe(false);
+});
+
+
+test('compiled OpenCode installs verified bytes without another API download and ignores a different bundle identity', async () => {
+  const options = await fixture();
+  const cfg = loadConfig({ KORTIX_WORKSPACE: options.workspace, KORTIX_PROJECT_ID: 'project', KORTIX_API_URL: 'https://api.kortix.test/v1', KORTIX_TOKEN: 'test-token' });
+  const env = { KORTIX_SESSION_ID: 'session', KORTIX_AGENT_NAME: 'agent', KORTIX_AGENT_STATE_DIR: options.state, KORTIX_AGENT_RESOURCES_SHA: 'a'.repeat(40) };
+  const key = Symbol.for('kortix.compiled.environment-resources');
+  const globals = globalThis as Record<symbol, unknown>;
+  const previous = globals[key];
+  let requests = 0;
+  const fetchImpl = async () => { requests++; return new Response(null, {status: 503}); };
+  try {
+    globals[key] = {projectId: 'project', sourceSha: env.KORTIX_AGENT_RESOURCES_SHA, agents: {agent: [resource('/workspace/bundled.txt')]}};
+    await prepareOpenCodeEnvironmentResources(cfg, env, {fetchImpl});
+    expect(requests).toBe(0);
+    expect(await readFile(join(options.workspace, 'bundled.txt'), 'utf8')).toBe('original');
+    await expect(prepareOpenCodeEnvironmentResources(cfg, {...env, KORTIX_AGENT_NAME: 'other'}, {fetchImpl})).rejects.toThrow('Selected agent resource release is missing');
+    expect(requests).toBe(0);
+    await expect(prepareOpenCodeEnvironmentResources(cfg, {...env, KORTIX_AGENT_RESOURCES_SHA: 'b'.repeat(40)}, {fetchImpl})).rejects.toThrow('HTTP 503');
+    expect(requests).toBe(1);
+    globals[key] = {projectId: 'project', sourceSha: env.KORTIX_AGENT_RESOURCES_SHA, agents: {agent: [{...resource('/workspace/corrupt.txt'), content: Buffer.from('corrupt').toString('base64')}]}};
+    await expect(prepareOpenCodeEnvironmentResources(cfg, env, {fetchImpl})).rejects.toThrow();
+    expect(await Bun.file(join(options.workspace, 'corrupt.txt')).exists()).toBe(false);
+  } finally {
+    if (previous === undefined) delete globals[key]; else globals[key] = previous;
+  }
 });

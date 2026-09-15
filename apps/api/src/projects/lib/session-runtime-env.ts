@@ -55,6 +55,7 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  agentResourcesSha?: string;
 }
 
 /**
@@ -158,6 +159,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
+    ...(input.agentResourcesSha ? { KORTIX_AGENT_RESOURCES_SHA: input.agentResourcesSha } : {}),
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),

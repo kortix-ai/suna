@@ -91,12 +91,12 @@ export function validateAgentResources(
   }
 }
 
-export function agentResourcesSchema() {
+export function agentResourcesSchema(version: 2 | 3 = 3) {
   return {
     type: 'object',
     additionalProperties: false,
     properties: {
-      worker: {
+      worker: version === 2 ? false : {
         type: 'object',
         maxProperties: 64,
         propertyNames: { pattern: AGENT_RESOURCE_NAME_PATTERN },

@@ -327,7 +327,22 @@ Read-only permissions prevent ordinary writes; trusted code with owner or root
 access can change permissions. They are not a security boundary. Seed tracking
 lives with the environment. It survives restart, not environment deletion.
 Working-file backup and restoration remain a separate implementation phase.
-YAML v2 rejects `resources` until the OpenCode resource adapter exists.
+YAML v2 supports the same `resources.environment` declarations. OpenCode installs
+these files in its single sandbox before starting custom code. The session stores
+an immutable resource commit; restart and replacement reuse it. Reading the
+resource manifest never starts another sandbox. V2 bundles all enabled agents’
+environment resources with an aggregate 8 MiB limit, then serves only the selected
+agent’s files. Compiled OpenCode boot reads matching resource bytes directly from its bundle,
+without another API download. Other boot paths fetch the pinned release.
+Existing sessions without a resource pin perform no resource fetch.
+V2 rejects `resources.worker`: that API requires Pi.
+
+To switch the environment example to OpenCode, set `kortix_version: 2`, remove
+`resources.worker`, and replace native Pi source with OpenCode plugins or tools.
+The `source`, `target`, and `mode` environment declarations stay unchanged.
+An OpenCode tool can read `/opt/kortix/helpers/report.py` or
+`/workspace/template.txt` directly. A Pi tool uses `context.environment` to access
+those paths. Native custom code still needs a runtime-specific implementation.
 
 ### Test bundled files
 

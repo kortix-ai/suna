@@ -12,6 +12,8 @@ import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { buildCompiledPiRuntimeArtifact } from '../../git-proxy/compiled-pi-runtime-artifact';
+import { buildCompiledRuntimeArtifact } from '../../git-proxy/compiled-runtime-artifact';
+import { agentResourceSourceSha } from '../lib/agent-resource-release';
 import {
   SessionEnvironmentError,
   SessionEnvironmentStopError,
@@ -172,19 +174,24 @@ projectsApp.openapi(
   async (c) => {
     const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     if (gate.kind === 'error') return gate.response as never;
-    if (gate.session.metadata.sandbox_slug !== 'pi-worker') return c.json({ error: 'Session does not run on the pi worker' }, 400);
-    const identity = await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata });
-    if (!identity) return c.json({ error: 'Pi runtime identity is incomplete' }, 409);
     try {
+      const pi = gate.session.metadata.sandbox_slug === 'pi-worker';
+      const sourceSha = pi
+        ? (await ensurePiWorkerIdentity({ projectId: gate.projectId, sessionId: gate.sessionId, metadata: gate.session.metadata }))?.sha
+        : agentResourceSourceSha(gate.session.metadata);
+      if (!sourceSha) return c.json({ error: 'Agent resource identity is incomplete' }, 409);
       const project = await withProjectGitAuth(gate.row as never);
-      const artifact = await buildCompiledPiRuntimeArtifact(project, identity.sha, identity.sha, gate.session.agentName);
+      const files = pi
+        ? (await buildCompiledPiRuntimeArtifact(project, sourceSha, sourceSha, gate.session.agentName)).manifest.agent_resources ?? []
+        : (await buildCompiledRuntimeArtifact(project, sourceSha, sourceSha)).environmentResources?.[gate.session.agentName];
+      if (!files) throw new Error('Selected agent resource release is missing');
       c.header('cache-control', 'private, no-store');
       return c.json({
         project_id: gate.projectId,
         session_id: gate.sessionId,
         agent_name: gate.session.agentName,
-        source_sha: identity.sha,
-        files: (artifact.manifest.agent_resources ?? []).filter(file => file.placement === 'environment'),
+        source_sha: sourceSha,
+        files: files.filter(file => file.placement === 'environment'),
       });
     } catch (error) {
       console.warn('[session-env] pinned agent resources unavailable', { sessionId: gate.sessionId, error: error instanceof Error ? error.message : String(error) });

@@ -310,9 +310,9 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   if (version === 2 && isTable(parsed.agents)) {
     for (const [name, agent] of Object.entries(parsed.agents)) {
-      if (isTable(agent) && agent.resources !== undefined) issues.push({
-        path: `agents.${name}.resources`,
-        message: 'Bundled resources require kortix_version 3. The OpenCode resource adapter is not available.',
+      if (isTable(agent) && isTable(agent.resources) && agent.resources.worker !== undefined) issues.push({
+        path: `agents.${name}.resources.worker`,
+        message: 'Worker resources require kortix_version 3. OpenCode supports environment resources only.',
         severity: 'error',
       });
     }

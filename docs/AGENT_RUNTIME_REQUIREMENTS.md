@@ -300,8 +300,11 @@ History, artifacts, and checkpoints have separate retention rules.
 The browser edits declared prompt files while preserving source/resource paths.
 Preview `9d405788e0` verifies imported custom code, worker resources, environment
 RPC, release pinning, and exact restart history. Private chat uploads also persist
-outside sandboxes. Native resource placement remains Pi-only.
-The portable custom API, OpenCode resource adapter, general workspace backups,
+outside sandboxes. Environment resource declarations now work with both runtimes:
+v2 installs them in its single sandbox; v3 installs them in separate compute.
+Both use pinned source bytes and preserve existing seed edits and deletions.
+Worker resources and native Pi code remain Pi-only.
+The portable custom API, general workspace backups,
 Lix integration, and gated reopen/cleanup lifecycle remain work. Existing orphan deletion is not
 a verified-backup policy; replace its gate before enabling this design.
 

@@ -171,6 +171,7 @@ export async function prepareEnvironmentResources(
     manifest.agent_name !== env.KORTIX_AGENT_NAME ||
     typeof manifest.source_sha !== 'string' ||
     !/^[a-f0-9]{40}$/.test(manifest.source_sha)
+    || (env.KORTIX_AGENT_RESOURCES_SHA !== undefined && manifest.source_sha !== env.KORTIX_AGENT_RESOURCES_SHA)
   )
     throw new Error('Environment resource identity mismatch');
   await installEnvironmentResources(manifest.files, {
@@ -181,4 +182,31 @@ export async function prepareEnvironmentResources(
     sessionId,
     signal,
   });
+}
+
+export async function prepareOpenCodeEnvironmentResources(
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+  options: Parameters<typeof prepareEnvironmentResources>[2] = {},
+): Promise<void> {
+  if (env.KORTIX_AGENT_RESOURCES_SHA === undefined) return;
+  if (!/^[a-f0-9]{40}$/.test(env.KORTIX_AGENT_RESOURCES_SHA))
+    throw new Error('Agent resource source identity is invalid');
+  const bundled = (globalThis as Record<symbol, unknown>)[Symbol.for('kortix.compiled.environment-resources')] as
+    { projectId: string; sourceSha: string; agents: Record<string, unknown> } | undefined;
+  if (bundled && cfg.projectId && bundled.projectId === cfg.projectId && bundled.sourceSha === env.KORTIX_AGENT_RESOURCES_SHA) {
+    if (!env.KORTIX_SESSION_ID || !env.KORTIX_AGENT_NAME)
+      throw new Error('Environment resources require the authenticated session identity');
+    const files = Object.hasOwn(bundled.agents, env.KORTIX_AGENT_NAME) ? bundled.agents[env.KORTIX_AGENT_NAME] : undefined;
+    if (!files) throw new Error('Selected agent resource release is missing');
+    await installEnvironmentResources(files, {
+      workspace: cfg.workspace,
+      helpers: '/opt/kortix/helpers',
+      state: env.KORTIX_AGENT_STATE_DIR || '/opt/kortix/environment-runtime',
+      projectId: cfg.projectId,
+      sessionId: env.KORTIX_SESSION_ID,
+    });
+    return;
+  }
+  await prepareEnvironmentResources(cfg, env, options);
 }

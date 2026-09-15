@@ -9,6 +9,8 @@ let session: any;
 let identity: any;
 let calls: any[] = [];
 let fail = false;
+let openCodeCalls: any[][] = [];
+let openCodeResources: Record<string, unknown> = {};
 const files = [
   {
     placement: 'environment',
@@ -62,6 +64,13 @@ mock.module('../../git-proxy/compiled-pi-runtime-artifact', () => ({
     };
   },
 }));
+mock.module('../../git-proxy/compiled-runtime-artifact', () => ({
+  buildCompiledRuntimeArtifact: async (...args: any[]) => {
+    openCodeCalls.push(args);
+    if (fail) throw new Error('compile failed');
+    return { environmentResources: openCodeResources };
+  },
+}));
 mock.module('../../platform/services/session-environment', () => ({
   ensureSessionEnvironment: async () => {
     throw new Error('must not start compute');
@@ -85,6 +94,8 @@ beforeEach(() => {
   };
   identity = { ref: 'pinned-ref', sha };
   calls = [];
+  openCodeCalls = [];
+  openCodeResources = { reader: files, other: [{ source: "private" }] };
   fail = false;
 });
 
@@ -124,8 +135,8 @@ test.each([
     },
   ],
   [
-    'OpenCode session',
-    400,
+    'OpenCode session without a resource pin',
+    409,
     () => {
       session.metadata.sandbox_slug = 'default';
     },
@@ -149,4 +160,24 @@ test('compilation errors fail closed and an owner can read the same pinned files
   fail = false;
   caller = null;
   expect((await request()).status).toBe(200);
+});
+
+test('OpenCode reads only the selected agent at its pinned source without creating another sandbox', async () => {
+  session.metadata = { sandbox_slug: 'default', agent_resources_sha: sha };
+  const response = await request();
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ project_id: pid, session_id: sid, agent_name: 'reader', source_sha: sha, files });
+  expect(openCodeCalls[0].slice(1)).toEqual([sha, sha]);
+  expect(calls).toHaveLength(0);
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+});
+
+test('OpenCode refuses a missing selected release and a corrupt source pin', async () => {
+  session.metadata = { sandbox_slug: 'default', agent_resources_sha: sha };
+  openCodeResources = { other: files };
+  expect((await request()).status).toBe(503);
+  session.metadata.agent_resources_sha = 'main';
+  openCodeCalls = [];
+  expect((await request()).status).toBe(503);
+  expect(openCodeCalls).toHaveLength(0);
 });

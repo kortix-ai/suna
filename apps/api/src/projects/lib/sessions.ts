@@ -1,4 +1,5 @@
 import { piModelLimits } from '../../git-proxy/pi-model-limits';
+import { agentResourceSourceSha, resolveOpenCodeResourceSourceSha } from './agent-resource-release';
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
@@ -563,6 +564,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       createdBy: projectSessions.createdBy,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -693,6 +695,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
+      agentResourcesSha: input.platformMetaAgent ? undefined : agentResourceSourceSha(sessionPolicyRow?.metadata),
       workspaceMode: input.workspaceMode,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
@@ -1029,10 +1032,12 @@ export async function createProjectSession(input: {
   // V3 selects Pi without a feature flag. V2 and legacy absence select OpenCode.
   // An invalid or unreadable runtime decision fails before session persistence.
   let piWorkerIdentity: { ref: string; sha: string } | null = null;
+  let runtimeSourceSha: string;
   try {
     const authedProject = await withProjectGitAuth(project);
     const ref = (baseRef ?? '').trim() || project.defaultBranch;
     const sha = await resolveCommitSha(authedProject, ref);
+    runtimeSourceSha = sha;
     const runtime = await resolveManifestRuntimeForPiSession(authedProject, sha);
     if (runtime === 'pi') {
       piWorkerIdentity = { ref, sha };
@@ -1097,6 +1102,20 @@ export async function createProjectSession(input: {
           mirroredDefaultAgent,
         });
   const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
+  let agentResourcesSha: string | undefined;
+  if (!piWorkerIdentity && !platformMetaAgent && loadedAgents.manifest?.revision) {
+    try {
+      agentResourcesSha = await resolveOpenCodeResourceSourceSha(
+        await withProjectGitAuth(project), runtimeSourceSha, agentName,
+      );
+    } catch (err) {
+      console.warn(`[sessions] resource resolution failed for ${projectId}:`, err instanceof Error ? err.message : err);
+      return { error: { status: 409, body: {
+        error: 'Agent resources could not be resolved from the session Git commit',
+        code: 'AGENT_RESOURCE_RESOLUTION_FAILED',
+      } } };
+    }
+  }
   if (platformMetaAgent && callerIsMeta) {
     return {
       error: {
@@ -1648,6 +1667,7 @@ export async function createProjectSession(input: {
     pi_worker_ref: piWorkerIdentity?.ref ?? null,
     pi_worker_sha: piWorkerIdentity?.sha ?? null,
     runtimeArtifact: null,
+    ...(agentResourcesSha ? { agent_resources_sha: agentResourcesSha } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,

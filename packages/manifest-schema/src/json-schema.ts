@@ -583,7 +583,7 @@ function agentBlockV2Schema(version: 2 | 3): JsonSchemaFragment {
     type: 'object',
     properties: {
       config: agentConfigurationSchema(agentMdFrontmatterSchema().properties as Record<string, unknown>),
-      resources: version === 3 ? agentResourcesSchema() : false,
+      resources: agentResourcesSchema(version),
       enabled: { type: 'boolean' },
       sandbox: { allOf: [SLUG_SCHEMA, { not: { const: PI_WORKER_SANDBOX_SLUG } }] },
       connectors: grantSetSchema(),

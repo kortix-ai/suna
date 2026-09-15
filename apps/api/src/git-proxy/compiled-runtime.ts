@@ -1,4 +1,11 @@
 import { createHash } from 'node:crypto';
+import type { CompiledAgentResource } from '@kortix/manifest-schema';
+
+export type OpenCodeEnvironmentResources = Record<string, CompiledAgentResource[]>;
+
+export function environmentResourcesDigest(resources: OpenCodeEnvironmentResources): string {
+  return createHash('sha256').update(JSON.stringify(resources)).digest('hex');
+}
 
 export const COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1' as const;
 export const COMPILED_RUNTIME_CONTENT_TYPE =
@@ -15,6 +22,7 @@ export interface CompiledRuntimeManifest {
   opencode_config_dir: string | null;
   opencode_config_archive_sha256: string | null;
   opencode_config_archive_bytes: number | null;
+  agent_resources_sha256?: string;
 }
 
 export interface CompiledRuntimeArtifact {
@@ -22,6 +30,7 @@ export interface CompiledRuntimeArtifact {
   sha256: string;
   size: number;
   manifest: CompiledRuntimeManifest;
+  environmentResources?: OpenCodeEnvironmentResources;
 }
 
 export interface CompileOpenCodeRuntimeInput {
@@ -32,6 +41,7 @@ export interface CompileOpenCodeRuntimeInput {
   agentBundle: string;
   opencodeConfigDir?: string | null;
   opencodeConfigArchiveBase64?: string | null;
+  environmentResources?: OpenCodeEnvironmentResources;
 }
 
 function validateInput(input: CompileOpenCodeRuntimeInput): void {
@@ -56,6 +66,7 @@ function runtimeSource(
   manifest: CompiledRuntimeManifest,
   agentBundle: string,
   opencodeConfigArchiveBase64: string | null,
+  environmentResources: OpenCodeEnvironmentResources,
 ): string {
   const encodedManifest = Buffer.from(JSON.stringify(manifest)).toString('base64url');
   return `#!/usr/bin/env bun
@@ -63,6 +74,7 @@ function runtimeSource(
 export const manifest = Object.freeze(
   JSON.parse(Buffer.from("${encodedManifest}", "base64url").toString("utf8")),
 );
+${Object.keys(environmentResources).length ? `export const environmentResources = JSON.parse(${JSON.stringify(JSON.stringify(environmentResources))});` : ''}
 
 if (process.argv.includes("--manifest")) {
   process.stdout.write(JSON.stringify(manifest) + "\\n");
@@ -95,6 +107,7 @@ for (const [name, value] of Object.entries(compiledEnv)) {
 }
 
 Object.assign(process.env, compiledEnv);
+${Object.keys(environmentResources).length ? `globalThis[Symbol.for("kortix.compiled.environment-resources")] = {projectId: manifest.project_id, sourceSha: manifest.source_sha, agents: environmentResources};` : ''}
 
 if (typeof globalThis.Bun === "undefined") {
   const { spawn } = await import("node:child_process");
@@ -194,12 +207,17 @@ export function compileOpenCodeRuntime(
       ? createHash('sha256').update(opencodeConfigArchive).digest('hex')
       : null,
     opencode_config_archive_bytes: opencodeConfigArchive?.byteLength ?? null,
+    ...(input.environmentResources && Object.keys(input.environmentResources).length
+      ? { agent_resources_sha256: environmentResourcesDigest(input.environmentResources) }
+      : {}),
   };
-  const source = runtimeSource(manifest, input.agentBundle, opencodeConfigArchiveBase64);
+  const source = runtimeSource(manifest, input.agentBundle, opencodeConfigArchiveBase64, input.environmentResources ?? {});
+  if (Buffer.byteLength(source) > 24 * 1024 * 1024) throw new Error('Compiled OpenCode runtime exceeds 24 MiB');
   return {
     source,
     sha256: createHash('sha256').update(source).digest('hex'),
     size: Buffer.byteLength(source),
     manifest,
+    ...(manifest.agent_resources_sha256 ? { environmentResources: input.environmentResources } : {}),
   };
 }
