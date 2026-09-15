@@ -113,6 +113,8 @@ export interface ComposerToolbarProps {
   agentUnavailable?: boolean;
   /** A selected upload failed. See `SendStopControl`. */
   attachmentFailed?: boolean;
+  /** Why the selected model cannot take the attachments, or null. See `SendStopControl`. */
+  attachmentUnsupported?: string | null;
   onSubmit: () => void;
 }
 
@@ -150,6 +152,7 @@ export function ComposerToolbar({
   modelUnavailable,
   agentUnavailable = false,
   attachmentFailed = false,
+  attachmentUnsupported = null,
   onSubmit,
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -235,6 +238,7 @@ export function ComposerToolbar({
           modelUnavailable={modelUnavailable}
           agentUnavailable={agentUnavailable}
           attachmentFailed={attachmentFailed}
+          attachmentUnsupported={attachmentUnsupported}
           onSubmit={onSubmit}
         />
       </div>

@@ -1532,7 +1532,9 @@
       "bringKey": "Bring your own key",
       "barTitle": "No model connected",
       "barDescription": "connect one to start chatting",
-      "connectModel": "Connect model"
+      "connectModel": "Connect model",
+      "imagesUnsupported": "{model} can’t read images",
+      "imagesUnsupportedHint": "remove them or pick another model"
     },
     "providerRecovery": {
       "savedPrompt": "Saved prompt",

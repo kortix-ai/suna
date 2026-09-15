@@ -11,7 +11,7 @@ import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out';
+  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-(--duration-normal) duration-(--duration-slow) ease-out';
 
 /**
  * Send ⇄ stop ⇄ pending cross-fade. The three states used to be three separate
@@ -47,6 +47,8 @@ export interface SendStopControlProps {
   agentUnavailable?: boolean;
   /** A selected upload failed. Send is refused until it is retried or removed. */
   attachmentFailed?: boolean;
+  /** Why the selected model cannot take the attachments. Send is refused while set. */
+  attachmentUnsupported?: string | null;
   onSubmit: () => void;
 }
 
@@ -66,6 +68,7 @@ export function SendStopControl({
   modelUnavailable,
   agentUnavailable = false,
   attachmentFailed = false,
+  attachmentUnsupported = null,
   onSubmit,
 }: SendStopControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -79,7 +82,7 @@ export function SendStopControl({
       ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
       : attachmentFailed
         ? tAttachments('failedBlocksSend')
-        : null;
+        : attachmentUnsupported;
 
   if (isSending && !lockForQuestion) {
     return (
@@ -103,8 +106,8 @@ export function SendStopControl({
     return (
       <div className="relative flex items-center">
         {escCount > 0 && (
-          <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-            <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-[13px] whitespace-nowrap">
+          <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-(--duration-normal)">
+            <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-xs whitespace-nowrap">
               <Kbd>ESC</Kbd>
               <span>
                 {escCount === 1
@@ -146,7 +149,7 @@ export function SendStopControl({
         size="sm"
         disabled={!questionCanAct || disabled}
         onClick={onSubmit}
-        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
+        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
       >
         {questionButtonLabel}
       </Button>

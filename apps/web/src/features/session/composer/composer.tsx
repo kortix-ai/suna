@@ -40,8 +40,9 @@ import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
+  modelRejectingAttachedImages,
 } from '../model-availability';
-import { ModelConnectionBar } from '../model-connection-gate';
+import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
@@ -478,6 +479,7 @@ function ComposerImpl({
   parentClassName,
 }: SessionChatInputProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tModelGate = useTranslations('sessionUi.modelGate');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
@@ -909,6 +911,15 @@ function ComposerImpl({
   const submitDisabled = disabled || modelUnavailable || agentUnavailable || lockForApproval;
   /** A failed upload refuses Send. The Send control's tooltip says why. */
   const attachmentFailed = attachmentsBlockSend(promptAttachmentItems);
+  /** The selected model cannot read an attached image: the tray under the card and Send say so. */
+  const modelRejectingImages = modelRejectingAttachedImages({
+    files: attachedFiles,
+    models,
+    selectedModel: availableSelectedModel,
+  });
+  const imagesUnsupportedReason = modelRejectingImages
+    ? `${tModelGate('imagesUnsupported', { model: modelRejectingImages })} — ${tModelGate('imagesUnsupportedHint')}`
+    : null;
   /**
    * A `/` command cannot carry the attached files, so this state refuses the
    * submit and says why — before anything is sent and before anything is
@@ -1172,6 +1183,8 @@ function ComposerImpl({
         });
         return;
       }
+      // Enter as well as the disabled Send: the tray under the card says why.
+      if (modelRejectingImages) return;
 
       // What refuses EVERY submission — a prompt, a `/` command, and a custom
       // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
@@ -1368,6 +1381,7 @@ function ComposerImpl({
     [
       agentUnavailable,
       modelUnavailable,
+      modelRejectingImages,
       lockForApproval,
       disabled,
       commands,
@@ -1556,7 +1570,7 @@ function ComposerImpl({
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
                     {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
-                    <span className="text-foreground/80 font-medium">
+                    <span className="text-foreground font-medium">
                       {threadContext.parentTitle}
                     </span>
                   </span>
@@ -1665,7 +1679,7 @@ function ComposerImpl({
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
-            'transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+            'transition-opacity duration-(--duration-normal) ease-[cubic-bezier(0.23,1,0.32,1)]',
             'motion-reduce:transition-none',
             isDragOver && 'opacity-30',
           )}
@@ -1825,9 +1839,13 @@ function ComposerImpl({
               hasText={!isEmpty}
               canSubmit={canSubmit}
               submitDisabled={
-                submitDisabled || attachmentFailed || commandAttachmentPlan.kind === 'refuse'
+                submitDisabled ||
+                attachmentFailed ||
+                modelRejectingImages !== null ||
+                commandAttachmentPlan.kind === 'refuse'
               }
               attachmentFailed={attachmentFailed}
+              attachmentUnsupported={imagesUnsupportedReason}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
@@ -1847,6 +1865,7 @@ function ComposerImpl({
         the overlap and only the tray's exposed strip shows.
       */}
       <ModelConnectionBar show={noModelsConnected} />
+      <ImagesUnsupportedBar modelName={noModelsConnected ? null : modelRejectingImages} />
 
       {/*
         Attach + agent + context ring, in a row UNDER the card — not in the

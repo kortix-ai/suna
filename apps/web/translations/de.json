@@ -1532,7 +1532,9 @@
       "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
-      "connectModel": "Modell verbinden"
+      "connectModel": "Modell verbinden",
+      "imagesUnsupported": "{model} kann keine Bilder lesen",
+      "imagesUnsupportedHint": "entferne sie oder wähle ein anderes Modell"
     },
     "providerRecovery": {
       "savedPrompt": "Gespeicherter Prompt",

@@ -1532,7 +1532,9 @@
       "bringKey": "Usar tu propia clave",
       "barTitle": "No hay ningún modelo conectado",
       "barDescription": "conecta uno para empezar a chatear",
-      "connectModel": "Conectar modelo"
+      "connectModel": "Conectar modelo",
+      "imagesUnsupported": "{model} no puede leer imágenes",
+      "imagesUnsupportedHint": "quítalas o elige otro modelo"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt guardado",

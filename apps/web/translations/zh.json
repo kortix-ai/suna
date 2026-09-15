@@ -1532,7 +1532,9 @@
       "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
-      "connectModel": "连接模型"
+      "connectModel": "连接模型",
+      "imagesUnsupported": "{model} 无法读取图片",
+      "imagesUnsupportedHint": "请移除图片或选择其他模型"
     },
     "providerRecovery": {
       "savedPrompt": "已保存的提示词",

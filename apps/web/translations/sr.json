@@ -1532,7 +1532,9 @@
       "bringKey": "Користи сопствени кључ",
       "barTitle": "Ниједан модел није повезан",
       "barDescription": "повежите модел да бисте започели разговор",
-      "connectModel": "Повежи модел"
+      "connectModel": "Повежи модел",
+      "imagesUnsupported": "{model} не може да чита слике",
+      "imagesUnsupportedHint": "уклони их или изабери други модел"
     },
     "providerRecovery": {
       "savedPrompt": "Сачуван упит",

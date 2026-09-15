@@ -1532,7 +1532,9 @@
       "bringKey": "自分のキーを持ち込む",
       "barTitle": "モデル未接続",
       "barDescription": "接続してチャットを開始",
-      "connectModel": "モデルを接続"
+      "connectModel": "モデルを接続",
+      "imagesUnsupported": "{model} は画像を読み取れません",
+      "imagesUnsupportedHint": "画像を削除するか、別のモデルを選択してください"
     },
     "providerRecovery": {
       "savedPrompt": "保存済みプロンプト",

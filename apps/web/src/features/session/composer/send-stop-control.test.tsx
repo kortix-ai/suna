@@ -30,6 +30,15 @@ describe('the Send control states why it refuses', () => {
     expect(markup).toMatch(/<button[^>]*\sdisabled=""/);
   });
 
+  test('an attachment the selected model cannot read disables Send and names the reason', () => {
+    const reason = 'DeepSeek V4 Flash can’t read images — remove them or pick another model';
+    const markup = renderToStaticMarkup(
+      <SendStopControl {...idle} submitDisabled attachmentUnsupported={reason} />,
+    );
+    expect(markup).toContain('title="DeepSeek V4 Flash can’t read images — remove them or pick another model"');
+    expect(markup).toMatch(/<button[^>]*\sdisabled=""/);
+  });
+
   test('without a failed attachment Send stays enabled and gives no refusal', () => {
     const markup = renderToStaticMarkup(<SendStopControl {...idle} />);
     expect(markup).not.toContain(REASON);

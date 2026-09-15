@@ -1532,7 +1532,9 @@
       "bringKey": "Usa la tua chiave",
       "barTitle": "Nessun modello collegato",
       "barDescription": "collegane uno per iniziare a chattare",
-      "connectModel": "Collega modello"
+      "connectModel": "Collega modello",
+      "imagesUnsupported": "{model} non può leggere le immagini",
+      "imagesUnsupportedHint": "rimuovile o scegli un altro modello"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt salvato",
