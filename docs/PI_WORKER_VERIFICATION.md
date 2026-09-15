@@ -2293,3 +2293,39 @@ connection setup now has a five-second header deadline; established streams
 retain their full lifetime. Terminal reconciliation starts before the first
 connection succeeds. Regression tests reproduce the stalled connection and
 verify recovery, continued streaming, and shutdown.
+
+### Live acceptance at `99f122d6cb`
+
+[Preview deployment 35021988550](https://github.com/kortix-ai/suna/actions/runs/35021988550)
+succeeds. API health, host checkout, and API/gateway/frontend image tags match
+`99f122d6cb50572b2c2604461e46d34fa0b0610e`.
+
+- Fresh OpenCode session `5c80ba4b-859d-4121-8994-b6ae4fd348e4` reads its helper
+  during module initialization. Its custom tool reads, edits, and deletes the
+  declared files. Each completed response closes its API turn.
+- Fresh Pi session `beaa8943-d14b-421b-b446-a155e09a75e3` passes the same file
+  operations through its environment capability. No environment exists before
+  the file tool. Environment health reports `workload: environment` and
+  `opencode: disabled`.
+- Both sessions retain the original helper after the source branch moves.
+  Stop/reopen preserves the seed edit, deliberate deletion, and all nine
+  original message envelopes exactly. OpenCode emits 497 deltas; Pi emits 303.
+- The real Pi composer sends a prompt with HTTP `202`. Its custom tool reads
+  the preserved files. The browser records 53 distinct visible text states and
+  168 deltas. Reload retains exact history. Provider read-back confirms both
+  runtime sandboxes and the Pi environment are stopped afterward.
+- Fresh readiness takes 12,399 ms for OpenCode and 5,806 ms for Pi. These are
+  individual observations, not a matched performance benchmark.
+
+Local `pnpm test -- --packages-only` passes in 422.4 seconds at `9ad0bb908d`,
+before the final event-loop correction. The final daemon suite passes 1,326
+tests; its typecheck and isolated build pass. The complete daemon starts through
+Node under Bun 1.3.11. At the deployed commit, the focused Linux compiler,
+schema, session, installer, and event suites pass 770 tests across 32 files.
+Local `pnpm test -- --domain git` passes all 17 flows.
+
+The deployed [GH-18 run](https://pi.kortix.com/_tests/20260915210149-kue87a/report.html)
+fails its 120-second deadline before creating a fixture project. API logs show
+GitHub returning `403` with a secondary content-creation rate limit. No artifact
+assertions run in that attempt. The complete preview census remains outstanding.
+No merge or dev/production verification is claimed.

@@ -341,7 +341,7 @@ To switch the environment example to OpenCode, set `kortix_version: 2`, remove
 `resources.worker`, and replace native Pi source with OpenCode plugins or tools.
 The `source`, `target`, and `mode` environment declarations stay unchanged.
 An OpenCode tool can read `/opt/kortix/helpers/report.py` or
-`/workspace/template.txt` directly. A Pi tool uses `context.environment` to access
+`/workspace/template.txt` directly. A Pi tool uses `context.env` to access
 those paths. Native custom code still needs a runtime-specific implementation.
 
 ### Test bundled files
