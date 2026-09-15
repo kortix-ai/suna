@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Pace provider mutations across all migration workers (2026-09-15)
+
+**When:** increasing migration concurrency, enforce a shared request budget in
+addition to pipeline limits. *Incident:* 112 pipelines exhausted Platinum's
+20-writes/second organization limit; 25 creations had no runtime afterward.
+*Enforcer:* the private SQLite write budget is tested across independent connections.
+Mutation retries share that budget; creation is paced separately. Scoped recovery
+retains owners and session IDs and requires full verification before completion.
+
 ### Apply captured-workspace reconciliation to every migrated source (2026-09-15)
 
 **When:** a valid captured archive waits for its source sandbox to finish archiving,

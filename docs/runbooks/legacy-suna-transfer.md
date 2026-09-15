@@ -843,3 +843,35 @@ its original 90-slot pool until it drains; 128 has not yet been exercised live.
 Controller/refill tests report 12 passed, zero failed, 87 assertions. The dispatcher
 build passes. The pacing assertion allows one millisecond between the admission
 and job timestamp, while still asserting the complete spacing window.
+
+### 112-pipeline probe and shared Platinum write budget — 2026-09-15
+
+The 1,000-item batch drained to three long file readbacks. Those appliers retained
+their session locks under dedicated completion watchers. The dispatcher handed
+off to a 5,000-item batch; initial concurrency validation now accepts up to 128
+only with the authorized migration override. The new coordinator is PID 31245.
+
+The unpaced 112-pipeline probe exhausted Platinum `/exec` and `/files` retries.
+Provider provisioning errors explicitly report an organization limit of 20 write
+requests/second. Twenty-five Platinum runtimes had no external sandbox after
+that refusal. This is separate from the application's hourly session-create quota.
+
+Private workers now share a SQLite write budget: file/exec mutations are paced
+at ten/second, and internal create commands at one/second. Request retries consume
+the same budget. Backend setup calls and other organization traffic are outside
+this local budget, so these settings reserve headroom rather than claiming a
+global guarantee. The independent-connection pacing test and adapter/controller/
+refill tests report 23 passed, zero failed, 119 assertions.
+
+The paced 112-pipeline probe observed zero Platinum 429s from 19:55:34 UTC through
+inspection. Two Daytona capture attempts returned 5xx; the controller reduced
+concurrency to 84. 128 has not been tested live. Automatic quiet-window recovery
+remains enabled. This observation does not establish a permanent provider ceiling.
+
+Two bounded recovery workers handle the 25 unmaterialized creates and 21 terminal
+file/exec throttles. They verify the original owner/provider and archive checkpoint,
+retain session IDs, and use the existing lease/verification/stop flow. Restart is
+used only for rate-rejected Platinum creation with no recorded runtime or native
+history. Existing sandbox write retries do not invoke restart. Six create failures
+and four write failures had passed complete verification at inspection; the rest
+remain pending recovery, not complete.
