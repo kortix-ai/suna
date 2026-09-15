@@ -52,9 +52,9 @@ export function CatalogCardSkeleton() {
 }
 
 /**
- * The catalog loading grid shared by `CatalogGrid` and every capabilities
- * route. One component — agents, connectors, and skills never diverge on
- * loading chrome.
+ * The catalog loading grid shared by `CatalogGrid`, `CapabilitiesSkeleton`,
+ * and every capabilities route. One component — agents, connectors, and
+ * skills never diverge on loading chrome.
  */
 export function CatalogGridSkeleton({
   count = SKELETON_CARD_COUNT,
@@ -78,7 +78,8 @@ export function CatalogGridSkeleton({
  * `sm:grid-cols-2 xl:grid-cols-3` (not `lg:grid-cols-3`) is deliberate: at
  * the `lg` breakpoint (1024-1279px) a 3-up card does not have room for a
  * title, a description line, and a trailing slot without truncating hard.
- * Loading chrome is `CatalogGridSkeleton`, sized like the loaded grid, so the
+ * Loading chrome is `CatalogGridSkeleton` — the same surface
+ * `capability-skeleton.tsx` paints behind the Suspense boundary — so the
  * loading-to-content handover never reflows a column or a row.
  */
 export function CatalogGrid({

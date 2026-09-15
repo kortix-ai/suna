@@ -9,16 +9,6 @@ const LOADING = resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/loading.tsx');
 const SESSION_LOADING = resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/sessions/[sessionId]/loading.tsx');
 
 /**
- * Every navigation boundary inside an open project. The session boundary is
- * covered through LOADING: with no first-prompt preview it renders that one.
- */
-const PANE_BOUNDARIES = [
-  LOADING,
-  resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/(capabilities)/loading.tsx'),
-  resolve(WEB_ROOT, 'src/app/(app)/projects/[id]/files/loading.tsx'),
-];
-
-/**
  * Modules too heavy to sit in the loading boundary's payload. ProjectHome is on
  * the list because it pulls the composer, SessionWelcome and the billing stack —
  * the whole point of this boundary is a payload small enough to prefetch.
@@ -39,8 +29,8 @@ function importedSpecifiers(source: string): string[] {
   ];
 }
 
-async function renderBoundary(path: string): Promise<string> {
-  const { default: Boundary } = await import(path);
+async function renderBoundary(): Promise<string> {
+  const { default: Boundary } = await import(LOADING);
   return renderToStaticMarkup(createElement(Boundary));
 }
 
@@ -71,32 +61,26 @@ describe('project home loading boundary', () => {
     expect(importedSpecifiers(source)).toContain('../../loading');
     expect(source).toContain('return <ProjectHomeLoading />');
   });
-});
 
-describe('project navigation boundaries', () => {
-  for (const path of PANE_BOUNDARIES) {
-    const name = path.slice(path.indexOf('projects/'));
+  test('paints the Kortix mark sized to the content pane', async () => {
+    const markup = await renderBoundary();
 
-    test(`${name} paints the Kortix mark sized to the content pane`, async () => {
-      const markup = await renderBoundary(path);
+    expect(markup).toContain('data-slot="project-pending-screen"');
+    expect(markup).toContain('flex-1');
+    // The viewport variant would overflow the pane beside the sidebar.
+    expect(markup).not.toContain('min-h-svh');
+  });
 
-      expect(markup).toContain('data-slot="project-pending-screen"');
-      expect(markup).toContain('flex-1');
-      // The viewport variant would overflow the pane beside the sidebar.
-      expect(markup).not.toContain('min-h-svh');
-    });
+  // Rendered, not grepped: a source-text check passes while an extracted
+  // placeholder component still paints grey bars.
+  test('paints no skeleton', async () => {
+    const markup = await renderBoundary();
+    const skeletonImports = importedSpecifiers(readFileSync(LOADING, 'utf8')).filter((specifier) =>
+      /skeleton/i.test(specifier),
+    );
 
-    // Rendered, not grepped: a source-text check passes while an extracted
-    // placeholder component still paints grey bars.
-    test(`${name} paints no skeleton`, async () => {
-      const markup = await renderBoundary(path);
-      const skeletonImports = importedSpecifiers(readFileSync(path, 'utf8')).filter((specifier) =>
-        /skeleton/i.test(specifier),
-      );
-
-      // Exactly one pulsing node: the mark. The old skeleton had five bars.
-      expect(markup.match(/animate-pulse/g) ?? []).toHaveLength(1);
-      expect(skeletonImports).toEqual([]);
-    });
-  }
+    // Exactly one pulsing node: the mark. The old skeleton had five bars.
+    expect(markup.match(/animate-pulse/g) ?? []).toHaveLength(1);
+    expect(skeletonImports).toEqual([]);
+  });
 });

@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const WEB_ROOT = resolve(import.meta.dir, '../../../../../..');
-const PENDING_SCREEN = resolve(WEB_ROOT, 'src/components/projects/project-pending-screen.tsx');
+const SKELETON = resolve(
+  WEB_ROOT,
+  'src/features/workspace/project-layout/project-files-skeleton.tsx',
+);
 
 /** Modules too heavy to sit in the loading boundary's payload. */
 const HEAVY = ['@/features/project-files', '@/features/file-viewer'];
@@ -47,14 +50,14 @@ describe('files route loading boundary', () => {
     const source = readFileSync(resolve(import.meta.dir, 'loading.tsx'), 'utf8');
 
     expect(heavyImports(source)).toEqual([]);
-    expect(source).toContain('ProjectPendingScreen');
+    expect(source).toContain('ProjectFilesSkeleton');
   });
 
-  test('the pending screen imports no heavy module', () => {
+  test('the shared skeleton imports no heavy module', () => {
     // It renders inside the loading boundary. Importing the 9k-LOC barrel or
     // the 1,877-LOC file viewer here would put the heavy chunk back on the
     // critical path this boundary exists to cover.
-    const source = readFileSync(PENDING_SCREEN, 'utf8');
+    const source = readFileSync(SKELETON, 'utf8');
 
     expect(heavyImports(source)).toEqual([]);
   });

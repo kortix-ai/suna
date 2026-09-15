@@ -3,8 +3,8 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { ProjectSettingsPage } from '@/features/workspace/capabilities/project-settings/project-settings-page';
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 /**
  * /projects/[id]/config — the Customize bar's "Settings" tab: every
@@ -21,7 +21,7 @@ import { ProjectSettingsPage } from '@/features/workspace/capabilities/project-s
  * The `Suspense` boundary is required, not decorative: the page reads
  * `useSearchParams()` for `?section=`, and Next refuses to prerender a route
  * that does so unbounded. Same pattern as the Connectors page. The fallback is
- * the route group's own loading mark, so the boundary cannot introduce a jump.
+ * the route group's own skeleton, so the boundary cannot introduce a jump.
  *
  * Each pane inside re-checks its own permissions and the API re-checks every
  * mutation; the sub-nav only decides which rows are worth showing.
@@ -31,7 +31,7 @@ export default function ProjectConfigPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Suspense fallback={<ProjectPendingScreen fill="pane" />}>
+      <Suspense fallback={<CapabilitiesSkeleton />}>
         <ProjectSettingsPage projectId={projectId} />
       </Suspense>
     </div>

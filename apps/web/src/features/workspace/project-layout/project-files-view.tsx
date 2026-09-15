@@ -21,7 +21,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+import { ProjectFilesSkeleton } from './project-files-skeleton';
 import { resolveFilesRef } from './resolve-files-ref';
 
 export function ProjectFilesView({ projectId }: { projectId: string }) {
@@ -65,7 +65,7 @@ export function ProjectFilesView({ projectId }: { projectId: string }) {
         />
       );
     }
-    return <ProjectPendingScreen fill="pane" />;
+    return <ProjectFilesSkeleton />;
   }
 
   return (

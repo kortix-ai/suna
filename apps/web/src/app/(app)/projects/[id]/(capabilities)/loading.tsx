@@ -1,4 +1,4 @@
-import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 /**
  * Navigation Suspense boundary for
@@ -10,10 +10,9 @@ import { ProjectPendingScreen } from '@/components/projects/project-pending-scre
  * sibling page is being navigated to.
  *
  * Two jobs, same as `files/loading.tsx`:
- *  1. Paint feedback the instant the click lands, instead of leaving the
- *     previous page frozen while the RSC payload and route chunk arrive. The
- *     feedback is the pulsing Kortix mark under the tab bar
- *     (`ProjectPendingScreen`), never a skeleton of the page.
+ *  1. Paint capability-page chrome the instant the click lands, instead of
+ *     leaving the previous page frozen while the RSC payload and route chunk
+ *     arrive.
  *  2. Give Next.js a cacheable prefetch target. `projects/[id]/layout.tsx`
  *     awaits cookies(), which makes every route under it dynamic, and for a
  *     dynamic route Next prefetches only as far as the nearest loading
@@ -22,5 +21,5 @@ import { ProjectPendingScreen } from '@/components/projects/project-pending-scre
  *     full cold-navigation cost Files was fixed to avoid.
  */
 export default function CapabilitiesLoading() {
-  return <ProjectPendingScreen fill="pane" />;
+  return <CapabilitiesSkeleton />;
 }

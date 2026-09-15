@@ -17,13 +17,11 @@ import { cn } from '@/lib/utils';
  *  - `project-access-boundary.tsx` — every hard refresh of `/projects/<id>`
  *    and of a session route, while Supabase resolves the session and the
  *    first `getProject` is in flight.
- *  - `fill="pane"` — every navigation inside an open project:
- *    `projects/[id]/loading.tsx` (project home, and a session opened from the
- *    sidebar), `(capabilities)/loading.tsx`, `files/loading.tsx`, and the
- *    Customize and Files pages' pre-data frames. The mark fills the content
- *    pane beside the sidebar instead of the viewport. These used to be
- *    skeletons of the page about to load; they flashed grey bars shaped like
- *    ProjectHome in front of a session transcript.
+ *  - `projects/[id]/loading.tsx` with `fill="pane"` — navigation to the
+ *    project home, and to a session opened from the sidebar. The mark fills
+ *    the content pane beside the sidebar instead of the viewport. A
+ *    ProjectHome-shaped skeleton used to stand there; it flashed grey bars in
+ *    front of a session transcript.
  *
  * They run back to back, so sharing one frame is the point: signing in now
  * paints this mark once and holds it across three navigations instead of
