@@ -19,7 +19,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { subscriptionIsConnected, subscriptionPrimaryAction } from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
@@ -31,9 +31,11 @@ import { sleep } from './utils';
 export function ChatGptSubscriptionConnect({
   projectId,
   onConnected,
+  accessSlot,
 }: {
   projectId: string;
   onConnected: (providerId: string) => void;
+  accessSlot?: ReactNode;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -163,6 +165,7 @@ export function ChatGptSubscriptionConnect({
             )}
           </p>
         </div>
+        {accessSlot}
       </div>
 
       {waiting && (

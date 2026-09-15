@@ -11,21 +11,15 @@ import { fileURLToPath } from 'node:url';
  *   -  open={detail.open}
  *   +  open={selected !== null}
  *
- * — and it silently hands an entity modal back to the query. Nothing type-checks
+ * — and it silently hands the modal back to the query. Nothing type-checks
  * differently, no test of the page's own logic fails, and the symptom
  * (a modal that opens by itself after an OAuth redirect, or vanishes when one
  * of four refetches errors) shows up as a timing-dependent bug report weeks
  * later. So the shape is asserted at its call sites.
  */
 
-// Both pages that used to be here have left it, each for the same reason and
-// on its own branch: an agent card is a link to `agentHref` (Customize is
-// agent-centric), and a connector card is a link to
-// `/projects/:id/connectors/:slug`. Neither opens a detail modal any more, so
-// neither has a selection to keep honest. That each stays a link is pinned —
-// agents by the `describe` at the bottom of this file, connectors by
-// `../connectors/connectors-page.routes.test.ts`.
 const PAGES = [
+  { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
 

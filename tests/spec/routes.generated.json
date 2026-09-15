@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 643,
+  "count": 645,
   "routes": [
     {
       "method": "GET",
@@ -1857,6 +1857,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-access"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-access"
     },
     {
       "method": "DELETE",

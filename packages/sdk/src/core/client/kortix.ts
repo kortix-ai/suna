@@ -350,6 +350,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
     modelPicker: P.getProjectModelPicker,
+    modelAccess: P.getProjectModelAccess,
+    setModelAccess: P.setProjectModelAccess,
     sandboxHealth: P.getProjectSandboxHealth,
     sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
@@ -457,6 +459,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
       modelPicker: () => P.getProjectModelPicker(projectId),
+      modelAccess: () => P.getProjectModelAccess(projectId),
+      setModelAccess: (change: P.ProjectModelAccessChange) => P.setProjectModelAccess(projectId, change),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),

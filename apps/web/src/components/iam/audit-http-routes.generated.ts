@@ -466,6 +466,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|llm-catalog|providers",
   "POST|v1|projects|:projectId|manifest|validate",
   "POST|v1|projects|:projectId|marketplace|install-session",
+  "GET|v1|projects|:projectId|model-access",
+  "PUT|v1|projects|:projectId|model-access",
   "DELETE|v1|projects|:projectId|model-defaults",
   "GET|v1|projects|:projectId|model-defaults",
   "PUT|v1|projects|:projectId|model-defaults",

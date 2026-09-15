@@ -88,22 +88,24 @@ export function createTunnelTools(client: TunnelClient): TunnelToolDefinition[] 
     },
     {
       name: 'tunnel_fs_write',
-      description: `Write a file to a connected computer via Agent Tunnel. Creates parent directories if needed. Requires filesystem write permission.`,
+      description: `Write a file to a connected computer via Agent Tunnel. Creates parent directories if needed. Requires filesystem write permission. Never transcribe binary base64; use agent-tunnel-cli fs_upload with source and path, or generate on the destination.`,
       parameters: {
         tunnel_id: tunnelIdParam,
         path: { type: 'string', description: 'Absolute path for the file on the connected computer', required: true },
         content: { type: 'string', description: 'File content to write', required: true },
+        sha256: { type: 'string', description: 'Source SHA-256; mismatch rejects the write before changing the destination', required: false },
         encoding: { type: 'string', description: 'File encoding (default: utf-8)', required: false },
       },
       async execute(args) {
         const result = await client.rpcWithPermissionFlow('fs.write', {
           path: args.path,
           content: args.content,
+          sha256: args.sha256,
           encoding: (args.encoding as string) || 'utf-8',
         });
         if (typeof result === 'string') return result;
         const data = result as Record<string, unknown>;
-        return `File written: ${data.path} (${data.size} bytes)`;
+        return `File written: ${data.path} (${data.size} bytes), SHA-256: ${data.sha256}`;
       },
     },
     {

@@ -21,6 +21,77 @@ linked, not inlined.
 
 ## Register
 
+### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
+
+**When:** stopping the sandbox proxy or running package tests. Cancel boot and
+interval offload timers; reject callbacks after stop. Disable automatic offload in
+the test runner; explicit offload tests use temporary databases. Use the actual
+`kortixd` package name for the sequential lane. *Near-miss:* XLSX verification's
+full run entered a background scan of the developer's OpenCode DB; the process
+was stopped during its SELECT. *Enforcers:* proxy stop regression and runner contract.
+
+### Validate the destination against an exact-file permission, not its parent (2026-09-14)
+
+**When:** validating Computer Tunnel writes. Resolve both the destination and
+missing allowlist paths through their nearest existing ancestor. Compare the full
+resolved destination with the allowlist. An approved file does not grant its parent.
+*Incident:* XLSX follow-up CI exposed rejected exact-file approvals; macOS also
+compared `/var` with `/private/var` for missing files. *Enforcers:*
+`filesystem-integrity.test.ts` and `TUN-6` with an exact-file permission.
+
+### Transfer opaque bytes programmatically and verify the destination digest (2026-09-14)
+
+**When:** sending binary artifacts through Computer Tunnel. Never transcribe base64
+from model context. Use `fs_upload`, or generate at the destination. Validate format
+at the source; compare SHA-256 after transfer. Reject malformed file arguments before
+creating permission requests. Resolve approve/deny with a pending-state conditional update.
+*Incident:* XLSX transfer to a Mac produced identical same-length corrupt copies;
+an approval denial also conflicted with a reported write. That historical race is unproven.
+*Enforcers:* `filesystem-integrity.test.ts` and product flow `TUN-6`.
+
+### Moving a surface under a URL namespace must move every reader, and an effect must never depend on a per-render localized object (2026-09-14)
+
+**When:** relocating a page into an overlay/modal that prefixes its query
+params, or localizing a static catalog through a function that returns a new
+object. (1) Inside the account hub read state only through
+`useHubSearchParams()`; a raw `useSearchParams().get('provider')` is always
+`null` because the URL carries `accountProvider`. (2) Memoize localized objects
+and key effects on primitive ids — `localizeProviderGuide()` returned a new
+guide each render, so the progress-restore effect looped and reset the step.
+*Incident:* SSO + SCIM setup wizards unusable on dev/staging/prod from
+`123c1d91c5` (2026-09-08, provider pick did nothing) and `ebaae4d247`
+(2026-09-04, Back/step rail snapped back, `Maximum update depth exceeded`).
+*Enforcer:* `apps/web/src/features/accounts/hub/hub-search-params.test.ts`
+(no hub-rendered file reads a hub key off the raw URL) and browser journey
+`tests/e2e/specs/28-identity-setup-wizard.spec.ts` (every step, reload,
+change provider, fails on render-loop console errors).
+
+### A least-privilege S3 grant that checks "does this key exist?" needs `s3:ListBucket` — MinIO root credentials never show the gap (2026-09-14)
+
+**When:** writing an IAM policy for code that calls HeadObject/GetObject and
+treats `404`/`NoSuchKey` as "not there yet". Without `s3:ListBucket` on the
+bucket ARN, AWS answers a missing key with `403 AccessDenied`, so the caller
+reads a normal miss as a denial. A local MinIO root user or an admin laptop
+key has every permission and passes. Test IAM against the real role before
+calling it verified. *Incident:* #7221 on dev; the project-snapshot producer
+failed every build with `not authorized to perform: s3:ListBucket` on
+`kortix-dev-project-snapshots`, so no snapshot was ever published. Sessions
+stayed on Git, so there was no user impact. *Automation:* none — the dev
+post-deploy check (`GET …/project-snapshot` → 200) caught it.
+
+### `count`/`for_each` must be known at PLAN time — gate a grant on a literal bool, never on an ARN created in the same apply (2026-09-14)
+
+**When:** adding an optional resource to a Terraform module whose on/off input is
+another resource's attribute (`count = var.bucket_arn != "" ? 1 : 0` fed by
+`module.bucket.bucket_arn`). On a root where the bucket does not exist yet, the
+ARN is unknown until apply and `terraform plan` fails with `Invalid count
+argument`. `terraform validate` and `fmt` pass — only a plan catches it.
+*Incident:* #7221 merged `ccd3f7596d`; Deploy Dev run `34891285433` failed at
+"Apply dev API Terraform", which skipped the dev API and frontend deploys for
+every push until the fix (`project_snapshots_enabled` bool). *Automation:* none
+yet — candidate: Terraform CI runs `terraform plan -refresh=false` with a local
+backend on each root that creates new resources.
+
 ### A stop → resume restarts the daemon on Daytona and does NOT on Platinum — never assume boot-time work re-runs after a resume (2026-09-14)
 
 **When:** writing anything that expects the sandbox daemon's boot path (config
@@ -5142,3 +5213,25 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+### Preview runtime secret contracts span two Git revisions (2026-09-14)
+
+**When:** a preview fails in `validatePreviewRuntimeSecrets` before the API starts.
+The orchestration code runs from `main`; the bootstrap reads the exact PR head.
+A newly allowlisted runtime secret on `main` can therefore reach an older PR
+bootstrap that rejects it. Merge the upstream contract change into the canonical
+branch before retrying. Do not bypass validation or remove the allowlist.
+
+*Incident:* PR #7233, preview run `34893648765`, rejected `PLATINUM_API_KEY`.
+The publisher carried #7221's new field, while the PR bootstrap predated it.
+Merging `8767572f10` brought in the matching allowlist and provider configuration.
+*Automation:* `tests/unit/preview-stack.test.ts` checks the allowlist and Platinum
+configuration within one revision. Cross-revision compatibility is not covered.
+
+### Preserve mounted service paths in preview test clients
+
+**Incident (2026-09-14, PR #7233):** preview gateway tests reached the API because the REST test client discarded `/_gateway`. Gateway health returned `kortix-api`, and inference routes returned `404`. The deployed gateway itself remained healthy.
+
+**Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
+
+**Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.

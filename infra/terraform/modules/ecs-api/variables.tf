@@ -245,12 +245,18 @@ variable "ses_send_configuration_set_names" {
   default     = ["kortix-transactional"]
 }
 
+variable "project_snapshots_enabled" {
+  description = "Grant the TASK role access to project_snapshot_bucket_arn. A literal bool so the grant's count is known at plan time even when the bucket is created in the same apply."
+  type        = bool
+  default     = false
+}
+
 variable "project_snapshot_bucket_arn" {
   description = <<-EOT
     ARN of the environment's project-snapshot bucket (modules/project-snapshots-bucket).
     Grants the TASK role s3:PutObject + s3:GetObject on its objects: the API's
     leader worker publishes snapshots and presigns short-lived GETs for
-    sandboxes. Nothing else (no ListBucket, no Delete). Empty disables the grant.
+    sandboxes, plus s3:ListBucket on the bucket so a missing key is a 404. No Delete. Used only when project_snapshots_enabled.
   EOT
   type        = string
   default     = ""

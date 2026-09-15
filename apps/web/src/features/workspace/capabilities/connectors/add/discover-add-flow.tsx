@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import {
   createConnector,
   getDiscoverConnector,
@@ -10,6 +9,7 @@ import {
 } from '@kortix/sdk';
 import { ArrowSquareOutIcon, CubeIcon, GlobeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +26,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { surfacesRecommendedFirst } from '@/features/workspace/capabilities/connectors/detail/connector-detail-copy';
 import {
   connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
@@ -194,12 +193,8 @@ export function DiscoverAddFlow({
               </InfoBanner>
             ) : detailQuery.data?.variants.length ? (
               <ul className="space-y-2">
-                {/* Recommended surface first (MCP where addable — COR-17);
-                    the rest keep feed order. Same rule as the catalogue
-                    detail page, so the two pickers never disagree. */}
-                {surfacesRecommendedFirst(detailQuery.data.variants).map((variant, index) => {
+                {detailQuery.data.variants.map((variant) => {
                   const href = variant.docs ?? variant.url;
-                  const recommended = index === 0 && (detailQuery.data?.variants.length ?? 0) > 1;
                   return (
                     <li
                       key={`${variant.kind}:${variant.id}`}
@@ -217,11 +212,6 @@ export function DiscoverAddFlow({
                           {variant.name}
                         </p>
                         <div className="mt-1 flex items-center gap-1.5">
-                          {recommended ? (
-                            <Badge variant="kortix" size="xs">
-                              {tI18nComplete.raw('textd70604e84304')}
-                            </Badge>
-                          ) : null}
                           <Badge variant="outline" size="xs">
                             {variant.kind === 'openapi' ? 'OpenAPI' : variant.kind.toUpperCase()}
                           </Badge>

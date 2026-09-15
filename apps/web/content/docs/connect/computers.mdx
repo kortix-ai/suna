@@ -74,3 +74,25 @@ does not download, install, or update that executable.
 You configure Computer Tunnel profiles from the dashboard, not from
 `kortix.yaml`. Use the profile's Accounts tab to pair, select, inspect, rename,
 and remove machines. Use its Tools tab to configure connector policy.
+
+## Deliver binary files safely
+
+For spreadsheets, PDFs, images, and other binary files, transfer bytes directly
+from a source file. Never ask the agent to copy a base64 payload from tool output.
+That can change bytes while preserving the file size.
+
+On the machine or sandbox holding the source, configure `TUNNEL_API_URL`,
+`TUNNEL_TOKEN`, and `TUNNEL_ID`, then run:
+
+```sh
+agent-tunnel-cli fs_upload '{"source":"/tmp/report.xlsx","path":"/Users/me/Desktop/report.xlsx"}'
+```
+
+The command supports files up to 3 MiB and requires filesystem write permission.
+It computes SHA-256 from the source and checks the destination's returned hash.
+A pending approval exits with code 1; approve the request before retrying.
+Update the connected agent if its response has no `sha256` field.
+
+For larger files, generate the artifact on the destination. Validate the source
+format before delivery. A matching hash proves that the bytes arrived unchanged;
+file size and the file extension do not prove that Excel can open a workbook.

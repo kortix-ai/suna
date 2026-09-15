@@ -135,6 +135,9 @@ async function runWorkspaceTests(
         // The CLI includes an intentional 11-second idle-stream contract.
         // Concurrent API and agent workers can push it past 15 seconds.
         KORTIX_TEST_TIMEOUT_MS: '30000',
+        // Unit tests exercise offload with explicit temporary databases. Never
+        // let a proxy's background maintenance open the developer's transcript.
+        KORTIX_ATTACHMENT_OFFLOAD: '0',
         ...env,
       },
     },
@@ -166,7 +169,7 @@ await runAll([
   }),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
-    await runWorkspaceTests(['@kortix/sandbox-agent-server'], 1);
+    await runWorkspaceTests(['kortixd'], 1);
   })(),
 ]);
 await runAll([
@@ -182,7 +185,7 @@ await runAll([
       './apps/**',
       '!kortix-api',
       '!@kortix/cli',
-      '!@kortix/sandbox-agent-server',
+      '!kortixd',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
