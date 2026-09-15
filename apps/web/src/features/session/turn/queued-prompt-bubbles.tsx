@@ -24,7 +24,13 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import { ArrowClockwiseIcon, PaperPlaneRightIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
+import {
+  ArrowClockwiseIcon,
+  PaperPlaneRightIcon,
+  WarningIcon,
+  XIcon,
+} from '@phosphor-icons/react';
+import type { SentAttachment } from '../sent-attachment-previews';
 import {
   type AttachmentUploadStatus,
   BUBBLE_SURFACE,
@@ -38,14 +44,13 @@ export interface QueuedPromptRow {
   text: string;
   /** Present on a failed row. */
   lastError?: string;
-  blockedReason?: 'runtime_stale';
   /**
    * The row's files, by NAME and TYPE. A queued row is the only thing on
    * screen for a prompt waiting on runtime delivery, and on a warm box that is
    * the whole delivery window: drawn text-only, a send of
    * three files read as a send of none (2026-09-04, browser-measured).
    */
-  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  attachments?: ReadonlyArray<SentAttachment>;
   /** A failed accepted send remains visible until retry. */
   uploadStatus?: AttachmentUploadStatus;
 }
@@ -56,8 +61,7 @@ export const QUEUED_BUBBLE_OPACITY_CLASS = 'opacity-50';
 
 /** `interrupted`: the runtime holds the message but a Stop ended the turn
  *  before a step opened under it — it runs with the next send. */
-export type QueuedPromptState =
-  'queued' | 'in-flight' | 'held' | 'failed' | 'interrupted' | 'runtime-stale';
+export type QueuedPromptState = 'queued' | 'in-flight' | 'held' | 'failed' | 'interrupted';
 
 export function queuedPromptStatusLabel(state: QueuedPromptState, lastError?: string): string {
   switch (state) {
@@ -120,7 +124,6 @@ export function QueuedPromptStatus({
   state: QueuedPromptState;
   lastError?: string;
 }) {
-  const t = useTranslations('common');
   const failed = state === 'failed';
   // A plain queued/in-flight bubble says nothing: the dim IS the state, and a
   // caption under every queued message read as clutter (review feedback).
@@ -134,9 +137,7 @@ export function QueuedPromptStatus({
         className={cn('flex items-center gap-1', failed && 'text-destructive')}
       >
         {failed && <WarningIcon className="size-3.5" />}
-        {state === 'runtime-stale'
-          ? t('workspaceWaiting')
-          : queuedPromptStatusLabel(state, lastError)}
+        {queuedPromptStatusLabel(state, lastError)}
       </span>
     </InlineMeta>
   );
@@ -280,10 +281,12 @@ function QueuedBubble({
 }) {
   const failed = state === 'failed';
   const queuedTiles: NormalizedAttachment[] = (row.attachments ?? []).map((file, index) => ({
-    key: `queued:${row.id}:${index}:${file.filename}`,
+    key: file.id ? `attachment:${file.id}` : `queued:${row.id}:${index}:${file.filename}`,
+    ...(file.id ? { id: file.id } : {}),
     filename: file.filename,
     mime: file.mime,
-    // No `src`/`path`: nothing to preview or open until the runtime holds the bytes.
+    // No `src`/`path`: nothing to open until the runtime holds the bytes. A
+    // file this tab sent draws its picture from its identity.
   }));
   return (
     <div
@@ -297,14 +300,15 @@ function QueuedBubble({
       {/* The row's files, ABOVE the bubble exactly where the sent message will
           draw them. The browser upload already completed before acceptance;
           unavailable runtime previews remain stable and inert. */}
-      {queuedTiles.length > 0 && (
+      {/* A text-only shell send kept failed still states its failure, with Retry. */}
+      {(queuedTiles.length > 0 || row.uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={queuedTiles} status={row.uploadStatus} />
       )}
       <div className="flex w-full items-center justify-end gap-1">
         <div
           className={cn(
             BUBBLE_SURFACE,
-            'duration-normal w-fit transition-opacity motion-reduce:transition-none',
+            'w-fit transition-opacity duration-500',
             failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
@@ -314,7 +318,7 @@ function QueuedBubble({
         </div>
         <div
           className={cn(
-            'duration-normal flex w-6 shrink-0 flex-col items-center justify-center transition-opacity motion-reduce:transition-none',
+            'flex w-6 shrink-0 flex-col items-center justify-center transition-opacity duration-150',
             failed
               ? 'opacity-100'
               : 'opacity-0 group-hover/queued:opacity-100 focus-within:opacity-100',
@@ -362,15 +366,7 @@ export function QueuedPromptBubbles({
         <QueuedBubble
           key={row.id}
           row={row}
-          state={
-            inFlight.has(row.id)
-              ? 'in-flight'
-              : held
-                ? 'held'
-                : row.blockedReason === 'runtime_stale'
-                  ? 'runtime-stale'
-                  : 'queued'
-          }
+          state={inFlight.has(row.id) ? 'in-flight' : held ? 'held' : 'queued'}
           live={emphasis === 'live'}
           onRemove={onRemove}
           onSendNow={onSendNow}

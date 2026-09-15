@@ -92,6 +92,41 @@ test('caller abort interrupts response parsing after headers arrive', async () =
   expect((await pending).error?.code).toBe('ABORTED');
 });
 
+test('a default request stops its deadline at the headers; a slow body still resolves', async () => {
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async () => {
+      const response = Response.json({ ok: true });
+      const body = response.json.bind(response);
+      // The body finishes 40 ms after headers, past the 10 ms request deadline.
+      response.json = () => new Promise((resolve) => setTimeout(() => resolve(body()), 40));
+      return response;
+    },
+  });
+  expect(await backendApi.get('/export', { timeout: 10 })).toMatchObject({
+    success: true,
+    data: { ok: true },
+  });
+});
+
+test('deadlineCoversBody bounds a stalled body by the request deadline', async () => {
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async () => {
+      const response = Response.json({});
+      response.json = () => new Promise(() => {});
+      return response;
+    },
+  });
+  const observed = await Promise.race([
+    backendApi.post('/complete', {}, { timeout: 10, deadlineCoversBody: true }),
+    new Promise((resolve) => setTimeout(() => resolve({ error: { code: 'STILL_PENDING' } }), 60)),
+  ]);
+  expect(observed).toMatchObject({ success: false, error: { code: 'TIMEOUT' } });
+});
+
 test('stalled retryable read response body times out before another attempt', async () => {
   let requests = 0;
   const abort = new AbortController();
@@ -116,5 +151,29 @@ test('stalled retryable read response body times out before another attempt', as
   } finally {
     abort.abort();
     // Cleanup must not make a response-body timeout regression hang the test runner.
+  }
+});
+
+test('an already aborted caller reports ABORTED on hosts without DOMException', async () => {
+  // React Native (Hermes) has no global `DOMException`.
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'DOMException');
+  Object.defineProperty(globalThis, 'DOMException', {
+    value: undefined,
+    configurable: true,
+    writable: true,
+  });
+  try {
+    configureKortix({
+      backendUrl: 'https://api.test',
+      getToken: async () => 'token',
+      fetch: async () => Response.json({}),
+    });
+    const abort = new AbortController();
+    abort.abort();
+    expect((await backendApi.post('/upload', {}, { signal: abort.signal })).error?.code).toBe(
+      'ABORTED',
+    );
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'DOMException', original);
   }
 });

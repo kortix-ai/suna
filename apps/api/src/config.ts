@@ -137,6 +137,16 @@ const envSchema = z.object({
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
+  // ── Prompt attachment uploads (optional, non-secret) ────────────────────
+  // `direct` (default): the client PUTs each file once to a signed Storage URL.
+  // `chunked`: the client PUTs bounded chunks through the API. Only for a
+  // deployment whose public edge drops large request bodies (the PR preview).
+  PROMPT_ATTACHMENT_UPLOAD_MODE: z.enum(['direct', 'chunked']).optional().default('direct'),
+  // Bytes per chunk. Read only in `chunked` mode.
+  PROMPT_ATTACHMENT_CHUNK_BYTES: optInt(65536).refine((bytes) => bytes > 0, {
+    message: 'PROMPT_ATTACHMENT_CHUNK_BYTES must be a positive integer',
+  }),
+
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
   API_KEY_SECRET: z.string().min(1, 'API_KEY_SECRET is required — API key hashing will fail'),
 
@@ -1091,6 +1101,8 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
+  PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,

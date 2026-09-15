@@ -14,7 +14,6 @@
     "codeDescription": "Como todo es código en un repositorio, el sistema puede leer su propio diseño, ampliarse y mantenerse estable a medida que crece. Es totalmente extensible, controlable y autoalojable. Nada es una caja negra."
   },
   "common": {
-    "workspaceWaiting": "Esperando al espacio de trabajo…",
     "cancel": "Cancelar",
     "save": "Guardar",
     "saving": "Guardando...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recargar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Administrar plan",
     "composerAttachments": {
-      "couldNotRestore": "No se pudieron restaurar los archivos adjuntos",
       "couldNotAttach": "No se pudieron adjuntar los archivos",
-      "couldNotRemove": "No se pudo eliminar el archivo adjunto",
       "couldNotRetry": "No se pudo reintentar el archivo adjunto",
-      "notReady": "Los archivos adjuntos no están listos",
-      "uploadFailed": "Error de carga",
-      "retry": "Reintentar",
-      "retryNamed": "Reintentar {name}",
-      "processing": "Procesando",
-      "waiting": "En espera",
-      "uploading": "Cargando {progress}%"
+      "couldNotSend": "No se pudo enviar",
+      "failedBlocksSend": "Reintenta o elimina el archivo adjunto que falló.",
+      "uploadFailed": "Error de carga. Comprueba tu conexión.",
+      "retryNamed": "Reintentar la carga de {name}",
+      "didNotUpload": "{name} no se cargó.",
+      "billingRequired": "Tu plan o tus créditos no permiten subir archivos ahora.",
+      "budgetExceeded": "Demasiadas cargas sin enviar. Las cargas sin usar caducan en 24 horas.",
+      "tooLarge": "Este archivo supera los 50 MiB.",
+      "expired": "Esta carga caducó. Elimínala y vuelve a adjuntar el archivo.",
+      "checkConnection": "Comprueba tu conexión y vuelve a intentarlo."
     },
     "i18nComplete": {
       "text25ab55af92b1": "Carga del archivo adjunto iniciada",

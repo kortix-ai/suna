@@ -14,11 +14,7 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
-import {
-  materializePromptAttachments,
-  PromptAttachmentMaterializationError,
-} from './prompt-attachment-materializer';
-import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
+import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
 import {
@@ -58,7 +54,6 @@ import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import * as lifecycleStore from './store';
 import {
   MAX_RUNTIME_UNREACHABLE_RETRIES,
-  RUNTIME_STALE_REASON,
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
@@ -2007,22 +2002,6 @@ export async function executeQueuedContinue(
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
-    if (e instanceof PromptAttachmentMaterializationError && e.stale) {
-      const parked = await parkPromptForUnreachableRuntime(row.commandId, e.message, {
-        sessionId: row.sessionId,
-        reason: RUNTIME_STALE_REASON,
-      });
-      if (parked.parked) {
-        if (row.sessionId) scheduleSandboxRuntimeRefresh(row.sessionId, 'stale-daemon');
-        return 'queued';
-      }
-      await markCommandFailed(
-        row.commandId,
-        `runtime stale after ${parked.retries} retries`,
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
-      );
-      return 'failed';
-    }
     await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
       retryable: true,
       attempts: row.attempts,

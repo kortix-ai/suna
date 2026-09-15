@@ -173,9 +173,6 @@ export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
   sessionPromptsPollMs,
-  countNonTerminalSessionPrompts,
-  sessionPromptsFingerprint,
-  nextSessionPromptsCadenceState,
   startSessionWithPrompt,
   isOptimisticSessionPrompt,
   optimisticSessionPrompt,
@@ -185,9 +182,7 @@ export {
   reconcileOptimisticPrompts,
   OPTIMISTIC_PROMPT_PREFIX,
   SESSION_PROMPTS_POLL_MS,
-  SESSION_PROMPTS_LIVE_POLL_LADDER_MS,
   SESSION_PROMPTS_IDLE_POLL_MS,
-  type SessionPromptsCadenceState,
   type StartSessionWithPromptAdapters,
   type UseSessionPromptsResult,
 } from './use-session-prompts';

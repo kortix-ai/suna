@@ -92,7 +92,6 @@ export interface MonitorRunnerOptions {
   // ── Seams. Production uses the defaults; tests shrink the timers. ─────────
   fetchImpl?: typeof fetch
   now?: () => number
-  timers?: MonitorRunnerTimers
   batchWindowMs?: number
   queueMax?: number
   restartBudget?: number
@@ -102,11 +101,6 @@ export interface MonitorRunnerOptions {
   postAttempts?: number
   postRetryBaseMs?: number
   postTimeoutMs?: number
-}
-
-export interface MonitorRunnerTimers {
-  setTimeout(handler: () => void, milliseconds: number): ReturnType<typeof setTimeout>
-  clearTimeout(timer: ReturnType<typeof setTimeout>): void
 }
 
 /**
@@ -187,7 +181,6 @@ interface ResolvedRunnerOptions {
   logDir: string
   fetchImpl: typeof fetch
   now: () => number
-  timers: MonitorRunnerTimers
   batchWindowMs: number
   queueMax: number
   restartBudget: number
@@ -238,10 +231,6 @@ export class MonitorRunner {
       logDir: options.logDir ?? '/var/log',
       fetchImpl: options.fetchImpl ?? fetch,
       now: options.now ?? (() => Date.now()),
-      timers: options.timers ?? {
-        setTimeout: (handler, milliseconds) => setTimeout(handler, milliseconds),
-        clearTimeout: (timer) => clearTimeout(timer),
-      },
       batchWindowMs: options.batchWindowMs ?? MONITOR_BATCH_WINDOW_MS,
       queueMax: options.queueMax ?? MONITOR_QUEUE_MAX,
       restartBudget: options.restartBudget ?? MONITOR_RESTART_BUDGET,
@@ -306,8 +295,8 @@ export class MonitorRunner {
     for (const state of this.states.values()) {
       state.stopped = true
       if (state.interval) clearInterval(state.interval)
-      if (state.silenceTimer) this.opts.timers.clearTimeout(state.silenceTimer)
-      for (const timer of state.timers) this.opts.timers.clearTimeout(timer)
+      if (state.silenceTimer) clearTimeout(state.silenceTimer)
+      for (const timer of state.timers) clearTimeout(timer)
       state.timers.clear()
       state.child?.kill('SIGTERM')
       state.child = null
@@ -542,8 +531,8 @@ export class MonitorRunner {
   private armSilenceWatchdog(state: MonitorState): void {
     const seconds = state.spec.expectEventWithinSeconds
     if (!seconds || state.stopped) return
-    if (state.silenceTimer) this.opts.timers.clearTimeout(state.silenceTimer)
-    state.silenceTimer = this.opts.timers.setTimeout(() => {
+    if (state.silenceTimer) clearTimeout(state.silenceTimer)
+    state.silenceTimer = setTimeout(() => {
       if (state.stopped) return
       this.emitLifecycle(state, 'silent', {
         expected_within_seconds: seconds,
@@ -557,7 +546,7 @@ export class MonitorRunner {
   }
 
   private later(state: MonitorState, ms: number, fn: () => void): void {
-    const timer = this.opts.timers.setTimeout(() => {
+    const timer = setTimeout(() => {
       state.timers.delete(timer)
       fn()
     }, ms)

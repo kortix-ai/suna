@@ -1,9 +1,17 @@
-import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import {
+  retryHeldSend,
+  useHeldSendFailureStore,
+  type HeldSend,
+} from '@/stores/session-composer-handoff-store';
+
+import enMessages from '../../../translations/en.json';
 import { OptimisticTurn } from './optimistic-turn';
+import { adoptSentAttachmentPreviews } from './sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads } from './uploaded-file-refs';
 
 /** An attached-file card reaches FileContentRenderer, which calls
@@ -104,7 +112,9 @@ describe('OptimisticTurn', () => {
       expect(chat).toContain(box);
     }
     // Both still open with the same bubble and close with the same waiting row.
-    expect(shell.slice(0, shell.indexOf('size-28'))).toBe(chat.slice(0, chat.indexOf('size-28')));
+    expect(shell.slice(0, shell.indexOf('size-28'))).toBe(
+      chat.slice(0, chat.indexOf('size-28')),
+    );
     expect(shell).toContain('Thinking');
     expect(chat).toContain('Thinking');
   });
@@ -118,6 +128,55 @@ describe('OptimisticTurn', () => {
     const chat = render(<OptimisticTurn {...props} onFileClick={() => {}} />);
     expect(shell).toBe(chat);
     expect(shell).toContain('@builder');
+  });
+});
+
+describe('OptimisticTurn sent pictures', () => {
+  test('the first prompt draws the picture it was sent with from the first frame, and no spinner', () => {
+    const file = {
+      kind: 'local' as const,
+      uploadId: 'upload-first',
+      file: new File(['x'], 'first.png', { type: 'image/png' }),
+      localUrl: 'blob:first-prompt',
+      isImage: true,
+    };
+    adoptSentAttachmentPreviews([file]);
+    // The boot shell has no sandbox yet (`deferPreview`); the chat has one.
+    for (const deferPreview of [true, false]) {
+      const markup = render(
+        <OptimisticTurn
+          text={buildOptimisticPromptTextWithUploads('look', [file])}
+          deferPreview={deferPreview}
+        />,
+      );
+      expect(markup.match(/<img [^>]*src="blob:first-prompt"/g)).toHaveLength(1);
+      expect(markup.match(/<li class="contents"/g)).toHaveLength(1);
+      expect(markup).not.toContain('animate-spinner-orbit');
+      expect(markup).not.toContain('Upload');
+    }
+  });
+
+  test('a staged attachment that carries its sent identity draws the sent picture, not its name', () => {
+    // The boot shell's copy after the preview store is cleared: no local files, only the
+    // remembered identities of the first prompt.
+    const file = {
+      kind: 'local' as const,
+      uploadId: 'upload-staged-first',
+      file: new File(['x'], 'staged.png', { type: 'image/png' }),
+      localUrl: 'blob:staged-first',
+      isImage: true,
+    };
+    adoptSentAttachmentPreviews([file]);
+    const markup = render(
+      <OptimisticTurn
+        text="look"
+        attachments={[{ id: 'upload-staged-first', filename: 'staged.png', mime: 'image/png' }]}
+        deferPreview
+      />,
+    );
+    expect(markup.match(/<img [^>]*src="blob:staged-first"/g)).toHaveLength(1);
+    expect(markup.match(/<li class="contents"/g)).toHaveLength(1);
+    expect(markup).not.toContain('animate-spinner-orbit');
   });
 });
 
@@ -203,7 +262,6 @@ describe('OptimisticTurn upload status', () => {
           { filename: 'b.pdf', mime: 'application/pdf' },
           { filename: 'c.svg', mime: 'image/svg+xml' },
         ]}
-        uploadStatus={{ state: 'uploading' }}
       />,
     );
     expect(markup).not.toContain('Uploading');
@@ -227,11 +285,90 @@ describe('OptimisticTurn upload status', () => {
     expect(markup).not.toContain('Uploading');
   });
 
-  test('a staged file in a running-session turn stays stable, with no line under it', () => {
+  test('a failed send the host kept offers Retry', () => {
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <OptimisticTurn
+            text="x"
+            attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
+            uploadStatus={{ state: 'failed', message: 'photo.jpg did not upload', onRetry: () => {} }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('photo.jpg did not upload');
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+  });
+
+  test('a kept failed send survives a SessionChat remount: it still draws the failed status, and Retry sends through the mounted instance', () => {
+    useHeldSendFailureStore.setState({ failuresBySession: {} });
+    const events: string[] = [];
+    const send: HeldSend = {
+      text: 'x',
+      attachments: {
+        submittedIds: ['attachment-1'],
+        readyAtSend: false,
+        whenReady: async () => [],
+        retry: () => {
+          events.push('retry');
+        },
+        release: () => {},
+      },
+      overrides: { clientMessageId: 'client-1' },
+    };
+    // The instance whose upload failed stores the send, then unmounts.
+    useHeldSendFailureStore
+      .getState()
+      .setHeldSendFailure('S1', 'msg_1', { message: 'photo.jpg did not upload', send });
+
+    // The remounted instance reads the failure from the store and draws it, as
+    // SessionChat does; its Retry runs on the remounted instance's send path.
+    const resent: HeldSend[] = [];
+    const failure = useHeldSendFailureStore.getState().failuresBySession.S1?.msg_1;
+    expect(failure?.message).toBe('photo.jpg did not upload');
+    const status = {
+      state: 'failed' as const,
+      message: failure!.message,
+      onRetry: () =>
+        retryHeldSend(
+          'S1',
+          'msg_1',
+          async (again) => {
+            events.push('send');
+            resent.push(again);
+          },
+          String,
+        ),
+    };
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <OptimisticTurn
+            text="x"
+            attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
+            uploadStatus={status}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('photo.jpg did not upload');
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+
+    status.onRetry();
+    expect(events).toEqual(['retry', 'send']);
+    expect(resent).toEqual([send]);
+    expect(useHeldSendFailureStore.getState().failuresBySession.S1?.msg_1).toBeUndefined();
+  });
+
+  test('a staged file in a running-session turn is one finished tile, with no line under it', () => {
     const accepted = render(
       <OptimisticTurn text="x" attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
     );
-    expect(accepted).not.toContain('animate-spinner-orbit');
-    expect(accepted).not.toContain('Uploading');
+    expect(accepted.match(/<li class="contents"/g)).toHaveLength(1);
+    expect(accepted).toContain('title="a.png"');
+    // No status: nothing under the strip, and no progress on the tile.
+    expect(accepted).not.toContain('role="alert"');
+    expect(accepted).not.toContain('role="progressbar"');
   });
 });

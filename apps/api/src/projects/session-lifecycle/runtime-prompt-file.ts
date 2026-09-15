@@ -21,11 +21,6 @@ const DAEMON_PORT = 8000;
  */
 export const RUNTIME_PROMPT_CHUNK_BYTES = 64 * 1024;
 
-/** Largest legacy whole-file request that can safely cross the runtime edge. */
-export const RUNTIME_WHOLE_UPLOAD_CEILING_BYTES = 96 * 1024;
-
-const RUNTIME_CAPABILITY_CACHE_TTL_MS = 60_000;
-
 export class RuntimeRouteUnsupportedError extends Error {
   readonly method: string;
   readonly route: string;
@@ -44,42 +39,7 @@ export class RuntimeRouteUnsupportedError extends Error {
   }
 }
 
-export class RuntimeStaleDaemonError extends Error {
-  readonly route: string;
-  readonly byteCount: number;
-
-  constructor(route: string, byteCount: number) {
-    super(`runtime stale daemon does not support ${route} for ${byteCount} bytes`);
-    this.name = 'RuntimeStaleDaemonError';
-    this.route = route;
-    this.byteCount = byteCount;
-  }
-}
-
-class RuntimeFirstAppendRouteUnsupportedError extends RuntimeRouteUnsupportedError {}
-
 type Forward = typeof forwardToSandbox;
-
-interface RuntimeAppendCapability {
-  supportsAppend: boolean;
-  supportsImport: boolean;
-  expiresAt: number;
-}
-
-interface RuntimeAppendCapabilityCacheEntry {
-  resolved?: RuntimeAppendCapability;
-  pending?: Promise<RuntimeAppendCapability>;
-}
-
-const runtimeAppendCapabilities = new WeakMap<Forward, Map<string, RuntimeAppendCapabilityCacheEntry>>();
-
-function runtimeCapabilityCache(forward: Forward): Map<string, RuntimeAppendCapabilityCacheEntry> {
-  const existing = runtimeAppendCapabilities.get(forward);
-  if (existing) return existing;
-  const created = new Map<string, RuntimeAppendCapabilityCacheEntry>();
-  runtimeAppendCapabilities.set(forward, created);
-  return created;
-}
 
 async function forwarded(
   input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
@@ -113,6 +73,10 @@ function isJsonContentType(contentType: string): boolean {
   return mediaType === 'application/json' || mediaType.endsWith('+json');
 }
 
+/**
+ * Read a daemon JSON response. A stale daemon can fall through to OpenCode's
+ * SPA and answer `200 text/html`; that is named, not parsed as a JSON error.
+ */
 async function readRuntimeJson<T>(input: {
   response: Response;
   method: string;
@@ -143,68 +107,30 @@ async function readRuntimeJson<T>(input: {
   }
 }
 
-async function runtimeSupportsAppend(
-  input: RuntimePromptFileWriteInput,
-  forward: Forward,
-): Promise<boolean> {
-  return (await runtimeCapabilities(input, forward)).supportsAppend;
-}
-
-async function runtimeCapabilities(
+/**
+ * Whether this daemon advertises `/file/import`. A health response without a
+ * `capabilities` field (a main-built daemon) means "no import": delivery then
+ * uses the existing append/upload path, never a stale classification.
+ */
+async function runtimeSupportsImport(
   input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
   forward: Forward,
-): Promise<RuntimeAppendCapability> {
-  const cache = runtimeCapabilityCache(forward);
-  const cached = cache.get(input.externalId);
-  if (cached?.resolved && cached.resolved.expiresAt > Date.now()) {
-    return cached.resolved;
-  }
-  if (cached?.pending) return cached.pending;
-
-  const pending = (async () => {
-    const health = await forwarded(
-      input,
-      forward,
-      'GET',
-      '/kortix/health',
-      new Headers(),
-      new ArrayBuffer(0),
-    );
-    const body = await readRuntimeJson<{ capabilities?: unknown }>({
-      response: health,
-      method: 'GET',
-      route: '/kortix/health',
-      operation: 'health',
-    });
-    const capabilities = Array.isArray(body.capabilities) ? body.capabilities : [];
-    const resolved = {
-      supportsAppend: capabilities.includes('file.append'),
-      supportsImport: capabilities.includes('file.import'),
-      expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
-    };
-    cache.set(input.externalId, {
-      resolved,
-    });
-    return resolved;
-  })();
-  cache.set(input.externalId, { pending });
-  try {
-    return await pending;
-  } catch (error) {
-    if (cache.get(input.externalId)?.pending === pending) cache.delete(input.externalId);
-    throw error;
-  }
-}
-
-function markRuntimeAppendUnsupported(input: RuntimePromptFileWriteInput, forward: Forward): void {
-  const cached = runtimeCapabilityCache(forward).get(input.externalId)?.resolved;
-  runtimeCapabilityCache(forward).set(input.externalId, {
-    resolved: {
-      supportsAppend: false,
-      supportsImport: cached?.supportsImport ?? false,
-      expiresAt: Date.now() + RUNTIME_CAPABILITY_CACHE_TTL_MS,
-    },
+): Promise<boolean> {
+  const health = await forwarded(
+    input,
+    forward,
+    'GET',
+    '/kortix/health',
+    new Headers(),
+    new ArrayBuffer(0),
+  );
+  const body = await readRuntimeJson<{ capabilities?: unknown }>({
+    response: health,
+    method: 'GET',
+    route: '/kortix/health',
+    operation: 'health',
   });
+  return Array.isArray(body.capabilities) && body.capabilities.includes('file.import');
 }
 
 export interface RuntimePromptAttachmentImportInput {
@@ -216,13 +142,12 @@ export interface RuntimePromptAttachmentImportInput {
   partIndex: number;
 }
 
-/** Import through a capable daemon. Return null when the daemon is legacy. */
+/** Import through a capable daemon. Return null when the daemon does not advertise import. */
 export async function importRuntimePromptAttachment(
   input: RuntimePromptAttachmentImportInput,
   forward: Forward = forwardToSandbox,
 ): Promise<{ path: string; size: number; sha256: string } | null> {
-  const capabilities = await runtimeCapabilities(input, forward);
-  if (!capabilities.supportsImport) return null;
+  if (!(await runtimeSupportsImport(input, forward))) return null;
   const encoded = new TextEncoder().encode(
     JSON.stringify({
       command_id: input.commandId,
@@ -239,23 +164,12 @@ export async function importRuntimePromptAttachment(
     new Headers({ 'Content-Type': 'application/json' }),
     encoded.buffer as ArrayBuffer,
   );
-  if (response.status === 404 || response.status === 405) {
-    throw new RuntimeStaleDaemonError(route, 0);
-  }
-  let result: { path?: unknown; size?: unknown; sha256?: unknown };
-  try {
-    result = await readRuntimeJson({
-      response,
-      method: 'POST',
-      route,
-      operation: 'import',
-    });
-  } catch (error) {
-    if (error instanceof RuntimeRouteUnsupportedError) {
-      throw new RuntimeStaleDaemonError(route, 0);
-    }
-    throw error;
-  }
+  const result = await readRuntimeJson<{ path?: unknown; size?: unknown; sha256?: unknown }>({
+    response,
+    method: 'POST',
+    route,
+    operation: 'import',
+  });
   if (
     typeof result.path !== 'string' ||
     !Number.isSafeInteger(result.size) ||
@@ -267,7 +181,6 @@ export async function importRuntimePromptAttachment(
   }
   return { path: result.path, size: result.size as number, sha256: result.sha256 };
 }
-
 
 async function uploadWhole(
   input: RuntimePromptFileWriteInput,
@@ -339,20 +252,12 @@ async function appendInChunks(
       new Headers(request.headers),
       await request.arrayBuffer(),
     );
-    let row: { path?: string; size?: number };
-    try {
-      row = await readRuntimeJson<{ path?: string; size?: number }>({
-        response,
-        method: 'POST',
-        route: '/file/append',
-        operation: 'append',
-      });
-    } catch (error) {
-      if (offset === 0 && error instanceof RuntimeRouteUnsupportedError) {
-        throw new RuntimeFirstAppendRouteUnsupportedError(error);
-      }
-      throw error;
-    }
+    const row = await readRuntimeJson<{ path?: string; size?: number }>({
+      response,
+      method: 'POST',
+      route: '/file/append',
+      operation: 'append',
+    });
     if (!row?.path) throw new Error('runtime append returned no file path');
     landedPath = row.path;
     landedSize = typeof row.size === 'number' ? row.size : landedSize;
@@ -377,45 +282,27 @@ export async function writeRuntimePromptFile(
   const fileBytes = new Uint8Array(input.bytes);
   let temporaryPath: string;
   if (fileBytes.byteLength > RUNTIME_PROMPT_CHUNK_BYTES) {
-    const supportsAppend = await runtimeSupportsAppend(input, forward);
-    if (!supportsAppend) {
-      if (fileBytes.byteLength <= RUNTIME_WHOLE_UPLOAD_CEILING_BYTES) {
-        temporaryPath = await uploadWhole(input, forward, directory, temporaryName, fileBytes);
-      } else {
-        throw new RuntimeStaleDaemonError('/file/append', fileBytes.byteLength);
-      }
-    } else {
-      try {
-        temporaryPath = await appendInChunks(input, forward, directory, temporaryName, fileBytes);
-      } catch (error) {
-        if (
-          error instanceof RuntimeFirstAppendRouteUnsupportedError
-        ) {
-          markRuntimeAppendUnsupported(input, forward);
-          if (fileBytes.byteLength <= RUNTIME_WHOLE_UPLOAD_CEILING_BYTES) {
-            temporaryPath = await uploadWhole(input, forward, directory, temporaryName, fileBytes);
-          } else {
-            throw new RuntimeStaleDaemonError('/file/append', fileBytes.byteLength);
-          }
-        } else {
-          // A chunk that failed mid-way leaves a truncated temp file in the
-          // workspace — junk the agent can trip over. Only the chunked path can
-          // leave one (a whole-file upload either lands or writes nothing). Best
-          // effort, never masks the real error.
-          const deleteBody = new TextEncoder().encode(
-            JSON.stringify({ path: path.posix.join(directory, temporaryName) }),
-          );
-          await forwarded(
-            input,
-            forward,
-            'DELETE',
-            '/file',
-            new Headers({ 'Content-Type': 'application/json' }),
-            deleteBody.buffer as ArrayBuffer,
-          ).catch(() => undefined);
-          throw error;
-        }
-      }
+    try {
+      temporaryPath = await appendInChunks(input, forward, directory, temporaryName, fileBytes);
+    } catch (error) {
+      // A chunk that failed mid-way leaves a truncated temp file in the
+      // workspace — junk the agent can trip over. Only the chunked path can
+      // leave one (a whole-file upload either lands or writes nothing). Best
+      // effort, never masks the real error. An HTML or 404 append answer is
+      // the only stale-daemon signal; it fails this attempt and the engine's
+      // ordinary retry owns what happens next.
+      const deleteBody = new TextEncoder().encode(
+        JSON.stringify({ path: path.posix.join(directory, temporaryName) }),
+      );
+      await forwarded(
+        input,
+        forward,
+        'DELETE',
+        '/file',
+        new Headers({ 'Content-Type': 'application/json' }),
+        deleteBody.buffer as ArrayBuffer,
+      ).catch(() => undefined);
+      throw error;
     }
   } else {
     temporaryPath = await uploadWhole(input, forward, directory, temporaryName, fileBytes);

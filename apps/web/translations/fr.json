@@ -14,7 +14,6 @@
     "codeDescription": "Comme tout est du code dans un dépôt, le système peut lire son propre plan, s'étendre et rester stable pendant sa croissance. Il est entièrement extensible, contrôlable et auto-hébergeable. Rien n'est une boîte noire."
   },
   "common": {
-    "workspaceWaiting": "En attente de l’espace de travail…",
     "cancel": "Annuler",
     "save": "Enregistrer",
     "saving": "Enregistrement...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recharger",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gérer le forfait",
     "composerAttachments": {
-      "couldNotRestore": "Impossible de restaurer les pièces jointes",
       "couldNotAttach": "Impossible de joindre les fichiers",
-      "couldNotRemove": "Impossible de supprimer la pièce jointe",
       "couldNotRetry": "Impossible de réessayer la pièce jointe",
-      "notReady": "Les pièces jointes ne sont pas prêtes",
-      "uploadFailed": "Échec du téléversement",
-      "retry": "Réessayer",
-      "retryNamed": "Réessayer {name}",
-      "processing": "Traitement en cours",
-      "waiting": "En attente",
-      "uploading": "Téléversement {progress}%"
+      "couldNotSend": "Échec de l’envoi",
+      "failedBlocksSend": "Réessayez ou supprimez la pièce jointe en échec.",
+      "uploadFailed": "Échec du téléversement. Vérifiez votre connexion.",
+      "retryNamed": "Réessayer le téléversement de {name}",
+      "didNotUpload": "{name} n’a pas été téléversé.",
+      "billingRequired": "Votre forfait ou vos crédits ne permettent pas de téléverser pour le moment.",
+      "budgetExceeded": "Trop de téléversements non envoyés. Les téléversements inutilisés expirent sous 24 heures.",
+      "tooLarge": "Ce fichier dépasse 50 Mio.",
+      "expired": "Ce téléversement a expiré. Supprimez-le, puis joignez de nouveau le fichier.",
+      "checkConnection": "Vérifiez votre connexion, puis réessayez."
     },
     "i18nComplete": {
       "text25ab55af92b1": "Téléversement de la pièce jointe démarré",

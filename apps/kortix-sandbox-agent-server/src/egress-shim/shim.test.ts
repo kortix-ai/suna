@@ -993,40 +993,27 @@ describe('the streaming relay transport', () => {
     // every readiness poll hit a closed port and the session sat at "Starting
     // the agent". The probe now settles off the boot path.
     let probeStarted = false
-    let probeSettled = false
-    let releaseProbe!: () => void
-    const pendingProbe = new Promise<void>((resolve) => {
-      releaseProbe = resolve
-    })
-    const probeResponse = pendingProbe.then(() => {
-      probeSettled = true
-      return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
-    })
     const brokerFetch = (async (_url: unknown, init: unknown) => {
       const request = init as RequestInit & { headers: Record<string, string> }
       if ('x-kortix-relay-probe' in request.headers) {
         probeStarted = true
-        return probeResponse
+        await new Promise((r) => setTimeout(r, 600))
+        return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
       }
       return new Response(null, { status: 500 })
     }) as unknown as typeof fetch
-    try {
-      const server = await createEgressShim({
-        ca: CA,
-        rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
-        apiUrl: 'https://api.kortix.test/v1',
-        projectId: 'proj-1',
-        token: 'kortix_pat_test',
-        brokerFetch,
-      })
-      open.push(server)
-      expect(probeStarted).toBe(true)
-      // Construction returns while the network response remains unresolved.
-      // Certificate generation and CPU scheduling do not affect this contract.
-      expect(probeSettled).toBe(false)
-    } finally {
-      releaseProbe()
-      await probeResponse
-    }
+    const started = Date.now()
+    const server = await createEgressShim({
+      ca: CA,
+      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+      apiUrl: 'https://api.kortix.test/v1',
+      projectId: 'proj-1',
+      token: 'kortix_pat_test',
+      brokerFetch,
+    })
+    open.push(server)
+    const elapsed = Date.now() - started
+    expect(probeStarted).toBe(true)
+    expect(elapsed).toBeLessThan(300)
   }, 10_000)
 })

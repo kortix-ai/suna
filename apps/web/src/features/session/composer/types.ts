@@ -7,13 +7,13 @@
  * the app keep working unchanged.
  */
 
-import type { PromptAttachment } from '@kortix/sdk';
-
 export type AttachedFile =
   | {
       kind: 'local';
       /** SDK controller identity. Absent only for legacy non-composer callers. */
       uploadId?: string;
+      /** `Date.now()` when the file entered the composer. The upload ring waits 400 ms from it. */
+      attachedAt?: number;
       file: File;
       localUrl: string;
       isImage: boolean;
@@ -21,15 +21,6 @@ export type AttachedFile =
   | {
       kind: 'remote';
       url: string;
-      filename: string;
-      mime: string;
-      isImage: boolean;
-    }
-  | {
-      /** A completed private upload restored from a URL-free composer draft. */
-      kind: 'staged';
-      uploadId: string;
-      attachment: PromptAttachment;
       filename: string;
       mime: string;
       isImage: boolean;

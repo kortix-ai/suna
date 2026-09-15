@@ -14,7 +14,6 @@
     "codeDescription": "Como tudo é código em um repositório, o sistema pode ler a própria arquitetura, ampliar seus recursos e permanecer estável enquanto cresce. Ele é totalmente extensível, controlável e auto-hospedável. Nada é uma caixa-preta."
   },
   "common": {
-    "workspaceWaiting": "Aguardando o espaço de trabalho…",
     "cancel": "Cancelar",
     "save": "Salvar",
     "saving": "Salvando...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recarregar",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gerenciar plano",
     "composerAttachments": {
-      "couldNotRestore": "Não foi possível restaurar os anexos",
       "couldNotAttach": "Não foi possível anexar os arquivos",
-      "couldNotRemove": "Não foi possível remover o anexo",
       "couldNotRetry": "Não foi possível tentar o anexo novamente",
-      "notReady": "Os anexos ainda não estão prontos",
-      "uploadFailed": "Falha no envio",
-      "retry": "Tentar novamente",
-      "retryNamed": "Tentar {name} novamente",
-      "processing": "Processando",
-      "waiting": "Aguardando",
-      "uploading": "Enviando {progress}%"
+      "couldNotSend": "Não foi possível enviar",
+      "failedBlocksSend": "Tente novamente ou remova o anexo que falhou.",
+      "uploadFailed": "Falha no envio. Verifique sua conexão.",
+      "retryNamed": "Tentar enviar {name} novamente",
+      "didNotUpload": "{name} não foi enviado.",
+      "billingRequired": "Seu plano ou seus créditos não permitem envios agora.",
+      "budgetExceeded": "Há muitos envios não enviados. Envios não usados expiram em até 24 horas.",
+      "tooLarge": "Este arquivo tem mais de 50 MiB.",
+      "expired": "Este envio expirou. Remova-o e anexe o arquivo novamente.",
+      "checkConnection": "Verifique sua conexão e tente novamente."
     },
     "i18nComplete": {
       "text25ab55af92b1": "Envio do anexo iniciado",

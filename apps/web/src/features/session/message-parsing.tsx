@@ -12,13 +12,12 @@ interface ParsedFileRef {
   path: string;
   mime: string;
   filename: string;
-  /** Present only on an optimistic ref, whose bytes have not landed yet: a
-   *  stable per-attachment id standing in for the absent server path. See
-   *  `uploaded-file-refs.ts`. */
-  pending?: string;
+  /** Present only on a sent ref drawn before delivery: the attachment identity.
+   *  See `sent-attachment-previews.ts`. */
+  attachment?: string;
 }
 
-// Attributes are read by NAME, not by position, so an optional `pending` can be
+// Attributes are read by NAME, not by position, so an optional `attachment` can be
 // appended without the tag becoming unparseable. A value can never contain a
 // raw `>` — `xmlAttr` escapes it — so `[^>]*` cannot run past the tag.
 const FILE_TAG_REGEX = /<file\s+([^>]*?)>\s*[\s\S]*?<\/file>/g;
@@ -43,12 +42,12 @@ export function parseFileReferences(text: string): {
       // A tag carrying neither is not a file reference; leave it in the text
       // rather than silently swallowing it.
       if (path === undefined && filename === undefined) return whole;
-      const pending = pick('pending');
+      const attachment = pick('attachment');
       files.push({
         path: path ?? '',
         mime: pick('mime') ?? '',
         filename: filename ?? '',
-        ...(pending ? { pending } : {}),
+        ...(attachment ? { attachment } : {}),
       });
       return '';
     })

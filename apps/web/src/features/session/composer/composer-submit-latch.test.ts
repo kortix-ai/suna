@@ -3,14 +3,16 @@
  *
  * The latch's BEHAVIOR (defer a typed second message, drop a same-tick
  * double-fire, release on throw) is asserted with real promises in
- * `submit-latch.test.ts`. This file pins only the composer's WIRING of it,
- * which a behavioral test of the pure module cannot see.
+ * `submit-latch.test.ts`. The send behavior below runs the exported helpers
+ * `composer.tsx` and its hosts call — `captureAttachmentSubmission`,
+ * `runComposerSend`, `deliverAfterPaint`, `dispatchLatched`, `createSubmitLatch`
+ * — so a regression in any of them fails here. Source assertions pin only the
+ * wiring: which helper each call site uses.
  *
  * Source assertions, for the reason stated in `session-chat-queued-retry-id.test.ts`:
- * `apps/web` has no DOM harness, the composer sits behind a `React.lazy`
- * boundary, and the thing under test is which guard wraps which call — not
- * rendered output. Every slice goes through `between()`, which FAILS on a
- * missing anchor rather than yielding '' and passing.
+ * `apps/web` has no DOM harness, and the composer sits behind a `React.lazy`
+ * boundary. Every slice goes through `between()`, which FAILS on a missing
+ * anchor rather than yielding '' and passing.
  *
  * History: the first latch was an inline `if (submissionInFlight.current)
  * return;`. That blanket return held the gate for the entire await of the
@@ -23,9 +25,17 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { PromptAttachmentSnapshot, SessionPromptPart } from '@kortix/sdk';
+import type { PromptAttachmentStatus, SessionPromptPart } from '@kortix/sdk';
 
-import { captureAttachmentSubmission } from './attachment-submission';
+import {
+  captureAttachmentSubmission,
+  deliverAfterPaint,
+  dispatchLatched,
+  runComposerSend,
+  type AttachmentSubmission,
+  type AttachmentSubmissionController,
+  type DispatchOutcome,
+} from './attachment-submission';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile } from './types';
 
@@ -48,136 +58,282 @@ function between(start: string, end: string): string {
   return source.slice(from, to);
 }
 
-describe('the composer submits through the latch', () => {
-  test('a queued ready draft keeps its captured parts when a later selection is pending', async () => {
-    let releaseFirst!: () => void;
-    const firstAck = new Promise<void>((resolve) => (releaseFirst = resolve));
-    const readyFile: AttachedFile = {
-      kind: 'local',
-      uploadId: 'ready-local',
-      file: new File(['ok'], 'ready.txt', { type: 'text/plain' }),
-      localUrl: 'blob:ready',
-      isImage: false,
-    };
-    const part: SessionPromptPart = {
-      type: 'file',
-      attachment_id: 'ready-server',
-      filename: 'ready.txt',
-      mime: 'text/plain',
-    };
-    let globallyPending = false;
-    const controller = {
-      getReadyParts: () => {
-        if (globallyPending) throw new Error('later attachment is pending');
-        return [part];
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+let sessionCount = 0;
+
+const fileA: AttachedFile = {
+  kind: 'local',
+  uploadId: 'local-a',
+  file: new File(['hello'], 'a.txt', { type: 'text/plain' }),
+  localUrl: 'blob:a',
+  isImage: false,
+};
+
+/** A controller whose one upload finishes only when the test releases it. */
+function heldUpload(status: PromptAttachmentStatus = 'uploading') {
+  let release!: () => void;
+  const uploaded = new Promise<void>((resolve) => (release = resolve));
+  const handedOff: string[][] = [];
+  const reclaimed: string[][] = [];
+  const controller: AttachmentSubmissionController = {
+    attachments: [
+      { id: 'local-a', filename: 'a.txt', mime: 'text/plain', size: 5, status, receivedBytes: 2 },
+    ],
+    submit: (ids) => {
+      handedOff.push([...ids]);
+    },
+    retry: () => {},
+    forget: () => {},
+    reclaim: (ids) => {
+      reclaimed.push([...ids]);
+    },
+    whenReady: async (ids): Promise<SessionPromptPart[]> => {
+      await uploaded;
+      return ids.map((id) => ({
+        type: 'file',
+        attachment_id: `att-${id}`,
+        filename: 'a.txt',
+        mime: 'text/plain',
+      }));
+    },
+  };
+  return { controller, handedOff, reclaimed, release };
+}
+
+type Draft = { text: string; files: AttachedFile[] };
+type Stash = Draft & { attachmentSubmission: AttachmentSubmission };
+
+/**
+ * A composer and its host, wired the way `composer.tsx` and `SessionChat` are:
+ * capture, `runComposerSend`, the host paints, then `deliverAfterPaint`.
+ *
+ * `refuse`: the host throws before painting (a create refusal).
+ * `slowPost`: a text-only POST waits on it, which keeps the dispatch in flight.
+ * `stopStash`: a stashed draft stops before the host (`submitDisabled`, or an open question).
+ */
+function composerAndHost(
+  controller: AttachmentSubmissionController,
+  options: { refuse?: boolean; slowPost?: Promise<void>; stopStash?: 'refused' | 'answered' } = {},
+) {
+  const editor: Draft = { text: '', files: [] };
+  const painted: string[] = [];
+  const posted: string[] = [];
+  const active = new Set<string>();
+
+  // One session per composer: an upload one test never releases cannot hold
+  // another test's sends in its delivery chain.
+  const sessionKey = `latch-session-${++sessionCount}`;
+  const onSend = async (text: string, submission: AttachmentSubmission) => {
+    if (options.refuse) throw new Error('Session creation failed');
+    painted.push(text);
+    return deliverAfterPaint(
+      sessionKey,
+      submission,
+      async () => {
+        const parts = await submission.whenReady();
+        if (parts.length === 0) await options.slowPost;
+        posted.push(text);
       },
-      getSnapshot: (): PromptAttachmentSnapshot => ({
-        canSend: !globallyPending,
-        attachments: [
-          {
-            id: 'ready-local',
-            filename: 'ready.txt',
-            mime: 'text/plain',
-            size: 2,
-            status: 'ready',
-            receivedBytes: 2,
-            attachment: {
-              attachment_id: 'ready-server',
-              filename: 'ready.txt',
-              mime: 'text/plain',
-              size: 2,
-              expires_at: '2099-01-01T00:00:00.000Z',
-            },
-          },
-        ],
-      }),
-    };
-    const sent: string[][] = [];
-    let queued = true;
-    const submit = createSubmitLatch<{ parts: SessionPromptPart[] }>(
-      async (stash) => {
-        if (!stash) return firstAck;
-        sent.push(stash.parts.map((item) => item.attachment_id ?? ''));
-      },
-      () => {
-        if (!queued) return null;
-        queued = false;
-        return { parts: captureAttachmentSubmission([readyFile], controller).parts };
-      },
+      undefined,
     );
+  };
 
-    void submit();
-    await submit();
-    globallyPending = true;
-    releaseFirst();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  const dispatch = async (stash?: Stash): Promise<DispatchOutcome> => {
+    if (stash && options.stopStash === 'refused') return;
+    if (stash && options.stopStash === 'answered') return 'answered';
+    const draft: Draft = stash ?? { text: editor.text, files: editor.files };
+    const submission =
+      stash?.attachmentSubmission ??
+      captureAttachmentSubmission(draft.files, controller, (work) => work);
+    if (!submission) return;
+    if (!stash) {
+      editor.text = '';
+      editor.files = [];
+    }
+    await runComposerSend({
+      submission,
+      controller,
+      active,
+      send: () => onSend(draft.text, submission),
+      onSent: () => {},
+      onFailed: () => {
+        editor.text = draft.text;
+        editor.files = [...editor.files, ...draft.files];
+      },
+    });
+    return 'sent';
+  };
 
-    expect(sent).toEqual([['ready-server']]);
+  const submit = createSubmitLatch<Stash>(
+    (stash) =>
+      dispatchLatched(stash, dispatch, controller, (returned, withText) => {
+        if (withText) editor.text = returned.text;
+        editor.files = [...editor.files, ...returned.files];
+      }),
+    () => {
+      if (!editor.text.trim()) return null;
+      const attachmentSubmission = captureAttachmentSubmission(
+        editor.files,
+        controller,
+        (work) => work,
+      );
+      if (!attachmentSubmission) return null;
+      const stash = { text: editor.text, files: editor.files, attachmentSubmission };
+      editor.text = '';
+      editor.files = [];
+      return stash;
+    },
+  );
+
+  const type = (text: string, files: AttachedFile[] = []) => {
+    editor.text = text;
+    editor.files = files;
+  };
+  return { submit, type, editor, painted, posted, active };
+}
+
+describe('Send hands uploads off and never waits for them', () => {
+  test('text-only send during a held upload POSTs after the held send', async () => {
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller);
+
+    composer.type('first', [fileA]);
+    const first = composer.submit();
+    // Same tick: the upload has not finished, and the message is on screen.
+    expect(composer.painted).toEqual(['first']);
+    expect(upload.handedOff).toEqual([['local-a']]);
+
+    // Enter again while the first dispatch is still in flight: the draft is stashed.
+    composer.type('second');
+    const second = composer.submit();
+    await Promise.all([first, second]);
+    await tick();
+
+    // Both messages painted while the first upload still runs. Nothing posted:
+    // the text-only send waits behind the held send, so the session gets Enter order.
+    expect(composer.painted).toEqual(['first', 'second']);
+    expect(composer.posted).toEqual([]);
+
+    upload.release();
+    await tick();
+    expect(composer.posted).toEqual(['first', 'second']);
   });
 
-  test('a pending second draft keeps its text and tile after the first ACK settles', async () => {
-    let releaseFirst!: () => void;
-    const firstAck = new Promise<void>((resolve) => (releaseFirst = resolve));
-    const pendingFile: AttachedFile = {
-      kind: 'local',
-      uploadId: 'pending-local',
-      file: new File(['still uploading'], 'pending.txt', { type: 'text/plain' }),
-      localUrl: 'blob:pending',
-      isImage: false,
-    };
-    let editorText = 'second draft';
-    let visibleFiles: AttachedFile[] = [pendingFile];
-    const dispatched: Array<{ text: string; files: AttachedFile[] }> = [];
-    const controller = {
-      getReadyParts: (): SessionPromptPart[] => {
-        throw new Error('Attachment uploads are still in progress');
-      },
-      getSnapshot: (): PromptAttachmentSnapshot => ({
-        canSend: false,
-        attachments: [
-          {
-            id: 'pending-local',
-            file: pendingFile.kind === 'local' ? pendingFile.file : undefined,
-            filename: 'pending.txt',
-            mime: 'text/plain',
-            size: 15,
-            status: 'uploading',
-            receivedBytes: 4,
-          },
-        ],
-      }),
-    };
-    const submit = createSubmitLatch<{ text: string; files: AttachedFile[] }>(
-      async (stash) => {
-        if (!stash) return firstAck;
-        dispatched.push(stash);
-      },
-      () => {
-        if (!editorText.trim()) return null;
-        try {
-          captureAttachmentSubmission(visibleFiles, controller);
-        } catch {
-          return null;
-        }
-        const stash = { text: editorText, files: [...visibleFiles] };
-        editorText = '';
-        visibleFiles = [];
-        return stash;
-      },
-    );
+  test('text-only send behind a pending chain paints immediately and does not hold the composer latch', async () => {
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller);
 
-    const first = submit();
-    await submit();
-    releaseFirst();
+    composer.type('first', [fileA]);
+    await composer.submit();
+    await tick();
+    expect(composer.painted).toEqual(['first']);
+
+    // The latch is free; the session's chain still holds the upload.
+    composer.type('second');
+    const second = composer.submit();
+    expect(composer.painted).toEqual(['first', 'second']);
+    expect(
+      await Promise.race([second.then(() => 'settled'), tick().then(() => 'held')]),
+    ).toBe('settled');
+
+    // The next Enter dispatches at once: it paints in the same tick, not after a stash.
+    composer.type('third');
+    const third = composer.submit();
+    expect(composer.painted).toEqual(['first', 'second', 'third']);
+    await third;
+    expect(composer.posted).toEqual([]);
+
+    upload.release();
+    await tick();
+    expect(composer.posted).toEqual(['first', 'second', 'third']);
+  });
+
+  test('a failed attachment refuses Send: the host is not called and the draft stays', async () => {
+    const upload = heldUpload('error');
+    const composer = composerAndHost(upload.controller);
+
+    composer.type('look', [fileA]);
+    await composer.submit();
+
+    expect(composer.painted).toEqual([]);
+    expect(upload.handedOff).toEqual([]);
+    expect(composer.editor).toEqual({ text: 'look', files: [fileA] });
+  });
+
+  test('a host that refuses before painting returns the uploads and the draft', async () => {
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller, { refuse: true });
+
+    composer.type('look', [fileA]);
+    await composer.submit();
+
+    expect(upload.reclaimed).toEqual([['local-a']]);
+    expect(composer.editor).toEqual({ text: 'look', files: [fileA] });
+    expect(composer.active.size).toBe(0);
+  });
+
+  test('a stash refused before the host (submitDisabled) gets its uploads, text, and files back', async () => {
+    let releasePost!: () => void;
+    const slowPost = new Promise<void>((resolve) => (releasePost = resolve));
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller, { slowPost, stopStash: 'refused' });
+
+    composer.type('first');
+    const first = composer.submit();
+    composer.type('second draft', [fileA]);
+    await composer.submit();
+    // Enter took the draft out of the editor and handed its upload off.
+    expect(upload.handedOff).toEqual([['local-a']]);
+    expect(composer.editor).toEqual({ text: '', files: [] });
+
+    releasePost();
     await first;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
-    expect(dispatched).toEqual([]);
-    expect(editorText).toBe('second draft');
-    expect(visibleFiles).toEqual([pendingFile]);
-    expect(visibleFiles[0]?.kind === 'local' ? visibleFiles[0].file.name : '').toBe('pending.txt');
+    expect(composer.painted).toEqual(['first']);
+    expect(upload.reclaimed).toEqual([['local-a']]);
+    expect(composer.editor).toEqual({ text: 'second draft', files: [fileA] });
   });
 
+  test('a stash answered to an open question gets its uploads and files back, not its text', async () => {
+    let releasePost!: () => void;
+    const slowPost = new Promise<void>((resolve) => (releasePost = resolve));
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller, { slowPost, stopStash: 'answered' });
+
+    composer.type('first');
+    const first = composer.submit();
+    composer.type('second draft', [fileA]);
+    await composer.submit();
+    releasePost();
+    await first;
+    await tick();
+
+    expect(upload.reclaimed).toEqual([['local-a']]);
+    expect(composer.editor).toEqual({ text: '', files: [fileA] });
+  });
+
+  test('a stash the host took returns nothing', async () => {
+    let releasePost!: () => void;
+    const slowPost = new Promise<void>((resolve) => (releasePost = resolve));
+    const upload = heldUpload();
+    const composer = composerAndHost(upload.controller, { slowPost });
+
+    composer.type('first');
+    const first = composer.submit();
+    composer.type('second draft', [fileA]);
+    await composer.submit();
+    releasePost();
+    await first;
+    await tick();
+
+    expect(composer.painted).toEqual(['first', 'second draft']);
+    expect(upload.reclaimed).toEqual([]);
+    expect(composer.editor).toEqual({ text: '', files: [] });
+  });
+});
+
+describe('the composer submits through the latch', () => {
   test('handleSubmit goes through ONE latch instance, held in a ref', () => {
     // A latch rebuilt per render forgets it is in flight, which reopens the
     // same-tick double-fire window mid-send. The `??=` into a ref is what makes
@@ -195,7 +351,24 @@ describe('the composer submits through the latch', () => {
     // creation would submit against stale attachedFiles/queue props.
     const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');
     expect(wiring).toContain('dispatchSubmissionRef.current = dispatchSubmission;');
-    expect(wiring).toContain('(stash) => dispatchSubmissionRef.current(stash)');
+    expect(wiring.replace(/\s+/g, ' ')).toContain(
+      '(stash) => dispatchLatched( stash, (current) => dispatchSubmissionRef.current(current), promptAttachmentsRef.current, restoreStashedDraft, )',
+    );
+  });
+
+  test('a stashed dispatch reports whether the host took the draft', () => {
+    // Every refusal before the host is a bare `return;`, which `dispatchLatched`
+    // reads as "give the stash back". Only three exits count as taken.
+    const dispatch = between('const dispatchSubmission = useCallback(', 'const dispatchSubmissionRef = useRef');
+    expect(dispatch).toContain('async (stash?: StashedDraft): Promise<DispatchOutcome> => {');
+    expect(dispatch.match(/return 'sent';/g)).toHaveLength(2);
+    expect(dispatch.match(/return 'answered';/g)).toHaveLength(1);
+    const answer = between('if (lockForQuestion) {', 'const content = draft');
+    expect(answer.indexOf('onCustomAnswer(trimmed);')).toBeLessThan(answer.indexOf("return 'answered';"));
+    const restore = between('const restoreStashedDraft = (', 'submitLatchRef.current ??= createSubmitLatch');
+    expect(restore).toContain('planFailedSendRecovery({');
+    expect(restore).toContain('submittedDoc: withText ? stash.doc : null,');
+    expect(restore).toContain('sentFiles: stash.files,');
   });
 
   test('the stash discriminator is typed text in the live editor, and the stash clears the editor', () => {
@@ -211,7 +384,10 @@ describe('the composer submits through the latch', () => {
     expect(wiring).toContain('if (!editor || !content || !content.text.trim()) return null;');
     expect(wiring).toContain('editor.clear();');
     expect(wiring).toContain('attachedFilesRef.current = [];');
-    expect(wiring).toContain('attachmentSubmission = captureAttachmentSubmission(');
+    expect(wiring).toContain(
+      'const attachmentSubmission = captureAttachmentSubmission(files, promptAttachmentsRef.current);',
+    );
+    expect(wiring).toContain('if (!attachmentSubmission) return null;');
     expect(wiring.indexOf('attachmentSubmission = captureAttachmentSubmission(')).toBeLessThan(
       wiring.indexOf('editor.clear();'),
     );
@@ -230,24 +406,50 @@ describe('the composer submits through the latch', () => {
     expect(source).toContain('onSubmit={handleSubmit}');
   });
 
-  test('Send captures readiness before reset and forgets only accepted ids after the await', () => {
+  test('Send captures, resets, clears the stored draft, then runs one runComposerSend', () => {
     const send = between('const content = draft', 'const dispatchSubmissionRef = useRef');
     const capture = send.indexOf('captureAttachmentSubmission(');
     const reset = send.indexOf('resolveComposerResetOnSend(');
-    const awaitSend = send.indexOf('await onSend(');
-    const forget = send.indexOf('promptAttachments.forget(attachmentSubmission.submittedIds)');
-
+    // Before the host runs: a reload while a send waits on its uploads must not
+    // bring the sent text and files back into the composer.
+    const clear = send.indexOf('clearSavedDraft();');
+    const run = send.indexOf('await runComposerSend({');
     expect(capture).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(capture);
-    expect(awaitSend).toBeGreaterThan(reset);
-    expect(forget).toBeGreaterThan(awaitSend);
+    expect(clear).toBeGreaterThan(reset);
+    expect(run).toBeGreaterThan(clear);
+    expect(send.replace(/\s+/g, ' ')).toContain(
+      'controller: promptAttachments, active: activeSubmissionIdsRef.current, send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission),',
+    );
+    // A refused send saves the restored draft again.
+    expect(send.slice(send.indexOf('onFailed: () => {'))).toContain(
+      'handleDocChange(restoredDoc, editorRef.current?.isEmpty() ?? true);',
+    );
+    // The host releases after its POST: the composer never forgets an upload.
+    expect(code()).not.toContain('.forget(');
   });
 
-  test('both the button and Enter are gated by attachment readiness', () => {
+  test('the composer never revokes a picture a Send took', () => {
+    // Every composer revoke goes through the cache's guard.
+    expect(code()).not.toContain('URL.revokeObjectURL(');
+    expect(source).toContain('revokeUnsentPreview(url)');
+  });
+
+  test('the button and Enter refuse only a failed attachment', () => {
     const normalized = source.replace(/\s+/g, ' ');
-    expect(normalized).toContain('submitDisabled || !promptAttachments.canSend');
-    expect(source).toContain('return captureAttachmentSubmission(filesNow, promptAttachments)');
-    expect(source).toContain('stash?.attachmentSubmission ??');
+    expect(normalized).toContain('const attachmentFailed = attachmentsBlockSend(promptAttachmentItems);');
+    expect(normalized).toContain('submitDisabled || attachmentFailed ||');
+    expect(normalized).toContain('attachmentFailed={attachmentFailed}');
+    expect(source).toContain(
+      'stash?.attachmentSubmission ?? captureAttachmentSubmission(filesNow, promptAttachments)',
+    );
+    expect(source).toContain('if (!attachmentSubmission) return;');
     expect(source).toContain('const filesNow = stash ? stash.files : attachedFilesRef.current;');
+  });
+
+  test('a plan or credit refusal at attach opens the billing path once per refusal', () => {
+    expect(source.replace(/\s+/g, ' ')).toContain(
+      'const [refusal] = takeNewBillingRefusals(promptAttachmentItems, seenBillingRefusalsRef.current); if (refusal) handleBillingError(refusal, tI18nComplete);',
+    );
   });
 });

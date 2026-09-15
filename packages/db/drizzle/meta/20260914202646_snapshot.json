@@ -1,6 +1,6 @@
 {
-  "id": "ec005c76-07bb-4d45-9c99-297bfc939ed4",
-  "prevId": "0405819a-1a99-4063-a899-028e0eb7dca1",
+  "id": "e3139c19-244e-457b-91e3-6ad2f88de9ef",
+  "prevId": "9b59b09b-7171-4321-9db8-bfb15f5d4940",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3653,39 +3653,6 @@
             },
             {
               "expression": "session_sequence",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_audit_events_account_source_phase_time": {
-          "name": "idx_audit_events_account_source_phase_time",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "authoritative_source",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "phase",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -13866,6 +13833,222 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_snapshot_archives": {
+      "name": "project_snapshot_archives",
+      "schema": "kortix",
+      "columns": {
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref": {
+          "name": "ref",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commit_sha": {
+          "name": "commit_sha",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo_owner": {
+          "name": "repo_owner",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_repo_id": {
+          "name": "external_repo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "locked_by": {
+          "name": "locked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "format": {
+          "name": "format",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'project-snapshot-v1'"
+        },
+        "object_prefix": {
+          "name": "object_prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archive_sha256": {
+          "name": "archive_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archive_bytes": {
+          "name": "archive_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entry_count": {
+          "name": "entry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blobs_sha256": {
+          "name": "blobs_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blobs_bytes": {
+          "name": "blobs_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ready_at": {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_snapshot_archives_project_sha": {
+          "name": "idx_project_snapshot_archives_project_sha",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "commit_sha",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_snapshot_archives_claim": {
+          "name": "idx_project_snapshot_archives_claim",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_snapshot_archives_project_id_projects_project_id_fk": {
+          "name": "project_snapshot_archives_project_id_projects_project_id_fk",
+          "tableFrom": "project_snapshot_archives",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.project_snapshot_builds": {
       "name": "project_snapshot_builds",
       "schema": "kortix",
@@ -14992,13 +15175,6 @@
           "notNull": true,
           "default": 0
         },
-        "chunk_digests": {
-          "name": "chunk_digests",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
         "sha256": {
           "name": "sha256",
           "type": "text",
@@ -15040,17 +15216,17 @@
         }
       },
       "indexes": {
-        "idx_prompt_attachments_scope": {
-          "name": "idx_prompt_attachments_scope",
+        "idx_prompt_attachments_user_status": {
+          "name": "idx_prompt_attachments_user_status",
           "columns": [
             {
-              "expression": "project_id",
+              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "user_id",
+              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -15092,7 +15268,7 @@
       "checkConstraints": {
         "prompt_attachments_status_check": {
           "name": "prompt_attachments_status_check",
-          "value": "\"kortix\".\"prompt_attachments\".\"status\" IN ('uploading', 'finalizing', 'ready', 'deleting')"
+          "value": "\"kortix\".\"prompt_attachments\".\"status\" IN ('uploading', 'finalizing', 'ready', 'failed', 'deleting')"
         },
         "prompt_attachments_size_check": {
           "name": "prompt_attachments_size_check",

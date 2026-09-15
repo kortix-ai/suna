@@ -1,13 +1,12 @@
-import { existsSync, readFileSync, type Stats } from "node:fs";
-import { lstat, realpath, rm } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join } from "node:path";
 import {
   LOCAL_AUTH_EMAIL_HOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+  localWebUrl,
   type LocalSupabaseEnvironment,
   type LocalWorktreeConfig,
-  localWebUrl,
 } from "./local-profile";
 
 interface WorktreeMarker extends LocalWorktreeConfig {
@@ -273,72 +272,6 @@ export async function ensureLocalMigrations(
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
   }
-  await waitForLocalPostgrest(supabase);
-}
-
-/** Migrations can finish while PostgREST still backs off from a missing schema. */
-export async function waitForLocalPostgrest(
-  supabase: LocalSupabaseEnvironment,
-  options: { request?: typeof fetch; timeoutMs?: number; pollMs?: number } = {},
-): Promise<void> {
-  if (!supabase.API_URL || !supabase.SERVICE_ROLE_KEY) {
-    throw new Error('local Supabase environment is missing REST credentials');
-  }
-  const url = localEndpoint(supabase.API_URL, 'local Supabase', '/rest/v1/credit_accounts');
-  url.search = 'select=account_id&limit=0';
-  const request = options.request ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 90_000;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const signal = AbortSignal.timeout(Math.max(1, Math.min(2_000, deadline - Date.now())));
-    let response: Response | undefined;
-    try {
-      response = await request(url, {
-        method: 'GET',
-        redirect: 'error',
-        headers: {
-          apikey: supabase.SERVICE_ROLE_KEY,
-          authorization: `Bearer ${supabase.SERVICE_ROLE_KEY}`,
-          'accept-profile': 'kortix',
-        },
-        signal,
-      });
-    } catch {
-      // A starting service can refuse the connection or exceed the attempt budget.
-      // Never print fetch errors: they can contain request credentials or URLs.
-    }
-    if (response) {
-      if (response.status === 200 || response.status === 404) {
-        let body: unknown;
-        try {
-          body = await response.json();
-        } catch {
-          if (!signal.aborted) {
-            throw new Error('local PostgREST schema probe returned an invalid result');
-          }
-        }
-        if (!signal.aborted) {
-          if (response.status === 200) {
-            if (Array.isArray(body) && body.length === 0) return;
-            throw new Error('local PostgREST schema probe returned an invalid result');
-          }
-          if (!body || typeof body !== 'object' || !('code' in body) || body.code !== 'PGRST205') {
-            throw new Error('local PostgREST schema probe rejected: HTTP 404');
-          }
-        }
-      } else {
-        await response.body?.cancel();
-        if (![502, 503, 504].includes(response.status)) {
-          throw new Error(`local PostgREST schema probe rejected: HTTP ${response.status}`);
-        }
-      }
-    }
-    const remaining = deadline - Date.now();
-    if (remaining > 0) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(options.pollMs ?? 250, remaining)));
-    }
-  }
-  throw new Error(`local PostgREST kortix schema did not become ready within ${timeoutMs}ms`);
 }
 
 export async function localApiHealthy(apiUrl: string): Promise<boolean> {
@@ -399,51 +332,6 @@ export async function localWebHealthy(webUrl: string): Promise<boolean> {
   }
 }
 
-export async function prepareLocalWebDevCache(
-  root: string,
-  launch: "owned" | "reuse",
-): Promise<void> {
-  if (launch === "reuse") return;
-
-  const resolvedRoot = resolve(root);
-  const nextDir = resolve(resolvedRoot, "apps/web/.next");
-  const devDir = resolve(nextDir, "dev");
-  if (
-    relative(resolvedRoot, nextDir) !== join("apps", "web", ".next") ||
-    relative(nextDir, devDir) !== "dev"
-  ) {
-    throw new Error("refusing to clear an invalid Next development cache path");
-  }
-
-  let nextStat: Stats;
-  try {
-    nextStat = await lstat(nextDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  if (nextStat.isSymbolicLink() || !nextStat.isDirectory()) {
-    throw new Error("refusing to clear a symlinked Next cache");
-  }
-
-  const [realRoot, realNext] = await Promise.all([realpath(resolvedRoot), realpath(nextDir)]);
-  if (realNext !== join(realRoot, "apps", "web", ".next")) {
-    throw new Error("refusing to clear a Next cache outside the worktree");
-  }
-
-  let devStat: Stats;
-  try {
-    devStat = await lstat(devDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  if (devStat.isSymbolicLink() || !devStat.isDirectory()) {
-    throw new Error("refusing to clear a symlinked Next cache");
-  }
-  await rm(devDir, { recursive: true, force: true });
-}
-
 /**
  * The environment the deterministic local stack hands its Next dev server.
  *
@@ -491,7 +379,6 @@ export async function ensureLocalWeb(
   const webPort = topology.marker?.ports.web ?? 3000;
   const webUrl = localWebUrl(webPort);
   if (await localWebHealthy(webUrl)) {
-    await prepareLocalWebDevCache(topology.root, "reuse");
     return { started: false, stop: async () => {} };
   }
   if (!options.autoStart) {
@@ -502,7 +389,6 @@ export async function ensureLocalWeb(
   if (!API_URL || !ANON_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
-  await prepareLocalWebDevCache(topology.root, "owned");
   const web = Bun.spawn(
     ["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"],
     {
@@ -536,7 +422,10 @@ export async function ensureLocalWeb(
       void web.exited.then((code) => {
         if (stopping) return;
         console.error(
-          `[local-stack] the local web server exited with code ${code} while tests were still running. Every browser spec from this point on will fail against ${webUrl} with a connection error, whatever each one reports. Look above this line for the cause.`,
+          `[local-stack] the local web server exited with code ${code} while ` +
+            `tests were still running. Every browser spec from this point on ` +
+            `will fail against ${webUrl} with a connection error, whatever ` +
+            `each one reports. Look above this line for the cause.`,
         );
       });
       return {

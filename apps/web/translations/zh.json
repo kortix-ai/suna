@@ -14,7 +14,6 @@
     "codeDescription": "由于一切都是仓库中的代码，系统可以读取自己的蓝图、自行扩展，并在增长过程中保持稳定。系统可完全扩展、可控且可自行托管，没有任何黑箱。"
   },
   "common": {
-    "workspaceWaiting": "正在等待工作区…",
     "cancel": "取消",
     "save": "保存",
     "saving": "保存中...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "充值",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "管理计划",
     "composerAttachments": {
-      "couldNotRestore": "无法恢复附件",
       "couldNotAttach": "无法添加文件",
-      "couldNotRemove": "无法移除附件",
       "couldNotRetry": "无法重试附件",
-      "notReady": "附件尚未准备好",
-      "uploadFailed": "上传失败",
-      "retry": "重试",
-      "retryNamed": "重试 {name}",
-      "processing": "处理中",
-      "waiting": "等待中",
-      "uploading": "正在上传 {progress}%"
+      "couldNotSend": "发送失败",
+      "failedBlocksSend": "请重试或移除上传失败的附件。",
+      "uploadFailed": "上传失败。请检查网络连接。",
+      "retryNamed": "重试上传 {name}",
+      "didNotUpload": "{name} 未上传。",
+      "billingRequired": "你的套餐或额度当前不允许上传。",
+      "budgetExceeded": "未发送的上传过多。未使用的上传会在 24 小时内过期。",
+      "tooLarge": "此文件超过 50 MiB。",
+      "expired": "此上传已过期。请移除后重新添加文件。",
+      "checkConnection": "请检查网络连接，然后重试。"
     },
     "i18nComplete": {
       "text25ab55af92b1": "已开始上传附件",

@@ -8,6 +8,7 @@ import {
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { config } from '../config';
 import {
   beginPromptAttachment,
   bindPromptAttachments,
@@ -60,9 +61,11 @@ beforeAll(async () => {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       const path = decodeURIComponent(new URL(request.url).pathname).replace(
-        /^\/storage\/v1\/object\/(?:authenticated\/|sign\/)?staged-files\/?/,
+        /^\/storage\/v1\/object\/(?:authenticated\/|sign\/|upload\/sign\/)?staged-files\/?/,
         '',
       );
+      if (request.url.includes('/object/upload/sign/'))
+        return Response.json({ url: `/object/upload/sign/staged-files/${path}?token=fake` });
       if (request.method === 'DELETE') {
         if (failRemove)
           return Response.json({ message: 'injected remove failure' }, { status: 503 });
@@ -113,9 +116,23 @@ async function ready() {
     mime: 'text/plain',
     size: 3,
   });
-  await uploadPromptAttachmentChunk(scope, handle.attachment_id, 0, new Uint8Array([1, 2, 3]));
+  // Direct mode: the client PUTs to the signed URL, so the fake Storage holds the object.
+  objects.set(
+    `prompt-attachments/${scope.projectId}/${handle.attachment_id}/file`,
+    new Uint8Array([1, 2, 3]),
+  );
   await completePromptAttachment(scope, handle.attachment_id);
   return handle.attachment_id;
+}
+/** Runs `work` with the preview's chunked transport selected. */
+async function inChunkedMode(work: () => Promise<void>) {
+  const previous = config.PROMPT_ATTACHMENT_UPLOAD_MODE;
+  config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
+  try {
+    await work();
+  } finally {
+    config.PROMPT_ATTACHMENT_UPLOAD_MODE = previous;
+  }
 }
 function enqueue(id: string, clientMessageId = crypto.randomUUID()) {
   return enqueueContinueSessionCommand({
@@ -136,7 +153,7 @@ async function expire(id: string) {
     .where(eq(promptAttachments.attachmentId, id));
 }
 
-test('ambiguous chunk and final-object writes retry idempotently with tracked object names', async () => {
+test('ambiguous chunk and final-object writes retry idempotently with tracked object names', () => inChunkedMode(async () => {
   const handle = await beginPromptAttachment(scope, {
     filename: 'proof.txt',
     mime: 'text/plain',
@@ -166,7 +183,7 @@ test('ambiguous chunk and final-object writes retry idempotently with tracked ob
   expect((await completePromptAttachment(scope, handle.attachment_id)).attachment_id).toBe(
     handle.attachment_id,
   );
-});
+}));
 
 test('command payload and reference commit together; retries do not add references', async () => {
   const id = await ready();
@@ -469,7 +486,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
   expect(objects.has(`${initial.objectPath}/file`)).toBe(true);
 });
 
-test('DELETE retains a non-extending tombstone until an ambiguous late write can be swept again', async () => {
+test('DELETE retains a non-extending tombstone until an ambiguous late write can be swept again', () => inChunkedMode(async () => {
   const handle = await beginPromptAttachment(scope, {
     filename: 'late.txt',
     mime: 'text/plain',
@@ -511,7 +528,7 @@ test('DELETE retains a non-extending tombstone until an ambiguous late write can
       .from(promptAttachments)
       .where(eq(promptAttachments.attachmentId, handle.attachment_id)),
   ).toHaveLength(0);
-});
+}));
 
 test('mixed handles and uppercase DATA count exactly 100 MiB plus one byte', async () => {
   const ids = [await ready(), await ready()];
@@ -547,4 +564,158 @@ test('mixed handles and uppercase DATA count exactly 100 MiB plus one byte', asy
       { type: 'file', filename: 'one.txt', mime: 'text/plain', url: 'DATA:text/plain;base64,QQ==' },
     ]),
   ).rejects.toMatchObject({ status: 413, code: 'attachment_message_limit' });
+});
+
+// Retention (D16) and the begin budget (D17). Loaded as a namespace so a missing
+// export fails its own test, not the whole file.
+const lifecycle = await import('../projects/prompt-attachments');
+const HOUR_MS = 60 * 60_000;
+async function settleCommand(
+  commandId: string,
+  status: 'succeeded' | 'dead_lettered' | 'queued',
+  result: Record<string, unknown>,
+  updatedAt: Date,
+) {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({ status, result, updatedAt })
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
+}
+async function referenceCount(id: string) {
+  return (
+    await db
+      .select()
+      .from(promptAttachmentReferences)
+      .where(eq(promptAttachmentReferences.attachmentId, id))
+  ).length;
+}
+async function attachmentRow(id: string) {
+  const [row] = await db
+    .select()
+    .from(promptAttachments)
+    .where(eq(promptAttachments.attachmentId, id));
+  return row;
+}
+const objectKey = (id: string) => `prompt-attachments/${scope.projectId}/${id}/file`;
+
+test('terminal delivery releases references after the grace period; cleanup then removes the object before metadata', async () => {
+  const id = await ready();
+  const command = await enqueue(id);
+  // Inside the grace period: nothing is released.
+  await settleCommand(command.row.commandId, 'succeeded', { status: 'delivered' }, new Date(Date.now() - HOUR_MS + 60_000));
+  await cleanupExpiredPromptAttachments();
+  expect(await referenceCount(id)).toBe(1);
+  expect(objects.has(objectKey(id))).toBe(true);
+
+  // Past the grace period: the reference goes, and a failed object removal keeps the metadata.
+  await settleCommand(command.row.commandId, 'succeeded', { status: 'delivered' }, new Date(Date.now() - HOUR_MS - 60_000));
+  failRemove = true;
+  try {
+    expect((await cleanupExpiredPromptAttachments()).errors).toBeGreaterThan(0);
+  } finally {
+    failRemove = false;
+  }
+  expect(await referenceCount(id)).toBe(0);
+  expect(objects.has(objectKey(id))).toBe(true);
+  expect(await attachmentRow(id)).toBeDefined();
+
+  await cleanupExpiredPromptAttachments();
+  expect(objects.has(objectKey(id))).toBe(false);
+  expect(await attachmentRow(id)).toBeUndefined();
+});
+
+test('a dead-lettered command keeps its references', async () => {
+  const old = new Date(Date.now() - 2 * HOUR_MS);
+  const deadLettered = await ready();
+  const retryable = await ready();
+  const forwarded = await ready();
+  await settleCommand((await enqueue(deadLettered)).row.commandId, 'dead_lettered', {}, old);
+  await settleCommand((await enqueue(retryable)).row.commandId, 'queued', {}, old);
+  // On the wire at OpenCode, not yet consumed by a turn: still undelivered.
+  await settleCommand((await enqueue(forwarded)).row.commandId, 'succeeded', { status: 'forwarded' }, old);
+  await cleanupExpiredPromptAttachments();
+  for (const id of [deadLettered, retryable, forwarded]) {
+    expect(await referenceCount(id)).toBe(1);
+    expect(objects.has(objectKey(id))).toBe(true);
+    expect(await attachmentRow(id)).toBeDefined();
+  }
+});
+
+test('session delete releases references', async () => {
+  const doomed = crypto.randomUUID();
+  await db.execute(
+    sql`INSERT INTO kortix.project_sessions(session_id,account_id,project_id,branch_name,status) VALUES(${doomed},${scope.accountId}::uuid,${scope.projectId}::uuid,${doomed},'running')`,
+  );
+  const only = await ready();
+  const shared = await ready();
+  const clientMessageId = crypto.randomUUID();
+  await enqueueContinueSessionCommand({
+    source: 'ui',
+    ...scope,
+    actorUserId: scope.userId,
+    sessionId: doomed,
+    text: 'doomed',
+    clientMessageId,
+    idempotencyKey: `prompt:${doomed}:${clientMessageId}`,
+    parts: [
+      { type: 'file', attachment_id: only },
+      { type: 'file', attachment_id: shared },
+    ],
+  });
+  // The live session still sends `shared`.
+  await enqueue(shared);
+
+  const { deleteSession } = await import('../projects/session-lifecycle/actions');
+  expect(
+    await deleteSession({
+      projectId: scope.projectId,
+      sessionId: doomed,
+      accountId: scope.accountId,
+      userId: scope.userId,
+    }),
+  ).toEqual({ ok: true });
+  expect(await referenceCount(only)).toBe(0);
+  expect(await referenceCount(shared)).toBe(1);
+
+  await cleanupExpiredPromptAttachments();
+  expect(objects.has(objectKey(only))).toBe(false);
+  expect(await attachmentRow(only)).toBeUndefined();
+  expect(objects.has(objectKey(shared))).toBe(true);
+  expect(await attachmentRow(shared)).toBeDefined();
+});
+
+test('project archive releases references', async () => {
+  const id = await ready();
+  await enqueue(id);
+  await lifecycle.releasePromptAttachmentsForProject(scope.projectId);
+  expect(await referenceCount(id)).toBe(0);
+  await cleanupExpiredPromptAttachments();
+  expect(objects.has(objectKey(id))).toBe(false);
+  expect(await attachmentRow(id)).toBeUndefined();
+});
+
+test('begin budget counts one user\'s live unbound uploads: 40 handles and 500 MiB', async () => {
+  const budget = { ...scope, userId: crypto.randomUUID() };
+  const begin = (size = 1) =>
+    beginPromptAttachment(budget, { filename: 'budget.txt', mime: 'text/plain', size });
+  const handles = [];
+  for (let index = 0; index < 40; index += 1) handles.push(await begin());
+  await expect(begin()).rejects.toMatchObject({ status: 429, code: 'attachment_budget_exceeded' });
+  // Another user has an independent budget.
+  expect((await beginPromptAttachment(scope, { filename: 'other.txt', mime: 'text/plain', size: 1 })).attachment_id).toBeTruthy();
+  // Expired uploads no longer count.
+  await db
+    .update(promptAttachments)
+    .set({ expiresAt: new Date(Date.now() - 1000) })
+    .where(eq(promptAttachments.userId, budget.userId));
+
+  const large = [];
+  for (let index = 0; index < 10; index += 1) large.push(await begin(50 * 1024 * 1024));
+  await expect(begin()).rejects.toMatchObject({ status: 429, code: 'attachment_budget_exceeded' });
+  // A bound upload belongs to a sent prompt and no longer counts as unbound.
+  const holder = await enqueue(await ready());
+  await db
+    .insert(promptAttachmentReferences)
+    .values({ commandId: holder.row.commandId, attachmentId: large[0]!.attachment_id });
+  expect((await begin()).attachment_id).toBeTruthy();
 });

@@ -1,44 +1,29 @@
-import type { UploadResult } from '@/features/files/api/runtime-files';
-import { attachmentMime } from '@/features/session/attachment-mime';
-import type { AttachedFile } from '@/features/session/session-chat-input';
-import type { SessionPromptPart } from '@kortix/sdk';
 import {
   MAX_PROMPT_UPLOAD_FILENAME_BYTES,
   promptFileReferenceXml,
   sanitizePromptUploadFilename,
 } from '@kortix/shared';
+import type { SessionPromptPart } from '@kortix/sdk';
+import { attachmentMime } from '@/features/session/attachment-mime';
+import type { SentAttachment } from '@/features/session/sent-attachment-previews';
+import type { AttachedFile } from '@/features/session/session-chat-input';
 
 export type PromptFilePart = SessionPromptPart & { type: 'file' };
 
-export type UploadFileForPrompt = (
-  file: File | Blob,
-  targetPath?: string,
-  filename?: string,
-) => Promise<UploadResult[]>;
-
 export type UploadedFileRef = {
-  /** Where the bytes actually landed. Empty ONLY on an optimistic ref, which
-   *  is rendered before any upload has happened. */
+  /** Where the runtime holds the bytes. Empty ONLY on an optimistic ref, which
+   *  is rendered before the runtime has the file. */
   path: string;
   mime: string;
   filename: string;
   /**
-   * Set only on an optimistic ref: a stable id for this attachment within its
-   * own message, standing in for the path the server has not assigned yet.
-   *
-   * The optimistic ref used to carry a PREDICTED path
-   * (`/workspace/uploads/<sanitized name>`) and that prediction is wrong far
-   * more often than it is right: the daemon writes with `wx` and suffixes on
-   * collision (`report-mgk2x1-a3f9b201.pdf`), so every re-upload of a name
-   * already in the session lands somewhere else. Worse, two attachments in one
-   * message whose names sanitize alike predicted the SAME path, and the
-   * transcript keys uploads by path — three pasted screenshots (all named
-   * `image.png`) produced three identical React keys.
+   * Set only on an optimistic handle-backed ref: the attachment identity (see
+   * `sent-attachment-previews.ts`). It keys the sent tile and finds its picture.
+   * A ref never predicts a path: the daemon suffixes on collision, and three
+   * pasted `image.png` files would share one predicted path.
    */
-  pendingId?: string;
+  attachment?: string;
 };
-
-export const UPLOADS_DIR = '/workspace/uploads';
 
 /**
  * The largest upload filename we will hand the daemon, in BYTES.
@@ -61,33 +46,18 @@ export function uploadedFileRefXml(input: UploadedFileRef): string {
     path: input.path,
     mime: input.mime,
     filename: input.filename,
-    pendingId: input.pendingId,
+    attachment: input.attachment,
   });
 }
 
-/**
- * The ref rendered while the bytes are still in flight.
- *
- * `index` is the attachment's position in its own message — a stable identity
- * that two same-named attachments cannot share, unlike the path they used to
- * be keyed by.
- */
-export function optimisticUploadedFileRef(file: AttachedFile, index = 0): UploadedFileRef {
+/** The ref a sent message draws before the runtime has the file. It is never pending. */
+export function optimisticUploadedFileRef(file: AttachedFile): UploadedFileRef {
   if (file.kind === 'local') {
     return {
       path: '',
       mime: attachmentMime(file.file.type, file.file.name),
       filename: file.file.name,
-      pendingId: `upl_${index}`,
-    };
-  }
-
-  if (file.kind === 'staged') {
-    return {
-      path: '',
-      mime: file.mime,
-      filename: file.filename,
-      pendingId: `upl_${index}`,
+      ...(file.uploadId ? { attachment: file.uploadId } : {}),
     };
   }
 
@@ -103,243 +73,49 @@ export function buildOptimisticPromptTextWithUploads(
   files: AttachedFile[] | undefined,
 ): string {
   const refs = (files ?? [])
-    .map((file, index) => uploadedFileRefXml(optimisticUploadedFileRef(file, index)))
+    .map((file) => uploadedFileRefXml(optimisticUploadedFileRef(file)))
     .join('\n');
 
   return refs ? `${text}\n\n${refs}` : text;
 }
 
-function splitFiles(
-  files: AttachedFile[] | undefined,
-  stagedParts: readonly SessionPromptPart[],
-): {
-  localFiles: Extract<AttachedFile, { kind: 'local' }>[];
-  remoteParts: PromptFilePart[];
-} {
-  const localFiles: Extract<AttachedFile, { kind: 'local' }>[] = [];
-  const remoteParts: PromptFilePart[] = [];
-  let stagedIndex = 0;
-
-  for (const file of files ?? []) {
-    if (file.kind === 'local') {
-      if (!file.uploadId) {
-        localFiles.push(file);
-        continue;
-      }
-      const part = stagedParts[stagedIndex++];
-      if (!part || part.type !== 'file' || !part.attachment_id) {
-        throw new Error('A staged attachment is missing its completed upload handle');
-      }
-      remoteParts.push(part as PromptFilePart);
-    } else if (file.kind === 'staged') {
-      const part = stagedParts[stagedIndex++];
-      if (!part || part.type !== 'file' || !part.attachment_id) {
-        throw new Error('A restored attachment is missing its completed upload handle');
-      }
-      remoteParts.push(part as PromptFilePart);
-    } else {
-      remoteParts.push({
-        type: 'file',
-        mime: file.mime,
-        url: file.url,
-        filename: file.filename,
-      });
-    }
-  }
-
-  if (stagedIndex !== stagedParts.length) {
-    throw new Error('Attachment selection changed before Send. Try again.');
-  }
-
-  return { localFiles, remoteParts };
-}
-
-/**
- * Where each already-uploaded `File` landed.
- *
- * A batch used to be `Promise.all`, so one failed upload rejected the send
- * while the other files were already written to the sandbox. The composer
- * restores the draft on that throw, so the natural next move is to press send
- * again — and the second attempt re-uploaded the survivors, which the daemon
- * cannot overwrite, so it suffixed them. Two orphan copies per retry.
- *
- * Remembering the landing path means a retry uploads only what actually failed.
- * Reuse beats deleting the survivors: a delete is a second network call that
- * can fail on its own, and it throws away bytes the user has already paid to
- * transfer.
- *
- * Keyed by the `File` object, which the composer preserves across the failed
- * send (`session-chat-input.tsx` `mergeFailedSubmissionFiles`) — a WeakMap, so
- * a dropped attachment takes its entry with it.
- */
-const landedUploadPaths = new WeakMap<File | Blob, string>();
-
-/** One failed upload inside a batch. */
-export interface UploadFailure {
-  filename: string;
-  reason: string;
-}
-
-/**
- * A send that could not upload every attachment.
- *
- * Names each file that failed and why, because "Upload failed" alone leaves the
- * user with no idea which of five attachments to remove.
- */
-export class UploadBatchError extends Error {
-  readonly failures: UploadFailure[];
-  /** The files that DID land. They are cached for the retry, not orphaned. */
-  readonly uploaded: UploadedFileRef[];
-
-  constructor(failures: UploadFailure[], uploaded: UploadedFileRef[]) {
-    super(`Upload failed: ${failures.map((f) => `${f.filename} — ${f.reason}`).join('; ')}`);
-    this.name = 'UploadBatchError';
-    this.failures = failures;
-    this.uploaded = uploaded;
-  }
-}
-
-function failureReason(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
-  return 'unknown error';
-}
-
-async function uploadLocalFile(
-  file: Extract<AttachedFile, { kind: 'local' }>,
-  uploadFile: UploadFileForPrompt,
-): Promise<UploadedFileRef> {
-  const mime = attachmentMime(file.file.type, file.file.name);
-  const cached = landedUploadPaths.get(file.file);
-  if (cached) return { path: cached, mime, filename: file.file.name };
-
-  const safeName = sanitizeUploadFilename(file.file.name);
-  const results = await uploadFile(file.file, UPLOADS_DIR, safeName);
-  // The server path is authoritative: the daemon suffixes on collision and
-  // reports where the bytes REALLY landed, which is rarely what a client can
-  // predict.
-  const path = results[0]?.path;
-  if (typeof path !== 'string' || !path.trim()) {
-    throw new Error('did not return a file path');
-  }
-  landedUploadPaths.set(file.file, path);
-  return { path, mime, filename: file.file.name };
-}
-
-export async function buildPromptPartsWithUploads(
-  text: string,
-  files: AttachedFile[] | undefined,
-  uploadFile: UploadFileForPrompt,
-  stagedParts: readonly SessionPromptPart[] = [],
-): Promise<{
-  text: string;
-  remoteParts: PromptFilePart[];
-}> {
-  const { localFiles, remoteParts } = splitFiles(files, stagedParts);
-  if (localFiles.length === 0) return { text, remoteParts };
-
-  // `allSettled`, not `all`: an upload's side effect (bytes on disk) is not
-  // undone by its sibling's rejection, so the batch has to account for every
-  // outcome rather than abandon the first failure's peers.
-  const settled = await Promise.allSettled(
-    localFiles.map((file) => uploadLocalFile(file, uploadFile)),
-  );
-
-  const uploaded: UploadedFileRef[] = [];
-  const failures: UploadFailure[] = [];
-  settled.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      uploaded.push(result.value);
-      return;
-    }
-    failures.push({
-      filename: localFiles[index].file.name,
-      reason: failureReason(result.reason),
-    });
+/** What one Send carried, in send order: identity, name and type. */
+export function sentAttachmentsOf(files: readonly AttachedFile[]): SentAttachment[] {
+  return files.map((file) => {
+    const ref = optimisticUploadedFileRef(file);
+    return {
+      ...(ref.attachment ? { id: ref.attachment } : {}),
+      filename: ref.filename,
+      mime: ref.mime,
+    };
   });
-
-  if (failures.length > 0) throw new UploadBatchError(failures, uploaded);
-
-  const refs = uploaded.map(uploadedFileRefXml).join('\n');
-  return {
-    text: `${text}\n\n${refs}`,
-    remoteParts,
-  };
 }
 
 /**
- * First-prompt attachments. New composer files arrive with project-scoped
- * handles in `stagedParts`; this function never reads those bytes again.
- * Legacy callers without a handle retain the old data-URL fallback until their
- * producer migrates. Already-remote files remain ordinary URL parts.
+ * A prompt's file parts, in attachment order.
  *
- * The cap mirrors the API's serialized-row ceiling (`PROMPT_PARTS_MAX_BYTES`,
- * 12 MB of JSON ≈ 9 MB of file bytes): a durable row is a Postgres row, not a
- * blob store. Past it, the refusal names the way out — send the prompt and
- * attach the file once the session is running, where the ordinary upload path
- * takes over.
+ * Every composer file starts its upload when it enters the composer, so at the
+ * POST each one takes the next handle-only part `whenReady` resolved. A remote
+ * file rides as a URL part. Send never reads or uploads file bytes itself: a
+ * local file without a ready handle is refused.
  */
-export const DATA_URL_ATTACHMENTS_MAX_BYTES = 9 * 1024 * 1024;
-
-export async function stageFirstPromptAttachments(
-  files: AttachedFile[] | undefined,
-  stagedParts: readonly SessionPromptPart[] = [],
-): Promise<PromptFilePart[]> {
-  if (!files?.length) return [];
-
-  // THE WHOLE BATCH IS WEIGHED FIRST, from `File.size` — no bytes read.
-  // Accumulating as we went meant a batch that busts the cap on its last file
-  // had already read every file before it: the full cost of the thing being
-  // refused, paid while the composer sat locked.
-  const localFiles = files.filter(
-    (file): file is Extract<AttachedFile, { kind: 'local' }> =>
-      file.kind === 'local' && !file.uploadId,
-  );
-  const totalBytes = localFiles.reduce((sum, file) => sum + file.file.size, 0);
-  if (totalBytes > DATA_URL_ATTACHMENTS_MAX_BYTES) {
-    throw new Error(
-      `Attachments over ${Math.floor(DATA_URL_ATTACHMENTS_MAX_BYTES / (1024 * 1024))} MB can't ride the first message — send it, then attach the file after the session starts.`,
-    );
+export function promptFileParts(
+  files: readonly AttachedFile[] | undefined,
+  readyParts: readonly SessionPromptPart[],
+): PromptFilePart[] {
+  const parts: PromptFilePart[] = [];
+  let next = 0;
+  for (const file of files ?? []) {
+    if (file.kind === 'remote') {
+      parts.push({ type: 'file', mime: file.mime, url: file.url, filename: file.filename });
+      continue;
+    }
+    const part = readyParts[next++];
+    if (!file.uploadId || !part || part.type !== 'file' || !part.attachment_id)
+      throw new Error('A staged attachment is missing its completed upload handle');
+    parts.push(part as PromptFilePart);
   }
-
-  // IN PARALLEL. Every byte here is read before the session is created, so
-  // this is dead time the user spends on a locked composer watching nothing —
-  // and the reads are independent. Sequentially it was the SUM of them; a
-  // five-file batch paid five round trips through the file system in a row.
-  // Order is preserved because `Promise.all` resolves positionally, and the
-  // attachment order is the order the user attached them in.
-  let stagedIndex = 0;
-  const parts = await Promise.all(
-    files.map(async (file): Promise<PromptFilePart> => {
-      if (file.kind === 'remote') {
-        return { type: 'file', mime: file.mime, url: file.url, filename: file.filename };
-      }
-      if (file.kind === 'staged' || file.uploadId) {
-        const part = stagedParts[stagedIndex++];
-        if (!part || part.type !== 'file' || !part.attachment_id) {
-          throw new Error('A staged attachment is missing its completed upload handle');
-        }
-        return part as PromptFilePart;
-      }
-      const mime = attachmentMime(file.file.type, file.file.name);
-      const bytes = new Uint8Array(await file.file.arrayBuffer());
-      // btoa over chunks: String.fromCharCode(...bytes) overflows the argument
-      // limit on multi-MB files.
-      let binary = '';
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
-      return {
-        type: 'file',
-        mime,
-        url: `data:${mime};base64,${btoa(binary)}`,
-        filename: file.file.name,
-      };
-    }),
-  );
-  if (stagedIndex !== stagedParts.length) {
+  if (next !== readyParts.length)
     throw new Error('Attachment selection changed before Send. Try again.');
-  }
   return parts;
 }

@@ -36,6 +36,19 @@ export function isUploadRequest(request: { method: string; path: string }): bool
   return request.method.toUpperCase() === 'POST' && /^\/file\/upload(?:$|[/?#])/.test(request.path);
 }
 
+/**
+ * One import attempt. The daemon answers `POST /file/import` only after the
+ * download, fsync and rename, bounded by its own 120 s `IMPORT_TIMEOUT_MS`
+ * (kortix-sandbox-agent-server `routes/files.ts`). This is longer, so the daemon
+ * always answers or aborts before the proxy gives up. The API calls this route
+ * itself during delivery; no browser waits on it behind the load balancer.
+ */
+export const PROXY_IMPORT_ATTEMPT_TIMEOUT_MS = 130_000;
+
+export function isFileImportRequest(request: { method: string; path: string }): boolean {
+  return request.method.toUpperCase() === 'POST' && /^\/file\/import(?:$|[/?#])/.test(request.path);
+}
+
 // Per-attempt upstream fetch timeout, shrunk to whatever budget remains so the
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
 export function proxyAttemptTimeoutMs(
@@ -55,6 +68,7 @@ export function proxyAttemptTimeoutMs(
   // whatever budget is left, repeatedly, until the budget runs out — turning
   // an ordinary 20-40s turn into a manufactured 502 well before either the
   // outer budget or the ALB's idle timeout actually required one.
+  if (request && isFileImportRequest(request)) return PROXY_IMPORT_ATTEMPT_TIMEOUT_MS;
   if (request && (isUploadRequest(request) || isLongTurnCompletionRequest(request))) {
     return Math.max(1_000, budgetRemainingMs - 500);
   }

@@ -252,21 +252,9 @@ all support it. React Native and Expo do not: their `fetch` has no
 bounded history and status synchronization. Use a platform-specific event
 transport for live events.
 
-The controller loads the newest 50 messages first. `loadOlder()` follows the
-server cursor in pages of 100. `loadHttpSessionHistory()` follows every cursor
-for explicit exports.
-
-Each transcript controller binds one OpenCode session id to one runtime URL.
-When the last React consumer leaves, automatic retries stop. A final turn-end
-read can finish on its original runtime. Its failure cannot restart retries.
-The hook creates no controller until it has a runtime URL. Server mirror
-messages can render during that wait.
-
-OpenCode's JSON `404` with `name: 'NotFoundError'` produces
-`SessionNotFoundOnRuntimeError`, available from `@kortix/sdk`. The controller
-keeps `freshness: 'error'` and stops reading that session/runtime pair.
-Reprovisioning creates a new controller for the replacement runtime.
-Proxy HTML and not-running `404` responses remain wakeable.
+The controller loads the newest 10 messages first. `loadOlder()` follows the
+server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
+exports.
 
 ### Event types
 
@@ -389,23 +377,33 @@ import { usePromptAttachments } from '@kortix/sdk/react';
 
 const uploads = usePromptAttachments(projectId);
 // File picker, paste, and drop handlers call uploads.add(file) or uploads.addMany(files).
-// Render uploads.attachments; disable Send when !uploads.canSend.
+// Render uploads.attachments. Refuse Send only while an attachment is `error` or `aborted`.
 
 async function submit() {
-  const parts = uploads.getReadyParts();
-  const ids = uploads.getSnapshot().attachments.map((item) => item.id);
-  await kortix.session(projectId, sessionId).prompts.create({
-    clientMessageId,
-    messageId,
-    parts: [{ type: 'text', text }, ...parts],
-  });
-  uploads.forget(ids);
+  const ids = uploads.attachments.map((item) => item.id);
+  uploads.submit(ids); // Send never waits: the composer clears and uploads continue.
+  paintMessage(text, ids);
+  try {
+    const parts = await uploads.whenReady(ids);
+    await kortix.session(projectId, sessionId).prompts.create({
+      clientMessageId,
+      messageId,
+      parts: [{ type: 'text', text }, ...parts],
+    });
+    uploads.forget(ids);
+  } catch {
+    uploads.reclaim(ids);
+  }
 }
 ```
 
-`getReadyParts()` checks readiness synchronously. Call it in the submit handler
-to block a same-tick paste-and-Enter before the next React render.
-The returned file part contains `attachment_id`, `filename`, and `mime`.
+`whenReady(ids, { signal })` resolves once every upload is ready, in `ids` order.
+It rejects when an upload fails, is aborted or removed, or `signal` aborts.
+`submit(ids)` hands the entries to that send: they leave `attachments`, stop
+counting toward the limits, and keep uploading after the composer unmounts.
+Call `forget(ids)` after the POST succeeds, or `reclaim(ids)` to return them to
+the composer after a failed send.
+The resolved file part contains `attachment_id`, `filename`, and `mime`.
 It contains no URL or file bytes. The server binds and materializes the upload.
 Use these parts on platform session creation, warm-session start, or prompt inbox
 routes. Do not pass private handles directly to OpenCode runtime `sendParts`.
@@ -413,31 +411,62 @@ Legacy platform file parts with `url` still work.
 
 Each item has a stable `id`, the original `file` reference, `receivedBytes`, and
 a status: `pending`, `uploading`, `processing`, `ready`, `error`, or `aborted`.
-Acknowledged bytes determine progress. `processing` can remain at 100% until the
-server completes the upload. Limits are 50 MiB per file, 100 MiB per message,
-and 20 files. Files must be nonempty. Two files upload concurrently by default.
+Bytes sent determine progress. The controller publishes a progress snapshot only
+for a whole-percent change, at most ten per second per upload. `processing` can
+remain at 100% until the server completes the upload. Limits are 50 MiB per
+file, 100 MiB per message, and 20 files. Files must be nonempty. Two files
+upload concurrently by default.
 
-`retry(id)` resumes the same handle. `abort(id)` cancels unfinished work.
-`remove(id)` deletes an unbound upload; a bound upload returns a typed 409.
-`forget(ids)` clears accepted selections without deleting server objects.
-Call it only after successful submission. Preserve selections when sending fails.
-The hook aborts unfinished work on unmount or project change, and preserves ready
-uploads so server command binding can finish.
+`retry(id)` resumes the same handle. After `attachment_size_mismatch` or
+`attachment_failed` the server keeps no usable handle, so `retry(id)` uploads the
+File again as a new attachment. An expired upload cannot retry: `retry(id)`
+throws, and the item error carries code `attachment_expired`. `abort(id)` cancels
+unfinished work.
+`remove(id)` removes the entry, aborts its upload, and resolves at once. The
+server DELETE is best-effort and never rejects; an upload it cannot delete
+expires after 24 hours.
+`forget(ids)` releases entries without deleting server objects.
+The hook aborts listed work on unmount or project change and deletes its uploads
+best-effort: no send holds them, and drafts keep no handle. Handed-off uploads
+continue.
 
-Persist only ready `item.attachment` metadata in a user/project-bound draft.
-`restore(metadata)` validates the fields and expiry. Never persist File objects,
-blob URLs, or signed URLs. Expired restored files must be attached again.
-Abandoned uploads expire after 24 hours.
+Selections live in memory only. Never persist File objects, blob URLs, signed
+URLs, or upload handles in a draft. Abandoned uploads expire after 24 hours.
 
 Framework-free hosts use `kortix.project(projectId).attachments.createController()`
 with the same methods. Subscribe through `subscribe(listener)` and read
 `getSnapshot()`. Call `dispose()` when the composer closes.
 Direct callers can use `attachments.upload(file, { signal, onProgress, onUpload,
 resume })` and `attachments.delete(attachmentId)`.
-Retain `onUpload` metadata for manual same-ID resumption. Completion retries typed
-processing responses and retryable server failures for up to five minutes, plus
-the current request's 30-second deadline. Caller aborts and client timeouts do not
-auto-retry. Each chunk is at most 64 KiB and retries at most twice.
+Retain `onUpload` metadata for manual same-ID resumption.
+
+The server selects the transport in the handle's `upload` field:
+
+- `kind: 'direct'` is the default. The SDK sends the whole file in one `PUT` to
+  `upload.url` with `upload.headers` and no Authorization header. With
+  `XMLHttpRequest` (browsers, React Native), progress reports sent bytes. With
+  `fetch`, progress reports 0 and then the full size. An expired URL, or one that
+  Storage refuses with 400, 401, or 403, is re-signed once for the same
+  `attachment_id`. A `409` from Storage means an earlier attempt stored the file.
+- `kind: 'chunked'` sends sequential authenticated `PUT`s of `upload.chunk_size`
+  bytes. The SDK accepts any positive `chunk_size`. Only a deployment whose edge
+  drops large request bodies selects this mode.
+
+Completion verifies the stored size and SHA-256. If completion answers `409
+attachment_not_uploaded`, `onUpload` reports the direct handle with
+`received_bytes: 0`, so `retry(id)` or a resume sends the file again.
+Initiation, the upload, and completion retry timeouts, network errors, 429, and
+5xx with jittered exponential backoff. The budget is 60 seconds from the first
+failure, so a long upload that fails late still retries. Completion also retries
+`attachment_processing`, with a five-minute budget. Initiation never retries 402
+(a `BillingError`: the account cannot run) or 429 `attachment_budget_exceeded` (40
+unfinished uploads or 500 MiB of unsent uploads for the user; unused uploads
+expire within 24 hours). The server answers or refuses one completion within 105
+seconds. Each completion request allows 120 seconds. Caller aborts never retry.
+
+A sent attachment's reference is released 1 hour after its prompt is delivered,
+and when its session or project is deleted. The next maintenance sweep then
+removes the file, and its `attachment_id` can no longer be sent.
 
 ## Files
 

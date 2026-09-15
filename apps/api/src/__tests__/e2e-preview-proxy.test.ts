@@ -1623,6 +1623,46 @@ describe('Preview proxy: long-turn completion timeout', () => {
     expect(mockWakeCalls.length).toBe(0);
   });
 
+  // The daemon replies to `/file/import` only after the download, fsync and
+  // rename, and it does not observe a client disconnect. A replay downloads the
+  // same attachment a second time, and a wake is wasted on a healthy box.
+  test('a connect-timer abort on POST /file/import is not replayed and does not wake', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/sandbox-file-import-001/${TEST_PORT}/file/import`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command_id: 'c', attachment_id: 'a', part_index: 0 }),
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.ok).toBe(false);
+    expect(callCount).toBe(1);
+    expect(mockWakeCalls.length).toBe(0);
+  });
+
   test('an ordinary connect-timer abort (non-message path) still wakes + retries as before', async () => {
     const savedFetch = globalThis.fetch;
     const origSetTimeout = globalThis.setTimeout;

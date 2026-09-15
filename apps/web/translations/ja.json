@@ -14,7 +14,6 @@
     "codeDescription": "すべてがリポジトリ内のコードなので、システムは自身の設計図を読み、機能を拡張し、成長しても正常な状態を保てます。完全に拡張可能で、制御でき、セルフホストできます。ブラックボックスはありません。"
   },
   "common": {
-    "workspaceWaiting": "ワークスペースを待機中…",
     "cancel": "キャンセル",
     "save": "保存",
     "saving": "保存中...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "補充する",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "計画を管理する",
     "composerAttachments": {
-      "couldNotRestore": "添付ファイルを復元できませんでした",
       "couldNotAttach": "ファイルを添付できませんでした",
-      "couldNotRemove": "添付ファイルを削除できませんでした",
       "couldNotRetry": "添付ファイルを再試行できませんでした",
-      "notReady": "添付ファイルの準備ができていません",
-      "uploadFailed": "アップロードに失敗しました",
-      "retry": "再試行",
-      "retryNamed": "{name} を再試行",
-      "processing": "処理中",
-      "waiting": "待機中",
-      "uploading": "アップロード中 {progress}%"
+      "couldNotSend": "送信できませんでした",
+      "failedBlocksSend": "失敗した添付ファイルを再試行するか、削除してください。",
+      "uploadFailed": "アップロードに失敗しました。接続を確認してください。",
+      "retryNamed": "{name} のアップロードを再試行",
+      "didNotUpload": "{name} はアップロードされませんでした。",
+      "billingRequired": "現在のプランまたはクレジットではアップロードできません。",
+      "budgetExceeded": "未送信のアップロードが多すぎます。未使用のアップロードは24時間以内に期限切れになります。",
+      "tooLarge": "このファイルは50 MiBを超えています。",
+      "expired": "このアップロードは期限切れです。削除して、ファイルをもう一度添付してください。",
+      "checkConnection": "接続を確認してから、再試行してください。"
     },
     "i18nComplete": {
       "text25ab55af92b1": "添付ファイルのアップロードを開始しました",

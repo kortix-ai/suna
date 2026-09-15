@@ -5863,8 +5863,8 @@ export const promptAttachments = kortixSchema.table(
     filename: text('filename').notNull(),
     mime: text('mime').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
+    /** Chunked mode only: acknowledged bytes, advanced by compare-and-set. */
     receivedBytes: integer('received_bytes').default(0).notNull(),
-    chunkDigests: jsonb('chunk_digests').default([]).notNull().$type<string[]>(),
     sha256: text('sha256'),
     status: varchar('status', { length: 16 }).default('uploading').notNull(),
     finalizeToken: uuid('finalize_token'),
@@ -5873,10 +5873,11 @@ export const promptAttachments = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    check('prompt_attachments_status_check', sql`${table.status} IN ('uploading', 'finalizing', 'ready', 'deleting')`),
+    check('prompt_attachments_status_check', sql`${table.status} IN ('uploading', 'finalizing', 'ready', 'failed', 'deleting')`),
     check('prompt_attachments_size_check', sql`${table.sizeBytes} > 0 AND ${table.sizeBytes} <= 52428800`),
     check('prompt_attachments_received_check', sql`${table.receivedBytes} >= 0 AND ${table.receivedBytes} <= ${table.sizeBytes}`),
-    index('idx_prompt_attachments_scope').on(table.projectId, table.userId),
+    // Reader: the per-user upload budget in `beginPromptAttachment`.
+    index('idx_prompt_attachments_user_status').on(table.userId, table.status),
     index('idx_prompt_attachments_expiry').on(table.expiresAt),
   ],
 );

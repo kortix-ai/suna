@@ -3,11 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Page, type Request } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
-import {
-  createDatabaseProject,
-  deleteDatabaseProject,
-  mergeDatabaseProjectMetadata,
-} from "../../src/fixtures/database-project";
+import { mergeDatabaseProjectMetadata } from "../../src/fixtures/database-project";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createManifestProject,
@@ -94,18 +90,28 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
   const user = await createAuthUser(email, authOptions);
   let projectFixture: ManifestProject | undefined;
   const events: NetworkEvent[] = [];
-  let chunkRequests = 0;
-  let failChunks = 0;
-  let holdChunk = false;
-  let releaseHeldChunk = () => {};
-  let observeHeldChunk = () => {};
-  const heldChunk = new Promise<void>((resolve) => {
-    observeHeldChunk = resolve;
-  });
-  const heldGate = new Promise<void>((resolve) => {
-    releaseHeldChunk = resolve;
-  });
+  let uploadRequests = 0;
+  let failUploads = false;
+  // The next upload request waits at the gate until the test releases it.
+  type UploadHold = { observed: Promise<void>; gate: Promise<void>; observe: () => void; release: () => void };
+  let hold: UploadHold | undefined;
+  const holdNextUpload = (): UploadHold => {
+    let observe = () => {};
+    let release = () => {};
+    const observed = new Promise<void>((resolve) => {
+      observe = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    hold = { observed, gate, observe: () => observe(), release: () => release() };
+    return hold;
+  };
   let failFirstSend = true;
+  // Refuses the session create that a Send with a held upload makes at once.
+  // A deployed target would accept it and navigate away; a refusal keeps the
+  // journey on the project home for both targets.
+  let failHeldCreate = false;
   const promptBodies: unknown[] = [];
 
   try {
@@ -164,6 +170,10 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     await page.route("**/*", async (route) => {
       const request = route.request();
       const path = pathname(request);
+      // Completions are recorded so a removed upload can be proven never to complete.
+      if (request.method() === "POST" && path.endsWith("/complete")) {
+        events.push({ method: request.method(), path });
+      }
       if (
         !isDeployedTarget() &&
         request.method() === "GET" &&
@@ -176,23 +186,51 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
         });
         return;
       }
-      const isChunk =
+      // The server selects the transport: API chunk PUTs, or one direct Storage
+      // PUT to a signed URL. `pathname` never includes the URL token.
+      const isUpload =
         request.method() === "PUT" &&
-        path.includes(`/v1/projects/${project.id}/attachments/`) &&
-        path.includes("/chunks/");
-      if (isChunk) {
-        chunkRequests += 1;
+        ((path.includes(`/v1/projects/${project.id}/attachments/`) &&
+          path.includes("/chunks/")) ||
+          path.includes("/storage/v1/object/upload/sign/"));
+      if (isUpload) {
+        uploadRequests += 1;
         events.push({ method: request.method(), path });
-        if (failChunks > 0) {
-          failChunks -= 1;
-          await route.abort("failed");
+        if (failUploads) {
+          // A 403 is not transient, so the SDK reports the failure without its
+          // 60-second retry budget. A direct URL is re-signed once first.
+          await route.fulfill({
+            status: 403,
+            contentType: "application/json",
+            body: JSON.stringify({ statusCode: "403", error: "Injected upload refusal" }),
+          });
           return;
         }
-        if (holdChunk) {
-          holdChunk = false;
-          observeHeldChunk();
-          await heldGate;
+        if (hold) {
+          const current = hold;
+          hold = undefined;
+          current.observe();
+          await current.gate;
+          // The page can abandon a held upload (Remove): continuing it then fails.
+          await route.continue().catch(() => {});
+          return;
         }
+      }
+
+      if (
+        failHeldCreate &&
+        request.method() === "POST" &&
+        path === `/v1/projects/${project.id}/sessions`
+      ) {
+        failHeldCreate = false;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { message: "Injected held-send create refusal" },
+          }),
+        });
+        return;
       }
 
       if (
@@ -255,27 +293,32 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     });
     await pickerBegin;
     await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
-    // The local preview appears before its chunk upload settles. Wait for the
+    // The local preview appears before its upload settles. Wait for the
     // actual upload state so the forced retry.txt failures cannot hit picker.png.
     await expect(
-      page.locator('[title="picker.png"] .animate-spinner-orbit'),
+      page.locator('li > div[aria-busy="true"]:has([title="picker.png"])'),
     ).toHaveCount(0, { timeout: 30_000 });
 
-    failChunks = 3;
+    failUploads = true;
     await page.locator("input[type=file]").setInputFiles({
       name: "retry.txt",
       mimeType: "text/plain",
       buffer: Buffer.from("retry me"),
     });
-    await expect(page.getByText("Upload failed", { exact: true })).toBeVisible({
-      timeout: 10_000,
+    // A failed upload shows a scrim with one Retry icon button on its tile.
+    const retryUpload = page.getByRole("button", {
+      name: "Retry upload of retry.txt",
     });
-    await page.getByRole("button", { name: "Retry retry.txt" }).click();
-    await expect(
-      page.getByRole("button", { name: "Retry retry.txt" }),
-    ).toHaveCount(0, {
-      timeout: 10_000,
-    });
+    await expect(retryUpload).toBeVisible({ timeout: 10_000 });
+    // A failed attachment refuses Send, and the control says why.
+    await expect(send).toBeDisabled();
+    await expect(send).toHaveAttribute(
+      "title",
+      "Retry or remove the failed attachment.",
+    );
+    failUploads = false;
+    await retryUpload.click();
+    await expect(retryUpload).toHaveCount(0, { timeout: 10_000 });
 
     await dispatchFileEvent(page, "drop", {
       name: "drop.txt",
@@ -283,58 +326,6 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
       bytes: Array.from(Buffer.from("drop bytes")),
     });
     await expect(page.getByText("drop.txt", { exact: true })).toBeVisible();
-
-    holdChunk = true;
-    const largeBytes = Array.from(Buffer.alloc(160 * 1024, 0x61));
-    await input.fill("Eager attachment first prompt");
-    await input.evaluate((element, bytes) => {
-      const transfer = new DataTransfer();
-      transfer.items.add(
-        new File([new Uint8Array(bytes)], "paste-large.txt", {
-          type: "text/plain",
-        }),
-      );
-      element.dispatchEvent(
-        new ClipboardEvent("paste", {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: transfer,
-        }),
-      );
-      element.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    }, largeBytes);
-    await heldChunk;
-    await page.waitForTimeout(250);
-    expect(promptBodies).toHaveLength(0);
-    await expect(send).toBeDisabled();
-
-    const deleteHeldRequest = page.waitForRequest(
-      (request) =>
-        request.method() === "DELETE" &&
-        pathname(request).includes(`/v1/projects/${project.id}/attachments/`),
-    );
-    await page.getByRole("button", { name: "Remove paste-large.txt" }).click();
-    const heldDelete = await deleteHeldRequest;
-    releaseHeldChunk();
-    const heldDeleteResponse = await heldDelete.response();
-    expect(heldDeleteResponse?.status()).toBe(204);
-    await expect(
-      page.getByRole("button", { name: "Remove paste-large.txt" }),
-    ).toHaveCount(0);
-    await expect(page.getByText(/^(Uploading|Processing|Waiting)/)).toHaveCount(
-      0,
-      {
-        timeout: 30_000,
-      },
-    );
-    await expect(send).toBeEnabled();
 
     const deleteDrop = page.waitForResponse(
       (response) =>
@@ -346,11 +337,85 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     await page.getByRole("button", { name: "Remove drop.txt" }).click();
     expect((await deleteDrop).status()).toBe(204);
 
-    const chunksBeforeRetry = chunkRequests;
+    // Remove while the upload still runs: its unbound upload is deleted, and
+    // the abandoned upload never completes.
+    const removalHold = holdNextUpload();
+    await dispatchFileEvent(page, "drop", {
+      name: "remove-me.txt",
+      mime: "text/plain",
+      bytes: Array.from(Buffer.alloc(160 * 1024, 0x62)),
+    });
+    await removalHold.observed;
+    await expect(
+      page.locator('li > div[aria-busy="true"]:has([title="remove-me.txt"])'),
+    ).toHaveCount(1);
+    const deleteRemoved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        pathname(response.request()).includes(
+          `/v1/projects/${project.id}/attachments/`,
+        ),
+    );
+    await page.getByRole("button", { name: "Remove remove-me.txt" }).click();
+    const removed = await deleteRemoved;
+    expect(removed.status()).toBe(204);
+    const removedId = pathname(removed.request()).split("/").pop() ?? "";
+    expect(removedId).not.toBe("");
+    await expect(page.getByText("remove-me.txt", { exact: true })).toHaveCount(0);
+    removalHold.release();
+    // Give an unaborted upload time to reach completion; the aborted one never does.
+    await page.waitForTimeout(1_000);
+    expect(
+      events.some(
+        (event) =>
+          event.method === "POST" &&
+          event.path.endsWith(`/attachments/${removedId}/complete`),
+      ),
+    ).toBe(false);
+
+    const pasteHold = holdNextUpload();
+    const largeBytes = Array.from(Buffer.alloc(160 * 1024, 0x61));
+    await input.fill("Eager attachment first prompt");
+    await dispatchFileEvent(page, "paste", {
+      name: "paste-large.txt",
+      mime: "text/plain",
+      bytes: largeBytes,
+    });
+    await pasteHold.observed;
+    // Send never waits for an upload: the control stays enabled while the
+    // upload runs, and Enter creates the session at once. The create carries
+    // no prompt, because the held upload has no handle yet.
+    await expect(send).toBeEnabled();
+    failHeldCreate = true;
+    const heldCreate = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        pathname(request) === `/v1/projects/${project.id}/sessions`,
+    );
+    await input.press("Enter");
+    expect(attachmentIds((await heldCreate).postDataJSON())).toEqual([]);
+    expect(promptBodies).toHaveLength(0);
+    // The injected create refusal keeps the draft and returns every upload.
+    await expect(input).toHaveText("Eager attachment first prompt", {
+      timeout: 10_000,
+    });
+    pasteHold.release();
+    await expect(page.locator('li > div[aria-busy="true"]')).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    // Every upload is ready: the create carries the prompt and its handles.
     await send.click();
+    await expect
+      .poll(() => promptBodies.length, { timeout: 30_000 })
+      .toBe(1);
+    // picker.png, retry.txt, and paste-large.txt; drop.txt was removed.
+    expect(attachmentIds(promptBodies[0])).toHaveLength(3);
+    const uploadsBeforeRetry = uploadRequests;
+    // The injected first-send refusal keeps the draft and every handle.
     await expect(page.locator('img[alt="picker.png"]')).toBeVisible();
-    await expect(input).toHaveText("Eager attachment first prompt");
-    expect(promptBodies).toHaveLength(1);
+    await expect(input).toHaveText("Eager attachment first prompt", {
+      timeout: 10_000,
+    });
     const secondResponse = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -362,14 +427,23 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
       attachmentIds(promptBodies[0]),
     );
     expect(JSON.stringify(promptBodies[1])).not.toContain("data:");
-    expect(chunkRequests).toBe(chunksBeforeRetry);
+    expect(uploadRequests).toBe(uploadsBeforeRetry);
     const response = await secondResponse;
     await expect(page.locator('[title="picker.png"]')).toBeVisible({
       timeout: 30_000,
     });
+    // The tile carries no upload chrome: no progress ring inside it, no busy
+    // box around it, and a real picture.
     await expect(
-      page.locator('[title="picker.png"] .animate-spinner-orbit'),
+      page.locator('[title="picker.png"] [role="progressbar"]'),
     ).toHaveCount(0);
+    await expect(
+      page.locator('[aria-busy="true"]:has([title="picker.png"])'),
+    ).toHaveCount(0);
+    await expect(page.locator('img[alt="picker.png"]').first()).toHaveAttribute(
+      "src",
+      /\S/,
+    );
     if (isDeployedTarget()) {
       expect(response.ok()).toBe(true);
       await expect(page).toHaveURL(/\/projects\/[^/]+\/sessions\/[^/]+/, {
@@ -399,80 +473,6 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     });
     try {
       if (projectFixture) await projectFixture.dispose();
-    } finally {
-      await deleteAuthUser(user.id, authOptions);
-    }
-  }
-});
-
-test("28 — eager composer completed draft reload contains metadata only", async ({
-  page,
-}, testInfo) => {
-  const env = loadEnv();
-  const email = `e2e-eager-draft-${randomUUID()}@example.test`;
-  const user = await createAuthUser(email, authOptions);
-  let projectId: string | undefined;
-  try {
-    const auth = await signIn(email, authOptions);
-    const accounts = await api<{ account_id: string }[]>(
-      auth.access_token,
-      "GET",
-      "/accounts",
-    );
-    const project = await createDatabaseProject(env, {
-      accountId: accounts[0].account_id,
-      userId: user.id,
-      name: `Eager Draft ${Date.now()}`,
-    });
-    projectId = project.id;
-    await installBrowserSessionDirect(
-      page,
-      auth,
-      `/projects/${project.id}`,
-      authOptions,
-    );
-    await dismissOnboarding(page);
-
-    await page.locator("input[type=file]").setInputFiles({
-      name: "draft-safe.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("draft-safe"),
-    });
-    await expect(page.getByText(/^(Uploading|Processing|Waiting)/)).toHaveCount(
-      0,
-      {
-        timeout: 20_000,
-      },
-    );
-    const key = `kortix_draft:project:${project.id}`;
-    await expect
-      .poll(() =>
-        page.evaluate((draftKey) => localStorage.getItem(draftKey), key),
-      )
-      .not.toBeNull();
-    const raw = await page.evaluate(
-      (draftKey) => localStorage.getItem(draftKey),
-      key,
-    );
-    expect(raw).not.toContain("blob:");
-    expect(raw).not.toContain("data:");
-    expect(raw).not.toContain("signed");
-    expect(raw).toContain("attachment_id");
-
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("draft-safe.txt", { exact: true })).toBeVisible(
-      { timeout: 30_000 },
-    );
-    await expect(
-      page.getByRole("button", { name: "Remove draft-safe.txt" }),
-    ).toBeVisible();
-    await testInfo.attach("eager-composer-draft-restored", {
-      body: await page.screenshot(),
-      contentType: "image/png",
-    });
-  } finally {
-    try {
-      if (projectId) await deleteDatabaseProject(env, projectId);
     } finally {
       await deleteAuthUser(user.id, authOptions);
     }

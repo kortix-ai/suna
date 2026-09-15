@@ -13,14 +13,15 @@ import {
   parseReplyContext,
   parseSessionReferences,
 } from '@/features/session/message-parsing';
+import type { SentAttachment } from '@/features/session/sent-attachment-previews';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   BUBBLE_SURFACE,
   BUBBLE_TEXT,
   MessageAttachments,
-  UserMessageActions,
   type AttachmentUploadStatus,
   type NormalizedAttachment,
+  UserMessageActions,
 } from '@/features/session/turn/user-message';
 import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
@@ -71,10 +72,10 @@ export function OptimisticTurn({
    *
    * A reload throws away the composer's optimistic state, so the durable
    * queued row is all that is left — and it knows the names, never the bytes
-   * (the upload has not landed, and the row is polled). Without them a
-   * refreshed tab drew a bare sentence for a send of seven attachments and the
-   * user could not tell a stuck upload from a prompt that never had files.
-   * Rendered without an open action until a runtime path exists.
+   * (the runtime has not received the files yet, and the row is polled).
+   * Without them a refreshed tab drew a bare sentence for a send of seven
+   * attachments, and the user could not tell a send with files from one
+   * without. Rendered without an open action until a runtime path exists.
    */
   attachments: staged,
   /**
@@ -100,7 +101,7 @@ export function OptimisticTurn({
   agentNames?: string[];
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
-  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  attachments?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
   sessionId?: string;
   busy?: boolean;
@@ -135,7 +136,7 @@ function OptimisticUserBubble({
   agentNames?: string[];
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
-  staged?: ReadonlyArray<{ filename: string; mime: string }>;
+  staged?: ReadonlyArray<SentAttachment>;
   uploadStatus?: AttachmentUploadStatus;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
@@ -155,17 +156,16 @@ function OptimisticUserBubble({
   // language, so the optimistic bubble and the server turn never disagree.
   const attachments = useMemo((): NormalizedAttachment[] => {
     const fromText = files.map((f, i) => ({
-      // Position first: an in-flight ref has no path to key on, and two
-      // attachments with the same name would otherwise share a key.
-      key: `optimistic:${i}:${f.pending ?? f.path}`,
+      // The attachment identity keys the tile, so the real turn keeps it. A
+      // ref without one falls back to its position.
+      key: f.attachment ? `attachment:${f.attachment}` : `optimistic:${i}:${f.path}`,
+      ...(f.attachment ? { id: f.attachment } : {}),
       filename: getFilename(f.filename || f.path),
       mime: f.mime,
-      // An upload that has not landed has no sandbox path to resolve. Passing
-      // the old PREDICTED path made the tile fetch a file that did not exist.
+      // A file the runtime does not hold yet has no sandbox path to resolve.
+      // The sent picture comes from the identity (`sent-attachment-previews`).
       src: deferPreview ? undefined : f.path || undefined,
       path: deferPreview ? undefined : f.path || undefined,
-      // `pending` in the serialized ref is an attachment identity, not browser
-      // upload progress. No path already keeps this tile inert.
     }));
 
     // A file that already landed is BOTH a text ref and (after a reload) a
@@ -174,7 +174,9 @@ function OptimisticUserBubble({
     const fromStaged = (staged ?? [])
       .filter((file) => !drawn.has(file.filename))
       .map((file, i) => ({
-        key: `staged:${i}:${file.filename}`,
+        // A remembered sent identity keys the tile and finds its picture.
+        key: file.id ? `attachment:${file.id}` : `staged:${i}:${file.filename}`,
+        ...(file.id ? { id: file.id } : {}),
         filename: file.filename,
         mime: file.mime,
         // No `src`/`path`: the runtime cannot preview or open this tile yet.

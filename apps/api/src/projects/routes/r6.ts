@@ -192,6 +192,12 @@ projectsApp.openapi(
   // members through via project.write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
+  // Release prompt attachments first. After the irreversible purge below, a
+  // failed release would leave an active project without its repository; after
+  // the archive, the project answers 404, so a release could never be retried.
+  const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
+  await releasePromptAttachmentsForProject(projectId);
+
   // Archiving is recoverable by default. Only an explicit purge permanently
   // deletes a Kortix-managed upstream; user-connected/BYO repositories are
   // always left untouched. Delete before hiding the project so provider

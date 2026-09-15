@@ -14,7 +14,6 @@
     "codeDescription": "Da alles Code in einem Repository ist, kann das System seinen eigenen Bauplan lesen, sich erweitern und beim Wachstum stabil bleiben. Es ist vollständig erweiterbar, kontrollierbar und selbst hostbar. Nichts ist eine Blackbox."
   },
   "common": {
-    "workspaceWaiting": "Warten auf den Arbeitsbereich…",
     "cancel": "Abbrechen",
     "save": "Speichern",
     "saving": "Wird gespeichert...",
@@ -9334,17 +9333,18 @@
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Auffüllen",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Plan verwalten",
     "composerAttachments": {
-      "couldNotRestore": "Anhänge konnten nicht wiederhergestellt werden",
       "couldNotAttach": "Dateien konnten nicht angehängt werden",
-      "couldNotRemove": "Anhang konnte nicht entfernt werden",
       "couldNotRetry": "Anhang konnte nicht erneut hochgeladen werden",
-      "notReady": "Anhänge sind noch nicht bereit",
-      "uploadFailed": "Upload fehlgeschlagen",
-      "retry": "Erneut versuchen",
-      "retryNamed": "{name} erneut versuchen",
-      "processing": "Wird verarbeitet",
-      "waiting": "Warten",
-      "uploading": "Upload läuft: {progress} %"
+      "couldNotSend": "Nicht gesendet",
+      "failedBlocksSend": "Wiederholen oder entfernen Sie den fehlgeschlagenen Anhang.",
+      "uploadFailed": "Upload fehlgeschlagen. Prüfen Sie Ihre Verbindung.",
+      "retryNamed": "Upload von {name} erneut versuchen",
+      "didNotUpload": "{name} wurde nicht hochgeladen.",
+      "billingRequired": "Ihr Tarif oder Guthaben erlaubt derzeit keine Uploads.",
+      "budgetExceeded": "Zu viele nicht gesendete Uploads. Nicht verwendete Uploads laufen innerhalb von 24 Stunden ab.",
+      "tooLarge": "Diese Datei ist größer als 50 MiB.",
+      "expired": "Dieser Upload ist abgelaufen. Entfernen Sie ihn und hängen Sie die Datei erneut an.",
+      "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
     },
     "i18nComplete": {
       "text25ab55af92b1": "Anhang-Upload gestartet",

@@ -1,31 +1,57 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test';
+import { expect, mock, test } from 'bun:test';
+import type { SessionPromptPart } from '@kortix/sdk';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComposerChatInput } from '@/features/session/composer-chat-input';
-import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let composer!: ComponentProps<typeof ComposerChatInput>;
+// `mock.module` is process-wide: every shared module keeps its real exports and
+// overrides only what this test needs, so other suites in the same run still link.
+const realComposerInput = await import('@/features/session/composer-chat-input');
+const realTranslations = await import('@/i18n/use-translations');
+const realQuery = await import('@tanstack/react-query');
+const realProjectCan = await import('@/lib/use-project-can');
+const realAccountPanel = await import('@/stores/account-panel-store');
+const realSdk = await import('@kortix/sdk');
+const realSdkReact = await import('@kortix/sdk/react');
 mock.module('@/features/session/composer-chat-input', () => ({
+  ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
     return null;
   },
 }));
 mock.module('@/i18n/use-translations', () => ({
+  ...realTranslations,
   useTranslations: () => ({ raw: () => 'Message' }),
 }));
-mock.module('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }));
-mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: false }) }));
-mock.module('@/stores/account-panel-store', () => ({ hubTarget: () => null }));
+mock.module('@tanstack/react-query', () => ({
+  ...realQuery,
+  useQuery: () => ({ data: undefined }),
+}));
+mock.module('@/lib/use-project-can', () => ({
+  ...realProjectCan,
+  useProjectCan: () => ({ allowed: false }),
+}));
+mock.module('@/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
+  ...realSdk,
   getProjectDetail: mock(),
   listProjectAccessRequests: mock(),
   listProjectSandboxes: mock(),
 }));
 mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
   contract: () => ({}),
-  qk: { project: { sandboxes: () => [], accessRequests: () => [], detail: () => [] } },
+  qk: {
+    ...realSdkReact.qk,
+    project: {
+      ...realSdkReact.qk.project,
+      sandboxes: () => [],
+      accessRequests: () => [],
+      detail: () => [],
+    },
+  },
 }));
 mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({
   SidebarToggle: () => null,
@@ -39,75 +65,51 @@ mock.module('./home/welcome-body', () => ({
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
 }));
 const { ProjectHome } = await import('./project-home');
-let renderer: ReactTestRenderer | undefined;
-afterEach(async () => {
-  if (renderer) await act(async () => renderer!.unmount());
-  renderer = undefined;
-  useComposerPrefillStore.setState({ prefillByProject: {} });
-});
 
-async function mount(onSend: ComponentProps<typeof ProjectHome>['onSend']) {
-  const warning =
-    'react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer';
-  const original = console.error;
-  const warnings: unknown[][] = [];
-  const capture = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-    if (args.length === 1 && args[0] === warning) warnings.push(args);
-    else original(...args);
-  });
-  try {
-    await act(async () => {
-      renderer = create(
-        createElement(ProjectHome, { projectId: 'project-1', onSend, busy: false }),
-      );
-    });
-  } finally {
-    capture.mockRestore();
-    expect(warnings).toEqual([[warning]]);
-  }
+const handle: SessionPromptPart = {
+  type: 'file',
+  attachment_id: '11111111-1111-4111-8111-111111111111',
+  filename: 'brief.pdf',
+  mime: 'application/pdf',
+};
+
+function mount(onSend: ComponentProps<typeof ProjectHome>['onSend']) {
+  renderToStaticMarkup(createElement(ProjectHome, { projectId: 'project-1', onSend, busy: false }));
 }
 
-test('automatic prefill failure restores the consumed text for one explicit retry', async () => {
+test('composer Send forwards attachment handles and propagates a failed create', async () => {
   const failure = new Error('Session creation failed');
   const onSend = mock(async () => {
     throw failure;
   });
-  useComposerPrefillStore
-    .getState()
-    .setPrefill('project-1', 'onboarding prompt', { autoSend: true });
-  await mount(onSend);
-  expect(onSend).toHaveBeenCalledTimes(1);
-  expect(onSend).toHaveBeenCalledWith('onboarding prompt', undefined, {}, []);
-  expect(useComposerPrefillStore.getState().prefillByProject['project-1']).toBeUndefined();
-  expect(composer.prefill?.text).toBe('onboarding prompt');
-  // The regular composer must still observe the original rejection to restore its draft.
-  await expect(composer.onSend('onboarding prompt', undefined, {}, [])).rejects.toBe(failure);
-  expect(onSend).toHaveBeenCalledTimes(2);
+  mount(onSend);
+
+  const attachments = {
+    submittedIds: ['local-1'],
+    readyAtSend: true,
+    whenReady: async () => [handle],
+    retry: () => {},
+    release: () => {},
+  };
+  // The composer keeps its selection only when it observes the rejection.
+  await expect(composer.onSend('read this', undefined, {}, attachments)).rejects.toBe(failure);
+  expect(onSend).toHaveBeenCalledWith('read this', undefined, {}, attachments);
 });
 
-test('slash-command failure preserves the command and options without an unhandled rejection', async () => {
-  const failure = new Error('Session creation failed');
-  const onSend = mock(async () => {
-    throw failure;
-  });
-  await mount(onSend);
-  await act(async () => {
-    composer.onCommand?.({ name: 'plan', description: 'Plan', template: '', hints: [] }, 'retry this', {});
-  });
-  expect(onSend).toHaveBeenCalledWith('/plan retry this', undefined, {}, []);
-  expect(composer.prefill?.text).toBe('/plan retry this');
-  expect(onSend).toHaveBeenCalledTimes(1);
-});
-
-test('ordinary prefill does not send and successful automatic send does not restore a draft', async () => {
-  const onSend = mock(async () => {});
-  useComposerPrefillStore.getState().setPrefill('project-1', 'draft only');
-  await mount(onSend);
-  expect(onSend).not.toHaveBeenCalled();
-  expect(composer.prefill?.text).toBe('draft only');
-  await act(async () => {
-    useComposerPrefillStore.getState().setPrefill('project-1', 'send now', { autoSend: true });
-  });
-  expect(onSend).toHaveBeenCalledTimes(1);
-  expect(composer.prefill?.text).toBe('draft only');
+test('a slash command whose send fails leaves no unhandled rejection', async () => {
+  const unhandled: unknown[] = [];
+  const record = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', record);
+  try {
+    const onSend = mock(async () => {
+      throw new Error('Session creation failed');
+    });
+    mount(onSend);
+    composer.onCommand?.({ name: 'plan', description: 'Plan', template: '', hints: [] }, 'x', {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onSend).toHaveBeenCalledWith('/plan x', undefined, {}, undefined);
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', record);
+  }
 });

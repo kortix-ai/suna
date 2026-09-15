@@ -3,7 +3,7 @@ import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
-import { abortable, abortableDelay } from './abort';
+import { abortable, abortableDelay, createAbortError } from './abort';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -37,6 +37,12 @@ export interface ApiClientOptions {
   showErrors?: boolean;
   errorContext?: ErrorContext;
   timeout?: number;
+  /**
+   * Keep `timeout` running until the response body is read. By default the
+   * deadline stops when headers arrive, so a large body is never cut off.
+   * Set it for requests whose server may stall after sending headers.
+   */
+  deadlineCoversBody?: boolean;
   /**
    * Override for the `fetch` implementation `backendApi.postStream` issues
    * the request with. Exists as an explicit injection point — not a global
@@ -168,7 +174,13 @@ async function makeRequest<T = any>(
   url: string,
   options: RequestInit & ApiClientOptions = {},
 ): Promise<ApiResponse<T>> {
-  const { showErrors = true, errorContext, timeout = 30000, ...fetchOptions } = options;
+  const {
+    showErrors = true,
+    errorContext,
+    timeout = 30000,
+    deadlineCoversBody = false,
+    ...fetchOptions
+  } = options;
 
   const controller = new AbortController();
   let activeController = controller;
@@ -182,7 +194,7 @@ async function makeRequest<T = any>(
   let didTimeout = false;
 
   try {
-    if (fetchOptions.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (fetchOptions.signal?.aborted) throw createAbortError();
     timeoutId = setTimeout(() => {
       if (!isAborted && !controller.signal.aborted) {
         isAborted = true;
@@ -282,8 +294,13 @@ async function makeRequest<T = any>(
       const retryableResponse =
         retryableRead && isTransientGatewayStatus(response.status) && attempt < maxAttempts - 1;
       if (!retryableResponse) {
-        // Headers do not complete a request. Keep this attempt's deadline
-        // active through final response parsing; the outer finally clears it.
+        // By default the deadline covers the wait for headers only, so a large
+        // body is never cut off. `deadlineCoversBody` keeps it running through
+        // final response parsing; the outer finally clears it.
+        if (!deadlineCoversBody && timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
         break;
       }
 
@@ -335,7 +352,7 @@ async function makeRequest<T = any>(
         }
       } catch {}
 
-      if (activeController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (activeController.signal.aborted) throw createAbortError();
       const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,

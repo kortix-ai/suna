@@ -68,43 +68,93 @@ const attachments = kortix.project(projectId).attachments.createController();
 const localId = attachments.add(file);
 const unsubscribe = attachments.subscribe(() => render(attachments.getSnapshot()));
 
-// Inside the submit handler, after uploads finish:
-const parts = attachments.getReadyParts(); // synchronous; throws while any file is unfinished
-const submittedIds = attachments.getSnapshot().attachments.map((item) => item.id);
-await kortix.session(projectId, sessionId).prompts.create({
-  clientMessageId,
-  messageId,
-  parts: [{ type: 'text', text }, ...parts],
-});
-attachments.forget(submittedIds); // successful handoff; does not delete storage objects
+// Inside the submit handler. Send never waits for uploads.
+const ids = attachments.getSnapshot().attachments.map((item) => item.id);
+attachments.submit(ids); // hand-off: the composer clears, the uploads continue
+paintMessage(text, ids);
+try {
+  const parts = await attachments.whenReady(ids); // handle-only parts, in `ids` order
+  await kortix.session(projectId, sessionId).prompts.create({
+    clientMessageId,
+    messageId,
+    parts: [{ type: 'text', text }, ...parts],
+  });
+  attachments.forget(ids); // release; does not delete storage objects
+} catch (error) {
+  attachments.reclaim(ids); // back to the composer, with the failed file's state
+}
 ```
 
 React consumers use `usePromptAttachments(projectId)` from `@kortix/sdk/react`.
-It returns the same controller methods plus reactive `attachments` and `canSend`.
-Call `getReadyParts()` in the submit handler even when a button uses `canSend`.
-This blocks an add-and-Enter event before React renders again.
+It returns the controller methods plus the reactive `attachments` list. It omits
+`dispose`, `subscribe`, and `getSnapshot`, and keeps its identity until the list
+changes.
 
 Files move through `pending`, `uploading`, `processing`, `ready`, `error`, or
-`aborted`. Progress counts acknowledged bytes. At 100%, `processing` still blocks
-Send until completion succeeds. The default concurrency is two files. Limits are
-50 MiB per file, 100 MiB per message, and 20 files. Empty files are rejected.
+`aborted`. Progress counts bytes sent. Progress snapshots are throttled: one per
+whole-percent change, at most ten per second per upload. The default concurrency
+is two files.
+Limits are 50 MiB per file, 100 MiB per message, and 20 files. Empty files are
+rejected. Refuse Send only while a selected file is `error` or `aborted`.
 
-`retry(localId)` resumes the same upload and preserves the original File.
-`remove(localId)` removes the tile and deletes unbound storage; a bound upload
-returns a typed 409. `abort(localId)` cancels unfinished work. `dispose()` aborts
-unfinished work without deleting completed uploads. Call it on non-React cleanup;
-the hook handles unmount and project changes. Unused uploads expire after 24 hours.
+`whenReady(ids, { signal })` resolves once every upload is `ready`. It rejects
+when one fails, is aborted or removed, or `signal` aborts. A rejected wait does
+not stop the upload.
 
-Persist only a ready item's `attachment` metadata in a user/project-bound draft.
-`restore(metadata)` validates it and its expiry. It never stores a File, blob URL,
-or signed URL. An expired restored item requires the user to attach the file again.
-Keep the selection after a failed send; call `forget` only after accepted submission.
+Ownership: `submit(ids)` hands entries to one send. They leave `attachments` and
+stop counting toward the limits. `dispose()` aborts and deletes only listed
+work, so a composer that unmounts after Send (a navigation, a remount) does not
+cancel its held uploads. The controller object lives as long as the send's `whenReady`
+promise references it. Call `forget(ids)` after the prompt POST succeeds, or
+`reclaim(ids)` when a failed send restores its draft. `forget()` with no argument
+releases only the listed selection. A host that keeps a failed send on screen
+keeps its entries: `retry(id)` reaches a handed-off entry after `dispose()`.
+
+`retry(localId)` resumes the same upload and preserves the original File. After
+`attachment_size_mismatch` or `attachment_failed` the server keeps no usable
+handle, so `retry` uploads the File again as a new attachment. An expired upload
+cannot retry: `retry` throws, and the item error carries code
+`attachment_expired`. `remove(localId)` removes the entry, aborts its upload, and
+resolves at once. It deletes unbound storage best-effort and never rejects; a
+failed or refused DELETE leaves the object to the 24-hour expiry.
+`abort(localId)` cancels unfinished work. `dispose()` aborts listed work and
+deletes its uploads best-effort: no send holds them, and drafts keep no handle.
+Call it on non-React cleanup; the hook handles unmount and project changes.
+Unused uploads expire after 24 hours.
+
+Selections live in memory only. Never persist a File, blob URL, signed URL, or
+upload handle in a draft.
 
 For non-composer uploads, call `kortix.project(projectId).attachments.upload(file,
-{ signal, onProgress, onUpload, resume })`. Retain the `onUpload` handle for manual
-same-ID recovery. Chunks retry transient failures up to two times. Completion
-polls retryable server responses for up to five minutes, plus the current request's
-30-second deadline. Caller abort and client timeout never auto-retry.
+{ signal, onProgress, onUpload, resume })`. The server selects the transport in the
+handle's `upload` field:
+
+- `kind: 'direct'` (default): one `PUT` of the whole file to `upload.url` with
+  `upload.headers` and no Authorization header. Hosts with `XMLHttpRequest`
+  (browsers, React Native) report sent bytes; other hosts use `fetch` and report
+  0, then the full size. An expired URL, or one Storage refuses with 400/401/403,
+  is re-signed once for the same `attachment_id`; the server creates no second
+  upload. A `409` from Storage means an earlier attempt already stored the file.
+- `kind: 'chunked'`: sequential authenticated `PUT`s of `upload.chunk_size` bytes.
+  The SDK accepts any positive `chunk_size`. Only a deployment whose edge drops
+  large request bodies selects it.
+
+Completion then verifies the stored bytes. Retain the `onUpload` handle for manual
+same-ID recovery. If completion answers `409 attachment_not_uploaded`, `onUpload`
+reports the direct handle with `received_bytes: 0`, so a resume sends the file
+again. Initiation, the upload, and completion retry timeouts, network errors,
+429, and 5xx with jittered exponential backoff. The budget is 60 seconds from the
+first failure, so a long upload that fails late still retries. Completion also
+retries `attachment_processing`, with a five-minute budget. Initiation never
+retries 402 (a `BillingError`: the account cannot run) or 429
+`attachment_budget_exceeded` (40 unfinished uploads or 500 MiB of unsent uploads
+for the user; unused uploads expire within 24 hours). The server answers or
+refuses one completion within 105 seconds; each completion request allows 120
+seconds. Caller aborts never retry.
+
+A sent attachment's reference is released 1 hour after its prompt is delivered,
+and when its session or project is deleted. The next maintenance sweep then
+removes the file, and its `attachment_id` can no longer be sent.
 Completed `attachment_id` parts use platform prompt routes. Runtime `sendParts`
 continues to accept runtime URL parts. Legacy platform URL parts remain supported.
 
@@ -608,19 +658,6 @@ React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-fre
 `createHttpSessionSyncController` for message history, status recovery, and older
 pagination. Mobile keeps its platform-specific event transport because React
 Native cannot consume the SDK's fetch-based SSE stream.
-
-Transcript synchronization binds each OpenCode session id to one runtime URL.
-Navigation cannot redirect an existing controller or an export's later pages.
-When the last React consumer leaves, the controller cancels automatic retries.
-A final turn-end read can finish against its original runtime. Its failure cannot
-restart retries. Opening the session again reconciles its tail.
-
-An OpenCode JSON `404` with `name: 'NotFoundError'` produces
-`SessionNotFoundOnRuntimeError`, exported from `@kortix/sdk`. That controller
-stays in `freshness: 'error'` and stops reading the missing session/runtime pair.
-A replacement runtime creates a new controller. Proxy HTML and not-running
-`404` responses remain wakeable. The React hook waits for a runtime URL before
-creating a controller; server mirror messages can render during that wait.
 
 ## Rules of the road
 

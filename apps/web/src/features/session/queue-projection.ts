@@ -1,5 +1,10 @@
+import type { MessageWithParts } from '@/ui';
+import { promptFileReferenceXml } from '@kortix/shared';
 import type { SessionPrompt } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
+
+import type { SentAttachment } from './sent-attachment-previews';
+import type { AttachmentUploadStatus } from './turn/user-message';
 
 /**
  * What the transcript's queued bubbles (`turn/queued-prompt-bubbles.tsx`)
@@ -22,11 +27,10 @@ export interface QueueRow {
   id: string;
   text: string;
   lastError?: string;
-  blockedReason?: 'runtime_stale';
   /** The row's files, by name and type only — see `projectQueueRows`. */
   attachments?: ReadonlyArray<{ filename: string; mime: string }>;
   /** Present only when the accepted row failed before runtime delivery. */
-  uploadStatus?: { state: 'uploading' } | { state: 'failed'; message: string };
+  uploadStatus?: { state: 'failed'; message?: string };
 }
 
 export interface QueueProjection {
@@ -63,7 +67,6 @@ export function projectQueueRows(input: {
     const row: QueueRow = {
       id: prompt.prompt_id,
       text: prompt.text,
-      ...(prompt.reason === 'runtime_stale' ? { blockedReason: 'runtime_stale' as const } : {}),
       ...(prompt.last_error ? { lastError: prompt.last_error } : {}),
       // The row's files, by name — the only thing a bubble can draw for bytes
       // that are still travelling to the box. On a WARM box the transcript
@@ -80,7 +83,7 @@ export function projectQueueRows(input: {
               ? {
                   uploadStatus: {
                     state: 'failed',
-                    message: prompt.last_error ?? 'Upload failed',
+                    ...(prompt.last_error ? { message: prompt.last_error } : {}),
                   } as const,
                 }
               : {}),
@@ -138,4 +141,114 @@ export function projectQueueRows(input: {
   }
 
   return { queued, failed, inFlightIds, held };
+}
+
+/** A send the boot shell painted on Enter, before any durable row lists it. */
+export interface ShellExtraSend {
+  id: string;
+  text: string;
+  attachments: ReadonlyArray<SentAttachment>;
+  /** Its uploads or POST failed: the bubble stays, with Retry. */
+  uploadStatus?: AttachmentUploadStatus;
+}
+
+/**
+ * The boot shell's queue behind the first prompt: every durable row after the
+ * first, plus the sends this shell made that no row lists yet (matched by text,
+ * which is all the list view carries).
+ *
+ * A row that lists a shell send keeps that send's id (the bubble key) and its
+ * attachment ids by index (the tile keys). The row's attachments carry only
+ * `filename`/`mime`, so without this the bubble remounted and lost its picture.
+ */
+export function projectQueuedBehindFirst(
+  prompts: ReadonlyArray<Pick<SessionPrompt, 'prompt_id' | 'text' | 'attachments'>>,
+  extraSends: ReadonlyArray<ShellExtraSend>,
+): ShellExtraSend[] {
+  // The same rule `queuedPromptMessages` uses: an attachment-only prompt is a real message.
+  const rows = prompts.filter((p) => p.text.trim().length > 0 || (p.attachments?.length ?? 0) > 0);
+  const unclaimed = [...extraSends];
+  const behind: ShellExtraSend[] = rows.slice(1).map((p) => {
+    const files = p.attachments ?? [];
+    const index = unclaimed.findIndex((extra) => extra.text.trim() === p.text.trim());
+    if (index < 0) return { id: p.prompt_id, text: p.text, attachments: files };
+    const [extra] = unclaimed.splice(index, 1);
+    return {
+      id: extra.id,
+      text: p.text,
+      attachments: files.map((file, i) => {
+        const id = extra.attachments[i]?.id;
+        return id ? { ...file, id } : file;
+      }),
+    };
+  });
+  const listed = new Set(rows.map((p) => p.text.trim()));
+  for (const extra of extraSends) {
+    if (!listed.has(extra.text.trim())) behind.push(extra);
+  }
+  return behind;
+}
+
+/**
+ * Queue rows the transcript does not hold yet, as SYNTHETIC user messages for
+ * the one turn list, so a queued prompt never renders below newer turns.
+ *
+ * A row's clock is the SENDER TAB's, and the box stamps real messages from its
+ * own: a box ~1 s ahead sorted a fresh row ABOVE the previous turn (measured).
+ * Every synthetic time is floored just past the newest real stamp, keeping the
+ * rows' own order. The echo arrives under the same `message_id`, so the
+ * synthetic turn becomes the real one in place.
+ *
+ * A row's files ride in its text as path-less `<file>` refs, the form a sent
+ * message draws: a reloaded tab draws one named tile per file.
+ */
+export function queuedPromptMessages(input: {
+  sessionId: string;
+  messages: ReadonlyArray<{ info: unknown }> | undefined;
+  prompts: readonly SessionPrompt[];
+  claimedIds: ReadonlySet<string>;
+}): MessageWithParts[] {
+  let floor = 0;
+  for (const message of input.messages ?? []) {
+    const created = (message.info as { time?: { created?: number } }).time?.created;
+    if (typeof created === 'number' && created > floor) floor = created;
+  }
+  const out: MessageWithParts[] = [];
+  let previous = floor;
+  for (const prompt of input.prompts) {
+    if (prompt.state === 'failed') continue;
+    const files = prompt.attachments ?? [];
+    if (!prompt.text.trim() && files.length === 0) continue;
+    if (prompt.message_id && input.claimedIds.has(prompt.message_id)) continue;
+    if (prompt.wire_message_id && input.claimedIds.has(prompt.wire_message_id)) continue;
+    if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
+    const id = prompt.message_id || `queued-${prompt.prompt_id}`;
+    const sentAt =
+      typeof prompt.client_sent_at_ms === 'number'
+        ? prompt.client_sent_at_ms
+        : Date.parse(prompt.created_at);
+    const createdMs = Math.max(sentAt, previous + 1);
+    previous = createdMs;
+    const refs = files
+      .map((file) => promptFileReferenceXml({ path: '', mime: file.mime, filename: file.filename }))
+      .join('\n');
+    out.push({
+      info: {
+        id,
+        sessionID: input.sessionId,
+        role: 'user',
+        time: Number.isFinite(createdMs) ? { created: createdMs } : {},
+      },
+      parts: [
+        {
+          id: `syn-${prompt.prompt_id}`,
+          messageID: id,
+          sessionID: input.sessionId,
+          type: 'text',
+          text: [prompt.text, refs].filter(Boolean).join('\n\n'),
+        },
+      ],
+    } as unknown as MessageWithParts);
+  }
+  return out;
 }

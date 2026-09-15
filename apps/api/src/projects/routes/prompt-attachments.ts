@@ -6,6 +6,7 @@ import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import {
+  assertChunkedPromptAttachmentUpload,
   beginPromptAttachment,
   completePromptAttachment,
   deletePromptAttachment,
@@ -21,6 +22,16 @@ const metadata = z.object({
   size: z.number(),
   expires_at: z.string(),
 });
+const uploadTarget = z.union([
+  z.object({
+    kind: z.literal('direct'),
+    url: z.string().url(),
+    method: z.literal('PUT'),
+    headers: z.record(z.string(), z.string()),
+    expires_at: z.string(),
+  }),
+  z.object({ kind: z.literal('chunked'), chunk_size: z.number().int().positive() }),
+]);
 const scopeParams = z.object({ projectId: z.string().uuid(), attachmentId: z.string().uuid() });
 const descriptor = z.object({
   version: z.literal(1),
@@ -98,7 +109,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/attachments',
     tags: ['sessions'],
-    summary: 'Begin a private prompt attachment upload',
+    summary: 'Begin a private prompt attachment upload, or re-sign an unfinished one',
     ...auth,
     request: {
       params: z.object({ projectId: z.string().uuid() }),
@@ -106,6 +117,8 @@ projectsApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
+              // Present only to obtain a fresh upload target for the same upload.
+              attachment_id: z.string().uuid().optional(),
               filename: z.string().min(1).max(1024),
               mime: z.string().max(255),
               size: z.number(),
@@ -115,8 +128,9 @@ projectsApp.openapi(
       },
     },
     responses: {
-      201: json(metadata.extend({ chunk_size: z.number() }), 'Upload handle'),
-      ...errors(400, 401, 403, 404, 413),
+      201: json(metadata.extend({ upload: uploadTarget }), 'Upload handle'),
+      // 402: the prompt path's billing error. 429: attachment_budget_exceeded.
+      ...errors(400, 401, 402, 403, 404, 409, 413, 429, 503),
     },
   }),
   async (c) => {
@@ -132,7 +146,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/attachments/{attachmentId}/chunks/{index}',
     tags: ['sessions'],
-    summary: 'Upload one ordered attachment chunk (64 KiB maximum)',
+    summary: 'Upload one ordered attachment chunk (chunked upload mode only)',
     ...auth,
     request: {
       params: scopeParams.extend({ index: z.string().regex(/^\d{1,4}$/) }),
@@ -150,6 +164,7 @@ projectsApp.openapi(
   async (c) => {
     const owner = await scope(c);
     if (!owner) return c.json({ error: 'Not found' }, 404);
+    assertChunkedPromptAttachmentUpload();
     const { attachmentId, index } = c.req.valid('param');
     return c.json(
       await uploadPromptAttachmentChunk(

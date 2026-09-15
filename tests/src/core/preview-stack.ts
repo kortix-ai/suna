@@ -289,6 +289,9 @@ export function applyPreviewEnvironment(
     PUBLIC_URL: origin,
     API_PUBLIC_URL: origin,
     SUPABASE_PUBLIC_URL: origin,
+    // The preview edge drops request bodies above ~124 KiB, and browser Storage
+    // uploads cross the same origin. Attachments use bounded API chunks here.
+    PROMPT_ATTACHMENT_UPLOAD_MODE: 'chunked',
     KORTIX_URL: origin,
     FRONTEND_URL: origin,
     SITE_URL: origin,

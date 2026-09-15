@@ -199,6 +199,27 @@ export async function createDatabaseSession(
   return sessionId;
 }
 
+/** Read one prompt attachment's retention state: remaining references, and whether the cleanup sweep may remove it now. */
+export async function readDatabasePromptAttachmentRetention(
+  env: Env,
+  attachmentId: string,
+  open: OpenProjectDb = openProjectDb,
+): Promise<{ references: number; due: boolean }> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "read attachment retention for");
+  const client = await open(databaseUrl);
+  try {
+    const result = (await client.query(
+      `SELECT
+         (SELECT count(*)::int FROM kortix.prompt_attachment_references WHERE attachment_id = $1::uuid) AS "references",
+         COALESCE((SELECT expires_at <= now() FROM kortix.prompt_attachments WHERE attachment_id = $1::uuid), true) AS due`,
+      [attachmentId],
+    )) as { rows: Array<{ references: number; due: boolean }> };
+    return result.rows[0]!;
+  } finally {
+    await client.end();
+  }
+}
+
 /** Bind a freshly minted project PAT to one synthetic live session for internal-route flows. */
 export async function bindDatabaseSessionCredential(
   env: Env,

@@ -78,6 +78,7 @@ import {
 } from '../prompt-wire-id-repair';
 import {
   PROXY_RETRY_BUDGET_MS,
+  isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
   proxyAttemptTimeoutMs,
@@ -1157,7 +1158,11 @@ export async function forwardToSandbox(
   // already wrote does not get absorbed — it lands a SECOND file. With this loop
   // retrying up to 4 times and the SDK retrying up to 3 on top, one user action
   // could deposit up to 12 copies and still report failure.
-  const uploadDelivery = isUploadRequest({ method, path: remainingPath });
+  // An attachment import is the same class: the daemon downloads the file and
+  // does not observe a disconnect, so a replay downloads it a second time.
+  const uploadDelivery =
+    isUploadRequest({ method, path: remainingPath }) ||
+    isFileImportRequest({ method, path: remainingPath });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.

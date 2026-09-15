@@ -9,7 +9,6 @@ import type { ComposerEditorHandle } from '../editor/composer-editor';
 import type { AttachedFile } from '../types';
 import {
   type DraftScope,
-  type CompletedDraftAttachment,
   type StoredDraft,
   draftScopeKey,
   serializeDraft,
@@ -31,8 +30,6 @@ export interface UseComposerDraftInput {
   /** The editor element exists, so the handle's methods are safe to call. */
   editorReady: boolean;
   attachedFiles: readonly AttachedFile[];
-  /** Completed SDK metadata. Never includes File objects or signed URLs. */
-  attachments: readonly CompletedDraftAttachment[];
   /** An explicit prefill outranks a stored draft — see `shouldRestoreDraft`. */
   hasPrefill: boolean;
   /** Called once, with the validated draft, when it is this draft's turn. */
@@ -60,7 +57,6 @@ export function useComposerDraft({
   editorRef,
   editorReady,
   attachedFiles,
-  attachments,
   hasPrefill,
   onRestore,
 }: UseComposerDraftInput): UseComposerDraftResult {
@@ -74,7 +70,6 @@ export function useComposerDraft({
   const scopeRef = useRef(scope);
   const userIdRef = useRef(userId);
   const filesRef = useRef(attachedFiles);
-  const attachmentsRef = useRef(attachments);
   const pendingRef = useRef<{ doc: JSONContent; isEmpty: boolean } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
@@ -88,9 +83,6 @@ export function useComposerDraft({
   useEffect(() => {
     filesRef.current = attachedFiles;
   }, [attachedFiles]);
-  useEffect(() => {
-    attachmentsRef.current = attachments;
-  }, [attachments]);
 
   /**
    * Write whatever is pending, now.
@@ -116,7 +108,6 @@ export function useComposerDraft({
         doc: pending.doc,
         documentIsEmpty: pending.isEmpty,
         files: filesRef.current,
-        attachments: attachmentsRef.current,
         userId: userIdRef.current,
       }),
     );
@@ -185,46 +176,6 @@ export function useComposerDraft({
     const stored = readDraft(scope, userId);
     if (stored) onRestore(stored);
   }, [scope, userId, editorReady, hasPrefill, editorRef, onRestore]);
-
-  // File-only edits do not fire TipTap's onDocChange. Persist them from their
-  // safe identity fields after draft restoration has had its first chance to
-  // run. Pending local files contribute nothing until the SDK returns a
-  // completed handle, so File objects and blob URLs never cross this boundary.
-  const persistenceSignature = JSON.stringify({
-    scope: scope ? draftScopeKey(scope) : null,
-    userId,
-    files: attachedFiles
-      .filter((file) => file.kind === 'remote')
-      .map((file) => [file.url, file.filename, file.mime]),
-    attachments: attachments.map((attachment) => [
-      attachment.uploadId,
-      attachment.attachment_id,
-      attachment.filename,
-      attachment.mime,
-      attachment.size,
-      attachment.expires_at,
-    ]),
-  });
-  const persistenceSignatureRef = useRef(persistenceSignature);
-  useEffect(() => {
-    if (!enabled || !editorReady) return;
-    if (persistenceSignatureRef.current === persistenceSignature) return;
-    persistenceSignatureRef.current = persistenceSignature;
-    const editor = editorRef.current;
-    if (!editor) return;
-    pendingRef.current = {
-      doc: editor.getDocument() ?? { type: 'doc', content: [{ type: 'paragraph' }] },
-      isEmpty: editor.isEmpty(),
-    };
-    if (timerRef.current !== null) clearTimeout(timerRef.current);
-    const timer = setTimeout(flush, SAVE_DEBOUNCE_MS);
-    timerRef.current = timer;
-    return () => {
-      if (timerRef.current !== timer) return;
-      clearTimeout(timer);
-      timerRef.current = null;
-    };
-  }, [enabled, editorReady, editorRef, flush, persistenceSignature]);
 
   return { handleDocChange, clearSavedDraft };
 }

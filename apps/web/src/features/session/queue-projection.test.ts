@@ -19,13 +19,6 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
 }
 
 describe('projectQueueRows', () => {
-  test('a stale runtime row remains queued and carries its waiting reason', () => {
-    const projection = projectQueueRows({
-      prompts: [prompt({ reason: 'runtime_stale', last_error: 'runtime stale' })],
-    });
-    expect(projection.failed).toEqual([]);
-    expect(projection.queued[0]).toMatchObject({ id: 'cmd-1', blockedReason: 'runtime_stale' });
-  });
   test('a delivering row is RENDERED, and locked — not dropped from the strip', () => {
     // A prompt typed mid-turn is forwarded within seconds and reads
     // `delivering` for the whole of the turn in front of it. It is not painted
@@ -240,10 +233,7 @@ test('a failed row names the failure on its attachments', () => {
       },
     ],
   });
-  expect(failed[0]?.uploadStatus).toEqual({
-    state: 'failed',
-    message: 'photo.jpg — upload failed (503)',
-  });
+  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed', message: 'photo.jpg — upload failed (503)' });
 });
 
 test('a text-only row carries no attachment fields at all', () => {
@@ -271,6 +261,25 @@ test('a text-only row carries no attachment fields at all', () => {
 // The API writes `last_error` on rows it keeps `queued` and retries, and never
 // clears it on success. Read as a failure, every transient retry said "upload
 // failed" (review finding, 2026-09-05).
+test('a failed row with no last_error is failed with no invented message', () => {
+  const { failed } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'failed-quiet',
+        client_message_id: 'client-quiet',
+        message_id: null,
+        wire_message_id: null,
+        text: 'with a file',
+        state: 'failed',
+        reason: null,
+        last_error: null,
+        attachments: [{ filename: 'a.png', mime: 'image/png' }],
+      } as never,
+    ],
+  });
+  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed' });
+});
+
 test('a queued row with a stale last_error does not invent upload progress or failure', () => {
   const { queued } = projectQueueRows({
     prompts: [

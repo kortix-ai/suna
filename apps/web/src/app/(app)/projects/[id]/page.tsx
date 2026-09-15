@@ -2,7 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { stageFirstPromptAttachments } from '@/features/session/uploaded-file-refs';
+import { promptFileParts } from '@/features/session/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
@@ -22,8 +22,14 @@ import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, type SessionPromptPart } from '@kortix/sdk';
-import { contract, qk, writeStartStash } from '@kortix/sdk/react';
+import {
+  attachmentFailureReason,
+  postWhenUploaded,
+  SENT_FAILURE_COPY,
+  type AttachmentSubmission,
+} from '@/features/session/composer/attachment-submission';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk, startSessionWithPrompt, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,6 +40,7 @@ const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-
 
 export default function ProjectIndexPage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const pathname = usePathname();
@@ -98,7 +105,7 @@ export default function ProjectIndexPage() {
       text: string,
       files: AttachedFile[] | undefined,
       options?: ProjectHomeSendOptions,
-      attachmentParts: SessionPromptPart[] = [],
+      attachments?: AttachmentSubmission,
     ) => {
       if (!text.trim() && !files?.length) return;
 
@@ -126,31 +133,50 @@ export default function ProjectIndexPage() {
       // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
       // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
-      // The project-scoped upload handles already exist. The create and warm
-      // claim paths bind those handles into the durable prompt row without
-      // reading the bytes again at Send time.
-      let parts: Awaited<ReturnType<typeof stageFirstPromptAttachments>>;
-      try {
-        parts = await stageFirstPromptAttachments(files, attachmentParts);
-      } catch (error) {
-        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
-        setSending(false);
-        throw error;
+      // Send time, not POST time. A held POST lands after the uploads, and the
+      // server orders rows by this stamp: a message sent on the session page
+      // meanwhile must still follow this one.
+      const sentAtMs = Date.now();
+      // Uploads still running at Send never hold the paint. The session is
+      // created (or the warm one taken) and opened now, and the first-prompt
+      // preview draws the message. Only the prompt POST waits for the uploads:
+      // the create cannot carry a prompt whose upload handles do not exist yet.
+      // Uploads already finished keep the create carrying the prompt.
+      const heldAttachments = attachments && !attachments.readyAtSend ? attachments : undefined;
+      let parts: ReturnType<typeof promptFileParts> = [];
+      if (!heldAttachments) {
+        try {
+          const attachmentParts = attachments ? await attachments.whenReady() : [];
+          parts = promptFileParts(files, attachmentParts);
+        } catch (error) {
+          errorToast(
+            error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'),
+          );
+          setSending(false);
+          throw error;
+        }
       }
-      await new Promise<void>((resolve, reject) => {
+      const sessionId = await new Promise<string>((resolve, reject) => {
         newSession({
           create: {
             ...buildNewSessionCreateInput(options),
-            pending_prompt: {
-              text,
-              agent: options?.agent ?? null,
-              model: options?.model ?? null,
-              variant: options?.variant ?? null,
-              attachment_names:
-                files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ??
-                [],
-              ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
-            },
+            ...(heldAttachments
+              ? {}
+              : {
+                  pending_prompt: {
+                    text,
+                    agent: options?.agent ?? null,
+                    model: options?.model ?? null,
+                    variant: options?.variant ?? null,
+                    attachment_names:
+                      files?.map((file) =>
+                        file.kind === 'local' ? file.file.name : file.filename,
+                      ) ?? [],
+                    ...(parts.length > 0
+                      ? { parts: [{ type: 'text' as const, text }, ...parts] }
+                      : {}),
+                  },
+                }),
           },
           scope: options?.scope,
           // Create failed (already surfaced by the hook). Reject so the
@@ -182,12 +208,48 @@ export default function ProjectIndexPage() {
             useFirstPromptPreviewStore
               .getState()
               .setFirstPromptPreview(sessionId, text, files ?? []);
-            resolve();
+            resolve(sessionId);
           },
         });
       });
+      if (!heldAttachments) {
+        attachments?.release();
+        return;
+      }
+      // This page unmounts with the navigation; the held POST does not. A
+      // failure stays on the session page as the first prompt's failed status.
+      // Keyed by the created session: a send made on the session page meanwhile
+      // queues behind this POST.
+      void postWhenUploaded(
+        sessionId,
+        heldAttachments,
+        async (attachmentParts) =>
+          startSessionWithPrompt(projectId, sessionId, {
+            parts: [{ type: 'text' as const, text }, ...promptFileParts(files, attachmentParts)],
+            overrides: {
+              ...(options?.agent ? { agent: options.agent } : {}),
+              ...(options?.model ? { model: options.model } : {}),
+              ...(options?.variant ? { variant: options.variant } : {}),
+            },
+            clientSentAtMs: sentAtMs,
+          }),
+        (uploadStatus) =>
+          useFirstPromptPreviewStore
+            .getState()
+            .setFirstPromptPreview(sessionId, text, files ?? [], uploadStatus),
+        (error) => tComposerAttachments(SENT_FAILURE_COPY[attachmentFailureReason(error)]),
+      );
     },
-    [billingLoading, accountState, newSession, openUpgradeDialog, projectAccountId, tI18nComplete],
+    [
+      billingLoading,
+      accountState,
+      newSession,
+      openUpgradeDialog,
+      projectAccountId,
+      projectId,
+      tI18nComplete,
+      tComposerAttachments,
+    ],
   );
 
   return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;

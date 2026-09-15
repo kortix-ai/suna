@@ -45,6 +45,8 @@ export interface SendStopControlProps {
    * the thing to go fix.
    */
   agentUnavailable?: boolean;
+  /** A selected upload failed. Send is refused until it is retried or removed. */
+  attachmentFailed?: boolean;
   onSubmit: () => void;
 }
 
@@ -63,17 +65,21 @@ export function SendStopControl({
   disabled,
   modelUnavailable,
   agentUnavailable = false,
+  attachmentFailed = false,
   onSubmit,
 }: SendStopControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
+  const tAttachments = useTranslations('hardcodedUi.composerAttachments');
   // One line, the same one the agent picker's tooltip carries — the two
   // controls are refusing for one reason and must not word it two ways.
   const refusal = agentUnavailable
     ? NO_AGENT_ACCESS_MESSAGE
     : modelUnavailable
       ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
-      : null;
+      : attachmentFailed
+        ? tAttachments('failedBlocksSend')
+        : null;
 
   if (isSending && !lockForQuestion) {
     return (

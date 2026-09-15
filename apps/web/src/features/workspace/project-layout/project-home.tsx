@@ -1,7 +1,8 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
+import { hubTarget } from '@/stores/account-panel-store';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -10,15 +11,14 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { hubTarget } from '@/stores/account-panel-store';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
-  type SessionPromptPart,
 } from '@kortix/sdk';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
@@ -56,7 +56,7 @@ export function ProjectHome({
     text: string,
     files: AttachedFile[] | undefined,
     options?: ProjectHomeSendOptions,
-    attachmentParts?: SessionPromptPart[],
+    attachments?: AttachmentSubmission,
   ) => void | Promise<void>;
   busy: boolean;
 }) {
@@ -127,7 +127,7 @@ export function ProjectHome({
       text: string,
       files: AttachedFile[] | undefined,
       options: ComposerOptions,
-      attachmentParts: SessionPromptPart[] = [],
+      attachments?: AttachmentSubmission,
     ) => {
       return onSend(
         text,
@@ -140,7 +140,7 @@ export function ProjectHome({
               ? { sandbox_slug: selectedSlug }
               : {}),
         },
-        attachmentParts,
+        attachments,
       );
     },
     [metaSelected, selectedSlug, onSend],
@@ -149,15 +149,11 @@ export function ProjectHome({
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
-  // These callers do not await the composer submission path. The session hook
-  // owns the visible error; restore their text here so the user can retry.
+  // Send rejects on failure so the composer keeps its attachment handles.
+  // These callers have no composer draft; the session hook shows the error.
   const sendOutsideComposer = useCallback(
-    async (text: string, options: ComposerOptions) => {
-      try {
-        await handleSend(text, undefined, options);
-      } catch {
-        setPrefill((previous) => ({ text, id: (previous?.id ?? Date.now()) + 1 }));
-      }
+    (text: string, options: ComposerOptions) => {
+      void Promise.resolve(handleSend(text, undefined, options)).catch(() => undefined);
     },
     [handleSend],
   );
@@ -172,7 +168,7 @@ export function ProjectHome({
     // the command palette) omits the flag and keeps the old prefill-only
     // behavior below.
     if (pendingPrefill.autoSend) {
-      void sendOutsideComposer(pendingPrefill.text, {});
+      sendOutsideComposer(pendingPrefill.text, {});
       return;
     }
     setPrefill({ text: pendingPrefill.text, id: Date.now() });
@@ -180,7 +176,7 @@ export function ProjectHome({
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
-      void sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
+      sendOutsideComposer(`/${cmd.name}${args ? ` ${args}` : ''}`, options);
     },
     [sendOutsideComposer],
   );

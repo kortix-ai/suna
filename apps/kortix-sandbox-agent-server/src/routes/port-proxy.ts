@@ -156,6 +156,5 @@ export function createPortProxyRouter(opts: { blockedPorts: ReadonlySet<number> 
     return c.redirect(`/proxy/${portStr}/${url.search}`, 301)
   })
 
-  portProxyRouter.all('*', (c) => c.json({ error: 'unknown proxy route' }, 404))
   return portProxyRouter
 }

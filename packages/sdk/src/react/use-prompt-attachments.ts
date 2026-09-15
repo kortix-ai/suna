@@ -8,9 +8,17 @@ import {
   type PromptAttachmentSnapshot,
 } from '../core/attachments/prompt-attachments';
 
-export type UsePromptAttachmentsResult = PromptAttachmentController & PromptAttachmentSnapshot;
+/** The controller without its lifecycle and store plumbing, which the hook owns. */
+export type UsePromptAttachmentsResult = Omit<
+  PromptAttachmentController,
+  'dispose' | 'subscribe' | 'getSnapshot'
+> &
+  PromptAttachmentSnapshot;
 
-/** Composer upload state. Uses the host's configured SDK transport; requires no session runtime. */
+/**
+ * Composer upload state. Uses the host's configured SDK transport; requires no
+ * session runtime. The result keeps its identity until the snapshot changes.
+ */
 export function usePromptAttachments(
   projectId: string | null | undefined,
   options: PromptAttachmentControllerOptions = {},
@@ -41,5 +49,19 @@ export function usePromptAttachments(
     };
   }, [owner, controller]);
 
-  return { ...controller, ...snapshot };
+  return useMemo(
+    (): UsePromptAttachmentsResult => ({
+      add: controller.add,
+      addMany: controller.addMany,
+      retry: controller.retry,
+      remove: controller.remove,
+      abort: controller.abort,
+      submit: controller.submit,
+      reclaim: controller.reclaim,
+      whenReady: controller.whenReady,
+      forget: controller.forget,
+      ...snapshot,
+    }),
+    [controller, snapshot],
+  );
 }

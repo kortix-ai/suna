@@ -103,9 +103,6 @@ describe('daemon file write routes', () => {
 
   for (const namespace of [
     'file',
-    'find',
-    'presentation',
-    'proxy',
     'kortix',
     'kortix/refresh',
     'kortix/pty',

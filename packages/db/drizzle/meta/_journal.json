@@ -474,13 +474,6 @@
     {
       "idx": 67,
       "version": "7",
-      "when": 1788880848383,
-      "tag": "20260908152048_prompt_attachments",
-      "breakpoints": true
-    },
-    {
-      "idx": 68,
-      "version": "7",
       "when": 1789058652035,
       "tag": "20260910164412_drop_dead_audit_events_index_snapshot",
       "breakpoints": true
@@ -490,6 +483,13 @@
       "version": "7",
       "when": 1789398339291,
       "tag": "20260914150539_project_snapshot_archives",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789417606357,
+      "tag": "20260914202646_prompt_attachments",
       "breakpoints": true
     }
   ]

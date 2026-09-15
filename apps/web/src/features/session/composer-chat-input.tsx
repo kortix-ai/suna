@@ -10,7 +10,7 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
-import type { SessionPromptPart } from '@kortix/sdk';
+import type { AttachmentSubmission } from './composer/attachment-submission';
 import {
   type Command,
   type ModelKey,
@@ -66,12 +66,13 @@ export function ComposerChatInput({
   onAgentSelectionChange,
   sandboxSlot,
   draftScope,
+  promptAttachments,
 }: {
   onSend: (
     text: string,
     files: AttachedFile[] | undefined,
     options: ComposerOptions,
-    attachmentParts: SessionPromptPart[],
+    attachments?: AttachmentSubmission,
   ) => void | Promise<void>;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
@@ -114,6 +115,8 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
+  /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
+  promptAttachments?: SessionChatInputProps['promptAttachments'];
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -214,9 +217,10 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      onSend={(text, files, _mentions, attachmentParts = []) =>
-        onSend(text, files, options(), attachmentParts)
+      onSend={(text, files, _mentions, attachments) =>
+        onSend(text, files, options(), attachments)
       }
+      promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
       isBusy={isBusy}

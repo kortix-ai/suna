@@ -1,10 +1,9 @@
 import { isModelNativeAttachmentMime } from '@kortix/shared';
 
-import { resolvePromptAttachment } from '../prompt-attachments';
+import { resolvePromptAttachments } from '../prompt-attachments';
 import type { PromptPartWire } from './store';
 import {
   importRuntimePromptAttachment,
-  RuntimeStaleDaemonError,
   type RuntimePromptAttachmentImportInput,
 } from './runtime-prompt-file';
 export {
@@ -37,14 +36,21 @@ export interface ResolvedPromptAttachment {
   readBytes(): Promise<Uint8Array>;
 }
 
-export type PromptAttachmentResolver = (input: {
-  attachmentId: string;
+/** Resolves every handle of one command at once, keyed by part index. A handle
+ * absent from the result is unavailable. */
+export type PromptAttachmentsResolver = (input: {
   commandId: string;
   projectId: string;
   accountId: string;
   sessionId: string;
-  partIndex: number;
-}) => Promise<ResolvedPromptAttachment>;
+  handles: Array<{ attachmentId: string; partIndex: number }>;
+}) => Promise<Map<number, ResolvedPromptAttachment>>;
+
+/** Log text for a failure. Storage and descriptor URLs carry tokens. */
+function messageWithoutUrls(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '[url]');
+}
 
 export type RuntimePromptAttachmentImporter = (
   input: RuntimePromptAttachmentImportInput,
@@ -57,13 +63,11 @@ export interface PromptAttachmentFailure {
 
 export class PromptAttachmentMaterializationError extends Error {
   readonly failures: PromptAttachmentFailure[];
-  readonly stale: boolean;
 
-  constructor(failures: PromptAttachmentFailure[], stale = false) {
+  constructor(failures: PromptAttachmentFailure[]) {
     super(failures.map((failure) => `${failure.filename} — ${failure.reason}`).join('; '));
     this.name = 'PromptAttachmentMaterializationError';
     this.failures = failures;
-    this.stale = stale;
   }
 }
 
@@ -121,7 +125,7 @@ export async function materializePromptAttachments(input: {
   projectId?: string;
   materializationKey: string;
   writeFile: RuntimePromptFileWriter;
-  resolveAttachment?: PromptAttachmentResolver;
+  resolveAttachments?: PromptAttachmentsResolver;
   importAttachment?: RuntimePromptAttachmentImporter;
   /**
    * Override the inline budget. The legacy repair passes `Infinity`: it is
@@ -147,23 +151,38 @@ export async function materializePromptAttachments(input: {
   };
   const candidates: Candidate[] = [];
   const failures: PromptAttachmentFailure[] = [];
-  let stale = false;
   const replacements = new Map<number, PromptPartWire>();
+
+  // Every handle of this command resolves with one metadata query.
+  const handles = input.parts.flatMap((part, partIndex) =>
+    part.type === 'file' && part.attachment_id
+      ? [{ attachmentId: part.attachment_id, partIndex }]
+      : [],
+  );
+  let resolvedHandles = new Map<number, ResolvedPromptAttachment>();
+  let resolveFailure = 'The command attachment is unavailable.';
+  if (handles.length > 0) {
+    try {
+      if (!input.accountId || !input.projectId) throw new Error('staged attachment scope is missing');
+      resolvedHandles = await (input.resolveAttachments ?? resolvePromptAttachments)({
+        commandId: input.materializationKey,
+        projectId: input.projectId,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        handles,
+      });
+    } catch (error) {
+      resolveFailure = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   for (let index = 0; index < input.parts.length; index += 1) {
     const part = input.parts[index]!;
     if (part.type !== 'file') continue;
     if (part.attachment_id) {
       try {
-        if (!input.accountId || !input.projectId) throw new Error('staged attachment scope is missing');
-        const resolved = await (input.resolveAttachment ?? resolvePromptAttachment)({
-          attachmentId: part.attachment_id,
-          commandId: input.materializationKey,
-          projectId: input.projectId,
-          accountId: input.accountId,
-          sessionId: input.sessionId,
-          partIndex: index,
-        });
+        const resolved = resolvedHandles.get(index);
+        if (!resolved) throw new Error(resolveFailure);
         const canonical: PromptPartWire = {
           type: 'file',
           filename: resolved.filename,
@@ -215,14 +234,31 @@ export async function materializePromptAttachments(input: {
       });
       try {
         if (candidate.resolved) {
-          const imported = await (input.importAttachment ?? importRuntimePromptAttachment)({
-            externalId: input.externalId,
-            sessionId: input.sessionId,
-            userId: input.userId,
-            commandId: input.materializationKey,
-            attachmentId: candidate.resolved.attachmentId,
-            partIndex: candidate.index,
-          });
+          let imported: Awaited<ReturnType<RuntimePromptAttachmentImporter>>;
+          try {
+            imported = await (input.importAttachment ?? importRuntimePromptAttachment)({
+              externalId: input.externalId,
+              sessionId: input.sessionId,
+              userId: input.userId,
+              commandId: input.materializationKey,
+              attachmentId: candidate.resolved.attachmentId,
+              partIndex: candidate.index,
+            });
+          } catch (error) {
+            // A daemon that answers the import route with non-JSON cannot take
+            // a push either; the engine's ordinary retry owns that attempt.
+            // Matched by name: runtime-prompt-file is mocked wholesale in suites.
+            if (error instanceof Error && error.name === 'RuntimeRouteUnsupportedError') throw error;
+            // Any other import failure pushes the verified bytes once. The push
+            // outcome is final for this attempt.
+            console.warn('[prompt-attachments] runtime import failed; pushing the file once', {
+              command_id: input.materializationKey,
+              attachment_id: candidate.resolved.attachmentId,
+              part_index: candidate.index,
+              error: messageWithoutUrls(error),
+            });
+            imported = null;
+          }
           if (!imported) {
             const bytes = await candidate.resolved.readBytes();
             await input.writeFile({
@@ -249,7 +285,6 @@ export async function materializePromptAttachments(input: {
         }
         replacements.set(candidate.index, { type: 'text', text: reference.text });
       } catch (error) {
-        if (error instanceof RuntimeStaleDaemonError) stale = true;
         failures.push({
           filename: reference.filename,
           reason: error instanceof Error ? error.message : String(error),
@@ -262,6 +297,6 @@ export async function materializePromptAttachments(input: {
   if (failures.length > 0) {
     failures.sort((a, b) => a.filename.localeCompare(b.filename));
   }
-  if (failures.length > 0) throw new PromptAttachmentMaterializationError(failures, stale);
+  if (failures.length > 0) throw new PromptAttachmentMaterializationError(failures);
   return input.parts.map((part, index) => replacements.get(index) ?? part);
 }

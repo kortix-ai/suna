@@ -10,6 +10,7 @@ import { flow } from '../core/flow';
 import {
   bindDatabaseSessionCredential,
   createDatabaseSession,
+  readDatabasePromptAttachmentRetention,
 } from '../fixtures/database-project';
 
 flow('SESS-28', {
@@ -19,6 +20,7 @@ flow('SESS-28', {
     'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index',
     'POST /v1/projects/:projectId/attachments/:attachmentId/complete',
     'DELETE /v1/projects/:projectId/attachments/:attachmentId',
+    'DELETE /v1/projects/:projectId/sessions/:sessionId',
     'POST /v1/projects/:projectId/sessions/warm/claim',
     'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
@@ -33,6 +35,10 @@ flow('SESS-28', {
   const base = { projectId: project.id };
   const bytes = new TextEncoder().encode('eager upload before session readiness\n'.repeat(4000));
   let attachmentId = '';
+  let upload:
+    | { kind: 'direct'; url: string; method: string; headers: Record<string, string> }
+    | { kind: 'chunked'; chunk_size: number }
+    | undefined;
   const begin = '/v1/projects/:projectId/attachments';
   const chunk = '/v1/projects/:projectId/attachments/:attachmentId/chunks/:index';
   const complete = '/v1/projects/:projectId/attachments/:attachmentId/complete';
@@ -43,25 +49,39 @@ flow('SESS-28', {
       (await owner.post(begin, { filename: 'probe.txt', mime: 'text/plain', size }, { params: base })).status(413);
     }
   });
-  await ctx.step('start a project upload before creating any session and receive an opaque handle', async () => {
+  await ctx.step('start a project upload before creating any session and receive an opaque handle with a server-selected transport', async () => {
     const result = await owner.post(begin, { filename: 'eager.txt', mime: 'text/plain', size: bytes.length }, { params: base });
     result.status(201);
     const data = result.json<any>();
     attachmentId = data.attachment_id;
-    if (data.chunk_size !== 65536 || data.size !== bytes.length || data.object_path || data.url) throw new Error('Invalid upload handle metadata');
+    upload = data.upload;
+    const direct = upload?.kind === 'direct' && /^https?:\/\//.test(upload.url) && upload.method === 'PUT' && !Object.keys(upload.headers).some((name) => name.toLowerCase() === 'authorization');
+    const chunked = upload?.kind === 'chunked' && Number.isSafeInteger(upload.chunk_size) && upload.chunk_size > 0;
+    if (!(direct || chunked) || data.size !== bytes.length || data.object_path || data.chunk_size) throw new Error('Invalid upload handle metadata');
   });
   const params = () => ({ ...base, attachmentId });
-  await ctx.step('incomplete finalization returns409 and oversized actual chunk returns413', async () => {
+  const rawChunk = (index: number) => ({ params: { ...params(), index }, raw: true, headers: { 'Content-Type': 'application/octet-stream' } });
+  await ctx.step('completion before the bytes arrive returns 409', async () => {
     (await owner.post(complete, {}, { params: params() })).status(409);
-    (await owner.put(chunk, new Uint8Array(65537), { params: { ...params(), index: 0 }, raw: true, headers: { 'Content-Type': 'application/octet-stream' } })).status(413);
   });
-  await ctx.step('upload more than128KiB in64KiB requests and replay one acknowledged chunk without duplicating bytes', async () => {
-    for (let offset = 0, index = 0; offset < bytes.length; offset += 65536, index++) {
-      const body = bytes.subarray(offset, offset + 65536);
-      const options = { params: { ...params(), index }, raw: true, headers: { 'Content-Type': 'application/octet-stream' } };
-      const result = await owner.put(chunk, body, options);
-      result.status(200).body().has('$.received_bytes', Math.min(offset + 65536, bytes.length));
-      if (index === 0) (await owner.put(chunk, body, options)).status(200).body().has('$.received_bytes', 65536);
+  await ctx.step('upload more than 128 KiB with the selected transport: one direct Storage PUT after a same-handle re-sign, or bounded chunks with one replay', async () => {
+    if (upload!.kind === 'direct') {
+      // Direct mode refuses the chunk route; re-signing returns a fresh URL for the same upload.
+      (await owner.put(chunk, bytes.subarray(0, 1), rawChunk(0))).status(409).body().has('$.code', 'attachment_upload_mode');
+      const resigned = await owner.post(begin, { attachment_id: attachmentId, filename: 'eager.txt', mime: 'text/plain', size: bytes.length }, { params: base });
+      resigned.status(201).body().has('$.attachment_id', attachmentId);
+      const target = resigned.json<any>().upload;
+      const stored = await fetch(target.url, { method: target.method, headers: target.headers, body: bytes });
+      if (!stored.ok) throw new Error(`direct Storage PUT returned ${stored.status}`);
+    } else {
+      const size = upload!.chunk_size;
+      (await owner.put(chunk, new Uint8Array(size + 1), rawChunk(0))).status(413);
+      for (let offset = 0, index = 0; offset < bytes.length; offset += size, index++) {
+        const body = bytes.subarray(offset, offset + size);
+        const result = await owner.put(chunk, body, rawChunk(index));
+        result.status(200).body().has('$.received_bytes', Math.min(offset + size, bytes.length));
+        if (index === 0) (await owner.put(chunk, body, rawChunk(index))).status(200).body().has('$.received_bytes', Math.min(size, bytes.length));
+      }
     }
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.filename', 'eager.txt');
     (await owner.post(complete, {}, { params: params() })).status(200).body().has('$.attachment_id', attachmentId);
@@ -69,10 +89,10 @@ flow('SESS-28', {
   const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, metadata: { warm: true } });
   ctx.track('session', sessionId, { projectId: project.id });
   const warmBody = { session_id: sessionId, pending_prompt: { text: 'SESS-28 eager attachment', attachment_names: ['eager.txt'], parts: [{ type: 'text', text: 'SESS-28 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] } };
-  await ctx.step('claim a warm session with the ready handle and read canonical filename from the durable inbox', async () => {
+  await ctx.step('claim a warm session with the ready handle, refuse a second claim with 409, and read canonical filename from the durable inbox', async () => {
     (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(200);
-    (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(200);
-    (await owner.post('/v1/projects/:projectId/sessions/warm/claim', { ...warmBody, pending_prompt: { ...warmBody.pending_prompt, text: 'different submission' } }, { params: base })).status(409);
+    // A consumed warm marker answers 409 for every repeat claim, with or without attachments.
+    (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(409);
     const inbox = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { ...base, sessionId } });
     inbox.status(200);
     const serialized = JSON.stringify(inbox.json());
@@ -130,12 +150,32 @@ flow('SESS-28', {
       params: { ...base, tokenId: tokenBody.token_id },
     })).status(200);
   });
+  await ctx.step('a direct upload whose stored size differs from its declaration fails with 400, then completion returns 409', async () => {
+    const created = await owner.post(begin, { filename: 'short.txt', mime: 'text/plain', size: 3 }, { params: base });
+    created.status(201);
+    const handle = created.json<any>();
+    // Chunked mode rejects a wrong-sized chunk on the chunk route instead (413 above).
+    if (handle.upload.kind !== 'direct') return;
+    const stored = await fetch(handle.upload.url, { method: 'PUT', headers: handle.upload.headers, body: new TextEncoder().encode('four') });
+    if (!stored.ok) throw new Error(`direct Storage PUT returned ${stored.status}`);
+    const failed = { ...base, attachmentId: handle.attachment_id };
+    (await owner.post(complete, {}, { params: failed })).status(400).body().has('$.code', 'attachment_size_mismatch');
+    (await owner.post(complete, {}, { params: failed })).status(409).body().has('$.code', 'attachment_failed');
+  });
   await ctx.step('remove an unfinished upload twice and keep it unavailable', async () => {
     const created = await owner.post(begin, { filename: 'removed.txt', mime: 'text/plain', size: 1 }, { params: base }); created.status(201);
     const unused = { ...base, attachmentId: created.json<any>().attachment_id };
     (await owner.del(remove, { params: unused })).status(204);
     (await owner.del(remove, { params: unused })).status(204);
     (await owner.post(complete, {}, { params: unused })).status(404);
+  });
+  // The maintenance sweep then removes the object before its metadata. The local
+  // profile runs no maintenance worker, so the API integration test
+  // (integration-prompt-attachments.test.ts, "session delete releases references") owns that half.
+  await ctx.step('delete the session and release its attachment: no reference remains and the attachment is due for the next maintenance sweep', async () => {
+    (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: { ...base, sessionId } })).status(200);
+    const retention = await readDatabasePromptAttachmentRetention(ctx.env, attachmentId);
+    if (retention.references !== 0 || !retention.due) throw new Error(`session delete kept the attachment: ${JSON.stringify(retention)}`);
   });
 });
 

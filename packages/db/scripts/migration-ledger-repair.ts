@@ -41,35 +41,10 @@ const APP_ACCESS_RENAMES = [
   },
 ] as const;
 
-const ATTACHMENT_RENAME = {
-  legacyName: '20260908152048390_prompt_attachments',
-  currentName: '20260912000000000_prompt_attachments',
-  filename: '20260912000000000_prompt_attachments.sql',
-  sha256: '3c08fbc32f525724209beab90e260683bc1e04def056b10a3cc5163cebb48eb4',
-} as const;
-
-const ATTACHMENT_PREREQUISITES = [
-  {
-    name: '20260909083000000_drop_dead_audit_events_index.concurrent',
-    filename: '20260909083000000_drop_dead_audit_events_index.concurrent.ts',
-    sha256: 'd2167dfe3ce1403eb25adc470a47394d88782f1565ce1262cef32eaa3ec280a2',
-  },
-  {
-    name: '20260910164412042_drop_dead_audit_events_index_snapshot',
-    filename: '20260910164412042_drop_dead_audit_events_index_snapshot.sql',
-    sha256: '4eda6197b04bea9651f3c734d44281947b9095cd04c08ef02b8aba8284717ce4',
-  },
-] as const;
-
-const MIGRATION_RENAMES = [
-  ...SANDBOX_DEADLINE_RENAMES,
-  ...APP_ACCESS_RENAMES,
-  ATTACHMENT_RENAME,
-] as const;
+const MIGRATION_RENAMES = [...SANDBOX_DEADLINE_RENAMES, ...APP_ACCESS_RENAMES] as const;
 
 const REPAIR_NAMES = [
   CONNECTOR_POLICY_MIGRATION.name,
-  ...ATTACHMENT_PREREQUISITES.map(({ name }) => name),
   ...MIGRATION_RENAMES.flatMap(({ legacyName, currentName }) => [legacyName, currentName]),
 ];
 
@@ -82,14 +57,12 @@ export interface MigrationLedgerRepairPlan {
   connectorMigrationIsMissing: boolean;
   legacyRunOn: Date | null;
   renames: Array<{ legacyName: string; currentName: string }>;
-  attachmentRepair?: { runOn: Date; missingPrerequisites: string[] };
 }
 
 export function planMigrationLedgerRepair(
   rows: MigrationLedgerRow[],
 ): MigrationLedgerRepairPlan | null {
   const byName = new Map(rows.map((row) => [row.name, row]));
-  const attachment = byName.get(ATTACHMENT_RENAME.legacyName);
   const renames = MIGRATION_RENAMES.filter(({ legacyName }) => byName.has(legacyName)).map(
     ({ legacyName, currentName }) => ({ legacyName, currentName }),
   );
@@ -113,7 +86,8 @@ export function planMigrationLedgerRepair(
     );
   }
 
-  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES.filter(({ legacyName }) => byName.has(legacyName))
+  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES
+    .filter(({ legacyName }) => byName.has(legacyName))
     .map(({ legacyName }) => byName.get(legacyName)?.runOn)
     .filter((runOn): runOn is Date => runOn instanceof Date);
   const legacyRunOn =
@@ -126,21 +100,11 @@ export function planMigrationLedgerRepair(
       deadlineRunOns.length > 0 && !byName.has(CONNECTOR_POLICY_MIGRATION.name),
     legacyRunOn,
     renames,
-    ...(attachment
-      ? {
-          attachmentRepair: {
-            runOn: attachment.runOn,
-            missingPrerequisites: ATTACHMENT_PREREQUISITES.filter(
-              ({ name }) => !byName.has(name),
-            ).map(({ name }) => name),
-          },
-        }
-      : {}),
   };
 }
 
 function verifyRepairArtifacts(migrationsDir: string): void {
-  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...MIGRATION_RENAMES, ...ATTACHMENT_PREREQUISITES];
+  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...MIGRATION_RENAMES];
   for (const artifact of artifacts) {
     const path = join(migrationsDir, artifact.filename);
     const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -194,11 +158,6 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
         `Migration ledger repair requires ${CONNECTOR_POLICY_MIGRATION.name} to be applied first.`,
       );
     }
-    if (plan.attachmentRepair?.missingPrerequisites.length) {
-      throw new Error(
-        'Migration ledger repair requires both attachment prerequisites to be applied first.',
-      );
-    }
 
     for (const { legacyName, currentName } of plan.renames) {
       const result = await client.query(
@@ -231,21 +190,6 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       }
     }
 
-    if (plan.attachmentRepair) {
-      // Preserve actual prerequisite timestamps. Earlier migrations can share
-      // the attachment's transaction timestamp, so backdating is not safe.
-      const result = await client.query(
-        `update kortix_migrations.pgmigrations
-            set run_on = greatest(run_on, (
-              select max(run_on) from kortix_migrations.pgmigrations where name = any($2::text[])
-            )) + interval '1 millisecond'
-          where name = $1`,
-        [ATTACHMENT_RENAME.currentName, ATTACHMENT_PREREQUISITES.map(({ name }) => name)],
-      );
-      if (result.rowCount !== 1)
-        throw new Error('Could not order the repaired attachment migration.');
-    }
-
     await client.query('commit');
     return true;
   } catch (error) {
@@ -260,7 +204,6 @@ export async function repairMigrationLedger(options: {
   databaseUrl: string;
   migrationsDir: string;
   applyConnectorMigration: () => Promise<void>;
-  applyAttachmentPrerequisite?: (name: string) => Promise<void>;
 }): Promise<boolean> {
   const initialPlan = await inspectRepairPlan(options.databaseUrl);
   if (!initialPlan) return false;
@@ -268,11 +211,6 @@ export async function repairMigrationLedger(options: {
   verifyRepairArtifacts(options.migrationsDir);
   if (initialPlan.connectorMigrationIsMissing) {
     await options.applyConnectorMigration();
-  }
-  for (const name of initialPlan.attachmentRepair?.missingPrerequisites ?? []) {
-    if (!options.applyAttachmentPrerequisite)
-      throw new Error('Attachment prerequisite runner is required.');
-    await options.applyAttachmentPrerequisite(name);
   }
 
   return reconcileRepairPlan(options.databaseUrl);

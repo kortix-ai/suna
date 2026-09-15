@@ -7,7 +7,7 @@ import {
   reconcileSessionTail,
 } from '../../browser/session-sync/session-sync-registry';
 import { logger } from '../../core/http/logger';
-import { dropClientForUrl, getClientForUrl } from '../../core/runtime/client';
+import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
@@ -67,8 +67,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   // Re-render (and re-read getActiveServerUrl, which resolves current-runtime) when
   // the session's runtime changes — so the SSE re-subscribes to the new daemon.
   const runtimeVersion = useCurrentRuntime((s) => s.version);
-  const runtimeScope = useCurrentRuntime((s) => s.sandboxId);
-  const runtimeUrl = useCurrentRuntime((s) => s.url);
   const activeServerUrl = useServerStore((s) => s.getActiveServerUrl());
   const sandboxStatus = useSandboxConnectionStore((s) => s.status);
   const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
@@ -148,23 +146,27 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     if (
       options.enabled === false ||
       !activeServerUrl ||
-      !runtimeScope ||
-      !runtimeUrl ||
       sandboxStatus !== 'connected' ||
       runtimeHealthy !== true
     )
       return;
 
-    // Capture this stream's URL. Event callbacks and gap reads keep this binding
-    // even if the host selects another runtime before their promises settle.
-    let client: ReturnType<typeof getClientForUrl>;
+    // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
+    // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
+    // briefly diverge on a session switch: the server-store url is set before the
+    // current-runtime url is pinned. In that window getClient() throws
+    // RuntimeNotReadyError — and because this hook runs in the page render tree
+    // (outside SandboxLoadingBoundary), a synchronous throw here is caught by the
+    // GLOBAL error boundary and flashes the whole route to blank. "Runtime not
+    // ready" is a transient info state, never an error: skip this tick and let the
+    // effect re-run (deps include runtimeVersion/activeServerUrl) once it pins.
+    let client: ReturnType<typeof getClient>;
     try {
-      client = getClientForUrl(runtimeUrl);
+      client = getClient();
     } catch {
       return;
     }
 
-    let active = true;
     const handleEvent = createEventHandler({
       queryClient,
       client,
@@ -177,10 +179,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
-      reconcileSessionTail: (sessionID, reason, scope) =>
-        reconcileSessionTail(sessionID, reason, scope, runtimeUrl),
-      runtimeScope,
-      isActive: () => active,
+      reconcileSessionTail,
       projectId,
     });
 
@@ -192,7 +191,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       client.permission
         .list()
         .then((res) => {
-          if (!active) return;
           if (Array.isArray(res.data)) res.data.forEach(addPermission);
         })
         .catch((err) => {
@@ -204,7 +202,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       client.question
         .list()
         .then((res) => {
-          if (!active) return;
           if (Array.isArray(res.data)) res.data.forEach(addQuestion);
         })
         .catch((err) => {
@@ -216,7 +213,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       client.session
         .status()
         .then((res) => {
-          if (!active) return;
           // This snapshot is the runtime's COMPLETE set of non-idle sessions,
           // so it carries two facts: what each listed session is doing, and
           // that every UNLISTED one is not busy. The second is the only repair
@@ -280,7 +276,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
               type: 'session.status',
               synthetic: true,
               properties: { sessionID, status },
-            } as unknown as OpenCodeSdkEvent, runtimeScope);
+            } as unknown as OpenCodeSdkEvent);
           }
           // The ENUMERATION half is not a per-session reading and does not go
           // stale the same way: a session absent from a complete list was not
@@ -311,12 +307,9 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
         // so a gap wide enough to lose message frames is wide enough to lose
         // the frame that would have marked the session busy.
-        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages), {
-          currentScope: runtimeScope,
-          ownerOf: (id) => syncState.sessionRuntime[id],
-        })) {
+        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
           if (!reserveMessageRehydrate(sid)) continue;
-          reconcileSessionTail(sid, 'sse-gap', runtimeScope, runtimeUrl)
+          reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
             .finally(() => releaseMessageRehydrate(sid));
         }
@@ -344,21 +337,17 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         revival.park();
       },
       onEvent: (event) => {
-        if (!active) return;
         // Every delivered frame is live proof the runtime is reachable — it
         // vetoes concurrent health-probe failures (a loaded box can miss the
         // probe deadline mid-turn). See shouldIgnoreProbeFailure.
         noteRuntimeEvidence();
-        noteSessionSyncEvent(event, runtimeScope);
+        noteSessionSyncEvent(event);
         handleEvent(event);
       },
-      onGapRehydrate: () => {
-        if (active) hydrateCore({ rehydrateMessages: true });
-      },
+      onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
     });
 
     return () => {
-      active = false;
       revival.stop();
       handle.close();
     };
@@ -367,8 +356,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // reconnecting on metadata-only updates while still recovering from
     // stale SSE connections after sandbox/proxy URL changes.
   }, [
-    runtimeScope,
-    runtimeUrl,
     queryClient,
     addPermission,
     removePermission,

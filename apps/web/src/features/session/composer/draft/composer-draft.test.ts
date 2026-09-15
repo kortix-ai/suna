@@ -1,16 +1,12 @@
 import type { JSONContent } from '@tiptap/core';
 import { describe, expect, test } from 'bun:test';
 
-import type { PromptAttachmentSnapshot, SessionPromptPart } from '@kortix/sdk';
-import { stageFirstPromptAttachments } from '../../uploaded-file-refs';
-import { captureAttachmentSubmission } from '../attachment-submission';
 import type { AttachedFile } from '../types';
 import {
   DRAFT_ENVELOPE_VERSION,
   MAX_DRAFT_BYTES,
   deserializeDraft,
   draftScopeKey,
-  restoreDraftFileOrder,
   serializeDraft,
   shouldRestoreDraft,
   type StoredDraft,
@@ -89,29 +85,6 @@ describe('serializeDraft', () => {
     expect(draft?.files).toEqual([REMOTE_FILE]);
   });
 
-  test('stores canonical completed metadata without local bytes or URLs', () => {
-    const attachment = {
-      attachment_id: 'att-ready',
-      filename: 'ready.txt',
-      mime: 'text/plain',
-      size: 5,
-      expires_at: '2099-01-01T00:00:00.000Z',
-    };
-    const draft = serializeDraft({
-      doc: EMPTY_DOC,
-      documentIsEmpty: true,
-      files: [LOCAL_FILE],
-      attachments: [{ ...attachment, uploadId: 'local-ready' }],
-      userId: USER,
-    });
-
-    expect(draft?.attachments).toEqual([attachment]);
-    const serialized = JSON.stringify(draft);
-    expect(serialized).not.toContain('blob:');
-    expect(serialized).not.toContain('data:');
-    expect(serialized).not.toContain('signed');
-  });
-
   test('stamps the envelope version and the author user id', () => {
     const draft = serializeDraft({
       doc: TEXT_DOC,
@@ -168,183 +141,6 @@ describe('deserializeDraft', () => {
       userId: USER,
     });
     expect(deserializeDraft(stored, OTHER_USER)).toBeNull();
-  });
-
-  test('restores only valid unexpired completed metadata', () => {
-    const raw = {
-      v: DRAFT_ENVELOPE_VERSION,
-      u: USER,
-      doc: EMPTY_DOC,
-      files: [],
-      attachments: [
-        {
-          attachment_id: 'att-ready',
-          filename: 'ready.txt',
-          mime: 'text/plain',
-          size: 5,
-          expires_at: '2099-01-01T00:00:00.000Z',
-          url: 'https://signed.example/private',
-        },
-        {
-          attachment_id: 'att-expired',
-          filename: 'expired.txt',
-          mime: 'text/plain',
-          size: 5,
-          expires_at: '2020-01-01T00:00:00.000Z',
-        },
-      ],
-      order: [{ kind: 'attachment', attachmentId: 'att-ready' }],
-    };
-
-    expect(deserializeDraft(raw, USER)?.attachments).toEqual([
-      {
-        attachment_id: 'att-ready',
-        filename: 'ready.txt',
-        mime: 'text/plain',
-        size: 5,
-        expires_at: '2099-01-01T00:00:00.000Z',
-      },
-    ]);
-  });
-
-  test('preserves interleaved staged and remote attachment order without private bytes', () => {
-    const attachment = {
-      attachment_id: 'att-ready',
-      filename: 'first.png',
-      mime: 'image/png',
-      size: 1,
-      expires_at: '2099-01-01T00:00:00.000Z',
-    };
-    const staged: AttachedFile = {
-      kind: 'staged',
-      uploadId: 'local-ready',
-      attachment,
-      filename: attachment.filename,
-      mime: attachment.mime,
-      isImage: true,
-    };
-    const stored = serializeDraft({
-      doc: EMPTY_DOC,
-      documentIsEmpty: true,
-      files: [staged, REMOTE_FILE],
-      attachments: [{ ...attachment, uploadId: staged.uploadId }],
-      userId: USER,
-    });
-    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
-    expect(back?.order).toEqual([
-      { kind: 'attachment', attachmentId: 'att-ready' },
-      { kind: 'remote', index: 0 },
-    ]);
-    if (!back) throw new Error('expected stored draft');
-    expect(
-      restoreDraftFileOrder(back, (item) => ({
-        kind: 'staged',
-        uploadId: `restored-${item.attachment_id}`,
-        attachment: item,
-        filename: item.filename,
-        mime: item.mime,
-        isImage: item.mime.startsWith('image/'),
-      })).map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
-    ).toEqual(['first.png', 'a.png']);
-    expect(JSON.stringify(back)).not.toContain('blob:');
-  });
-
-  test('preserves mixed attachment order through save, reload, capture, and Send', async () => {
-    const firstAttachment = {
-      attachment_id: 'att-first',
-      filename: 'first.bin',
-      mime: 'application/octet-stream',
-      size: 5,
-      expires_at: '2099-01-01T00:00:00.000Z',
-    };
-    const thirdAttachment = {
-      attachment_id: 'att-third',
-      filename: 'third_.txt',
-      mime: 'text/plain',
-      size: 5,
-      expires_at: '2099-01-01T00:00:00.000Z',
-    };
-    const first: AttachedFile = {
-      kind: 'local',
-      uploadId: 'before-reload-first',
-      file: new File(['first'], 'first.bin'),
-      localUrl: 'blob:first',
-      isImage: false,
-    };
-    const third: AttachedFile = {
-      kind: 'local',
-      uploadId: 'before-reload-third',
-      file: new File(['third'], 'third?.txt', { type: 'text/plain; charset=utf-8' }),
-      localUrl: 'blob:third',
-      isImage: false,
-    };
-    // Identical display metadata belongs to distinct uploads. Controller
-    // completion order below deliberately differs from the tray order.
-    const fourthAttachment = { ...thirdAttachment, attachment_id: 'att-fourth' };
-    const fourth: AttachedFile = { ...third, uploadId: 'before-reload-fourth' };
-    const stored = serializeDraft({
-      doc: EMPTY_DOC,
-      documentIsEmpty: true,
-      files: [first, REMOTE_FILE, third, REMOTE_FILE, fourth],
-      attachments: [
-        { ...fourthAttachment, uploadId: 'before-reload-fourth' },
-        { ...thirdAttachment, uploadId: 'before-reload-third' },
-        { ...firstAttachment, uploadId: 'before-reload-first' },
-      ],
-      userId: USER,
-    });
-    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
-    if (!back) throw new Error('expected stored draft');
-    const restored = restoreDraftFileOrder(back, (attachment) => ({
-      kind: 'staged',
-      uploadId: `restored-${attachment.attachment_id}`,
-      attachment,
-      filename: attachment.filename,
-      mime: attachment.mime,
-      isImage: attachment.mime.startsWith('image/'),
-    }));
-    const readyParts: SessionPromptPart[] = [firstAttachment, thirdAttachment, fourthAttachment].map(
-      (attachment) => ({
-        type: 'file',
-        attachment_id: attachment.attachment_id,
-        filename: attachment.filename,
-        mime: attachment.mime,
-      }),
-    );
-    const snapshot: PromptAttachmentSnapshot = {
-      canSend: true,
-      attachments: [firstAttachment, thirdAttachment, fourthAttachment].map((attachment) => ({
-        id: `restored-${attachment.attachment_id}`,
-        filename: attachment.filename,
-        mime: attachment.mime,
-        size: attachment.size,
-        status: 'ready',
-        receivedBytes: attachment.size,
-        attachment,
-      })),
-    };
-    const captured = captureAttachmentSubmission(restored, {
-      getReadyParts: () => readyParts,
-      getSnapshot: () => snapshot,
-    });
-    const sent = await stageFirstPromptAttachments(restored, captured.parts);
-
-    expect(
-      restored.map((file) => (file.kind === 'local' ? file.file.name : file.filename)),
-    ).toEqual(['first.bin', 'a.png', 'third_.txt', 'a.png', 'third_.txt']);
-    expect(captured.submittedIds).toEqual(['restored-att-first', 'restored-att-third', 'restored-att-fourth']);
-    expect(sent.map((part) => part.filename)).toEqual(['first.bin', 'a.png', 'third_.txt', 'a.png', 'third_.txt']);
-    expect(sent.map((part) => part.attachment_id ?? part.url)).toEqual([
-      'att-first',
-      REMOTE_FILE.kind === 'remote' ? REMOTE_FILE.url : '',
-      'att-third',
-      REMOTE_FILE.kind === 'remote' ? REMOTE_FILE.url : '',
-      'att-fourth',
-    ]);
-    const serialized = JSON.stringify(back);
-    for (const forbidden of ['blob:', 'data:', 'uploadId', 'third?', 'charset=', 'signed']) {
-      expect(serialized).not.toContain(forbidden);
-    }
   });
 
   test('a stale envelope version is refused', () => {

@@ -111,6 +111,8 @@ export interface ComposerToolbarProps {
   modelUnavailable: boolean;
   /** No agent is available to this user — the send is refused. See composer.tsx. */
   agentUnavailable?: boolean;
+  /** A selected upload failed. See `SendStopControl`. */
+  attachmentFailed?: boolean;
   onSubmit: () => void;
 }
 
@@ -147,6 +149,7 @@ export function ComposerToolbar({
   disabled,
   modelUnavailable,
   agentUnavailable = false,
+  attachmentFailed = false,
   onSubmit,
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -231,6 +234,7 @@ export function ComposerToolbar({
           disabled={disabled}
           modelUnavailable={modelUnavailable}
           agentUnavailable={agentUnavailable}
+          attachmentFailed={attachmentFailed}
           onSubmit={onSubmit}
         />
       </div>

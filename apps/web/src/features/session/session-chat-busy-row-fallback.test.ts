@@ -29,8 +29,8 @@ function between(source: string, start: string, end: string): string {
  */
 describe('the waiting row has a fallback when no turn owns it', () => {
   test('the fallback knows exactly when a turn is drawing the row itself', () => {
-    expect(chat.replace(/\s+/g, ' ')).toContain(
-      'const someTurnDrawsBusyRow = lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;',
+    expect(chat).toContain(
+      'const someTurnDrawsBusyRow =\n    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;',
     );
   });
 
@@ -45,8 +45,8 @@ describe('the waiting row has a fallback when no turn owns it', () => {
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
     const row = between(chat, '{isBusy &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
-    expect(row).toMatch(
-      /!\(\s*showFirstPromptPreview\s*&&\s*firstPromptSource\s*&&\s*queuedMessages\.length === 0\s*&&\s*turns\.length === 0\s*\)/,
+    expect(row).toContain(
+      '!(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0)',
     );
     // The stand-in's own gate is unchanged — it is the one that decides
     // whether the boot row is on screen at all.
@@ -108,7 +108,9 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
   test('the LOCAL copy is what the stand-in and the hand-over read', () => {
     expect(chat).toContain('const firstPromptSource = firstPromptPreview ?? firstPromptKeep;');
     expect(chat).toContain('hasPreview: !!firstPromptSource,');
-    expect(chat).toContain('return { text: firstPromptSource.text, attachments };');
+    expect(chat).toContain(
+      'text: firstPromptSource.text,\n        attachments: sentAttachmentsOf(firstPromptSource.files),',
+    );
     expect(chat).toContain('firstPromptSource.text,\n                                firstPromptSource.files,');
   });
 

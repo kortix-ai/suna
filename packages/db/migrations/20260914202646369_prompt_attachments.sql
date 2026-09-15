@@ -38,7 +38,6 @@ CREATE TABLE "kortix"."prompt_attachments" (
 	"mime" text NOT NULL,
 	"size_bytes" integer NOT NULL,
 	"received_bytes" integer DEFAULT 0 NOT NULL,
-	"chunk_digests" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"sha256" text,
 	"status" varchar(16) DEFAULT 'uploading' NOT NULL,
 	"finalize_token" uuid,
@@ -46,7 +45,7 @@ CREATE TABLE "kortix"."prompt_attachments" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "prompt_attachments_object_path_unique" UNIQUE("object_path"),
-	CONSTRAINT "prompt_attachments_status_check" CHECK ("kortix"."prompt_attachments"."status" IN ('uploading', 'finalizing', 'ready', 'deleting')),
+	CONSTRAINT "prompt_attachments_status_check" CHECK ("kortix"."prompt_attachments"."status" IN ('uploading', 'finalizing', 'ready', 'failed', 'deleting')),
 	CONSTRAINT "prompt_attachments_size_check" CHECK ("kortix"."prompt_attachments"."size_bytes" > 0 AND "kortix"."prompt_attachments"."size_bytes" <= 52428800),
 	CONSTRAINT "prompt_attachments_received_check" CHECK ("kortix"."prompt_attachments"."received_bytes" >= 0 AND "kortix"."prompt_attachments"."received_bytes" <= "kortix"."prompt_attachments"."size_bytes")
 );
@@ -54,7 +53,7 @@ CREATE TABLE "kortix"."prompt_attachments" (
 ALTER TABLE "kortix"."prompt_attachment_references" ADD CONSTRAINT "prompt_attachment_refs_command_fk" FOREIGN KEY ("command_id") REFERENCES "kortix"."session_lifecycle_commands"("command_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."prompt_attachment_references" ADD CONSTRAINT "prompt_attachment_refs_attachment_fk" FOREIGN KEY ("attachment_id") REFERENCES "kortix"."prompt_attachments"("attachment_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_prompt_attachment_references_attachment" ON "kortix"."prompt_attachment_references" USING btree ("attachment_id");--> statement-breakpoint
-CREATE INDEX "idx_prompt_attachments_scope" ON "kortix"."prompt_attachments" USING btree ("project_id","user_id");--> statement-breakpoint
+CREATE INDEX "idx_prompt_attachments_user_status" ON "kortix"."prompt_attachments" USING btree ("user_id","status");--> statement-breakpoint
 CREATE INDEX "idx_prompt_attachments_expiry" ON "kortix"."prompt_attachments" USING btree ("expires_at");
 
 -- API-owned metadata contains private object paths. Browser roles cannot read
@@ -62,3 +61,25 @@ CREATE INDEX "idx_prompt_attachments_expiry" ON "kortix"."prompt_attachments" US
 REVOKE ALL ON TABLE "kortix"."prompt_attachments", "kortix"."prompt_attachment_references" FROM anon, authenticated;
 ALTER TABLE "kortix"."prompt_attachments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "kortix"."prompt_attachment_references" ENABLE ROW LEVEL SECURITY;
+
+-- A signed upload URL does not cap bytes. The private staged-files bucket
+-- enforces the 50 MiB per-file attachment limit on every direct PUT. Connector
+-- attachments share the bucket; their 25 MiB limit stays below it. Guarded like
+-- 20260826212608172_storage_branding_bucket.sql: a no-op where Storage is
+-- absent or shaped differently. An existing smaller limit is kept.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'storage' and table_name = 'buckets' and column_name = 'file_size_limit'
+  ) then
+    raise notice 'storage.buckets not present or unexpected shape — skipping staged-files size limit.';
+    return;
+  end if;
+
+  insert into storage.buckets (id, name, public, file_size_limit)
+  values ('staged-files', 'staged-files', false, 52428800)
+  on conflict (id) do update set file_size_limit = excluded.file_size_limit
+  where storage.buckets.file_size_limit is null
+     or storage.buckets.file_size_limit > excluded.file_size_limit;
+end $$;
