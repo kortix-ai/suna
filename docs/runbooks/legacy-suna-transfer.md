@@ -321,6 +321,11 @@ errors before increasing concurrency again.
 The current private batch runner pipelines capture, archive upload, apply,
 and stop for each prepared session. It starts the next stage when that
 session's proof passes. It does not wait for every selected capture to finish.
+The runner retries source preparation three times. The coordinator retries a
+failed batch three times against the same ledger. A transport-stalled apply
+can leave an existing destination session in `created` or `imported`. Verify
+its owner, project, stopped state, archive receipt, and transport logs before
+requeueing. Never allocate a second destination session for that source thread.
 
 An admission refusal can dead-letter the create command. Replaying its
 idempotency key returns the stored error even after active sessions stop.
@@ -623,3 +628,33 @@ The OpenCode `/file/content` route can return binary content as UTF-8 text.
 Its response changed a 363,046-byte source file into 363,052 bytes in a
 production check. Download files through Daytona `fs.downloadFile` for byte
 comparison. A separate browser Files check verifies user-facing visibility.
+
+### Production scheduling update — 2026-09-15
+
+The private operator ledger now has `migration_priority` for all 16,685 baseline threads. Preparation and batch selection sort by legacy `updated_at` (fallback `created_at`) descending, with thread ID as a deterministic tie-breaker. Active batches finish their original selection. New batches select up to 500 prepared sessions, with at most 90 concurrent pipelines and existing pressure backoff. Preparation remains bounded to 100 threads per batch and 16 readers. A larger selection reduces the idle tail without increasing active-session limits.
+
+Source lifecycle cleanup now uses fresh Daytona state and waits for an existing archive transition. It does not call stop on an archiving sandbox. Five focused lifecycle tests pass. End-to-end throughput improvement remains to be measured after the running batch finishes.
+
+### Continuous refill and parallel readback — 2026-09-15
+
+The operator runner now overlaps preparation with active transfers. A single source lease owns selection; a temporary claimed-session table prevents reselection. Preparation feeds up to 100 new candidates at a time while workers drain the queue, bounded to 500 selections per run and 90 concurrent pipelines. Backoff limits new dispatch. Preparation failures drain active jobs before surfacing. Source sandbox IDs remain deduplicated within each run.
+
+Destination regular-file readback uses four simultaneous downloads per session. Each file retains its size and SHA-256 assertion. Scratch names are unique; outstanding downloads finish before cleanup on failure. Disk reservation includes concurrent downloads. Five focused refill/readback tests pass. Production rollout loads these changes when the active batch completes; measure sustained throughput before revising the ETA.
+
+Rollout evidence: batch PID 43647 logged `rolling-pipeline-start`, `max_items=500`, `concurrency=67`. Previous pressure backoff is retained; the ceiling is 90. The previous batch was restarted only after source/archive jobs finished and both remaining children proved `imported`, a saved `workspace_restore`, and active file-readback scratch directories. No source capture was interrupted. The coordinator retries with the same ledger session IDs.
+
+### Platinum destination correction — 2026-09-15
+
+New imports explicitly request Platinum. Legacy source capture still uses Daytona. Destination file transfer uses Platinum native `/v1/sandboxes/:id/files` and `/exec`; uploads are SHA-256 checked, use bounded chunks, and are installed with the runtime user as owner. Commands run as `kortix` with `HOME=/home/kortix`; exec timeouts are capped at 300 seconds. Live session readback rejects a provider different from the requested provider.
+
+Bind imported native root sessions to the current runtime `/workspace` project. A template root can retain the `global` project while the repository receives its own project ID. The importer checks the real project, preserves the old root association, updates only the imported root, and verifies that root is present in the workspace session list. Existing native IDs are preserved. Native title readback now applies to file-restoring imports as well as approved file skips.
+
+Both destination project provider transitions report `activated`, target `platinum`. The first pilot (`c68e4d3b-cf14-4f49-8de1-4cc32d05f922`) verifies 89 source rows, 12 native messages, 5 regular files, original ownership, Marko access, and both index/native titles. A fresh second pilot and stop/wake test gate bulk dispatch. Existing materialized Daytona sessions cannot migrate in place: the admin route returns `SESSION_RUNTIME_IDENTITY_IMMUTABLE`. Retain them until a replacement strategy is chosen; project provider activation does not move existing sandboxes.
+
+### Destination archive queue — 2026-09-15
+
+User requested stop followed by archive. The separate archive worker selects only verified imports with stop receipts. It checks current owner/provider and requires both the Kortix session and provider sandbox to be stopped. Reopened sessions are skipped. It requests at most eight archives in flight, records accepted requests as `archiving`, and records success only after the provider reports `archived`. It never deletes a sandbox. New imports continue while cold-storage operations run.
+
+The archive queue is gated by an actual Platinum archive → reopen → native history/title and file hash readback → stop pilot. The dashboard separately reports Platinum verification and destination archive receipts. Existing Daytona imports remain on Daytona per the user’s clarification; only subsequent destinations use Platinum.
+
+Archive pilot result: Platinum reported `archived`; reopening preserved the same Kortix session ID, native ID, and sandbox ID. Native title/history readback and all 5 file hashes passed (12 native messages). The pilot was stopped again. This receipt automatically enables the separate eight-sandbox archive queue. Regular stop/wake and a second fresh Platinum import also passed. Existing Daytona sessions remain on their provider, as explicitly requested.

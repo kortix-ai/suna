@@ -21,6 +21,17 @@ linked, not inlined.
 
 ## Register
 
+### Retry transport-stalled session imports from the existing checkpoint (2026-09-15)
+
+**When:** a batch stops on a source or destination connection failure, retain
+the prepared session and archive receipts. Before requeueing an apply review,
+verify the same destination `session_id`, project, owner, stopped state, and
+remote archive. Retry preparation and the batch without creating another
+session. *Near-miss:* five Suna imports reached `created` or `imported` before
+a transient network failure; Trimaran preparation also lost source connectivity.
+*Enforcer:* `requeue-transport-apply-reviews.ts` checks owner readback and both
+transport retry logs. The private batch and coordinator retry three times.
+
 ### Confirm delayed Daytona archive transitions before releasing captures (2026-09-15)
 
 **When:** source capture writes `workspace_status=captured` before an archived
@@ -5122,3 +5133,23 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+### Re-read Daytona state before restoring source lifecycle (2026-09-15)
+
+**Rule:** Restore the original source state from a fresh provider read. Wait for archiving or restoring transitions; do not unconditionally stop a sandbox. Write the preservation receipt only after observing the original state. **Incident:** production legacy captures retried HTTP 400 `Sandbox is not in a stoppable state` during source cleanup. **Enforcer:** private `restore-source-state.test.ts` covers five lifecycle paths, including a stuck transition that must not receive a success receipt.
+
+### Refill migration workers before the slowest item finishes (2026-09-15)
+
+**Rule:** Overlap bounded preparation with transfers; keep a single source selection lease and deduplicate claimed session IDs. Drain active jobs before releasing the lease after preparation failure. **Incident:** 90 configured pipelines fell to five active jobs while a fixed batch waited for its slowest files. **Enforcer:** private `refilling-pool.test.ts` asserts overlap, concurrency limits, and draining on failure. Parallel file readback tests reject corrupted bytes and verify cleanup after outstanding downloads finish.
+
+### Validate the destination provider independently of the legacy source (2026-09-15)
+
+**Rule:** A legacy Daytona source does not authorize a Daytona destination. Assert the intended destination provider on create and live readback, and use a compatible destination file-transfer adapter before bulk dispatch. **Incident:** the Libremax importer explicitly sent `provider: daytona` and restored through the Daytona SDK while the user expected Platinum; 1,835 local creation receipts existed at discovery. New dispatch was suspended; active children drain. **Enforcement:** private `provider-correction-pause.json` now blocks new batch startup and destination creation. A destination-provider invariant test and Platinum pilot are required before removing this guard.
+
+### Run native imports as the destination runtime user and bind its actual project (2026-09-15)
+
+**Rule:** Match the runtime UID and HOME, enforce provider exec limits, and resolve the actual workspace project before importing a native session. Verify the imported root appears in the workspace list and survives stop/wake. **Incident:** Platinum exec defaulted to root with `HOME=/`; after correction, a template root retained `project_id=global` while `/workspace` acquired a Git project ID, so direct reads passed but wake readiness failed. **Enforcer:** private Platinum adapter and runtime-project binding tests cover the UID/HOME command, timeout cap, hash gate, exact root identity, missing-project rejection, and backup retention. Native title verification now covers every import.
+
+### Gate cold-storage migration on an archive-and-reopen pilot (2026-09-15)
+
+**Rule:** Archive only verified destination imports after both the session API and provider report stopped. Treat accepted archive requests as pending until the provider reports archived. Before bulk activation, reopen one archived destination and verify stable IDs, native history/title, and every file hash. **Incident:** adding cold storage to the Libremax migration required distinguishing stopped from archived and preserving user-reopened sessions. **Enforcer:** `archive-disposition.test.ts` rejects provider/owner drift and active state; the private archive queue starts only after the real Platinum archive/wake receipt exists, and limits in-flight archives to eight.

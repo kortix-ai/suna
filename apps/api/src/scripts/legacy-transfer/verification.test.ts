@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test';
-import {assertWorkspaceVerified,assertApprovedMissingSandboxException} from './verification';
+import {assertWorkspaceVerified,assertApprovedMissingSandboxException,assertApprovedNoReferenceWorkspaceException} from './verification';
 const valid = {workspace_status:'captured',source_sandbox_id:'source-box',workspace_api_verified_files:1,remote_archive_verified_at:'2026-09-15T00:00:00.000Z',remote_archive_files:6,workspace_capture:{archive_sha256:'a'.repeat(64),entries:4,files:1},workspace_restore:{restored_entries:4,regular_files:1,metadata_verified:true,root_directory_verified:true,exact_inventory_verified:true,file_hashes_verified:true,target:'/workspace/project'}};
 test('missing references and unapproved skips cannot complete a file migration',()=>{
  for(const workspace_status of ['no-source-sandbox-reference','unresolved-source-sandbox','capture-pending','skipped']) expect(()=>assertWorkspaceVerified('project',{workspace_status})).toThrow('Workspace is unresolved');
@@ -30,4 +30,13 @@ test('approved missing sandbox verifies history without claiming file restoratio
  expect(()=>assertWorkspaceVerified('project',proof)).toThrow();
  expect(()=>assertApprovedMissingSandboxException({...proof,approved_exception:{...proof.approved_exception,provider_http:200}})).toThrow();
  expect(()=>assertApprovedMissingSandboxException({...proof,remote_archive_files:6})).toThrow();
+});
+
+test('a scoped missing-reference waiver verifies history without file proof',()=>{
+ const proof={workspace_status:'approved-no-reference-workspace-skip',source_sandbox_id:null,approved_exception:{source_project_id:'project',reason:'missing-sandbox-reference',authorized_at:'2026-09-15T00:00:00Z',source_mapping_problems:['missing-sandbox-reference']},remote_archive_files:4,remote_archive_verified_at:'2026-09-15T00:00:00Z',owner_verified:true,marko_access_verified:true,native_messages_verified:true};
+ expect(()=>assertApprovedNoReferenceWorkspaceException('project',proof)).not.toThrow();
+ expect(()=>assertApprovedNoReferenceWorkspaceException('other',proof)).toThrow();
+ expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,source_sandbox_id:'box'})).toThrow();
+ expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,approved_exception:{...proof.approved_exception,source_mapping_problems:[]}})).toThrow();
+ expect(()=>assertApprovedNoReferenceWorkspaceException('project',{...proof,remote_archive_files:6})).toThrow();
 });
