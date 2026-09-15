@@ -113,7 +113,7 @@ describe('ModelsTab offers both default scopes', () => {
 
   /**
    * The row shows the same real numbers as the "Add provider" catalog
-   * (`provider-detail.tsx`) — context window, price per 1M, capability icons
+   * — context window, price per 1M, capability icons
    * — instead of a prose paraphrase. One catalog, one set of facts.
    */
   test('the row shows real catalog figures, not a paraphrase', () => {
@@ -124,13 +124,14 @@ describe('ModelsTab offers both default scopes', () => {
     expect(tabSource).not.toContain('modelPlainSummary');
   });
 
-  test('the menu is gated on the model being offered, not on it lacking a scope', () => {
+  test('the menu permits disabling hidden models while default actions require an offered model', () => {
     // The old gate was `!isProjectDefault && enabled`, which hid the control on
     // exactly the row you would reach for to ALSO make it your own default.
-    // A model the project does not offer still gets no menu — the server
-    // refuses to default to it.
+    // Hidden models need the disable action. Default actions remain unavailable.
     expect(tabSource).not.toContain('!isProjectDefault && enabled');
-    expect(tabSource).toContain('{enabled && (');
+    expect(tabSource).toContain('(enabled || hiddenFromPicker)');
+    expect(tabSource).toContain('disabled={!enabled || isProjectDefault || defaults.isUpdating}');
+    expect(tabSource).toContain('disabled={!enabled || isAccountDefault || defaults.isUpdating}');
   });
 });
 

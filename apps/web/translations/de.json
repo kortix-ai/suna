@@ -19224,5 +19224,24 @@
         "prompt": "Schreibe das Dokument, das eine neue Person in ihrer ersten Woche liest – wie wir arbeiten, wo sich Dinge befinden, wen sie fragen kann und woran man gute Arbeit erkennt. Nutze, was du aus dem Projektgedächtnis entnehmen kannst, und liste am Ende alles auf, worüber du Annahmen treffen musstest, statt mich zwischendurch zu fragen."
       }
     }
+  },
+  "modelAccess": {
+    "manageProvider": "Einstellungen für {name}",
+    "enableProviderAction": "Anbieter aktivieren",
+    "disableProviderAction": "Anbieter deaktivieren",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "enableProvider": "{name} aktivieren",
+    "defaultProviderHint": "Wählen Sie vor dem Deaktivieren einen Projektstandard eines anderen Anbieters.",
+    "credentialsHint": "Inferenz deaktivieren, ohne Zugangsdaten zu entfernen.",
+    "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
+    "managedTitle": "Von Kortix verwaltete Modelle",
+    "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
+    "hidden": "In Auswahl ausgeblendet",
+    "disableModel": "Modell deaktivieren",
+    "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
+    "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
+    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
   }
 }

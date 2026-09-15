@@ -2,10 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
+import {
+  isRuntimeNotReadyExhausted,
+  recordRuntimeNotReady,
+  type RuntimeNotReadyStreak,
+} from '@/lib/runtime-not-ready-budget';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Transient "the sandbox/opencode runtime URL isn't pinned yet" throw. It fires
@@ -23,6 +28,12 @@ function isRuntimeNotReadyError(error: Error): boolean {
   return /server url not ready|sandbox is still loading|opencode not ready/i.test(m);
 }
 
+/**
+ * The current runtime-not-ready outage. Module scope, not state: `reset()`
+ * remounts this boundary on every retry. See `runtime-not-ready-budget.ts`.
+ */
+let runtimeNotReadyStreak: RuntimeNotReadyStreak | null = null;
+
 export default function Error({
   error,
   reset,
@@ -32,6 +43,9 @@ export default function Error({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const runtimeNotReady = isRuntimeNotReadyError(error);
+  // Set once the silent retry has run for its whole budget. From then on the
+  // card below renders, so a runtime that never comes up is not a blank window.
+  const [retryExhausted, setRetryExhausted] = useState(false);
 
   const handleReset = () => {
     try {
@@ -44,11 +58,27 @@ export default function Error({
   // Transient runtime-not-ready: soft-reset the segment on a short interval so it
   // re-renders and picks up the runtime URL the moment it pins — no hard reload,
   // no crash card. Mirrors SandboxLoadingBoundary's belt-and-suspenders retry.
+  // Each tick records a sighting; once the budget is spent the retry stops and
+  // the card takes over. Its Try again reloads the document, which also clears
+  // the module-scope streak.
   useEffect(() => {
     if (!runtimeNotReady) return;
-    const t = setInterval(() => reset(), 800);
+    const t = setInterval(() => {
+      const now = Date.now();
+      runtimeNotReadyStreak = recordRuntimeNotReady(runtimeNotReadyStreak, now);
+      if (isRuntimeNotReadyExhausted(runtimeNotReadyStreak, now)) {
+        clearInterval(t);
+        Sentry.captureMessage('runtime not ready: silent retry budget exhausted', {
+          level: 'warning',
+          extra: { message: error?.message, digest: error?.digest },
+        });
+        setRetryExhausted(true);
+        return;
+      }
+      reset();
+    }, 800);
     return () => clearInterval(t);
-  }, [runtimeNotReady, reset]);
+  }, [runtimeNotReady, reset, error]);
 
   // Only genuine crashes are worth logging / reporting. A transient
   // runtime-not-ready race is expected background noise during a session switch —
@@ -71,13 +101,13 @@ export default function Error({
     Sentry.captureException(error);
   }, [error, runtimeNotReady]);
 
-  if (runtimeNotReady) {
-    // Render NOTHING. "Sandbox still loading" is a transient info state, never an
-    // error UI — no logo, no card, no message. We silently soft-reset (above) until
-    // the runtime URL pins, at which point the real page renders in place. The only
-    // trace is the console.debug. This is the last-ditch backstop; the session
-    // subtree's own gating + SandboxLoadingBoundary normally prevent the throw from
-    // ever reaching here at all.
+  if (runtimeNotReady && !retryExhausted) {
+    // Render NOTHING while the budget lasts. "Sandbox still loading" is a
+    // transient info state, never an error UI — no logo, no card, no message. We
+    // silently soft-reset (above) until the runtime URL pins, at which point the
+    // real page renders in place. The only trace is the console.debug. This is
+    // the last-ditch backstop; the session subtree's own gating +
+    // SandboxLoadingBoundary normally prevent the throw from ever reaching here.
     return null;
   }
 

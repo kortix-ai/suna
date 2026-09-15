@@ -1467,6 +1467,20 @@ html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
 html[data-desktop='true'] .kx-desktop-back {
   display: flex;
 }
+
+/* A top row positioned on a full-screen frame with no product navigation:
+   `/new` and the `/projects/start` sign-out. The top of the window is the
+   title-bar band, where the traffic lights (macOS) and the web-drawn window
+   controls (Win/Linux) sit. On desktop the row drops below the band, with one
+   spacing step of air, and keeps its own side padding.
+
+   Positioned rows only: `top` does nothing in flow. An in-flow header (the
+   onboarding wizard) puts `.kx-titlebar-spacer` above itself instead.
+
+   Unlayered, so it beats the row's own `top-*` utilities. */
+html[data-desktop='true'] .kx-desktop-band-row {
+  top: calc(var(--kx-titlebar-inset) + var(--spacing) * 2);
+}
 /* Below `md` the auth mark pins to the top-left corner. On desktop that corner
    is the band (traffic lights on macOS, Back on every platform), so the mark
    moves below it. */
