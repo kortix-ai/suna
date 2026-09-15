@@ -938,3 +938,53 @@ file evidence.
 Validation: controller, transient-pressure, and refilling-pool tests report
 18 passed, zero failed, 273 assertions. The dispatcher build passes. The higher
 concurrency test failed before raising the implementation ceiling, then passed.
+
+### Platinum capacity incident — 2026-09-15 20:47 UTC
+
+Verified throughput reached zero in the observed two-minute window. A destination-
+scoped provisioning query found 68 sandbox records with `503 no capacity` in
+`eu-west`, 39 with `503 overloaded`, 37 with unknown image state, seven creation
+timeouts, five provider statement-timeout errors, and one per-IP spawn 429. These
+are persisted record counts, not an interval request rate. Generic runtime-start
+errors hid these categories from phase-level telemetry.
+
+Operator control requests eight pipeline admissions and a ten-minute growth hold.
+Existing operations drain; no destination deletion or provider switch occurs.
+Recovery and higher scaling require successful provider provisioning and verified
+imports. The direct adapter's last recorded 429 predates this incident, which does
+not establish provisioning health.
+
+### User-authorized bidirectional destination routing — 2026-09-15
+
+The user authorized fallback between Daytona and Platinum after the Platinum
+capacity incident. New imports now select `destination-routing.json.preferred`,
+currently Daytona. The first request persists its provider in the local proof.
+Retries retain that provider and the same session ID. Existing destinations keep
+their provider; this change does not move an initialized runtime or its files.
+
+The scoped internal create policy explicitly allows both providers. It retains
+source/project/account/owner/archive gates and validates the provider in both the
+durable command and session readback. Its historical idempotency prefix remains
+unchanged to avoid creating a second command identity.
+
+`run-provider-routing.ts` checks destination-scoped provisioning errors every
+minute. Three recent distinct sandbox records with capacity/availability failures
+trigger fallback for future creates when the alternate has fewer than three.
+If both providers meet that failure threshold, admission drops to eight. The
+monitor counts records updated within five minutes; absence of errors is not
+proof that an unused provider is healthy. Real imports test the selected provider.
+
+The same monitor raises admissions by 32, up to the running pool ceiling of 128,
+after three minutes between increases, at least 20 verified selected-provider
+imports in the last three minutes, and zero matching recent provisioning errors.
+Controller pressure backoff and shared write/create pacing remain active. The
+manual restart advanced eight to 32, then 64 after the first verified import.
+
+Daytona pilot `e155fb9c-2f58-4d92-a2ca-462d2cb1ef69` verified history and an empty
+workspace inventory, then stopped. Additional pilot
+`71499632-624d-4bcd-818c-db0bcc90b035` verified four files, original owner, Marko
+sharing, and native history. At inspection, nine new Daytona imports were
+verified. Routing/create-policy tests report three passed, zero failed, 16
+assertions; the importer build passes. Bidirectional selection is unit-tested;
+no artificial production Daytona outage was induced. Failed pre-existing
+Platinum creates remain in the recovery ledger and have not been switched.
