@@ -13,7 +13,11 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
+import {
+  agentLaunchableInProject,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
+import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
@@ -984,6 +988,31 @@ export async function forwardToSandbox(
   //     that was refused.
   // The three existing early returns further down all sit after the claim and
   // have exactly that defect; this one deliberately does not join them.
+  // INC-2026-09-15. Before ANY gate reads the body's agent — authorization, the
+  // connector gate, the env sync, the token re-mint — an agent this session's
+  // project does not declare is removed from the body. Every consumer below
+  // then sees the session's own agent. Sandbox-authored turns included: they
+  // skip the authorization gate, which is exactly why the name must be gone
+  // before the re-mint reads it. See `undeclared-prompt-agent.ts`.
+  if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
+    const guardProjectId = record.projectId;
+    const checked = await dropUndeclaredPromptAgent({
+      body: requestBody,
+      headers: incomingHeaders,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      sandboxId,
+      path: remainingPath,
+      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
+      sandboxAuthored,
+      userId: userId ?? null,
+      userAgent: incomingHeaders.get('user-agent'),
+      isLaunchable: (agentName) => agentLaunchableInProject(guardProjectId, agentName),
+      log: (event) =>
+        console.error('[PREVIEW] dropped an agent this project does not declare from a turn-start body', event),
+    });
+    requestBody = checked.body;
+  }
   if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
     const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
     // Authorization FIRST. The connector gate below reads this agent's manifest,

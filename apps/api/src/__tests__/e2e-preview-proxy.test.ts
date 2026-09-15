@@ -163,23 +163,28 @@ mock.module('../shared/db', () => {
           return [];
         };
         return {
-          from: (table: any) => ({
-            // `.where(...)` is both awaitable (resolveShareSubject awaits it
-            // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (condition: any) => {
-              let ordered = false;
-              const query = {
-                orderBy: () => {
-                  ordered = true;
-                  return query;
-                },
-                limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
-                then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
-                  Promise.resolve(rowsFor(ordered)).then(resolve, reject),
-              };
-              return query;
-            },
-          }),
+          from: (table: any) => {
+            const afterFrom: Record<string, unknown> = {
+              // loadSandbox joins project_sessions for the session's own agent.
+              leftJoin: () => afterFrom,
+              // `.where(...)` is both awaitable (resolveShareSubject awaits it
+              // directly, expecting an array) and chainable via `.limit(n)`.
+              where: (condition: any) => {
+                let ordered = false;
+                const query = {
+                  orderBy: () => {
+                    ordered = true;
+                    return query;
+                  },
+                  limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
+                  then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                    Promise.resolve(rowsFor(ordered)).then(resolve, reject),
+                };
+                return query;
+              },
+            };
+            return afterFrom;
+          },
         };
       },
       update: (table: unknown) => ({

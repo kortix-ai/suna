@@ -341,6 +341,52 @@ export async function resolveAgentGrant(
   return grantFromLoadedAgents(agentName, await loadProjectAgents(project));
 }
 
+/**
+ * Agents every OpenCode runtime reports as `native` (verified against a live
+ * sandbox roster, 2026-09-15: build, compaction, explore, general, plan,
+ * summary, title).
+ */
+export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
+  'build',
+  'compaction',
+  'explore',
+  'general',
+  'plan',
+  'summary',
+  'title',
+]);
+
+/**
+ * May `agentName` be the RUNNING agent of a session in this project?
+ *
+ * A session token's grant follows the agent a prompt names (see
+ * `remintGrantForAgentSwitch`). Nothing may put a name on that token that the
+ * project does not declare: INC-2026-09-15 wrote `chief-of-staff`, an agent of a
+ * DIFFERENT project, onto ~50 session tokens of unrelated projects, and every
+ * one of those sessions lost its CLI and connector access.
+ *
+ *   - `default`, the platform meta agent and OpenCode's built-in agents are
+ *     always launchable: none of them is ever another project's agent.
+ *   - A project with no per-agent governance (no specs, no parse errors) keeps
+ *     the runtime roster as the authority, unchanged.
+ *   - Otherwise the name must be a declared, enabled spec. A manifest that
+ *     failed to parse proves nothing and answers `false`.
+ *
+ * Pure. Exported for tests and for the sandbox proxy.
+ */
+export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): boolean {
+  const name = agentName.trim();
+  if (!name) return false;
+  if (name === DEFAULT_AGENT_SENTINEL || isMetaAgentName(name)) return true;
+  // OpenCode ships these in every runtime and a governed project's picker can
+  // still send one. They are the runtime's own, not another project's, so they
+  // keep running exactly as before: an undeclared built-in resolves to the
+  // deny-all grant in `grantFromLoadedAgents`, never a widening.
+  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name)) return true;
+  if (loaded.specs.length === 0 && loaded.errors.length === 0) return true;
+  return loaded.specs.some((s) => s.name === name && s.enabled);
+}
+
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
   // The reserved platform coordinator is injected by the platform and is NEVER

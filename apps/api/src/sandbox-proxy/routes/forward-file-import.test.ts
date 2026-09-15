@@ -49,6 +49,8 @@ mock.module('../../projects/lib/sandbox-env-sync', () => ({
 mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
+  // The proxy's declared-agent guard; this suite exercises import forwarding.
+  agentLaunchableInProject: async () => true,
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},

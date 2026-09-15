@@ -31,6 +31,40 @@ edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
 twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
 pins the daemon marker and the 501 mapping.
 
+### A raw `sql` subquery must QUALIFY every outer column — Drizzle unqualifies them in a single-table select (2026-09-15)
+
+**When:** writing `` sql`(select … from ${inner} where … = ${outer.col})` `` as a
+column of `db.select({...}).from(outer)`, or anywhere the template may later be
+placed there. Drizzle renders column references in a single-table selection
+WITHOUT their table, so `${outer.col}` becomes `"col"`, Postgres binds it to the
+INNER table, and the correlation is a tautology that returns the first row of the
+inner table for every outer row. Use a typed `leftJoin`, or wrap every outer column
+in `qualifiedColumn()` (`apps/api/src/shared/sql-qualified-column.ts`). *Incident:*
+prod v0.13.16 and earlier, from ~2026-09-07: `loadSandbox`
+(`sandbox-proxy/backend.ts`) read the session agent this way, so every proxied
+request got another customer's agent (`chief-of-staff`, the first
+`project_sessions` tuple). Agent-less prompts re-pointed session tokens at it —
+344 tokens in unrelated projects lost CLI and connector access; the admin project
+list showed global session counts per project. *Automation:*
+`sql-correlated-subquery-guard.test.ts` fails on any raw subquery that references
+a `@kortix/db` table column it does not select from; `backend-load-sandbox-sql.test.ts`
+pins the rendered join; `isLaunchableAgentName` + the proxy/re-mint guards refuse
+any agent name the session's own manifest does not declare.
+
+### Renaming or replacing the default agent is TWO writes — the manifest AND `project.metadata.default_agent`, which wins (2026-09-15)
+
+**When:** a CR renames, removes, or replaces the agent named by `default_agent`
+in `kortix.yaml`. `resolveGovernedAgentGrant` (`apps/api/src/projects/agents.ts`)
+resolves the `default` sentinel from `opts.projectDefaultAgent` (the DB mirror)
+BEFORE `loaded.defaultAgent` (the manifest). A CR merge does not refresh the DB
+mirror, so the old name keeps winning and every default-agent launch (web
+composer, triggers without `agent`, Slack) fails `AGENT_NOT_DECLARED`. After the
+merge, run `kortix agents default <new>` (writes both), then assert
+`kortix projects info --json` → `metadata.default_agent`. *Near-miss:* prod
+customer project, `kortix` → `galileo-admin` rename, ~7 min window, caught before
+any member launched. *Automation:* none — candidate: CR-merge manifest sync
+updates `metadata.default_agent` when the merged manifest no longer declares it.
+
 ### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
 
 **When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier

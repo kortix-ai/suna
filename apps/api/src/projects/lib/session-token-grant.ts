@@ -45,7 +45,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { existingProjectMirrorPath, runGitCapture } from '../git/mirror';
-import { agentGrantDiffers, resolveSessionAgentGrant } from './secret-grant';
+import {
+  agentGrantDiffers,
+  isAgentLaunchableForProject,
+  resolveSessionAgentGrant,
+} from './secret-grant';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -238,6 +242,41 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
   }
 }
 
+async function loadGitProjectRow(projectId: string) {
+  const [project] = await db
+    .select({
+      repoUrl: projects.repoUrl,
+      defaultBranch: projects.defaultBranch,
+      manifestPath: projects.manifestPath,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return project;
+}
+
+/**
+ * Is `agentName` an agent this session's project declares? FAIL CLOSED: a read
+ * that throws answers `false`, and the caller falls back to the session agent.
+ */
+export async function agentLaunchableInProject(
+  projectId: string,
+  agentName: string,
+): Promise<boolean> {
+  try {
+    const project = await loadGitProjectRow(projectId);
+    return await isAgentLaunchableForProject({
+      projectId,
+      repoUrl: project?.repoUrl ?? '',
+      defaultBranch: project?.defaultBranch,
+      manifestPath: project?.manifestPath,
+      agentName,
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function resolveCurrentGrant(input: {
   projectId: string;
   sessionId: string;
@@ -246,15 +285,7 @@ async function resolveCurrentGrant(input: {
   forceRefresh: boolean;
 }): Promise<AgentGrant | null> {
   try {
-    const [project] = await db
-      .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
-      })
-      .from(projects)
-      .where(eq(projects.projectId, input.projectId))
-      .limit(1);
+    const project = await loadGitProjectRow(input.projectId);
 
     return await resolveSessionAgentGrant({
       projectId: input.projectId,
@@ -364,8 +395,25 @@ export async function remintGrantForAgentSwitch(
   // The agent that will ACTUALLY run. `project_sessions.agent_name` is the
   // create-time agent and nothing ever updates it, so it is the fallback, not
   // the reference point.
-  const runningAgent =
+  let runningAgent =
     requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : input.sessionAgent;
+  // INC-2026-09-15. A name this project does not declare NEVER reaches the
+  // token. `chief-of-staff`, an agent of a different project, was written onto
+  // ~50 session tokens of unrelated projects and stripped every one of them of
+  // its CLI and connector access. The proxy already drops such a name from the
+  // body before this runs; this is the last line, for any path that does not.
+  if (
+    runningAgent !== input.sessionAgent &&
+    !(await agentLaunchableInProject(input.projectId, runningAgent))
+  ) {
+    console.error('[session-token-grant] refused to re-point a session token at an undeclared agent', {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      sessionAgent: input.sessionAgent,
+      requestedAgent: runningAgent,
+    });
+    runningAgent = input.sessionAgent;
+  }
 
   const stored = await loadStoredSessionGrant(input.sessionId);
   // Synchronous for the same-agent case too — every ordinary turn. This ran in
@@ -445,6 +493,16 @@ export async function reconcileStoredSessionAgentGrant(input: {
   const stored = await loadStoredSessionGrant(input.sessionId);
 
   let runningAgent = stored?.agent?.trim() ?? '';
+  // Self-heal INC-2026-09-15: a stored agent the project does not declare is not
+  // an identity to keep serving. Fall back to the session's own agent below.
+  if (runningAgent && !(await agentLaunchableInProject(input.projectId, runningAgent))) {
+    console.error('[session-token-grant] stored session grant names an undeclared agent; healing to the session agent', {
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      storedAgent: runningAgent,
+    });
+    runningAgent = '';
+  }
   if (!runningAgent) {
     try {
       const [session] = await db

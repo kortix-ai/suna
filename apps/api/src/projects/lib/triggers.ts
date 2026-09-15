@@ -1,3 +1,4 @@
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -529,12 +530,12 @@ async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
     sql`exists (
       select 1
       from ${projectTriggerRuntime}
-      where ${projectTriggerRuntime.projectId} = ${projects.projectId}
+      where ${projectTriggerRuntime.projectId} = ${qualifiedColumn(projects.projectId)}
     )`,
     sql`exists (
       select 1
       from ${connectors}
-      where ${connectors.projectId} = ${projects.projectId}
+      where ${connectors.projectId} = ${qualifiedColumn(projects.projectId)}
     )`,
   );
   const rows = await db
