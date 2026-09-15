@@ -825,18 +825,18 @@ flow(
     // otherwise). Block on OpenCode readiness before minting the share token.
     await createOcConversation(ctx, sandboxId);
 
-    // The mint proxies to the sandbox daemon's /kortix/share. The default
-    // template's daemon returns an opaque payload (a token when share is wired,
-    // else an HTML/empty body) — so we assert the platform endpoint responds and
-    // extract a token if present, without failing the auth-boundary flow when the
-    // daemon doesn't implement share. (Core coverage here is the 401 boundary +
-    // the /v1/p/share mount.)
+    // The mint proxies to the sandbox daemon's /kortix/share. A daemon without
+    // share routes answers its /kortix catch-all 404, which the API reports as
+    // 501 — so we assert the platform endpoint responds and extract a token if
+    // present, without failing the auth-boundary flow when the daemon doesn't
+    // implement share. (Core coverage here is the 401 boundary + the
+    // /v1/p/share mount.)
     let shareToken = '';
     await ctx.step('mint a scoped preview share token (endpoint responds)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post('/v1/p/share', { sandbox_id: sandboxId, port: 8000 });
-      r.status([200, 201, 502]); // 502 = daemon share not implemented on this template
+      r.status([200, 201, 501]); // 501 = this sandbox daemon has no share routes
       shareToken = r.json<any>()?.token ?? r.json<any>()?.share?.token ?? '';
     });
     if (shareToken) {

@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs';
 import { UNKNOWN_DAEMON_ROUTE_ERROR, shareUpstreamResult } from './share-upstream';
 
 describe('shareUpstreamResult', () => {
-  test('a daemon without share routes answers 502, not a sandbox-not-found 404', () => {
+  // 501, not 502: the edge middleware in `index.ts` rewrites every 502 into a
+  // retryable 503 with Retry-After, and retrying cannot add a missing route.
+  test('a daemon without share routes answers 501, not a sandbox-not-found 404', () => {
     expect(shareUpstreamResult(404, { error: UNKNOWN_DAEMON_ROUTE_ERROR })).toEqual({
-      status: 502,
+      status: 501,
       body: { error: 'This sandbox does not support share links' },
     });
   });

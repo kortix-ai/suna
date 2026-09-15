@@ -105,7 +105,7 @@ shareApp.openapi(
     },
     responses: {
       200: json(ShareResultSchema, 'Share link (proxied from the sandbox daemon)'),
-      ...errors(400, 401, 403, 404, 502),
+      ...errors(400, 401, 403, 404, 501, 502),
     },
   }),
   // Manual body parsing retained: the original contract returns a custom
@@ -169,7 +169,7 @@ shareApp.openapi(
     },
     responses: {
       200: json(ShareResultSchema, 'Share links (proxied from the sandbox daemon)'),
-      ...errors(400, 401, 403, 404, 502),
+      ...errors(400, 401, 403, 404, 501, 502),
     },
   }),
   // Manual query read kept — original returns a custom 400 envelope and proxies
@@ -216,7 +216,7 @@ shareApp.openapi(
     },
     responses: {
       200: json(ShareResultSchema, 'Revocation result (proxied from the sandbox daemon)'),
-      ...errors(400, 401, 403, 404, 502),
+      ...errors(400, 401, 403, 404, 501, 502),
     },
   }),
   // Manual param/query read kept — original returns field-specific 400 envelopes
