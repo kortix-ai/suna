@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   SessionAttachmentStore,
   attachmentUserContent,
+  toolImageParts,
   type PromptAttachment,
 } from "./session-attachments.ts";
 
@@ -21,6 +22,117 @@ const store = () =>
   new SessionAttachmentStore("https://store.test/projects/p", "own/session", {
     authorization: "Bearer worker",
   });
+
+test("tool image parts use durable session paths and retain legacy lookup compatibility", () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+  const sessionId = '22222222-2222-4222-8222-222222222222';
+  const scopedStore = new SessionAttachmentStore('https://store.test', sessionId, {}, projectId);
+  const identity = { sessionID: 'native', messageID: 'message', partID: 'tool' };
+  const content = [{ type: 'image', mimeType: file.mime, data: '', kortixAttachment: file }];
+  const parts = toolImageParts(content, identity, scopedStore.registerPart);
+  expect(parts[0].url).toBe(`/projects/${projectId}/sessions/${sessionId}/attachments/${file.url.split(':').at(-1)}`);
+  expect(scopedStore.referenceForPart('/kortix/part/native/message/tool-image-0')).toEqual(file);
+  expect(toolImageParts(content, identity)[0].url).toBe('/kortix/part/native/message/tool-image-0');
+});
+
+test("hydrates distinct images concurrently, deduplicates repeated references, and preserves message order", async () => {
+  const buffers = [1, 2, 3].map(value => Buffer.from([value]));
+  const files = buffers.map(bytes => fileFor(bytes));
+  const pending: Array<() => void> = [];
+  const requests: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requests.push(url);
+    await new Promise<void>(resolve => pending.push(resolve));
+    const index = files.findIndex(item => url.endsWith(item.url.split(':').at(-1)!));
+    return new Response(buffers[index], { headers: { 'content-type': 'image/png' } });
+  }) as unknown as typeof fetch;
+  const messages: Array<{ role: string; content: unknown[] }> = files.map((item, index) => ({
+    role: 'user', content: attachmentUserContent(String(index), [item, files[0]]),
+  }));
+  const original = structuredClone(messages);
+  const result = store().hydrate(messages);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(2);
+    pending.splice(0).forEach(resolve => resolve());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(3);
+    pending.splice(0).forEach(resolve => resolve());
+    const hydrated = await result;
+    expect(hydrated.map(message => message.content)).toEqual(buffers.map((bytes, index) => [
+      { type: 'text', text: String(index) },
+      { type: 'image', mimeType: 'image/png', data: bytes.toString('base64') },
+      { type: 'image', mimeType: 'image/png', data: buffers[0]!.toString('base64') },
+    ]));
+    expect(messages).toEqual(original);
+  } finally {
+    globalThis.fetch = (async () => new Response(buffers[0], { headers: { 'content-type': 'image/png' } })) as unknown as typeof fetch;
+    pending.splice(0).forEach(resolve => resolve());
+    await result.catch(() => {});
+  }
+});
+
+test("a failed image read cancels its parallel sibling before hydration rejects", async () => {
+  const first = fileFor(Buffer.from([31]));
+  const second = fileFor(Buffer.from([32]));
+  let siblingAborted = false;
+  let release!: () => void;
+  const siblingStarted = new Promise<void>(resolve => { release = resolve; });
+  const deadline = AbortSignal.timeout(1000);
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).endsWith(first.url.split(':').at(-1)!)) {
+      await Promise.race([siblingStarted, new Promise<void>((_resolve, reject) => {
+        deadline.addEventListener('abort', () => reject(new Error('parallel sibling did not start')), { once: true });
+      })]);
+      return new Response('corrupt', { headers: { 'content-type': 'image/png' } });
+    }
+    release();
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        siblingAborted = true;
+        reject(init.signal!.reason);
+      }, { once: true });
+    });
+  }) as unknown as typeof fetch;
+  await expect(store().hydrate([{ content: attachmentUserContent('images', [first, second]) }]))
+    .rejects.toThrow('integrity');
+  expect(siblingAborted).toBe(true);
+});
+
+test('replays repeated images through authenticated HTTP with at most two active downloads', async () => {
+  const buffers = Array.from({ length: 16 }, (_, index) => Buffer.alloc(256, index));
+  const files = buffers.map(bytes => fileFor(bytes));
+  const requests: string[] = [];
+  let active = 0;
+  let maximum = 0;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      expect(request.headers.get('authorization')).toBe('Bearer fixture');
+      const path = new URL(request.url).pathname;
+      expect(path).toStartWith('/projects/p/sessions/own%2Fsession/attachments/');
+      requests.push(path);
+      maximum = Math.max(maximum, ++active);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      active--;
+      const index = files.findIndex(item => path.endsWith(item.url.split(':').at(-1)!));
+      return new Response(buffers[index], { headers: { 'content-type': 'image/png' } });
+    },
+  });
+  try {
+    const assets = new SessionAttachmentStore(`${server.url}projects/p`, 'own/session', { authorization: 'Bearer fixture' });
+    const hydrated = await assets.hydrate([{ content: attachmentUserContent('images', [...files, ...files]) }]);
+    expect(maximum).toBe(2);
+    expect(requests).toHaveLength(16);
+    expect(hydrated[0]!.content.slice(1).map((image: any) => image.data)).toEqual([...buffers, ...buffers].map(bytes => bytes.toString('base64')));
+    const controller = new AbortController();
+    const stopped = assets.hydrate([{ content: attachmentUserContent('cached', [files[0]]) }], controller.signal);
+    controller.abort(new Error('stopped'));
+    await expect(stopped).rejects.toThrow('stopped');
+    expect(requests).toHaveLength(16);
+  } finally { server.stop(true); }
+});
 
 test("uses only the bound session and returns cached verified bytes without retaining base64", async () => {
   const requests: Request[] = [];

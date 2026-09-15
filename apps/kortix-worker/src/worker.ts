@@ -660,7 +660,7 @@ export async function buildHarness(cfg: WorkerConfig) {
   // Durable transcript. The worker is a cache of it, not its owner: kill this
   // process and the conversation is still whole in the store.
   let session: Session | undefined;
-  const attachments = new SessionAttachmentStore(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {});
+  const attachments = new SessionAttachmentStore(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {}, cfg.projectId);
   let sessionLog: RemoteSessionLog | undefined;
   let durableSessionLog: SessionLog | undefined;
   let turnJournalRef: TurnAdmissionJournal | null = null;
@@ -1602,6 +1602,16 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
   );
   surface = new RuntimeSurface({
     registerAttachment: attachments.registerPart,
+    resolveAttachment: ref => {
+      let file = attachments.referenceForPart(ref);
+      if (!file) {
+        const match = /^\/kortix\/part\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(ref);
+        const admission = match?.[1] === surface.rootId ? turnJournal.admission(match[2]!) : null;
+        const index = admission?.wireUserMessage.parts.findIndex(part => part.id === match?.[3]) ?? -1;
+        if (index > 0) file = (admission?.options.files as unknown as PromptAttachment[] | undefined)?.[index - 1];
+      }
+      return file ? attachments.registerPart(ref, file) : undefined;
+    },
     sessionId: cfg.sessionId ?? 'session-local',
     projectId: cfg.projectId,
     token: cfg.kortixToken,
@@ -2496,7 +2506,7 @@ async function initializeWorker(cfg: WorkerConfig, server: Server, activate: (ha
             ...(options.compaction ? { type: 'compaction', auto: options.compactionAuto === true } : { type: 'text', text }),
           },
           ...(options.files ?? []).map((file, index) => ({ ...file, id: `${messageId}-p${index + 1}`, messageID: messageId, sessionID: surface.rootId,
-            url: `/kortix/part/${surface.rootId}/${messageId}/${messageId}-p${index + 1}` })),
+            url: attachments.registerPart(`/kortix/part/${surface.rootId}/${messageId}/${messageId}-p${index + 1}`, file) })),
         ],
       },
     };

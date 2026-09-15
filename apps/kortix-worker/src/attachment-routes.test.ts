@@ -24,7 +24,7 @@ afterEach(async () => {
   }
   for (const store of stores.splice(0)) store.stop(true);
 });
-async function fixture() {
+async function fixture(scoped = false) {
   const items: any[] = [];
   const reads: string[] = [];
   let missing = false;
@@ -55,7 +55,8 @@ async function fixture() {
     envCwd: '/workspace',
     systemPrompt: 'Follow the request.',
     modelMode: 'faux' as const,
-    sessionId: 'images',
+    sessionId: scoped ? '22222222-2222-4222-8222-222222222222' : 'images',
+    ...(scoped ? { projectId: '11111111-1111-4111-8111-111111111111' } : {}),
     kortixToken: 'test-token',
     storeUrl: store.url.toString().replace(/\/$/, ''),
     turnOwnerLeaseMs: 500,
@@ -100,6 +101,30 @@ async function fixture() {
     },
   };
 }
+
+test('scoped image history points directly to durable storage and legacy history upgrades without rewriting the log', async () => {
+  const f = await fixture(true);
+  f.worker.faux!.setResponses([fauxAssistantMessage('Image saved.')]);
+  expect((await f.send({})).status).toBe(200);
+  const before = await f.history();
+  const part = before[0].parts.find((part: any) => part.type === 'file');
+  expect(part.url).toBe(`/projects/11111111-1111-4111-8111-111111111111/sessions/22222222-2222-4222-8222-222222222222/attachments/${sha256}`);
+  const legacy = `/kortix/part/${f.id}/${before[0].info.id}/${part.id}`;
+  expect(Buffer.from(await (await f.request(legacy)).arrayBuffer())).toEqual(png);
+  const replace = (value: any): void => {
+    if (!value || typeof value !== 'object') return;
+    for (const key of Object.keys(value)) {
+      if (key === 'url' && value[key] === part.url) value[key] = legacy;
+      else replace(value[key]);
+    }
+  };
+  for (const item of f.items) replace(item);
+  const log = JSON.stringify(f.items);
+  await f.restart();
+  expect(await f.history()).toEqual(before);
+  expect(JSON.stringify(f.items).startsWith(log.slice(0, -1))).toBe(true);
+  expect(f.worker.env.calls).toHaveLength(0);
+});
 
 test('immutable images reach the model, remain lazy in wire history, and replay after replacement', async () => {
   const f = await fixture();

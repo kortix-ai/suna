@@ -1,4 +1,5 @@
 import { flow } from '../core/flow';
+import { createHash } from 'node:crypto';
 
 flow('SESS-33', {
   domain: 'sessions',
@@ -8,6 +9,8 @@ flow('SESS-33', {
     'GET /v1/projects/:projectId/sessions/:sessionId/log',
     'GET /v1/projects/:projectId/sessions/:sessionId',
     'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    'PUT /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
+    'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:sha256',
   ],
 }, async ctx => {
   const project = await ctx.fixtures.project();
@@ -20,12 +23,16 @@ flow('SESS-33', {
   initial.status(200);
   const initialStatus = initial.json<any>().status;
   const stream = 'kortix.pi.turn-admission.v1';
-  const seedMirror = async (ids: string[]) => {
+  const connectDatabase = async () => {
     if (!ctx.env.databaseUrl || ctx.env.target === 'prod') throw new Error('mirror fixtures require a non-production database');
     const { Client } = await import('pg');
     const local = /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl);
     const client = new Client({ connectionString: ctx.env.databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
     await client.connect();
+    return client;
+  };
+  const seedMirror = async (ids: string[]) => {
+    const client = await connectDatabase();
     try {
       await client.query(`INSERT INTO kortix.session_transcript_mirrors (session_id,project_id,account_id,opencode_session_id,head_complete)
         SELECT session_id,project_id,account_id,'ses_history',true FROM kortix.project_sessions WHERE session_id=$1
@@ -47,6 +54,27 @@ flow('SESS-33', {
   await ctx.step('a captured transcript without Pi history controls keeps every message visible', async () => {
     await seedMirror(['u0', 'a0', 'u1', 'a1']);
     await mirror(['u0', 'a0', 'u1', 'a1']);
+  });
+  await ctx.step('a stopped transcript preserves its immutable file reference and the API returns the exact bytes without starting compute', async () => {
+    const content = `history-attachment-${crypto.randomUUID()}`;
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    const attachmentRoute = '/v1/projects/:projectId/sessions/:sessionId/attachments/:sha256';
+    const attachmentParams = { ...params, sha256 };
+    const url = `/projects/${project.id}/sessions/${session.id}/attachments/${sha256}`;
+    (await owner.put(attachmentRoute, content, { params: attachmentParams, raw: true, headers: { 'content-type': 'text/plain' } })).status(204);
+    const before = (await owner.get(sessionRoute, { params })).status(200).json<any>();
+    const client = await connectDatabase();
+    try {
+      await client.query(`UPDATE kortix.session_transcript_messages SET parts=parts || $2::jsonb WHERE session_id=$1 AND message_id='u0'`, [session.id, JSON.stringify([{ id: 'history-file', type: 'file', mime: 'text/plain', filename: 'note.txt', url }])]);
+    } finally { await client.end(); }
+    const response = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', { params, query: { shape: 'sync' } });
+    response.status(200).body().has('$.source', 'mirror');
+    const file = response.json<any>().messages.flatMap((message: any) => message.parts).find((part: any) => part.id === 'history-file');
+    if (file?.url !== url) throw new Error('mirror lost the immutable attachment reference');
+    const bytes = await owner.get(attachmentRoute, { params: attachmentParams });
+    bytes.status(200);
+    if (bytes.text() !== content) throw new Error('historical attachment bytes changed');
+    (await owner.get(sessionRoute, { params })).status(200).body().has('$.status', before.status);
   });
   const identified = (item: Record<string, unknown>): Record<string, unknown> & { _kortixAppendId: string } => ({ ...item, _kortixAppendId: crypto.randomUUID() });
   const accepted = (messageId: string, historyRevision?: number) => identified({

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sessionAttachmentReference } from '../../../packages/sdk/src/core/runtime/session-attachment-reference';
 
 const PREFIX = "kortix-attachment:sha256:";
 const IMAGE_TYPES = new Set([
@@ -84,7 +85,24 @@ interface StoredImageContent {
 export type RegisterAttachmentPart = (
   ref: string,
   file: PromptAttachment,
-) => void;
+) => string | void;
+
+export function restoreUserAttachmentParts(
+  parts: Array<Record<string, unknown>>,
+  content: unknown,
+  register?: RegisterAttachmentPart,
+) {
+  const files = Array.isArray(content)
+    ? content.filter(block => block?.type === 'image' && block.kortixAttachment).map(block => block.kortixAttachment)
+    : [];
+  let index = 0;
+  return parts.map(part => {
+    if (part.type !== 'file') return part;
+    const file = files[index++];
+    if (!file || typeof part.url !== 'string') return part;
+    return { ...part, url: register?.(part.url, parsePromptAttachment(file)) ?? part.url };
+  });
+}
 
 export function toolImageParts(
   content: unknown,
@@ -97,7 +115,7 @@ export function toolImageParts(
     const file = parsePromptAttachment(block.kortixAttachment);
     const id = `${identity.partID}-image-${index}`;
     const url = `/kortix/part/${identity.sessionID}/${identity.messageID}/${id}`;
-    register?.(url, file);
+    const storedUrl = register?.(url, file);
     return [
       {
         type: "file" as const,
@@ -108,7 +126,7 @@ export function toolImageParts(
         filename:
           file.filename ??
           `image-${index + 1}.${file.mime === "image/jpeg" ? "jpg" : file.mime.split("/")[1]}`,
-        url,
+        url: storedUrl ?? url,
       },
     ];
   });
@@ -121,8 +139,11 @@ export class SessionAttachmentStore {
   >();
   private cacheBytes = 0;
   private readonly partReferences = new Map<string, PromptAttachment>();
-  readonly registerPart: RegisterAttachmentPart = (ref, file) => {
+  readonly registerPart = (ref: string, file: PromptAttachment): string => {
     this.partReferences.set(ref, { ...file });
+    return this.projectId && this.sessionId
+      ? sessionAttachmentReference(this.projectId, this.sessionId, attachmentDigest(file.url) ?? '') ?? ref
+      : ref;
   };
   referenceForPart(ref: string): PromptAttachment | undefined {
     return this.partReferences.get(ref);
@@ -131,6 +152,7 @@ export class SessionAttachmentStore {
     private readonly baseUrl?: string,
     private readonly sessionId?: string,
     private readonly headers: Record<string, string> = {},
+    private readonly projectId?: string,
   ) {}
 
   async read(file: PromptAttachment, signal?: AbortSignal) {
@@ -192,6 +214,7 @@ export class SessionAttachmentStore {
     } finally {
       reader.releaseLock();
     }
+    signal?.throwIfAborted();
     const bytes = Buffer.concat(chunks, size);
     if (!size || createHash("sha256").update(bytes).digest("hex") !== sha256)
       throw new Error("session attachment integrity check failed");
@@ -355,26 +378,53 @@ export class SessionAttachmentStore {
     messages: T[],
     signal?: AbortSignal,
   ): Promise<T[]> {
-    const result: T[] = [];
-    for (const message of messages) {
+    signal?.throwIfAborted();
+    const jobs = new Map<string, {
+      file: PromptAttachment;
+      destinations: Array<{ content: any[]; index: number }>;
+    }>();
+    const result = messages.map(message => {
       const source = message as { content?: unknown };
-      if (!Array.isArray(source.content)) {
-        result.push(message);
-        continue;
-      }
-      const content = [];
-      for (const block of source.content) {
+      if (!Array.isArray(source.content)) return message;
+      const content = [...source.content];
+      for (const [index, block] of content.entries()) {
         if (block?.type === "image" && block.kortixAttachment) {
           const file = parsePromptAttachment(block.kortixAttachment);
-          const bytes = await this.read(file, signal);
-          content.push({
-            type: "image",
-            mimeType: file.mime,
-            data: bytes.toString("base64"),
-          });
-        } else content.push(block);
+          const key = JSON.stringify([file.url, file.mime]);
+          let job = jobs.get(key);
+          if (!job) {
+            job = { file, destinations: [] };
+            jobs.set(key, job);
+          }
+          job.destinations.push({ content, index });
+        }
       }
-      result.push({ ...message, content });
+      return { ...message, content };
+    });
+    const pending = [...jobs.values()];
+    const controller = new AbortController();
+    const readSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal;
+    let next = 0;
+    const readers = Array.from({ length: Math.min(2, pending.length) }, async () => {
+      while (next < pending.length) {
+        readSignal.throwIfAborted();
+        const { file, destinations } = pending[next++]!;
+        const bytes = await this.read(file, readSignal);
+        readSignal.throwIfAborted();
+        const data = bytes.toString("base64");
+        for (const { content, index } of destinations) {
+          content[index] = { type: "image", mimeType: file.mime, data };
+        }
+      }
+    });
+    try {
+      await Promise.all(readers);
+    } catch (error) {
+      controller.abort(error);
+      await Promise.allSettled(readers);
+      throw error;
     }
     return result;
   }

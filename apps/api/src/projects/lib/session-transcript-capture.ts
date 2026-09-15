@@ -94,7 +94,7 @@ export async function captureSessionTranscriptMirror(
 
     const read = await deps.readMessages(sessionId);
     if (!read) return null;
-    const rows = mirrorRowsFromOpencodePayload(read.payload);
+    const rows = mirrorRowsFromOpencodePayload(read.payload, { projectId: session.projectId, sessionId });
     if (rows.length === 0) return null;
 
     const [existing] = await db

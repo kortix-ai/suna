@@ -1,4 +1,4 @@
-import { toolImageParts, type RegisterAttachmentPart } from './session-attachments.ts';
+import { toolImageParts, restoreUserAttachmentParts, type RegisterAttachmentPart } from './session-attachments.ts';
 import { serveGlobalEventStream } from './global-event-stream.ts';
 /**
  * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
@@ -444,6 +444,7 @@ function readRawJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<un
 
 export interface RuntimeSurfaceOptions {
   registerAttachment?: RegisterAttachmentPart;
+  resolveAttachment?: (ref: string) => string | undefined;
   todos?: () => PiTodo[];
   sessionId: string;
   projectId?: string;
@@ -812,7 +813,9 @@ export class RuntimeSurface {
       });
       if (role === 'user') lastUserId = id;
       if (role === 'user' && Array.isArray(message.kortixWireUserParts)) {
-        for (const part of message.kortixWireUserParts) this.transcript.apply({ type: 'message.part.updated', properties: { sessionID: this.rootId, part } });
+        for (const part of restoreUserAttachmentParts(message.kortixWireUserParts, message.content, this.opts.registerAttachment)) {
+          this.transcript.apply({ type: 'message.part.updated', properties: { sessionID: this.rootId, part } });
+        }
         continue;
       }
       const suspended = this.opts.suspendedTools?.().find(question => question.messageId === id);
@@ -907,7 +910,16 @@ export class RuntimeSurface {
         type: 'message.updated',
         properties: { sessionID: this.rootId, info: message.info },
       });
-      for (const part of message.parts) {
+      const projectPart = (part: Record<string, unknown>): Record<string, unknown> => {
+        if (part.type !== 'file' || typeof part.url !== 'string') return part;
+        return { ...part, url: this.opts.resolveAttachment?.(part.url) ?? part.url };
+      };
+      for (const source of message.parts) {
+        let part = projectPart(source);
+        const state = part.state as Record<string, unknown> | undefined;
+        if (part.type === 'tool' && Array.isArray(state?.attachments)) {
+          part = { ...part, state: { ...state, attachments: state.attachments.map(projectPart) } };
+        }
         this.transcript.apply({
           type: 'message.part.updated',
           properties: { sessionID: this.rootId, part },
