@@ -412,17 +412,27 @@ async function markSessionCheckoutAdopted(target: string, branchName: string | u
   }
 }
 
-async function establishBaseRefsFromBakedHead(
+/**
+ * Point `<base>`, `origin/<base>` and `origin/HEAD` at the session's base tip.
+ *
+ * OpenCode's `/vcs/diff?mode=branch` — the session Changes badge, header chip
+ * and diff panel — diffs against the merge-base with `origin/HEAD`. Every
+ * checkout that starts from the image-baked scaffold inherits the scaffold's
+ * `origin/main`, which is the scaffold ROOT. If only the local `<base>` moves to
+ * the project tip, every commit on `<base>` since the scaffold is reported as a
+ * change the session made, on a session that has not touched anything.
+ */
+async function establishBaseRefs(
   target: string,
   base: string,
-  bakedHead: string,
+  head: string,
 ): Promise<void> {
   const localBaseRef = `refs/heads/${base}`
   const remoteBaseRef = `refs/remotes/origin/${base}`
   const remoteHeadRef = 'refs/remotes/origin/HEAD'
   const commands: Array<{ args: string[]; action: string }> = [
-    { args: ['update-ref', localBaseRef, bakedHead], action: `set ${localBaseRef}` },
-    { args: ['update-ref', remoteBaseRef, bakedHead], action: `set ${remoteBaseRef}` },
+    { args: ['update-ref', localBaseRef, head], action: `set ${localBaseRef}` },
+    { args: ['update-ref', remoteBaseRef, head], action: `set ${remoteBaseRef}` },
     { args: ['symbolic-ref', remoteHeadRef, remoteBaseRef], action: `set ${remoteHeadRef}` },
     {
       args: ['branch', `--set-upstream-to=origin/${base}`, '--', base],
@@ -435,11 +445,7 @@ async function establishBaseRefsFromBakedHead(
       throw new Error(`failed to ${command.action}: ${result.stderr || result.stdout}`)
     }
   }
-  logger.info('[git] established base refs from baked checkout', {
-    target,
-    base,
-    head: bakedHead,
-  })
+  logger.info('[git] established base refs', { target, base, head })
 }
 
 /**
@@ -778,7 +784,7 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
       const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
       if (cfg.branchName && cfg.sessionFresh && !adoption.adopted && cfg.baseSha === bakedHead) {
-        await establishBaseRefsFromBakedHead(target, base, bakedHead)
+        await establishBaseRefs(target, base, bakedHead)
       }
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)
@@ -1115,6 +1121,7 @@ async function tryScaffoldDeltaFetch(
     if (cfg.sessionFresh && cfg.baseSha && localHead === cfg.baseSha) {
       const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
       if (co.code !== 0) throw new Error(`checkout base (local): ${co.stderr}`)
+      await establishBaseRefs(tmp, base, localHead)
       await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
@@ -1132,6 +1139,7 @@ async function tryScaffoldDeltaFetch(
         cfg.gitDeltaParentCommitBase64,
       )
     ) {
+      await establishBaseRefs(tmp, base, cfg.baseSha)
       await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (zero-network: API delta bundle)', {
         ms: Date.now() - t0,
@@ -1150,6 +1158,7 @@ async function tryScaffoldDeltaFetch(
       cfg.gitDeltaParentSha &&
       await applyRemoteFastBootDeltaBundle(cfg, tmp, base, cfg.baseSha, cfg.gitDeltaParentSha, cfg.gitDeltaParentCommitBase64)
     ) {
+      await establishBaseRefs(tmp, base, cfg.baseSha)
       await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (one request: remote API delta bundle)', {
         ms: Date.now() - t0,
@@ -1172,6 +1181,8 @@ async function tryScaffoldDeltaFetch(
     if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
     if (co.code !== 0) throw new Error(`checkout base: ${co.stderr}`)
+    const fetchedHead = (await execGit(['-C', tmp, 'rev-parse', 'HEAD'])).stdout.trim()
+    await establishBaseRefs(tmp, base, fetchedHead)
     await swapStageIntoTarget(tmp, target)
     logger.info('[git] repo materialized via scaffold delta-fetch', { ms: Date.now() - t0, base })
     return true

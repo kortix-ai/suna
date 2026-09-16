@@ -46,14 +46,33 @@ function seed(commits: number, opts: { big?: boolean } = {}) {
     git(source, 'commit', '-q', '-m', `feat: change ${i}`)
   }
   const baseSha = git(source, 'rev-parse', 'HEAD')
+  // git refuses an empty bundle, so a project still on its scaffold root has none.
   const bundlePath = join(root, 'delta.bundle')
-  git(source, 'bundle', 'create', bundlePath, 'refs/heads/main', `^${scaffoldSha}`)
-  const bundle = readFileSync(bundlePath)
+  if (commits > 0) git(source, 'bundle', 'create', bundlePath, 'refs/heads/main', `^${scaffoldSha}`)
+  const bundle = commits > 0 ? readFileSync(bundlePath) : Buffer.alloc(0)
   const parentCommit = execFileSync('git', ['cat-file', 'commit', scaffoldSha], { cwd: source })
   const target = join(root, 'workspace')
   mkdirSync(target)
   __setScaffoldRepoPathForTests(scaffoldRepo)
   return { root, source, scaffoldSha, baseSha, bundle, parentCommitBase64: parentCommit.toString('base64'), target }
+}
+
+/**
+ * A fresh session must report ZERO changes against its base.
+ *
+ * OpenCode's `/vcs/diff?mode=branch` — the session Changes badge, header chip
+ * and diff panel — diffs the working tree against the merge-base with
+ * `origin/HEAD`. The scaffold fast paths clone the baked scaffold, whose
+ * `origin/main` is the scaffold ROOT, then move only the local `main` to the
+ * project tip. Left there, every commit on `main` since the scaffold showed up
+ * as a change the session made.
+ */
+function expectFreshSessionHasNoChanges(p: ReturnType<typeof seed>) {
+  expect(git(p.target, 'rev-parse', 'refs/remotes/origin/main')).toBe(p.baseSha)
+  expect(git(p.target, 'symbolic-ref', 'refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/main')
+  const mergeBase = git(p.target, 'merge-base', 'HEAD', 'origin/HEAD')
+  expect(mergeBase).toBe(p.baseSha)
+  expect(git(p.target, 'diff', '--name-only', mergeBase)).toBe('')
 }
 
 function baseEnv(p: ReturnType<typeof seed>, repoUrl: string): Record<string, string> {
@@ -89,6 +108,7 @@ describe('fast-boot delta materialization', () => {
     expect(git(p.target, 'rev-list', '--count', 'HEAD')).toBe('6')
     expect(readFileSync(join(p.target, 'file-5.txt'), 'utf8')).toBe('change 5\n')
     expect(git(p.target, 'remote', 'get-url', 'origin')).toContain('/v1/git/')
+    expectFreshSessionHasNoChanges(p)
   })
 
   test('downloads a REMOTE bundle with one authenticated GET and applies it', async () => {
@@ -112,6 +132,7 @@ describe('fast-boot delta materialization', () => {
     expect(git(p.target, 'rev-parse', 'HEAD')).toBe(p.baseSha)
     expect(git(p.target, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('sess-1')
     expect(readFileSync(join(p.target, 'file-3.txt'), 'utf8')).toBe('change 3\n')
+    expectFreshSessionHasNoChanges(p)
   })
 
   test('falls back to a single-round-trip shallow fetch when the bundle route fails', async () => {
@@ -129,6 +150,7 @@ describe('fast-boot delta materialization', () => {
     expect(git(p.target, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('sess-1')
     // `--depth 1`: one negotiation round, history restored later off the critical path.
     expect(await isShallowRepo(p.target)).toBe(true)
+    expectFreshSessionHasNoChanges(p)
   })
 
   test('rejects a bundle whose parent tree the scaffold does not hold, then falls back', async () => {
@@ -152,6 +174,35 @@ describe('fast-boot delta materialization', () => {
     await materializeRepo(cfg)
     expect(git(p.target, 'rev-parse', 'HEAD')).toBe(p.baseSha)
     expect(readFileSync(join(p.target, 'README.md'), 'utf8')).toBe('generic scaffold\n')
+    expectFreshSessionHasNoChanges(p)
+  })
+
+  test('a project still on the scaffold root boots with zero network and no changes', async () => {
+    const p = seed(0)
+    expect(p.baseSha).toBe(p.scaffoldSha)
+    globalThis.fetch = (async () => {
+      throw new Error('network must not be touched')
+    }) as unknown as typeof fetch
+    const cfg = loadConfig(baseEnv(p, 'https://api.kortix.test/v1/git/11111111-1111-4111-8111-111111111111.git'))
+    await materializeRepo(cfg)
+    expect(git(p.target, 'rev-parse', 'HEAD')).toBe(p.baseSha)
+    expect(git(p.target, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('sess-1')
+    expectFreshSessionHasNoChanges(p)
+  })
+
+  test('a real edit after a bundle boot is the only change reported', async () => {
+    const p = seed(3)
+    const cfg = loadConfig({
+      ...baseEnv(p, 'https://api.kortix.test/v1/git/11111111-1111-4111-8111-111111111111.git'),
+      KORTIX_GIT_DELTA_BUNDLE_BASE64: p.bundle.toString('base64'),
+    })
+    await materializeRepo(cfg)
+    writeFileSync(join(p.target, 'README.md'), 'edited in the session\n')
+    const mergeBase = git(p.target, 'merge-base', 'HEAD', 'origin/HEAD')
+    expect(git(p.target, 'diff', '--name-only', mergeBase)).toBe('README.md')
+    // Committing keeps it visible: the set is version-vs-base, not the dirty tree.
+    git(p.target, 'commit', '-q', '-am', 'session edit')
+    expect(git(p.target, 'diff', '--name-only', mergeBase)).toBe('README.md')
   })
 })
 
