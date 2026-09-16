@@ -658,13 +658,20 @@ for (const runtime of runtimes) {
           .locator("[data-pending-prompt-id]")
           .filter({ hasText: transcriptText });
         // Keep the first real API acceptance in flight. A second Enter must
-        // paint and POST without waiting for that response to reach the tab.
+        // paint at once. Its POST leaves after the first POST settles: the
+        // session's delivery chain keeps POSTs in Enter order, because an idle
+        // session admits whichever prompt lands first (`delivery-chain.ts`).
         let releaseAcceptance!: () => void;
         const acceptanceGate = new Promise<void>((resolve) => { releaseAcceptance = resolve; });
+        const postOrder: string[] = [];
         const promptsUrl = `**/sessions/${sessionId}/prompts`;
         await page.route(promptsUrl, async (route) => {
           const request = route.request();
-          if (request.method() !== "POST" || !request.postData()?.includes(transcriptText)) {
+          const body = request.postData() ?? "";
+          if (request.method() === "POST") {
+            postOrder.push(body.includes(transcriptText) ? "transcript" : body.includes(composerText) ? "composer" : "other");
+          }
+          if (request.method() !== "POST" || !body.includes(transcriptText)) {
             await route.continue();
             return;
           }
@@ -673,21 +680,26 @@ for (const runtime of runtimes) {
           await route.fulfill({ response });
         });
         const firstSend = send(transcriptText, "Enter", "transcript");
+        let nextRequest: Promise<import("@playwright/test").Request> | undefined;
         try {
           await expect(pending).toBeVisible({ timeout: 1_000 });
           await input.fill(composerText);
-          const nextRequest = page.waitForRequest((request) =>
+          nextRequest = page.waitForRequest((request) =>
             request.method() === "POST" && request.url().endsWith(`/sessions/${sessionId}/prompts`) &&
-            Boolean(request.postData()?.includes(composerText)), { timeout: 1_000 });
+            Boolean(request.postData()?.includes(composerText)), { timeout: 30_000 });
           await input.press("Meta+Enter");
           await expect(page.locator("[data-queued-prompt-id]").filter({ hasText: composerText }))
             .toBeVisible({ timeout: 1_000 });
-          expect((await nextRequest).postDataJSON().placement).toBe("composer");
+          // Painted, and still waiting behind the first POST.
+          expect(postOrder).toEqual(["transcript"]);
         } finally {
           releaseAcceptance();
           await firstSend;
-          await page.unroute(promptsUrl);
         }
+        expect(nextRequest).toBeDefined();
+        expect((await nextRequest!).postDataJSON().placement).toBe("composer");
+        expect(postOrder).toEqual(["transcript", "composer"]);
+        await page.unroute(promptsUrl);
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
         await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
         await expectThinkingMatchesStop(page);
