@@ -1,6 +1,12 @@
 import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { freshSendHint, resolveWorkingTurn, shouldSuppressWorkingTurnBusy } from './working-turn';
+import {
+  freshSendHint,
+  projectionShowsWork,
+  queuedStatusVisible,
+  resolveWorkingTurn,
+  shouldSuppressWorkingTurnBusy,
+} from './working-turn';
 
 test('a confirmed active turn keeps its working row through completed intermediate steps', () => {
   expect(shouldSuppressWorkingTurnBusy({
@@ -282,5 +288,63 @@ describe('resolveWorkingTurn — a transcript with no assistant content at all',
     expect(
       resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds: new Set(['u2']) }),
     ).toEqual({ workingTurnId: 'u1', pendingTurnIds: ['u2'] });
+  });
+});
+
+describe('pending delivery hides Thinking only behind a visible queued status', () => {
+  const pendingPrompt = new Set(['queued-bubble']);
+
+  test('a delivered prompt with no queued status keeps Thinking under a live Stop', () => {
+    // 2026-09-17, local: the Quick Queue interrupt ended the previous turn and
+    // the next prompt ran for 11s. No bubble was pending, yet the working
+    // projection still reported pending delivery, so only Stop showed work.
+    const visible = queuedStatusVisible({
+      turns: [turn('answered', 'done'), turn('running')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(),
+      queueListRows: 0,
+    });
+    expect(visible).toBe(false);
+    expect(projectionShowsWork({ busy: true, pendingDelivery: true, queuedStatusVisible: visible })).toBe(true);
+  });
+
+  test('a pending transcript bubble or Queue List row explains the wait instead', () => {
+    const bubble = queuedStatusVisible({
+      turns: [turn('answered', 'done'), turn('queued-bubble')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: pendingPrompt,
+      queueListRows: 0,
+    });
+    const listRow = queuedStatusVisible({
+      turns: [turn('answered', 'done')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(),
+      queueListRows: 1,
+    });
+    const unreached = queuedStatusVisible({
+      turns: [turn('answered', 'done'), turn('later')],
+      pendingTurnIds: new Set(['later']),
+      pendingPromptIds: new Set(),
+      queueListRows: 0,
+    });
+    for (const visible of [bubble, listRow, unreached]) {
+      expect(visible).toBe(true);
+      expect(projectionShowsWork({ busy: true, pendingDelivery: true, queuedStatusVisible: visible })).toBe(false);
+    }
+  });
+
+  test('an answered turn does not count as a queued bubble', () => {
+    expect(queuedStatusVisible({
+      turns: [turn('queued-bubble', 'open')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: pendingPrompt,
+      queueListRows: 0,
+    })).toBe(false);
+  });
+
+  test('ordinary work follows busy alone', () => {
+    expect(projectionShowsWork({ busy: true, pendingDelivery: false, queuedStatusVisible: true })).toBe(true);
+    expect(projectionShowsWork({ busy: false, pendingDelivery: false, queuedStatusVisible: false })).toBe(false);
+    expect(projectionShowsWork({ busy: false, pendingDelivery: true, queuedStatusVisible: false })).toBe(false);
   });
 });

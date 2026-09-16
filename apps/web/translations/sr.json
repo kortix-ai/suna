@@ -1689,10 +1689,6 @@
     "hintSettings": "Притисните {modifier}, да отворите подешавања",
     "hintCompact": "Затражите сажимање сесије када постане дуга",
     "queueList": "Queue List",
-    "queueWaiting": "Na čekanju",
-    "queueSending": "Slanje…",
-    "quickQueueWaiting": "Quick Queue · Na čekanju",
-    "quickQueueSending": "Quick Queue · Slanje…",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
     "queued": "На чекању",
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}"

@@ -18,7 +18,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
-  QueuedPromptStatus,
+  QueuedPromptFailure,
 } from '@/features/session/turn/queued-prompt-bubbles';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import {
@@ -486,7 +486,10 @@ export function InstantSessionShell({
                 `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6 md:pr-4`. */}
             <div className={SESSION_TRANSCRIPT_CLASS}>
               {effectiveSubmission && !hasTranscript && (
-                <div className="flex min-w-0 flex-col">
+                <div
+                  className="flex min-w-0 flex-col"
+                  data-queue-tone={firstPromptRow?.state === 'failed' ? 'failed' : 'pending'}
+                >
                   {/* Runtime startup has not started an agent response. */}
                   <OptimisticTurn
                     text={buildOptimisticPromptTextWithUploads(
@@ -501,23 +504,27 @@ export function InstantSessionShell({
                     sessionId={sessionId}
                     busy={false}
                     leadingStatus={
-                      <QueuedPromptStatus
-                        state={firstPromptRow?.state === 'failed' ? 'failed' : 'queued'}
-                        lastError={firstPromptRow?.last_error}
-                        onRetry={firstPromptRow?.state === 'failed'
-                          ? () => {
-                              void promptInbox.retry(firstPromptRow.prompt_id)
-                                .catch((error) => errorToast(error.message));
-                            }
-                          : undefined}
-                      />
+                      firstPromptRow?.state === 'failed' ? (
+                        <QueuedPromptFailure
+                          lastError={firstPromptRow.last_error}
+                          onRetry={() => {
+                            void promptInbox.retry(firstPromptRow.prompt_id)
+                              .catch((error) => errorToast(error.message));
+                          }}
+                        />
+                      ) : undefined
                     }
                   />
                 </div>
               )}
               {!hasTranscript &&
                 transcriptQueue.map((entry) => (
-                  <div key={entry.id} data-pending-prompt-id={entry.id} className="mt-12">
+                  <div
+                    key={entry.id}
+                    data-pending-prompt-id={entry.id}
+                    data-queue-tone={entry.prompt?.state === 'failed' ? 'failed' : 'pending'}
+                    className="mt-12"
+                  >
                     <OptimisticTurn
                       text={entry.text}
                       attachments={entry.attachments}
@@ -526,28 +533,21 @@ export function InstantSessionShell({
                       busy={false}
                       className={QUEUED_BUBBLE_OPACITY_CLASS}
                       leadingStatus={
-                        <QueuedPromptStatus
-                          state={entry.prompt?.state === 'failed' ? 'failed' : 'queued'}
-                          lastError={entry.prompt?.last_error}
-                          onRetry={
-                            entry.prompt
-                              ? () => {
-                                  void promptInbox
-                                    .retry(entry.prompt!.prompt_id)
-                                    .catch((error) => errorToast(error.message));
-                                }
-                              : undefined
-                          }
-                          onRemove={
-                            entry.prompt
-                              ? () => {
-                                  void promptInbox
-                                    .remove(entry.prompt!.prompt_id)
-                                    .catch((error) => errorToast(error.message));
-                                }
-                              : undefined
-                          }
-                        />
+                        entry.prompt?.state === 'failed' ? (
+                          <QueuedPromptFailure
+                            lastError={entry.prompt.last_error}
+                            onRetry={() => {
+                              void promptInbox
+                                .retry(entry.prompt!.prompt_id)
+                                .catch((error) => errorToast(error.message));
+                            }}
+                            onRemove={() => {
+                              void promptInbox
+                                .remove(entry.prompt!.prompt_id)
+                                .catch((error) => errorToast(error.message));
+                            }}
+                          />
+                        ) : undefined
                       }
                     />
                   </div>

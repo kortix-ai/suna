@@ -1689,10 +1689,6 @@
     "hintSettings": "Appuie sur {modifier}, pour ouvrir les paramètres",
     "hintCompact": "Demande à compacter la session lorsqu'elle devient longue",
     "queueList": "Queue List",
-    "queueWaiting": "En attente",
-    "queueSending": "Envoi…",
-    "quickQueueWaiting": "Quick Queue · En attente",
-    "quickQueueSending": "Quick Queue · Envoi…",
     "stopUnconfirmed": "L’arrêt n’a pas pu être confirmé. L’agent fonctionne peut-être encore. Réessayez de l’arrêter.",
     "queued": "En attente",
     "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"

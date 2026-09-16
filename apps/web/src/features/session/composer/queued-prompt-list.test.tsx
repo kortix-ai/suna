@@ -95,9 +95,10 @@ describe('QueuedPromptList', () => {
 });
 
 
-test('Queue List identifies waiting and sending rows without hover', () => {
+test('Queue List rows carry no waiting or sending caption', () => {
   const markup = render({ rows: [row({ id: 'waiting' }), row({ id: 'sending', state: 'delivering', removable: false, takeBackEligible: false })] });
   expect(markup).toContain('aria-label="Queue List"');
-  expect(markup).toContain('Waiting');
-  expect(markup).toContain('Sending…');
+  expect(markup).not.toContain('Waiting');
+  expect(markup).not.toContain('Sending');
+  expect(markup).not.toContain('role="status"');
 });

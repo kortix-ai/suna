@@ -1689,10 +1689,6 @@
     "hintSettings": "Pulsa {modifier}, para abrir los ajustes",
     "hintCompact": "Pide que se compacte la sesión cuando sea demasiado larga",
     "queueList": "Queue List",
-    "queueWaiting": "En espera",
-    "queueSending": "Enviando…",
-    "quickQueueWaiting": "Quick Queue · En espera",
-    "quickQueueSending": "Quick Queue · Enviando…",
     "stopUnconfirmed": "No se pudo confirmar la detención. El agente podría seguir ejecutándose. Inténtalo de nuevo.",
     "queued": "En cola",
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}"

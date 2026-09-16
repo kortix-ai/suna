@@ -1689,10 +1689,6 @@
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
     "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
     "queueList": "Queue List",
-    "queueWaiting": "Wartet",
-    "queueSending": "Wird gesendet…",
-    "quickQueueWaiting": "Quick Queue · Wartet",
-    "quickQueueSending": "Quick Queue · Wird gesendet…",
     "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
     "queued": "In Warteschlange",
     "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"

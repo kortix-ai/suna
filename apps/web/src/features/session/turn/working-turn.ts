@@ -66,6 +66,40 @@ export function shouldSuppressWorkingTurnBusy(input: {
 }
 
 /**
+ * Is a queued status on screen? It mirrors the transcript's `pending` bubble
+ * rule and counts Queue List rows, including a held queue's Resume row.
+ */
+export function queuedStatusVisible(input: {
+  turns: ReadonlyArray<TurnLike>;
+  pendingTurnIds: ReadonlySet<string>;
+  /** Every id an inbox prompt can render under. */
+  pendingPromptIds: { has(id: string): boolean };
+  queueListRows: number;
+}): boolean {
+  if (input.queueListRows > 0) return true;
+  return input.turns.some((turn) => {
+    const id = turn.userMessage.info.id;
+    return (
+      input.pendingTurnIds.has(id) ||
+      (turn.assistantMessages.length === 0 && input.pendingPromptIds.has(id))
+    );
+  });
+}
+
+/**
+ * Does the transcript show the session's work? Pending delivery hides
+ * Thinking only while a queued status explains the wait. Without one, the
+ * composer's Stop would be the only sign that anything is running.
+ */
+export function projectionShowsWork(input: {
+  busy: boolean;
+  pendingDelivery: boolean;
+  queuedStatusVisible: boolean;
+}): boolean {
+  return input.busy && !(input.pendingDelivery && input.queuedStatusVisible);
+}
+
+/**
  * The hint for an idle send this tab just made, while the projection names no
  * turn: the sent turn's CURRENT id, until that turn has an answer.
  *

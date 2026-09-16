@@ -675,7 +675,8 @@ for (const runtime of runtimes) {
           await firstSend;
           await page.unroute(promptsUrl);
         }
-        await expect(pending).toContainText("Quick Queue");
+        await expect(pending).toHaveAttribute("data-queue-tone", "pending");
+        await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
         if (!isDeployedTarget()) {
           await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);

@@ -56,8 +56,10 @@ import { ExpandableOutput } from './turn/expandable-output';
 import { chatPlanAnchorId, isPlanWriteTool } from './turn/plan-anchor';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
+  queuedBubbleTone,
   type QueuedPromptState,
-  QueuedPromptStatus,
+  QueuedPromptFailure,
+  type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
@@ -65,7 +67,13 @@ import { statusElapsedFrame } from './turn/status-elapsed';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
-import { freshSendHint, resolveWorkingTurn, shouldSuppressWorkingTurnBusy } from './turn/working-turn';
+import {
+  freshSendHint,
+  projectionShowsWork,
+  queuedStatusVisible,
+  resolveWorkingTurn,
+  shouldSuppressWorkingTurnBusy,
+} from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
@@ -826,11 +834,22 @@ function SessionTurnImpl({
     [isCompaction, turn],
   );
   const compactionInFlight = compactionInfo?.inFlight ?? false;
-  // A Stop ended the turn before a step opened under this message: say so. A
-  // pending bubble says "Queued" — the dim alone reads as "something is wrong".
-  // Pending sends keep their status until the runtime begins their answer.
+  // A Stop ended the turn before a step opened under this message, or the
+  // prompt still waits for delivery. Both keep the queue tone on the bubble;
+  // only a delivery failure adds text.
   const queueState: QueuedPromptState | null = interruptedBeforeRun ? 'interrupted' : null;
   const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
+  const queuedStatus: QueuedPromptStatusState | null =
+    pendingPrompt?.state === 'failed'
+      ? 'failed'
+      : !statusState
+        ? null
+        : pendingPrompt?.reason === 'held'
+          ? 'held'
+          : pendingPrompt &&
+              (isOptimisticSessionPrompt(pendingPrompt) || pendingPrompt.state === 'delivering')
+            ? 'sending'
+            : statusState;
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -1535,6 +1554,7 @@ function SessionTurnImpl({
           data-turn-pending={pending || interruptedBeforeRun || undefined}
           data-turn-queue-state={pendingPrompt?.state ?? queueState ?? undefined}
           data-pending-prompt-id={pendingPrompt?.prompt_id}
+          data-queue-tone={queuedBubbleTone(queuedStatus)}
           className={cn((pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS)}
         >
           <UserMessage
@@ -1554,12 +1574,8 @@ function SessionTurnImpl({
             onEditCancel={onEditCancel}
             onEditSend={onEditSend}
             leadingStatus={
-              pendingPrompt?.state === 'failed' || statusState ? (
-                <QueuedPromptStatus
-                  state={pendingPrompt?.state === 'failed' ? 'failed'
-                    : pendingPrompt?.reason === 'held' ? 'held'
-                    : pendingPrompt && (isOptimisticSessionPrompt(pendingPrompt) || pendingPrompt.state === 'delivering') ? 'sending'
-                    : statusState!}
+              queuedStatus === 'failed' ? (
+                <QueuedPromptFailure
                   lastError={pendingPrompt?.last_error}
                   onRetry={
                     pendingPrompt && onRetryQueued
@@ -2547,17 +2563,6 @@ export function SessionChat({
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
 
-  // The one working answer the LAST turn card renders (its shimmer). Resolved
-  // here, once, so the card never reads the raw slot for a Kortix session —
-  // see `resolveLastTurnWorking` for the split and the defect it removes.
-  const lastTurnWorking = resolveLastTurnWorking({
-    isChildSession,
-    // The delay-hidden projection, so the card and the composer settle on the
-    // same frame instead of the card flickering 300ms earlier.
-    projectionBusy: isBusy && !working.pendingDelivery,
-    rawSlotBusy: getWorkingState(sessionStatus, true),
-  });
-
   // Read by `handleSend` for its ANCHORING decision only (a send into a running
   // turn must not yank the viewport). Refs, not the values: `handleSend` is a stable callback
   // that a dozen surfaces hold, and adding busy state to its deps would rebuild
@@ -3459,6 +3464,31 @@ export function SessionChat({
    * same wording every other surface uses, and it is already what a session
    * with no turns at all shows.
    */
+  // The one working answer the LAST turn card renders (its shimmer). Resolved
+  // here, once, so the card never reads the raw slot for a Kortix session —
+  // see `resolveLastTurnWorking` for the split and the defect it removes.
+  const queuedStatusOnScreen = useMemo(
+    () =>
+      queuedStatusVisible({
+        turns,
+        pendingTurnIds,
+        pendingPromptIds: pendingPromptsByMessageId,
+        queueListRows: queueRows.rows.length + queueRows.heldCount,
+      }),
+    [turns, pendingTurnIds, pendingPromptsByMessageId, queueRows],
+  );
+  const lastTurnWorking = resolveLastTurnWorking({
+    isChildSession,
+    // The delay-hidden projection, so the card and the composer settle on the
+    // same frame instead of the card flickering 300ms earlier. Pending delivery
+    // yields Thinking only to a queued status the user can see.
+    projectionBusy: projectionShowsWork({
+      busy: isBusy,
+      pendingDelivery: !!working.pendingDelivery,
+      queuedStatusVisible: queuedStatusOnScreen,
+    }),
+    rawSlotBusy: getWorkingState(sessionStatus, true),
+  });
   const someTurnDrawsBusyRow =
     lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;
   /**

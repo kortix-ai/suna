@@ -12,52 +12,52 @@ export const QUEUED_BUBBLE_OPACITY_CLASS =
  *  before a step opened under it — it runs with the next send. */
 export type QueuedPromptState = 'queued' | 'interrupted';
 
-export function queuedPromptStatusLabel(state: QueuedPromptState): string {
-  return state === 'interrupted' ? 'Queued — runs with your next message' : 'Queued';
+export type QueuedPromptStatusState = QueuedPromptState | 'failed' | 'sending' | 'held';
+
+/** Ring tone for a queued bubble. `pending` covers waiting and sending, so a
+ *  delivery retry that flips a row between them never changes the ring. */
+export type QueuedBubbleTone = 'pending' | 'held' | 'failed';
+
+export function queuedBubbleTone(
+  state: QueuedPromptStatusState | null | undefined,
+): QueuedBubbleTone | undefined {
+  if (!state) return undefined;
+  if (state === 'failed' || state === 'held') return state;
+  return 'pending';
 }
 
-export function QueuedPromptStatus({
-  state,
+/**
+ * The only status text a queued user message renders: a delivery failure and
+ * its recovery actions. Waiting, sending, paused, and interrupted prompts show
+ * no words — the bubble's queue tone carries them.
+ */
+export function QueuedPromptFailure({
   lastError,
   onRetry,
   onRemove,
 }: {
-  state: QueuedPromptState | 'failed' | 'sending' | 'held';
   lastError?: string | null;
   onRetry?: () => void;
   onRemove?: () => void;
 }) {
-  const t = useTranslations('threads');
   const copy = useTranslations('hardcodedUi.i18nComplete');
   const common = useTranslations('common');
   return (
     <InlineMeta>
-      <span data-queued-status={state} className="flex items-center gap-1">
-        {state === 'failed' ? (
-          <>
-            <span className="text-kortix-red" role="status" title={lastError ?? undefined}>
-              {copy.raw('textcd5f943d5863')}
-              {lastError ? ` — ${lastError}` : ''}
-            </span>
-            {onRetry && (
-              <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
-                {copy.raw('text942087cc2d41')}
-              </Button>
-            )}
-            {onRemove && (
-              <Button type="button" variant="ghost" size="xs" onClick={onRemove}>
-                {common('remove')}
-              </Button>
-            )}
-          </>
-        ) : state === 'queued' ? (
-          t('quickQueueWaiting')
-        ) : state === 'sending' ? (
-          t('quickQueueSending')
-        ) : state === 'held' ? (
-          copy.raw('text1eb132d9d4da')
-        ) : (
-          queuedPromptStatusLabel(state)
+      <span data-queued-status="failed" className="flex items-center gap-1">
+        <span className="text-kortix-red" role="status" title={lastError ?? undefined}>
+          {copy.raw('textcd5f943d5863')}
+          {lastError ? ` — ${lastError}` : ''}
+        </span>
+        {onRetry && (
+          <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
+            {copy.raw('text942087cc2d41')}
+          </Button>
+        )}
+        {onRemove && (
+          <Button type="button" variant="ghost" size="xs" onClick={onRemove}>
+            {common('remove')}
+          </Button>
         )}
       </span>
     </InlineMeta>

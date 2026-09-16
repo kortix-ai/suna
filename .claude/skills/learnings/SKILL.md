@@ -5448,7 +5448,7 @@ With shared local databases, the elected API rejected another worktree's rows,
 while the owning API ran no retry worker. Filter ownership before claiming and
 keep the existing claim CAS. `worker.test.ts` covers retry startup without
 leadership, restart, shutdown, and explicitly disabled background work.
-
+ 
 
 ### 2026-09-16 — Queue integration tests must claim only fixture rows
 
