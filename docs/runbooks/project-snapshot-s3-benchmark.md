@@ -695,6 +695,94 @@ no wasted 300 ms: the first request follows the announcement by 62–570 ms at
 the median depending on which probe goes first. Raw rows: job `e2725831`'s
 `tmp/bench-main.jsonl` (+ `.subscribe.jsonl`, `.report.json`).
 
+## Dev (`dev-api.kortix.com`) after PR #7242 merged, 2026-09-16
+
+The first measurement on the real dev topology: dev API (`afe575e52d`, which
+contains #7242's merge `b91434509c`), dev bucket `kortix-dev-project-snapshots`
+in us-west-2, the sandbox image with the merged daemon (`opencode-listening-line`
+mark present on every boot), `KORTIX_PROJECT_SNAPSHOT_MODE` unset on the
+platform (`git`) and the bench project switched per round through
+`projects.metadata.project_snapshot_mode` — the canary lever from the rollout
+section, applied on the dev database. Bench project `c1ce2961-488f-4ca4-9e13-6dcb0d0b41b1`
+(`bench-dev-repr`, the representative 400 × 4 KiB fixture, commit `74c522bb38`;
+boot object 1.58 MB / 653 entries, blob pack 1.60 MB, archive `ready` ~1 min
+after the push). Arms alternate every round, 10 s cooldown, one warm-up per
+arm discarded, `apps/api/scripts/project-snapshot-bench.ts run` with
+`--daemon-log`. The in-box probe (`--probe-hosts`) is unavailable on dev: the
+proxy's `/kortix/env-rpc` exec hop answers 503 there, so box placement and
+first byte to the bucket were not measured.
+
+### Dev's default provider (Platinum), 30 rounds per arm, 00:58–02:22 UTC
+
+| Arm | Rounds ok / failed / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | `opencode-ready` p50 / p95 | Full boot p50 / p95 (min / max) | Descriptor / retries |
+|---|---|---|---|---|---|---|
+| Git (`git` mode) | 30 / 0 / 0 | 1,874 / 2,622 ms | 1,965 / 2,706 ms | 3,702 / 4,506 ms | 14,813 / 17,199 ms (12,600 / 17,322) | — / 0 |
+| **S3 (`prefer-s3`)** | 30 / 0 / 0 | **1,659 / 1,783 ms** | **1,749 / 1,866 ms** | **3,173 / 4,168 ms** | 14,459 / 17,959 ms (13,397 / 21,114) | env 30 / 0 |
+
+S3 leads on dev now: acquisition −215 ms at p50 and −839 ms at p95 (in-guest
+`s3_acquire` 1,584 / 1,730 ms versus `git` 1,866 / 2,614 ms), `opencode-ready`
+529 ms earlier. All 30 S3 boots took their first attempt from the env
+descriptor (`KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR`), 0 retries, 0 fallbacks, no
+proxy call on the boot path; hydration `ok` 30/30 (blob-pack import 410 ms p50,
+settled ~1.2 s after `runtimeReady`). Full boot is at parity because Platinum's
+own sandbox start is 12–14 s of the 14.5 s (`start` ready p50 12.3 s S3 /
+13.9 s Git); the S3 arm's 21.1 s maximum was a 20.1 s Platinum start with a
+normal 1,549 ms single-attempt acquisition. The listening-line gate had the
+checkout before OpenCode's announcement on 30/30 S3 and 24/30 Git boots; line
+→ root list answered 450 ms (S3) / 1,100 ms (Git) at p50. One warm-up S3 boot
+(discarded) stalled 12 s on its first download (`unavailable` at `download`,
+`transfer stalled: no bytes for 12000ms`) and recovered through the proxy
+descriptor on attempt 2 (41.9 s boot); it did not recur in the 30 scored rounds.
+
+Against the pre-#7242 dev measurement (S3 2,273 ms vs Git 1,477 ms acquisition
+p50, 2 sessions per arm, provider not recorded): the descriptor round trip that
+put S3 800 ms behind is gone, and S3 is ahead with the bucket still in
+us-west-2.
+
+Billing note for whoever runs this next: each boot on dev books ~28 "LLM
+gateway admission hold" ledger entries of $0.01 that were not refunded within
+the run, so a free-tier bench account ($2.00) lasts seven boots; fund it
+(`atomic_add_credits`, type `admin_grant`) before a 60-round run.
+
+### Same comparison pinned to Daytona (`{"provider":"daytona"}`), 20 rounds per arm, 02:22–02:41 UTC
+
+| Arm | Rounds ok / failed / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | `opencode-ready` p50 / p95 | Full boot p50 / p95 (min / max) | Descriptor / retries |
+|---|---|---|---|---|---|---|
+| Git (`git` mode) | 20 / 0 / 0 | 1,247 / 1,596 ms | 1,288 / 1,623 ms | 2,748 / 2,992 ms | 11,486 / 13,506 ms (9,472 / 15,109) | — / 0 |
+| **S3 (`prefer-s3`)** | 20 / 0 / 0 | **876 / 2,032 ms** | **918 / 2,068 ms** | **2,570 / 3,332 ms** | 12,407 / 15,500 ms (9,598 / 15,918) | env 17, proxy 3 / 3 |
+
+S3 acquisition −371 ms at p50 (−30 %; in-guest `s3_acquire` 802 / 2,003 ms
+versus `git` 1,241 / 1,593 ms), `opencode-ready` 178 ms earlier. Three S3
+rounds (7, 13, 16) retried: the boot-object download closed 4–52 KB short of
+its 1,576,923 bytes (`transfer closed after 1,524,166 … 1,572,864`), the Bun
+short close seen on 2 of 30 boots against the Ohio bucket; each recovered on
+attempt 2 with a proxy descriptor (about +1.2 s) — that is the S3 p95. The
+full-boot median is 921 ms behind Git, and all of it sits before the daemon:
+create → in-guest `opencode-ready` is 9,228 vs 9,085 ms at p50 (parity) but
+12,908 vs 10,758 ms at p95 — 6 of 20 S3 rounds drew an 11.5–12.9 s Daytona
+provisioning against 1 of 20 Git rounds, with normal in-guest marks on every
+one of them; same image, same API create path (+175 ms at `kicked` for the
+`project-snapshot-hit` step). Hydration `ok` 20/20, import 263 ms p50. The
+checkout landed before OpenCode's announcement on 17/20 S3 and 8/20 Git boots
+— on Daytona the S3 checkout is early enough to hit the bind window every
+time, the case the listening-line gate exists for; line → root list answered
+1,163 ms (S3) / 1,577 ms (Git) at p50.
+
+### Reading across the two dev providers
+
+- S3 leads acquisition on both providers with the bucket still in us-west-2:
+  −215 ms (Platinum) and −371 ms (Daytona) at p50, and `opencode-ready` comes
+  178–529 ms earlier. 100 scored boots, 0 failures, 0 fallbacks.
+- What is left of the S3 tail is the Bun short close on the boot object
+  (3/20 on Daytona, 0/30 on Platinum) — retry-in-place (PR #7242's "Next" 3)
+  would take ~1.2 s off those rounds. One 12 s download stall was seen once,
+  on a discarded warm-up, and healed through the proxy descriptor.
+- Full boot on dev is provisioning-bound: 11–14 s of a Platinum boot and 7–13 s
+  (bimodal) of a Daytona boot pass before the daemon's first mark. The
+  acquisition path is now 6–13 % of the boot on either provider.
+- Nothing in these runs argues against `prefer-s3` as the platform default on
+  dev; the decision is a bucket-region and cost question, not a boot-time one.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
