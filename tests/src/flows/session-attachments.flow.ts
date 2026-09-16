@@ -13,7 +13,7 @@ import {
   readDatabasePromptAttachmentRetention,
 } from '../fixtures/database-project';
 
-flow('SESS-29', {
+flow('SESS-30', {
   domain: 'sessions', requires: ['database', 'funded'], timeoutMs: 180_000,
   routes: [
     'POST /v1/projects/:projectId/attachments',
@@ -88,7 +88,7 @@ flow('SESS-29', {
   });
   const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: ctx.P.OWNER.accountId!, userId: ctx.P.OWNER.userId!, metadata: { warm: true } });
   ctx.track('session', sessionId, { projectId: project.id });
-  const warmBody = { session_id: sessionId, pending_prompt: { text: 'SESS-29 eager attachment', attachment_names: ['eager.txt'], parts: [{ type: 'text', text: 'SESS-29 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] } };
+  const warmBody = { session_id: sessionId, pending_prompt: { text: 'SESS-30 eager attachment', attachment_names: ['eager.txt'], parts: [{ type: 'text', text: 'SESS-30 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] } };
   await ctx.step('claim a warm session with the ready handle, refuse a second claim with 409, and read canonical filename from the durable inbox', async () => {
     (await owner.post('/v1/projects/:projectId/sessions/warm/claim', warmBody, { params: base })).status(200);
     // A consumed warm marker answers 409 for every repeat claim, with or without attachments.
@@ -100,17 +100,17 @@ flow('SESS-29', {
     (await owner.del(remove, { params: params() })).status(409);
   });
   await ctx.step('enqueue a follow-up using the same handle and deduplicate the repeated client message', async () => {
-    const body = { client_message_id: 'SESS-29-followup', message_id: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn', parts: [{ type: 'text', text: 'SESS-29 follow-up' }, { type: 'file', attachment_id: attachmentId }] };
+    const body = { client_message_id: 'SESS-30-followup', message_id: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn', parts: [{ type: 'text', text: 'SESS-30 follow-up' }, { type: 'file', attachment_id: attachmentId }] };
     const target = '/v1/projects/:projectId/sessions/:sessionId/prompts';
     const options = { params: { ...base, sessionId } };
     const first = await owner.post(target, body, options); first.status(202);
     const second = await owner.post(target, body, options); second.status(200).body().has('$.deduped', true).has('$.prompt_id', first.json<any>().prompt_id);
-    const duplicate = { ...body, client_message_id: 'SESS-29-duplicate', parts: [body.parts[1], body.parts[1]] };
+    const duplicate = { ...body, client_message_id: 'SESS-30-duplicate', parts: [body.parts[1], body.parts[1]] };
     (await owner.post(target, duplicate, options)).status(400);
-    const missing = { ...body, client_message_id: 'SESS-29-missing', parts: [{ type: 'file', attachment_id: crypto.randomUUID() }] };
+    const missing = { ...body, client_message_id: 'SESS-30-missing', parts: [{ type: 'file', attachment_id: crypto.randomUUID() }] };
     (await owner.post(target, missing, options)).status(404);
 
-    const token = await owner.post('/v1/projects/:projectId/cli-token', { name: 'SESS-29 descriptor' }, { params: base });
+    const token = await owner.post('/v1/projects/:projectId/cli-token', { name: 'SESS-30 descriptor' }, { params: base });
     token.status(201);
     const tokenBody = token.json<any>();
     const descriptorPath = '/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId';
