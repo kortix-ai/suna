@@ -13,9 +13,13 @@ export function manifestConfigDir(manifest: Record<string, unknown>): string {
     return manifest.config_dir;
   }
   for (const block of [manifest.pi, manifest.opencode]) {
-    if (record(block) && typeof block.config_dir === 'string' && block.config_dir.trim())
-      return block.config_dir.trim().replace(/\/+$/, '');
+    if (record(block) && typeof block.config_dir === 'string') {
+      const directory = block.config_dir.trim();
+      if (!directory) continue;
+      let end = directory.length;
+      while (end > 0 && directory[end - 1] === '/') end -= 1;
+      return directory.slice(0, end);
+    }
   }
   return manifestDefaultConfigDir(Number(manifest.kortix_version));
 }
-

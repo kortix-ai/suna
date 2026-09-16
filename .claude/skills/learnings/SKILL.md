@@ -7269,3 +7269,11 @@ current name. Reject two historical names that identify one migration.
 **Enforcer:** schema generation must produce no SQL. The ledger unit and PostgreSQL
 integration tests verify both historical Pi naming generations, repeat repair,
 strict ordering, and no rerun of applied SQL.
+
+### Trim configuration suffixes with one scan (2026-09-16)
+
+**Incident:** CodeQL flags the legacy config-directory suffix regex. A 50,000-slash
+input takes 891 ms locally because each slash starts another suffix search.
+**Rule:** scan backward once, then slice. Preserve legacy whitespace and slash behavior.
+**Enforcer:** `manifest-config-dir.test.ts` requires the adversarial input to finish
+within 100 ms and verifies both runtime names and shared-config precedence.

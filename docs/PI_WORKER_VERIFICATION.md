@@ -2395,3 +2395,7 @@ current names. It rejects duplicate historical identities and normalizes applied
 order without rerunning SQL. Focused unit and real PostgreSQL tests pass 23/23.
 A fresh database applies all 221 migrations, builds 133 tables, and reports no
 pending migrations. Migration lint reports zero issues across 125 SQL files.
+
+The legacy config-directory suffix parser now uses one backward scan. A focused
+50,000-slash regression fails at 891 ms before the change and passes its 100 ms
+bound afterward. All 469 manifest tests and the package typecheck pass.
