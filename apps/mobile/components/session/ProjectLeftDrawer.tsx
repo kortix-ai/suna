@@ -27,7 +27,7 @@
  */
 
 import React, { useCallback, useMemo, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -40,7 +40,14 @@ import {
   type AppIcon,
 } from '@/lib/icons';
 import { useDrawerProgress } from 'react-native-drawer-layout';
-import { useAnimatedReaction } from 'react-native-reanimated';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedReaction,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Button } from '@/components/ui/button';
@@ -78,6 +85,12 @@ const BAR_BOTTOM_GAP = 16;
 const BAR_FADE_ABOVE = 36;
 /** Space between the last scroll row and the bottom bar's controls. */
 const LIST_END_GAP = 16;
+/**
+ * Height of the fade at the top of the session list. It also is the scroll
+ * distance over which the fade appears: invisible at rest, so the first row is
+ * never dimmed, fully shown once a row has scrolled under the pills.
+ */
+const LIST_TOP_FADE_HEIGHT = 24;
 /** Sessions listed in the drawer. The Sessions pill opens the full list. */
 const DRAWER_RECENT_SESSIONS = 20;
 /** Drawer progress at or below this counts as closed (fully off screen). */
@@ -195,6 +208,15 @@ export function ProjectLeftDrawer({
   // The list scrolls under the fade; its last row must rest above the controls.
   const listBottomPadding = barBottom + BAR_CONTROL_HEIGHT + LIST_END_GAP;
 
+  // Top fade: follows the scroll offset on the UI thread (no re-render per frame).
+  const listScrollY = useSharedValue(0);
+  const onListScroll = useAnimatedScrollHandler((event) => {
+    listScrollY.value = event.contentOffset.y;
+  });
+  const topFadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(listScrollY.value, [0, LIST_TOP_FADE_HEIGHT], [0, 1], Extrapolation.CLAMP),
+  }));
+
   // ── Navigation guard ──
   // A second tap on a pill before the drawer has closed would navigate a
   // second time. The first navigating tap sets the guard; it resets when the
@@ -272,6 +294,8 @@ export function ProjectLeftDrawer({
   // fade out under the bottom bar instead of stopping at a hard edge.
   const chrome = isDark ? THEME.dark.chromeBackground : THEME.light.chromeBackground;
   const fadeColors = [withAlpha(chrome, 0), withAlpha(chrome, 0.85), withAlpha(chrome, 1)] as const;
+  // The same fade, reversed, where rows scroll up under the nav pills.
+  const topFadeColors = [withAlpha(chrome, 1), withAlpha(chrome, 0)] as const;
 
   return (
     // One straight left line at 20pt: the logo header is px-5; every row
@@ -293,34 +317,44 @@ export function ProjectLeftDrawer({
         <NavPill icon={CustomizeIcon} label="All projects" onPress={goToProjects} />
       </View>
 
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}>
-        <View className="px-2 -mx-1">
-          {projectSessionsLoading ? (
-            <View className="items-center py-8">
-              <KortixLoader size="small" />
-            </View>
-          ) : recent.length === 0 ? (
-            <Text variant="muted" className="px-3 py-2">
-              No sessions yet
-            </Text>
-          ) : (
-            recent.map((ps) => (
-              <ProjectSessionListItem
-                key={ps.session_id}
-                item={ps}
-                active={ps.session_id === activeProjectSessionId}
-                onPress={handleOpenProjectSession}
-              />
-            ))
-          )}
-        </View>
-        <View className="mt-2 px-2">
-          <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-        </View>
-      </ScrollView>
+      <View className="flex-1">
+        <Animated.ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          onScroll={onListScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}>
+          <View className="px-2 -mx-1">
+            {projectSessionsLoading ? (
+              <View className="items-center py-8">
+                <KortixLoader size="small" />
+              </View>
+            ) : recent.length === 0 ? (
+              <Text variant="muted" className="px-3 py-2">
+                No sessions yet
+              </Text>
+            ) : (
+              recent.map((ps) => (
+                <ProjectSessionListItem
+                  key={ps.session_id}
+                  item={ps}
+                  active={ps.session_id === activeProjectSessionId}
+                  onPress={handleOpenProjectSession}
+                />
+              ))
+            )}
+          </View>
+          <View className="mt-2 px-2">
+            <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+          </View>
+        </Animated.ScrollView>
+        {/* Top fade: rows fade out under the nav pills instead of a hard edge. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: LIST_TOP_FADE_HEIGHT }, topFadeStyle]}>
+          <LinearGradient colors={topFadeColors} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+      </View>
 
       {/* Pinned bottom bar: New session · avatar, over a fade of the drawer
           surface. Touches on the transparent top of the fade reach the rows. */}
@@ -339,9 +373,8 @@ export function ProjectLeftDrawer({
           className="absolute inset-x-0 flex-row items-center justify-between px-5"
           style={{ bottom: barBottom }}>
           <Button size="lg" className="rounded-full" onPress={handleNewSession}>
-            {/* Web's New session glyph (project-sidebar.tsx), flipped on both axes: tip down-right.
-                One transform, not `mirrored`: Phosphor applies `mirrored` after `style`, which would drop the Y flip. */}
-            <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }, { scaleY: -1 }] }} />
+            {/* Web's New session glyph (project-sidebar.tsx), flipped horizontally: tip up-right. */}
+            <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
             <Text>New session</Text>
           </Button>
           <Pressable
