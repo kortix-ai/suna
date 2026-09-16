@@ -198,6 +198,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');

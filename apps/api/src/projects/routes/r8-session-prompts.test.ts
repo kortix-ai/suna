@@ -154,7 +154,7 @@ function jsonbPatch(
   const merge = [...rendered.matchAll(/'(\{[^']*\})'::jsonb/g)]
     .map((m) => JSON.parse(m[1]) as Record<string, unknown>)
     .reduce<Record<string, unknown>>((acc, one) => Object.assign(acc, one), {});
-  const remove = [...rendered.matchAll(/-\s*'([a-z_]+)'/g)].map((m) => m[1]);
+  const remove = [...rendered.matchAll(/-\s*'([a-zA-Z_]+)'/g)].map((m) => m[1]);
   return { merge, remove };
 }
 
@@ -215,9 +215,22 @@ function render(node: unknown): string {
 
 mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
 
+let connectorVerdict: Record<string, unknown> = { ok: true };
+let billingCalls = 0;
+const realPreflight = await import('../lib/prompt-connector-preflight');
+mock.module('../lib/prompt-connector-preflight', () => ({
+  ...realPreflight,
+  missingPromptConnectorConnections: async () => {
+    if (connectorVerdict.throws)
+      throw new realPreflight.PromptConnectorPreflightUnresolved(new Error('manifest unavailable'));
+    return connectorVerdict;
+  },
+}));
+
 mock.module('../../billing/services/billing-gate', () => ({
-  checkBillingActive: async () =>
-    billingOk
+  checkBillingActive: async () => {
+    billingCalls += 1;
+    return billingOk
       ? { ok: true }
       : {
           ok: false,
@@ -227,7 +240,8 @@ mock.module('../../billing/services/billing-gate', () => ({
           billingModel: 'credits',
           hasSubscription: false,
           billingState: 'drained',
-        },
+        };
+  },
 }));
 
 mock.module('../session-lifecycle', () => ({
@@ -336,6 +350,8 @@ const validBody = {
 };
 
 beforeEach(() => {
+  connectorVerdict = { ok: true };
+  billingCalls = 0;
   commandTable = [];
   sessionMetadata = {};
   enqueued = [];
@@ -353,6 +369,26 @@ beforeEach(() => {
 });
 
 describe('POST .../prompts', () => {
+  test('an unresolved connector lookup returns 503 without creating a prompt', async () => {
+    connectorVerdict = { throws: true };
+    const response = await post(validBody);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test('a required connector refusal returns 409 before queueing or resuming prompts', async () => {
+    connectorVerdict = { ok: false, kind: 'unavailable', aliases: ['gmail-mfda1u'] };
+    const response = await post(validBody);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
+      connectors: ['gmail-mfda1u'],
+    });
+    expect(enqueued).toHaveLength(0);
+    expect(drains).toHaveLength(0);
+    expect(billingCalls).toBe(0);
+  });
   test('queues the prompt and answers 202 with the row it created', async () => {
     const response = await post(validBody);
     expect(response.status).toBe(202);
@@ -822,6 +858,17 @@ describe('POST .../prompts/hold', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { prompts: Array<Record<string, unknown>> };
     expect(body.prompts).toHaveLength(1);
+  });
+
+  test('Stop persists a running delivery as held across reload and Resume clears it', async () => {
+    commandTable = [row({ status: 'running' })];
+    await hold({ held: true });
+    const reloaded = await app().request(base());
+    const body = (await reloaded.json()) as { prompts: Array<Record<string, unknown>> };
+    expect([body.prompts[0].state, body.prompts[0].reason]).toEqual(['waiting', 'held']);
+    await hold({ held: false });
+    expect(commandTable[0].result?.held).not.toBe(true);
+    expect(commandTable[0].payload.stopPausedOnDelivery).toBeUndefined();
   });
 
   test('rejects anything but a boolean — a hold is not a guess', async () => {

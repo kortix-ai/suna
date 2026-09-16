@@ -256,11 +256,16 @@ new tab (**Provisioning**) to configure.
 
 SCIM behavior worth knowing:
 - **Users**: create by email; a not-yet-signed-up user is provisioned as an invite
-  and reports `active:false` until they sign in.
-- **Deactivate** (`PATCH active:false` or DELETE): removes the account membership
+  and reports `active:true` while the invitation remains valid.
+- **Deactivate** (`PATCH active:false`, Entra's string `"False"`, or DELETE): removes the account membership
   and busts their cache. The **last owner cannot be deactivated** (guarded).
 - **Groups**: create + membership `PATCH` (Entra's add/remove and replace ops) map
   onto Kortix IAM group membership; grant those groups project roles (Part C).
+  A removal with a `value` array removes only those members. An empty array
+  preserves membership. Omitting both the value and filter removes all members.
+
+HTTP flows `SCIM-6` and `SCIM-7` cover Entra's PATCH formats, persisted membership,
+and last-owner protection. Run `pnpm test -- --domain scim` to verify them.
 
 ---
 

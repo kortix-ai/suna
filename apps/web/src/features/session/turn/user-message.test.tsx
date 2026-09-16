@@ -7,7 +7,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
 
-import { RemoveFromQueueButton } from './queued-prompt-bubbles';
 import { UserMessage, UserMessageBubble } from './user-message';
 
 const message = {
@@ -67,30 +66,6 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
-  test('puts remove-from-queue in the hover actions row, not beside the bubble', () => {
-    const markup = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <TooltipProvider>
-            <UserMessage
-              message={message}
-              sessionId="session-1"
-              ownsPlan={false}
-              onRewind={() => {}}
-              leadingActions={<RemoveFromQueueButton id="prompt-1" onRemove={() => {}} />}
-            />
-          </TooltipProvider>
-        </NextIntlClientProvider>
-      </QueryClientProvider>,
-    );
-    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
-    const fadeAt = markup.indexOf(fade);
-    const removeAt = markup.indexOf('aria-label="Remove from queue"');
-    expect(removeAt).toBeGreaterThan(-1);
-    expect(fadeAt).toBeGreaterThan(-1);
-    expect(removeAt).toBeGreaterThan(fadeAt);
-    expect(markup).not.toContain('pr-7');
-  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {

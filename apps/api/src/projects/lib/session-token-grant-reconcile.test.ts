@@ -2,7 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import type { AgentGrant } from '@kortix/db';
 import * as realSecretGrant from './secret-grant';
 
-const storedGrant: AgentGrant = {
+const storedGrantDefault: AgentGrant = {
   agent: 'kortix',
   connectors: ['slack'],
   kortixCli: 'all',
@@ -15,20 +15,26 @@ const currentGrant: AgentGrant = {
   env: 'all',
 };
 
-let selectCount = 0;
+let storedGrant: AgentGrant = storedGrantDefault;
+let sessionAgentRow = 'kortix';
 let writtenGrant: AgentGrant | null | undefined;
 let resolvedAgent: string | undefined;
 let resolvedRequestedAgent: string | null | undefined;
 let forceRefresh: boolean | undefined;
+/** Agent names the project declares; `null` = every name is launchable. */
+let launchableAgents: Set<string> | null = null;
+const launchChecks: string[] = [];
 
+// The mock answers by WHICH columns a query selects, so the tests do not depend
+// on the order the module issues its reads in.
 mock.module('../../shared/db', () => ({
   db: {
-    select: () => ({
+    select: (columns: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
           limit: async () => {
-            selectCount += 1;
-            if (selectCount === 1) return [{ agentGrant: storedGrant }];
+            if ('agentGrant' in columns) return [{ agentGrant: storedGrant }];
+            if ('agentName' in columns) return [{ agentName: sessionAgentRow }];
             return [
               {
                 repoUrl: 'https://example.test/acme/repo.git',
@@ -63,7 +69,12 @@ mock.module('./secret-grant', () => ({
     resolvedAgent = input.sessionAgent;
     resolvedRequestedAgent = input.requestedAgent;
     forceRefresh = input.forceRefresh;
-    return currentGrant;
+    const running = input.requestedAgent ?? input.sessionAgent;
+    return running === currentGrant.agent ? currentGrant : { ...currentGrant, agent: running };
+  },
+  isAgentLaunchableForProject: async (input: { agentName: string }) => {
+    launchChecks.push(input.agentName);
+    return launchableAgents === null || launchableAgents.has(input.agentName);
   },
 }));
 
@@ -72,11 +83,14 @@ const { reconcileStoredSessionAgentGrant, remintGrantForAgentSwitch } = await im
 );
 
 beforeEach(() => {
-  selectCount = 0;
+  storedGrant = storedGrantDefault;
+  sessionAgentRow = 'kortix';
   writtenGrant = undefined;
   resolvedAgent = undefined;
   resolvedRequestedAgent = undefined;
   forceRefresh = undefined;
+  launchableAgents = null;
+  launchChecks.length = 0;
 });
 
 test('reconciles a same-agent connector change for an existing session token', async () => {
@@ -118,4 +132,69 @@ test('same-agent reconcile is SYNCHRONOUS on the prompt path — a narrowed mani
   expect(forceRefresh).toBe(true);
   expect(writtenGrant).toEqual(currentGrant);
   expect(decision).toEqual({ action: 'write', grant: currentGrant });
+});
+
+// ── INC-2026-09-15: an agent the project does not declare never reaches a token ──
+
+test('a prompt naming an agent this project does not declare runs as the SESSION agent — the token is never re-pointed at it', async () => {
+  launchableAgents = new Set(['kortix', 'galileo']);
+  const decision = await remintGrantForAgentSwitch({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    sessionAgent: 'kortix',
+    requestedAgent: 'chief-of-staff',
+  });
+
+  expect(launchChecks).toContain('chief-of-staff');
+  expect(resolvedRequestedAgent).toBe('kortix');
+  expect(writtenGrant?.agent).toBe('kortix');
+  expect(decision.action).toBe('write');
+  expect(decision.action === 'write' ? decision.grant.agent : null).toBe('kortix');
+});
+
+test('a switch to a DECLARED agent still re-points the token', async () => {
+  launchableAgents = new Set(['kortix', 'galileo']);
+  await remintGrantForAgentSwitch({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    sessionAgent: 'kortix',
+    requestedAgent: 'galileo',
+  });
+
+  expect(resolvedRequestedAgent).toBe('galileo');
+  expect(writtenGrant?.agent).toBe('galileo');
+});
+
+test('a prompt with no agent never pays the launchability read', async () => {
+  launchableAgents = new Set(['kortix']);
+  await remintGrantForAgentSwitch({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    sessionAgent: 'kortix',
+    requestedAgent: null,
+  });
+
+  expect(launchChecks).toEqual([]);
+  expect(writtenGrant?.agent).toBe('kortix');
+});
+
+test('a token already carrying an undeclared agent heals to the session agent on the next connector call', async () => {
+  launchableAgents = new Set(['galileo']);
+  sessionAgentRow = 'galileo';
+  storedGrant = {
+    agent: 'chief-of-staff',
+    connectors: [],
+    kortixCli: [],
+    env: [],
+  };
+
+  const grant = await reconcileStoredSessionAgentGrant({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+  });
+
+  expect(launchChecks).toContain('chief-of-staff');
+  expect(resolvedAgent).toBe('galileo');
+  expect(writtenGrant?.agent).toBe('galileo');
+  expect(grant?.agent).toBe('galileo');
 });

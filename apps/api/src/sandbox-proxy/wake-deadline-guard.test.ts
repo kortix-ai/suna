@@ -77,6 +77,7 @@ mock.module('../shared/db', () => ({
           ];
       const chain = {
         from: () => chain,
+        leftJoin: () => chain,
         where: () => chain,
         orderBy: () => chain,
         limit: () => Promise.resolve(rows),

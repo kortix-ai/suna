@@ -200,12 +200,6 @@ export function sessionBootByTemplateIdEnabled(): boolean {
   return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
 }
 
-/** Default-off kill switch for the shared slim cold-boot image. */
-export function fastColdBootEnabled(): boolean {
-  const raw = (process.env.KORTIX_FAST_COLD_BOOT_ENABLED ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
-}
-
 /**
  * FIX-A: decide whether this boot should use the pinned EXACT template id. Pure
  * (no I/O) so the gate is unit-testable. Returns the id ONLY when every guard
@@ -586,7 +580,7 @@ export async function provisionSessionSandbox(opts: {
       slug: string;
       contentHash: string;
       isDefault: boolean;
-      runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
+      runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -664,10 +658,7 @@ export async function provisionSessionSandbox(opts: {
         routing: activeRouting,
         providerName,
         providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
-        // A Platinum pin identifies the standard default template. The fast
-        // profile has its own content-addressed name and must never boot that
-        // standard pin by mistake.
-        imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
+        imageIsDefault: image.isDefault,
         imageSnapshotName: image.snapshotName,
         disabledForSession: idBootDisabled || opts.allowProjectImage === false,
       });

@@ -14,10 +14,13 @@
  */
 
 import { create } from 'zustand';
+import type { AttachedFile } from '@/features/session/composer/types';
 
 export interface SessionPrefill {
   text: string;
   id: number;
+  /** Files to attach with the text — queued messages taken back with Up. */
+  files?: AttachedFile[];
 }
 
 interface SessionComposerPrefillState {
@@ -30,7 +33,7 @@ interface SessionComposerPrefillState {
    *  over whatever the user typed since. `clearPrefill` is how the session
    *  (not the composer) declares "already delivered, forget it". */
   prefillBySession: Record<string, SessionPrefill>;
-  setPrefill: (sessionId: string, text: string) => void;
+  setPrefill: (sessionId: string, text: string, files?: AttachedFile[]) => void;
   /** Called once the composer has been handed this session's prefill —
    *  removes it so a later remount doesn't re-apply stale text. */
   clearPrefill: (sessionId: string) => void;
@@ -53,9 +56,12 @@ let nextId = 0;
 
 export const useSessionComposerPrefillStore = create<SessionComposerPrefillState>((set) => ({
   prefillBySession: {},
-  setPrefill: (sessionId, text) =>
+  setPrefill: (sessionId, text, files) =>
     set((s) => ({
-      prefillBySession: { ...s.prefillBySession, [sessionId]: { text, id: ++nextId } },
+      prefillBySession: {
+        ...s.prefillBySession,
+        [sessionId]: { text, id: ++nextId, ...(files?.length ? { files } : {}) },
+      },
     })),
   clearPrefill: (sessionId) =>
     set((s) => {

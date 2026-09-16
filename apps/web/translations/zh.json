@@ -368,6 +368,10 @@
         "plan": {
           "label": "套餐",
           "description": "此账户的订阅、团队席位和账单。"
+        },
+        "provider-connections": {
+          "label": "我的提供商",
+          "description": "你的订阅和提供商 API 密钥，可跨项目使用。"
         }
       }
     },
@@ -1285,7 +1289,6 @@
       "switch": "切换项目",
       "switchMenu": "切换项目",
       "create": "创建项目…",
-      "createIn": "在 {account} 中创建项目",
       "createAccount": "创建账户…",
       "settings": "设置",
       "downloadApp": "下载应用",
@@ -1295,7 +1298,8 @@
       "noMatches": "没有匹配的项目",
       "empty": "暂无项目",
       "account": "账户",
-      "loadError": "项目加载失败"
+      "loadError": "项目加载失败",
+      "createIn": "在 {account} 中创建项目"
     },
     "manifestUpgrade": {
       "title": "升级到 v2",
@@ -1371,8 +1375,15 @@
         "早安！今天想做什么？",
         "早上好！准备好大干一场了吗？"
       ],
-      "afternoon": ["下午好！需要什么帮助？", "下午好！接下来做什么？"],
-      "evening": ["晚上好！还在加班吗？", "晚上好！今晚在做什么？", "晚上好！开始吧。"],
+      "afternoon": [
+        "下午好！需要什么帮助？",
+        "下午好！接下来做什么？"
+      ],
+      "evening": [
+        "晚上好！还在加班吗？",
+        "晚上好！今晚在做什么？",
+        "晚上好！开始吧。"
+      ],
       "random": [
         "欢迎回来！",
         "嘿！Kortix能为你做什么？",
@@ -3253,7 +3264,12 @@
           "eyebrow": "分流客户信号",
           "title": "把杂乱的客户信号转成有优先级的行动",
           "description": "智能体从工单、Slack 和你的 CRM 中提取信号，然后分类、去重，并带着完整上下文路由给合适团队。每一步都在隔离沙箱中运行，未经审查不会触达客户。",
-          "log": ["拉票+客户历史记录", "文档起草的回复", "标记退款以待批准", "发送、记录到审计跟踪"]
+          "log": [
+            "拉票+客户历史记录",
+            "文档起草的回复",
+            "标记退款以待批准",
+            "发送、记录到审计跟踪"
+          ]
         },
         "shipBacklogTickets": {
           "tabTitle": "交付待办工单",
@@ -3261,7 +3277,12 @@
           "eyebrow": "交付待办工单",
           "title": "从待办工单到经过审查的变更请求",
           "description": "把编码智能体指向你的待办列表。它会阅读 issue，在自己的沙箱和分支中工作，并打开带预览的变更请求，让每一行代码都通过审查合入 main，而不是黑箱落地。",
-          "log": ["审查沙盒中的差异", "重现了该错误", "打开修复分支", "已提交变更请求"]
+          "log": [
+            "审查沙盒中的差异",
+            "重现了该错误",
+            "打开修复分支",
+            "已提交变更请求"
+          ]
         },
         "fillThePipeline": {
           "tabTitle": "填充销售管线",
@@ -3269,7 +3290,12 @@
           "eyebrow": "填充销售管线",
           "title": "调研每个客户，起草每次触达",
           "description": "智能体会补全并排序客户，起草个性化外联内容，并保持 CRM 整洁，让团队带着准备进入每次通话，而不是临时忙乱。",
-          "log": ["从批准的来源收集", "反复核对事实", "写了简报", "为团队发布"]
+          "log": [
+            "从批准的来源收集",
+            "反复核对事实",
+            "写了简报",
+            "为团队发布"
+          ]
         },
         "closeTheBooks": {
           "tabTitle": "完成结账",
@@ -3277,7 +3303,12 @@
           "eyebrow": "完成结账",
           "title": "完成对账和结账，并留下可审计轨迹",
           "description": "智能体会采集发票、核对账户并标记策略异常，为每个数字留下可审查的运行日志，让结账更快且完全可审计。",
-          "log": ["匹配交易", "标记了 3 个异常", "起草摘要", "等待签字"]
+          "log": [
+            "匹配交易",
+            "标记了 3 个异常",
+            "起草摘要",
+            "等待签字"
+          ]
         },
         "briefToCampaign": {
           "tabTitle": "从简报到营销活动",
@@ -3285,7 +3316,12 @@
           "eyebrow": "从简报到营销活动",
           "title": "把简报变成可上线的营销活动",
           "description": "把简报和品牌资料交给智能体。它们会调研、起草，并把页面、帖子和广告变体按品牌要求串联起来，最后交回成品，由人工批准后再上线。",
-          "log": ["阅读简介", "起草资产", "检查品牌规则", "送审"]
+          "log": [
+            "阅读简介",
+            "起草资产",
+            "检查品牌规则",
+            "送审"
+          ]
         },
         "runTheBackOffice": {
           "tabTitle": "运营后台事务",
@@ -3293,7 +3329,12 @@
           "eyebrow": "运营后台事务",
           "title": "把操作手册变成自动运行的工作流",
           "description": "智能体会跨供应商跟踪订单、监控供应商表现，并把你的 SOP 变成由计划任务或 webhook 触发的工作流，让业务在团队休息时也持续运转。",
-          "log": ["加载SOP", "在沙箱中运行每一步", "在审批关口暂停", "关闭了任务"]
+          "log": [
+            "加载SOP",
+            "在沙箱中运行每一步",
+            "在审批关口暂停",
+            "关闭了任务"
+          ]
         }
       },
       "line149JsxTextTalkToSales": "联系销售",
@@ -9759,7 +9800,7 @@
       "text0dcb80086189": "实时渠道。在帖子中提及机器人，该线程就会成为会话；答案及其生成的文件都会回到同一线程。Teams 已随产品提供，但默认关闭，需在部署中启用。",
       "text0dd131944c00": "恰好一个会话",
       "text0def42d1eccc": "Stripe 中的客户",
-      "text0df337fc286c": "已连接应用",
+      "text0df337fc286c": "设置了连接器",
       "text0df3614110d5": "我已创建企业应用",
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "仅限 {value0}",
@@ -10688,7 +10729,7 @@
       "text29300070ca98": "19 天",
       "text29306928fdc1": "6 字段 cron，支持任意 IANA 时区",
       "text293b5ec8aac7": "浏览器标签页显示你的 favicon 和产品名称，并支持深色模式变体",
-      "text2945df36c2f9": "应用详情",
+      "text2945df36c2f9": "查看了连接器操作",
       "text29490fc13cfc": "无法连接到代理",
       "text29521c5c7df3": "不得合并——project.cr.merge 默认拒绝",
       "text2952938846ef": "使用项目密钥前，请断开已存储的连接器凭据。",
@@ -10796,7 +10837,7 @@
       "text2c1c62f284fb": "产品名称已保存",
       "text2c1cff23cb89": "无法加载",
       "text2c1ef1ad75b5": "写入审计记录",
-      "text2c496ac4ee78": "应用操作",
+      "text2c496ac4ee78": "搜索了连接器操作",
       "text2c4de2851235": "完整审计追踪",
       "text2c6041fda32c": "已从队列中移除",
       "text2c6e8e7b3b77": "显示 {value0} 键",
@@ -13454,7 +13495,7 @@
       "text77fe4eba38d8": "所有仓库",
       "text77ff6343ff46": "项目角色包括 project.trigger.update 权限（默认为项目管理员）的任何人以及帐户所有者和管理员。触发器自己的代理始终可以。",
       "text7804f7a79a9e": "已完成",
-      "text7812d84e3512": "使用了应用",
+      "text7812d84e3512": "使用了连接器",
       "text781fbdd4840f": "- 每条记录：背景、决策、日期",
       "text782a07562e97": "开源且可自行托管",
       "text783487161e9f": "“给我四个版本”",
@@ -15982,7 +16023,7 @@
       "textc009fe87348b": "无法加载 PDF 预览。",
       "textc011d6097bfb": "许可证",
       "textc01240eae6d5": "这不是为了将优秀功能留给付费层级而制作的精简版本。自托管实例运行与托管云相同的镜像，由同一条流水线生成，并遵循同一发布轨道。",
-      "textc023d120dd17": "已连接的应用",
+      "textc023d120dd17": "列出了连接器",
       "textc02977b07ec9": "测试连接",
       "textc02ba0f7bece": "463,900",
       "textc0472b8d5a10": "规则变为 Active 后，PingOne 会执行首次全量同步，之后在目录发生变化时推送增量变更。",
@@ -17958,6 +17999,9 @@
       "textf771f4d32eee": "p95",
       "textf785c3ce1d58": "毫秒",
       "textf786f0ee4793": "立即重新连接",
+      "text8a8b956178c8": "正在重新连接…",
+      "text3915f5ca49b3": "工作区已休眠",
+      "textc64d601209b6": "唤醒",
       "textf7870941f5a8": "已列出待处理的项目邀请",
       "textf7873b149941": "你无权查看此次调用的参数，因此无法在此处批准。请项目经理审核。",
       "textf78817ccb153": "规划、撰写并提升内容排名。",
@@ -18324,6 +18368,10 @@
       "textff5bd8333c4e": "你，以及可以管理此项目的人",
       "text36d8691ae566": "知道链接的任何人，以及你的团队",
       "text4fb2abecc0a6": "知道密码的任何人，以及你的团队",
+      "text03a01dd53ffa": "按 ↑ 编辑排队的消息",
+      "text1eb132d9d4da": "队列已暂停",
+      "textf8e64a37950a": "排队的消息",
+      "textcd5f943d5863": "未发送",
       "text00014a68c034": "未找到目录来源",
       "text0668b6bceb30": "已添加到项目",
       "text08e6480e9b78": "已添加 {value0}",
@@ -19285,5 +19333,68 @@
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
     "resetError": "无法重置模型列表。"
+  },
+  "personalProviders": {
+    "title": "我的提供商",
+    "region": "个人提供商连接",
+    "description": "连接一次，即可在多个项目中使用你的订阅或 API 密钥。",
+    "projectDescription": "启用连接后，你在此项目中发起的会话将使用此连接。",
+    "globalDescription": "在项目的“模型 → 提供商”中选择使用各个连接的位置。",
+    "connected": "个人提供商已连接",
+    "expired": "授权已过期。请重新连接。",
+    "gatewayRequired": "此项目需要启用 LLM 网关才能使用个人提供商。",
+    "personalApiKey": "个人 · API 密钥",
+    "personalSubscription": "个人 · 订阅",
+    "useInProject": "在此项目中使用我的 {provider}",
+    "disconnect": "断开连接",
+    "provider": "提供商",
+    "apiKey": "你的 API 密钥",
+    "connectChatGpt": "连接 ChatGPT",
+    "saveKey": "保存个人密钥",
+    "cancel": "取消",
+    "autoEnable": "在此处连接后，也会为你在此项目中的会话启用该提供商。",
+    "disconnectTitle": "断开个人提供商连接？",
+    "disconnectDescription": "这将从所有项目中移除你的连接。你可以稍后重新连接。",
+    "connectionFor": "{provider} 的连接",
+    "projectConnection": "项目连接",
+    "myConnection": "我的连接",
+    "myApiKey": "我的 API 密钥",
+    "mySubscription": "我的 ChatGPT 订阅",
+    "subscriptionConnected": "ChatGPT 订阅已连接",
+    "personalActive": "用于你启动的会话。在设置 → 我的提供商中管理此连接。",
+    "personalDraft": "连接后可用于你启动的会话。你的连接保持私密。",
+    "listInstruction": "连接你的账户，或为此项目添加连接。",
+    "loadFailed": "无法加载个人连接。",
+    "useConnection": "使用连接",
+    "reconnectChatGpt": "重新连接 ChatGPT",
+    "connectedPersonal": "已连接 · 你的账户",
+    "connectedProject": "已连接 · 项目",
+    "notConnected": "未连接",
+    "manage": "管理",
+    "connect": "连接",
+    "method": "连接方式",
+    "subscriptionMethod": "ChatGPT 订阅",
+    "keyMethod": "API 密钥",
+    "ownership": "谁可以使用此连接",
+    "useMyAccount": "使用我的账户",
+    "shareProject": "与此项目共享",
+    "privateHint": "仅你可用。用于你在此项目中启动的会话。",
+    "sharedHint": "此项目中的所有人都可以使用此连接。",
+    "projectReadOnly": "只有项目管理员可以更改共享连接。",
+    "reuseHint": "你的账户已连接，无需再次登录即可使用。",
+    "projectSavedHint": "此项目已有保存的连接。",
+    "saveConnection": "保存连接",
+    "useAccount": "使用此账户",
+    "useProject": "使用项目连接",
+    "stopUsing": "停止使用我的账户",
+    "removeProject": "移除项目连接",
+    "stopUsingHint": "新会话将使用项目连接（如果可用）。你的账户仍可用于其他项目。",
+    "removeProjectHint": "这将移除此项目中所有人的共享连接。",
+    "connectionName": "连接名称",
+    "updateConnection": "更新连接",
+    "connectionSelection": "个人连接",
+    "usePool": "使用我的连接池（{count}）",
+    "poolHint": "每个会话使用你的一个连接。限制和身份验证错误仍会显示。",
+    "disconnectConnectionHint": "此连接将从所有项目中移除。你的其他连接仍然可用。"
   }
 }

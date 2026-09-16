@@ -41,7 +41,7 @@ export interface BuildableTemplate {
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
   /** Selects a fixed platform runtime instead of the full standard layer. */
-  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
+  runtimeProfile?: 'standard' | 'meta' | 'app' | 'pi-worker';
   /** Required when runtimeProfile is app. */
   appContext?: AppBuildContext;
 }
@@ -101,13 +101,6 @@ export interface SandboxProviderAdapter {
    * active name in caller order, or null when none is active.
    */
   findFirstActiveSnapshot?(names: readonly string[]): Promise<string | null>;
-
-  /**
-   * Optional: prepare an already-active snapshot for the provider's fastest
-   * launch path. Providers without a separate preparation phase omit it.
-   * Implementations may throw; reuse callers must preserve the usable snapshot.
-   */
-  prepareSnapshot?(snapshotName: string): Promise<void>;
 
   /** Delete the snapshot (no-op if missing). */
   deleteSnapshot(snapshotName: string): Promise<void>;

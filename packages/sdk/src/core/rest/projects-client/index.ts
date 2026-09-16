@@ -50,5 +50,5 @@ export type {
   ProjectGitConnection,
   ProjectFileEntry,
 } from './shared';
-
+export * from './provider-connections';
 export * from './model-access';

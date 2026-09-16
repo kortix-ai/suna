@@ -1332,6 +1332,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Headless regular auth — see `auth` above. */
     auth,
     accounts,
+    providerConnections: {
+      list: P.listUserProviderConnections,
+      saveApiKey: P.saveUserProviderApiKey,
+      remove: P.deleteUserProviderConnection,
+      startOAuth: P.startUserProviderOAuth,
+      pollOAuth: P.pollUserProviderOAuth,
+      listProject: P.listProjectPersonalProviders,
+      setProject: P.setProjectPersonalProvider,
+    },
     /** Identity and access — assignments, roles, permissions, groups, probes. */
     iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */

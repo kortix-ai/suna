@@ -25,7 +25,7 @@ import { log } from "./log";
 import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows, runScheduled, type ConcurrentLane } from "./lanes";
 import { planLocalFlows } from "./local-profile";
-import { ke2eRetryDelayMs } from "./client";
+import { isKe2eRetryableError, ke2eRetryDelayMs } from "./client";
 import {
   summarize,
   type Assertion,
@@ -358,6 +358,9 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           return template?.ready === true ||
             template?.provider_coverage?.some((provider) => provider.launch_ready === true) === true;
         }, { until: (ready) => ready, timeoutMs: 900_000, intervalMs: 5000,
+          // A transport error while staging bakes this deploy's image is not a
+          // verdict on the image: keep polling inside the same deadline.
+          retryOnError: isKe2eRetryableError,
           description: 'current default sandbox image readiness' });
         await waitFor(async () => {
           const ready = await client.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
@@ -367,6 +370,9 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           if (body.stage === 'error' && !body.retriable) throw new Error(JSON.stringify(body));
           return body.stage;
         }, { until: (stage) => stage === 'ready', timeoutMs: Math.max(1, setupDeadline - Date.now()), intervalMs: 3000,
+          // POST /start is idempotent. One timed-out call during the first boot
+          // on a fresh image killed whole release shards; poll again instead.
+          retryOnError: isKe2eRetryableError,
           description: 'sandbox fixture readiness' });
         log.info('sandbox setup: current default image and runtime ready');
       } finally {

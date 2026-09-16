@@ -44,15 +44,15 @@ describe('the composer reads ONE working answer', () => {
     expect(chat).not.toContain('30_000');
   });
 
-  test('the send receipt names the optimistic turn only when the session was idle', () => {
+  test('the send receipt names the optimistic turn only when the send was not queued', () => {
+    // `willQueue` replaced `sendingIntoRunningTurn`: a send made while anything
+    // is already queued waits too (FIFO), so it names the working turn as well.
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
       'return messageID;',
     );
-    expect(send).toContain(
-      'const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;',
-    );
+    expect(send).toContain('const receiptTurnId = willQueue ? workingTurnIdRef.current : messageID;');
     expect(send).toContain('noteSendReceipt(messageID, receiptTurnId)');
     // Acceptance is what lets a `/turn` read answer for the send AT ALL: until
     // `POST .../prompts` returns there is no row for it to see.
@@ -218,16 +218,6 @@ describe('the turn card reads the same working answer', () => {
     const turn = between(chat, 'function SessionTurnImpl(', '// Cost info');
     expect(turn).toContain('getRetryInfo(sessionStatus)');
     expect(turn).toContain('getRetryMessage(sessionStatus)');
-  });
-
-  test('"Send now" decides from the projection, not the raw slot', () => {
-    // Both failure directions were real: a stale-idle slot dispatched into a
-    // live turn (OpenCode answers that by aborting it — the "Interrupted"
-    // symptom), and a stale-busy slot issued a spurious Stop that held the
-    // whole inbox.
-    const sendNow = between(chat, 'const handleQueueSendNow = useCallback(', 'stop: async ()');
-    expect(sendNow).toContain('isRunning: () => serverHoldsOpenTurn(working)');
-    expect(sendNow).not.toContain('useSessionStateStore.getState()');
   });
 
   test('the composer honors the server admission verdict — a failed row cannot pose as a sent prompt', () => {
