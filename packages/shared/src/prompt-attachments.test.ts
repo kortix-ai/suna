@@ -60,6 +60,21 @@ describe('sanitizePromptUploadFilename', () => {
   });
 });
 
+test('promptFileReferenceXml carries the attachment identity, and no pending id', () => {
+  expect(
+    promptFileReferenceXml({
+      path: '',
+      mime: 'image/png',
+      filename: 'a.png',
+      attachment: 'upload-"1"',
+    }),
+  ).toBe(
+    '<file path="" mime="image/png" filename="a.png" attachment="upload-&quot;1&quot;">\n' +
+      'This file has been uploaded and is available at the path above.\n' +
+      '</file>',
+  );
+});
+
 test('promptFileReferenceXml escapes every XML attribute', () => {
   expect(
     promptFileReferenceXml({

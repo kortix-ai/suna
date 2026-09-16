@@ -5,23 +5,24 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
-import { FLOATING_PANEL } from './menu-recipe';
+import { FLOATING_PANEL_SURFACE } from './menu-recipe';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 /**
- * The surface comes from `FLOATING_PANEL`, shared with the dropdown, context
- * menu and select — a popover is the same card, so it should not have its own
- * background, border, radius, shadow or enter/exit animation.
+ * The surface comes from `FLOATING_PANEL_SURFACE`, shared with the dropdown,
+ * context menu and select — a popover is the same card, so it should not have
+ * its own background, border, radius or shadow.
+ *
+ * No enter/exit animation, the same as `DropdownMenuContent`: the panel paints
+ * on the frame it mounts and unmounts on the frame it closes. See
+ * `dropdown-menu.tsx` for why.
  *
  * What stays local is what a popover holds rather than what it is: `p-4`
  * because the content is prose and controls rather than a list of `p-1` rows,
  * a `w-72` default, and `outline-hidden` because Radix focuses the panel itself
  * on open and the ring would trace the whole card.
  */
-const POPOVER_PANEL = cn(
-  FLOATING_PANEL,
-  'w-72 origin-(--radix-popover-content-transform-origin) p-4 outline-hidden',
-);
+const POPOVER_PANEL = cn(FLOATING_PANEL_SURFACE, 'w-72 p-4 outline-hidden');
 
 function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;

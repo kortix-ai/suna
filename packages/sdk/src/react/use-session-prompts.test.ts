@@ -235,6 +235,32 @@ describe('startSessionWithPrompt', () => {
     expect(receipt?.acceptedAtMs ?? null).not.toBeNull();
   });
 
+  test('a held first prompt keeps its Send time as clientSentAtMs, not the POST time', async () => {
+    // The server orders racing rows by `clientSentAtMs`. A first prompt whose
+    // POST waited on its uploads must still sort before a message the user
+    // sent after it; the POST-time clock would put it behind that message.
+    useSessionWorkingStore.getState().reset();
+    const inputs: any[] = [];
+    const create = async (_p: string, _s: string, input: any) => {
+      inputs.push(input);
+      return { prompt_id: 'p1', state: 'queued' as const, message_id: input.messageId, deduped: false };
+    };
+    await startSessionWithPrompt(
+      'proj-1',
+      'sess-4',
+      { parts: [{ type: 'text', text: 'go' }], clientSentAtMs: 1_000 },
+      { create, nowMs: () => 9_000 },
+    );
+    await startSessionWithPrompt(
+      'proj-1',
+      'sess-5',
+      { parts: [{ type: 'text', text: 'go' }] },
+      { create, nowMs: () => 9_000 },
+    );
+
+    expect(inputs.map((input) => input.clientSentAtMs)).toEqual([1_000, 9_000]);
+  });
+
   test('a refused row drops the receipt and throws instead of posing as sent', async () => {
     useSessionWorkingStore.getState().reset();
     await expect(

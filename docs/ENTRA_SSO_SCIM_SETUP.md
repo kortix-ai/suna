@@ -255,17 +255,32 @@ new tab (**Provisioning**) to configure.
    ([screenshot 7](#screenshots)).
 
 SCIM behavior worth knowing:
+
+- SCIM owns membership in groups it creates or updates. SAML claims cannot add
+  or remove members of those groups, including claims in an older browser token.
+  SAML group mappings continue to manage groups that SCIM has not taken over.
+- Entra pathless group updates persist `displayName` and `externalId`.
+- User profile updates persist Entra's default mappings, including name, title,
+  email, phone numbers, work addresses, preferred language, and enterprise fields
+  such as department, employee number, and manager. Filtered subattribute updates
+  and removals preserve unrelated values. Group PATCH and PUT reject malformed references.
+  A failed PATCH rolls back every operation in that request.
+- User and group lists support `startIndex` and `count`, with at most 200 resources
+  per page. `count=0` returns the matching total without resource data.
 - **Users**: create by email; a not-yet-signed-up user is provisioned as an invite
-  and reports `active:true` while the invitation remains valid.
+  and reports `active:true`. Its SCIM ID and `externalId` survive first login. Active SCIM users
+  can sign in even when automatic JIT creation is disabled.
 - **Deactivate** (`PATCH active:false`, Entra's string `"False"`, or DELETE): removes the account membership
-  and busts their cache. The **last owner cannot be deactivated** (guarded).
+  and group memberships, revokes account tokens, and invalidates their cache.
+  Existing SSO tokens cannot recreate a deactivated membership. The last owner
+  remains protected with HTTP `409`.
 - **Groups**: create + membership `PATCH` (Entra's add/remove and replace ops) map
   onto Kortix IAM group membership; grant those groups project roles (Part C).
   A removal with a `value` array removes only those members. An empty array
   preserves membership. Omitting both the value and filter removes all members.
 
-HTTP flows `SCIM-6` and `SCIM-7` cover Entra's PATCH formats, persisted membership,
-and last-owner protection. Run `pnpm test -- --domain scim` to verify them.
+HTTP flows `SCIM-6` through `SCIM-15` cover Entra's PATCH formats, populated default profile mappings, persisted membership,
+last-owner protection, stable user IDs, and concurrent SSO deactivation. Run `pnpm test -- --domain scim` to verify them.
 
 ---
 
@@ -291,10 +306,12 @@ These mirror the automated integration tests
 
 - **Revoke lag ≤ ~15 s** — the IAM authorization cache TTL. A removed member or
   group grant stops working within one TTL window across replicas.
-- **Deactivation = removal.** `active:false` removes the membership (not a
-  reversible soft-flag). Re-adding a user in Entra re-provisions them via SCIM
-  `POST`; their prior *role grants* are not automatically restored — grants live
-  on the Kortix group, so re-adding them to the group restores access.
+- **Deactivation removes access and retains directory state.** `active:false`
+  remains readable through SCIM with the same ID. `active:true` restores baseline
+  membership. DELETE hides the resource and prevents SSO from restoring it.
+  Explicit SCIM creation can provision it again. Reactivation restores group assignments still present in the SCIM directory;
+  group removals made while inactive remain removed. Individual role grants are
+  not restored. DELETE also clears directory group assignments.
 - **Group → role is explicit.** Synced groups never grant access on their own; an
   admin must grant the Kortix group a project role. This is intentional
   (deny-by-default, no surprise access).

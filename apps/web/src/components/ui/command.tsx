@@ -22,7 +22,29 @@ const CMDK_SHARED_CLASSES = [
   '[&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0',
 ].join(' ');
 
-function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
+/**
+ * `data-nav` records which input moved the highlight last: `pointer` or
+ * `keyboard`. `CommandItem` reads it to pick ONE highlight source.
+ *
+ * cmdk 0.2.1 selects a row on every `pointermove` through its store, so
+ * `data-selected` moves only after React re-renders the whole list. In the ⌘K
+ * palette that re-render trails the cursor: the row you left stays lit until
+ * it lands, which reads as a hover transition. In pointer mode the row paints
+ * from CSS `:hover` alone — the same instant highlight the sidebar session
+ * rows use. Keyboard mode keeps `data-selected`, because arrow keys have no
+ * `:hover` to follow.
+ *
+ * Written straight to the DOM node, not React state: a state update here would
+ * re-render the list on every pointer move, which is the lag this removes.
+ * cmdk calls a caller's `onKeyDown` before its own handler and spreads
+ * `onPointerMove` onto the root, so both reach the same element.
+ */
+function Command({
+  className,
+  onKeyDown,
+  onPointerMove,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
       data-slot="command"
@@ -30,6 +52,16 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
         'bg-popover text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-md',
         className,
       )}
+      onKeyDown={(event) => {
+        event.currentTarget.dataset.nav = 'keyboard';
+        onKeyDown?.(event);
+      }}
+      onPointerMove={(event) => {
+        if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+          event.currentTarget.dataset.nav = 'pointer';
+        }
+        onPointerMove?.(event);
+      }}
       {...props}
     />
   );
@@ -70,9 +102,22 @@ function CommandDialog({
         <DialogDescription>{description ?? t('description')}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={cn('p-0 shadow-[0_0_50px_0] shadow-black/50', className)}
+        // `data-[state=closed]:animate-none!` on the panel AND the overlay: the
+        // palette closes on the frame you dismiss it, with no exit animation.
+        // `DialogContent` and `DialogOverlay` both play a 200ms `animate-out`
+        // (fade, plus a zoom to 95% on the panel), and Radix Presence keeps the
+        // node mounted until `animationend` — so Escape, a selected command,
+        // or an outside click left the palette on screen for 200ms after it
+        // was done. With `animation-name: none`, Presence unmounts at once.
+        // `!` because tailwind-merge does not know `animate-out` (it comes from
+        // tw-animate-css) and keeps both classes; without it, the winner would
+        // be whichever utility Tailwind happens to emit last.
+        className={cn(
+          'p-0 shadow-[0_0_50px_0] shadow-black/10 data-[state=closed]:animate-none! border',
+          className,
+        )}
         hideCloseButton={!showCloseButton}
-        overlayClassName="bg-black/40 backdrop-blur-[1px]"
+        overlayClassName="bg-black/20 backdrop-blur-[1px] data-[state=closed]:animate-none!"
       >
         <Command
           shouldFilter={shouldFilter}
@@ -178,13 +223,26 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
       // is driven by browser hit-testing, so the row under the cursor is
       // always highlighted; when cmdk's pointer selection works the two states
       // coincide on the same row.
+      //
+      // `data-[selected=true]` is scoped to NOT pointer mode (`data-nav` on the
+      // `Command` root — see there). With a mouse, `:hover` is the only
+      // highlight, so it follows the cursor on the frame it moves instead of
+      // waiting for cmdk's re-render. With the keyboard, `data-selected` is.
+      // A caller that restyles the selected row must write the same
+      // `[&:not([data-nav=pointer]_*)]:data-[selected=true]:` prefix, so
+      // tailwind-merge replaces this class instead of stacking a second one.
       className={cn(
-        // `bg-primary/10`, not `bg-accent`: dark-theme `--accent` IS
-        // `--popover` (both surface-1), so an accent highlight on a popover
-        // surface paints invisibly. The 10% ink tint is the same treatment
-        // every menu row uses (see MENU_ROW_TONE in menu-recipe.ts) and
-        // reads on any surface in both themes.
-        "hover:bg-primary/10 hover:text-foreground data-[selected=true]:bg-primary/10 data-[selected=true]:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        // `bg-hover`: the fill of a project sidebar session row on hover.
+        // That row paints `--card` on the canvas; in light mode `--hover`
+        // (ink @ 4.5%) over the white popover blends to the same #f3f3f3–
+        // #f4f4f4. `bg-card` itself cannot be used here: dark-theme `--card`
+        // and `--accent` ARE `--popover` (all surface-1), so it would paint
+        // invisibly on this panel. `--hover` is translucent ink, so it reads
+        // on any surface in both themes. It replaced `bg-primary/10`, which
+        // read too dark next to the sidebar rows.
+        'hover:bg-hover hover:text-foreground transition-none',
+        '[&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-hover [&:not([data-nav=pointer]_*)]:data-[selected=true]:text-foreground',
+        "[&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

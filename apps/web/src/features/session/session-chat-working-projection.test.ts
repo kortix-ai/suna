@@ -50,7 +50,11 @@ describe('the composer reads ONE working answer', () => {
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      // NOT `return messageID;`: the send's upload wait returns early on a
+      // failed attachment, so that anchor ends the slice inside `deliver()`,
+      // before the receipt calls this asserts on. End at the declaration that
+      // follows the whole callback instead.
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
     expect(send).toContain('const receiptTurnId = willQueue ? workingTurnIdRef.current : messageID;');
     expect(send).toContain('noteSendReceipt(messageID, receiptTurnId)');
@@ -117,7 +121,11 @@ describe('the composer reads ONE working answer', () => {
     const send = between(
       chat,
       'const clientMessageId = overrides?.clientMessageId',
-      'return messageID;',
+      // NOT `return messageID;`: the send's upload wait returns early on a
+      // failed attachment, so that anchor ends the slice inside `deliver()`,
+      // before the receipt calls this asserts on. End at the declaration that
+      // follows the whole callback instead.
+      'const heldSendFailures = useHeldSendFailureStore(',
     );
     expect(send).toContain('clearSendReceipt(messageID)');
   });

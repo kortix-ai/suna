@@ -1536,7 +1536,9 @@
       "bringKey": "Bring your own key",
       "barTitle": "No model connected",
       "barDescription": "connect one to start chatting",
-      "connectModel": "Connect model"
+      "connectModel": "Connect model",
+      "imagesUnsupported": "{model} can’t read images",
+      "imagesUnsupportedHint": "remove them or pick another model"
     },
     "providerRecovery": {
       "savedPrompt": "Saved prompt",
@@ -9336,7 +9338,26 @@
     "autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6": "Input schema",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Top up",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Manage plan",
+    "composerAttachments": {
+      "couldNotAttach": "Could not attach files",
+      "couldNotRetry": "Could not retry attachment",
+      "couldNotSend": "Couldn't send",
+      "failedBlocksSend": "Retry or remove the failed attachment.",
+      "uploadFailed": "Upload failed. Check your connection.",
+      "retryNamed": "Retry upload of {name}",
+      "didNotUpload": "{name} did not upload.",
+      "billingRequired": "Your plan or credits do not allow uploads right now.",
+      "budgetExceeded": "Too many unsent uploads. Unused uploads expire within 24 hours.",
+      "tooLarge": "This file is larger than 50 MiB.",
+      "expired": "This upload expired. Remove it and attach the file again.",
+      "checkConnection": "Check your connection, then retry."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Started attachment upload",
+      "text40078a553439": "Uploaded attachment chunk",
+      "text4c7f8000aabd": "Completed attachment upload",
+      "text91420d2587c2": "Removed attachment upload",
+      "text3aab5b3be2b9": "Resolved runtime attachment descriptor",
       "text0005b85debac": "Sound pack played for session events.",
       "text000c02c11c7a": "Reusable instructions your agents load on demand.",
       "text0017bda47853": "URL copied",
