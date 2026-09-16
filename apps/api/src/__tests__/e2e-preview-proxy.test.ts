@@ -1349,6 +1349,65 @@ describe('Preview proxy: forwarding', () => {
   });
 });
 
+describe('Preview proxy: provider credential recovery', () => {
+  const providerRejection = JSON.stringify({
+    statusCode: 401,
+    code: 'UNAUTHORIZED',
+    message: 'unauthorized: authentication failed: Invalid or expired token',
+  });
+
+  const providerRefusals: typeof mockFetchResponses = [
+    { status: 401, body: providerRejection, headers: { 'content-type': 'application/json' } },
+    { status: 307, body: '', headers: { location: 'https://api.auth.daytona.io/user_management/authorize?state=opaque' } },
+  ];
+  for (const rejected of providerRefusals) {
+    test(`refreshes rejected Daytona ingress credentials after ${rejected.status}`, async () => {
+      mockFetchResponses = [rejected, { status: 200, body: '[]' }];
+      const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+      expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+      expect(mockFetchCallCount).toBe(2);
+      expect(mockWakeCalls).toEqual([]);
+    });
+  }
+
+  test('stops after one credential refresh and does not expose provider login redirects', async () => {
+    mockFetchResponses = Array.from({ length: 5 }, () => ({ status: 401, body: providerRejection }));
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe('sandbox_provider_auth_unavailable');
+    expect(mockFetchCallCount).toBe(2);
+  });
+
+  test('invalidates provider credentials without replaying a PTY creation', async () => {
+    mockFetchResponses = [{ status: 401, body: providerRejection }];
+    const app = createProxyTestApp();
+    const response = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: '{}',
+    });
+    expect(response.status).toBe(503);
+    expect(mockFetchCallCount).toBe(1);
+    mockFetchResponses = [{ status: 200, body: '[]' }];
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, { headers: { Authorization: 'Bearer test' } });
+    expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+  });
+
+  test('preserves application OAuth redirects', async () => {
+    mockFetchResponses = [{ status: 307, body: '', headers: { location: 'https://accounts.example.com/login' } }];
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://accounts.example.com/login');
+    expect(mockFetchCallCount).toBe(1);
+  });
+});
+
 describe('Preview proxy: CORS', () => {
   test('sets CORS headers for the web app, and for nobody else', async () => {
     // A preview's credential is an ambient SameSite=None cookie, so echoing an

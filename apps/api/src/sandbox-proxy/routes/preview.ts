@@ -38,6 +38,7 @@ import {
 import { config } from '../../config';
 import { previewCorsHeaders } from '../preview-hosts';
 import { appCookieHeader } from '../preview-session';
+import { isProviderIngressAuthFailure } from '../provider-auth';
 import {
   PREVIEW_STATE_HEADER,
   previewStatePage,
@@ -1218,6 +1219,7 @@ export async function forwardToSandbox(
   // at all (out of budget on the first pass) is the provider-edge case too — we
   // have no evidence about the box.
   let lastAttemptHop: ProxyHop = 'provider_ingress';
+  let providerCredentialsRefreshed = false;
 
   // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
   // passthrough (below), and a previous stream that answered 200 without EVER
@@ -1496,6 +1498,27 @@ export async function forwardToSandbox(
         clearTimeout(connectTimer);
       }
       ptl.mark('upstream');
+
+      // A resumed Daytona sandbox can reject a cached preview token. Its edge
+      // answers either JSON 401 or a login redirect; neither is the daemon's
+      // signed-context refusal. Drop every transport's cached link for this
+      // port and refresh once for reads. Never replay a write here.
+      if (await isProviderIngressAuthFailure(record.provider, upstream)) {
+        await upstream.body?.cancel().catch(() => {});
+        invalidatePreviewLink(sandboxId, port);
+        if (!providerCredentialsRefreshed && (method === 'GET' || method === 'HEAD') && attempt < MAX_RETRIES) {
+          providerCredentialsRefreshed = true;
+          continue;
+        }
+        await abandonTurnLifecycle();
+        // The provider rejected authentication before the daemon received it.
+        if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+        return jsonProxyError({
+          error: 'sandbox provider authentication unavailable',
+          code: 'sandbox_provider_auth_unavailable',
+          retry: true,
+        }, 503, origin);
+      }
 
       if (upstream.status >= 300 && upstream.status < 400) {
         await abandonTurnLifecycle();

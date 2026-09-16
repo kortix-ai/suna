@@ -21,6 +21,18 @@ linked, not inlined.
 
 ## Register
 
+### Refresh provider credentials before blaming sandbox authentication (2026-09-16)
+
+**When:** a resumed terminal receives an upstream authentication refusal. Daytona
+returns either a login redirect or its own JSON `401`; neither proves the daemon
+rejected signed user context. Invalidate the preview-link cache and refresh once
+for reads. Do not replay writes or retry a real daemon authentication rejection.
+Discard cached ingress after a failed WebSocket handshake as well.
+*Incident:* v0.13.18 production verification and both staging browser runs failed
+after resume while fresh Daytona credentials reached the daemon. *Enforcers:*
+`provider-auth.test.ts`, `e2e-preview-proxy.test.ts`, `ws-proxy-ingress-recovery.test.ts`.
+
+
 ### Let Docker readiness decide whether a sandbox can run the preview (2026-09-15)
 
 **When:** preparing a Daytona warm image, attempt kernel module loads but do not
