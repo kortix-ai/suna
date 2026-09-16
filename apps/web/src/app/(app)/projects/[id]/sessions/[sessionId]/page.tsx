@@ -87,7 +87,6 @@ import {
   formatRuntimeError,
   getProjectDetail,
   isSessionFresh,
-  listProjectSessions,
   sessionStartKey,
   setActiveInstanceCookie,
   updateProjectSession,
@@ -102,6 +101,7 @@ import {
   readStartStash,
   startSessionWithPrompt,
   useRuntimeConnectionStore,
+  useProjectSession,
   useSession,
   useSessionPrompts,
   useWakeEscalation,
@@ -194,19 +194,19 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+  // This page needs exactly ONE session — its own. It used to find that row by
+  // scanning the project's whole session list, which was never the right read
+  // and became a wrong one once that list became a bounded page: a session
+  // older than the first page is absent from it, so the page would have opened
+  // with no pin, no agent name and no recovery metadata. `useProjectSession`
+  // reads the row by id, which is exact at any age, costs one indexed lookup
+  // instead of a page scan, and returns `metadata` WHOLE where the list
+  // deliberately trims its heavy write-only keys (`trimListMetadata`).
+  const { data: currentProjectSession } = useProjectSession(projectId, sessionId, {
     enabled: !!user && !!projectId,
-    // The always-mounted sidebar owns title/status polling for this shared key.
-    // A second observer timer here produced independent list requests between
-    // the sidebar's polls during long turns.
-    refetchOnWindowFocus: false,
-    ...contract('inventory'),
   });
-  const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
-  const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
+  const initialOpenCodeSessionId = findInitialSessionPin(currentProjectSession);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness

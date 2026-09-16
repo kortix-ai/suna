@@ -8,6 +8,62 @@ import {
 } from './prompt-parts';
 
 describe('sanitizeInboxPromptParts', () => {
+  test('accepts an opaque staged attachment without URL or caller metadata', () => {
+    expect(sanitizeInboxPromptParts([
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ])).toEqual({ parts: [
+      { type: 'file', attachment_id: '123e4567-e89b-42d3-a456-426614174000' },
+    ] });
+  });
+  // The 20-file cap belongs to staged attachment handles. A CLI or SDK prompt
+  // of legacy data-URL file parts keeps the part and byte caps it always had.
+  test('admits 25 legacy data-URL file parts', () => {
+    const parts = Array.from({ length: 25 }, (_, index) => ({
+      type: 'file',
+      mime: 'image/png',
+      url: 'data:image/png;base64,AAAA',
+      filename: `shot-${index}.png`,
+    }));
+    const result = sanitizeInboxPromptParts(parts);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.parts).toHaveLength(25);
+  });
+
+  test('refuses 21 attachment handles', () => {
+    const parts = Array.from({ length: 21 }, (_, index) => ({
+      type: 'file',
+      attachment_id: `123e4567-e89b-42d3-a456-${String(index).padStart(12, '0')}`,
+    }));
+    expect(sanitizeInboxPromptParts(parts)).toEqual({
+      error: 'attachments supports at most 20 files',
+    });
+  });
+
+  test('treats attachment_id: null as an absent field', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          attachment_id: null,
+          mime: 'image/png',
+          url: 'data:image/png;base64,AAAA',
+          filename: 'shot.png',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+      ],
+    });
+  });
+
+  test('refuses an attachment_id that is not a UUID', () => {
+    expect(
+      sanitizeInboxPromptParts([{ type: 'file', attachment_id: 'not-a-uuid' }]),
+    ).toEqual({ error: 'attachment_id must be a UUID' });
+  });
+
   test('keeps the known fields of text and file parts, drops everything else', () => {
     const result = sanitizeInboxPromptParts([
       { type: 'text', text: 'hello', evil: 'dropped' },

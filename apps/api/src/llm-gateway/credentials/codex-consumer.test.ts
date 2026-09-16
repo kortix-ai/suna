@@ -57,22 +57,11 @@ mock.module('../../shared/audit', () => ({
   },
 }));
 
-let personalValue: string | null = null;
-const personalUpdates: string[] = [];
-mock.module('../../provider-connections/store', () => ({
-  resolveUserProviderConnection: async () => personalValue === null ? null : ({
-    connectionId: 'personal-connection', userId: USER_ID, providerId: 'codex', value: personalValue,
-  }),
-  withUserProviderConnectionLock: async (_id: string, callback: any) => callback({ connectionId: 'personal-connection', userId: USER_ID, providerId: 'codex', value: personalValue }, async (value: string) => { personalUpdates.push(value); }),
-  updateUserProviderConnection: async (_row: unknown, value: string) => { personalUpdates.push(value); return true; },
-}));
-
 const { CodexRefreshError, resolveCodexCredential } = await import('./codex');
 
 describe('resolveCodexCredential consumer boundary', () => {
   beforeEach(() => {
     resolveProjectSecretForConsumer.mockClear();
-    personalValue = null; personalUpdates.length = 0;
     audits.length = 0;
     updates.length = 0;
     resolvedValue = JSON.stringify({
@@ -167,13 +156,4 @@ describe('resolveCodexCredential consumer boundary', () => {
     expect(JSON.stringify(audits)).not.toContain('old-access');
     expect(JSON.stringify(audits)).not.toContain('refresh-token');
   });
-});
-
-test('a bound personal subscription takes precedence and refreshes its user row', async () => {
-  personalValue = JSON.stringify({ openai: { type: 'oauth', access: 'old-personal', refresh: 'refresh-personal', expires: 0 } });
-  const fetchImpl = mock(async () => Response.json({ access_token: 'new-personal', expires_in: 3600 }));
-  const result = await resolveCodexCredential(PROJECT_ID, USER_ID, fetchImpl, { accountId: ACCOUNT_ID });
-  expect(result?.access).toBe('new-personal');
-  expect(JSON.parse(personalUpdates.at(-1)!).openai.access).toBe('new-personal');
-  expect(audits.at(-1)?.resourceType).toBe('provider_connection');
 });

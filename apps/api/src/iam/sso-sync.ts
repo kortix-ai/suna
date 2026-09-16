@@ -14,9 +14,10 @@
 // also needs access to project X for a one-off" workable without the
 // next sign-in stomping it.
 
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships } from '@kortix/db';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships, accountScimUsers } from '@kortix/db';
 import { db } from '../shared/db';
+import { withDirectoryTransaction } from './directory-transaction';
 import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
@@ -256,144 +257,163 @@ export async function syncSsoMembership(args: {
   const provider = await getSsoProviderBySupabaseId(supabaseSsoProviderId);
   if (!provider) return { skipped: true };
 
-  // 1. Ensure account membership. If autoCreateMembers is off, we only
-  //    sync groups for users an admin has already invited.
-  const [existingMember] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, provider.accountId),
-        eq(accountMembers.userId, args.userId),
-      ),
-    )
-    .limit(1);
-
-  let memberCreated = false;
-  if (!existingMember) {
-    if (!provider.autoCreateMembers) {
+  return withDirectoryTransaction(provider.accountId, async () => {
+    const [directoryUser] = await db.select().from(accountScimUsers).where(and(
+      eq(accountScimUsers.accountId, provider.accountId),
+      or(eq(accountScimUsers.userId, args.userId), eq(accountScimUsers.userName, args.email.trim().toLowerCase())),
+    )).limit(1);
+    if (directoryUser && (!directoryUser.active || directoryUser.deletedAt)) {
       return { skipped: false, memberCreated: false };
     }
-    // IDENTITY, then the ROLE. Two stores since the cutover.
-    await db
-      .insert(accountMemberships)
-      .values({ accountId: provider.accountId, userId: args.userId })
-      .onConflictDoNothing();
-    // The ROLE, through the ONE write path. SAML users default to `member`; real
-    // privileges come from the group mappings below.
-    //
-    // SSO JIT keeps bypassing user-authz by design — an IdP is not a user, and
-    // this runs inside the auth middleware where there is no caller to
-    // authorize — but it does not bypass the audit trail or the cache contract:
-    // `SYSTEM_ACTOR` skips only `assertWriterMayAssign`, and `source: 'sso'`
-    // records WHY the row exists, so an admin reading the assignment can tell an
-    // IdP-provisioned membership from one a human granted.
-    //
-    // Still best-effort: this runs inside the auth middleware on EVERY SAML
-    // request, and a grant-store hiccup must not turn into a failed login. The
-    // identity row above is what makes the person a member; a missing assignment
-    // is re-created on their next request.
-    try {
-      await assignRole(SYSTEM_ACTOR, provider.accountId, {
-        principal: { type: 'user', id: args.userId },
-        roleKey: 'member',
-        scope: { type: 'account' },
-        source: 'sso',
-        exclusive: true,
-      });
-    } catch (err) {
-      console.warn('[sso-sync] canonical membership assignment failed', {
-        accountId: provider.accountId,
-        userId: args.userId,
-        err: (err as Error)?.message,
-      });
+    if (directoryUser && !directoryUser.userId) {
+      await db.update(accountScimUsers).set({ userId: args.userId })
+        .where(and(eq(accountScimUsers.accountId, provider.accountId), eq(accountScimUsers.scimId, directoryUser.scimId)));
     }
-    memberCreated = true;
-    // JIT bypasses invite acceptance, so SCIM group memberships parked on a
-    // pending invite for this email (scim/groups.ts) would strand forever —
-    // consume them now. Project grants on the invite stay for the real
-    // accept flow; only the {group_id} entries are applied and stripped.
-    await consumeInviteGroupGrants(provider.accountId, args.userId, args.email);
-  }
 
-  // 2. Sync IAM group memberships from the claim.
-  const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
+    // 1. Ensure account membership. If autoCreateMembers is off, we only
+    //    sync groups for users an admin has already invited.
+    const [existingMember] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, provider.accountId),
+          eq(accountMembers.userId, args.userId),
+        ),
+      )
+      .limit(1);
 
-  // Auto-provision: when enabled, create an IAM group + mapping for every
-  // (deduped) group the IdP sent BEFORE reading the mappings below, so the
-  // freshly created ones flow through the very same diff — the admin skips
-  // hand-mapping each group and just attaches project roles to the new ones.
-  if (provider.autoProvisionGroups) {
-    for (const claimValue of new Set(claims)) {
-      await ensureAutoProvisionedGroup({
-        accountId: provider.accountId,
-        ssoProviderId: provider.ssoProviderId,
-        claimValue,
-      });
+    let memberCreated = false;
+    if (!existingMember) {
+      if (!provider.autoCreateMembers && !directoryUser?.active) {
+        return { skipped: false, memberCreated: false };
+      }
+      // IDENTITY, then the ROLE. Two stores since the cutover.
+      await db
+        .insert(accountMemberships)
+        .values({ accountId: provider.accountId, userId: args.userId })
+        .onConflictDoNothing();
+      // The ROLE, through the ONE write path. SAML users default to `member`; real
+      // privileges come from the group mappings below.
+      //
+      // SSO JIT keeps bypassing user-authz by design — an IdP is not a user, and
+      // this runs inside the auth middleware where there is no caller to
+      // authorize — but it does not bypass the audit trail or the cache contract:
+      // `SYSTEM_ACTOR` skips only `assertWriterMayAssign`, and `source: 'sso'`
+      // records WHY the row exists, so an admin reading the assignment can tell an
+      // IdP-provisioned membership from one a human granted.
+      //
+      // Still best-effort: this runs inside the auth middleware on EVERY SAML
+      // request, and a grant-store hiccup must not turn into a failed login. The
+      // identity row above is what makes the person a member; a missing assignment
+      // is re-created on their next request.
+      try {
+        await assignRole(SYSTEM_ACTOR, provider.accountId, {
+          principal: { type: 'user', id: args.userId },
+          roleKey: 'member',
+          scope: { type: 'account' },
+          source: 'sso',
+          exclusive: true,
+        });
+      } catch (err) {
+        console.warn('[sso-sync] canonical membership assignment failed', {
+          accountId: provider.accountId,
+          userId: args.userId,
+          err: (err as Error)?.message,
+        });
+      }
+      memberCreated = true;
+      // JIT bypasses invite acceptance, so SCIM group memberships parked on a
+      // pending invite for this email (scim/groups.ts) would strand forever —
+      // consume them now. Project grants on the invite stay for the real
+      // accept flow; only the {group_id} entries are applied and stripped.
+      await consumeInviteGroupGrants(provider.accountId, args.userId, args.email);
     }
-  }
 
-  const mappings = await listSsoGroupMappings(provider.accountId);
-  if (mappings.length === 0) {
-    return { skipped: false, memberCreated };
-  }
-  const claimedGroupIds = resolveClaimedGroupIds(claims, mappings);
-  const mappedGroupIds = new Set(mappings.map((m) => m.groupId));
+    // 2. Sync IAM group memberships from the claim.
+    const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
 
-  // Current memberships in this account, restricted to the mapped set
-  // so we don't even consider stripping manual groups.
-  const currentRows = mappedGroupIds.size === 0
-    ? []
-    : await db
-        .select({ groupId: accountGroupMembers.groupId })
-        .from(accountGroupMembers)
+    // Auto-provision: when enabled, create an IAM group + mapping for every
+    // (deduped) group the IdP sent BEFORE reading the mappings below, so the
+    // freshly created ones flow through the very same diff — the admin skips
+    // hand-mapping each group and just attaches project roles to the new ones.
+    if (provider.autoProvisionGroups) {
+      for (const claimValue of new Set(claims)) {
+        await ensureAutoProvisionedGroup({
+          accountId: provider.accountId,
+          ssoProviderId: provider.ssoProviderId,
+          claimValue,
+        });
+      }
+    }
+
+    const allMappings = await listSsoGroupMappings(provider.accountId);
+    const ssoGroups = await db.select({ groupId: accountGroups.groupId })
+      .from(accountGroups)
+      .where(and(eq(accountGroups.accountId, provider.accountId), ne(accountGroups.source, 'scim')));
+    const ssoGroupIds = new Set(ssoGroups.map((group) => group.groupId));
+    const mappings = allMappings.filter((mapping) => ssoGroupIds.has(mapping.groupId));
+    if (mappings.length === 0) {
+      return { skipped: false, memberCreated };
+    }
+    const claimedGroupIds = resolveClaimedGroupIds(claims, mappings);
+    const mappedGroupIds = new Set(mappings.map((m) => m.groupId));
+
+    // Current memberships in this account, restricted to the mapped set
+    // so we don't even consider stripping manual groups.
+    const currentRows = mappedGroupIds.size === 0
+      ? []
+      : await db
+          .select({ groupId: accountGroupMembers.groupId })
+          .from(accountGroupMembers)
+          .where(
+            and(
+              eq(accountGroupMembers.userId, args.userId),
+              inArray(accountGroupMembers.groupId, [...mappedGroupIds]),
+            ),
+          );
+    const currentGroupIds = new Set(currentRows.map((r) => r.groupId));
+
+    const { toAdd, toRemove } = diffSsoGroups({
+      currentGroupIds,
+      mappedGroupIds,
+      claimedGroupIds,
+    });
+
+    if (toAdd.length > 0) {
+      await db
+        .insert(accountGroupMembers)
+        .values(
+          toAdd.map((groupId) => ({
+            groupId,
+            userId: args.userId,
+            addedBy: null,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+    if (toRemove.length > 0) {
+      await db
+        .delete(accountGroupMembers)
         .where(
           and(
             eq(accountGroupMembers.userId, args.userId),
-            inArray(accountGroupMembers.groupId, [...mappedGroupIds]),
+            inArray(accountGroupMembers.groupId, toRemove),
           ),
         );
-  const currentGroupIds = new Set(currentRows.map((r) => r.groupId));
+    }
 
-  const { toAdd, toRemove } = diffSsoGroups({
-    currentGroupIds,
-    mappedGroupIds,
-    claimedGroupIds,
+    // JIT membership changed on login → bust this user so their group-derived
+    // roles are correct on the very first authed request of the session.
+    if (memberCreated || toAdd.length > 0 || toRemove.length > 0) {
+      invalidateIamCacheForUser(args.userId);
+    }
+
+    return {
+      skipped: false,
+      memberCreated,
+      groupsAdded: toAdd,
+      groupsRemoved: toRemove,
+    };
   });
-
-  if (toAdd.length > 0) {
-    await db
-      .insert(accountGroupMembers)
-      .values(
-        toAdd.map((groupId) => ({
-          groupId,
-          userId: args.userId,
-          addedBy: null,
-        })),
-      )
-      .onConflictDoNothing();
-  }
-  if (toRemove.length > 0) {
-    await db
-      .delete(accountGroupMembers)
-      .where(
-        and(
-          eq(accountGroupMembers.userId, args.userId),
-          inArray(accountGroupMembers.groupId, toRemove),
-        ),
-      );
-  }
-
-  // JIT membership changed on login → bust this user so their group-derived
-  // roles are correct on the very first authed request of the session.
-  if (memberCreated || toAdd.length > 0 || toRemove.length > 0) {
-    invalidateIamCacheForUser(args.userId);
-  }
-
-  return {
-    skipped: false,
-    memberCreated,
-    groupsAdded: toAdd,
-    groupsRemoved: toRemove,
-  };
 }

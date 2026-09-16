@@ -20,10 +20,9 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   type CreateSessionPublicShareInput,
   createSessionPublicShare,
-  listProjectSessions,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useProjectSession } from '@kortix/sdk/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -46,14 +45,14 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   // control that can only fail. Only an explicit `false` withholds it: the
   // inventory is not loaded on every surface this hook serves, and an unknown
   // answer must not silently remove a control from the owner.
-  const { data: sessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
-    enabled: !!projectId && !!sessionId,
-    ...contract('inventory'),
-  });
-  const canManageSharing =
-    sessions?.find((s) => s.session_id === sessionId)?.can_manage_sharing !== false;
+  // By id, not by scanning the project's session list. The list is a bounded
+  // page now, so a session older than the first page was simply absent from it
+  // and the scan answered `undefined` — which this predicate reads as "not
+  // false", i.e. permitted. It happened to fail OPEN (see above), so the
+  // control stayed visible, but the answer was a coincidence rather than a
+  // verdict. The read-by-id is exact at any age.
+  const { data: session } = useProjectSession(projectId, sessionId);
+  const canManageSharing = session?.can_manage_sharing !== false;
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 

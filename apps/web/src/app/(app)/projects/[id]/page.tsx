@@ -2,7 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { stageFirstPromptAttachments } from '@/features/session/uploaded-file-refs';
+import { promptFileParts } from '@/features/session/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
@@ -22,8 +22,13 @@ import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  postWhenUploaded,
+  sentFailureMessage,
+  type AttachmentSubmission,
+} from '@/features/session/composer/attachment-submission';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, writeStartStash } from '@kortix/sdk/react';
+import { contract, qk, startSessionWithPrompt, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,6 +39,7 @@ const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-
 
 export default function ProjectIndexPage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const pathname = usePathname();
@@ -94,10 +100,15 @@ export default function ProjectIndexPage() {
   }, [searchParams, pathname, projectId, router]);
 
   const handleSend = useCallback(
-    async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
+    async (
+      text: string,
+      files: AttachedFile[] | undefined,
+      options?: ProjectHomeSendOptions,
+      attachments?: AttachmentSubmission,
+    ) => {
       if (!text.trim() && !files?.length) return;
 
-      if (isBillingEnabled() && billingLoading) return;
+      if (isBillingEnabled() && billingLoading) throw new Error('Account access is still loading');
 
       // Gate accounts that cannot run before navigating so we never strand the
       // user on a shell that cannot provision. Free accounts with the monthly
@@ -107,7 +118,7 @@ export default function ProjectIndexPage() {
         openUpgradeDialog(
           billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
         );
-        return;
+        throw new Error('Account cannot start a session');
       }
 
       // Identical create-first path to every other new-session entry point: the
@@ -121,61 +132,141 @@ export default function ProjectIndexPage() {
       // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
       // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
-      // Attachments ride the create itself as data: URLs — the session's
-      // sandbox does not exist yet, so there is nowhere to upload into. The
-      // API turns this whole pending_prompt into a durable inbox row in the
-      // same transaction as the session, so the message survives a closed tab
-      // from this moment on. Over the cap, the refusal names the way out.
-      let parts: Awaited<ReturnType<typeof stageFirstPromptAttachments>>;
-      try {
-        parts = await stageFirstPromptAttachments(files);
-      } catch (error) {
-        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
-        setSending(false);
+      // Send time, not POST time. A held POST lands after the uploads, and the
+      // server orders rows by this stamp: a message sent on the session page
+      // meanwhile must still follow this one.
+      const sentAtMs = Date.now();
+      // Uploads still running at Send never hold the paint. The session is
+      // created (or the warm one taken) and opened now, and the first-prompt
+      // preview draws the message. Only the prompt POST waits for the uploads:
+      // the create cannot carry a prompt whose upload handles do not exist yet.
+      // Uploads already finished keep the create carrying the prompt.
+      const heldAttachments = attachments && !attachments.readyAtSend ? attachments : undefined;
+      let parts: ReturnType<typeof promptFileParts> = [];
+      if (!heldAttachments) {
+        try {
+          const attachmentParts = attachments ? await attachments.whenReady() : [];
+          parts = promptFileParts(files, attachmentParts);
+        } catch (error) {
+          errorToast(
+            error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'),
+          );
+          setSending(false);
+          throw error;
+        }
+      }
+      // This page unmounts with the navigation; the held POST does not. A
+      // failure stays on the session page as the first prompt's failed status.
+      // Keyed by the created session: a send made on the session page meanwhile
+      // queues behind this POST. It starts at most once per Send.
+      let heldPostStarted = false;
+      const startHeldPost = (held: AttachmentSubmission, sessionId: string) => {
+        if (heldPostStarted) return;
+        heldPostStarted = true;
+        void postWhenUploaded(
+          sessionId,
+          held,
+          async (attachmentParts) =>
+            startSessionWithPrompt(projectId, sessionId, {
+              parts: [{ type: 'text' as const, text }, ...promptFileParts(files, attachmentParts)],
+              overrides: {
+                ...(options?.agent ? { agent: options.agent } : {}),
+                ...(options?.model ? { model: options.model } : {}),
+                ...(options?.variant ? { variant: options.variant } : {}),
+              },
+              clientSentAtMs: sentAtMs,
+            }),
+          (uploadStatus) =>
+            useFirstPromptPreviewStore
+              .getState()
+              .setFirstPromptPreview(sessionId, text, files ?? [], uploadStatus),
+          (error) => sentFailureMessage(error, tComposerAttachments),
+        );
+      };
+      // A refused create can still open the session: the connector gate's Retry
+      // creates it with these same options. By then the Promise below has
+      // rejected, so nothing after the `await` runs, and the composer has taken
+      // the uploads back, so its unmount would delete them.
+      let refused = false;
+      const sessionId = await new Promise<string>((resolve, reject) => {
+        newSession({
+          create: {
+            ...buildNewSessionCreateInput(options),
+            ...(heldAttachments
+              ? {}
+              : {
+                  pending_prompt: {
+                    text,
+                    agent: options?.agent ?? null,
+                    model: options?.model ?? null,
+                    variant: options?.variant ?? null,
+                    attachment_names:
+                      files?.map((file) =>
+                        file.kind === 'local' ? file.file.name : file.filename,
+                      ) ?? [],
+                    ...(parts.length > 0
+                      ? { parts: [{ type: 'text' as const, text }, ...parts] }
+                      : {}),
+                  },
+                }),
+          },
+          scope: options?.scope,
+          // Create failed (already surfaced by the hook). Reject so the
+          // composer restores its submitted draft and keeps every handle.
+          onError: () => {
+            refused = true;
+            setSending(false);
+            reject(new Error('Session creation failed'));
+          },
+          onNavigate: (sessionId) => {
+            // `sessionId` here is the route/Kortix session id, not the OpenCode
+            // pin the session page resolves later (`useCanonicalRuntimeSession`
+            // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
+            // route id via the SDK's canonical `writeStartStash` — the session
+            // page's `migrateStash` hands this off onto the resolved pin once it
+            // exists, and `readStartStash` (instant shell, `useSession`) reads it
+            // uniformly either side of that migration.
+            // PICKS only: the prompt (and its attachments) are already a
+            // durable inbox row via create.pending_prompt above — a prompt in
+            // the stash here would be a second delivery channel for the same
+            // message.
+            writeStartStash(sessionId, {
+              prompt: '',
+              agent: options?.agent ?? null,
+              model: options?.model ?? null,
+              variant: options?.variant ?? null,
+            });
+            // RENDER-only copy for the boot shell, so the bubble is on screen
+            // from the session page's first frame — see `useFirstPromptPreviewStore`.
+            useFirstPromptPreviewStore
+              .getState()
+              .setFirstPromptPreview(sessionId, text, files ?? []);
+            // A connector-gate Retry of a held send: hand the uploads off again
+            // and POST from here. A ready send's create carried the prompt.
+            if (refused && heldAttachments) {
+              heldAttachments.resubmit();
+              startHeldPost(heldAttachments, sessionId);
+            }
+            resolve(sessionId);
+          },
+        });
+      });
+      if (!heldAttachments) {
+        attachments?.release();
         return;
       }
-      newSession({
-        create: {
-          ...buildNewSessionCreateInput(options),
-          pending_prompt: {
-            text,
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
-            attachment_names:
-              files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
-            ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
-          },
-        },
-        scope: options?.scope,
-        // Create failed (already surfaced by the hook) — we never left this
-        // page, so just unlock the composer with the text still in it.
-        onError: () => setSending(false),
-        onNavigate: (sessionId) => {
-          // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalRuntimeSession`
-          // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
-          // route id via the SDK's canonical `writeStartStash` — the session
-          // page's `migrateStash` hands this off onto the resolved pin once it
-          // exists, and `readStartStash` (instant shell, `useSession`) reads it
-          // uniformly either side of that migration.
-          // PICKS only: the prompt (and its attachments) are already a
-          // durable inbox row via create.pending_prompt above — a prompt in
-          // the stash here would be a second delivery channel for the same
-          // message.
-          writeStartStash(sessionId, {
-            prompt: '',
-            agent: options?.agent ?? null,
-            model: options?.model ?? null,
-            variant: options?.variant ?? null,
-          });
-          // RENDER-only copy for the boot shell, so the bubble is on screen
-          // from the session page's first frame — see `useFirstPromptPreviewStore`.
-          useFirstPromptPreviewStore.getState().setFirstPromptPreview(sessionId, text, files ?? []);
-        },
-      });
+      startHeldPost(heldAttachments, sessionId);
     },
-    [billingLoading, accountState, newSession, openUpgradeDialog, projectAccountId, tI18nComplete],
+    [
+      billingLoading,
+      accountState,
+      newSession,
+      openUpgradeDialog,
+      projectAccountId,
+      projectId,
+      tI18nComplete,
+      tComposerAttachments,
+    ],
   );
 
   return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;

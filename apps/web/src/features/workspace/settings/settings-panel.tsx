@@ -60,7 +60,6 @@ import { SandboxTab } from './tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
-import { PersonalProviderConnections } from '@/features/providers/personal-provider-connections';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -91,7 +90,6 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // Your own API keys are yours in ONE account (the read is account-scoped —
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
-  'provider-connections',
   'tokens',
   // Same scope as `plan` below — one wallet per account, read through the same
   // resolved id — so it renders wherever `plan` does. Listed before it, in the
@@ -734,7 +732,6 @@ function SettingsTabPane({
   if (item.tab === 'connected') {
     return <ConnectedAccountsTab accountId={accountId} />;
   }
-  if (item.tab === 'provider-connections') return <PersonalProviderConnections />;
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;
   }

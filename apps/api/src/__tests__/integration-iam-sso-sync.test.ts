@@ -52,7 +52,7 @@ const canWrite = async (userId: string) =>
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
-  await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'scim' });
+  await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'sso' });
   // The group grants MANAGER on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
   await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });

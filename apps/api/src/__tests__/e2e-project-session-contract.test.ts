@@ -635,7 +635,17 @@ mock.module('../shared/db', () => ({
               // asserting on the response alone would pass even if the filter
               // were never applied.
               lastSessionListWhere = predicate ?? null;
-              return Promise.resolve(sessionRow ? [sessionRow] : []);
+              const rows = sessionRow ? [sessionRow] : [];
+              // Thenable AND `.limit()`-able: the session list reads a bounded
+              // keyset PAGE (`.where().orderBy().limit()`), while other callers
+              // still await the ordered read directly.
+              return {
+                limit: async () => rows,
+                then: (
+                  resolve: (value: unknown[]) => unknown,
+                  reject?: (reason: unknown) => unknown,
+                ) => Promise.resolve(rows).then(resolve, reject),
+              };
             }
             return Promise.resolve([]);
           },
@@ -1001,6 +1011,19 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
+  },
+}));
+
+// Session delete releases prompt attachment references. The contract DB mock
+// does not model those tables; the release SQL is covered by
+// integration-prompt-attachments.test.ts.
+const releasedAttachmentSessions: string[] = [];
+const realPromptAttachments = await import('../projects/prompt-attachments');
+mock.module('../projects/prompt-attachments', () => ({
+  ...realPromptAttachments,
+  releasePromptAttachmentsForSession: async (input: { sessionId: string }) => {
+    releasedAttachmentSessions.push(input.sessionId);
+    return 0;
   },
 }));
 
@@ -4370,6 +4393,7 @@ describe('project session API contract', () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(sessionRow?.status).toBe('stopped');
     expect(sessionRow?.branchName).toBe(SESSION_ID);
+    expect(releasedAttachmentSessions).toContain(SESSION_ID);
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {

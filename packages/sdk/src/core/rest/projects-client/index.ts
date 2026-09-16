@@ -11,6 +11,7 @@ export * from './connectors';
 export * from './policies';
 export * from './sandbox';
 export * from './files';
+export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
@@ -50,5 +51,5 @@ export type {
   ProjectGitConnection,
   ProjectFileEntry,
 } from './shared';
-export * from './provider-connections';
+
 export * from './model-access';

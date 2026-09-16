@@ -3,7 +3,15 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import {
+  retryHeldSend,
+  useHeldSendFailureStore,
+  type HeldSend,
+} from '@/stores/session-composer-handoff-store';
+
+import enMessages from '../../../translations/en.json';
 import { OptimisticTurn } from './optimistic-turn';
+import { adoptSentAttachmentPreviews } from './sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads } from './uploaded-file-refs';
 
 /** An attached-file card reaches FileContentRenderer, which calls
@@ -123,13 +131,62 @@ describe('OptimisticTurn', () => {
   });
 });
 
+describe('OptimisticTurn sent pictures', () => {
+  test('the first prompt draws the picture it was sent with from the first frame, and no spinner', () => {
+    const file = {
+      kind: 'local' as const,
+      uploadId: 'upload-first',
+      file: new File(['x'], 'first.png', { type: 'image/png' }),
+      localUrl: 'blob:first-prompt',
+      isImage: true,
+    };
+    adoptSentAttachmentPreviews([file]);
+    // The boot shell has no sandbox yet (`deferPreview`); the chat has one.
+    for (const deferPreview of [true, false]) {
+      const markup = render(
+        <OptimisticTurn
+          text={buildOptimisticPromptTextWithUploads('look', [file])}
+          deferPreview={deferPreview}
+        />,
+      );
+      expect(markup.match(/<img [^>]*src="blob:first-prompt"/g)).toHaveLength(1);
+      expect(markup.match(/<li class="contents"/g)).toHaveLength(1);
+      expect(markup).not.toContain('animate-spinner-orbit');
+      expect(markup).not.toContain('Upload');
+    }
+  });
+
+  test('a staged attachment that carries its sent identity draws the sent picture, not its name', () => {
+    // The boot shell's copy after the preview store is cleared: no local files, only the
+    // remembered identities of the first prompt.
+    const file = {
+      kind: 'local' as const,
+      uploadId: 'upload-staged-first',
+      file: new File(['x'], 'staged.png', { type: 'image/png' }),
+      localUrl: 'blob:staged-first',
+      isImage: true,
+    };
+    adoptSentAttachmentPreviews([file]);
+    const markup = render(
+      <OptimisticTurn
+        text="look"
+        attachments={[{ id: 'upload-staged-first', filename: 'staged.png', mime: 'image/png' }]}
+        deferPreview
+      />,
+    );
+    expect(markup.match(/<img [^>]*src="blob:staged-first"/g)).toHaveLength(1);
+    expect(markup.match(/<li class="contents"/g)).toHaveLength(1);
+    expect(markup).not.toContain('animate-spinner-orbit');
+  });
+});
+
 describe('OptimisticTurn staged attachments', () => {
   // A reload discards the composer's optimistic state. The durable queued row
   // is then the only thing that knows the prompt had files, and it carries
   // NAMES ONLY — no bytes, no sandbox path, because the upload has not landed.
   // Without this the refreshed tab showed a bare sentence for a send of seven
   // attachments (2026-09-04), which reads as "my files were dropped".
-  test('draws a pending tile per staged attachment after a reload', () => {
+  test('draws a stable tile per staged attachment after a reload', () => {
     const markup = render(
       <OptimisticTurn
         text="YO BRO"
@@ -142,6 +199,7 @@ describe('OptimisticTurn staged attachments', () => {
     expect(markup).toContain('YO BRO');
     expect(markup).toContain('20260830_134945.jpg');
     expect(markup).toContain('spec.pdf');
+    expect(markup).not.toContain('animate-spinner-orbit');
   });
 
   test('keeps send order', () => {
@@ -195,7 +253,7 @@ describe('OptimisticTurn upload status', () => {
   // whole upload — it has to say what is happening.
   // No "Uploading N files…" line: every tile already spins while its bytes
   // are on their way, and a second line said the same thing (Jay, 2026-09-06).
-  test('while uploading, the tiles spin and nothing is written under them', () => {
+  test('an accepted first-send attachment does not restart upload progress', () => {
     const markup = render(
       <OptimisticTurn
         text="YO BRO"
@@ -204,11 +262,10 @@ describe('OptimisticTurn upload status', () => {
           { filename: 'b.pdf', mime: 'application/pdf' },
           { filename: 'c.svg', mime: 'image/svg+xml' },
         ]}
-        uploadStatus={{ state: 'uploading' }}
       />,
     );
     expect(markup).not.toContain('Uploading');
-    expect(markup).toContain('animate-spinner-orbit');
+    expect(markup).not.toContain('animate-spinner-orbit');
     expect(markup).toContain('a.jpg');
     expect(markup).toContain('c.svg');
   });
@@ -228,11 +285,91 @@ describe('OptimisticTurn upload status', () => {
     expect(markup).not.toContain('Uploading');
   });
 
-  test('a staged file in a running-session turn spins, with no line under it', () => {
-    const pending = render(
+  test('a failed send the host kept offers Retry', () => {
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <OptimisticTurn
+            text="x"
+            attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
+            uploadStatus={{ state: 'failed', message: 'photo.jpg did not upload', onRetry: () => {} }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('photo.jpg did not upload');
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+  });
+
+  test('a kept failed send survives a SessionChat remount: it still draws the failed status, and Retry sends through the mounted instance', () => {
+    useHeldSendFailureStore.setState({ failuresBySession: {} });
+    const events: string[] = [];
+    const send: HeldSend = {
+      text: 'x',
+      attachments: {
+        submittedIds: ['attachment-1'],
+        readyAtSend: false,
+        whenReady: async () => [],
+        retry: () => {
+          events.push('retry');
+        },
+        resubmit: () => {},
+        release: () => {},
+      },
+      overrides: { clientMessageId: 'client-1' },
+    };
+    // The instance whose upload failed stores the send, then unmounts.
+    useHeldSendFailureStore
+      .getState()
+      .setHeldSendFailure('S1', 'msg_1', { message: 'photo.jpg did not upload', send });
+
+    // The remounted instance reads the failure from the store and draws it, as
+    // SessionChat does; its Retry runs on the remounted instance's send path.
+    const resent: HeldSend[] = [];
+    const failure = useHeldSendFailureStore.getState().failuresBySession.S1?.msg_1;
+    expect(failure?.message).toBe('photo.jpg did not upload');
+    const status = {
+      state: 'failed' as const,
+      message: failure!.message,
+      onRetry: () =>
+        retryHeldSend(
+          'S1',
+          'msg_1',
+          async (again) => {
+            events.push('send');
+            resent.push(again);
+          },
+          String,
+        ),
+    };
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <OptimisticTurn
+            text="x"
+            attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
+            uploadStatus={status}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('photo.jpg did not upload');
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+
+    status.onRetry();
+    expect(events).toEqual(['retry', 'send']);
+    expect(resent).toEqual([send]);
+    expect(useHeldSendFailureStore.getState().failuresBySession.S1?.msg_1).toBeUndefined();
+  });
+
+  test('a staged file in a running-session turn is one finished tile, with no line under it', () => {
+    const accepted = render(
       <OptimisticTurn text="x" attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
     );
-    expect(pending).toContain('animate-spinner-orbit');
-    expect(pending).not.toContain('Uploading');
+    expect(accepted.match(/<li class="contents"/g)).toHaveLength(1);
+    expect(accepted).toContain('title="a.png"');
+    // No status: nothing under the strip, and no progress on the tile.
+    expect(accepted).not.toContain('role="alert"');
+    expect(accepted).not.toContain('role="progressbar"');
   });
 });

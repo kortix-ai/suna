@@ -98,6 +98,7 @@ function resetState() {
   deleteManagedRepoCalls = [];
   deleteManagedRepoError = null;
   deleteManagedRepoResult = false;
+  releaseAttachmentsError = null;
   rejectedBranch = null;
 }
 
@@ -403,6 +404,21 @@ const projectDbMock = createProjectsContractDbMock(dbState);
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: projectDbMock,
+}));
+
+// Project archive releases prompt attachment references. The contract DB mock
+// does not model those tables; the release SQL is covered by
+// integration-prompt-attachments.test.ts ("project archive releases references").
+const releasedAttachmentProjects: string[] = [];
+let releaseAttachmentsError: Error | null = null;
+const realPromptAttachments = await import('../projects/prompt-attachments');
+mock.module('../projects/prompt-attachments', () => ({
+  ...realPromptAttachments,
+  releasePromptAttachmentsForProject: async (projectId: string) => {
+    if (releaseAttachmentsError) throw releaseAttachmentsError;
+    releasedAttachmentProjects.push(projectId);
+    return 0;
+  },
 }));
 
 const { projectsApp } = await import('../projects/index');
@@ -721,9 +737,11 @@ describe('projects API contract', () => {
       repo_url: beforeRepoUrl,
     });
 
+    releasedAttachmentProjects.length = 0;
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
+    expect(releasedAttachmentProjects).toEqual([PROJECT_ID]);
     expect(deleteManagedRepoCalls).toEqual([]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
@@ -756,6 +774,19 @@ describe('projects API contract', () => {
     expect(del.status).toBe(502);
     expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
     expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
+  });
+
+  test('a failed attachment release answers 500 before the irreversible repository purge', async () => {
+    const app = createApp();
+    deleteManagedRepoResult = true;
+    releaseAttachmentsError = new Error('database unavailable');
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+
+    expect(del.status).toBe(500);
+    // The retry finds the repository and the project exactly as they were.
+    expect(deleteManagedRepoCalls).toEqual([]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 

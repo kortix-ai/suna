@@ -110,7 +110,9 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
   test('the LOCAL copy is what the stand-in and the hand-over read', () => {
     expect(chat).toContain('const firstPromptSource = firstPromptPreview ?? firstPromptKeep;');
     expect(chat).toContain('hasPreview: !!firstPromptSource,');
-    expect(chat).toContain('return { text: firstPromptSource.text, attachments };');
+    expect(chat).toContain(
+      'text: firstPromptSource.text,\n        attachments: sentAttachmentsOf(firstPromptSource.files),',
+    );
     expect(chat).toContain('firstPromptSource.text,\n                                firstPromptSource.files,');
   });
 

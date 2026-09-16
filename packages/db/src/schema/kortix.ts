@@ -265,6 +265,28 @@ export const accountMemberships = kortixSchema.table(
   (table) => [primaryKey({ columns: [table.userId, table.accountId] })],
 );
 
+export const accountScimUsers = kortixSchema.table(
+  'account_scim_users',
+  {
+    scimId: uuid('scim_id').notNull(),
+    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    invitationId: uuid('invitation_id'),
+    userName: text('user_name').notNull(),
+    externalId: text('external_id'),
+    active: boolean('active').default(true).notNull(),
+    profile: jsonb('profile').$type<Record<string, unknown>>().default({}).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.scimId] }),
+    uniqueIndex('account_scim_users_account_email').on(table.accountId, table.userName),
+    index('account_scim_users_account_user').on(table.accountId, table.userId),
+  ],
+);
+
 // Pending invitations for users not yet members (or not yet signed up). On
 // signup or first /v1/accounts call we auto-claim invites matching the user's
 // email and convert them into account_members rows.
@@ -5847,6 +5869,53 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connector').on(table.connectorId),
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
+  ],
+);
+
+// Ownership IDs intentionally have no FK: metadata must outlive project/account
+// deletion until maintenance has removed every private storage object.
+export const promptAttachments = kortixSchema.table(
+  'prompt_attachments',
+  {
+    attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    objectPath: text('object_path').notNull().unique(),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    /** Chunked mode only: acknowledged bytes, advanced by compare-and-set. */
+    receivedBytes: integer('received_bytes').default(0).notNull(),
+    sha256: text('sha256'),
+    status: varchar('status', { length: 16 }).default('uploading').notNull(),
+    finalizeToken: uuid('finalize_token'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('prompt_attachments_status_check', sql`${table.status} IN ('uploading', 'finalizing', 'ready', 'failed', 'deleting')`),
+    check('prompt_attachments_size_check', sql`${table.sizeBytes} > 0 AND ${table.sizeBytes} <= 52428800`),
+    check('prompt_attachments_received_check', sql`${table.receivedBytes} >= 0 AND ${table.receivedBytes} <= ${table.sizeBytes}`),
+    // Reader: the per-user upload budget in `beginPromptAttachment`.
+    index('idx_prompt_attachments_user_status').on(table.userId, table.status),
+    index('idx_prompt_attachments_expiry').on(table.expiresAt),
+  ],
+);
+
+export const promptAttachmentReferences = kortixSchema.table(
+  'prompt_attachment_references',
+  {
+    commandId: uuid('command_id').notNull(),
+    attachmentId: uuid('attachment_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.commandId, table.attachmentId] }),
+    foreignKey({ name: 'prompt_attachment_refs_command_fk', columns: [table.commandId], foreignColumns: [sessionLifecycleCommands.commandId] }).onDelete('cascade'),
+    foreignKey({ name: 'prompt_attachment_refs_attachment_fk', columns: [table.attachmentId], foreignColumns: [promptAttachments.attachmentId] }).onDelete('restrict'),
+    index('idx_prompt_attachment_references_attachment').on(table.attachmentId),
   ],
 );
 

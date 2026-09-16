@@ -600,19 +600,7 @@ describe('resolveCachedAccountTier — 30s TTL boundary', () => {
     expect(getAccountTier).toHaveBeenCalledTimes(2);
   });
 });
-let personalCredential: { connectionId: string; value: string } | null = null;
-mock.module('../../provider-connections/store', () => ({ resolveUserProviderConnection: async () => personalCredential }));
 
-test('a personal binding uses its key before any shared project credential', async () => {
-  catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
-  resolvedSecrets = [{ identifier: 'ANTHROPIC_API_KEY', value: 'project-key' }];
-  personalCredential = { connectionId: 'personal-1', value: 'personal-key' };
-  try {
-    const candidates = await resolveCandidates(principal(), 'anthropic/claude-sonnet-4.6');
-    expect(candidates[0]).toMatchObject({ apiKey: 'personal-key', credentialRef: 'personal:personal-1' });
-    expect(candidates.some(candidate => candidate.apiKey === 'project-key')).toBe(false);
-  } finally { personalCredential = null; }
-});
 
 describe('explicit project model access', () => {
   test('disabled provider fails before any credential is read', async () => {

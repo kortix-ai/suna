@@ -56,7 +56,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | Action | What it does |
 |---|---|
 | `send(text, override?)` | Send a prompt. `override` sets `{ model?, agent? }` for this message only. |
-| `sendParts(parts, override?)` | Send text and file prompt parts through the selected transport. |
+| `sendParts(parts, override?)` | Send text and runtime URL file parts through the selected transport. Private staged handles use platform prompt routes. |
 | `rewind(messageId)` | Rewind this canonical session to a user message. The selected message and later path become hidden and recoverable. |
 | `restoreRewind()` | Restore the removed path before another prompt commits its replacement. |
 | `cancel()` | Stop the current run and clear pending questions and permissions. |

@@ -393,11 +393,27 @@ projectsApp.openapi(
         // CAS above already refused (marker gone), so this insert runs at most
         // once per session. The idempotency key still guards the create path's
         // row for a session that somehow saw both.
-        await tx
+        const insertPrompt = tx
           .insert(sessionLifecycleCommands)
           .values(conversion.rowValues)
-          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
-          .returning({ commandId: sessionLifecycleCommands.commandId });
+          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+        // Only a handle prompt reads its payload back, for binding. A legacy
+        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+        if ((conversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const [promptCommand] = await insertPrompt.returning({
+            commandId: sessionLifecycleCommands.commandId,
+            accountId: sessionLifecycleCommands.accountId,
+            projectId: sessionLifecycleCommands.projectId,
+            actorUserId: sessionLifecycleCommands.actorUserId,
+            payload: sessionLifecycleCommands.payload,
+          });
+          if (promptCommand) {
+            const { bindPromptAttachments } = await import('../prompt-attachments');
+            await bindPromptAttachments(tx, promptCommand);
+          }
+        } else {
+          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
+        }
       }
       return row;
     });

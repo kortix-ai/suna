@@ -117,5 +117,3 @@ describe('a managed model whose transport credential is missing is never offered
     ).rejects.toMatchObject({ name: 'GatewayResolutionError' });
   });
 });
-
-mock.module('../../provider-connections/store', () => ({ resolveUserProviderConnection: async () => null }));

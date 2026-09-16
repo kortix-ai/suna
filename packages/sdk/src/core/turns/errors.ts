@@ -73,14 +73,108 @@ function messageFieldFromJsonish(str: string): string | undefined {
  */
 function textFromHtml(str: string): string | undefined {
   if (!/^\s*<(?:!doctype|html|head|body)\b/i.test(str)) return undefined;
-  const title = str.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
+  // One lowercased copy, reused by both scans below, so tag matching is
+  // case-insensitive without a regex.
+  const lower = str.toLowerCase();
+  const title = titleFromHtml(str, lower);
   if (title) return title;
-  const text = str
-    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = visibleTextFromHtml(str, lower);
   return text ? text.slice(0, 200) : undefined;
+}
+
+/**
+ * A tag name ends here — the next character is not another name character.
+ * Without this, `<scriptish>` would be treated as a `<script>` open tag.
+ */
+function isTagNameBoundary(code: number): boolean {
+  if (Number.isNaN(code)) return true; // end of string
+  const isAlnum =
+    (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  return !isAlnum;
+}
+
+/** Index just past the `>` that closes the tag opening at `lt`, or end of string. */
+function endOfTag(str: string, lt: number): number {
+  const gt = str.indexOf('>', lt);
+  return gt === -1 ? str.length : gt + 1;
+}
+
+/**
+ * The `<title>` text, by forward scan.
+ *
+ * This was `/<title[^>]*>([^<]*)<\/title>/i`, which CodeQL flagged as
+ * `js/polynomial-redos`: every `<title` in the body is a match start, and
+ * `[^>]*` rescans the whole tail from each one before failing, so a page that
+ * is a long run of unclosed tags costs O(n^2). The body is whatever an upstream
+ * gateway returned, so it is attacker-influenced. Measured before this change:
+ * 30,000 unclosed `<title` took 4.25 s. Every `indexOf` below starts at a
+ * position that only moves forward, so the whole scan is linear.
+ *
+ * Semantics are unchanged: the title must be followed by a real `</title>`
+ * close, and its text stops at the first `<`. The one thing that IS new is
+ * tolerating whitespace before the bracket (`</title >`), which HTML permits.
+ */
+function titleFromHtml(str: string, lower: string): string | undefined {
+  let from = 0;
+  for (;;) {
+    const open = lower.indexOf('<title', from);
+    if (open === -1) return undefined;
+    const afterName = open + '<title'.length;
+    if (!isTagNameBoundary(lower.charCodeAt(afterName))) {
+      from = afterName;
+      continue;
+    }
+    const gt = str.indexOf('>', afterName);
+    if (gt === -1) return undefined;
+    const nextTag = str.indexOf('<', gt + 1);
+    if (nextTag !== -1 && lower.startsWith('</title', nextTag)) {
+      const title = str.slice(gt + 1, nextTag).trim();
+      if (title) return title;
+    }
+    from = gt + 1;
+  }
+}
+
+/** Element content that is never visible text, so it must not reach a transcript row. */
+const NON_VISIBLE_ELEMENTS = ['script', 'style'] as const;
+
+/**
+ * The page's visible text, by forward scan.
+ *
+ * Replaces `/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi` plus
+ * `/<[^>]+>/g`, which carried two CodeQL findings:
+ *
+ *  - `js/bad-tag-filter` — `<\/script>` does not match `</script >`, which HTML
+ *    permits, so the script body survived the strip and landed in the message.
+ *  - `js/polynomial-redos` — same rescan-from-every-start shape as above;
+ *    30,000 unclosed `<script` took 4.32 s.
+ *
+ * An unterminated `<script` swallows the rest of the document, which is what a
+ * browser does too.
+ */
+function visibleTextFromHtml(str: string, lower: string): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < str.length) {
+    const lt = str.indexOf('<', i);
+    if (lt === -1) {
+      parts.push(str.slice(i));
+      break;
+    }
+    parts.push(str.slice(i, lt));
+    const skipped = NON_VISIBLE_ELEMENTS.find(
+      (tag) =>
+        lower.startsWith(`<${tag}`, lt) &&
+        isTagNameBoundary(lower.charCodeAt(lt + tag.length + 1)),
+    );
+    if (skipped) {
+      const close = lower.indexOf(`</${skipped}`, lt);
+      i = close === -1 ? str.length : endOfTag(str, close);
+      continue;
+    }
+    i = endOfTag(str, lt);
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 /** `overloaded_error` → `Overloaded error`; `rate_limit_exceeded` → `Rate limit exceeded`. */

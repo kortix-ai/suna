@@ -19,6 +19,7 @@ import {
   copyFile,
   cp,
   chmod,
+  open as openFile,
   readdir,
   mkdir,
   mkdtemp,
@@ -734,8 +735,21 @@ async function agentBinaryStale(agentPath: string, srcDir: string): Promise<bool
     // Current by mtime. Memoize the source hash once (only when absent, so the
     // steady state pays nothing) so a later checkout can be recognized as a
     // no-op instead of false-positive stale.
-    if (!(await stat(hashPath).catch(() => null))) {
-      await writeFileFs(hashPath, await srcContentHash(srcDir)).catch(() => {});
+    // `wx` creates the file ONLY if it is absent, and does so atomically. The
+    // previous shape — stat, then write when the stat said "missing" — is a
+    // check-then-act race (CodeQL js/file-system-race): two concurrent builds
+    // both see it absent and both write. Opening exclusively also keeps the
+    // steady-state cost at zero, because the hash is computed only on the
+    // branch that actually won the create.
+    const handle = await openFile(hashPath, 'wx').catch(() => null);
+    if (handle) {
+      try {
+        await handle.writeFile(await srcContentHash(srcDir));
+      } catch {
+        // A memoized hash is an optimization; losing it only costs a rebuild.
+      } finally {
+        await handle.close().catch(() => {});
+      }
     }
     return false;
   }
