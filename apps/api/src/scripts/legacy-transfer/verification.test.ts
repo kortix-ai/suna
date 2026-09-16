@@ -51,3 +51,16 @@ test('unrecoverable workspace waiver is scoped and never claims restored files',
  for(const patch of [{source_sandbox_id:'other'},{files_status:'restored'},{workspace_capture:{}},{workspace_restore:{}},{remote_archive_files:6},{owner_verified:false},{marko_access_verified:false},{native_messages_verified:false}])expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...proof,...patch})).toThrow();
  for(const patch of [{recoverable:true},{provider_state:'archived'},{authorized_at:''},{reason:'missing-sandbox-reference'}])expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...proof,approved_exception:{...proof.approved_exception,...patch}})).toThrow();
 });
+
+test('provider-error and stuck-archiving waivers require matching provider evidence',()=>{
+ const base={workspace_status:'approved-unrecoverable-workspace-skip',source_sandbox_id:'box',files_status:'unavailable',remote_archive_files:4,remote_archive_verified_at:'2026-09-15T00:00:00Z',owner_verified:true,marko_access_verified:true,native_messages_verified:true};
+ const approved={source_ref:'source',source_project_id:'project',source_sandbox_id:'box',authorized_at:'2026-09-16T00:00:00Z',provider_checked_at:'2026-09-16T00:00:00Z',recoverable:false};
+ const providerError={...base,approved_exception:{...approved,reason:'unrecoverable-provider-error',provider_state:'error'}};
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',providerError)).not.toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...providerError,approved_exception:{...providerError.approved_exception,recoverable:true}})).toThrow();
+ const oldUpdatedAt=new Date(Date.now()-3*24*60*60*1000).toISOString();
+ const archiving={...base,approved_exception:{...approved,reason:'stuck-archiving',provider_state:'archiving',provider_updated_at:oldUpdatedAt}};
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',archiving)).not.toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...archiving,approved_exception:{...archiving.approved_exception,provider_updated_at:new Date().toISOString()}})).toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...archiving,approved_exception:{...archiving.approved_exception,provider_checked_at:''}})).toThrow();
+});
