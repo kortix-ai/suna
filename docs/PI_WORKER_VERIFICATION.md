@@ -2499,3 +2499,9 @@ volume is removed. The unchanged local DB command then passes 283 tests with
 Production remains **NOT YET**. Security checks, the remaining parity inventory,
 workspace backup, and matched latency benchmarks remain open. No automatic
 environment deletion or merge to main, staging, or prod is enabled.
+
+Main advances again during verification to `3e7b3e18b7`. Only the append-only
+learning register conflicts; both sets of entries are retained. The integration
+also carries the upstream SCIM and API-router changes. Local SCIM HTTP flows
+pass 7/7 with zero skips; user lookup tests pass 4/4. Pi runtime implementation
+is unchanged. Final deployment and CI results are recorded on PR #6998.

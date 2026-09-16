@@ -513,10 +513,19 @@ scimRouter.openapi(
       // Member removes: path looks like members[value eq "userId"]. The value
       // may be a user_id OR the invitation id the IdP cached at provisioning —
       // removeGroupMemberValue resolves both (and un-parks a pending grant).
-      if (opName === 'remove' && path.startsWith('members')) {
-        const m = path.match(/value\s+eq\s+"([^"]+)"/i);
+      if (opName === 'remove' && /^members(?:$|\[)/i.test(path)) {
+        const m = path.match(/^members\[value\s+eq\s+"([^"]+)"\]$/i);
         if (m) {
           await removeGroupMemberValue(accountId, groupId, m[1]!);
+        } else if (path.toLowerCase() === 'members' && op.value !== undefined) {
+          if (!Array.isArray(op.value) || op.value.some((member) =>
+            !member || typeof member.value !== 'string' || !member.value
+          )) {
+            return scimError(c, 400, 'members removal value must be an array of member references');
+          }
+          for (const member of op.value) {
+            await removeGroupMemberValue(accountId, groupId, member.value);
+          }
         } else if (!path.includes('[')) {
           // Bare `remove members` (no filter) — empty the group, both live
           // rows and parked grants.

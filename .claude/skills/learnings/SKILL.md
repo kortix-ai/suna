@@ -21,6 +21,35 @@ linked, not inlined.
 
 ## Register
 
+### Resolve SCIM identities across the complete auth directory (2026-09-16)
+
+**When:** matching provisioned users by email. Query the normalized email in
+`auth.users` and prefer the existing account member for duplicate identities.
+Do not treat a lookup failure as a missing user and create an invitation.
+*Near-miss:* SCIM searched only the first 1,000 auth users; dev held 2,816 users.
+*Enforcer:* `scim/user-lookup.test.ts` covers the truncated directory and lookup
+failures; `SCIM-6` verifies provisioning and deactivation over HTTP.
+
+### Test Entra's actual SCIM PATCH payloads (2026-09-16)
+
+**When:** parsing SCIM user or group updates. Normalize Entra string booleans,
+case-insensitive attributes, and pathless attribute objects. A removal value
+array selects members; only an omitted value and filter mean remove all.
+*Incident:* dev investigation reproduced ignored user deactivation and removal
+of unrelated group members. *Enforcer:* HTTP flows `SCIM-6` and `SCIM-7` prove
+deactivation, last-owner protection, selective removal, and persisted read-back.
+
+### Test SCIM ingress without a User-Agent (2026-09-16)
+
+**When:** routing enterprise directory provisioning through AWS WAF. Entra omits
+`User-Agent`; supply a relay identity only on account-scoped SCIM routes when
+the header is absent or empty. Preserve the bearer, body, and sender headers.
+*Incident:* Azure's dev connection test returned HTML `403` before SCIM auth;
+the identical request with a User-Agent reached Kortix. All five local SCIM
+flows passed because their HTTP client sent a header. *Enforcer:*
+`api-router/worker.test.mjs` covers SCIM methods, discovery, and route boundaries.
+
+
 
 ### Preserve durable image references in stopped transcripts (2026-09-15)
 
