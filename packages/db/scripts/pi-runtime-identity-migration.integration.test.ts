@@ -80,7 +80,7 @@ describe.skipIf(!dockerAvailable)('Pi runtime identity migration — real Postgr
     `);
 
     const migration = await Bun.file(
-      resolve(import.meta.dir, '..', 'migrations', '20260903080719873_pi_runtime_identity.sql'),
+      resolve(import.meta.dir, '..', 'migrations', '20260916101232944_pi_runtime_identity.sql'),
     ).text();
     dockerPsql(migration);
   }, 30_000);

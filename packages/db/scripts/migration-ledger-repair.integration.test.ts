@@ -95,14 +95,28 @@ suite('migration ledger rename repair', () => {
       `);
 
       const currentPiNames = [
-        '20260902070000000_session_worker_log',
-        '20260902070001000_pi_runtime_artifacts',
+        '20260916101228944_session_worker_log',
+        '20260916101229944_pi_runtime_artifacts',
+        '20260916101230944_filesystems',
+        '20260916101231944_sandbox_compute_environment_workload.nontransaction',
+        '20260916101232944_pi_runtime_identity',
+        '20260916101233944_session_worker_log_append_id',
+        '20260916101234944_session_worker_log_append_id_unique.concurrent',
+        '20260916101235944_session_attachments',
+        '20260916101236944_pi_private_storage_access',
       ];
       const currentConsumerBoundaryName = '20260805202913539_secret_consumer_boundary';
       const legacyConsumerBoundaryName = '20260805165801277_secret_consumer_boundary';
       const legacyPiNames = [
         '20260828170156721_session_worker_log',
         '20260829160353474_pi_runtime_artifacts',
+        '20260902084011462_filesystems',
+        '20260903055848254_sandbox_compute_environment_workload.nontransaction',
+        '20260903080719873_pi_runtime_identity',
+        '20260904065901557_session_worker_log_append_id',
+        '20260904065927143_session_worker_log_append_id_unique.concurrent',
+        '20260908195702338_session_attachments',
+        '20260908200910776_pi_private_storage_access',
       ];
       const migrationNames = readdirSync(migrationsDir)
         .filter(
@@ -250,9 +264,7 @@ suite('migration ledger rename repair', () => {
       checkOrder: true,
       dryRun: true,
     });
-    expect(pending.map((migration) => migration.name)).not.toContain(
-      '20260902070001000_pi_runtime_artifacts',
-    );
+    expect(pending).toEqual([]);
     expect(pending.map((migration) => migration.name)).not.toContain(
       '20260805202913539_secret_consumer_boundary',
     );
@@ -271,16 +283,53 @@ suite('migration ledger rename repair', () => {
             '20260829160353474_pi_runtime_artifacts',
             '20260805165801277_secret_consumer_boundary',
             '20260805202913539_secret_consumer_boundary',
-            '20260902070000000_session_worker_log',
-            '20260902070001000_pi_runtime_artifacts',
+            '20260916101228944_session_worker_log',
+            '20260916101229944_pi_runtime_artifacts',
           ],
         ],
       );
       expect(ledger.rows.map((row) => row.name)).toEqual([
         '20260805202913539_secret_consumer_boundary',
-        '20260902070000000_session_worker_log',
-        '20260902070001000_pi_runtime_artifacts',
+        '20260916101228944_session_worker_log',
+        '20260916101229944_pi_runtime_artifacts',
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('upgrades the latest preview names without rerunning SQL', async () => {
+    const client = new pg.Client({ connectionString: piDatabaseUrl?.toString() });
+    await client.connect();
+    try {
+      await client.query(`
+        update kortix_migrations.pgmigrations
+           set name = case name
+             when '20260916101228944_session_worker_log'
+               then '20260902070000000_session_worker_log'
+             when '20260916101229944_pi_runtime_artifacts'
+               then '20260902070001000_pi_runtime_artifacts'
+             else name end;
+      `);
+      const options = {
+        databaseUrl: piDatabaseUrl?.toString() ?? '',
+        migrationsDir,
+        applyConnectorMigration: async () => {
+          throw new Error('Pi upgrades must not rerun applied SQL');
+        },
+      };
+      expect(await repairMigrationLedger(options)).toBe(true);
+      expect(await repairMigrationLedger(options)).toBe(false);
+      expect(await runner({
+        databaseUrl: options.databaseUrl,
+        dir: migrationsDir,
+        migrationsTable: 'pgmigrations',
+        migrationsSchema: 'kortix_migrations',
+        direction: 'up',
+        count: Number.POSITIVE_INFINITY,
+        checkOrder: true,
+        dryRun: true,
+      })).toEqual([]);
     } finally {
       await client.end();
     }

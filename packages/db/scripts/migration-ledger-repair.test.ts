@@ -97,11 +97,11 @@ describe('planMigrationLedgerRepair', () => {
       renames: [
         {
           legacyName: LEGACY_SESSION_WORKER_LOG,
-          currentName: '20260902070000000_session_worker_log',
+          currentName: '20260916101228944_session_worker_log',
         },
         {
           legacyName: LEGACY_PI_RUNTIME_ARTIFACTS,
-          currentName: '20260902070001000_pi_runtime_artifacts',
+          currentName: '20260916101229944_pi_runtime_artifacts',
         },
       ],
     });
@@ -118,4 +118,59 @@ describe('planMigrationLedgerRepair', () => {
       'without its table migration',
     );
   });
+});
+
+const PI_PREVIEW_MIGRATIONS = [
+  [
+    "20260902070000000_session_worker_log",
+    "20260916101228944_session_worker_log"
+  ],
+  [
+    "20260902070001000_pi_runtime_artifacts",
+    "20260916101229944_pi_runtime_artifacts"
+  ],
+  [
+    "20260902084011462_filesystems",
+    "20260916101230944_filesystems"
+  ],
+  [
+    "20260903055848254_sandbox_compute_environment_workload.nontransaction",
+    "20260916101231944_sandbox_compute_environment_workload.nontransaction"
+  ],
+  [
+    "20260903080719873_pi_runtime_identity",
+    "20260916101232944_pi_runtime_identity"
+  ],
+  [
+    "20260904065901557_session_worker_log_append_id",
+    "20260916101233944_session_worker_log_append_id"
+  ],
+  [
+    "20260904065927143_session_worker_log_append_id_unique.concurrent",
+    "20260916101234944_session_worker_log_append_id_unique.concurrent"
+  ],
+  [
+    "20260908195702338_session_attachments",
+    "20260916101235944_session_attachments"
+  ],
+  [
+    "20260908200910776_pi_private_storage_access",
+    "20260916101236944_pi_private_storage_access"
+  ]
+] as const;
+
+test.each(PI_PREVIEW_MIGRATIONS)('preserves the applied preview migration %s', (legacyName, currentName) => {
+  expect(planMigrationLedgerRepair([row(legacyName)])).toEqual({
+    connectorMigrationIsMissing: false,
+    legacyRunOn: null,
+    renames: [{ legacyName, currentName }],
+  });
+  expect(planMigrationLedgerRepair([row(currentName)])).toBeNull();
+});
+
+test('rejects two historical names that identify the same applied Pi migration', () => {
+  expect(() => planMigrationLedgerRepair([
+    row('20260828170156721_session_worker_log'),
+    row('20260902070000000_session_worker_log'),
+  ])).toThrow('contains both');
 });

@@ -2383,3 +2383,15 @@ must identify this integration's deployed SHA before claiming runtime readiness.
 Workspace backup, automatic environment deletion, full deployed parity, and the
 matched product p50/p95 benchmark remain open. The storage work was deferred while
 resolving this integration. No environment retention policy is enabled here.
+
+CI then exposes two migration integration gaps. The latest upstream Drizzle
+snapshots omit Pi additions, and nine branch migrations sort before new main
+migrations. The repair carries the Pi schema into both newer snapshots and
+normalizes their journal indexes. Schema generation produces no SQL.
+
+The nine migration files receive later names with identical SHA-256 checksums.
+The existing locked ledger repair maps both historical Pi names directly to the
+current names. It rejects duplicate historical identities and normalizes applied
+order without rerunning SQL. Focused unit and real PostgreSQL tests pass 23/23.
+A fresh database applies all 221 migrations, builds 133 tables, and reports no
+pending migrations. Migration lint reports zero issues across 125 SQL files.

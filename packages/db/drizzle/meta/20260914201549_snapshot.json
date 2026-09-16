@@ -1753,6 +1753,18 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "runtime_id": {
+          "name": "runtime_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runtime_kind": {
+          "name": "runtime_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -16197,9 +16209,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "sandbox_compute_sessions_workload_type_check": {
-          "name": "sandbox_compute_sessions_workload_type_check",
-          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor')"
+        "sandbox_compute_sessions_workload_type_check_v2": {
+          "name": "sandbox_compute_sessions_workload_type_check_v2",
+          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor', 'environment')"
         }
       },
       "isRLSEnabled": false
@@ -17146,6 +17158,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -20552,6 +20570,556 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "kortix.filesystem_files": {
+      "name": "filesystem_files",
+      "schema": "kortix",
+      "columns": {
+        "filesystem_id": {
+          "name": "filesystem_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage": {
+          "name": "storage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_filesystem_files_listing": {
+          "name": "idx_filesystem_files_listing",
+          "columns": [
+            {
+              "expression": "filesystem_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "filesystem_files_filesystem_id_filesystems_filesystem_id_fk": {
+          "name": "filesystem_files_filesystem_id_filesystems_filesystem_id_fk",
+          "tableFrom": "filesystem_files",
+          "tableTo": "filesystems",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "filesystem_id"
+          ],
+          "columnsTo": [
+            "filesystem_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "filesystem_files_filesystem_id_path_pk": {
+          "name": "filesystem_files_filesystem_id_path_pk",
+          "columns": [
+            "filesystem_id",
+            "path"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "kortix.filesystems": {
+      "name": "filesystems",
+      "schema": "kortix",
+      "columns": {
+        "filesystem_id": {
+          "name": "filesystem_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "filesystems_project_id_projects_project_id_fk": {
+          "name": "filesystems_project_id_projects_project_id_fk",
+          "tableFrom": "filesystems",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "filesystems_project_name_key": {
+          "name": "filesystems_project_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "kortix.pi_runtime_artifacts": {
+      "name": "pi_runtime_artifacts",
+      "schema": "kortix",
+      "columns": {
+        "artifact_key": {
+          "name": "artifact_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_sha": {
+          "name": "source_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_name": {
+          "name": "agent_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worker_bundle_sha256": {
+          "name": "worker_bundle_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manifest": {
+          "name": "manifest",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_pi_runtime_artifacts_retention": {
+          "name": "idx_pi_runtime_artifacts_retention",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pi_runtime_artifacts_project_id_projects_project_id_fk": {
+          "name": "pi_runtime_artifacts_project_id_projects_project_id_fk",
+          "tableFrom": "pi_runtime_artifacts",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "kortix.filesystem_blobs": {
+      "name": "filesystem_blobs",
+      "schema": "kortix",
+      "columns": {
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "kortix.session_worker_log": {
+      "name": "session_worker_log",
+      "schema": "kortix",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "session_worker_log_id_seq",
+            "schema": "kortix",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "append_id": {
+          "name": "append_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "item": {
+          "name": "item",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_session_worker_log_session_id": {
+          "name": "idx_session_worker_log_session_id",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_worker_log_append_id": {
+          "name": "idx_session_worker_log_append_id",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "append_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_worker_log_session_id_project_sessions_session_id_fk": {
+          "name": "session_worker_log_session_id_project_sessions_session_id_fk",
+          "tableFrom": "session_worker_log",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "session_worker_log_item_object_check": {
+          "name": "session_worker_log_item_object_check",
+          "value": "jsonb_typeof(\"kortix\".\"session_worker_log\".\"item\") = 'object'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "kortix.session_attachments": {
+      "name": "session_attachments",
+      "schema": "kortix",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "session_attachments_session_id_project_sessions_session_id_fk": {
+          "name": "session_attachments_session_id_project_sessions_session_id_fk",
+          "tableFrom": "session_attachments",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "session_attachments_session_id_sha256_pk": {
+          "name": "session_attachments_session_id_sha256_pk",
+          "columns": [
+            "session_id",
+            "sha256"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "session_attachments_sha256_check": {
+          "name": "session_attachments_sha256_check",
+          "value": "\"kortix\".\"session_attachments\".\"sha256\" ~ '^[a-f0-9]{64}$'"
+        },
+        "session_attachments_size_check": {
+          "name": "session_attachments_size_check",
+          "value": "octet_length(\"kortix\".\"session_attachments\".\"content\") BETWEEN 1 AND 8388608"
+        },
+        "session_attachments_content_type_check": {
+          "name": "session_attachments_content_type_check",
+          "value": "length(\"kortix\".\"session_attachments\".\"content_type\") BETWEEN 3 AND 129"
+        }
+      },
+      "isRLSEnabled": true
     }
   },
   "enums": {

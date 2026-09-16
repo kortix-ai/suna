@@ -7257,3 +7257,15 @@ or schedule another probe loop. Reconfigure before start must not start probing.
 **Enforcement:** `verified-reload-process.e2e.test.ts` requires readiness within
 1.5 seconds after reconfigure. A delayed response from the previous workspace
 cannot override the new workspace's unavailable response.
+
+### Carry branch schema additions through every newer upstream snapshot (2026-09-16)
+
+**Near-miss:** the Pi integration merged two newer Drizzle snapshots without its
+six tables and additional columns. CI detected schema drift and nine migrations
+that sorted before newer main migrations.
+**Rule:** reconcile every newer snapshot and journal index. When migration names
+move, keep file bytes unchanged and map every historical name directly to its
+current name. Reject two historical names that identify one migration.
+**Enforcer:** schema generation must produce no SQL. The ledger unit and PostgreSQL
+integration tests verify both historical Pi naming generations, repeat repair,
+strict ordering, and no rerun of applied SQL.
