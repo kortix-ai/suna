@@ -112,3 +112,13 @@ describe('BYO Slack Events API URL verification', () => {
     expect(handledBlockActions).toEqual([payload]);
   });
 });
+
+// An unsigned request is invalid even when this host has no OAuth installation.
+test('OAuth webhook rejects unsigned requests before checking installation configuration', async () => {
+  const response = await slackWebhookApp.request('/', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'event_callback' }),
+  });
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({ error: 'Invalid signature' });
+});

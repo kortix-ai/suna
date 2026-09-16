@@ -44,7 +44,7 @@ const FAMILY_ICON: Record<StepFamily, LucideIcon> = {
   delegate: Bot,
   sessions: History,
   memory: Brain,
-  apps: Plug,
+  connectors: Plug,
   automations: Zap,
   projects: FolderOpen,
   skills: Wand2,

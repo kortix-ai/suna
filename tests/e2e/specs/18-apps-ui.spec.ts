@@ -187,9 +187,10 @@ test.describe('18 — Kortix Apps UI', () => {
           new RegExp(`^preview-.+\\.apps\\.${escapeRe(originSuffix)}$`),
         );
       } else {
-        const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
+        const environmentPrefix = process.env.KE2E_TARGET === 'preview' ? 'preview' : env.target;
+        const appsDomain = process.env.E2E_APPS_BASE_DOMAIN || 'apps.kortix.com';
         expect(seededUrl.hostname).toMatch(
-          new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
+          new RegExp(`^${environmentPrefix}-${escapeRe(seeded.slug)}-[a-z0-9]+\\.${escapeRe(appsDomain)}$`),
         );
       }
 

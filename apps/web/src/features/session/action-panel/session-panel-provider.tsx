@@ -82,6 +82,7 @@ export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
 
 export interface SessionPanelValue {
   sessionId: string;
+  projectId?: string;
   projectSessionId?: string;
 
   /** Card data — everything the floating overlay renders. */
@@ -769,6 +770,7 @@ export function SessionPanelProvider({
   const value = useMemo<SessionPanelValue>(
     () => ({
       sessionId,
+      projectId,
       projectSessionId,
       files,
       context,
@@ -788,6 +790,7 @@ export function SessionPanelProvider({
     }),
     [
       sessionId,
+      projectId,
       projectSessionId,
       files,
       context,

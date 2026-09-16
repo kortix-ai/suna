@@ -223,6 +223,9 @@ test.describe("24 — a menu click never reloads the document", () => {
       await dismissOnboarding(page);
       await page.waitForLoadState("load");
 
+      // The initial goto waits for DOMContentLoaded. Finish its load event
+      // before counting document loads caused by subsequent menu clicks.
+      await page.waitForLoadState("load");
       const loadsAfterBoot = documentLoads.length;
 
       // 1. Switching workspace from the sidebar picker. Every row here was a

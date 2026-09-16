@@ -5,7 +5,11 @@ import { useEffect, useState } from 'react';
 export const RUNTIME_TOOL_WAIT_MS = 15_000;
 
 /** Converts an indefinite runtime-tool spinner into a local retry state. */
-export function useBoundedRuntimeWait(waiting: boolean, attempt: number): boolean {
+export function useBoundedRuntimeWait(
+  waiting: boolean,
+  attempt: number,
+  timeoutMs = RUNTIME_TOOL_WAIT_MS,
+): boolean {
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
@@ -13,12 +17,12 @@ export function useBoundedRuntimeWait(waiting: boolean, attempt: number): boolea
     // a synchronous effect-driven render while still clearing a prior attempt.
     const reset = window.setTimeout(() => setExpired(false), 0);
     if (!waiting) return () => window.clearTimeout(reset);
-    const timeout = window.setTimeout(() => setExpired(true), RUNTIME_TOOL_WAIT_MS);
+    const timeout = window.setTimeout(() => setExpired(true), timeoutMs);
     return () => {
       window.clearTimeout(reset);
       window.clearTimeout(timeout);
     };
-  }, [attempt, waiting]);
+  }, [attempt, timeoutMs, waiting]);
 
   return waiting && expired;
 }

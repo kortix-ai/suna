@@ -85,13 +85,13 @@
   --color-liquid-glass: var(--liquid-glass-bg);
   --color-liquid-glass-hover: var(--liquid-glass-bg-hover);
   --shadow-liquid-glass: var(--liquid-glass-shadow);
-  /* Terminal surface. The PTY pane and its chrome (the connect strip, the
-     panel shell behind it) are always dark, in every app theme, because they
-     mirror a real shell — so these are literals, not light/dark pairs. One
-     set of tokens so the three files that paint that surface cannot drift
-     apart again. `terminalTheme` in features/session/pty-terminal.tsx must
-     keep `background` equal to --terminal-surface and `foreground` equal to
-     --terminal-fg: xterm's ITheme needs concrete colors, not CSS vars. */
+  /* Terminal surface. Only the PTY pane itself is always dark, in every app
+     theme, because it mirrors a real shell — so these are literals, not
+     light/dark pairs. Chrome around it (the connect bar, the panel shell, the
+     connection status) is app UI and paints Kortix tokens. `terminalTheme` in
+     features/session/pty-terminal.tsx must keep `background` equal to
+     --terminal-surface and `foreground` equal to --terminal-fg: xterm's ITheme
+     needs concrete colors, not CSS vars. */
   --color-terminal-surface: var(--terminal-surface);
   --color-terminal-fg: var(--terminal-fg);
   --color-terminal-border: var(--terminal-border);

@@ -40,6 +40,7 @@ import {
   DEFAULT_AGENT_SENTINEL,
   type LoadedAgents,
   grantFromLoadedAgents,
+  isLaunchableAgentName,
   loadProjectAgents,
 } from '../agents';
 
@@ -227,6 +228,47 @@ export async function resolveSessionAgentGrant(
   input: SessionSecretGrantInput,
 ): Promise<AgentGrant | null> {
   return (await loadGrantForRunningAgent(input)).grant;
+}
+
+/**
+ * Does this project declare `agentName` as a launchable agent?
+ *
+ * The gate every path must pass before an agent name reaches a session token,
+ * the prompt's secret env, or the runtime (see `isLaunchableAgentName` and
+ * INC-2026-09-15). FAIL CLOSED: an unreadable manifest answers `false`, and the
+ * caller runs the session's own agent instead — always a safe choice.
+ *
+ * A miss is re-checked once against a forced mirror refresh, so an agent a
+ * change request declared seconds ago on another replica is not refused by a
+ * stale mirror.
+ */
+export async function isAgentLaunchableForProject(input: {
+  projectId: string;
+  repoUrl: string;
+  defaultBranch: string | null | undefined;
+  manifestPath: string | null | undefined;
+  agentName: string;
+}): Promise<boolean> {
+  // No git context means no manifest and no per-agent governance: unchanged.
+  if (!input.defaultBranch) return true;
+  const read = async (forceRefresh: boolean) => {
+    const loaded = await loadProjectAgents(
+      {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch as string,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      { rethrowReadErrors: true, forceRefresh },
+    );
+    return isLaunchableAgentName(input.agentName, loaded);
+  };
+  try {
+    return (await read(false)) || (await read(true));
+  } catch {
+    return false;
+  }
 }
 
 async function loadGrantForRunningAgent(

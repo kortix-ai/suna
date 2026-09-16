@@ -30,6 +30,7 @@
  * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
  */
 
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { and, asc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -59,11 +60,11 @@ export async function reconcileStuckActiveSessions(
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
         or(
-          sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+          sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${qualifiedColumn(projectSessions.sessionId)} and sb.status = 'active')`,
           sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
         ),
-        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
-        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
+        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${qualifiedColumn(projectSessions.sessionId)} and t.finalized = false)`,
+        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${qualifiedColumn(projectSessions.sessionId)} and u.created_at > ${cutoff.toISOString()})`,
       ),
     )
     // Oldest-stuck first: an unordered LIMIT is how a row stays outside every

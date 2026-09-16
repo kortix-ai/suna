@@ -83,9 +83,6 @@ export {
   PERMISSION_RULE_KEYS,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
-  WORKSPACE_MODE_HELP,
-  WORKSPACE_MODE_LABEL,
-  WORKSPACE_MODES,
 } from './agent-editor-catalog';
 
 /**
