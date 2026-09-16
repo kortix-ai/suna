@@ -111,6 +111,7 @@ import {
   getProject,
   getProjectDetail,
   listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
   normalizeAppPathname,
   systemReload,
@@ -865,7 +866,7 @@ export function CommandPalette() {
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
   const { data: projectSessionsList } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
+    queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && !!projectId,
     ...contract('inventory'),
   });

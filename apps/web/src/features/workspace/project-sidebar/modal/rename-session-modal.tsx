@@ -13,17 +13,15 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { qk, updateCachedProjectSessions } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 import {
   applyRenameResponse,
-  beginOptimisticRename,
-  rollbackOptimisticRename,
+  applySessionRename,
 } from './rename-session-cache';
 
 interface RenameSessionModalProps {
@@ -53,13 +51,8 @@ export function RenameSessionModal({
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
 
-  // The optimistic write below targets the DEFAULT ('visible') scope only —
-  // that is the scope every reader except the manager-only inventory page
-  // uses, and the only one this component has a cached row to paint over.
-  // `onSettled`'s invalidation, further down, uses the sessionsScope PREFIX
-  // instead, so the 'project'-scoped inventory page (never painted
-  // optimistically) still catches up via a real refetch.
-  const sessionsQueryKey = qk.project.sessions(projectId);
+  // The optimistic write below reaches EVERY cached session shape and scope
+  // for this project — see `updateCachedProjectSessions`.
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => {
@@ -67,12 +60,19 @@ export function RenameSessionModal({
       return updateProjectSession(projectId, sessionId, { name });
     },
     // Optimistic write: the sidebar, the header, and every other reader of
-    // `sessionsQueryKey` (seven in total) show the new name before the
-    // network round-trip completes, instead of waiting for the refetch this
-    // mutation triggers on settle.
+    // this project's sessions show the new name before the network round-trip
+    // completes, instead of waiting for the refetch this mutation triggers on
+    // settle.
     onMutate: async (name) => {
-      await queryClient.cancelQueries({ queryKey: sessionsQueryKey });
-      return beginOptimisticRename(queryClient, sessionsQueryKey, sessionId, name);
+      await queryClient.cancelQueries({ queryKey: qk.project.sessionsScope(projectId) });
+      // Writes through EVERY cached shape — the sidebar's paged cache, the flat
+      // lists, and the single-row entry — not just the flat key. The sidebar
+      // moved to `useInfiniteQuery` when this list became a bounded page, and a
+      // write aimed at the flat key alone stopped reaching the surface the user
+      // is actually looking at.
+      updateCachedProjectSessions(queryClient, projectId, (sessions) =>
+        sessionId ? applySessionRename(sessions, sessionId, name) : sessions,
+      );
     },
     onSuccess: (updated, name) => {
       // Write the server's own response into the cache rather than discard
@@ -80,8 +80,8 @@ export function RenameSessionModal({
       // `updated_at`, so this replaces the optimistic guess from `onMutate`
       // with the real thing. MERGED, not substituted: the PATCH response
       // carries fewer fields than the list row — see `applyRenameResponse`.
-      queryClient.setQueryData<ProjectSession[]>(sessionsQueryKey, (sessions) =>
-        sessions ? applyRenameResponse(sessions, updated) : sessions,
+      updateCachedProjectSessions(queryClient, projectId, (sessions) =>
+        applyRenameResponse(sessions, updated),
       );
       successToast(
         name
@@ -91,8 +91,12 @@ export function RenameSessionModal({
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err, _name, context) => {
-      rollbackOptimisticRename(queryClient, sessionsQueryKey, context?.previous);
+    onError: (err) => {
+      // The server reverts this, not a snapshot. The optimistic write now spans
+      // several cache shapes, so restoring one captured array would leave the
+      // others holding the failed name; `onSettled` invalidates the whole
+      // sessions prefix immediately after this, which puts every shape back to
+      // server truth in one pass.
       errorToast(
         err instanceof Error ? err.message : tI18nHardcoded.raw('i18nComplete.text8d0a49d459d7'),
       );
@@ -100,9 +104,8 @@ export function RenameSessionModal({
     onSettled: () => {
       // The server stays authoritative: this refetch reconciles the cache
       // with reality even though onSuccess already wrote the response, e.g.
-      // if another tab changed the session in between. The PREFIX, not
-      // `sessionsQueryKey`: a rename has to reach every scope, not just the
-      // default one this component wrote to optimistically.
+      // if another tab changed the session in between. It is also the revert
+      // path for a failed rename — see `onError`.
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
   });

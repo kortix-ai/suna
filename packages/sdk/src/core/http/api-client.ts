@@ -56,6 +56,13 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: ApiError;
   success: boolean;
+  /**
+   * Response headers, on a successful response. Present so a surface can read a
+   * value the API deliberately keeps OUT of the body — today that is
+   * `X-Next-Cursor` on the session list, which pages without wrapping the array
+   * in an envelope every existing client would have to relearn.
+   */
+  headers?: Headers;
 }
 
 /**
@@ -440,6 +447,7 @@ async function makeRequest<T = any>(
     return {
       data,
       success: true,
+      headers: response.headers,
     };
   } catch (error: any) {
     // Always clear timeout on error
