@@ -81,8 +81,12 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   const provisioningProvider = isProvisioning ? data?.sandbox?.provider : undefined;
 
   // Derive values — override takes precedence
-  // When provisioning, don't expose sandboxUrl (it's not ready yet)
-  const sandboxUrl = override?.sandboxUrl ?? (shouldFetch && !isProvisioning ? data?.sandboxUrl : undefined);
+  // Expose the default sandboxUrl only while that sandbox is active. The SSE
+  // stream below connects to it, and a provisioning, stopped, or failed
+  // sandbox cannot serve /event: the stream would error and reconnect forever.
+  const sandboxUrl =
+    override?.sandboxUrl ??
+    (shouldFetch && data?.sandbox.status === 'active' ? data.sandboxUrl : undefined);
   const sandboxId = override?.sandboxId ?? (shouldFetch ? data?.sandboxId : undefined);
   const sandboxUuid = override?.sandboxUuid ?? (shouldFetch ? data?.sandbox?.sandbox_id : undefined);
   const sandboxName = override?.sandboxName ?? (shouldFetch ? data?.sandbox?.name : undefined);

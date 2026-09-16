@@ -86,7 +86,12 @@ import {
   restartProjectSession,
   deleteProjectSession,
 } from '@/lib/projects/projects-client';
-import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
+import type {
+  ProjectSession,
+  ProjectSessionStatus,
+  SessionStartResult,
+} from '@/lib/projects/projects-client';
+import { connectStepFromRequestError, connectStepFromStart } from '@/lib/session/connect-step';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { getSandboxUrl } from '@/lib/platform/client';
@@ -448,25 +453,40 @@ export function ProjectScreen() {
       const MAX_WAIT_MS = 4 * 60_000;
       try {
         let attempt = 0;
+        let requestFailures = 0;
         while (Date.now() - startedAt < MAX_WAIT_MS) {
           if (ensuringRef.current !== sessionId) return; // superseded by another open
           attempt += 1;
 
           // ONE server call: POST /start idempotently provisions/resumes the
           // sandbox AND resolves the OpenCode pin server-side.
-          const start = await startProjectSession(projectId, sessionId);
+          let start: SessionStartResult;
+          try {
+            start = await startProjectSession(projectId, sessionId);
+            requestFailures = 0;
+          } catch (err) {
+            if (getUpgradeGate(err)) throw err; // the outer catch opens the upgrade sheet
+            if (ensuringRef.current !== sessionId) return;
+            requestFailures += 1;
+            const step = connectStepFromRequestError(err, requestFailures);
+            if (step.kind === 'fail') {
+              failConnect(sessionId, step.failure);
+              return;
+            }
+            log.log(`💓 [connect] attempt ${attempt}: /start failed (${requestFailures}), retrying`);
+            await new Promise((r) => setTimeout(r, 1_500));
+            continue;
+          }
           if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
-          const sandbox = start?.sandbox ?? null;
 
-          if (start?.stage === 'failed' || sandbox?.status === 'error') {
-            failConnect(sessionId, {
-              title: 'Session failed to start',
-              message: 'The sandbox could not be provisioned.',
-            });
+          const step = connectStepFromStart(start);
+          if (step.kind === 'fail') {
+            failConnect(sessionId, step.failure);
             return;
           }
 
-          if (sandbox?.status === 'active' && sandbox.external_id) {
+          const sandbox = start.sandbox;
+          if (step.kind === 'open' && sandbox?.external_id) {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
 
             const health = await probeSandboxHealth(sandboxUrl);
@@ -484,10 +504,10 @@ export function ProjectScreen() {
             }
 
             log.log(
-              `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`
+              `💓 [connect] attempt ${attempt}: stage=${start.stage} health=${health.status} pin=${start.opencode_session_id ? 'ok' : '-'}`
             );
 
-            if (start?.stage === 'ready' && start.opencode_session_id) {
+            if (start.stage === 'ready' && start.opencode_session_id) {
               connectToProjectSession({
                 session_id: sessionId,
                 sandbox_id: sandbox.sandbox_id,
@@ -500,7 +520,7 @@ export function ProjectScreen() {
               return;
             }
           } else {
-            log.log(`💓 [connect] attempt ${attempt}: stage=${start?.stage ?? 'provisioning'}`);
+            log.log(`💓 [connect] attempt ${attempt}: stage=${start.stage}`);
           }
 
           await new Promise((r) => setTimeout(r, 1_500));

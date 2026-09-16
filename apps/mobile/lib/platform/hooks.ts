@@ -61,51 +61,29 @@ async function opencodeFetch<T>(sandboxUrl: string, path: string, options?: Requ
 // ─── Sandbox Hook ────────────────────────────────────────────────────────────
 
 /**
- * Ensures user has a sandbox. Returns sandbox info + derived OpenCode URL.
- * This is the first thing that should run after auth.
+ * The user's most relevant existing project-session sandbox (active →
+ * provisioning → stopped → error), or `null` when there is none.
+ *
+ * Read-only: it never creates a session. Opening the app used to call
+ * `ensureSandbox()` when no session existed, which provisioned a runtime
+ * nobody asked for, and on a stack whose session create fails (e.g. a
+ * loopback `KORTIX_URL`) it raised the same error on every app open.
+ * Sessions start from the project composer.
  */
 export function useSandbox(enabled: boolean = true) {
   return useQuery({
     queryKey: platformKeys.sandbox(),
     queryFn: async () => {
-      log.log('📦 [useSandbox] Checking sandbox...');
-
-      // First try to get existing active sandbox
-      let sandbox = await getActiveSandbox();
-
-      // If no active sandbox, listSandboxes() retrieves all known sandboxes
-      // from the platform API. We reuse ANY sandbox the list returns (active /
-      // provisioning / stopped) so a cold app open never accidentally routes
-      // through POST /platform/init just because the DB row momentarily says
-      // 'stopped' — calling /init would trigger tryReactivateStaleSandbox →
-      // provider.start(), which can surface to users as a spurious "restart on
-      // every open".
+      // One listing: `getActiveSandbox` already returns the best row of every
+      // project's sessions, in the priority order above.
+      const sandbox = await getActiveSandbox();
       if (!sandbox) {
-        log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
-        const allSandboxes = await listSandboxes();
-        // Prefer active → provisioning → stopped → error.
-        const priority = { active: 0, provisioning: 1, stopped: 2, error: 3 } as Record<string, number>;
-        const best = [...allSandboxes].sort(
-          (a, b) => (priority[a.status] ?? 99) - (priority[b.status] ?? 99),
-        )[0];
-
-        if (best) {
-          log.log(`📦 [useSandbox] Reusing existing sandbox: ${best.external_id} (status=${best.status})`);
-          return {
-            sandbox: best,
-            sandboxUrl: getSandboxUrl(best.external_id),
-            sandboxId: best.external_id,
-          };
-        }
-
-        // No sandbox at all anywhere — provision one.
-        log.log('📦 [useSandbox] No sandbox found, provisioning...');
-        const result = await ensureSandbox();
-        sandbox = result.sandbox;
+        log.log('📦 [useSandbox] No project-session sandbox yet');
+        return null;
       }
 
       const sandboxUrl = getSandboxUrl(sandbox.external_id);
-      log.log('✅ [useSandbox] Sandbox ready:', sandbox.external_id, '→', sandboxUrl);
+      log.log(`📦 [useSandbox] Using sandbox ${sandbox.external_id} (status=${sandbox.status})`);
 
       return {
         sandbox,
