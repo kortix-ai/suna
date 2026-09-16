@@ -1171,3 +1171,13 @@ The monitor routed new sessions to Daytona and reduced admission to 16. It
 continues probing for Platinum recovery. Existing session providers do not
 change. An archive network-slot lease read also hit a partial JSON write;
 new uploader processes retry that transient lease race.
+
+At 16:22 UTC, the controller had probed 88 admissions on Daytona. HTTP 429
+responses in capture and apply attempts triggered three successive 25% backoffs:
+88 to 66 to 49 to 36. The controller continues probing after quiet windows;
+this is a multiplicative backoff, not a small fixed decrement. Platinum had
+remained unused for new sessions after the 15:21:30 fallback because its last
+explicit probe completed eight seconds before that timestamp. Two fully
+verified Platinum imports at 16:09 and 16:10 UTC establish post-fallback
+recovery. The routing monitor now accepts two such file-verified imports within
+20 minutes, with zero recent Platinum failures, as recovery evidence.

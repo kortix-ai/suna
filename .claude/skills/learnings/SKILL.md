@@ -5303,3 +5303,7 @@ sequential manifest reads; all existing assertions remain required.
 ### Retry incomplete archive lease reads during concurrent creation (2026-09-16)
 
 **Rule:** Treat a partially written network-slot lease as temporary contention. Retry slot acquisition after the creator finishes writing. **Incident:** an archive uploader read a newly created empty lease file and failed with `SyntaxError: JSON Parse error: Unexpected EOF`. The batch retried, but the failure consumed an archive attempt and lowered throughput. **Enforcement:** `archive-network-slot.ts` retries syntax and disappearing-file races while it scans the network lease pool.
+
+### Accept completed primary imports as provider recovery evidence (2026-09-16)
+
+**Rule:** A fallback router must recognize fully verified primary imports completed after the fallback timestamp. Do not depend only on a one-off recovery probe that may finish just before the fallback. **Incident:** Platinum's last recovery probe finished eight seconds before Daytona became preferred. No further probe candidate existed, so routing stayed on Daytona for over an hour despite successful Platinum imports at 16:09 and 16:10 UTC and zero recent Platinum failures. **Enforcement:** the private provider monitor requires two post-fallback, fully verified Platinum imports within 20 minutes before returning to Platinum. Provider-routing tests retain the stale-probe rejection.
