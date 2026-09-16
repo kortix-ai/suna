@@ -991,6 +991,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               // overlay anyway.
               loaderMounted && 'isolate',
             )}
+            aria-hidden={!overlayDismissed}
+            inert={!overlayDismissed}
           >
             <ProjectSessionRuntimeConnection>
               {mountChat && (
@@ -1009,6 +1011,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
 
         {loaderMounted && (
           <div
+            aria-hidden={overlayDismissed}
+            inert={overlayDismissed}
             onTransitionEnd={() => {
               if (chatReady) setLoaderMounted(false);
             }}

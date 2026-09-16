@@ -42,6 +42,18 @@ describe('session composer prefill (W12)', () => {
     );
     expect(useSessionComposerPrefillStore.getState().prefillBySession['s2']).toBeUndefined();
   });
+
+  test('an old editor acknowledgement cannot clear a newer queued edit', () => {
+    const store = useSessionComposerPrefillStore.getState();
+    store.setPrefill('handoff', 'First edit');
+    const first = useSessionComposerPrefillStore.getState().prefillBySession.handoff!;
+    store.setPrefill('handoff', 'Second edit');
+    store.clearPrefill('handoff', first.id);
+    const current = useSessionComposerPrefillStore.getState().prefillBySession.handoff!;
+    expect(current.text).toBe('Second edit');
+    store.clearPrefill('handoff', current.id);
+    expect(useSessionComposerPrefillStore.getState().prefillBySession.handoff).toBeUndefined();
+  });
 });
 
 // ─── "Add context" (Task 5) — same held/id-keyed shape as the prefill above,

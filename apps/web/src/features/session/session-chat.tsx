@@ -2262,14 +2262,8 @@ export function SessionChat({
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
   const sessionPrefill = useSessionPrefill(sessionId);
-  // Held (not consumed) by the store so a fresh id always reaches the
-  // composer's own id-keyed effect — but held forever ghosts stale text back
-  // in on a later remount (tab switch, panel toggle): SessionChatInput's
-  // prefill effect runs before this one in the same commit (child before
-  // parent), so the text has already landed by the time we clear it here.
-  useEffect(() => {
-    if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
-  }, [sessionPrefill, sessionId]);
+  // The lazy editor acknowledges application. A parent effect can run before
+  // that editor mounts and erase a queued edit during the startup handoff.
   // WHICH held draft the composer is handed right now, in priority order, in
   // ONE place. The four sources mint their ids from four independent counters,
   // so `prefill.id` alone cannot say which one the composer just applied — and
@@ -5717,6 +5711,9 @@ export function SessionChat({
                   await handleSend(text, files, mentions, { placement });
                 }}
                 prefill={composerPrefill}
+                onPrefillApplied={(id) => {
+                  useSessionComposerPrefillStore.getState().clearPrefill(sessionId, id);
+                }}
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
                 onArrowUpAtStart={() => handleTakeBackQueue()}
