@@ -437,6 +437,7 @@ for (const runtime of runtimes) {
       const auth = await signIn(user.email!, authOptions);
       let project: ManifestProject | undefined;
       let sessionId = "";
+      let bootSessionId = "";
       try {
         const accounts = await api<{ account_id: string }[]>(
           auth.access_token,
@@ -725,7 +726,48 @@ for (const runtime of runtimes) {
           path: test.info().outputPath("queue-placements.png"),
           scale: "css",
         });
+        if (!isDeployedTarget()) {
+          bootSessionId = await createDatabaseSession(loadEnv(), {
+            projectId: project.id,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+          });
+          await api(
+            auth.access_token,
+            "POST",
+            `/projects/${project.id}/sessions/${bootSessionId}/prompts`,
+            {
+              client_message_id: `start_${bootSessionId}`,
+              message_id: `msg_${(Date.now() * 0x1000).toString(16).slice(-12)}AbCdEfGhIjKlMn`,
+              parts: [{ type: "text", text: "First prompt still starting" }],
+              placement: "transcript",
+            },
+            202,
+          );
+          await page.goto(
+            `${baseURL}/projects/${project.id}/sessions/${bootSessionId}`,
+          );
+          await expect(input).toBeVisible({ timeout: 30_000 });
+          await expect(
+            page
+              .getByRole("paragraph")
+              .getByText("First prompt still starting", { exact: true }),
+          ).toBeVisible();
+          await page.reload();
+          await expect(input).toBeVisible({ timeout: 30_000 });
+          await expect(
+            page
+              .getByRole("paragraph")
+              .getByText("First prompt still starting", { exact: true }),
+          ).toBeVisible();
+        }
       } finally {
+        if (project && bootSessionId)
+          await api(
+            auth.access_token,
+            "DELETE",
+            `/projects/${project.id}/sessions/${bootSessionId}`,
+          ).catch(() => undefined);
         if (project && sessionId)
           await api(
             auth.access_token,
