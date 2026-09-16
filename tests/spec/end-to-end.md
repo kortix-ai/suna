@@ -294,6 +294,49 @@ paths. The user message renders every attachment before and after reload, with t
 same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
 rewritten in place before the next prompt.
 
+`SESS-30` Eager private attachment uploads. A project accepts bytes before any
+session exists. Initiation returns an opaque handle with a server-selected
+transport. Direct mode, the default, returns a short-lived signed Storage upload
+URL. The client sends the whole file in one PUT with no Authorization header.
+Initiation with the same `attachment_id` re-signs that upload and creates no
+second upload. The chunk route returns 409 in direct mode. Chunked mode, which
+only the preview deployment selects, returns `chunk_size`. Indexed API requests
+then carry at most that many bytes, and a replayed chunk duplicates no bytes.
+Completion before the bytes arrive returns 409. Completion streams the stored
+object once, verifies its exact size, records its SHA-256 and returns canonical
+filename, MIME and size. A direct upload whose size differs from its declaration
+fails with 400, and a later completion returns 409.
+Warm claim and follow-up enqueue persist handle-only file parts, not base64.
+Identical follow-up submissions reuse the same command. A repeat claim of a
+consumed warm session returns 409, with or without attachments.
+Missing handles return 404, incomplete uploads 409 and oversize declarations 413.
+Bound files cannot be deleted. Removing an unbound upload is idempotent.
+Initiation returns 402 with the billing body when the account cannot run.
+Initiation returns 429 `attachment_budget_exceeded` above 40 unfinished uploads or
+500 MiB of unsent bytes per user. The SDK retries neither refusal.
+The internal descriptor route accepts only a live session sandbox credential.
+It binds the exact running command, attachment reference and part index before it
+returns the canonical path, byte count, SHA-256 and short-lived download URL.
+User JWTs and ordinary project PATs return 403.
+Session delete and project archive release every attachment reference they hold.
+A delivered prompt releases its references 1 hour after its command closes.
+An attachment with no reference is due for the next maintenance sweep.
+
+Browser composer contract (`28-eager-composer-attachments.spec.ts`): picker,
+drop and paste start the private upload before Send. Send stays enabled while
+uploads run. Send and Enter refuse only a failed or aborted attachment, and the
+Send tooltip reads "Retry or remove the failed attachment." A tile whose upload
+still runs 400 ms after attach shows a determinate progress ring. A failed tile
+keeps its picture or name under a scrim that states the localized reason. Retry
+appears only for a connection failure; a billing, budget, size or expiry refusal
+offers only Remove. Removing a tile while it uploads aborts the upload and
+deletes the unbound upload. A retry reuses the same attachment handle. An
+accepted first prompt carries handle-only parts and sends no file bytes again. A
+refused first prompt keeps the captured attachments while new selections remain
+in the composer. The sent message shows its tiles from the first frame, with no
+progress ring and no busy state. Drafts never store File bytes, blob URLs, data
+URLs, signed download URLs, or upload handles.
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots
@@ -990,9 +1033,26 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SBX-5` A project member reads the project sandbox inventory. Non-members are rejected.
 `SBX-6` Daytona and Platinum webhooks reject unsigned provider payloads.
 `SCIM-5` SCIM resource-type, schema, and user-replacement routes preserve tenant and bearer-token boundaries.
-`SCIM-6` Entra deactivation accepts string `"False"`, case-insensitive `Active`, and RFC pathless attribute objects. Each returns `active:false`, removes access, and makes the user absent on read-back. The last owner remains protected with `409`; pending invitations also deactivate.
+`SCIM-6` Entra deactivation accepts string `"False"`, case-insensitive `Active`, and RFC pathless attribute objects. Each returns `active:false`, removes access, and preserves an inactive user on read-back. The last owner remains protected with `409`; pending invitations also deactivate.
 
 `SCIM-7` Entra `Remove members` with a `value` array removes only the listed members. An empty array removes none. A malformed array returns 400 without changing membership. RFC filtered removal remains supported; a bare removal clears membership. Read-back must preserve every unrelated member.
+
+`SCIM-8` SCIM group membership takes precedence over stale SSO claims. After SCIM adds a member, a real authenticated request with an older token lacking the group preserves membership. After SCIM removes a member, an older token claiming the group cannot restore it. Entra pathless group updates persist externalId and displayName, and retries preserve the resource ID.
+
+`SCIM-9` SCIM deactivation and deletion prevent existing SSO tokens from recreating membership, even with auto_create_members enabled. Deactivated users remain readable as inactive and retain their ID and externalId. Explicit reactivation restores membership. DELETE retries return 204; explicit SCIM creation restores the same identity after deletion.
+`SCIM-10` A pending SCIM user keeps its ID and external ID after first SSO login. Pending group grants appear in read-back. Cached IDs support repeated group changes. Renaming cannot bypass deactivation.
+
+`SCIM-11` Group PATCH operations are atomic. Attribute and operation names are case-insensitive. Pathless adds and explicit member replacement persist exact membership. Malformed operations and invalid PUT members return 400 without changing state.
+
+`SCIM-12` SCIM profile updates persist name subattributes and filtered work email. Invalid user patches return 400 without changing state. Filters accept case-insensitive operators and escaped strings. Pagination returns stable pages and count zero returns the total without resources.
+
+`SCIM-13` An identity has independent SCIM state in each account. Deactivation in one account preserves access to another. POST, PUT, and DELETE cannot remove the last owner. Revoking a SCIM token immediately rejects further requests.
+
+`SCIM-14` Inactive users retain directory group assignments without retaining account access, including before first login. Changes made while inactive determine membership after reactivation. DELETE clears the directory assignments and explicit recreation does not restore them.
+
+`SCIM-15` provisions populated Entra default mappings: phone numbers, work addresses, preferred language, enterprise department, employee number, and manager. Create, GET, filtered PATCH, removal, atomic invalid-value rollback, ResourceTypes, and Schemas must preserve the same attributes.
+
+
 `SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement that stamps `last_activity_at` and advances `updated_at` beyond `created_at`, so the adopted session lists immediately and its activity sort is current. The contract requires `last_activity_at > created_at` and `updated_at >= last_activity_at` on the adopted row. Later lifecycle writes can advance `updated_at` before read-back. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.

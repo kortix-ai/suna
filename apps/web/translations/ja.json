@@ -1536,7 +1536,9 @@
       "bringKey": "自分のキーを持ち込む",
       "barTitle": "モデル未接続",
       "barDescription": "接続してチャットを開始",
-      "connectModel": "モデルを接続"
+      "connectModel": "モデルを接続",
+      "imagesUnsupported": "{model} は画像を読み取れません",
+      "imagesUnsupportedHint": "画像を削除するか、別のモデルを選択してください"
     },
     "providerRecovery": {
       "savedPrompt": "保存済みプロンプト",
@@ -9336,7 +9338,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "質問はありません",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "補充する",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "計画を管理する",
+    "composerAttachments": {
+      "couldNotAttach": "ファイルを添付できませんでした",
+      "couldNotRetry": "添付ファイルを再試行できませんでした",
+      "couldNotSend": "送信できませんでした",
+      "failedBlocksSend": "失敗した添付ファイルを再試行するか、削除してください。",
+      "uploadFailed": "アップロードに失敗しました。接続を確認してください。",
+      "retryNamed": "{name} のアップロードを再試行",
+      "didNotUpload": "{name} はアップロードされませんでした。",
+      "billingRequired": "現在のプランまたはクレジットではアップロードできません。",
+      "budgetExceeded": "未送信のアップロードが多すぎます。未使用のアップロードは24時間以内に期限切れになります。",
+      "tooLarge": "このファイルは50 MiBを超えています。",
+      "expired": "このアップロードは期限切れです。削除して、ファイルをもう一度添付してください。",
+      "checkConnection": "接続を確認してから、再試行してください。"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "添付ファイルのアップロードを開始しました",
+      "text40078a553439": "添付ファイルのチャンクをアップロードしました",
+      "text4c7f8000aabd": "添付ファイルのアップロードが完了しました",
+      "text91420d2587c2": "添付ファイルのアップロードを削除しました",
+      "text3aab5b3be2b9": "ランタイム添付ファイル記述子を解決しました",
       "text0005b85debac": "セッションイベントで再生されるサウンドパック。",
       "text000c02c11c7a": "エージェントが必要に応じて読み込める、再利用可能な指示。",
       "text0017bda47853": "URLをコピーしました",

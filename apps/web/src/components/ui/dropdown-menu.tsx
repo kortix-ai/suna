@@ -7,7 +7,6 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
 import {
   MENU_LABEL,
-  MENU_PANEL,
   MENU_PANEL_STATIC,
   MENU_SEPARATOR,
   MENU_SHORTCUT,
@@ -25,20 +24,20 @@ import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
  * A dropdown is anchored to a trigger, so its panel is at least as wide as a
  * typical trigger. A right-click menu has no trigger width to match and floors
  * itself lower.
- */
-const DROPDOWN_PANEL = cn(MENU_PANEL, 'min-w-[14rem] overflow-hidden');
-
-/**
- * The submenu panel: the same surface, with the enter/exit animation removed.
  *
- * A submenu is the one panel that opens INTO the pointer's path — you are
- * already moving right, toward the first row, when it mounts. `animate-in`
- * (fade + `zoom-in-95` + a 2-unit slide, ~150ms) spent that whole window
- * moving the rows away from the cursor, which reads as the menu lagging behind
- * the hand. The root menu keeps its animation: it opens where you clicked, not
- * where you are heading.
+ * No enter/exit animation on the root panel or the submenu. The root panel
+ * used to `animate-in` (fade + `zoom-in-95` + a 2-unit slide, ~150ms). Radix
+ * Presence also keeps the node mounted until `animate-out` fires
+ * `animationend`, so every open AND every close waited on the animation. People
+ * open these menus tens of times a day; the project sidebar's workspace
+ * switcher is the worst case. The motion read as the menu lagging behind the
+ * click, and it dropped frames under load. The panel now paints on the frame it
+ * mounts and unmounts on the frame it closes.
+ *
+ * The submenu lost its animation earlier for a second reason: it opens INTO the
+ * pointer's path, so the slide moved its rows away from the cursor.
  */
-const DROPDOWN_SUB_PANEL = cn(MENU_PANEL_STATIC, 'min-w-[14rem] overflow-hidden');
+const DROPDOWN_PANEL = cn(MENU_PANEL_STATIC, 'min-w-[14rem] overflow-hidden');
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
@@ -107,7 +106,7 @@ const DropdownMenuSubContent = React.forwardRef<
   // places itself (a submenu always opens on the inline edge of its trigger)
   // and does not take either prop, so they are destructured only to keep them
   // off the DOM node. They previously selected a `slide-in-from-*` class; that
-  // was the enter animation, which this panel no longer has.
+  // was the enter animation, which no dropdown panel has any more.
 >(({ className, side: _side, align: _align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
@@ -115,7 +114,7 @@ const DropdownMenuSubContent = React.forwardRef<
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
-      className={cn(DROPDOWN_SUB_PANEL, className)}
+      className={cn(DROPDOWN_PANEL, className)}
       style={{ zIndex: floatingZ(depth), ...style }}
       {...props}
     />

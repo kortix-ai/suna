@@ -21,6 +21,24 @@ linked, not inlined.
 
 ## Register
 
+### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
+
+**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
+every API route that calls a daemon path the daemon does not serve, and give
+each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
+"sandbox not found". Never pick 502 for a permanent refusal: the `index.ts`
+edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
+twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
+pins the daemon marker and the 501 mapping.
+### Preserve SCIM group changes when old SSO sessions make requests (2026-09-16)
+
+**When:** reconciling SAML group claims. Leave SCIM-managed groups to SCIM. Mark
+existing groups as SCIM-managed when the provisioning API takes ownership.
+*Incident:* Azure added Ivan to Engineering on dev; reloading his older SSO
+session deleted the membership. Pathless group attributes also returned success
+without persisting. *Enforcer:* `SCIM-8` uses real signed Supabase tokens to
+prove old claims cannot undo SCIM additions or removals, and checks read-back.
+
 ### Resolve SCIM identities across the complete auth directory (2026-09-16)
 
 **When:** matching provisioned users by email. Query the normalized email in
@@ -345,6 +363,7 @@ snapshot worker would spin forever without publishing.
 caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
 *Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
 image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
+
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
@@ -622,6 +641,16 @@ reproduced the failure; `project-access-boundary.test.ts` pins the wiring.
 AuthProvider declares initial readiness only after bootstrap validation and
 cleanup finish, not from an earlier `INITIAL_SESSION` event. Keep the signed-out
 redirect above the pending gate and use the user-scoped key for admin bypass.
+
+### Daemon routes negotiate capability across mixed builds (2026-09-07)
+
+**When:** the API calls a sandbox daemon route. Never assume the API and the daemon
+share a build. A health response without `capabilities` means an older daemon: use
+a route it already serves (`/file/append`), never a stale classification.
+*Incident:* `/file/append` reached a stale daemon, fell through to OpenCode's SPA as
+`200 text/html`, and five retries dead-lettered the first prompt.
+*Enforcers:* `readRuntimeJson` non-JSON guard and `file.import` negotiation
+(`runtime-prompt-file.test.ts`); daemon `/kortix/*` and `/file/*` JSON 404 (`files-routes.test.ts`).
 
 ### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 
@@ -5495,3 +5524,62 @@ starting another stack. Obtain authorization before stopping other tasks.
 force. Use ordinary `docker image rm`, never forced removal or volume pruning.
 The local runner requires working Supabase and real HTTP assertions before it
 reports success; `SEC-30` passed after this recovery.
+
+### Retain SCIM lifecycle state independently of account membership
+
+**Incident (2026-09-16, PR #7298):** SCIM deactivation deleted account membership.
+A subsequent authenticated SSO request recreated it through JIT provisioning.
+The IdP also lost the cached SCIM ID after an invited user first signed in.
+
+**Rule:** persist directory identity, active state, and deletion state separately.
+Serialize SCIM writes and SSO synchronization per account in database transactions.
+Use the stable SCIM ID for user and group read-back before and after first login.
+
+**Enforcement:** real HTTP flows `SCIM-9` and `SCIM-10` verify concurrent SSO
+requests cannot undo deactivation, explicit reactivation works, deletion is
+idempotent, and cached user IDs continue to support group membership updates.
+
+### Verify SCIM write responses against persisted directory state
+
+**Incident (2026-09-16, PR #7298):** group `Replace Members` and user
+`name.givenName` updates returned HTTP 200 while retaining the old values.
+Malformed group operations could also leave an earlier operation applied.
+
+**Rule:** validate complete SCIM changes before applying them. Apply a request
+atomically and verify GET read-back. Support case-insensitive attribute names,
+Entra subattribute paths, stable pagination, and escaped equality filters.
+
+**Enforcement:** HTTP flows `SCIM-11` and `SCIM-12` assert persisted values,
+rollback, rejection of malformed requests, and pagination. `SCIM-13` verifies
+account isolation, last-owner guards, and provisioning-token revocation.
+
+### Keep inactive directory assignments separate from effective access
+
+**Incident (2026-09-16, PR #7298 verification):** the reactivation test exposed
+loss of project access when deactivation discarded SCIM group assignments.
+Entra does not need to resend an unchanged group after re-enabling a user.
+
+**Rule:** retain directory group assignments while inactive, remove effective
+IAM memberships, and restore only current directory assignments on reactivation.
+DELETE clears both. Group updates while inactive must update directory state.
+
+**Enforcement:** `SCIM-10` and `SCIM-14` verify disable/enable without another
+group push, removals while inactive, users disabled before first login, and
+DELETE followed by explicit recreation.
+
+**Local verification recovery (2026-09-16):** Supabase user creation and password
+grants returned 504 while Docker had 402 MB free. Removing two verified unused,
+downloadable API images increased free space to 3.3 GB. The 13 SCIM flows and
+BILL-9b then passed together. Preserve volumes and local-only images; Docker must
+refuse removal of images acquired by another container during inspection.
+
+### 2026-09-16 — Exercise populated identity-provider defaults
+
+Azure's configured default mappings include phone numbers, addresses, preferred language,
+and enterprise department, employee number, and manager. Testing users with empty optional
+fields hid unsupported-attribute failures. The strict SCIM parser returned 400 as soon as
+those fields were populated, rejecting the entire provisioning request.
+
+Validate the provider's actual mappings with populated values before declaring synchronization
+healthy. Keep discovery schemas, create payloads, filtered PATCH paths, removals, and read-back
+responses consistent. SCIM-15 and user-profile.test.ts enforce this contract.

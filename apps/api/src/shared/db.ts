@@ -1,5 +1,6 @@
 import { createDb, type Database } from '@kortix/db';
 import { config } from '../config';
+import { contextualDatabase } from './db-context';
 
 const globalForDb = globalThis as typeof globalThis & {
   __kortixApiDb?: Database;
@@ -43,4 +44,4 @@ function getDb(): Database {
   return globalForDb.__kortixApiDb;
 }
 
-export const db: Database = getDb();
+export const { db, transaction: withDbTransaction, afterCommit: afterDbCommit } = contextualDatabase(getDb());
