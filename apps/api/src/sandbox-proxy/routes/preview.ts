@@ -1,13 +1,16 @@
+import { isProviderIngressAuthFailure } from '../provider-auth';
 import { WIRE_MESSAGE_ID } from '../../projects/wire-message-id';
+import { promptConnectorRefusalBody } from '../../projects/lib/prompt-connector-refusal';
+import { stripInlineAttachmentBytes } from '../inline-attachments';
+import { timeUpstream } from '../../middleware/upstream-timing';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
-import { timeUpstream } from '../../middleware/upstream-timing';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
@@ -15,7 +18,11 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSessionRuntimesEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
+import {
+  agentLaunchableInProject,
+  remintGrantForAgentSwitch,
+} from '../../projects/lib/session-token-grant';
+import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import {
@@ -50,7 +57,6 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
-import { stripInlineAttachmentBytes } from '../inline-attachments';
 import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
@@ -590,34 +596,8 @@ async function connectorGateRefusal(
     }
     throw err;
   }
-  if (verdict.ok) return null;
-
-  if (verdict.kind === 'unavailable') {
-    return jsonProxyError(
-      {
-        error:
-          verdict.aliases.length === 1
-            ? `Required connection "${verdict.aliases[0]}" is unavailable`
-            : `Required connections ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
-        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
-        connectors: verdict.aliases,
-      },
-      409,
-      origin,
-    );
-  }
-  return jsonProxyError(
-    {
-      // `message` as well as `error`: the SDK prefers `message` and otherwise
-      // substitutes a generic "Failed to send message", which would bury this.
-      error: 'Create the required connections before continuing this session.',
-      message: 'Create the required connections before continuing this session.',
-      code: 'CONNECTOR_CONNECTION_REQUIRED',
-      connector_connections: verdict.connections,
-    },
-    409,
-    origin,
-  );
+  const refusal = promptConnectorRefusalBody(verdict);
+  return refusal ? jsonProxyError(refusal, 409, origin) : null;
 }
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
@@ -775,10 +755,13 @@ export function shouldAutoResumeStoppedSandbox(
  * agent (a POST) or restarted the session.
  *
  * A terminal ATTACH is the same class of intent as a session mutation: a human
- * opened the panel or pressed "Reconnect now". The client marks exactly those
- * two connects with `wake=1` and NEVER marks its automatic backoff retries, so
- * the "passive resurrection" the resume policy exists to prevent (polling,
- * hydration, background reconnects) still cannot wake a box.
+ * opened the panel or pressed a control. The client marks that attach with
+ * `wake=1` and keeps the mark on its retries only until the attach opens. The
+ * wake is asynchronous and the row stays `stopped` until the provider confirms
+ * the box, so each marked dial during the wake is refused with 503 and the
+ * client dials again. Once an attach has opened the client stops marking, so a
+ * socket that drops because the box parked (the "passive resurrection" the
+ * resume policy exists to prevent) still cannot wake it.
  *
  * Pure + exported so the gate is unit-tested without provisioning a box.
  */
@@ -983,6 +966,31 @@ export async function forwardToSandbox(
   //     that was refused.
   // The three existing early returns further down all sit after the claim and
   // have exactly that defect; this one deliberately does not join them.
+  // INC-2026-09-15. Before ANY gate reads the body's agent — authorization, the
+  // connector gate, the env sync, the token re-mint — an agent this session's
+  // project does not declare is removed from the body. Every consumer below
+  // then sees the session's own agent. Sandbox-authored turns included: they
+  // skip the authorization gate, which is exactly why the name must be gone
+  // before the re-mint reads it. See `undeclared-prompt-agent.ts`.
+  if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
+    const guardProjectId = record.projectId;
+    const checked = await dropUndeclaredPromptAgent({
+      body: requestBody,
+      headers: incomingHeaders,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      sandboxId,
+      path: remainingPath,
+      sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
+      sandboxAuthored,
+      userId: userId ?? null,
+      userAgent: incomingHeaders.get('user-agent'),
+      isLaunchable: (agentName) => agentLaunchableInProject(guardProjectId, agentName),
+      log: (event) =>
+        console.error('[PREVIEW] dropped an agent this project does not declare from a turn-start body', event),
+    });
+    requestBody = checked.body;
+  }
   if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
     const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
     // Authorization FIRST. The connector gate below reads this agent's manifest,
@@ -1012,9 +1020,9 @@ export async function forwardToSandbox(
         console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
         return false;
       });
-      // Re-read: the resume flips the row → 'active' (this call or a concurrent
-      // one). The box boots in the background; the wake/retry loop below tolerates
-      // the gap and forwards once it's up (and subsequent client retries recover).
+      // Re-read. The resume only claims the wake: the row stays 'stopped' until
+      // the provider confirms the box, so this request usually returns the 503
+      // below and the client's retry forwards once the row is 'active'.
       const resumed = await loadSandbox(sandboxId);
       if (resumed) record = resumed;
     }
@@ -1201,6 +1209,7 @@ export async function forwardToSandbox(
   // at all (out of budget on the first pass) is the provider-edge case too — we
   // have no evidence about the box.
   let lastAttemptHop: ProxyHop = 'provider_ingress';
+  let providerCredentialsRefreshed = false;
 
   // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
   // passthrough (below), and a previous stream that answered 200 without EVER
@@ -1501,6 +1510,27 @@ export async function forwardToSandbox(
         clearTimeout(connectTimer);
       }
       ptl.mark('upstream');
+
+      // A resumed Daytona sandbox can reject a cached preview token. Its edge
+      // answers either JSON 401 or a login redirect; neither is the daemon's
+      // signed-context refusal. Drop every transport's cached link for this
+      // port and refresh once for reads. Never replay a write here.
+      if (await isProviderIngressAuthFailure(record.provider, upstream)) {
+        await upstream.body?.cancel().catch(() => {});
+        invalidatePreviewLink(sandboxId, port);
+        if (!providerCredentialsRefreshed && (method === 'GET' || method === 'HEAD') && attempt < MAX_RETRIES) {
+          providerCredentialsRefreshed = true;
+          continue;
+        }
+        await abandonTurnLifecycle();
+        // The provider rejected authentication before the daemon received it.
+        if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+        return jsonProxyError({
+          error: 'sandbox provider authentication unavailable',
+          code: 'sandbox_provider_auth_unavailable',
+          retry: true,
+        }, 503, origin);
+      }
 
       if (upstream.status >= 300 && upstream.status < 400) {
         await abandonTurnLifecycle();
@@ -1977,8 +2007,10 @@ export async function resolvePreviewWsUpstream(opts: {
         console.warn(`[preview-ws] auto-resume failed for ${resumeExternalId}:`, err);
         return false;
       });
-      // The resume flips the row to 'active' immediately; the box finishes
-      // booting in the background and the client's next retry connects.
+      // The resume only CLAIMS the wake: the row stays 'stopped' until the
+      // provider confirms the box, which measured 16-31 s locally and ~60 s on
+      // dev. Until then this returns 503 and the client dials again; a browser
+      // sees each refusal as 1006 and asks `GET /kortix/pty` for the reason.
       const resumed = await loadSandbox(sandboxId);
       if (resumed) record = resumed;
     }

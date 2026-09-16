@@ -46,9 +46,8 @@ async function openWorkspacePicker(page: Page): Promise<Locator> {
   await page
     .getByRole("menuitem", { name: "Switch Project", exact: true })
     .click();
-  const picker = page.getByRole("menu", {
-    name: "Switch Project",
-    exact: true,
+  const picker = page.getByRole("menu").filter({
+    has: page.getByRole("menuitem", { name: "Account settings" }),
   });
   await expect(picker).toBeVisible();
   return picker;

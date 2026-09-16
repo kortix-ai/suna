@@ -153,8 +153,10 @@ is desired.
 
 The measured branch result is 4.25 seconds p50 to first assistant text for a
 cold Pi worker. The compared OpenCode cold path is 29.19 seconds p50. The two
-measurements used different providers, so they prove the branch improvement
-but not a provider-neutral ratio.
+measurements used different providers. They describe those deployments and do
+not establish a runtime-only speedup. The same-environment comparison measures
+104 ms Pi process readiness and 1,352 ms OpenCode readiness. Warm completion
+medians differ by less than 1%; see the [controlled comparison](../spikes/pi-worker/bench/DIRECT_ENVIRONMENT.md).
 
 ### When does the environment start?
 

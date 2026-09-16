@@ -40,6 +40,12 @@ afterEach(async () => {
 })
 
 describe('execution-only environment', () => {
+  test('rejects the OpenCode listening wait without launching a runtime', () => {
+    const runtime = createExecutionOnlyRuntime()
+    expect(() => runtime.waitForCurrentListening()).toThrow('Its agent runtime runs in the worker.')
+    expect(runtime.getPid()).toBeNull()
+  })
+
   test('reports ready without contacting or starting an agent runtime', async () => {
     const response = await app.request('/kortix/health?turn=1')
     expect(response.status).toBe(200)

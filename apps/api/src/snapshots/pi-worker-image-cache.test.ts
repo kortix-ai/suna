@@ -23,11 +23,11 @@ describe('pi worker image ready-cache', () => {
     expect(singleFlight).toBeGreaterThan(lookup);
     expect(write).toBeGreaterThan(singleFlight);
     expect(write).toBeLessThan(fnEnd);
-    // TTL-guarded read, and only a PREPARED result is ever cached.
+    // TTL-guarded read; the cache stores the resolved image result.
     const readBlock = source.slice(lookup, singleFlight);
     expect(readBlock).toContain('PI_WORKER_IMAGE_READY_TTL_MS');
-    const writeBlock = source.slice(singleFlight, write);
-    expect(writeBlock).toContain('prepareSnapshotForReuse(provider, snapshotName, result');
+    const writeBlock = source.slice(singleFlight, write + 80);
+    expect(writeBlock).toContain('piWorkerImageReady.set(buildKey, { at: Date.now(), result })');
   });
 
   test('a fresh build is never served from the ready-cache path uninitialized', async () => {

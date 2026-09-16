@@ -164,6 +164,7 @@ mock.module('../../../platform/services/session-environment', () => ({
 mock.module('../../lib/session-transcript-capture', () => ({
   captureSessionTranscriptMirror: async (sessionId: string) => {
     captureCalls.push(sessionId);
+    callOrder.push(`capture:${sessionId}`);
     return captureImpl();
   },
 }));
@@ -221,7 +222,6 @@ describe('stopSession', () => {
     const entered = Promise.withResolvers<void>();
     const persisted = Promise.withResolvers<void>();
     captureImpl = async () => {
-      callOrder.push('capture');
       entered.resolve();
       await persisted.promise;
       callOrder.push('persisted');
@@ -235,11 +235,11 @@ describe('stopSession', () => {
     ]);
     expect(first).toBe('capture');
     expect(captureCalls).toEqual(['sess-1']);
-    expect(callOrder).toEqual(['abort', 'capture']);
+    expect(callOrder).toEqual(['abort', 'capture:sess-1']);
     expect(stopCalls).toEqual([]);
     persisted.resolve();
     expect((await stopping).status).toBe(200);
-    expect(callOrder).toEqual(['abort', 'capture', 'persisted', 'provider.stop']);
+    expect(callOrder).toEqual(['abort', 'capture:sess-1', 'persisted', 'provider.stop']);
   });
 
   test('still stops when transcript capture cannot reach the runtime', async () => {
@@ -296,6 +296,7 @@ describe('stopSession', () => {
     // opencode process to abort, so no pre-stop call is attempted.
     expect(abortFetchCalls).toEqual([]);
     expect(captureCalls).toEqual([]);
+    expect(callOrder).toEqual(['provider.stop']);
     const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
     const rendered = describeSql(metadata);
     expect(rendered).toContain('runtimeWakeId');
@@ -486,7 +487,7 @@ describe('stopSession', () => {
 
     expect(result.status).toBe(200);
     expect(statusCalls).toEqual(['ext-1']);
-    expect(callOrder).toEqual(['abort', 'provider.stop', 'provider.getStatus']);
+    expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop', 'provider.getStatus']);
     expect(pausedCompute).toEqual(['sess-1']);
     expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
     expect(updateCalls.find((c) => c.table === projectSessions)?.updates.status).toBe('stopped');
@@ -532,7 +533,7 @@ describe('stopSession', () => {
       expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
       expect(abortFetchCalls[0]?.init.method).toBe('POST');
       // Ordering: the abort call happens strictly before provider.stop().
-      expect(callOrder).toEqual(['abort', 'provider.stop']);
+      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
     });
 
     test('a timed-out/failed abort still stops the box (best-effort, never a gate)', async () => {
@@ -551,7 +552,7 @@ describe('stopSession', () => {
 
       expect(result.status).toBe(200);
       expect(abortFetchCalls).toHaveLength(1);
-      expect(callOrder).toEqual(['abort', 'provider.stop']);
+      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
       expect(stopCalls).toEqual(['ext-1']);
       expect(
         updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
@@ -571,7 +572,7 @@ describe('stopSession', () => {
       const result = await stopSession(baseInput);
 
       expect(result.status).toBe(200);
-      expect(callOrder).toEqual(['abort', 'provider.stop']);
+      expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
     });
 
     test('an unreachable box (no service key on record) skips the fetch entirely and still stops', async () => {

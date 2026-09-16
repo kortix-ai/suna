@@ -94,6 +94,8 @@ mock.module('../../projects/lib/sandbox-env-sync', () => ({
 }));
 let remintCalls = 0;
 mock.module('../../projects/lib/session-token-grant', () => ({
+  // The proxy's declared-agent guard; these suites exercise other behavior.
+  agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => {
     remintCalls += 1;
     return { action: 'skip' };

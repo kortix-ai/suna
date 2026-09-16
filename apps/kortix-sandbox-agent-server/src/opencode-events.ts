@@ -66,6 +66,40 @@ type OpencodeEventHandlers = {
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
   connectTimeoutMs?: number
+  /**
+   * How long one subscribe attempt may wait for OpenCode's response HEADERS.
+   * Only the header phase is bounded; the timer is cleared the moment the
+   * response arrives, so the event stream itself is never cut. A subscribe
+   * that reaches a freshly bound OpenCode before its request handler exists is
+   * never answered (see OPENCODE_LISTENING_LINE in opencode.ts); without this
+   * bound that attempt hung for the life of the session and the daemon never
+   * saw another event — measured on S3 boots, 2026-09-15.
+   */
+  subscribeHeadersTimeoutMs?: number
+  /** How long to hold an attempt for the current OpenCode's readiness announcement. */
+  listeningWaitMaxMs?: number
+}
+
+const SUBSCRIBE_HEADERS_TIMEOUT_MS = 5_000
+const LISTENING_WAIT_MAX_MS = 5_000
+
+/** Resolve once the current OpenCode may be talked to, or after `maxMs`.
+ *  Optional-chained so a partial test double without the supervisor method
+ *  behaves as before (no gate). */
+async function waitForListeningOrTimeout(opencode: Opencode, maxMs: number): Promise<void> {
+  const signal = opencode.waitForCurrentListening?.()
+  if (!signal) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      signal.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, maxMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -98,10 +132,10 @@ export function startOpencodeEventLoop(
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
     const controller = new AbortController()
     abortController = controller
-    const connectTimeoutMs = options.connectTimeoutMs ?? 5_000
+    const connectTimeoutMs = options.connectTimeoutMs ?? options.subscribeHeadersTimeoutMs ?? SUBSCRIBE_HEADERS_TIMEOUT_MS
     const connectTimer = setTimeout(() => {
       logger.warn('[opencode-events] subscription headers timed out', { connectTimeoutMs })
-      controller.abort(new DOMException('OpenCode event subscription timed out', 'TimeoutError'))
+      controller.abort(new DOMException('subscribe headers timeout', 'TimeoutError'))
     }, connectTimeoutMs)
     let res: Response
     try {
@@ -179,6 +213,13 @@ export function startOpencodeEventLoop(
     const POST_CONNECT_BACKOFF_START_MS = 250
     let backoffMs = PRE_CONNECT_RETRY_MS
     while (!stopping) {
+      // Never subscribe before the current OpenCode announced its request
+      // handler: its port is bound ~100 ms before the handler exists, and a
+      // request sent then is never answered. Applies to reconnects as well —
+      // a restarted OpenCode has a fresh window. Bounded so a dead OpenCode
+      // still falls through to the ordinary refused/retry path.
+      await waitForListeningOrTimeout(opencode, options.listeningWaitMaxMs ?? LISTENING_WAIT_MAX_MS)
+      if (stopping) return
       try {
         await connectOnce()
       } catch (err) {

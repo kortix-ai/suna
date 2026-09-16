@@ -20,11 +20,12 @@ import {
   type RegisteredFlow,
 } from "./flow";
 import { loadEnv, type Env } from "./env";
+import { waitFor } from "./poll";
 import { log } from "./log";
 import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows, runScheduled, type ConcurrentLane } from "./lanes";
 import { planLocalFlows } from "./local-profile";
-import { ke2eRetryDelayMs } from "./client";
+import { isKe2eRetryableError, ke2eRetryDelayMs } from "./client";
 import {
   summarize,
   type Assertion,
@@ -326,6 +327,58 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
   const world = await buildWorld(env, flows);
 
   try {
+    // Cold provider images can take longer than a flow's runtime deadline. Build
+    // one through the real session route before measuring concurrent user flows.
+    if (env.capabilities.daytona && flows.some((f) =>
+      !f.meta.quarantine && f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
+      const stack = world.newStack();
+      try {
+        const fixtures = world.makeFixtures(stack);
+        const project = await fixtures.sharedSeededProject();
+        const client = new Client(env.apiUrl).as(world.principals.OWNER);
+        const created = await client.post('/v1/projects/:projectId/sessions', {},
+          { params: { projectId: project.id } });
+        created.status(201);
+        const sessionId = created.json<{ session_id: string }>().session_id;
+        if (!sessionId) throw new Error('sandbox setup returned no session_id');
+        stack.push('session', sessionId, { projectId: project.id });
+        const setupDeadline = Date.now() + 900_000;
+        log.info('sandbox setup: waiting for the current default image and runtime (up to 15 minutes)');
+        // Session boot can use the previous ready image while the current one
+        // builds. The preview gate must exercise this deploy's baked daemon.
+        await waitFor(async () => {
+          const snapshots = await client.get('/v1/projects/:projectId/snapshots',
+            { params: { projectId: project.id } });
+          snapshots.status(200);
+          const template = snapshots.json<{ templates: Array<{
+            is_default: boolean;
+            ready: boolean;
+            provider_coverage?: Array<{ launch_ready: boolean }>;
+          }> }>().templates.find((template) => template.is_default);
+          return template?.ready === true ||
+            template?.provider_coverage?.some((provider) => provider.launch_ready === true) === true;
+        }, { until: (ready) => ready, timeoutMs: 900_000, intervalMs: 5000,
+          // A transport error while staging bakes this deploy's image is not a
+          // verdict on the image: keep polling inside the same deadline.
+          retryOnError: isKe2eRetryableError,
+          description: 'current default sandbox image readiness' });
+        await waitFor(async () => {
+          const ready = await client.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
+            { params: { projectId: project.id, sessionId }, query: { wait_ms: '8000' }, timeoutMs: 30_000 });
+          ready.status(200);
+          const body = ready.json<{ stage: string; retriable: boolean; message?: string }>();
+          if (body.stage === 'error' && !body.retriable) throw new Error(JSON.stringify(body));
+          return body.stage;
+        }, { until: (stage) => stage === 'ready', timeoutMs: Math.max(1, setupDeadline - Date.now()), intervalMs: 3000,
+          // POST /start is idempotent. One timed-out call during the first boot
+          // on a fresh image killed whole release shards; poll again instead.
+          retryOnError: isKe2eRetryableError,
+          description: 'sandbox fixture readiness' });
+        log.info('sandbox setup: current default image and runtime ready');
+      } finally {
+        await stack.teardown();
+      }
+    }
     const parallelLane = flows.filter((f) => !f.meta.serial && !f.meta.global);
     const serialLane = flows.filter((f) => f.meta.serial && !f.meta.global);
     const globalLane = flows.filter((f) => f.meta.global);

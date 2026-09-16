@@ -297,3 +297,5 @@ export type {
   GatewayBudget,
   NewGatewayBudget,
 } from './types';
+
+export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

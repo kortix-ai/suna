@@ -118,12 +118,36 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   }
   const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
   if (!normalized.ok) return normalized;
+  const repository = normalizeRepositoryAccess(normalized.block, true);
+  if (!repository.ok) return repository;
   return {
     ok: true,
     schemaVersion: manifest.schemaVersion,
-    block: normalized.block as AgentBlockV2,
+    block: repository.block as AgentBlockV2,
     defaultAgent,
   };
+}
+
+/** Canonicalize supported legacy modes without granting access or enabling legacy read. */
+function normalizeRepositoryAccess(block: Record<string, unknown>, reading = false): NormalizeRequiredConnectorsResult {
+  const next = { ...block };
+  if (next.repository_access !== undefined && typeof next.repository_access !== 'boolean') {
+    return { ok: false, error: 'repository_access must be a boolean' };
+  }
+  if (next.workspace !== undefined) {
+    if (!['runtime', 'read', 'branch'].includes(String(next.workspace))) {
+      return { ok: false, error: 'workspace must be runtime, read, or branch' };
+    }
+    const access = next.workspace === 'branch';
+    if (next.repository_access !== undefined && next.repository_access !== access) {
+      return { ok: false, error: 'repository_access conflicts with workspace' };
+    }
+    if (next.workspace !== 'read' || next.repository_access !== undefined || reading) {
+      next.repository_access ??= access;
+      delete next.workspace;
+    }
+  }
+  return { ok: true, block: next };
 }
 
 export type ApplyAgentBlockResult =
@@ -155,7 +179,11 @@ function applyAgentMapBlock(
   const nextAgents: Record<string, unknown> = {
     ...(rawAgents as Record<string, unknown> | undefined),
   };
-  nextAgents[agentName] = normalized.block;
+  const repository = normalizeRepositoryAccess(normalized.block);
+  if (!repository.ok) return repository;
+  // Older API replicas ignore repository_access. Keep their deny signal during rollout and rollback.
+  if (repository.block.repository_access === false) repository.block.workspace = 'runtime';
+  nextAgents[agentName] = repository.block;
   const nextRaw = { ...manifest.raw, agents: nextAgents };
 
   const result = validateManifest(nextRaw, manifest.format);

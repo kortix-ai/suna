@@ -241,6 +241,9 @@ flow(
     domain: "sessions",
     requires: ["database"],
     routes: [
+      "GET /v1/projects/:projectId/branches",
+      "GET /v1/projects/:projectId/agents/:agentName/config",
+      "PUT /v1/projects/:projectId/agents/:agentName/config",
       "POST /v1/projects/:projectId/sessions/warm/claim",
       "GET /v1/projects/:projectId/sessions/:sessionId",
       "POST /v1/projects/:projectId/sessions/:sessionId/prompts",
@@ -251,13 +254,22 @@ flow(
   },
   async (ctx) => {
     const principal = await ctx.fixtures.user({ label: "SESS-31" });
-    const project = await ctx.fixtures.project({ accountId: principal.accountId! });
+    const project = await ctx.fixtures.project({ accountId: principal.accountId!, seed: true });
     const owner = ctx.client.as(principal);
+    const branches = await owner.get("/v1/projects/:projectId/branches", { params: { projectId: project.id } });
+    branches.status(200);
+    const sourceSha = branches.json<{ branches: { name: string; tip: string; is_default: boolean }[] }>()
+      .branches.find((branch) => branch.is_default)?.tip;
+    if (!sourceSha || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error('SESS-31 requires an immutable config source');
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: principal.accountId!,
       userId: principal.userId!,
-      metadata: { warm: true, pi_worker_boot: true, sandbox_slug: "pi-worker" },
+      agentName: 'kortix',
+      metadata: {
+        warm: true, pi_worker_boot: true, sandbox_slug: "pi-worker",
+        pi_worker_ref: sourceSha, pi_worker_sha: sourceSha,
+      },
     });
     ctx.track("session", sessionId, { projectId: project.id });
     const params = { projectId: project.id, sessionId };
@@ -345,6 +357,30 @@ flow(
           throw new Error("inline bytes leaked into the public inbox");
       },
     );
+    await ctx.step('change the current agent connector requirements and verify an unpinned session refuses before enqueueing', async () => {
+      const configPath = '/v1/projects/:projectId/agents/:agentName/config';
+      const configParams = { projectId: project.id, agentName: 'kortix' };
+      const config = await owner.get(configPath, { params: configParams });
+      config.status(200);
+      (await owner.put(configPath, {
+        ...config.json<any>().block,
+        connectors: 'all',
+        connectors_required: ['missing-pin-probe'],
+      }, { params: configParams })).status(200);
+      const unpinned = await createDatabaseSession(ctx.env, {
+        projectId: project.id, accountId: principal.accountId!, userId: principal.userId!, agentName: 'kortix',
+      });
+      ctx.track('session', unpinned, { projectId: project.id });
+      const unpinnedParams = { projectId: project.id, sessionId: unpinned };
+      const refused = await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+        client_message_id: 'unpinned-connector-probe',
+        message_id: 'msg_0123456789abAbCdEfGhIjKlMn',
+        parts: [{ type: 'text', text: 'Check current config' }],
+      }, { params: unpinnedParams });
+      refused.status(409).body().has('$.code', 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
+      const prompts = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: unpinnedParams });
+      prompts.status(200).body().has('$.prompts', []);
+    });
     const messageId = `msg_${Date.now().toString(16).padStart(12, "0")}${"A".repeat(14)}`;
     const prompt = {
       client_message_id: `image-${sessionId}`,
@@ -352,7 +388,7 @@ flow(
       parts: [{ type: "text", text: "Read it again" }, image],
     };
     await ctx.step(
-      "a boot-time image prompt persists once and a retry returns the same command",
+      "the pinned Pi config still accepts a boot-time image prompt once and a retry returns the same command",
       async () => {
         const first = await owner.post(
           "/v1/projects/:projectId/sessions/:sessionId/prompts",

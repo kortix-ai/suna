@@ -26,7 +26,7 @@ function mockUpstream() {
     fetch(req) {
       const u = new URL(req.url)
       return new Response(
-        JSON.stringify({ auth: req.headers.get('authorization'), path: u.pathname + u.search }),
+        JSON.stringify({ auth: req.headers.get('authorization'), path: u.pathname + u.search, acceptEncoding: req.headers.get('accept-encoding') }),
         { headers: { 'content-type': 'application/json' } },
       )
     },
@@ -36,9 +36,9 @@ function mockUpstream() {
 
 // Typed read of the mock's echo body — global fetch().json() is `unknown` under
 // strict tsc, which the daemon CI's `tsc --noEmit` (not just `bun test`) enforces.
-async function fetchJson(url: string): Promise<{ auth: string | null; path: string }> {
+async function fetchJson(url: string): Promise<{ auth: string | null; path: string; acceptEncoding: string | null }> {
   const res = await fetch(url)
-  return (await res.json()) as { auth: string | null; path: string }
+  return (await res.json()) as { auth: string | null; path: string; acceptEncoding: string | null }
 }
 
 describe('credential proxy — live token swap (the no-restart mechanism)', () => {
@@ -97,6 +97,7 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       const r1 = await fetchJson(`${base}/v1/llm/models`)
       expect(r1.auth).toBe('Bearer token-A')
       expect(r1.path).toBe('/v1/llm/models')
+      expect(r1.acceptEncoding).toBe('identity')
 
       // swap the token LIVE — same proxy process, no restart
       setLlmProxyToken('token-B')
@@ -105,6 +106,27 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       expect(r2.path).toBe('/v1/llm/chat/completions')
     } finally {
       up.stop()
+    }
+  })
+
+  test('returns decompressed upstream content without stale compression headers', async () => {
+    const payload = JSON.stringify({ choices: [{ message: { content: 'TURN_OK' } }] })
+    const compressed = Bun.gzipSync(payload)
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: () => new Response(compressed, { headers: {
+        'content-type': 'application/json',
+        'content-encoding': 'gzip',
+        'content-length': String(compressed.byteLength),
+      } }),
+    })
+    try {
+      startLlmProxy(14319, `http://127.0.0.1:${upstream.port}`, 'token')
+      const response = await fetch(`${llmProxyBaseUrl()}/chat/completions`)
+      expect(response.headers.get('content-encoding')).toBeNull()
+      expect(await response.text()).toBe(payload)
+    } finally {
+      upstream.stop(true)
     }
   })
 

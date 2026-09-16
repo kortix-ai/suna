@@ -1,7 +1,5 @@
 import type { PiModelLimits } from '../../git-proxy/pi-model-limits';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
-import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -14,9 +12,7 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
-  workspaceMode?: WorkspaceModeV2 | null;
-  /** Enables the rollback-safe fresh-session Git fast path. */
-  fastColdBootEnabled?: boolean;
+  repositoryAccess?: boolean;
   /** Experimental compiled checkout and OpenCode launcher rollout mode. */
   compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
@@ -51,6 +47,15 @@ export interface SessionRuntimeEnvInput {
    * the short-lived download descriptor from the Git proxy with KORTIX_TOKEN.
    */
   projectSnapshotPin?: string | null;
+  /**
+   * The download descriptor for that archive, presigned at session create
+   * (base64 JSON of the same body `GET …/project-snapshot` serves: object
+   * URLs, digests, sizes, expiry). Short-lived and read-only, like the
+   * KORTIX_TOKEN next to it. With it the daemon's first attempt is one direct
+   * GET from the object store; without it (or once it expires) the daemon
+   * fetches a fresh descriptor from the Git proxy.
+   */
+  projectSnapshotDescriptor?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -90,7 +95,7 @@ export function auditRelayEnvPassthrough(
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
-  const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
+  const allowsFullRepository = input.repositoryAccess ?? true;
   const compiledBootMode = input.compiledBootMode ?? 'off';
   const gitHintMatchesResources = !input.agentResourcesSha || input.baseSha === input.agentResourcesSha;
   const compiledBootEnabled = compiledBootMode !== 'off';
@@ -105,7 +110,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
   // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // fast-cold-boot / compiled-boot experiments; measured 2026-08-27 on dev,
+  // compiled-boot experiment; measured 2026-08-27 on dev,
   // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
@@ -146,6 +151,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
       ? {
           KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
           ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
+          ...(input.projectSnapshotPin && input.projectSnapshotDescriptor
+            ? { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: input.projectSnapshotDescriptor }
+            : {}),
         }
       : {};
   return {
@@ -155,7 +163,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
-    ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
@@ -171,7 +178,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     } : {}),
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
-    ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
+    KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),

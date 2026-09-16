@@ -2329,3 +2329,57 @@ fails its 120-second deadline before creating a fixture project. API logs show
 GitHub returning `403` with a secondary content-creation rate limit. No artifact
 assertions run in that attempt. The complete preview census remains outstanding.
 No merge or dev/production verification is claimed.
+
+## Main integration and pinned config admission — 2026-09-16
+
+Merged `main` through `80a175ad3a` into the existing `pi-worker` branch. The
+integration preserves Pi source pins, compiled bundles, lazy environments,
+attachments, and execution-only environment mode. No Durable Objects are enabled.
+
+- Pi connector preflight reads the persisted agent and source SHA. Incomplete Pi
+  identity fails closed. Current IAM, explicit session requirements, and live
+  connection availability still apply. OpenCode retains current-branch requirements.
+- `repository_access` reaches Pi environment creation. Restrictive legacy
+  `workspace_mode` metadata remains restrictive. Examples use the canonical field.
+- Daemon readiness and SSE changes retain the Pi execution-only implementation.
+  Terminal integration compiles with the explicit project ID or route fallback.
+- OpenCode reconfigure replaces its idle health timer with a startup probe. A stale
+  in-flight response cannot mark the new configuration ready or create another loop.
+  The real-process regression observes 102 ms after the fix; this is one local
+  measurement, not a product benchmark.
+- Regenerated the merged YAML schemas and 671-route audit registry. Qualified
+  correlated SQL references in transcript rewind and filesystem garbage collection.
+
+Local verification:
+
+| Command or check | Result |
+|---|---|
+| `pnpm test -- --full` API/CLI lane | 408/408 pass, 38.9 s flow time |
+| Same run, browser lane | 29 pass, five configured deployed-only skips, 165.7 s |
+| `pnpm test -- --packages-only` after the daemon fix | Pass, 419.3 s |
+| API unit suite | 9,675 pass, 82 configured skips, zero failures |
+| Daemon suite | 1,328 pass, zero failures |
+| Web suite | 9,800 pass, zero failures |
+| Worker quality | 930 worker tests and seven benchmark protocol tests pass |
+| SDK `test`, `typecheck`, `smoke:install` | Pass; 3,032 tests; packed imports construct successfully |
+| API, daemon, worker, and web typechecks | Pass |
+| Focused web ESLint | Zero errors; 44 existing hook/compiler warnings |
+| Isolated daemon build, Bun 1.3.11 | 381 modules; 2.0 MB server bundle |
+| Pi preflight on deployed API Bun 1.2.23 | Eight pass, zero failures |
+
+`SESS-31` changes connector requirements through HTTP. The unpinned session
+returns 409 without an inbox row. The pinned Pi fixture still accepts its image
+prompt once, preserves the bytes, and returns the same command on retry.
+
+Initial runs exposed the corrected terminal compile error, stale audit registry,
+and five-second readiness delay. One API test worker stalled after all but the
+missing-resource assertion completed. That assertion passes ten focused repeats;
+the complete artifact file passes three repeats, and the full API rerun passes.
+The stall's cause remains unconfirmed. No test is deleted or weakened.
+
+The final package rerun replaces the failed package lane of the full invocation;
+it is not a claim that the earlier full invocation returned zero. Preview proof
+must identify this integration's deployed SHA before claiming runtime readiness.
+Workspace backup, automatic environment deletion, full deployed parity, and the
+matched product p50/p95 benchmark remain open. The storage work was deferred while
+resolving this integration. No environment retention policy is enabled here.

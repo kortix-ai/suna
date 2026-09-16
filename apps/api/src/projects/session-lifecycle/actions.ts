@@ -21,7 +21,7 @@ import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   sessionMetadataClaimsPiWorker,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 import {
   buildPiWorkerSessionSandboxEnvVars,
@@ -283,7 +283,7 @@ export async function restartSession(input: {
         !piWorkerIdentity &&
         projectImageAllowedForSession(
           session.agentName,
-          workspaceModeFromSessionMetadata(session.metadata),
+          repositoryAccessFromSessionMetadata(session.metadata),
         ),
       sandboxSlug,
       runtimeMetadata,
@@ -316,7 +316,7 @@ export async function restartSession(input: {
               // meta agent config, so the daemon clones the project over the meta
               // workspace and wipes /workspace/AGENTS.md.
               platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
-              workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+              repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
               restoreSessionBranch: true,
             }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),

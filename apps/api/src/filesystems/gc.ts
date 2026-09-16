@@ -1,3 +1,4 @@
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 /**
  * Reclaiming blobs no path references any more.
  *
@@ -116,8 +117,8 @@ export async function sweepUnreferencedBlobs(options?: {
     // Re-check the reference under the delete: a path written between the scan
     // and here would otherwise lose its bytes.
     await db.delete(filesystemBlobs).where(
-      sql`${filesystemBlobs.sha256} in ${deleted} and not exists (
-        select 1 from ${filesystemFiles} where ${filesystemFiles.sha256} = ${filesystemBlobs.sha256}
+      sql`${qualifiedColumn(filesystemBlobs.sha256)} in ${deleted} and not exists (
+        select 1 from ${filesystemFiles} where ${filesystemFiles.sha256} = ${qualifiedColumn(filesystemBlobs.sha256)}
       )`,
     );
   }

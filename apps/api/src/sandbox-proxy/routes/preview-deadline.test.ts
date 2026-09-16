@@ -77,6 +77,8 @@ mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
+  // The proxy's declared-agent guard; these suites exercise other behavior.
+  agentLaunchableInProject: async () => true,
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));

@@ -86,7 +86,6 @@ let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
 let providerCreateErrorLimits: Record<string, number | undefined> = {};
 let imageRequests: Array<Record<string, unknown>> = [];
-let fastImageRequests: Array<Record<string, unknown>> = [];
 let imageResolutionQueue: Array<{
   snapshotName: string;
   slug: string;
@@ -115,7 +114,6 @@ const testConfig = {
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
   LLM_GATEWAY_BASE_URL: undefined,
-  KORTIX_FAST_COLD_BOOT_ENABLED: false,
 };
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -313,17 +311,6 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
-  ensureFastSandboxImage: async (opts: Record<string, unknown>) => {
-    fastImageRequests.push(opts);
-    return {
-      snapshotName: 'kortix-fast-dev-test',
-      slug: 'default',
-      contentHash: 'fast-hash-1',
-      isDefault: true,
-      built: false,
-      runtimeProfile: 'fast',
-    };
-  },
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
@@ -437,7 +424,6 @@ beforeEach(() => {
   providerCreateErrors = {};
   providerCreateErrorLimits = {};
   imageRequests = [];
-  fastImageRequests = [];
   imageResolutionQueue = [];
   standardImageDeleteCalls = [];
   accountTokenCreateCalls = [];
@@ -450,11 +436,6 @@ beforeEach(() => {
   agentGrantNames = [];
   gatewayEntitled = false;
   projectGatewayEnabled = false;
-  testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
-});
-
-afterEach(() => {
-  delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
 });
 
 function baseOpts() {
@@ -639,28 +620,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBeUndefined();
-  });
-
-  test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
-    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox(baseOpts());
-    await opened;
-
-    expect(fastImageRequests).toEqual([]);
-    expect(imageRequests).toHaveLength(1);
-    const finishCall = updateCalls.find(
-      (call) =>
-        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
-    );
-    expect(finishCall?.updates.metadata).toMatchObject({
-      runtimeArtifact: {
-        providerArtifactRef: 'snap-test-1',
-      },
-    });
   });
 
   test('forwards the restricted-workspace project-image denial into image resolution', async () => {

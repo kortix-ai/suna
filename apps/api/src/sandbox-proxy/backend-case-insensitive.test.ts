@@ -44,9 +44,10 @@ mock.module('../platform/providers', () => ({
 }));
 mock.module('../shared/db', () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        leftJoin() { return this; },
+    select: () => {
+      const afterFrom = {
+        // loadSandbox joins project_sessions for the session's own agent.
+        leftJoin: () => afterFrom,
         where: () => ({
           orderBy: () => ({
             limit: async () => {
@@ -55,8 +56,9 @@ mock.module('../shared/db', () => ({
             },
           }),
         }),
-      }),
-    }),
+      };
+      return { from: () => afterFrom };
+    },
   },
 }));
 

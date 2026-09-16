@@ -85,6 +85,7 @@ export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
 
 export interface SessionPanelValue {
   sessionId: string;
+  projectId?: string;
   projectSessionId?: string;
   /** False while a project session is unknown or runs a text-only Pi worker. */
   attachmentsEnabled?: boolean;
@@ -785,6 +786,7 @@ export function SessionPanelProvider({
   const value = useMemo<SessionPanelValue>(
     () => ({
       sessionId,
+      projectId,
       projectSessionId,
       attachmentsEnabled,
       files,
@@ -805,6 +807,7 @@ export function SessionPanelProvider({
     }),
     [
       sessionId,
+      projectId,
       projectSessionId,
       attachmentsEnabled,
       files,

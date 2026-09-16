@@ -28,6 +28,8 @@ export async function queryDatabaseRows<
 >(sql: string, values: unknown[] = [], databaseUrl?: string): Promise<T[]> {
   const connectionString =
     databaseUrl ??
+    process.env.KE2E_DATABASE_URL ??
+    process.env.E2E_DATABASE_URL ??
     requireEnvValue("DATABASE_URL", "apps/api/.env.local", "apps/api/.env");
   const client = new Client({ connectionString });
   await client.connect();

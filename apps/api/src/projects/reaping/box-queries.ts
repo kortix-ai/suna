@@ -12,6 +12,7 @@
  * table again.
  */
 
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
@@ -49,14 +50,14 @@ export function reapCandidatePredicate(sandboxIds?: readonly string[], activeTur
 export function activeTurnAuthorityPredicate() {
   return sql`(
     (
-      coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
-      AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active')
+      coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'token', '') <> ''
+      AND coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'state', '') IN ('delivering', 'active')
     )
     OR EXISTS (
       SELECT 1
         FROM jsonb_each(CASE
-          WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-            THEN ${sessionSandboxes.metadata}->'activeTurns'
+          WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+            THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
           ELSE '{}'::jsonb
         END) entry
        WHERE entry.key = entry.value->>'token'
@@ -187,8 +188,8 @@ export async function claimExpiredSandboxStop(
         sql`NOT EXISTS (
               SELECT 1
                 FROM jsonb_each(CASE
-                  WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
-                    THEN ${sessionSandboxes.metadata}->'activeTurns'
+                  WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
+                    THEN ${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns'
                   ELSE '{}'::jsonb
                 END) entry
                WHERE entry.key = entry.value->>'token'

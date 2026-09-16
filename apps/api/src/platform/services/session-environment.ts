@@ -26,7 +26,6 @@
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { projectSessions, sessionEnvironments } from '@kortix/db';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { GitBackedProject } from '../../projects/git';
@@ -229,10 +228,10 @@ export interface EnsureSessionEnvironmentInput {
   agentName: string;
   baseRef: string;
   gitProject: GitBackedProject;
-  workspaceMode?: WorkspaceModeV2 | null;
   sandboxSlug?: string;
   /** Immutable Git commit used to derive the selected environment image. */
   imageRef?: string;
+  repositoryAccess?: boolean;
 }
 
 /**
@@ -611,7 +610,7 @@ async function provisionEnvironment(
         restoreSessionBranch: true,
         defaultBranch: input.imageRef ?? input.gitProject.defaultBranch,
         manifestPath: input.gitProject.manifestPath,
-        workspaceMode: input.workspaceMode,
+        repositoryAccess: input.repositoryAccess,
       }),
     ]);
     credential = await mintSessionRuntimeToken({

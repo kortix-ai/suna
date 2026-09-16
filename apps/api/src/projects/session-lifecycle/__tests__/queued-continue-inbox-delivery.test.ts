@@ -95,7 +95,7 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let promptResponsePlan: Array<'failed' | 'deduplicated'> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated' | 'connector-required'> = [];
 // Models the sandbox edge DISCARDING an oversized body while answering ok: the
 // POST is captured, but the runtime never holds that message. Scoped to the
 // FIRST posted id, so the delivery's retry lands and the test does not have to
@@ -113,6 +113,7 @@ let postDelayMs = 0;
 // every claimed row is `running` until the drain releases the tail.
 const simulatedInFlightCommands = new Set<string>();
 
+let pauseAfterPosts: number | null = null;
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
@@ -125,6 +126,9 @@ mock.module('../../../shared/db', () => ({
       from: (table: unknown) => ({
         where: () => {
           const limit = async () => {
+            if (projection && 'result' in projection && 'payload' in projection) {
+              return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === sessionWorkerLog) {
               if (rewoundFloorUnavailable) throw new Error('history storage unavailable');
@@ -240,6 +244,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
         if (idempotencyKey) seenKeys.add(idempotencyKey);
       };
       const plannedResponse = promptResponsePlan.shift();
+      if (plannedResponse === 'connector-required') return Response.json({ code: 'CONNECTOR_CONNECTION_REQUIRED', message: 'Create the required connections before continuing this session.' }, { status: 409 });
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
         remember();
@@ -439,6 +444,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  pauseAfterPosts = null;
   requeues = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
@@ -524,6 +530,25 @@ test('history floor failure returns the claimed prompt to a retryable state befo
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('Stop during a transient delivery failure prevents another POST', async () => {
+    promptResponsePlan = ['failed'];
+    pauseAfterPosts = 1;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(capturedBodies).toHaveLength(1);
+    expect(payloadPatches.some((patch) => patch.status === 'queued' && patch.lockedBy === null)).toBe(true);
+    expect(failedCalls).toHaveLength(0);
+  });
+
+  test('connector refusals fail once and retain the actionable error', async () => {
+    promptResponsePlan = ['connector-required'];
+    expect(await executeQueuedContinue(baseRow())).toBe('failed');
+    expect(capturedBodies).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: 'Create the required connections before continuing this session.',
+      options: { retryable: false },
+    });
+  });
+
   test('materializes non-native staged files before prompt_async', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({

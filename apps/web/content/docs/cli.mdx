@@ -603,7 +603,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
-| `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--json]` | Browse the Pipedream app catalog. |
+| `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--limit <n>] [--json]` | Search the Composio toolkit catalog — the slugs `add --provider composio --app <slug>` accepts. Alias: `kortix connectors toolkits`. Add `--pipedream` for the legacy Pipedream catalog. |
 | `kortix connectors catalog [<query>] [--cursor <c>] [--json]` | Browse the direct-connector catalogue. Needs the `connectors_api_discover` flag. |
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
 | `kortix connectors sensitive <slug> on\|off` | Gate this connector's reads too — every call then needs approval. Applies now. |

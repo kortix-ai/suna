@@ -5,8 +5,6 @@ export function createExecutionOnlyRuntime(): Opencode {
     throw new Error('This environment executes workspace tools. Its agent runtime runs in the worker.')
   }
   return {
-    prefetchBinary: async () => false,
-    cancelBinaryPrefetch() {},
     start: unavailable,
     stop: async () => {},
     restart: unavailable,
@@ -21,6 +19,6 @@ export function createExecutionOnlyRuntime(): Opencode {
     getBinaryPath: () => null,
     getState: () => 'down',
     markReady: unavailable,
-    waitForCurrentReadyResponse: unavailable,
+    waitForCurrentListening: unavailable,
   }
 }

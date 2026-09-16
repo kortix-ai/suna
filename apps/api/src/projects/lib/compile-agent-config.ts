@@ -271,7 +271,7 @@ export function compileSelectedAgentConfig(
  * governance always wins over whatever the `.md` itself says; there is no
  * other precedence to document since behavior lives ONLY in the `.md`), and
  * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
- * secrets/kortix_cli/workspace) are never copied: no runtime representation.
+ * secrets/kortix_cli/repository_access) are never copied: no runtime representation.
  */
 function compileAgentBlock(
   name: string,

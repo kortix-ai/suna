@@ -1,3 +1,4 @@
+import { providerConnectionsApp } from './provider-connections/routes';
 // Expand the aggregate ECS secret before any module reads process.env.
 import './environment-secret';
 
@@ -940,6 +941,7 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+app.route('/v1/provider-connections', providerConnectionsApp);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 

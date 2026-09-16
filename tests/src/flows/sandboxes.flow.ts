@@ -59,6 +59,8 @@ flow(
   "SNAP-2",
   {
     domain: "sandboxes",
+    // This deletes the content-addressed default image shared by other projects.
+    global: true,
     requires: ["daytona"],
     routes: ["POST /v1/projects/:projectId/snapshots/rebuild"],
   },

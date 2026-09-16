@@ -34,7 +34,7 @@ agents:
     connectors: none
     secrets: none
     skills: none
-    workspace: runtime
+    repository_access: false
     config:
       description: Review supplied text
       model: kortix/gpt-5.6-luna
@@ -95,9 +95,18 @@ Without a shared `config_dir`, v3 defaults to `.kortix/pi` and v2 to
 The Pi compiler rejects conflicting legacy directories and unknown runtime fields.
 
 `sandbox` selects the execution environment template. The platform owns the worker
-image and identity. `workspace: runtime` leaves the environment without a repository
+image and identity. `repository_access: false` leaves the environment without a repository
 checkout. Its worker can fetch the pinned bundle, but its credential cannot clone
 the repository or select another agent or release.
+
+`repository_access: true` permits the checkout and scoped Git access. Both runtime
+versions use this field. Existing `workspace: runtime` and `workspace: branch`
+inputs remain aliases for `false` and `true`. Legacy `workspace: read` stays
+restricted and requires an explicit policy choice before creating a new session.
+
+Pi prompt admission checks the pinned agent's connector requirements. Moving the
+default branch does not change an existing Pi session. Current IAM, explicit
+session requirements, and live connector availability still apply to every prompt.
 
 ## Legacy agent Markdown
 
@@ -256,7 +265,7 @@ kortix_version: 3
 default_agent: reporter
 agents:
   reporter:
-    workspace: runtime
+    repository_access: false
     resources:
       worker:
         rules: assets/rules.json
@@ -671,7 +680,7 @@ kortix_version: 3
 default_agent: reviewer
 agents:
   reviewer:
-    workspace: runtime
+    repository_access: false
     secrets: none
     resources:
       environment:

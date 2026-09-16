@@ -150,6 +150,9 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             if (!STRIP_REQ_HEADERS.has(k.toLowerCase())) headers.set(k, v)
           })
           headers.set('authorization', `Bearer ${tok}`)
+          // Bun fetch decodes the upstream body. Prevent a compressed response
+          // from retaining an incompatible content-encoding across this hop.
+          headers.set('accept-encoding', 'identity')
 
           try {
             // Model requests are windowed HERE, before they leave the sandbox
@@ -180,10 +183,8 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             // fetch decodes the body. Encoding and length must describe the forwarded bytes.
             upstreamRes.headers.forEach((v, k) => {
               const lk = k.toLowerCase()
-              if (
-                lk === 'transfer-encoding' || lk === 'connection' ||
-                lk === 'content-encoding' || lk === 'content-length'
-              ) return
+              // fetch decompresses the body. Do not make the caller decode it again.
+              if (['transfer-encoding', 'connection', 'content-encoding', 'content-length'].includes(lk)) return
               outHeaders.set(k, v)
             })
             return new Response(upstreamRes.body, {

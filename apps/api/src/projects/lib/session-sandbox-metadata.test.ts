@@ -10,7 +10,7 @@ import {
   sandboxSlugFromSessionMetadata,
   sanitizeCallerSessionMetadata,
   sessionMetadataClaimsPiWorker,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import {
   isRepositoryProjectAction,
@@ -110,18 +110,18 @@ describe('Pi worker runtime identity metadata', () => {
   });
 });
 
-describe('workspaceModeFromSessionMetadata', () => {
+describe('repositoryAccessFromSessionMetadata', () => {
   test('returns a persisted workspace mode', () => {
-    expect(workspaceModeFromSessionMetadata({ workspace_mode: 'runtime' })).toBe('runtime');
-    expect(workspaceModeFromSessionMetadata({ workspace_mode: 'read' })).toBe('read');
-    expect(workspaceModeFromSessionMetadata({ workspace_mode: 'branch' })).toBe('branch');
+    expect(repositoryAccessFromSessionMetadata({ workspace_mode: 'runtime' })).toBe(false);
+    expect(repositoryAccessFromSessionMetadata({ workspace_mode: 'read' })).toBe(false);
+    expect(repositoryAccessFromSessionMetadata({ workspace_mode: 'branch' })).toBe(true);
   });
 
   test('keeps missing metadata legacy-compatible and maps invalid stored modes to runtime', () => {
-    expect(workspaceModeFromSessionMetadata(null)).toBeUndefined();
-    expect(workspaceModeFromSessionMetadata({})).toBeUndefined();
-    expect(workspaceModeFromSessionMetadata({ workspace_mode: 'all' })).toBe('runtime');
-    expect(workspaceModeFromSessionMetadata({ workspace_mode: null })).toBe('runtime');
+    expect(repositoryAccessFromSessionMetadata(null)).toBe(true);
+    expect(repositoryAccessFromSessionMetadata({})).toBe(true);
+    expect(repositoryAccessFromSessionMetadata({ workspace_mode: 'all' })).toBe(false);
+    expect(repositoryAccessFromSessionMetadata({ workspace_mode: null })).toBe(false);
   });
 });
 
@@ -135,11 +135,11 @@ describe('restricted workspace repository boundary', () => {
   });
 
   test('project images require a full-repository non-meta session', () => {
-    expect(projectImageAllowedForSession('default', 'branch')).toBe(true);
+    expect(projectImageAllowedForSession('default', true)).toBe(true);
     expect(projectImageAllowedForSession('default', undefined)).toBe(true);
-    expect(projectImageAllowedForSession('default', 'runtime')).toBe(false);
-    expect(projectImageAllowedForSession('default', 'read')).toBe(false);
-    expect(projectImageAllowedForSession('meta', 'branch')).toBe(false);
+    expect(projectImageAllowedForSession('default', false)).toBe(false);
+    expect(projectImageAllowedForSession('default', false)).toBe(false);
+    expect(projectImageAllowedForSession('meta', true)).toBe(false);
   });
 
   test('classifies every repository-backed project capability', () => {
@@ -165,5 +165,20 @@ describe('resolveSessionSandboxSlug', () => {
     expect(resolveSessionSandboxSlug({ agent: 'ml', project: 'node' })).toBe('ml');
     expect(resolveSessionSandboxSlug({ project: 'node' })).toBe('node');
     expect(resolveSessionSandboxSlug({})).toBe('default');
+  });
+});
+
+
+describe('repository_access session metadata', () => {
+  test('honors the canonical restriction without legacy metadata', () => {
+    expect(workspaceMetadataAllowsRepositoryAccess({ repository_access: false })).toBe(false);
+    expect(workspaceMetadataAllowsRepositoryAccess({ repository_access: true })).toBe(true);
+  });
+  test('invalid canonical values and conflicting restrictions fail closed', () => {
+    for (const value of [null, 'true', 1, {}]) {
+      expect(workspaceMetadataAllowsRepositoryAccess({ repository_access: value })).toBe(false);
+    }
+    expect(workspaceMetadataAllowsRepositoryAccess({ repository_access: true, workspace_mode: 'runtime' })).toBe(false);
+    expect(workspaceMetadataAllowsRepositoryAccess({ repository_access: false, workspace_mode: 'branch' })).toBe(false);
   });
 });

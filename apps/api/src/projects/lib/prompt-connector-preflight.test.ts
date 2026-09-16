@@ -11,7 +11,7 @@ describe('unionRequiredAliases', () => {
     // (connection_id is NOT NULL), so if this source were dropped, selecting an
     // unconnected connector in the UI would record an intent nothing ever reads.
     expect(
-      unionRequiredAliases({ sessionRequired: ['gmail'], manifestRequired: [], boundAliases: [] }),
+      unionRequiredAliases({ sessionRequired: ['gmail'], manifestRequired: [] }),
     ).toEqual(['gmail']);
   });
 
@@ -19,25 +19,22 @@ describe('unionRequiredAliases', () => {
     // Canonical, not the public spelling: `slack` is stored as `kortix_slack`,
     // and the resolver this feeds looks the alias up by its stored slug.
     expect(
-      unionRequiredAliases({ sessionRequired: null, manifestRequired: ['slack'], boundAliases: [] }),
+      unionRequiredAliases({ sessionRequired: null, manifestRequired: ['slack'] }),
     ).toEqual(['kortix_slack']);
   });
 
-  test('an existing binding counts — it catches a connection revoked after create', () => {
-    // Neither of the other two sources notices that: the manifest never named it
-    // and the caller never declared it, but the session was built to use it.
-    expect(
-      unionRequiredAliases({ sessionRequired: null, manifestRequired: [], boundAliases: ['gmail'] }),
-    ).toEqual(['gmail']);
+  test('an optional binding does not become a prompt requirement', () => {
+    // Extra connection metadata must not become an explicit requirement.
+    const optionalBinding = { sessionRequired: null, manifestRequired: [], boundAliases: ['gmail'] };
+    expect(unionRequiredAliases(optionalBinding)).toEqual([]);
   });
 
-  test('all three merge, and an alias in two of them appears once', () => {
+  test('explicit requirements merge and deduplicate aliases', () => {
     const result = unionRequiredAliases({
       sessionRequired: ['gmail'],
       manifestRequired: ['gmail', 'slack'],
-      boundAliases: ['notion'],
     });
-    expect(result.sort()).toEqual(['gmail', 'kortix_slack', 'notion']);
+    expect(result.sort()).toEqual(['gmail', 'kortix_slack']);
   });
 
   test('aliases are canonicalised, so a public spelling is not counted twice', () => {
@@ -47,7 +44,6 @@ describe('unionRequiredAliases', () => {
       unionRequiredAliases({
         sessionRequired: ['email'],
         manifestRequired: ['kortix_email'],
-        boundAliases: [],
       }),
     ).toHaveLength(1);
   });
@@ -59,17 +55,16 @@ describe('unionRequiredAliases', () => {
       unionRequiredAliases({
         sessionRequired: ['', '   '],
         manifestRequired: [],
-        boundAliases: [''],
       }),
     ).toEqual([]);
   });
 
   test('nothing required anywhere is the empty set, not a false requirement', () => {
     expect(
-      unionRequiredAliases({ sessionRequired: null, manifestRequired: [], boundAliases: [] }),
+      unionRequiredAliases({ sessionRequired: null, manifestRequired: [] }),
     ).toEqual([]);
     expect(
-      unionRequiredAliases({ sessionRequired: undefined, manifestRequired: [], boundAliases: [] }),
+      unionRequiredAliases({ sessionRequired: undefined, manifestRequired: [] }),
     ).toEqual([]);
   });
 });

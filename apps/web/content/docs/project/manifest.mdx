@@ -317,7 +317,7 @@ agents:
 | `secrets`             | `none`  | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`.                                                                                                                   |
 | `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                            |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
-| `workspace`           | —       | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected.                                                                                               |
+| `repository_access` | `true` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `skills` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.
 
@@ -342,3 +342,24 @@ Dashboard edits are a read-modify-write on the same file. To keep diffs clean ac
 1. Keep `kortix_version` as the first key.
 2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `enabled`, then type-specific fields, then `prompt` last.
 3. If you add a webhook trigger before its secret is set, list the secret name in `env.optional`. Leave the trigger `enabled: false` until the value is in.
+
+### Repository access
+
+Set `agents.<name>.repository_access` to `false` for agents that do not need project source files.
+They can still create sandbox files and use their granted tools, secrets, and connectors.
+Set it to `true` for agents that need the repository. Git permissions remain separate.
+Change this setting in the agent editor under **Workspace → Project repository access**.
+The setting applies to new sessions. Existing sessions keep their saved policy, including after runtime replacement.
+
+```yaml
+agents:
+  support:
+    repository_access: false
+  engineer:
+    repository_access: true
+```
+
+The deprecated `workspace` field remains readable: `branch` means `true`, and `runtime` means `false`.
+Legacy `read` configurations still reject session creation until you replace the field with an explicit boolean.
+There is no read-only repository mode. Conflicting old and new fields are rejected.
+The editor and SDK send `repository_access`. For disabled access, the API also stores `workspace: runtime` as a compatibility mirror. This preserves the restriction for older API replicas during rollout or rollback. API reads omit the mirror. Hand-authored manifests using only `repository_access` require the updated API.

@@ -65,6 +65,8 @@ const AgentBlockSchema = z
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
     kortix_cli: GrantSetSchema.optional(),
+    repository_access: z.boolean().optional(),
+    // Deprecated input alias for older clients.
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
     opencode: OpencodeAgentConfigSchema.optional(),
   })

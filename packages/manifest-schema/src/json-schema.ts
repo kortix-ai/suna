@@ -601,9 +601,14 @@ function agentBlockV2Schema(version: 2 | 3): JsonSchemaFragment {
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
       kortix_cli: kortixCliGrantSetSchema(2),
-      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2] },
+      repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
+      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
     },
     additionalProperties: false,
+    allOf: [
+      { if: { required: ['workspace'], properties: { workspace: { const: 'branch' } } }, then: { properties: { repository_access: { const: true } } } },
+      { if: { required: ['workspace'], properties: { workspace: { enum: ['runtime', 'read'] } } }, then: { properties: { repository_access: { const: false } } } },
+    ],
   };
 }
 
@@ -726,12 +731,9 @@ export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
           '`.kortix/pi`. Otherwise identical to version 2. '
         : '') +
       '`agents` is a name→block MAP, ' +
-      'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must ' +
-      'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
-      'prompt itself) lives entirely in that agent’s own native ' +
-      `\`${configDir}/agents/<name>.md\` frontmatter + body — authoring any of those fields ` +
-      'here is a hard error. `[[channels]]` is removed outright. See ' +
-      'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
+      'with governance, repository access, resource declarations, and optional `config` behavior. ' +
+      'Behavior can use inline YAML, a referenced YAML file, or legacy native Markdown at ' +
+      `\`${configDir}/agents/<name>.md\`. Pi custom modules and extensions are declared per agent.`,
     type: 'object',
     required: ['kortix_version', 'default_agent', 'agents'],
     properties: {

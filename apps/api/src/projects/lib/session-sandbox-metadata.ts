@@ -1,4 +1,3 @@
-import { WORKSPACE_MODES_V2, type WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { PI_WORKER_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 
 export const PI_WORKER_RUNTIME_METADATA_KEYS = [
@@ -96,30 +95,23 @@ export function environmentSandboxSlugFromSessionMetadata(metadata: unknown): st
   return /^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug) ? slug : undefined;
 }
 
-/** Read the server-owned agent workspace mode from durable session metadata. */
-export function workspaceModeFromSessionMetadata(metadata: unknown): WorkspaceModeV2 | undefined {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+/** Read the immutable repository policy. Legacy restrictions always remain restrictive. */
+export function repositoryAccessFromSessionMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return true;
   const record = metadata as Record<string, unknown>;
-  if (!Object.prototype.hasOwnProperty.call(record, 'workspace_mode')) return undefined;
-  const value = record.workspace_mode;
-  return typeof value === 'string' && (WORKSPACE_MODES_V2 as readonly string[]).includes(value)
-    ? (value as WorkspaceModeV2)
-    : 'runtime';
+  if (Object.prototype.hasOwnProperty.call(record, 'repository_access') && record.repository_access !== true) {
+    return false;
+  }
+  // Keep this fallback until every old session and API replica has migrated.
+  return !Object.prototype.hasOwnProperty.call(record, 'workspace_mode') || record.workspace_mode === 'branch';
 }
 
-/** Only branch and legacy sessions may receive repository bytes or credentials. */
-export function workspaceModeAllowsFullRepository(
-  mode: WorkspaceModeV2 | null | undefined,
-): boolean {
-  return mode === undefined || mode === null || mode === 'branch';
-}
-
-/** A project image contains the complete repository and is unsafe otherwise. */
+/** Project images contain repository bytes and require repository access. */
 export function projectImageAllowedForSession(
   agentName: string | null | undefined,
-  workspaceMode: WorkspaceModeV2 | null | undefined,
+  repositoryAccess: boolean = true,
 ): boolean {
-  return !isMetaAgentName(agentName ?? '') && workspaceModeAllowsFullRepository(workspaceMode);
+  return !isMetaAgentName(agentName ?? '') && repositoryAccess;
 }
 
 /** Apply the session sandbox precedence contract. */

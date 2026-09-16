@@ -36,6 +36,7 @@ import { refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { db } from '../shared/db';
 import {
+  presignProjectSnapshotDownload,
   PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE,
   PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE,
   PROJECT_SNAPSHOT_FORMAT,
@@ -353,25 +354,102 @@ export async function verifyReadyProjectSnapshotObjects(
 }
 
 /**
+ * The same check, OFF the request path: a row whose object expired is
+ * re-queued for the NEXT session, while THIS session's daemon meets a 404 from
+ * the store and takes the Git path (`missing`, no retry). Nothing on the
+ * create or descriptor path waits for the bucket any more.
+ */
+export function verifyReadyProjectSnapshotObjectsInBackground(ready: ReadyProjectSnapshot): void {
+  void verifyReadyProjectSnapshotObjects(ready).catch((err) => {
+    console.warn('[project-snapshot] background object check failed', {
+      projectId: ready.projectId,
+      sha: ready.commitSha,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+}
+
+/** What `GET …/project-snapshot` serves, and what session create presigns into the sandbox env. */
+export interface ProjectSnapshotDescriptorPayload {
+  format: typeof PROJECT_SNAPSHOT_FORMAT;
+  commit_sha: string;
+  ref: string;
+  repository: { owner: string; name: string; external_id: string };
+  /** The boot object: working tree + blobless .git. Its digest/size is the session pin. */
+  tree: { url: string; sha256: string; bytes: number; entries: number; expires_at: string };
+  /** The hydration object: the tip's blob pack, fetched after activation. */
+  blobs: { url: string; sha256: string; bytes: number; expires_at: string };
+}
+
+/** Presign both objects of a ready row. Local signing only — no bucket call. */
+export async function buildProjectSnapshotDescriptor(ready: ReadyProjectSnapshot): Promise<ProjectSnapshotDescriptorPayload> {
+  const [tree, blobs] = await Promise.all([
+    presignProjectSnapshotDownload(projectSnapshotTreeKey(ready.objectPrefix, ready.archiveSha256)),
+    presignProjectSnapshotDownload(projectSnapshotBlobsKey(ready.objectPrefix, ready.blobsSha256)),
+  ]);
+  return {
+    format: PROJECT_SNAPSHOT_FORMAT,
+    commit_sha: ready.commitSha,
+    ref: ready.ref,
+    repository: {
+      owner: ready.repository.owner,
+      name: ready.repository.name,
+      external_id: ready.repository.externalId,
+    },
+    tree: {
+      url: tree.url,
+      sha256: ready.archiveSha256,
+      bytes: ready.archiveBytes,
+      entries: ready.entryCount,
+      expires_at: tree.expiresAt.toISOString(),
+    },
+    blobs: {
+      url: blobs.url,
+      sha256: ready.blobsSha256,
+      bytes: ready.blobsBytes,
+      expires_at: blobs.expiresAt.toISOString(),
+    },
+  };
+}
+
+/** Env encoding of the descriptor: base64 of the JSON, one value, no quoting hazards across providers. */
+export function encodeProjectSnapshotDescriptorForEnv(descriptor: ProjectSnapshotDescriptorPayload): string {
+  return Buffer.from(JSON.stringify(descriptor)).toString('base64');
+}
+
+/**
  * Session-create helper: the pin the sandbox env carries when an archive is
- * ready, and a recorded cache miss (plus an enqueue, so the NEXT session finds
- * it) when it is not.
+ * ready — plus the presigned descriptor, so the daemon's first attempt is one
+ * direct GET from the store — and a recorded cache miss (plus an enqueue, so
+ * the NEXT session finds it) when it is not.
  */
 export async function resolveProjectSnapshotPinForSession(input: {
   projectId: string;
   ref: string;
   commitSha: string | undefined;
   repoUrl: string;
-}): Promise<{ pin: string | null; cache: 'hit' | 'miss' | 'no-sha' | 'unconfigured' }> {
-  if (!projectSnapshotStorageConfigured()) return { pin: null, cache: 'unconfigured' };
-  if (!input.commitSha || !/^[0-9a-f]{40}$/.test(input.commitSha)) return { pin: null, cache: 'no-sha' };
+}): Promise<{ pin: string | null; descriptor: string | null; cache: 'hit' | 'miss' | 'no-sha' | 'unconfigured' }> {
+  if (!projectSnapshotStorageConfigured()) return { pin: null, descriptor: null, cache: 'unconfigured' };
+  if (!input.commitSha || !/^[0-9a-f]{40}$/.test(input.commitSha)) return { pin: null, descriptor: null, cache: 'no-sha' };
   const ready = await readReadyProjectSnapshot(input.projectId, input.commitSha);
-  // A row whose objects expired is re-queued here and the session takes the
-  // Git path outright (a recorded `no-pin` skip), instead of pinning an
-  // object it would fail to download at boot.
-  const verified = ready ? await verifyReadyProjectSnapshotObjects(ready) : null;
-  if (verified) {
-    return { pin: `${verified.commitSha}:${verified.archiveSha256}:${verified.archiveBytes}`, cache: 'hit' };
+  if (ready) {
+    // Off the create path: an object that expired re-queues the row for the
+    // next session; this session's daemon meets the 404 and boots from Git.
+    verifyReadyProjectSnapshotObjectsInBackground(ready);
+    const pin = `${ready.commitSha}:${ready.archiveSha256}:${ready.archiveBytes}`;
+    // Presigning is local signing. If it fails, the pin still ships and the
+    // daemon fetches the descriptor from the proxy as before.
+    const descriptor = await buildProjectSnapshotDescriptor(ready)
+      .then(encodeProjectSnapshotDescriptorForEnv)
+      .catch((err) => {
+        console.warn('[project-snapshot] presign at create failed; the daemon will fetch the descriptor', {
+          projectId: input.projectId,
+          sha: input.commitSha,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      });
+    return { pin, descriptor, cache: 'hit' };
   }
   void enqueueProjectSnapshot({
     projectId: input.projectId,
@@ -385,7 +463,7 @@ export async function resolveProjectSnapshotPinForSession(input: {
       error: err instanceof Error ? err.message : String(err),
     });
   });
-  return { pin: null, cache: 'miss' };
+  return { pin: null, descriptor: null, cache: 'miss' };
 }
 
 // ── Worker claim / settle ───────────────────────────────────────────────────

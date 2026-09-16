@@ -186,11 +186,19 @@ export default function ProjectStartPage() {
     };
   }, []);
 
-  if (terminal) {
+  // A loaded, EMPTY account list. `resolve` returns early on it, so without
+  // this neither `terminal` nor `failed` is ever set and the loading frame stays
+  // up forever, with no control — a hard lock on desktop, which has no browser
+  // Back. `GET /accounts` bootstraps a personal account or answers 500, so this
+  // is rare; with nothing to open and nowhere to create, it is `no-permission`.
+  const noAccounts = accountsQuery.isSuccess && accountsQuery.data.length === 0;
+  const shownTerminal = terminal ?? (noAccounts ? 'no-permission' : null);
+
+  if (shownTerminal) {
     return (
       <div className="relative">
         <StartSignOutButton />
-        <ProjectStartEmpty reason={terminal} />
+        <ProjectStartEmpty reason={shownTerminal} />
       </div>
     );
   }
@@ -230,12 +238,16 @@ function StartSignOutButton() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [pending, setPending] = useState(false);
 
+  // `kx-desktop-band-row` moves the button below the title-bar band on
+  // desktop: Win/Linux draws min/max/close over this corner at z 100. The row
+  // spans the window, so it passes clicks through and only the button takes
+  // them.
   return (
-    <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+    <div className="kx-desktop-band-row pointer-events-none absolute inset-x-0 top-4 flex justify-end px-4 sm:top-6 sm:px-6">
       <Button
         variant="outline"
         size="sm"
-        className="gap-1.5 rounded-full"
+        className="pointer-events-auto gap-1.5 rounded-full"
         disabled={pending}
         onClick={() => {
           setPending(true);

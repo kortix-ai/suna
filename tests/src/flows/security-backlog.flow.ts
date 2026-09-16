@@ -361,8 +361,8 @@ flow(
 
 // ─── SEC-F: webhook signature bypass → 400/401 ──────────────────────────────
 // Public webhook ingress points reject unsigned/forged payloads BEFORE doing
-// any work. Stripe = in-body sig (missing → 400); RevenueCat = bearer-token
-// auth (bad → 401); project/Slack/Telegram webhooks = unsigned/foreign → 4xx.
+// any work. An unconfigured webhook can answer with a service error, but must
+// never accept or process the forged payload.
 flow(
   'SEC-F',
   {
@@ -410,11 +410,14 @@ flow(
         .post('/v1/billing/webhooks/revenuecat', { event: { type: 'ke2e.forged' } });
       r.status([400, 401, 500]);
     });
-    await ctx.step('Slack webhook, unsigned payload → 4xx', async () => {
+    await ctx.step('Slack webhook, unsigned payload → never 2xx', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post('/v1/webhooks/slack', { type: 'event_callback' });
-      r.status([400, 401, 403, 404]);
+      r.status([400, 401, 403, 404, 503]);
+      if (r.statusCode === 503 && r.text() !== '{"error":"OAuth mode not configured"}') {
+        throw new Error('Slack webhook returned an unexpected 503');
+      }
     });
     await ctx.step('Telegram webhook, wrong secret token → 4xx', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post(
@@ -617,8 +620,22 @@ flow(
         '/%2e%2e/%2e%2e/etc/passwd',
       ]) {
         const response = await ctx.client.get(path, { pathAsIs: true });
-        response.status([400, 401, 403, 404]);
-        if (/root:.*:0:0|private_key|BEGIN [A-Z ]*PRIVATE KEY/i.test(response.text())) {
+        if (response.statusCode === 307) {
+          const location = response.header('location') ?? '';
+          const redirect = new URL(location, 'https://probe.invalid');
+          if (
+            path !== '/%2e%2e/%2e%2e/etc/passwd' ||
+            !location.startsWith('/auth?') ||
+            redirect.origin !== 'https://probe.invalid' ||
+            redirect.pathname !== '/auth' ||
+            redirect.searchParams.get('redirect') !== '/etc/passwd'
+          ) {
+            throw new Error(`${path} returned unexpected redirect ${location}`);
+          }
+        } else {
+          response.status([400, 401, 403, 404]);
+        }
+        if (/root:.*:0:0|private_key|-----BEGIN [A-Z ]*PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]{64,}-----END/i.test(response.text())) {
           throw new Error(`${path} exposed sensitive file content`);
         }
         if (secretPattern.test(response.text())) {

@@ -211,6 +211,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/public-shares',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId',
       'GET /v1/p/public-share/:token',
+      'GET /v1/p/config',
     ],
   },
   async (ctx) => {
@@ -385,7 +386,7 @@ flow(
     });
 
     await ctx.step(
-      'unauthenticated resolution of the file token → 200/503 with its public origin URL',
+      'unauthenticated file resolution matches the deployment’s preview-origin configuration',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
@@ -393,6 +394,13 @@ flow(
         r.status([200, 503]);
         if (r.statusCode === 200) {
           r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
+          const config = await ctx.client.as(ctx.P.ANON).get('/v1/p/config');
+          config.status(200);
+          if (config.json<any>().preview_url_template === null) {
+            r.body().has('$.share.public_url', null)
+              .has('$.share.proxy_path', `/v1/p/public-share/${fileToken}/file`);
+            return;
+          }
           const publicUrl = new URL(r.json<any>().share.public_url);
           if (publicUrl.protocol !== 'https:' || publicUrl.pathname !== '/open') {
             throw new Error(`file share returned an invalid public_url: ${publicUrl}`);
@@ -1418,3 +1426,248 @@ flow('SESS-29', {
     (await owner.put(route, content, options)).status(404);
   });
 });
+
+flow(
+  'SESS-34',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 600_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+    ],
+  },
+  async (ctx) => {
+    const { waitFor } = await import('../core/poll');
+    const project = await ctx.fixtures.project({ managedGit: true, seed: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let restrictedSessionId = '';
+    for (const access of [false, true]) {
+      await ctx.step(`create repository_access=${access} session and prove checkout plus session-token authorization`, async () => {
+        const config = await owner.put('/v1/projects/:projectId/agents/:agentName/config', {
+          repository_access: access,
+          kortix_cli: ['project.file.read', 'project.gitops.read'],
+        }, { params: { projectId: project.id, agentName: 'kortix' } });
+        config.status(200);
+        const created = await owner.post('/v1/projects/:projectId/sessions', {
+          agent_name: 'kortix', metadata: { repository_access: !access, workspace_mode: access ? 'runtime' : 'branch' },
+        }, { params: { projectId: project.id } });
+        created.status(201);
+        const sessionId = created.json<any>().session_id;
+        if (!sessionId) throw new Error('session create returned no session_id');
+        ctx.track('session', sessionId, { projectId: project.id });
+        if (!access) restrictedSessionId = sessionId;
+        const params = { projectId: project.id, sessionId };
+        const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
+        read.status(200).body().has('$.metadata.repository_access', access)
+          .has('$.metadata.workspace_mode', access ? 'branch' : 'runtime');
+        const patch = await owner.patch('/v1/projects/:projectId/sessions/:sessionId', {
+          metadata: { repository_access: !access },
+        }, { params });
+        patch.status(400);
+        const ready = await waitFor(async () => {
+          const response = await owner.post('/v1/projects/:projectId/sessions/:sessionId/start', {},
+            { params, query: { wait_ms: '8000' }, timeoutMs: 25_000 });
+          response.status(200);
+          const body = response.json<any>();
+          if (body.stage === 'error' && body.retriable === false) throw new Error(JSON.stringify(body));
+          return body;
+        }, { until: (body) => body.stage === 'ready' && Boolean(body.sandbox?.external_id ?? body.sandbox?.externalId),
+          timeoutMs: 240_000, intervalMs: 3000, description: 'repository policy session ready' });
+        const externalId = ready.sandbox.external_id ?? ready.sandbox.externalId;
+        // Only status codes and checkout state leave the sandbox. Its credential stays inside it.
+        const script = `const fs = require("node:fs");
+const expected = ${access};
+const checkout = fs.existsSync("/workspace/.git");
+if (checkout !== expected) throw new Error("unexpected checkout: " + checkout);
+const base = process.env.KORTIX_API_URL.replace(/\\/$/, "");
+const headers = { Authorization: "Bearer " + process.env.KORTIX_TOKEN };
+const files = await fetch(base + "/projects/${project.id}/files", { headers });
+if (files.status !== (expected ? 200 : 403)) throw new Error("file status: " + files.status);
+await files.body?.cancel();
+const git = await fetch(base + "/git/${project.id}.git/info/refs?service=git-upload-pack", { headers });
+if (git.status !== (expected ? 200 : 403)) throw new Error("git status: " + git.status);
+await git.body?.cancel();
+console.log(JSON.stringify({ checkout, files: files.status, git: git.status }));`;
+        const command = `bun -e '${script.replace(/'/g, "'\\''")}'`;
+        const execution = await owner.post(`/v1/p/${externalId}/8000/kortix/env-rpc`,
+          { op: 'exec', args: { command, timeout: 30_000 } }, { timeoutMs: 40_000 });
+        execution.status(200).body().has('$.ok', true).has('$.value.exitCode', 0);
+        const proof = JSON.parse(execution.json<any>().value.stdout.trim());
+        if (proof.checkout !== access || proof.files !== (access ? 200 : 403) || proof.git !== (access ? 200 : 403)) {
+          throw new Error(`unexpected repository proof: ${JSON.stringify(proof)}`);
+        }
+      });
+    }
+    await ctx.step('changing the agent to enabled leaves its existing restricted session restricted', async () => {
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: restrictedSessionId },
+      });
+      read.status(200).body().has('$.metadata.repository_access', false).has('$.metadata.workspace_mode', 'runtime');
+    });
+  },
+);
+
+
+flow(
+  'SESS-35',
+  {
+    domain: 'sessions',
+    global: true,
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const team = await ctx.fixtures.team();
+    await db.connect();
+    const sessionId = randomUUID();
+    const commandId = randomUUID();
+    try {
+      await db.query(
+        `INSERT INTO kortix.credit_accounts
+         (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+         VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
+         ON CONFLICT (account_id) DO UPDATE SET
+           balance = 1000, balance_precise = 1000,
+           non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
+           tier = 'tier_2_20'`,
+        [team.id],
+      );
+      const project = await team.project({ managedGit: true });
+      const params = { projectId: project.id, sessionId };
+      const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+      await ctx.step('create a session requiring an unavailable connector', async () => {
+        const config = await owner.put(
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { connectors: 'all', secrets: 'none', skills: 'all', kortix_cli: 'all' },
+          { params: { projectId: project.id, agentName: 'kortix' } },
+        );
+        config.status(200);
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, required_connectors)
+        VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project', '["missing-gmail"]'::jsonb)`,
+          [sessionId, team.id, project.id, ctx.P.OWNER.userId],
+        );
+      });
+      await ctx.step('POST returns the connector refusal and creates no inbox row', async () => {
+        const response = await owner.post(
+          promptPath,
+          {
+            client_message_id: 'blocked-connector',
+            message_id: 'msg_0123456789abAbCdEfGhIjKlMn',
+            parts: [{ type: 'text', text: 'hello' }],
+          },
+          { params },
+        );
+        response.status(409).body().has('$.code', 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
+        const listed = await owner.get(promptPath, { params });
+        listed.status(200);
+        if (listed.json<any>().prompts.length !== 0)
+          throw new Error('refused prompt entered the queue');
+      });
+      await ctx.step(
+        'Stop holds an in-flight delivery immediately and GET preserves the hold',
+        async () => {
+          // A claimed row models the instant between worker claim and network send.
+          // Its lease prevents the background worker from claiming the fixture.
+          await db.query(
+            `INSERT INTO kortix.session_lifecycle_commands
+        (command_id, command_type, source, status, project_id, session_id, account_id,
+         actor_user_id, payload, locked_by, locked_until)
+        VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+          '{"text":"hello","clientMessageId":"stop-running"}'::jsonb, 'SESS-35', now() + interval '1 hour')`,
+            [commandId, project.id, sessionId, team.id, ctx.P.OWNER.userId],
+          );
+          const held = await owner.post(`${promptPath}/hold`, { held: true }, { params });
+          held.status(200);
+          for (const response of [held, await owner.get(promptPath, { params })]) {
+            response.status(200);
+            const mine = response.json<any>().prompts.find((p: any) => p.prompt_id === commandId);
+            if (mine?.state !== 'waiting' || mine?.reason !== 'held')
+              throw new Error(`Stop state: ${JSON.stringify(mine)}`);
+          }
+          const stored = await db.query(
+            'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+            [commandId],
+          );
+          if (!stored.rows[0]?.result.held || !stored.rows[0]?.payload.stopPausedOnDelivery)
+            throw new Error('Stop did not persist both markers');
+        },
+      );
+      await ctx.step('a disabled optional binding allows a prompt; an explicit requirement still refuses it', async () => {
+        const connector = await db.query(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, enabled)
+           VALUES ($1, $2, 'optional-gmail', 'Optional Gmail', 'openapi', '{}'::jsonb, false)
+           RETURNING connector_id`, [team.id, project.id],
+        );
+        const connection = await db.query(
+          `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label)
+           VALUES ($1, $2, $3, 'project', 'Optional Gmail') RETURNING connection_id`,
+          [team.id, project.id, connector.rows[0].connector_id],
+        );
+        await db.query(
+          `INSERT INTO kortix.project_session_connector_bindings
+           (session_id, account_id, project_id, connector_alias, connector_id, connection_id)
+           VALUES ($1, $2, $3, 'optional-gmail', $4, $5)`,
+          [sessionId, team.id, project.id, connector.rows[0].connector_id, connection.rows[0].connection_id],
+        );
+        await db.query('UPDATE kortix.project_sessions SET required_connectors = NULL WHERE session_id = $1', [sessionId]);
+        const body = {
+          client_message_id: 'optional-connector',
+          message_id: 'msg_0123456789abAbCdEfGhIjKlMo',
+          parts: [{ type: 'text', text: 'hello without Gmail' }],
+        };
+        const accepted = await owner.post(promptPath, body, { params });
+        accepted.status(202);
+        const queued = await db.query(
+          `SELECT command_id FROM kortix.session_lifecycle_commands
+           WHERE session_id = $1 AND payload->>'clientMessageId' = 'optional-connector'`, [sessionId],
+        );
+        if (queued.rowCount !== 1) throw new Error('optional connector prompt was not persisted');
+        // The fixture's claimed delivery prevents this row from reaching a runtime.
+        await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1', [queued.rows[0].command_id]);
+        await db.query(`UPDATE kortix.project_sessions SET required_connectors = '["optional-gmail"]'::jsonb WHERE session_id = $1`, [sessionId]);
+        const refused = await owner.post(promptPath, { ...body, client_message_id: 'explicit-connector' }, { params });
+        refused.status(409).body().has('$.code', 'CONNECTOR_CONNECTION_REQUIRED');
+      });
+      await ctx.step('Resume clears both hold markers on a claimed delivery', async () => {
+        const response = await owner.post(`${promptPath}/hold`, { held: false }, { params });
+        response.status(200);
+        const stored = await db.query(
+          'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+          [commandId],
+        );
+        if (stored.rows[0]?.result.held || stored.rows[0]?.payload.stopPausedOnDelivery)
+          throw new Error('Resume left a hold marker');
+      });
+    } finally {
+      await db
+        .query('DELETE FROM kortix.session_lifecycle_commands WHERE session_id = $1', [sessionId])
+        .catch(() => {});
+      await db
+        .query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId])
+        .catch(() => {});
+      await db.end();
+    }
+  },
+);

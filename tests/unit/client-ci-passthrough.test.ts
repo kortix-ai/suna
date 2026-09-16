@@ -46,6 +46,22 @@ it('sends the diagnostic credential but redacts it from captured artifacts', asy
   expect(JSON.stringify(response.captured)).not.toContain(secret);
 });
 
+it('keeps a gateway mount prefix when binding credentials, without doubling the API version', async () => {
+  const urls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+    urls.push(String(url));
+    return new Response('{}', { headers: { 'content-type': 'application/json' } });
+  }));
+  await new Client('https://preview.test/_gateway').withBearer('test').get('/v1/models');
+  await new Client('https://preview.test/_gateway').get('/health');
+  await new Client('https://preview.test/v1').get('/v1/health');
+  expect(urls).toEqual([
+    'https://preview.test/_gateway/v1/models',
+    'https://preview.test/_gateway/health',
+    'https://preview.test/v1/health',
+  ]);
+});
+
 it('keeps the preview gateway mount for anonymous and authenticated requests', async () => {
   const fetchMock = vi.fn(async (_url: string | URL) => new Response('{}'));
   vi.stubGlobal('fetch', fetchMock);

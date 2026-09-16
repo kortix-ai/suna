@@ -1,71 +1,15 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-/**
- * `provider-connect.tsx` — THE provider connect surface. One component, mounted
- * by the Models settings tab (`gateway-view.tsx`'s Providers sub-tab, reached
- * through `features/workspace/settings/tabs/models-tab.tsx`), by the model
- * selector's connect dialog and by the Secrets tab's "Manage providers" button
- * (both through `llm-provider-modal.tsx`'s `ProjectProviderModal`, which is now
- * only a `Modal` shell around this file). JAY-510: a third copy is not
- * acceptable — that is the defect this file exists to remove.
- *
- * **ONE list. No sections. EVERY provider.** A search field, one line of
- * instruction, and a row per provider — logo and name on the left, key field
- * on the right. That is the whole screen.
- *
- * **What this replaced, and why.** It had four sections — Connected, Add a
- * key, a "Show 181 more providers" disclosure, and Custom provider — each
- * individually defensible and collectively unreadable. Three concrete
- * failures, all fixed by deleting structure rather than relabelling it:
- *
- *   1. *The row teleported.* Saving a key moved that provider out of the grid
- *      into a "Connected" block ABOVE it, growing a section that was not there
- *      a second earlier. Order is now fixed; a saved row gains a check and
- *      stays put.
- *   2. *The same provider appeared twice* — once as a connected summary with a
- *      "Replace key" button, once as an empty field. Now one row, and typing
- *      in it IS replacing.
- *   3. *"Show 181 more providers" was a wall,* not an invitation.
- *
- * The first cut of (3) deleted the disclosure AND the providers behind it:
- * with no search text the list was the three first-class ids plus whatever
- * already had a key, so 185 providers only existed for someone who typed a
- * name they already knew. That reads as "Kortix supports three providers".
- * The whole catalog is in the list now (`orderProviderRows`), first-class ids
- * first, everything else in catalog order — the search field narrows a list
- * that is already all there instead of being the only door to it.
- *
- * **The list pages; the search does not.** Rendering all 184 rows on arrival
- * traded the wall for a different one, so `PROVIDER_PAGE_SIZE` rows render and
- * `Load more` adds a page at a time. That is a floor on what is shown, never a
- * ceiling on what is reachable: a query renders every match in the catalogue
- * regardless of the window, and a provider with a stored key is always inside
- * it. See `PROVIDER_PAGE_SIZE` and `lastConnectedIndex`.
- *
- * Custom providers moved out entirely, to their own tab
- * (`custom-provider-panel.tsx`) — a job almost nobody does should not be the
- * last thing on the screen everybody uses.
- *
- * **Anthropic's subscription half has no control — deliberate, disclosed.**
- * `PROVIDER_NOTES.anthropic` reads "Claude Pro/Max subscription or your own API
- * key", but there is no Anthropic OAuth anywhere in this repo: the only live
- * provider OAuth is `startProjectProviderOAuth(projectId, 'openai', ...)`
- * (`chatgpt-subscription-connect.tsx:58`). The note renders verbatim because
- * JAY-510 requires it; the missing flow is a product gap, not something this
- * file may invent. OpenAI's subscription half IS real and mounts as
- * `subscriptionSlots.openai`.
- *
- * **Layers.** `ProviderConnectView` is pure (props only, no hooks) so it renders
- * under `renderToStaticMarkup` with no `QueryClientProvider` — the repo's only
- * render-assertion idiom. `ProviderConnect` is the container and owns every
- * hook. Same split as `sandbox-tab.tsx` / `models-tab.tsx`.
+/** Shared provider list for Models, Secrets, and the model selector.
+ * Rows keep catalog order. Connect and Manage open the same ownership dialog.
+ * The prop-only view and credential fields also support isolated render tests.
  */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
+import { ProjectProviderConnection } from './project-provider-connection';
 
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
   InputGroup,
@@ -78,13 +22,9 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
-import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
-import {
-  ProviderAccessMenu,
-} from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
+import { ProviderAccessMenu } from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
   useLiveLlmProviderCatalog,
@@ -94,13 +34,10 @@ import {
   envVarPlaceholder,
   orderProviderRows,
   prettyFieldLabel,
-  providerDisconnectPlan,
-  shouldSaveCredential,
 } from '@/features/workspace/customize/sections/llm-provider/utils';
-import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
+import { LLM_PROVIDERS, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
+import { useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
@@ -108,14 +45,12 @@ import {
   EyeSlashIcon as EyeSlash,
   XIcon as Remove,
   MagnifyingGlassIcon as Search,
-  PlugsIcon as Unplug,
   WarningCircleIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
- * (ChatGPT), Google Gemini". They lead the BYOK rows after Kortix, not the only rows —
+ * (ChatGPT), Google Gemini". They are the top THREE ROWS, not the only rows —
  * every other provider follows them in catalog order. Deliberately NOT
  * `POPULAR_PROVIDER_IDS` (`provider-branding.tsx:10-17`), which is a
  * different, six-member list that also carries `github-copilot`, `openrouter`
@@ -123,7 +58,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
  */
 export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
 
-/** Stable DOM id shared by a credential input and its label. */
+/**
+ * Stable label target for a credential input.
+ */
 export function providerKeyFieldId(providerId: string, envVar: string): string {
   return `provider-connect-${providerId}-${envVar}`;
 }
@@ -205,7 +142,9 @@ export interface ProviderConnectViewProps {
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
   accessSlots?: Record<string, ReactNode>;
-  /** Open the shared Models tab with all provider groups. */
+  wrapCredentials?: (row: ProviderConnectRow, fields: ReactNode) => ReactNode;
+  instruction?: ReactNode;
+  /** Open the Models tab with this provider's models visible. */
   onOpenModels?: (providerId: string) => void;
   className?: string;
 }
@@ -456,7 +395,7 @@ function ProviderKeyFields({
       ) : (
         // One border around the stack, `divide-y` for the seams — Bedrock's
         // three fields are one credential, so they get one box.
-        <div className="border-border divide-border bg-input divide-y overflow-hidden rounded-md border">
+        <div className="border-border divide-border bg-background divide-y overflow-hidden rounded-md border">
           {fields}
         </div>
       )}
@@ -468,31 +407,7 @@ function ProviderKeyFields({
   );
 }
 
-/**
- * One provider, as a two-column row: who it is on the left, where the key goes
- * on the right.
- *
- * ## Why the grid, and not the card it replaced
- *
- * Every row used to be a bordered card holding a logo, a title, a badge, a
- * subtitle, a "Get a key" link, a model-count link, a labelled input and a
- * Connect button — eight things, boxed, stacked forty deep. Nothing lined up
- * vertically, so the eye had to re-find the input on every row.
- *
- * Here the fields share one column, so all forty inputs sit on one axis and
- * the page can be scanned by moving straight down it. The chrome that carried
- * no information — the per-row border, the key glyph in the field, the "Get a
- * key" words around the link — is gone; the link survives as the `↗` beside
- * the name, which is where a reader already looks for "take me to it".
- *
- * ## No Connect button
- *
- * The button is gone because the row can tell when you are done with it: the
- * save fires when focus LEAVES the row (`onBlur` + a `relatedTarget` containment
- * check), which is one save per provider no matter how many fields it has, and
- * fires exactly once whether you tab out, click elsewhere, or press Enter.
- * `onCommit` decides whether that is actually a write — see `ProviderConnect`.
- */
+/** Provider identity and its connection action share one row in catalog order. */
 function ProviderRow({
   row,
   values,
@@ -506,6 +421,7 @@ function ProviderRow({
   onRemoveKey,
   subscriptionSlot,
   accessSlot,
+  wrapCredentials,
   onOpenModels,
 }: {
   row: ProviderConnectRow;
@@ -520,6 +436,7 @@ function ProviderRow({
   onRemoveKey?: ProviderConnectViewProps['onRemoveKey'];
   subscriptionSlot?: ReactNode;
   accessSlot?: ReactNode;
+  wrapCredentials?: ProviderConnectViewProps['wrapCredentials'];
   onOpenModels?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -536,32 +453,30 @@ function ProviderRow({
               rel="noopener noreferrer"
               title={tI18nComplete('text2a94ea8db704', { value0: row.label })}
               aria-label={tI18nComplete('text2a94ea8db704', { value0: row.label })}
-              className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
+              className="text-muted-foreground/50 hover:text-foreground shrink-0 transition-colors"
             >
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           )}
           {accessSlot}
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {onOpenModels && row.modelCount > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpenModels(row.id)}
-              className="text-muted-foreground hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
-            >
-              {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
-              {row.modelCount === 1 ? '' : 's'}
-            </button>
-          )}
-        </div>
+        {onOpenModels && row.modelCount > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpenModels(row.id)}
+            className="text-muted-foreground/50 hover:text-foreground mt-0.5 cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
+          >
+            {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
+            {row.modelCount === 1 ? '' : 's'}
+          </button>
+        )}
       </div>
     </div>
   );
 
-  // Read-only members get the identity column and nothing else — no field to
-  // type in, so no second column to line it up against either.
-  if (!canWrite) {
+  // Shared credentials require project write access. The scope wrapper can still
+  // offer a reader their own personal connection without exposing shared fields.
+  if (!canWrite && !wrapCredentials) {
     return (
       <div className="py-1.5" data-provider-row={row.id}>
         {identity}
@@ -569,29 +484,33 @@ function ProviderRow({
     );
   }
 
+  const fields = canWrite ? (
+    <ProviderKeyFields
+      row={row}
+      values={values}
+      onValueChange={onValueChange}
+      onCommit={onCommit}
+      status={status}
+      errorMessage={errorMessage}
+      revealedFields={revealedFields}
+      onToggleReveal={onToggleReveal}
+      onRemoveKey={onRemoveKey}
+    >
+      {subscriptionSlot}
+    </ProviderKeyFields>
+  ) : null;
+
   return (
     <div
       data-provider-row={row.id}
-      className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
+      className={cn(
+        wrapCredentials
+          ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2'
+          : 'grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-start sm:gap-4',
+      )}
     >
       {identity}
-      {row.envVars.length === 0 ? (
-        <p className="text-muted-foreground py-2 text-xs text-pretty">{row.note}</p>
-      ) : (
-        <ProviderKeyFields
-          row={row}
-          values={values}
-          onValueChange={onValueChange}
-          onCommit={onCommit}
-          status={status}
-          errorMessage={errorMessage}
-          revealedFields={revealedFields}
-          onToggleReveal={onToggleReveal}
-          onRemoveKey={onRemoveKey}
-        >
-          {subscriptionSlot}
-        </ProviderKeyFields>
-      )}
+      {wrapCredentials ? wrapCredentials(row, fields) : fields}
     </div>
   );
 }
@@ -656,6 +575,8 @@ export function ProviderConnectView({
   onSearchChange,
   subscriptionSlots,
   accessSlots,
+  wrapCredentials,
+  instruction,
   onOpenModels,
   className,
 }: ProviderConnectViewProps) {
@@ -683,7 +604,10 @@ export function ProviderConnectView({
           auto-save nobody is told about is indistinguishable from an edit that
           was lost. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        {canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
+        {instruction ??
+          (canWrite
+            ? tI18nComplete.raw('text9253b4fa8e06')
+            : tI18nComplete.raw('text30674c348b84'))}
       </p>
 
       {rows.length === 0 ? (
@@ -705,6 +629,7 @@ export function ProviderConnectView({
               onRemoveKey={onRemoveKey}
               subscriptionSlot={subscriptionSlots?.[row.id]}
               accessSlot={accessSlots?.[row.id]}
+              wrapCredentials={wrapCredentials}
               onOpenModels={onOpenModels}
             />
           ))}
@@ -733,8 +658,6 @@ export function ProviderConnectView({
 }
 
 // ─── Container ───────────────────────────────────────────────────────────────
-
-const CONNECTION_REFRESH_TIMEOUT_MS = 45_000;
 
 /**
  * How many providers render before `Load more`, and how many each press adds.
@@ -785,76 +708,57 @@ export function ProviderConnect({
   onOpenModels,
   className,
 }: ProviderConnectProps) {
-  const access = useModelAccess(enabled ? projectId : null);
+  const tPersonal = useTranslations('personalProviders');
   const tAccess = useTranslations('modelAccess');
+  const access = useModelAccess(enabled ? projectId : null);
   const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
-  const managedProvider = useMemo<LlmProviderEntry>(() => ({
-    id: 'kortix',
-    label: 'Kortix',
-    envVars: [],
-    authRequirement: { methods: [] },
-    helpUrl: null,
-    apiHost: null,
-    hint: tAccess('managedDescription'),
-    models: Object.entries(pickerCatalog?.models ?? {})
-      .filter(([id]) => !id.includes('/'))
-      .map(([id, model]) => ({
-        id,
-        name: model.name || id,
-        description: model.description,
-        reasoning: model.reasoning,
-        tool_call: model.tool_call,
-        attachment: model.attachment,
-        limit: model.limit,
-        cost: model.cost,
-      })),
-    featured: true,
-    managed: true,
-  }), [pickerCatalog, tAccess]);
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   useLiveLlmProviderCatalog(projectId, enabled);
   const catalogRevision = useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
-  const queryClient = useQueryClient();
-
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
-  /**
-   * What each `${providerId}:${envVar}` held the last time it was successfully
-   * saved. This — not a dirty flag — is what stops the blur-driven save from
-   * re-POSTing an unchanged key every time focus crosses a row. A flag would
-   * have to be cleared by hand from four places; a snapshot answers "did this
-   * change" by comparison and cannot fall out of sync.
-   */
-  const [savedValues, setSavedValues] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [removeId, setRemoveId] = useState<string | null>(null);
-  // The connect we are waiting on. The VISIBLE pending flag is DERIVED from it
-  // below rather than cleared from inside an effect — that synchronous
-  // `setState` in an effect body is what `react-hooks/set-state-in-effect`
-  // flags, and it cost an extra render too.
-  const [pendingRequest, setPendingRequest] = useState<string | null>(null);
 
   const connectedIds = useMemo(
     () => new Set(connectedProviders.map((provider) => provider.id)),
     [connectedProviders],
   );
 
-  // Pending ends the moment the provider shows up in the connected list.
-  // `pendingRequest` is additionally cleared on a disconnect, so connecting X
-  // and later disconnecting X cannot revive a stale spinner on that row.
-  const pendingProviderId =
-    pendingRequest && !connectedIds.has(pendingRequest) ? pendingRequest : null;
-
   // The revision subscription above re-renders this component after the live
   // catalog replaces the module binding.
-  const searchable = useMemo(() => [
-    ...(access.data?.enforced ? [managedProvider] : []),
-    ...LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix'),
-  // The module catalog is replaced out of band; its revision triggers a fresh read.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [access.data?.enforced, managedProvider, catalogRevision]);
+  const managedProvider = useMemo<LlmProviderEntry>(
+    () => ({
+      id: 'kortix',
+      label: 'Kortix',
+      envVars: [],
+      authRequirement: { methods: [] },
+      helpUrl: null,
+      apiHost: null,
+      hint: tAccess('managedDescription'),
+      models: Object.entries(pickerCatalog?.models ?? {})
+        .filter(([id]) => !id.includes('/'))
+        .map(([id, model]) => ({
+          id,
+          name: model.name || id,
+          description: model.description,
+          reasoning: model.reasoning,
+          tool_call: model.tool_call,
+          attachment: model.attachment,
+          limit: model.limit,
+          cost: model.cost,
+        })),
+      featured: true,
+      managed: true,
+    }),
+    [pickerCatalog, tAccess],
+  );
+  const searchable = useMemo(
+    () => [
+      ...(access.data?.enforced ? [managedProvider] : []),
+      ...LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix'),
+    ],
+    // The module catalog changes out of band. Its revision triggers a fresh read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [access.data?.enforced, managedProvider, catalogRevision],
+  );
 
   /**
    * THE list, in a FIXED order that a save never disturbs — see
@@ -897,278 +801,56 @@ export function ProviderConnect({
   const visibleRows = useMemo(() => rows.slice(0, limit), [rows, limit]);
   const hiddenCount = rows.length - visibleRows.length;
 
-  const connect = useMutation({
-    mutationFn: async (providerId: string) => {
-      const entry = LLM_PROVIDER_BY_ID.get(providerId);
-      if (!entry) throw new Error(`Unknown provider ${providerId}`);
-      // LLM provider credentials are ALWAYS project-wide — a per-user key is
-      // invisible to the gateway's shared-row resolution and every model turn
-      // dies with "No upstream configured" (2026-07-07 prod incident). Ported
-      // verbatim from the deleted `api-key-connect-form.tsx:52-62`.
-      await Promise.all(
-        entry.envVars.map((envVar) =>
-          upsertProjectSecret(projectId, {
-            name: envVar,
-            value: (values[`${providerId}:${envVar}`] ?? '').trim(),
-            strategy: 'broker',
-            consumer: 'llm_gateway',
-          }),
-        ),
-      );
-      return entry;
-    },
-    onSuccess: (entry) => {
-      successToast(tI18nComplete('textbc8686cf8d63', { value0: entry.label }));
-      // The typed values are KEPT, and recorded as the saved baseline. Clearing
-      // them was right when a Connect button ended the interaction; with a
-      // blur-driven save the field is still on screen and still focusable, and
-      // a field that empties itself the instant you click away reads as "it
-      // threw my key away", not as "it saved".
-      setSavedValues((current) => {
-        const next = { ...current };
-        for (const envVar of entry.envVars) {
-          const key = `${entry.id}:${envVar}`;
-          next[key] = (values[key] ?? '').trim();
-        }
-        return next;
-      });
-      setErrors((current) => {
-        if (!(entry.id in current)) return current;
-        const next = { ...current };
-        delete next[entry.id];
-        return next;
-      });
-      setPendingRequest(entry.id);
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId, { expectProviderId: entry.id });
-    },
-    onError: (err, providerId) => {
-      const message = err instanceof Error ? err.message : 'Failed to save credentials';
-      // Both channels, deliberately. The toast is what someone who has already
-      // scrolled away sees; the inline message is what stays put next to the
-      // field they have to fix. A blur-driven save has no button to leave in a
-      // failed state, so the row has to carry the failure itself.
-      errorToast(message);
-      setErrors((current) => ({ ...current, [providerId]: message }));
-    },
-  });
-
-  /**
-   * Removing a key. Same fan-out the deleted `ConnectedProviderList` did —
-   * `providerDisconnectPlan` + `deleteProjectProviderOAuth` +
-   * `deleteProjectSecret`, same invalidations — moved up here because the
-   * control that triggers it now lives inside the row's own field instead of
-   * in a second list that no longer exists.
-   */
-  const remove = useMutation({
-    mutationFn: async (provider: LlmProviderEntry) => {
-      const plan = providerDisconnectPlan(provider);
-      await Promise.all([
-        ...(plan.oauthProvider ? [deleteProjectProviderOAuth(projectId, plan.oauthProvider)] : []),
-        ...plan.secretNames.map((name) => deleteProjectSecret(projectId, name)),
-      ]);
-      return provider;
-    },
-    onSuccess: (provider) => {
-      successToast(tI18nComplete('textb7e29198fc4e', { value0: provider.label }));
-      setRemoveId(null);
-      // Settle any pending connect for the same provider, and forget the saved
-      // baseline — otherwise re-pasting the SAME key would compare equal and
-      // `shouldSaveCredential` would decline to write it back.
-      setPendingRequest(null);
-      setSavedValues((current) => {
-        const next = { ...current };
-        for (const envVar of provider.envVars) delete next[`${provider.id}:${envVar}`];
-        return next;
-      });
-      setValues((current) => {
-        const next = { ...current };
-        for (const envVar of provider.envVars) delete next[`${provider.id}:${envVar}`];
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId);
-    },
-    onError: (err) =>
-      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textb89e92d0b992')),
-  });
-
-  // Warn if the refresh never lands. Same contract as the deleted modal's
-  // `pendingProviderId` effect (`llm-provider-modal.tsx:90-105`), minus the
-  // full-surface takeover it used to render. No synchronous `setState` in the
-  // effect body — the success path is the derivation above; this only writes
-  // from inside the timeout callback.
-  useEffect(() => {
-    if (!pendingProviderId) return;
-    const timeout = window.setTimeout(() => {
-      setPendingRequest(null);
-      warningToast(tI18nComplete.raw('texta54c4c33bc36'));
-    }, CONNECTION_REFRESH_TIMEOUT_MS);
-    return () => window.clearTimeout(timeout);
-  }, [pendingProviderId, tI18nComplete]);
-
-  const handleValueChange = useCallback((providerId: string, envVar: string, value: string) => {
-    setValues((current) => ({ ...current, [`${providerId}:${envVar}`]: value }));
-    // Typing is the retry. Clearing the row's failure here — rather than only
-    // when the next save succeeds — stops a red field from arguing with a key
-    // the user has already corrected.
-    setErrors((current) => {
-      if (!(providerId in current)) return current;
-      const next = { ...current };
-      delete next[providerId];
-      return next;
-    });
-  }, []);
-
-  const handleToggleReveal = useCallback((providerId: string, envVar: string) => {
-    setRevealedFields((current) => {
-      const key = `${providerId}:${envVar}`;
-      return { ...current, [key]: !current[key] };
-    });
-  }, []);
-
-  /**
-   * "Focus left this provider's row." Whether that is a WRITE is
-   * `shouldSaveCredential`'s call — a pure predicate in `utils.ts`, where its
-   * three rules (nothing typed / half a credential / unchanged) are pinned by
-   * tests instead of living inside a callback nothing can reach.
-   */
-  const handleCommit = useCallback(
-    (providerId: string) => {
-      const entry = LLM_PROVIDER_BY_ID.get(providerId);
-      if (!entry) return;
-      if (!shouldSaveCredential({ providerId, envVars: entry.envVars, values, savedValues })) {
-        return;
-      }
-      connect.mutate(providerId);
-    },
-    [connect, values, savedValues],
-  );
-
-  /**
-   * One status per provider, derived — never stored. `saving` outlives the
-   * mutation on purpose: the POST returning is not the moment the provider is
-   * usable, `refreshProjectProviderState` landing is, and a spinner that stops
-   * before then invites a second paste into a field that is already working.
-   */
-  const statuses = useMemo(() => {
-    const map: Record<string, ProviderKeyStatus> = {};
-    for (const [key] of Object.entries(savedValues)) {
-      const providerId = key.slice(0, key.indexOf(':'));
-      if (providerId) map[providerId] = 'saved';
-    }
-    const saving = connect.isPending ? connect.variables : pendingProviderId;
-    if (saving) map[saving] = 'saving';
-    for (const providerId of Object.keys(errors)) map[providerId] = 'error';
-    return map;
-  }, [savedValues, connect.isPending, connect.variables, pendingProviderId, errors]);
-
-  const removeEntry = removeId
-    ? (connectedProviders.find((p) => p.id === removeId) ??
-      LLM_PROVIDER_BY_ID.get(removeId) ??
-      null)
-    : null;
-
-  if (providerStateLoading) {
-    return (
-      <div
-        className="flex min-h-[200px] items-center justify-center"
-        role="status"
-        aria-label={tI18nComplete.raw('text7f619ff13aa8')}
-      >
-        <Loading className="text-muted-foreground size-4 shrink-0" />
-      </div>
-    );
-  }
-
   return (
     <>
       <ProviderConnectView
         accessSlots={Object.fromEntries(
           visibleRows.map((row) => [
             row.id,
-            <ProviderAccessMenu
-              key={row.id}
-              access={access}
-              providerId={row.id}
-              name={row.id === 'kortix' ? tAccess('managedTitle') : row.label}
-              canWrite={canWrite}
-            />,
+            <div key={row.id} className="flex shrink-0 items-center gap-0.5">
+              <ProviderAccessMenu
+                access={access}
+                providerId={row.id}
+                name={row.id === 'kortix' ? tAccess('managedTitle') : row.label}
+                canWrite={canWrite}
+              />
+              {row.id === 'openai' && (
+                <ProviderAccessMenu
+                  access={access}
+                  providerId="codex"
+                  name="ChatGPT subscription"
+                  canWrite={canWrite}
+                />
+              )}
+            </div>,
           ]),
         )}
         className={className}
         rows={visibleRows}
+        instruction={tPersonal('listInstruction')}
+        wrapCredentials={(row) =>
+          row.id === 'kortix' ? null : (
+            <ProjectProviderConnection
+              projectId={projectId}
+              row={row}
+              canWrite={canWrite}
+              projectConnectionsLoading={providerStateLoading}
+              subscriptionConnected={row.id === 'openai' && connectedIds.has('codex')}
+              KeyFields={ProviderKeyFields}
+            />
+          )
+        }
         totalCount={searchable.length}
         hiddenCount={hiddenCount}
         onLoadMore={() => setVisibleCount((shown) => shown + PROVIDER_PAGE_SIZE)}
-        values={values}
-        onValueChange={handleValueChange}
-        onCommit={handleCommit}
-        statuses={statuses}
-        errors={errors}
-        revealedFields={revealedFields}
-        onToggleReveal={handleToggleReveal}
-        onRemoveKey={canWrite ? setRemoveId : undefined}
+        values={{}}
+        onValueChange={() => {}}
+        onCommit={() => {}}
+        onToggleReveal={() => {}}
         canWrite={canWrite}
         search={search}
         onSearchChange={setSearch}
-        subscriptionSlots={
-          canWrite
-            ? {
-                // The ONLY live provider subscription flow in the repo. Anthropic
-                // has no OAuth anywhere — see this file's header comment.
-                openai: (
-                  <ChatGptSubscriptionConnect
-                    accessSlot={
-                      <ProviderAccessMenu
-                        access={access}
-                        providerId="codex"
-                        name="ChatGPT subscription"
-                        canWrite={canWrite}
-                      />
-                    }
-                    projectId={projectId}
-                    onConnected={setPendingRequest}
-                  />
-                ),
-              }
-            : undefined
-        }
         onOpenModels={access.data?.enforced ? onOpenModels : undefined}
-      />
-
-      {/* The one destructive action on this screen. `ConfirmDialog` is mandatory
-        before a delete (design system) — and the `×` sits inside a field, one
-        stray click from the key it removes, so it earns the confirm twice
-        over. Copy says the consequence, not the storage: the env-var names it
-        used to print in `<code>` described where the key lived to a reader who
-        is deciding whether to lose it. */}
-      <ConfirmDialog
-        open={!!removeId}
-        onOpenChange={(open) => !open && setRemoveId(null)}
-        title={tI18nComplete.raw('text088c3ffd67b6')}
-        confirmLabel={tI18nComplete.raw('text81c45fd9b904')}
-        confirmVariant="destructive"
-        confirmIcon={<Unplug className="size-3.5 shrink-0" />}
-        isPending={remove.isPending}
-        onConfirm={() => removeEntry && remove.mutate(removeEntry)}
-        description={
-          removeEntry ? (
-            <span className="text-xs">
-              {tI18nComplete.raw('texta99dfc3d112a')}{' '}
-              <span className="text-foreground font-medium">{removeEntry.label}</span>
-              {removeEntry.models.length > 0 && (
-                <>
-                  {' '}
-                  {tI18nComplete.raw('textedfd52be9cbc')} {removeEntry.models.length}{' '}
-                  {tI18nComplete.raw('text9372c470eead')}
-                  {removeEntry.models.length === 1 ? '' : 's'}
-                </>
-              )}
-              {tI18nComplete.raw('text61c922500051')}
-            </span>
-          ) : null
-        }
       />
     </>
   );

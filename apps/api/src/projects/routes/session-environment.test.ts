@@ -73,7 +73,7 @@ describe('session environment routes', () => {
     );
     expect(ensure).toBeGreaterThan(-1);
     expect(ensureCall).toContain(
-      'workspaceMode: workspaceModeFromSessionMetadata(gate.session.metadata)',
+      'repositoryAccess: repositoryAccessFromSessionMetadata(gate.session.metadata)',
     );
     expect(ensureCall).toContain(
       'environmentSandboxSlugFromSessionMetadata(gate.session.metadata)',

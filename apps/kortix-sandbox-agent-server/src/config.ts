@@ -77,6 +77,10 @@ const Schema = z.object({
   // KORTIX_BASE_SHA. Identity only, never a URL: the daemon exchanges it for
   // a short-lived download descriptor at the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_PIN: z.string().optional(),
+  // The presigned download descriptor for that pin (base64 JSON), signed by
+  // the API at session create. Optional: absent or expired → the daemon
+  // fetches one from the Git proxy with KORTIX_TOKEN.
+  KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_ENV_RPC_SECRET: z.string().optional(),
   KORTIX_ENVIRONMENT_HISTORY: BoolFlag.default(false),
@@ -160,6 +164,8 @@ export type Config = {
   projectSnapshotMode?: ProjectSnapshotMode
   /** Prepared-archive identity `<sha>:<sha256>:<bytes>`, when the API pinned one. */
   projectSnapshotPin?: string
+  /** Presigned download descriptor for that pin (base64 JSON), when the API signed one at create. */
+  projectSnapshotDescriptor?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -209,6 +215,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
+    KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_ENV_RPC_SECRET: env.KORTIX_ENV_RPC_SECRET,
     KORTIX_ENVIRONMENT_HISTORY: env.KORTIX_ENVIRONMENT_HISTORY,
@@ -250,6 +257,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
+    projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
     envRpcSecret: parsed.KORTIX_ENV_RPC_SECRET,
     environmentHistory: parsed.KORTIX_ENVIRONMENT_HISTORY,

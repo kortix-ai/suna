@@ -1022,6 +1022,36 @@ test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the qu
   expect(result).toEqual({ prompts: [] });
 });
 
+test('queue row calls never route failures to the host global error handler', async () => {
+  // Every caller of these four already says what went wrong in its own words:
+  // the queue list's remove, retry and resume each toast a specific message,
+  // and the poll is a background read. With `showErrors` left at its TRUE
+  // default the transport ALSO toasted the server's raw prose first, so one
+  // failed remove painted two toasts ("Not found" + "That prompt is no longer
+  // in the queue") — and a failed 1s poll toasted on every tick.
+  // `createSessionPrompt` is deliberately NOT in this list: its 402 has to reach
+  // the host handler, which is what opens the upgrade dialog.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+
+  nextResponse = { status: 500, body: { error: 'boom' } };
+  await listSessionPrompts('P1', 'S1').catch(() => {});
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+  await deleteSessionPrompt('P1', 'S1', 'cmd-1').catch(() => {});
+  nextResponse = { status: 409, body: { error: 'Prompt is already being answered' } };
+  await retrySessionPrompt('P1', 'S1', 'cmd-1').catch(() => {});
+  nextResponse = { status: 503, body: { error: 'unavailable' } };
+  await holdSessionPrompts('P1', 'S1', false).catch(() => {});
+
+  expect(errors).toEqual([]);
+
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+});
+
 test('a prompt call throws on a non-2xx instead of returning a half-answer', async () => {
   nextResponse = { status: 402, body: { error: 'out of credits' } };
   await expect(

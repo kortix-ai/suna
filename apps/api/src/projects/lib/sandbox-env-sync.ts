@@ -27,8 +27,7 @@ import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { resolveSessionSecretGrant } from './secret-grant';
 import {
-  workspaceModeAllowsFullRepository,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
@@ -1272,7 +1271,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       gitAuthToken: null,
     };
     const compiled =
-      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+      !repositoryAccessFromSessionMetadata(session?.metadata) &&
       session?.agentName
         ? await resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
         : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef);

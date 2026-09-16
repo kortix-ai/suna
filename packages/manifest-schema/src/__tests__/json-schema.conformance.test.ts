@@ -694,6 +694,12 @@ connectors:
     valid: true,
     input: 'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.schedule.read"]\n',
   },
+  { name: "v2: repository access false", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n" },
+  { name: "v2: repository access true", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n" },
+  { name: "v2: repository access \"false\"", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: \"false\"\n" },
+  { name: "v2: repository access null", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: null\n" },
+  { name: "v2: repository access true\n    workspace: runtime", format: 'yaml', valid: false, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: true\n    workspace: runtime\n" },
+  { name: "v2: repository access false\n    workspace: runtime", format: 'yaml', valid: true, input: "kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    repository_access: false\n    workspace: runtime\n" },
   {
     name: 'v2: workspace accepts the declared enum',
     format: 'yaml',

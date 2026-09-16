@@ -21,7 +21,8 @@ import { resolveProjectSessionRuntimeIdentity } from '@/features/session/session
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
+import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
+import { cleanPromptText, type QueueRow } from '@/features/session/queue-projection';
 import {
   stageFirstPromptAttachments,
   buildOptimisticPromptTextWithUploads,
@@ -208,6 +209,25 @@ export function InstantSessionShell({
     }
     return behind;
   }, [promptInbox.prompts, extraSends]);
+  // Listed above the composer, exactly where `SessionChat` lists its queue, so
+  // the crossfade into the real chat moves nothing. Read-only: there is no
+  // runtime to remove from or retry against while the box boots.
+  const shellQueueRows = useMemo<QueueRow[]>(
+    () =>
+      queuedBehindFirst.map((entry) => {
+        const cleaned = cleanPromptText(entry.text);
+        return {
+          id: entry.id,
+          clientMessageId: entry.id,
+          text: cleaned.text,
+          attachmentCount: cleaned.fileCount,
+          state: 'queued',
+          removable: false,
+          takeBackEligible: false,
+        };
+      }),
+    [queuedBehindFirst],
+  );
   // The producer's own copy of the first prompt, drawn from the first frame —
   // the row read above can miss it entirely when a warm box delivers between
   // navigation and the fetch. See `useFirstPromptPreviewStore`.
@@ -364,6 +384,10 @@ export function InstantSessionShell({
       // typed mid-turn gets, rather than racing the boot.
       sessionWorking={!!submitted}
       stopDisabled={!!submitted}
+      // What was typed while the box boots — see `shellQueueRows`.
+      inputSlot={
+        submitted ? <QueuedPromptList rows={shellQueueRows} heldCount={0} /> : undefined
+      }
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.
@@ -451,10 +475,6 @@ export function InstantSessionShell({
                     deferPreview
                     sessionId={sessionId}
                   />
-                  {/* What was typed while the box boots, as the dimmed queued
-                    bubbles they already are on the server — same component
-                    SessionChat draws, so the crossfade changes nothing. */}
-                  <QueuedPromptBubbles className="mt-3" queued={queuedBehindFirst} />
                 </div>
               )}
             </div>

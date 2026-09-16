@@ -30,7 +30,7 @@ import { ensurePiWorkerIdentity } from '../lib/ensure-pi-worker-identity';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import {
   environmentSandboxSlugFromSessionMetadata,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 
 const EnvironmentSchema = z.object({
@@ -243,7 +243,7 @@ projectsApp.openapi(
         userId: gate.userId,
         agentName: gate.session.agentName,
         baseRef: gate.session.baseRef || project.defaultBranch,
-        workspaceMode: workspaceModeFromSessionMetadata(gate.session.metadata),
+        repositoryAccess: repositoryAccessFromSessionMetadata(gate.session.metadata),
         sandboxSlug: environmentSandboxSlugFromSessionMetadata(gate.session.metadata) ?? 'default',
         imageRef: identity.sha,
         gitProject: {

@@ -46,7 +46,7 @@ describe('session fast boot Git hint cache', () => {
     // a pi session never receives a project image, every other session still
     // goes through projectImageAllowedForSession. Both halves are pinned.
     expect(sessions).toContain('allowProjectImage: piWorkerBoot');
-    expect(sessions).toContain(': projectImageAllowedForSession(agentName, workspaceMode)');
+    expect(sessions).toContain(': projectImageAllowedForSession(agentName, repositoryAccess)');
     expect(actions).toContain('allowProjectImage:\n        !piWorkerIdentity &&');
     expect(actions).toContain('projectImageAllowedForSession(');
     expect(shared).toContain('allowProjectImage:\n      !piWorkerIdentity &&');

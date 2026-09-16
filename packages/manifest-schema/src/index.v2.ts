@@ -56,7 +56,7 @@ import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } 
 /** Full OpenCode `AgentConfig.mode` parity — https://opencode.ai/config.json `$defs.AgentConfig`. */
 export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 
-/** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
+/** @deprecated Use AgentBlockV2.repository_access. Retained for existing manifests. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** Version 2 selects OpenCode. Version 3 selects the compiled Pi worker. */
@@ -142,6 +142,9 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter. */
   skills?: GrantSetV2;
   kortix_cli?: GrantSetV2;
+  /** Whether new sessions receive repository access. Defaults to true. */
+  repository_access?: boolean;
+  /** @deprecated branch = true, runtime = false; read requires an explicit choice. */
   workspace?: WorkspaceModeV2;
 }
 
@@ -566,6 +569,14 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
   // warning (see `validateGrantList`'s doc comment).
   validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true, 2);
+
+  if (entry.repository_access !== undefined && typeof entry.repository_access !== 'boolean') {
+    issues.push({ path: `${where}.repository_access`, message: 'must be a boolean.', severity: 'error' });
+  }
+  if (typeof entry.repository_access === 'boolean' && entry.workspace !== undefined &&
+      entry.repository_access !== (entry.workspace === 'branch')) {
+    issues.push({ path: `${where}.repository_access`, message: 'repository_access conflicts with workspace.', severity: 'error' });
+  }
 
   if (entry.workspace !== undefined) {
     const w = typeof entry.workspace === 'string' ? entry.workspace.trim() : '';

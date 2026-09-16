@@ -6160,3 +6160,54 @@ export const connectorProjectSettingsRelations = relations(connectorProjectSetti
     references: [projects.projectId],
   }),
 }));
+
+/** Reusable LLM credentials owned by one user, independent of any project. */
+export const userProviderConnections = kortixSchema.table('user_provider_connections', {
+  connectionId: uuid('connection_id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  providerId: varchar('provider_id', { length: 128 }).notNull(),
+  authType: varchar('auth_type', { length: 32 }).notNull(),
+  slot: varchar('slot', { length: 64 }).default('default').notNull(),
+  label: varchar('label', { length: 100 }).default('').notNull(),
+  valueEnc: text('value_enc').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('user_provider_connections_user_provider_slot').on(table.userId, table.providerId, table.slot),
+  unique('user_provider_connections_owner_identity').on(table.connectionId, table.userId, table.providerId),
+  check('user_provider_connections_auth_type', sql`${table.authType} in ('api_key', 'device_oauth')`),
+]);
+
+/** An explicit grant to use a personal provider connection in one project. */
+export const projectUserProviderConnections = kortixSchema.table('project_user_provider_connections', {
+  projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull(),
+  providerId: varchar('provider_id', { length: 128 }).notNull(),
+  connectionId: uuid('connection_id').notNull(),
+  pool: boolean('pool').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.projectId, table.userId, table.providerId] }),
+  foreignKey({
+    columns: [table.connectionId, table.userId, table.providerId],
+    foreignColumns: [userProviderConnections.connectionId, userProviderConnections.userId, userProviderConnections.providerId],
+    name: 'project_user_provider_connections_owner_fk',
+  }).onDelete('cascade'),
+  index('project_user_provider_connections_connection').on(table.connectionId),
+]);
+
+/** A session retains its selected personal pool member across API replicas. */
+export const sessionUserProviderConnections = kortixSchema.table('session_user_provider_connections', {
+  sessionId: text('session_id').notNull().references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull(),
+  providerId: varchar('provider_id', { length: 128 }).notNull(),
+  connectionId: uuid('connection_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.sessionId, table.userId, table.providerId] }),
+  foreignKey({
+    columns: [table.connectionId, table.userId, table.providerId],
+    foreignColumns: [userProviderConnections.connectionId, userProviderConnections.userId, userProviderConnections.providerId],
+    name: 'session_user_provider_connections_owner_fk',
+  }).onDelete('cascade'),
+  index('session_user_provider_connections_connection').on(table.connectionId),
+]);

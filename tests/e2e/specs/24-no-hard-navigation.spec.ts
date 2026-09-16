@@ -158,9 +158,8 @@ async function openWorkspacePicker(page: Page): Promise<Locator> {
   await page
     .getByRole("menuitem", { name: "Switch Project", exact: true })
     .click();
-  const picker = page.getByRole("menu", {
-    name: "Switch Project",
-    exact: true,
+  const picker = page.getByRole("menu").filter({
+    has: page.getByRole("menuitem", { name: "Account settings" }),
   });
   await expect(picker).toBeVisible();
   return picker;
@@ -222,7 +221,10 @@ test.describe("24 — a menu click never reloads the document", () => {
         waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
+      await page.waitForLoadState("load");
 
+      // The initial goto waits for DOMContentLoaded. Finish its load event
+      // before counting document loads caused by subsequent menu clicks.
       await page.waitForLoadState("load");
       const loadsAfterBoot = documentLoads.length;
 
@@ -300,6 +302,7 @@ test.describe("24 — a menu click never reloads the document", () => {
         waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
+      await page.waitForLoadState("load");
 
       const newEntry = sidebar(page)
         .getByRole("link", { name: /^new$/i })

@@ -213,6 +213,17 @@ export interface SessionChatInputProps {
   modelsLoading?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  /**
+   * A functional hint that replaces the rotating placeholder while it is set —
+   * the session passes "Press ↑ to edit queued messages" while entries are
+   * queued. Lock copy (a pending question or approval) still wins.
+   */
+  hint?: string;
+  /**
+   * Up with the caret on the editor's first visual row. Returns whether it
+   * acted; `false` keeps Up as an ordinary caret move.
+   */
+  onArrowUpAtStart?: () => boolean;
   prefill?: {
     text: string;
     id: number;
@@ -355,8 +366,8 @@ export interface SessionChatInputProps {
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
 /**
- * The inset strip above the card that hosts `inputSlot` — the approval notice,
- * the permission notice, and `QuestionPrompt`.
+ * The inset strip above the card that hosts `inputSlot` — the queued messages,
+ * the approval notice, the permission notice, and `QuestionPrompt`.
  *
  * `items-center` is load-bearing and it BITES: a flex column sizes each child
  * to its content unless the child says otherwise, so anything mounted here that
@@ -441,6 +452,8 @@ function ComposerImpl({
   modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything…',
+  hint,
+  onArrowUpAtStart,
   prefill = null,
   onPrefillApplied,
   attachRequestId = null,
@@ -1395,13 +1408,19 @@ function ComposerImpl({
     return submitLatchRef.current();
   }, []);
 
+  // A question lock owns the editor: Up there is a caret move, never a take-back.
+  const handleArrowUpAtStart = useCallback(
+    () => (lockForQuestion ? false : (onArrowUpAtStart?.() ?? false)),
+    [lockForQuestion, onArrowUpAtStart],
+  );
+
   const editorPlaceholder = resolveEditorPlaceholder({
     lockForApproval,
     lockForQuestion,
     questionButtonLabel,
     questionAcceptsCustom,
     questionPending,
-    placeholder,
+    placeholder: hint ?? placeholder,
   });
 
   /**
@@ -1412,15 +1431,15 @@ function ComposerImpl({
    * IS active the editor gets `''`, so its `::before` renders empty and two
    * placeholders never paint at once (see animated-placeholder.tsx).
    */
-  const animatePlaceholder = isEmpty && !editorDisabled && !lockForQuestion;
+  const animatePlaceholder = isEmpty && !editorDisabled && !lockForQuestion && !hint;
 
   /**
    * Whether the inset strip above the card has anything to show. Gated on
    * actual CONTENT, never on `sessionId`: that was truthy in every session, so
    * the strip's padded, bordered shell rendered as an empty rounded sliver
-   * floating above the notice bar whenever it was empty. The prompt queue no
-   * longer lives here — queued prompts are drawn in the transcript
-   * (`turn/queued-prompt-bubbles.tsx`).
+   * floating above the notice bar whenever it was empty. A session's queued
+   * messages render here, as the first child of `inputSlot`
+   * (`queued-prompt-list.tsx`).
    */
   const showQueueStrip = Boolean(threadContext || inputSlot);
 
@@ -1691,6 +1710,7 @@ function ComposerImpl({
                   placeholder={animatePlaceholder ? '' : editorPlaceholder}
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
+                  onArrowUpAtStart={onArrowUpAtStart ? handleArrowUpAtStart : undefined}
                   onEmptyChange={setIsEmpty}
                   onDocChange={handleDocChange}
                   agents={agents}

@@ -91,14 +91,13 @@ import {
   runGitService,
 } from './local-upstream';
 import { config } from '../config';
-import { queueProjectSnapshotForRef, readReadyProjectSnapshot, verifyReadyProjectSnapshotObjects } from './project-snapshot';
 import {
-  PROJECT_SNAPSHOT_FORMAT,
-  presignProjectSnapshotDownload,
-  projectSnapshotBlobsKey,
-  projectSnapshotTreeKey,
-  projectSnapshotStorageConfigured,
-} from './project-snapshot-store';
+  buildProjectSnapshotDescriptor,
+  queueProjectSnapshotForRef,
+  readReadyProjectSnapshot,
+  verifyReadyProjectSnapshotObjectsInBackground,
+} from './project-snapshot';
+import { projectSnapshotStorageConfigured } from './project-snapshot-store';
 
 export const gitProxyApp = makeOpenApiApp<AppEnv>();
 
@@ -817,44 +816,16 @@ gitProxyApp.openapi(
       return c.json({ error: 'project snapshot storage is not configured' }, 503);
     }
     const { sha } = c.req.valid('query');
-    const row = await readReadyProjectSnapshot(projectId, sha);
-    // Both objects must still be there: a lifecycle expiration re-queues the
-    // row and the box takes the Git path instead of a doomed download.
-    const ready = row ? await verifyReadyProjectSnapshotObjects(row) : null;
+    const ready = await readReadyProjectSnapshot(projectId, sha);
     if (!ready) return c.json({ error: 'not_prepared', sha }, 404);
-    const treeKey = projectSnapshotTreeKey(ready.objectPrefix, ready.archiveSha256);
-    const blobsKey = projectSnapshotBlobsKey(ready.objectPrefix, ready.blobsSha256);
+    // Off the request path: an object that expired re-queues the row for the
+    // next session; this daemon meets the 404 and takes the Git path. This
+    // route is the daemon's FALLBACK — a fresh session normally carries the
+    // descriptor presigned at create (KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR) and
+    // never calls it; a retry or an expired URL does.
+    verifyReadyProjectSnapshotObjectsInBackground(ready);
     try {
-      const [tree, blobs] = await Promise.all([
-        presignProjectSnapshotDownload(treeKey),
-        presignProjectSnapshotDownload(blobsKey),
-      ]);
-      return c.json({
-        format: PROJECT_SNAPSHOT_FORMAT,
-        commit_sha: ready.commitSha,
-        ref: ready.ref,
-        repository: {
-          owner: ready.repository.owner,
-          name: ready.repository.name,
-          external_id: ready.repository.externalId,
-        },
-        // The boot object: working tree + blobless .git. Its digest/size is the
-        // session pin.
-        tree: {
-          url: tree.url,
-          sha256: ready.archiveSha256,
-          bytes: ready.archiveBytes,
-          entries: ready.entryCount,
-          expires_at: tree.expiresAt.toISOString(),
-        },
-        // The hydration object: the tip's blob pack, fetched after activation.
-        blobs: {
-          url: blobs.url,
-          sha256: ready.blobsSha256,
-          bytes: ready.blobsBytes,
-          expires_at: blobs.expiresAt.toISOString(),
-        },
-      });
+      return c.json(await buildProjectSnapshotDescriptor(ready));
     } catch (error) {
       console.warn('[git-proxy] project snapshot descriptor unavailable', {
         projectId,

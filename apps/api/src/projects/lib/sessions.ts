@@ -49,7 +49,8 @@ import {
   requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
-  workspaceFromLoadedAgents,
+  repositoryAccessFromLoadedAgents,
+  legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
@@ -70,7 +71,6 @@ import {
   resolveManifestRuntimeForPiSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
@@ -107,7 +107,6 @@ import {
   projectImageAllowedForSession,
   resolveSessionSandboxSlug,
   sanitizeCallerSessionMetadata,
-  workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import {
@@ -482,6 +481,7 @@ export async function buildSessionSandboxEnvVars(input: {
   /** S3 config provider mode + prepared-archive pin — see session-runtime-env.ts. */
   projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
   projectSnapshotPin?: string | null;
+  projectSnapshotDescriptor?: string | null;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -491,7 +491,7 @@ export async function buildSessionSandboxEnvVars(input: {
   manifestPath?: string;
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
-  workspaceMode?: WorkspaceModeV2 | null;
+  repositoryAccess?: boolean;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -538,7 +538,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitAuthToken: null,
     };
     compiledAgentConfig =
-      !workspaceModeAllowsFullRepository(input.workspaceMode)
+      !(input.repositoryAccess ?? true)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
@@ -698,8 +698,7 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       agentResourcesSha: resourceSourceSha,
-      workspaceMode: input.workspaceMode,
-      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+      repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
@@ -711,6 +710,7 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeConfigDir: input.opencodeConfigDir,
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
+      projectSnapshotDescriptor: input.projectSnapshotDescriptor,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1130,8 +1130,8 @@ export async function createProjectSession(input: {
       },
     };
   }
-  const workspaceMode = workspaceFromLoadedAgents(agentName, loadedAgents) ?? 'branch';
-  if (workspaceMode === 'read') {
+  const repositoryAccess = repositoryAccessFromLoadedAgents(agentName, loadedAgents);
+  if (legacyReadWorkspaceFromLoadedAgents(agentName, loadedAgents)) {
     return {
       error: {
         status: 409,
@@ -1662,7 +1662,9 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
-    workspace_mode: workspaceMode,
+    repository_access: repositoryAccess,
+    // Rollback compatibility: older API replicas must also enforce this restriction.
+    workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
     ...(piWorkerBoot ? { environment_sandbox_slug: environmentSandboxSlug } : {}),
     pi_worker_boot: piWorkerBoot,
@@ -1826,9 +1828,7 @@ export async function createProjectSession(input: {
       // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
-      // just means the daemon's fetch fallback. Deliberately NOT tied to
-      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
-      // deploy-dev pins to an explicit `false`.
+      // just means the daemon's fetch fallback.
       // The worker path never clones: the scaffold/delta hint is pure waste
       // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
@@ -1913,13 +1913,14 @@ export async function createProjectSession(input: {
           })
         : fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
-          // S3 config provider: pin a PREPARED archive for the exact base tip,
-          // or record the miss and queue the build for the next session. One
-          // indexed read; never a bucket call on the create path.
+          // S3 config provider: pin a PREPARED archive for the exact base tip
+          // and presign its download descriptor right here (local signing, no
+          // bucket call on the create path), or record the miss and queue the
+          // build for the next session. One indexed read.
           const projectSnapshotMode = resolveProjectSnapshotMode(project.metadata);
           const projectSnapshot =
             projectSnapshotMode === 'git'
-              ? { pin: null, cache: 'unconfigured' as const }
+              ? { pin: null, descriptor: null, cache: 'unconfigured' as const }
               : await resolveProjectSnapshotPinForSession({
                   projectId,
                   ref: baseRef,
@@ -1931,14 +1932,19 @@ export async function createProjectSession(input: {
                     sessionId,
                     error: err instanceof Error ? err.message : String(err),
                   });
-                  return { pin: null, cache: 'miss' as const };
+                  return { pin: null, descriptor: null, cache: 'miss' as const };
                 });
           if (projectSnapshotMode !== 'git') {
             tl.mark(`project-snapshot-${projectSnapshot.cache}`);
           }
-          return { fastBootGitHint, projectSnapshotMode, projectSnapshotPin: projectSnapshot.pin };
+          return {
+            fastBootGitHint,
+            projectSnapshotMode,
+            projectSnapshotPin: projectSnapshot.pin,
+            projectSnapshotDescriptor: projectSnapshot.descriptor,
+          };
         })
-        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin }) =>
+        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin, projectSnapshotDescriptor }) =>
           buildSessionSandboxEnvVars({
             accountId,
             projectId,
@@ -1953,6 +1959,7 @@ export async function createProjectSession(input: {
             freshSession: true,
             projectSnapshotMode,
             projectSnapshotPin,
+            projectSnapshotDescriptor,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
@@ -1961,7 +1968,7 @@ export async function createProjectSession(input: {
             opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
-            workspaceMode,
+            repositoryAccess,
           }),
         )
         .then((envVars) => {
@@ -1986,7 +1993,7 @@ export async function createProjectSession(input: {
       // fire-and-forget so they never block the IIFE itself.
       const branchAlreadyCreated =
         body.branch_already_created === true || body.branchAlreadyCreated === true;
-      const branchPromise: Promise<void> = branchAlreadyCreated
+      const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
         ? Promise.resolve()
         : projectWithGitAuthPromise
             .then((projectWithGitAuth) =>
@@ -2025,7 +2032,7 @@ export async function createProjectSession(input: {
         agentName,
         allowProjectImage: piWorkerBoot
           ? false
-          : projectImageAllowedForSession(agentName, workspaceMode),
+          : projectImageAllowedForSession(agentName, repositoryAccess),
         // v0 pins the worker to Daytona: the entrypoint override in
         // ensurePiWorkerImage is only exercised there so far. Lift once the
         // other adapters' entrypoint handling is verified.

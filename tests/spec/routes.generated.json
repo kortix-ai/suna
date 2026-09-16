@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 654,
+  "count": 671,
   "routes": [
     {
       "method": "GET",
@@ -1924,6 +1924,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/personal-providers"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/personal-providers/:provider"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/resource-grants"
     },
     {
@@ -2336,6 +2344,30 @@
     },
     {
       "method": "GET",
+      "path": "/v1/provider-connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/provider-connections/:provider"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/provider-connections/:provider"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/provider-connections/:provider/connections/:connectionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/provider-connections/:provider/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/provider-connections/:provider/start"
+    },
+    {
+      "method": "GET",
       "path": "/v1/public/session-shares/:shareId"
     },
     {
@@ -2417,6 +2449,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

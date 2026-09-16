@@ -85,6 +85,12 @@ timeouts, then a Daytona guest whose kernel could not mount overlay2) on about
 every third lane. Pull-request previews below still use a sandbox: they need a
 long-lived public HTTPS origin.
 
+Live sandbox flows first provision one tracked session and wait up to 15 minutes
+for the default image and runtime. This setup runs before individual flow timers.
+The normal flow deadlines still apply after the image is ready. `SNAP-2` runs in
+the global lane after concurrent flows because rebuilding the shared default image
+invalidates it for every project using the same content hash.
+
 ## Pull request preview sandboxes
 
 Add the `preview` label to a same-repository pull request into `main`.
