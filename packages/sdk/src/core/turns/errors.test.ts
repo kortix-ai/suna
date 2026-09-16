@@ -270,6 +270,37 @@ describe('unwrapError — a message that is itself a serialized body is unwrappe
     expect(unwrapError(html)).toBe('502 Bad Gateway');
   });
 
+  // CodeQL js/bad-tag-filter: `<\/script>` does not match a close tag with
+  // whitespace before the bracket, which HTML permits. The script body then
+  // survives the strip and lands in the user's transcript row.
+  test('a close tag with whitespace still strips the script body out of the visible text', () => {
+    const html = '<html><body><script >alert(1)</script >Service unavailable</body></html>';
+    expect(unwrapError(html)).toBe('Service unavailable');
+  });
+
+  test('the same holds for style, and for an uppercase close tag', () => {
+    const html = '<html><body><STYLE>.a{color:red}</STYLE >Gateway timeout</body></html>';
+    expect(unwrapError(html)).toBe('Gateway timeout');
+  });
+
+  // CodeQL js/polynomial-redos: `<title[^>]*>` and `<script[\s\S]*?<\/script>`
+  // each rescan the tail from every match position, so an error page that is a
+  // long run of unclosed tags costs O(n^2). The body is attacker-influenced —
+  // it is whatever an upstream gateway returned — so this must stay linear.
+  test('a pathological unclosed-tag body is parsed in linear time, not quadratically', () => {
+    const hostile = `<html>${'<title'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('the same bound holds for a long run of unclosed script tags', () => {
+    const hostile = `<html><body>${'<script'.repeat(30_000)}`;
+    const started = Date.now();
+    unwrapError(hostile);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   test('a body with no recognizable sentence never renders "[object Object]" or empty', () => {
     // A code or status is still a sentence's worth of information — say it.
     expect(unwrapError({ status: 500 })).toBe('Request failed with status 500');
