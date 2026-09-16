@@ -17,6 +17,7 @@ import {
   deleteProjectSession,
   deleteSessionPrompt,
   ensureWarmProjectSession,
+  ensureProjectSessionEnvironment,
   getProjectSession,
   getProjectSessionConfigState,
   getProjectSessionScope,
@@ -121,6 +122,23 @@ test('getSessionPreviewCandidates hits the previews endpoint', async () => {
   const result = await getSessionPreviewCandidates('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1/previews');
   expect(result).toEqual({ candidates: [] });
+});
+
+test('ensureProjectSessionEnvironment starts the auxiliary compute runtime', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      session_id: 'S1',
+      status: 'active',
+      external_id: 'env-1',
+      preview_url: 'https://env.example',
+      preview_token: null,
+    },
+  };
+  const result = await ensureProjectSessionEnvironment('P1', 'S1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/environment/ensure');
+  expect(last().method).toBe('POST');
+  expect(result.external_id).toBe('env-1');
 });
 
 test('listSessionPublicShares hits GET /public-shares with showErrors: false', async () => {

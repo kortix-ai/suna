@@ -75,10 +75,10 @@ export function createDiagRouter(cfg: Config, deps: DiagDeps): Hono {
         daemon_log_file: daemonLog,
       },
       opencode: {
-        state: deps.opencode.getState(),
+        state: cfg.workload === 'environment' ? 'disabled' : deps.opencode.getState(),
         pid: deps.opencode.getPid(),
-        port: deps.opencode.getActivePort(),
-        internal_url: deps.opencode.getInternalUrl(),
+        port: cfg.workload === 'environment' ? null : deps.opencode.getActivePort(),
+        internal_url: cfg.workload === 'environment' ? null : deps.opencode.getInternalUrl(),
         binary: deps.opencode.getBinaryPath(),
         port_pair: [cfg.opencodeInternalPort, cfg.opencodeStandbyPort],
         session_id: deps.bootState.initialOpenCodeSessionId ?? null,

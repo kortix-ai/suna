@@ -44,23 +44,13 @@ async function requestEmailAuthentication(page: Page, email: string) {
     exact: true,
   });
   await expect(continueButton).toBeEnabled();
-  let submitted = false;
-  for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
-    const formRequest = page
-      .waitForRequest(
-        (request) =>
-          request.method() === "POST" && new URL(request.url()).pathname === "/auth",
-        { timeout: 2_000 },
-      )
-      .then(() => true)
-      .catch(() => false);
-    await page.getByLabel("Email").press("Enter");
-    submitted = await formRequest;
-    if (!submitted) {
-      await expect(continueButton).toBeEnabled();
-    }
-  }
-  expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
+  await Promise.all([
+    page.waitForRequest(
+      (request) =>
+        request.method() === "POST" && new URL(request.url()).pathname === "/auth",
+    ),
+    page.getByLabel("Email").press("Enter"),
+  ]);
   await expect(
     page.getByRole("heading", { name: "Check your email" }),
   ).toBeVisible();

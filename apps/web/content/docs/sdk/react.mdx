@@ -34,6 +34,43 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 Readiness is server truth. The runtime is ready when `POST /start` returns
 `stage: 'ready'`. `useSession` does not run a separate client-side health check.
 
+### useSessionWorkspace(projectId, sessionId, options?)
+
+Mount `useSessionWorkspace` only in a surface that needs repository files,
+PTYs, or preview ports. A Pi session then provisions or resumes its separate
+environment. The hook waits for that environment's daemon to report
+`runtimeReady: true` before exposing `phase: 'ready'` and its workspace URL.
+Allocation alone does not prove checkout readiness. A one-box session reuses
+its control runtime without another API request.
+
+```tsx
+import { useSession, useSessionWorkspace } from '@kortix/sdk/react';
+
+function Terminal({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  const workspace = useSessionWorkspace(projectId, sessionId, {
+    enabled: session.phase === 'ready',
+  });
+
+  if (workspace.phase === 'resolving') return <Spinner />;
+  if (workspace.phase === 'error') return <Retry onClick={workspace.retry} />;
+  return <Pty serverUrl={workspace.runtimeUrl} />;
+}
+```
+
+`phase` is `idle`, `resolving`, `ready`, or `error`. Concurrent hooks share one
+React Query entry. The hook never redirects chat or event traffic away from the
+control runtime.
+
+For Pi sessions, wait for workspace readiness before requesting files, project
+paths, or Git data. These requests use the environment. Messages and events use
+the worker. The SDK recognizes each server-owned Pi metadata projection and
+keeps project and Git caches scoped to the workspace identity.
+
+`getWorkspaceClient()` is a compatibility helper for existing OpenCode-style
+calls. It throws `RuntimeNotReadyError` until the environment URL exists. New
+integrations should use the session-scoped SDK methods and hooks above.
+
 ### Returns
 
 | Field | Type | What it holds |
@@ -48,6 +85,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
 | `rewindPending` | `boolean` | A rewind or restore request is in progress. |
 | `rewindError` | `KortixSendError \| null` | The last rewind or restore failure. |
+| `changeModel(model)`, `isChangingModel` | — | Persist a model. Pi applies it to new prompts and preserves accepted turns. OpenCode retains its runtime restart behavior. |
 | `models`, `agents`, `defaultAgent`, `commands` | — | Selectable models, selectable agents, the default agent, and slash commands. Available before the runtime starts. |
 | `retry` | `() => void` | Force a re-check of `/start`. |
 
@@ -81,6 +119,10 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
+
+Rewind and restore events refresh active file lists, file contents, and Git diffs.
+Pi requires complete tool records and the original environment's file checkpoints.
+Conflicting edits refuse rewind. These checkpoints do not survive environment deletion.
 
 `rewind(messageId)` never creates a session. It uses the canonical session from
 `POST /start`. The runtime restores file state and keeps the removed transcript

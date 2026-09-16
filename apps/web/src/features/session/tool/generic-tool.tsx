@@ -6,6 +6,7 @@ import {
   partOutput,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { LOCAL_MCP_TOOL_LABELS } from '@/features/session/tool/shared/local-mcp';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CpuIcon as Cpu } from '@phosphor-icons/react';
 import { useMemo } from 'react';
@@ -37,36 +38,42 @@ export function GenericTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
   const { server, display } = useMemo(() => parseToolName(part.tool), [part.tool]);
 
   const subtitle = useMemo(() => {
-    const keys = [
-      'description',
-      'query',
-      'url',
-      'filePath',
-      'file_path',
-      'path',
-      'pattern',
-      'name',
-      'prompt',
-    ];
+    const keys = LOCAL_MCP_TOOL_LABELS.has(part.tool)
+      ? ['server']
+      : [
+          'description',
+          'query',
+          'url',
+          'filePath',
+          'file_path',
+          'path',
+          'pattern',
+          'name',
+          'prompt',
+        ];
     for (const k of keys) {
       const v = input[k];
       if (typeof v === 'string' && v.length > 0) return v.length > 80 ? v.slice(0, 77) + '…' : v;
     }
     return undefined;
-  }, [input]);
+  }, [input, part.tool]);
 
   const args = useMemo(() => {
-    const skip = new Set([
-      'description',
-      'query',
-      'url',
-      'filePath',
-      'file_path',
-      'path',
-      'pattern',
-      'name',
-      'prompt',
-    ]);
+    const skip = new Set(
+      LOCAL_MCP_TOOL_LABELS.has(part.tool)
+        ? ['server', 'connectionId']
+        : [
+            'description',
+            'query',
+            'url',
+            'filePath',
+            'file_path',
+            'path',
+            'pattern',
+            'name',
+            'prompt',
+          ],
+    );
     const out: string[] = [];
     for (const [k, v] of Object.entries(input)) {
       if (skip.has(k)) continue;
@@ -76,7 +83,7 @@ export function GenericTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       }
     }
     return out;
-  }, [input]);
+  }, [input, part.tool]);
 
   return (
     <BasicTool

@@ -1,26 +1,7 @@
-/**
- * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
- * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_cli/repository_access/enabled. OpenCode
- * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
- * permission/prompt) lives entirely in the agent's own native
- * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
- * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
- * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
- * editor route (`../routes/agent-config.ts`) is what merges this governance
- * half with the `.md` behavior half into one wire response/request — this
- * module only ever touches kortix.yaml.
- *
- * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
- * resolves the platform GRANT the session token carries (a narrower view —
- * connectors/secrets/kortix_cli reduced to the wire `AgentGrant` shape).
- * This module instead reads/writes the agent's declared governance block
- * verbatim so the editor can present (and persist) the complete governance
- * field space, not just the grant subset. Pure — no I/O; callers own
- * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
- */
+/** Read and update agent declarations in YAML. Behavior can live in config or
+ *  legacy native Markdown; the editor route preserves the selected source. */
 import {
+  manifestUsesAgentMap,
   type AgentBlockV2,
   resolveGrantSet,
   SLUG_RE,
@@ -109,13 +90,13 @@ export type ReadAgentBlockResult =
 
 /**
  * Read one agent's raw v2 block out of an already-loaded manifest. Never
- * throws. `block` is `null` for a v1 manifest (schemaVersion !== 2) or when
+ * throws. `block` is `null` for a v1 manifest (no `agents:` map) or when
  * the named agent isn't declared yet (a brand-new agent the editor is about
  * to create) — both are valid, non-error states the caller (the GET route)
  * surfaces distinctly via `schemaVersion`/`ok`.
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent: null };
   }
   const rawAgents = manifest.raw.agents;
@@ -123,14 +104,14 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
   if (rawAgents === undefined || rawAgents === null) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
+    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent };
   }
   if (Array.isArray(rawAgents) || typeof rawAgents !== 'object') {
     return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
   }
   const entry = (rawAgents as Record<string, unknown>)[agentName];
   if (entry === undefined) {
-    return { ok: true, schemaVersion: 2, block: null, defaultAgent };
+    return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent };
   }
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
@@ -141,7 +122,7 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   if (!repository.ok) return repository;
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: manifest.schemaVersion,
     block: repository.block as AgentBlockV2,
     defaultAgent,
   };
@@ -226,11 +207,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project must use kortix_version 2 or later (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -272,11 +253,11 @@ export function applyAgentBlockV2(
   agentName: string,
   block: AgentBlockV2,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to edit the full agent configuration.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to edit the full agent configuration.',
     };
   }
   return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
@@ -306,11 +287,11 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 (kortix.yaml) to edit agent scope.',
+        'This project must use kortix_version 2 or later (kortix.yaml) to edit agent scope.',
     };
   }
   const rawAgents = manifest.raw.agents;
@@ -412,12 +393,12 @@ export function grantSecretToAgentV2(
   identifier: string,
   projectIdentifiers: readonly string[] = [],
 ): GrantSecretToAgentResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       unsupportedV1: true,
       error:
-        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
+        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 or later (kortix.yaml) to grant a secret to an agent.',
     };
   }
   const rawAgents = manifest.raw.agents;

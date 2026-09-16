@@ -51,6 +51,42 @@ export interface ClaimedPiWorkerBox {
   baseUrl: string;
 }
 
+/**
+ * The pool is OFF by default (`KORTIX_PI_WORKER_POOL_TARGET` = 0) and is off in
+ * every deployed environment today. That is now a product choice, not a
+ * workaround.
+ *
+ * It used to be a workaround: a claim delivered the session env over HTTP to
+ * `park.mjs`, which execed the worker with it in a CHILD PROCESS ONLY, while
+ * the container kept `KORTIX_PI_PARK=1`. The first stop/resume re-ran the
+ * entrypoint, execed `park.mjs` again with the claim gone, and the box
+ * answered `{parked:true,runtimeReady:false}` for ever — the session's
+ * transcript survived and no turn could ever run again. A cold-created box
+ * resumed correctly, so it hit only this fast path and read as random.
+ *
+ * FIXED: `park.mjs` now persists the claim to `claim.json` (0600, written
+ * atomically before the claim is acknowledged) and prefers it over parking on
+ * every later boot, so a resumed pooled box comes back as its own worker. The
+ * whole protocol — claim, handoff, and resume-after-restart — is driven
+ * against the real baked script in `snapshots/pi-worker-park.test.ts`.
+ *
+ * Before enabling it anywhere, validate on a live environment what a unit test
+ * cannot: that a claimed box survives a real provider stop/resume, and that
+ * the pool's reaper never recycles a box whose claim file is still on disk.
+ *
+ * THE POOL IS DAYTONA-ONLY, and that is load-bearing rather than incidental.
+ * The persisted claim (`/opt/kortix/claim.json`) lives on the box's writable
+ * layer, so it only survives a provider whose resume returns the SAME box with
+ * its disk intact. Daytona qualifies: `ensureSessionRuntimeStarted` resolves
+ * the existing sandbox by external id and execs `pi-worker-entrypoint` inside
+ * it — which is also precisely why the claim is needed, since that entrypoint
+ * re-reads the container's still-set `KORTIX_PI_PARK=1` and would otherwise
+ * re-park a box that already belongs to a session. A provider that cold-boots
+ * its template on resume instead (Platinum — see the `ensureSessionRuntimeStarted`
+ * contract in `platform/providers/index.ts`) starts from a fresh rootfs, so the
+ * claim file would be gone and the resume defect would come back in a form no
+ * test here covers. Do not widen this provider without re-proving durability.
+ */
 export function piWorkerPoolEnabled(): boolean {
   return config.KORTIX_PI_WORKER_POOL_TARGET > 0;
 }

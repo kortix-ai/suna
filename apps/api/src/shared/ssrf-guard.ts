@@ -42,10 +42,24 @@ export function isPrivateIp(ip: string): boolean {
   if (!ip || typeof ip !== 'string') return true;
   const family = isIP(ip);
   if (family === 0) return true; // not an IP → treat as unsafe (defensive)
+  let normalized = ip;
+  if (family === 6) {
+    try {
+      normalized = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+    } catch {
+      return true;
+    }
+  }
 
   // IPv4-mapped IPv6 (::ffff:a.b.c.d) → unwrap to the v4 form.
-  const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+  const mapped = normalized.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
   if (mapped) return isPrivateIp(mapped[1]);
+  const mappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (mappedHex) {
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
+    return isPrivateIp(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
 
   if (family === 4) {
     const parts = ip.split('.').map((p) => Number.parseInt(p, 10));
@@ -67,7 +81,7 @@ export function isPrivateIp(ip: string): boolean {
   }
 
   // IPv6
-  const v = ip.toLowerCase();
+  const v = normalized.toLowerCase();
   if (v === '::1' || v === '::') return true; // loopback / unspecified
   if (v.startsWith('fc') || v.startsWith('fd')) return true; // fc00::/7 ULA (incl. AWS fd00:ec2::254 metadata)
   if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb'))
@@ -107,7 +121,7 @@ export async function assertSafeEgressUrl(
   if (parsed.username || parsed.password) {
     throw new UnsafeEgressError('url must not contain credentials', rawUrl);
   }
-  const host = parsed.hostname;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
   // Literal IP host → check directly without DNS.
   if (isIP(host) !== 0) {
     if (isPrivateIp(host)) throw new UnsafeEgressError(`blocked private ip host: ${host}`, rawUrl);
@@ -159,12 +173,13 @@ export async function safeEgressFetch(
   for (;;) {
     const res = await fetch(url, { ...fetchInit, redirect: 'manual', signal });
     if (res.status < 300 || res.status >= 400) return res;
+    const location = res.headers.get('location');
+    if (!location) return res; // malformed 3xx with no Location → let caller see it
+    await res.body?.cancel().catch(() => {});
     // 3xx — follow manually with re-validation.
     if (++hops > MAX_REDIRECTS) {
       throw new UnsafeEgressError(`too many redirects (>${MAX_REDIRECTS})`, rawUrl);
     }
-    const location = res.headers.get('location');
-    if (!location) return res; // malformed 3xx with no Location → let caller see it
     const next = new URL(location, url);
     url = await assertSafeEgressUrl(next.href, { allowHttp });
   }

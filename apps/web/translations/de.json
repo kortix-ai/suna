@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Modell für neue Eingaben gespeichert. Bereits angenommene Eingaben behalten ihr Modell.",
+    "changeFailed": "Das Modell konnte nicht geändert werden",
     "search": "Modelle suchen",
     "free": "Kostenlos",
     "addProvider": "Anbieter hinzufügen",
@@ -18368,6 +18370,10 @@
       "textff5bd8333c4e": "Du und alle, die dieses Projekt verwalten können",
       "text36d8691ae566": "Alle mit dem Link, sowie dein Team",
       "text4fb2abecc0a6": "Alle mit dem Passwort, sowie dein Team",
+      "text069bf3d7e248": "Der Arbeitsbereich konnte nicht geöffnet werden.",
+      "text1cd3cef84e36": "Die Antwort konnte nicht gesendet werden. Versuche es erneut.",
+      "textb4c89a8de9da": "Die Sitzungsberechtigungen konnten nicht aktualisiert werden.",
+      "text9deef600048b": "Unterhaltung wird geladen",
       "text03a01dd53ffa": "↑ drücken, um Nachrichten in der Warteschlange zu bearbeiten",
       "text1eb132d9d4da": "Warteschlange pausiert",
       "textf8e64a37950a": "Nachrichten in der Warteschlange",

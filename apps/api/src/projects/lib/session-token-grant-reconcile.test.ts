@@ -1,5 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { AgentGrant } from '@kortix/db';
+import { type AgentGrant, accountTokens, projectSessions } from '@kortix/db';
 import * as realSecretGrant from './secret-grant';
 
 const storedGrantDefault: AgentGrant = {
@@ -15,8 +15,9 @@ const currentGrant: AgentGrant = {
   env: 'all',
 };
 
+let session = { agentName: 'kortix', metadata: {} as Record<string, unknown> };
+let resolvedRef: string | undefined;
 let storedGrant: AgentGrant = storedGrantDefault;
-let sessionAgentRow = 'kortix';
 let writtenGrant: AgentGrant | null | undefined;
 let resolvedAgent: string | undefined;
 let resolvedRequestedAgent: string | null | undefined;
@@ -29,12 +30,12 @@ const launchChecks: string[] = [];
 // on the order the module issues its reads in.
 mock.module('../../shared/db', () => ({
   db: {
-    select: (columns: Record<string, unknown>) => ({
-      from: () => ({
+    select: () => ({
+      from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
-            if ('agentGrant' in columns) return [{ agentGrant: storedGrant }];
-            if ('agentName' in columns) return [{ agentName: sessionAgentRow }];
+            if (table === accountTokens) return [{ agentGrant: storedGrant }];
+            if (table === projectSessions) return [session];
             return [
               {
                 repoUrl: 'https://example.test/acme/repo.git',
@@ -65,10 +66,12 @@ mock.module('./secret-grant', () => ({
     sessionAgent: string;
     requestedAgent?: string | null;
     forceRefresh?: boolean;
+    defaultBranch?: string;
   }) => {
     resolvedAgent = input.sessionAgent;
     resolvedRequestedAgent = input.requestedAgent;
     forceRefresh = input.forceRefresh;
+    resolvedRef = input.defaultBranch;
     const running = input.requestedAgent ?? input.sessionAgent;
     return running === currentGrant.agent ? currentGrant : { ...currentGrant, agent: running };
   },
@@ -83,8 +86,9 @@ const { reconcileStoredSessionAgentGrant, remintGrantForAgentSwitch } = await im
 );
 
 beforeEach(() => {
+  session = { agentName: 'kortix', metadata: {} };
+  resolvedRef = undefined;
   storedGrant = storedGrantDefault;
-  sessionAgentRow = 'kortix';
   writtenGrant = undefined;
   resolvedAgent = undefined;
   resolvedRequestedAgent = undefined;
@@ -134,6 +138,36 @@ test('same-agent reconcile is SYNCHRONOUS on the prompt path — a narrowed mani
   expect(decision).toEqual({ action: 'write', grant: currentGrant });
 });
 
+const piMetadata = { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'feature', pi_worker_sha: 'a'.repeat(40) };
+
+test('Pi connector reconciliation uses its session agent and pinned source despite a stale token', async () => {
+  session = { agentName: 'denied', metadata: piMetadata };
+  await reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' });
+  expect(resolvedAgent).toBe('denied');
+  expect(resolvedRequestedAgent).toBe('denied');
+  expect(resolvedRef).toBe(piMetadata.pi_worker_sha);
+});
+
+test('an unsupported Pi agent switch cannot reassign the worker token', async () => {
+  session = { agentName: 'denied', metadata: piMetadata };
+  await expect(remintGrantForAgentSwitch({ projectId: 'project-1', sessionId: 'session-1', sessionAgent: 'denied', requestedAgent: 'kortix' })).rejects.toThrow('Pi agent switching');
+  expect(writtenGrant).toBeUndefined();
+  expect(resolvedAgent).toBeUndefined();
+});
+
+test('a Pi session with an invalid pinned identity fails closed', async () => {
+  session = { agentName: 'denied', metadata: { ...piMetadata, pi_worker_sha: 'broken' } };
+  await expect(reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' })).rejects.toThrow('Pi runtime identity');
+  expect(writtenGrant).toBeUndefined();
+});
+
+test('OpenCode connector reconciliation retains the switched agent from its token', async () => {
+  session = { agentName: 'other', metadata: {} };
+  await reconcileStoredSessionAgentGrant({ projectId: 'project-1', sessionId: 'session-1' });
+  expect(resolvedAgent).toBe('kortix');
+  expect(resolvedRef).toBe('main');
+});
+
 // ── INC-2026-09-15: an agent the project does not declare never reaches a token ──
 
 test('a prompt naming an agent this project does not declare runs as the SESSION agent — the token is never re-pointed at it', async () => {
@@ -180,7 +214,7 @@ test('a prompt with no agent never pays the launchability read', async () => {
 
 test('a token already carrying an undeclared agent heals to the session agent on the next connector call', async () => {
   launchableAgents = new Set(['galileo']);
-  sessionAgentRow = 'galileo';
+  session = { agentName: 'galileo', metadata: {} };
   storedGrant = {
     agent: 'chief-of-staff',
     connectors: [],

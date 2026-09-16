@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { isExempt } from './request-deadline';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { Hono } from 'hono';
+import { isExempt, remainingRequestBudgetMs, requestDeadline } from './request-deadline';
 
 function ctx(path: string, method = 'POST') {
   return {
@@ -74,4 +75,35 @@ describe('requestDeadline exempts the streaming secret relay', () => {
       expect(isExempt(ctx(path))).toBe(false);
     }
   });
+});
+
+
+const clockSpies: Array<ReturnType<typeof spyOn>> = [];
+afterEach(() => { for (const clock of clockSpies.splice(0)) clock.mockRestore(); });
+
+test('subrequests reserve response time from the enclosing request budget', async () => {
+  let now = 100_000;
+  clockSpies.push(spyOn(Date, 'now').mockImplementation(() => now));
+  const app = new Hono();
+  app.use('*', requestDeadline);
+  app.get('/v1/projects/p1/sessions/s1/prompts', c => {
+    expect(remainingRequestBudgetMs(20_000)).toBe(20_000);
+    now += 23_500;
+    expect(remainingRequestBudgetMs(20_000)).toBe(500);
+    now += 1_000;
+    expect(remainingRequestBudgetMs(20_000)).toBe(0);
+    return c.text('bounded');
+  });
+  expect((await app.request('/v1/projects/p1/sessions/s1/prompts')).status).toBe(200);
+  expect(remainingRequestBudgetMs(20_000)).toBe(20_000);
+});
+
+test('exempt request work uses its own subrequest cap', async () => {
+  const app = new Hono();
+  app.use('*', requestDeadline);
+  app.get('/v1/p/worker/8000/health', c => {
+    expect(remainingRequestBudgetMs(20_000)).toBe(20_000);
+    return c.text('exempt');
+  });
+  expect((await app.request('/v1/p/worker/8000/health')).status).toBe(200);
 });

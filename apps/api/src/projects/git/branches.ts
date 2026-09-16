@@ -289,10 +289,11 @@ export async function createRemoteSessionBranch(
 ) {
   const base = validateRef(baseRef || project.defaultBranch);
   const branch = validateRef(branchName);
+  const pinnedCommit = /^[0-9a-f]{40}$/.test(base);
   const githubRepo = parseGitHubRepoUrl(project.repoUrl);
   if (githubRepo && project.gitAuthToken) {
     const auth = { token: project.gitAuthToken };
-    const sha = await getBranchCommitSha({
+    const sha = pinnedCommit ? base : await getBranchCommitSha({
       owner: githubRepo.owner,
       repo: githubRepo.repo,
       branch: base,
@@ -320,7 +321,7 @@ export async function createRemoteSessionBranch(
     await runGit(['remote', 'add', 'origin', project.repoUrl], repoPath, false);
     const fetchBase = () =>
       runGit(
-        ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
+        ['fetch', '--no-tags', '--depth=1', 'origin', pinnedCommit ? base : `+refs/heads/${base}:refs/heads/${base}`],
         repoPath,
         true,
         project.gitAuthToken,
@@ -338,14 +339,14 @@ export async function createRemoteSessionBranch(
       // start) is dead. Seed it on demand, then retry once. Reactive by design:
       // the happy path pays nothing, and a repair only runs for the exact
       // failure it can fix (see isMissingRemoteBranchError).
-      if (!isMissingRemoteBranchError(error)) throw error;
+      if (pinnedCommit || !isMissingRemoteBranchError(error)) throw error;
       const { ensureManagedRepoSeeded } = await import('../managed-repo-seed');
       const outcome = await ensureManagedRepoSeeded(project.projectId, 'session-branch');
       if (!outcome.repaired) throw error;
       await fetchBase();
     }
     await runGit(
-      ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
+      ['push', 'origin', `${pinnedCommit ? 'FETCH_HEAD' : `refs/heads/${base}`}:refs/heads/${branch}`],
       repoPath,
       true,
       project.gitAuthToken,

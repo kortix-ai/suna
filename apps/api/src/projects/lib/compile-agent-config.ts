@@ -1,44 +1,23 @@
 /**
- * The runtime compiler (spec docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.3, redirected 2026-07-05 — "one home per concern"): turns a
- * `kortix_version: 2` manifest's `agents:` map (pure governance) plus each
- * agent's own native `.kortix/opencode/agents/<name>.md` (frontmatter +
- * body — the OpenCode behavior source of truth) into OpenCode-native config.
- *
- * The 2026-07-05 redirect killed the earlier "nested `opencode:` block in
- * kortix.yaml + illegal-frontmatter gate" design: OpenCode behavior
- * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
- * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
- * OpenCode agent `.md` is valid input as-is, frontmatter included. The
- * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_cli/repository_access/enabled); the agent's NAME is the join
- * between the two (map key ↔ `.md` filename).
- *
- * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
- * parses that agent's `.md` content (supplied by the caller, keyed by the
- * conventional path — see `agentMarkdownPath`), copies every recognized
- * OpenCode behavioral field straight through, and overlays governance on top:
- * `enabled: false` forces the runtime's `disable` on (governance always wins
- * on that one field); `skills` folds onto `permission.skill`. Every other
- * governance field (connectors/secrets/kortix_cli/repository_access) has no runtime
- * representation and is never copied.
- *
- * `resolveCompiledAgentConfigForSession` is the I/O half: reads the project's
- * manifest + each declared agent's `.md` straight from git (bypassing apps/api's
- * v1-only `triggers.ts` manifest reader, which still caps at `kortix_version`
- * 1 — this compiler is the first apps/api consumer of a v2 manifest's `agents:`
- * map, so it reads the raw text itself via `@kortix/manifest-schema` rather
- * than waiting on that cap to move). It never throws: a v1 project (or any
- * read/parse/compile failure) resolves to `null`, which is the "v1 byte-for-
- * byte unaffected" contract the session-env wiring depends on.
+ * Compile YAML agent configuration or legacy Markdown into the runtime contract.
+ * The selected-agent path pins every input to the session source revision and
+ * fails closed. The all-agent resolver retains null-on-failure only for legacy
+ * Markdown declarations; explicit YAML configuration failures propagate.
+ * Platform grants remain separate; enabled and skill permissions overlay behavior.
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
+  AGENT_BEHAVIOR_KEYS,
+  manifestConfigDir,
+  manifestDefaultRuntime,
+  manifestUsesAgentMap,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
+  validateManifest,
   validateAgentMdFrontmatter,
+  validateAgentConfiguration,
   type AgentBlockV2,
   type GrantSetV2,
   type ManifestIssue,
@@ -50,6 +29,7 @@ import {
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
+import { readAgentPrompt } from './read-agent-prompt';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -114,28 +94,35 @@ function manifestSchemaVersion(manifest: Record<string, unknown>): number {
   return Number.NaN;
 }
 
-/** The project's OpenCode config directory — the SAME top-level `[opencode]
- *  config_dir` v1 already reads (unrelated to per-agent behavior; this is
- *  just "where does `.kortix/opencode/...` live for this project"). Defaults
- *  to `.kortix/opencode`. */
+/**
+ * Where this project's agents/skills/commands live — "where does
+ * `<config_dir>/agents/...` live for this project", unrelated to per-agent
+ * behavior.
+ *
+ * The default follows the manifest's own version: `.kortix/pi` from v3,
+ * `.kortix/opencode` before it. A v3 project's agents should not sit in a
+ * directory named after the runtime it does not run.
+ *
+ * `pi:` is read before `opencode:` so a v3 manifest can name its own directory
+ * without borrowing the other runtime's block; a v3 manifest that still sets
+ * `opencode: config_dir` is honoured rather than ignored, because that is a
+ * deliberate statement about where the files are and silently reading a
+ * different path would lose them.
+ */
 function resolveConfigDir(manifest: Record<string, unknown>): string {
-  const oc = manifest.opencode;
-  if (oc && typeof oc === 'object' && !Array.isArray(oc)) {
-    const dir = (oc as Record<string, unknown>).config_dir;
-    if (typeof dir === 'string' && dir.trim()) {
-      return dir.trim().replace(/\/+$/, '');
-    }
-  }
-  return '.kortix/opencode';
+  return manifestConfigDir(manifest);
 }
 
-/**
- * The conventional path to an agent's native `.md` file — the agent's NAME is
- * the join between the manifest's `agents:` map key and this file (spec
- * §2.2, 2026-07-05 redirect). No manifest field ever spells this path out.
- */
+/** The explicit prompt file, or the legacy agent Markdown path. */
 export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: string): string {
+  const prompt = (manifest.agents as Record<string, AgentBlockV2> | undefined)?.[agentName]?.config?.prompt;
+  if (prompt && typeof prompt === 'object' && typeof prompt.file === 'string') return prompt.file;
   return `${resolveConfigDir(manifest)}/agents/${agentName}.md`;
+}
+
+function needsAgentFile(manifest: Record<string, unknown>, agentName: string): boolean {
+  const config = (manifest.agents as Record<string, AgentBlockV2> | undefined)?.[agentName]?.config;
+  return config === undefined || typeof config?.prompt === 'object';
 }
 
 /** Behavioral frontmatter keys copied straight through onto the compiled
@@ -144,20 +131,7 @@ export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: 
  *  `KNOWN_BEHAVIOR_KEYS` (this list minus `disable`, which the editor never
  *  round-trips) and its wire schema from it, instead of hand-maintaining a
  *  second/third copy — see `routes/agent-config.ts`. */
-export const BEHAVIOR_FRONTMATTER_KEYS = [
-  'description',
-  'mode',
-  'model',
-  'variant',
-  'temperature',
-  'top_p',
-  'options',
-  'color',
-  'steps',
-  'hidden',
-  'permission',
-  'disable',
-] as const;
+export const BEHAVIOR_FRONTMATTER_KEYS = AGENT_BEHAVIOR_KEYS;
 
 /** The agent-config editor's round-tripped subset of `BEHAVIOR_FRONTMATTER_KEYS`
  *  — every field except `disable`, which the editor never round-trips (a
@@ -224,7 +198,7 @@ export function compileAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig | null {
-  if (manifestSchemaVersion(manifest) !== 2) return null;
+  if (!manifestUsesAgentMap(manifestSchemaVersion(manifest))) return null;
 
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -258,8 +232,8 @@ export function compileSelectedAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig {
-  if (manifestSchemaVersion(manifest) !== 2) {
-    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2.');
+  if (!manifestUsesAgentMap(manifestSchemaVersion(manifest))) {
+    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2 or later.');
   }
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -272,10 +246,12 @@ export function compileSelectedAgentConfig(
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents)
       ? v2.agents
       : {};
-  const block = rawAgents[agentName];
-  if (!block) {
+  // Key presence, not truthiness: a declared agent may legitimately have a
+  // null block (comments only), and that is NOT "undeclared".
+  if (!Object.hasOwn(rawAgents, agentName)) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is not declared.`, agentName);
   }
+  const block: AgentBlockV2 = rawAgents[agentName] ?? ({} as AgentBlockV2);
   if (block.enabled === false) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
@@ -299,13 +275,38 @@ export function compileSelectedAgentConfig(
  */
 function compileAgentBlock(
   name: string,
-  block: AgentBlockV2,
+  rawBlock: AgentBlockV2 | null | undefined,
   mdPath: string,
   mdContent: string | undefined,
 ): OpencodeAgentConfig {
+  // A declared agent whose block holds only comments parses as NULL in YAML:
+  //
+  //   echo-probe:
+  //     # grants nothing
+  //
+  // That is a legitimate declaration — the agent exists and grants nothing —
+  // but it used to reach `block.enabled` and throw, and this compile is
+  // ALL-OR-NOTHING: one such agent took down the whole project's config, so
+  // every session booted with no compiled agent config at all and the
+  // per-agent prebuild fell back to the default agent alone. Seen on
+  // pi.kortix.com 2026-08-29: "null is not an object (evaluating
+  // 'block.enabled')".
+  const block: AgentBlockV2 = rawBlock ?? ({} as AgentBlockV2);
   const out: OpencodeAgentConfig = {};
 
-  if (mdContent !== undefined) {
+  if (block.config !== undefined) {
+    const issues: ManifestIssue[] = [];
+    validateAgentConfiguration(block.config, `agents.${name}.config`, issues, validateAgentMdFrontmatter);
+    const errors = issues.filter(issue => issue.severity === 'error');
+    if (errors.length) throw new CompileAgentConfigError(errors.map(issue => `${issue.path}: ${issue.message}`).join('; '), name);
+    for (const key of BEHAVIOR_FRONTMATTER_KEYS)
+      if (block.config[key] !== undefined) (out as Record<string, unknown>)[key] = block.config[key];
+    if (typeof block.config.prompt === 'string') out.prompt = block.config.prompt;
+    else if (block.config.prompt) {
+      if (mdContent === undefined) throw new CompileAgentConfigError(`Agent "${name}" prompt file "${mdPath}" is missing.`, name);
+      out.prompt = mdContent;
+    }
+  } else if (mdContent !== undefined) {
     const { frontmatter, body } = parseAgentMarkdown(mdContent);
 
     const issues: ManifestIssue[] = [];
@@ -444,28 +445,45 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
+/** Resolve a session runtime while preserving only deliberate legacy absence. */
+export async function resolveManifestRuntimeForPiSession(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const ref = baseRef?.trim() || project.defaultBranch;
+  const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const found = await readManifestFromRepo(project, candidates, ref);
+  if (!found) return null;
+  const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
+  const version = manifestSchemaVersion(raw);
+  if (version === 1) return null;
+  if (version !== 2 && version !== 3) {
+    throw new CompileAgentConfigError('Manifest must declare a valid kortix_version.');
+  }
+  const runtime = (raw as Record<string, unknown>).runtime;
+  if (runtime !== undefined && runtime !== 'pi' && runtime !== 'opencode') {
+    throw new CompileAgentConfigError('Manifest runtime must be "pi" or "opencode".');
+  }
+  const expected = manifestDefaultRuntime(version);
+  if (runtime !== undefined && runtime !== expected) {
+    throw new CompileAgentConfigError(`kortix_version ${version} requires runtime "${expected}".`);
+  }
+  return expected;
+}
+
 /**
  * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
  *
- * Null means "could not tell" (no manifest, not v2, read/parse failure) and
- * always falls back to the OpenCode path — the same fail-open-to-legacy
- * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
- * well-formed `runtime: pi` can move a session onto the worker.
+ * This compatibility resolver keeps the historical tolerant contract. Session
+ * creation for a Pi-enabled project uses `resolveManifestRuntimeForPiSession`
+ * so Git, parse, and invalid-runtime failures cannot silently select OpenCode.
  */
 export async function resolveManifestRuntime(
   project: GitBackedProject,
   baseRef?: string | null,
 ): Promise<RuntimeV2 | null> {
-  const ref = baseRef?.trim() || project.defaultBranch;
   try {
-    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    const found = await readManifestFromRepo(project, candidates, ref);
-    if (!found) return null;
-    const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (manifestSchemaVersion(raw) !== 2) return null;
-    const runtime = (raw as Record<string, unknown>).runtime;
-    if (runtime === 'pi') return 'pi';
-    return 'opencode';
+    return await resolveManifestRuntimeForPiSession(project, baseRef);
   } catch {
     return null;
   }
@@ -488,6 +506,7 @@ export async function resolveCompiledAgentConfigForSession(
   baseRef?: string | null,
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
+  let hasExplicitConfiguration = false;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
@@ -495,18 +514,22 @@ export async function resolveCompiledAgentConfigForSession(
 
     const format = manifestFormatForPath(found.path);
     const raw = parseManifestText(found.content, format);
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) return null;
 
     const v2 = raw as unknown as ManifestV2;
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
+    hasExplicitConfiguration = Object.values(agents).some(block => block?.config !== undefined);
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
+        if (!needsAgentFile(raw, name)) return;
         const path = agentMarkdownPath(raw, name);
         try {
-          agentMdFiles[path] = await readRepoFile(project, path, ref);
+          agentMdFiles[path] = agents[name]?.config !== undefined
+            ? await readAgentPrompt(project, path, ref)
+            : await readRepoFile(project, path, ref);
         } catch (err) {
           // A MISSING file is an expected client condition: the manifest may
           // declare an agent that carries no behavior file, and that agent
@@ -530,6 +553,7 @@ export async function resolveCompiledAgentConfigForSession(
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
     return compiled ? JSON.stringify(compiled) : null;
   } catch (err) {
+    if (hasExplicitConfiguration) throw err;
     console.warn(
       `[compile-agent-config] project ${project.projectId}: compile failed, session boots without a compiled agent config: ${(err as Error).message}`,
     );
@@ -557,19 +581,48 @@ export async function resolveSelectedAgentConfigForSession(
 
   const format = manifestFormatForPath(found.path);
   const raw = parseManifestText(found.content, format);
-  if (manifestSchemaVersion(raw) !== 2) {
+  if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) {
     throw new CompileAgentConfigError(
-      `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
+      `Project ${project.projectId} must use kortix_version 2 or later for selected-agent compilation.`,
       agentName,
     );
   }
 
+  const manifest = raw as unknown as ManifestV2;
+  const rawAgents =
+    manifest.agents && typeof manifest.agents === 'object' && !Array.isArray(manifest.agents)
+      ? manifest.agents
+      : {};
+  if (Object.hasOwn(rawAgents, agentName)) {
+    const selectedValidation = validateManifest(
+      {
+        kortix_version: manifestSchemaVersion(raw),
+        default_agent: agentName,
+        agents: { [agentName]: rawAgents[agentName] ?? {} },
+      },
+      format,
+    );
+    const errors = selectedValidation.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length > 0) {
+      throw new CompileAgentConfigError(
+        `Agent "${agentName}" has invalid governance: ${errors
+          .map((issue) => `${issue.path}: ${issue.message}`)
+          .join('; ')}`,
+        agentName,
+      );
+    }
+  }
+
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
-  try {
-    agentMdFiles[path] = await readRepoFile(project, path, ref);
-  } catch (err) {
-    if (!isRepoFileNotFoundError(err)) throw err;
+  if (needsAgentFile(raw, agentName)) {
+    try {
+      agentMdFiles[path] = rawAgents[agentName]?.config !== undefined
+        ? await readAgentPrompt(project, path, ref)
+        : await readRepoFile(project, path, ref);
+    } catch (err) {
+      if (!isRepoFileNotFoundError(err)) throw err;
+    }
   }
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));

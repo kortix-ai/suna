@@ -15,6 +15,7 @@ import { commitFile, createRepo, getFileSha } from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
@@ -1087,8 +1088,16 @@ projectsApp.openapi(
   if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
     return c.json({ error: 'slug must be lowercase letters/digits/_- (1-64 chars)' }, 400);
   }
-  if (slug === DEFAULT_SANDBOX_SLUG) {
-    return c.json({ error: 'slug "default" is reserved for the platform template' }, 409);
+  if (slug === DEFAULT_SANDBOX_SLUG || slug === PI_WORKER_SANDBOX_SLUG) {
+    return c.json(
+      {
+        error:
+          slug === DEFAULT_SANDBOX_SLUG
+            ? 'slug "default" is reserved for the platform template'
+            : `slug "${PI_WORKER_SANDBOX_SLUG}" is reserved for the server-selected Pi runtime`,
+      },
+      409,
+    );
   }
 
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : slug;

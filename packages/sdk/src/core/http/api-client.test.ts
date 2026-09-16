@@ -914,3 +914,72 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     }
   });
 });
+
+
+describe('caller cancellation reaches the platform request', () => {
+  test('cancellation settles while credential resolution is still pending', async () => {
+    const controller = new AbortController();
+    let release: (value: string) => void = () => {};
+    let calls = 0;
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => {
+      controller.abort(new Error('Stopped during authentication'));
+      return new Promise<string>(resolve => { release = resolve; });
+    }, fetch: async () => { calls++; return Response.json({ok:true}); } });
+    const pending = backendApi.get('/connectors/catalog', {signal:controller.signal});
+    try {
+      const result = await Promise.race([pending, new Promise<null>(resolve => setTimeout(() => resolve(null), 100))]);
+      expect(result?.error?.code).toBe('ABORTED');
+      expect(calls).toBe(0);
+    } finally {
+      release('tok');
+      await pending;
+    }
+    expect(calls).toBe(0);
+  });
+
+  test('an already cancelled request never resolves credentials or reaches fetch', async () => {
+    let credentials = 0;
+    let calls = 0;
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => { credentials++; return 'tok'; }, fetch: async () => { calls++; return Response.json({ok:true}); } });
+    const controller = new AbortController();
+    controller.abort(new Error('User stopped'));
+    const result = await backendApi.get('/connectors/catalog', {signal:controller.signal});
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ABORTED');
+    expect(credentials).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  test('Stop aborts an in-flight write without retry or a global error', async () => {
+    const controller = new AbortController();
+    const errors: unknown[] = [];
+    let calls = 0;
+    let transportAborted = false;
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok', onError: error => errors.push(error), fetch: async (_url, init) => {
+      calls++;
+      return new Promise<Response>((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => { transportAborted = true; reject(init.signal?.reason); }, {once:true});
+        controller.abort(new Error('Stop the connector call'));
+        queueMicrotask(() => resolve(Response.json({ok:true})));
+      });
+    } });
+    const result = await backendApi.post('/connectors/call', {connector:'fixture',action:'write',args:{}}, {signal:controller.signal});
+    expect(result.error?.code).toBe('ABORTED');
+    expect(transportAborted).toBe(true);
+    expect(calls).toBe(1);
+    expect(errors).toEqual([]);
+  });
+
+  test('cancellation during a retryable response prevents a second read', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok', fetch: async () => {
+      calls++;
+      controller.abort();
+      return Response.json({error:'unavailable'}, {status:503});
+    } });
+    const result = await backendApi.get('/connectors/catalog', {signal:controller.signal});
+    expect(result.error?.code).toBe('ABORTED');
+    expect(calls).toBe(1);
+  });
+});

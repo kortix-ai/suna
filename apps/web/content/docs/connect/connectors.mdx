@@ -141,9 +141,50 @@ prefills the authorization URL, token URL, and scopes. Enter the client ID of an
 app you create with that provider. When the server publishes no metadata, enter
 every field.
 
-Kortix keeps the MCP session: it runs `initialize` and
-`notifications/initialized` on demand, then sends `Mcp-Session-Id` on later
-calls. A server that answers without a session never sees the handshake.
+Catalog synchronization runs `initialize` and `notifications/initialized` to
+discover server capabilities. Kortix sends the negotiated protocol version on
+later calls. It sends `Mcp-Session-Id` when the server issues one. Sessions are
+isolated by endpoint, authentication, credential, and configured headers.
+
+### Read MCP resources and prompts
+
+Remote MCP servers can expose resources and reusable prompts alongside tools.
+The connector catalog includes these actions when the server advertises them:
+
+| Action, relative to the connector | Arguments |
+|---|---|
+| `mcp.resources.list` | Optional `cursor` from the previous `nextCursor` |
+| `mcp.resources.templates.list` | Optional `cursor` |
+| `mcp.resources.read` | `uri` |
+| `mcp.prompts.list` | Optional `cursor` |
+| `mcp.prompts.get` | `name` and optional `arguments` containing string values |
+
+For a connector named `research`, use the existing CLI or SDK:
+
+```bash
+kortix connectors call research.mcp.resources.list --args '{}' --json
+kortix connectors call research.mcp.resources.read --args '{"uri":"research://notes"}' --json
+kortix connectors call research.mcp.prompts.get --args '{"name":"review","arguments":{"topic":"streaming"}}' --json
+```
+
+```ts
+const result = await kortix.project(projectId).connectors.call(
+  'research.mcp.resources.read',
+  { uri: 'research://notes' },
+);
+```
+
+Pi discovers these actions with `connector_search` and `connector_describe`,
+then executes them with `connector_call`. Resource URIs belong to the remote
+server. Reading one does not open the worker or environment filesystem.
+Resource images use the same private attachment viewer as tool images.
+Prompt messages remain tool content; they do not replace agent instructions.
+
+These actions use the connector's existing grants, authentication, policies,
+approvals, and audit records. They have `read` risk; sensitive connectors still
+require approval. A policy can target `mcp.resources.read` or `mcp.prompts.*`.
+Existing MCP catalogs upgrade on their next synchronization.
+Stdio servers and resource subscriptions are not implemented by this adapter.
 
 Kortix binds each connection to the authorization server that issued it. When
 the callback carries an `iss` parameter (RFC 9207), Kortix rejects it unless it

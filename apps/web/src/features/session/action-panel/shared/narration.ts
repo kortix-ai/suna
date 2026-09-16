@@ -19,6 +19,7 @@
 
 import { safeHttpUrl } from '@/lib/safe-url';
 import type { ToolPart } from '@/ui';
+import { LOCAL_MCP_TOOL_LABELS } from '../../tool/shared/local-mcp';
 import { parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 
@@ -183,7 +184,10 @@ export function familyForTool(toolName: string): StepFamily | 'hidden' {
  * `linear/create_issue`.
  */
 export function humanizeToolName(toolName: string): string {
-  const n = normalizeName(toolName).replace(/__+/g, '/');
+  const normalized = normalizeName(toolName);
+  const localMcp = LOCAL_MCP_TOOL_LABELS.get(normalized);
+  if (localMcp) return localMcp;
+  const n = normalized.replace(/__+/g, '/');
   const leaf = n.includes('/') ? n.slice(n.lastIndexOf('/') + 1) : n;
   return leaf
     .replace(/_/g, ' ')

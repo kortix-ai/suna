@@ -22,7 +22,12 @@
  */
 
 import { and, gt, inArray, isNotNull, or } from 'drizzle-orm';
-import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
+import {
+  appRuntimes,
+  projectMonitorBoxes,
+  sessionEnvironments,
+  sessionSandboxes,
+} from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -72,8 +77,15 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   // PERSISTENT by design (autoStop 0) and has no session_sandboxes row, so
   // without it this sweep would read every healthy monitor box as an orphan and
   // stop it about an hour after it was created — every hour, forever.
+  //
+  // A pi session ENVIRONMENT has the same shape for the same reason: its own
+  // table, no session_sandboxes row. Without it here, this sweep stopped the
+  // compute box out from under a live pi session about an hour in, and nothing
+  // recovered — `ensure` only resumes a row whose status says 'stopped', and
+  // the reaper does not write that column, so the row still claimed 'active'
+  // while the box was off and every tool call failed to attach.
   const recentCutoff = new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS);
-  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
+  const [sessionKeepRows, appKeepRows, monitorKeepRows, environmentKeepRows] = await Promise.all([
     db
       .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
       .from(sessionSandboxes)
@@ -107,8 +119,32 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
           gt(projectMonitorBoxes.updatedAt, recentCutoff),
         ),
       ),
+    db
+      .select({
+        provider: sessionEnvironments.provider,
+        externalId: sessionEnvironments.externalId,
+      })
+      .from(sessionEnvironments)
+      .where(
+        and(
+          isNotNull(sessionEnvironments.externalId),
+          or(
+            inArray(sessionEnvironments.status, ['active', 'provisioning']),
+            // `lastUsedAt` is the liveness signal here: an environment is
+            // touched on every ensure, while `updatedAt` only moves on a
+            // status change.
+            gt(sessionEnvironments.lastUsedAt, recentCutoff),
+            gt(sessionEnvironments.updatedAt, recentCutoff),
+          ),
+        ),
+      ),
   ]);
-  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
+  const keepRows = [
+    ...sessionKeepRows,
+    ...appKeepRows,
+    ...monitorKeepRows,
+    ...environmentKeepRows,
+  ];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)

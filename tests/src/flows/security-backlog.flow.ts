@@ -619,7 +619,7 @@ flow(
         '/v1/../.env',
         '/%2e%2e/%2e%2e/etc/passwd',
       ]) {
-        const response = await ctx.client.get(path);
+        const response = await ctx.client.get(path, { pathAsIs: true });
         if (response.statusCode === 307) {
           const location = response.header('location') ?? '';
           const redirect = new URL(location, 'https://probe.invalid');

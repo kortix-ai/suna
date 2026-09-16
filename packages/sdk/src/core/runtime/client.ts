@@ -32,7 +32,7 @@ export type { OpencodeClient };
 
 import { authenticatedFetch } from "../http/auth";
 import { isConfigured } from "../http/config";
-import { getActiveOpenCodeUrl } from "../session/server-store/active";
+import { getActiveOpenCodeUrl, getActiveWorkspaceUrl } from "../session/server-store/active";
 import { ApiError } from "../http/api/errors";
 
 // Sandbox env/secrets client (`GET/PUT/DELETE /env`), the `/kortix/triggers`
@@ -94,6 +94,23 @@ export function getClient(): OpencodeClient {
 	// One factory. "The active runtime" is just the current session's URL, and
 	// getClientForUrl caches per URL — so there is no separate global singleton to
 	// keep in sync, and no client to "reset" when the current session changes.
+	return getClientForUrl(url);
+}
+
+/**
+ * Get the OpenCode-compatible client for the runtime that owns repository data.
+ *
+ * A one-box OpenCode session resolves this to the control runtime. A Pi session
+ * resolves it to the lazy environment. It never falls back to the Pi worker
+ * while that environment is pending, because the worker has no repository.
+ */
+export function getWorkspaceClient(): OpencodeClient {
+	const url = getActiveWorkspaceUrl();
+	if (!url) {
+		throw new RuntimeNotReadyError(
+			'[opencode-sdk] Workspace URL not ready — session environment is still loading',
+		);
+	}
 	return getClientForUrl(url);
 }
 

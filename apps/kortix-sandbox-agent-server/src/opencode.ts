@@ -2405,6 +2405,7 @@ export function createOpencodeSupervisor(
 
   function scheduleReadinessProbe() {
     if (stopping) return
+    if (readinessTimer) clearTimeout(readinessTimer)
     // Poll fast until ready (quick boot detection), then slow to a liveness ping.
     // The forever-100ms poll cost ~55% of a core per idle sandbox (READY_LIVENESS_MS).
     // Once ok, probe slowly (liveness). But the moment a liveness probe starts
@@ -2416,8 +2417,8 @@ export function createOpencodeSupervisor(
           ? READY_LIVENESS_RECHECK_MS
           : READY_LIVENESS_MS
         : READY_POLL_MS
-    readinessTimer = setTimeout(async () => {
-      if (stopping) return
+    const timer = setTimeout(async () => {
+      if (stopping || readinessTimer !== timer) return
       const probedPort = livePort()
       const probedChild = child
       // Send nothing to a process that has not announced its handler yet
@@ -2432,6 +2433,7 @@ export function createOpencodeSupervisor(
       const probe = directoryProbeOpen
         ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
         : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
+      if (stopping || readinessTimer !== timer) return
       const ready = probe === 'ready'
       // An answered probe proves the handler exists (the fallback path).
       if (probe !== 'down' && probedChild && probedChild === child) reportListening(probedChild)
@@ -2474,6 +2476,7 @@ export function createOpencodeSupervisor(
       }
       scheduleReadinessProbe()
     }, interval)
+    readinessTimer = timer
   }
 
 
@@ -2722,6 +2725,7 @@ export function createOpencodeSupervisor(
       currentOpencodeConfigDir = nextOpencodeConfigDir
       if (nextProjectEnv) currentProjectEnv = nextProjectEnv
       state = 'starting'
+      if (readinessTimer) scheduleReadinessProbe()
       logger.info('[opencode] reconfigured', {
         projectId: nextCfg.projectId,
         opencodeConfigDir: nextOpencodeConfigDir,

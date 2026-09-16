@@ -2,16 +2,12 @@
 
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fileListKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { listFiles } from '../api/runtime-files';
 
-export const fileListKeys = {
-  all: ['runtime-files', 'list'] as const,
-  dir: (serverUrl: string, dirPath: string) =>
-    ['runtime-files', 'list', serverUrl, dirPath] as const,
-};
+export { fileListKeys } from '@kortix/sdk/react';
 
 /**
  * Fetch the directory listing for a path on the active OpenCode server.
@@ -20,7 +16,7 @@ export const fileListKeys = {
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
  */
 export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({
@@ -61,7 +57,7 @@ export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
  */
 export function useInvalidateFileList() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return (dirPath?: string) => {
     if (dirPath) {

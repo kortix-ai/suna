@@ -16,19 +16,9 @@ import { Check, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
- * Change the model mid-session.
- *
- * A session's model used to be fixed at creation — the runtime read it once at
- * start, so a live session kept it forever. Changing it now re-points the
- * running runtime, which RESTARTS it and therefore ends any in-flight turn.
- * That is why this is a deliberate choice rather than a silent setting.
- *
- * Goes through `/api/session-model` rather than the SDK directly: the upstream
- * field is named after the runtime, and reference-app client code stays
- * provider-neutral (scripts/sdk-boundary.mjs). The route reports whether the
- * change took effect NOW or applies at next start, and we say which — a user
- * told the model changed, whose next answer comes from the old one, has been
- * lied to.
+ * Save the session model through the provider-neutral wrapper route.
+ * The runtime can apply the selection to new prompts or require a restart.
+ * The response identifies the behavior and any failure to reach the runtime.
  */
 export function ModelSwitcher({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const qc = useQueryClient();
@@ -69,6 +59,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
       const body = (await res.json()) as {
         model?: string;
         appliedLive?: boolean;
+        appliesTo?: 'next_prompt';
         pushFailed?: boolean;
         detail?: string;
         error?: string;

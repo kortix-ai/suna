@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Modelo guardado para nuevas solicitudes. Las solicitudes ya aceptadas conservan su modelo.",
+    "changeFailed": "No se pudo cambiar el modelo",
     "search": "Buscar modelos",
     "free": "Gratis",
     "addProvider": "Añadir proveedor",
@@ -18368,6 +18370,10 @@
       "textff5bd8333c4e": "Tú y cualquiera que pueda administrar este proyecto",
       "text36d8691ae566": "Cualquiera con la URL, además de tu equipo",
       "text4fb2abecc0a6": "Cualquiera con la contraseña, además de tu equipo",
+      "text069bf3d7e248": "No se pudo abrir el espacio de trabajo.",
+      "text1cd3cef84e36": "No se pudo enviar la respuesta. Inténtalo de nuevo.",
+      "textb4c89a8de9da": "No se pudieron actualizar los permisos de la sesión.",
+      "text9deef600048b": "Cargando conversación",
       "text03a01dd53ffa": "Pulsa ↑ para editar los mensajes en cola",
       "text1eb132d9d4da": "Cola en pausa",
       "textf8e64a37950a": "Mensajes en cola",

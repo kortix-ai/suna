@@ -284,6 +284,15 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(body.sandboxId).toBe(SANDBOX_A);
   });
 
+  test('a session-bound project PAT reaches its boot-timeline sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/boot-timeline', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_session_bound_a' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   test('a plain project PAT (no session binding) still cannot reach the sink', async () => {
     const res = await appWithProbe().request('/v1/platform/runtime-projection', {
       method: 'POST',

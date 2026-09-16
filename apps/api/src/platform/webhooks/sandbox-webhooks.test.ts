@@ -6,6 +6,8 @@ const cfg: { DAYTONA_WEBHOOK_SECRET?: string; PLATINUM_WEBHOOK_SECRET?: string }
 let stoppedCalls: string[] = [];
 let stoppedOptions: Array<Record<string, unknown> | undefined> = [];
 let removedCalls: string[] = [];
+let environmentStoppedCalls: string[] = [];
+let environmentRemovedCalls: string[] = [];
 let dedupSeen: Set<string> = new Set();
 
 mock.module('../../config', () => ({ config: cfg }));
@@ -35,6 +37,16 @@ mock.module('../../projects/sandbox-reaper', () => ({
     return true;
   },
 }));
+mock.module('../services/session-environment-state-sync', () => ({
+  reconcileEnvironmentStoppedByExternalId: async (externalId: string) => {
+    environmentStoppedCalls.push(externalId);
+    return true;
+  },
+  reconcileEnvironmentRemovedByExternalId: async (externalId: string) => {
+    environmentRemovedCalls.push(externalId);
+    return true;
+  },
+}));
 
 const {
   classifyLifecycle,
@@ -50,6 +62,8 @@ beforeEach(() => {
   stoppedCalls = [];
   stoppedOptions = [];
   removedCalls = [];
+  environmentStoppedCalls = [];
+  environmentRemovedCalls = [];
   dedupSeen = new Set();
 });
 
@@ -103,11 +117,18 @@ describe('verifySvix (Daytona)', () => {
   });
   test('rejects wrong / incomplete', () => {
     expect(verifySvix(body, secret, { id, timestamp: ts, signature: 'v1,nope' })).toBe(false);
-    expect(verifySvix(body, secret, { id: undefined, timestamp: ts, signature: `v1,${expected}` })).toBe(false);
+    expect(
+      verifySvix(body, secret, { id: undefined, timestamp: ts, signature: `v1,${expected}` }),
+    ).toBe(false);
   });
 });
 
-function svixHeaders(secret: string, id: string, ts: string, body: string): (h: string) => string | undefined {
+function svixHeaders(
+  secret: string,
+  id: string,
+  ts: string,
+  body: string,
+): (h: string) => string | undefined {
   const sig = createHmac('sha256', Buffer.from(secret.replace(/^whsec_/, ''), 'base64'))
     .update(`${id}.${ts}.${body}`, 'utf8')
     .digest('base64');
@@ -132,10 +153,16 @@ describe('handleDaytonaWebhook', () => {
   });
   test('closes billing on a stopped state', async () => {
     cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbA', newState: 'stopped', updatedAt: 't1' });
+    const body = JSON.stringify({
+      event: 'sandbox.state.updated',
+      id: 'sbA',
+      newState: 'stopped',
+      updatedAt: 't1',
+    });
     const r = await handleDaytonaWebhook(body, svixHeaders(secret, 'm1', '100', body));
     expect(r.status).toBe(200);
     expect(stoppedCalls).toEqual(['sbA']);
+    expect(environmentStoppedCalls).toEqual(['sbA']);
   });
   // `classifyLifecycle` folds `stopping` and `archiving` — both TRANSITIONAL —
   // into `stopped`. A delivery is an unsolicited observation, so mid-turn it
@@ -144,7 +171,12 @@ describe('handleDaytonaWebhook', () => {
   // parked a running turn with `stopReason: provider_reconcile`).
   test('a stopped delivery is an OBSERVATION, and says so', async () => {
     cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbC', newState: 'stopping', updatedAt: 't1' });
+    const body = JSON.stringify({
+      event: 'sandbox.state.updated',
+      id: 'sbC',
+      newState: 'stopping',
+      updatedAt: 't1',
+    });
     await handleDaytonaWebhook(body, svixHeaders(secret, 'm3', '100', body));
 
     expect(stoppedCalls).toEqual(['sbC']);
@@ -152,7 +184,12 @@ describe('handleDaytonaWebhook', () => {
   });
   test('dedupes a repeated delivery', async () => {
     cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbB', newState: 'stopped', updatedAt: 't1' });
+    const body = JSON.stringify({
+      event: 'sandbox.state.updated',
+      id: 'sbB',
+      newState: 'stopped',
+      updatedAt: 't1',
+    });
     const hdr = svixHeaders(secret, 'm2', '100', body);
     await handleDaytonaWebhook(body, hdr);
     await handleDaytonaWebhook(body, hdr);
@@ -176,6 +213,7 @@ describe('handlePlatinumWebhook', () => {
     const r = await handlePlatinumWebhook(body, hmacHeader(body));
     expect(r.status).toBe(200);
     expect(removedCalls).toEqual(['pX']);
+    expect(environmentRemovedCalls).toEqual(['pX']);
   });
   test('noop on started', async () => {
     cfg.PLATINUM_WEBHOOK_SECRET = secret;

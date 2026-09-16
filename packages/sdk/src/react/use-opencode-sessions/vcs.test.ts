@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
+import * as realRuntimeClient from '../../core/runtime/client';
 
 // Bound BEFORE `mock.module` runs (static imports execute first), so the mock
 // can re-export the REAL `opencodeKeys` while replacing only the two hooks the
@@ -13,7 +14,17 @@ mock.module('./keys', () => ({
 
 // `useCurrentRuntime` is `useSyncExternalStore` — an invalid hook call outside
 // a render. Replace it with a plain selector over a per-test state object.
-let runtimeState: { sandboxId: string | null } = { sandboxId: null };
+let runtimeState: {
+  sandboxId: string | null;
+  dataRuntimeKind: 'worker' | 'environment' | null;
+  workspaceUrl: string | null;
+  workspaceSandboxId: string | null;
+} = {
+  sandboxId: null,
+  dataRuntimeKind: null,
+  workspaceUrl: null,
+  workspaceSandboxId: null,
+};
 mock.module('../use-current-runtime', () => ({
   useCurrentRuntime: (selector: (s: typeof runtimeState) => unknown) => selector(runtimeState),
 }));
@@ -26,7 +37,11 @@ mock.module('@tanstack/react-query', () => ({
 
 let clientImpl: Record<string, unknown> = {};
 mock.module('../../core/runtime/client', () => ({
-  getClient: () => clientImpl,
+  ...realRuntimeClient,
+  getClient: () => {
+    throw new Error('VCS must not use the control runtime');
+  },
+  getWorkspaceClient: () => clientImpl,
 }));
 
 const { useOpenCodeVcsDiff } = await import('./vcs');
@@ -40,7 +55,12 @@ type QueryConfig = {
 
 beforeEach(() => {
   runtimeReady = true;
-  runtimeState = { sandboxId: 'sbx_1' };
+  runtimeState = {
+    sandboxId: 'worker_1',
+    dataRuntimeKind: 'environment',
+    workspaceUrl: 'https://environment.example.test',
+    workspaceSandboxId: 'sbx_1',
+  };
   clientImpl = {};
 });
 
@@ -92,7 +112,12 @@ describe('useOpenCodeVcsDiff', () => {
   });
 
   test('the query key carries the mode and the active sandbox id', () => {
-    runtimeState = { sandboxId: 'sbx_9' };
+    runtimeState = {
+      sandboxId: 'worker_9',
+      dataRuntimeKind: 'environment',
+      workspaceUrl: 'https://environment-9.example.test',
+      workspaceSandboxId: 'sbx_9',
+    };
     const branch = useOpenCodeVcsDiff('branch') as unknown as QueryConfig;
     const git = useOpenCodeVcsDiff('git') as unknown as QueryConfig;
 
@@ -128,6 +153,17 @@ describe('useOpenCodeVcsDiff', () => {
     expect((useOpenCodeVcsDiff('branch') as unknown as QueryConfig).enabled).toBe(false);
     runtimeReady = true;
     expect((useOpenCodeVcsDiff('branch') as unknown as QueryConfig).enabled).toBe(true);
+  });
+
+  test('disabled while a Pi environment has no workspace URL', () => {
+    runtimeState = {
+      sandboxId: 'worker_1',
+      dataRuntimeKind: 'environment',
+      workspaceUrl: null,
+      workspaceSandboxId: null,
+    };
+
+    expect((useOpenCodeVcsDiff('branch') as unknown as QueryConfig).enabled).toBe(false);
   });
 
   test('options.enabled === false disables it even when the runtime is ready', () => {

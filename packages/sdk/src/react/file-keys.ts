@@ -19,3 +19,9 @@ export const gitStatusKeys = {
   all: ['opencode-files', 'git-status'] as const,
   status: (serverUrl: string) => ['opencode-files', 'git-status', serverUrl] as const,
 };
+
+export const binaryBlobKeys = {
+  all: ['opencode-files', 'binary-blob'] as const,
+  file: (serverUrl: string, filePath: string) =>
+    ['opencode-files', 'binary-blob', serverUrl, filePath] as const,
+};

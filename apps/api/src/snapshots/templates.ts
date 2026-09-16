@@ -20,6 +20,12 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
+  CLAUDE_CODE_SHA256_AMD64,
+  CLAUDE_CODE_SHA256_ARM64,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_SHA256_AMD64,
+  CODEX_CLI_SHA256_ARM64,
+  CODEX_CLI_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   OPENCODE_VERSION,
@@ -44,6 +50,7 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
+  isReservedSandboxTemplateSlug,
   normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
@@ -226,9 +233,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v43: per-project warm images extract the single Git metadata archive directly
 // into /workspace without retaining it. Repo warm-up uses only canonical
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
-// v44: install the shared shell tool floor (rg, fd, bat, jq, fzf, …) from
-// @kortix/shared/sandbox shell-tools.ts, with `fd`/`bat` linked to Debian's names.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v44';
+// v44: bake exact Codex CLI and Claude Code pins into every full environment image.
+// v45: bake ripgrep for the remote glob and grep tools.
+// v46: bake native file readiness and decoded LLM response forwarding.
+// These govern first requests, before the daemon permits its deferred self-update.
+// v47: bake acknowledged environment RPC cancellation for Pi Stop.
+// v48: retain Pi RPC fixes, add the shared shell tools, and refresh readiness on reconfigure.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v48';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -589,6 +600,7 @@ export async function refreshTemplateState(
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  opts: { requireCurrentRuntime?: boolean } = {},
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -606,7 +618,9 @@ export async function computeTemplateIdentity(
    */
   swapKey: string;
 }> {
-  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint(
+    opts.requireCurrentRuntime ? 'off' : config.KORTIX_COMPILED_BOOT_MODE,
+  );
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
   const hashInputs = {
     dockerfile: userDockerfile,
@@ -893,7 +907,14 @@ function clamp(
   return n;
 }
 
-function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unknown }): void {
+function validateTemplateMutation(args: {
+  slug?: unknown;
+  image?: unknown;
+  dockerfilePath?: unknown;
+}): void {
+  if (typeof args.slug === 'string' && isReservedSandboxTemplateSlug(args.slug.trim())) {
+    throw new Error(`Sandbox template slug "${args.slug.trim()}" is server-owned.`);
+  }
   const image = typeof args.image === 'string' && args.image.trim() ? args.image.trim() : null;
   const dockerfilePath =
     typeof args.dockerfilePath === 'string' && args.dockerfilePath.trim()
@@ -904,8 +925,8 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
   }
 }
 
-// The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// The runtime layer bakes source artifacts into every template's rootfs.
+// The agent inputs build the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
 // slack-cli, SDK-backed Connector client) are the non-agent runtime. The
 // agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
@@ -913,6 +934,8 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  { label: 'kortix-agent-lock', path: resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/bun.lock') },
+  { label: 'kortix-agent-mcp-config', path: resolve(REPO_ROOT, 'packages/sdk/src/core/pi/mcp.ts') },
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
@@ -938,14 +961,17 @@ const runtimeIntegrityKey = () =>
     UV_SHA256_ARM64,
     BUN_SHA256_AMD64,
     BUN_SHA256_ARM64,
+    CODEX_CLI_SHA256_AMD64,
+    CODEX_CLI_SHA256_ARM64,
+    CLAUDE_CODE_SHA256_AMD64,
+    CLAUDE_CODE_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${CODEX_CLI_VERSION}:${CLAUDE_CODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:codex:${CODEX_CLI_VERSION}:claude:${CLAUDE_CODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
-let runtimeFingerprintCache: { key: string; value: string } | null = null;
-let runtimeFingerprintInflight: Promise<string> | null = null;
+const runtimeFingerprintCache = new Map<string, Promise<string>>();
 let nonAgentFingerprintCache: { key: string; value: string } | null = null;
 let nonAgentFingerprintInflight: Promise<string> | null = null;
 
@@ -964,26 +990,24 @@ let nonAgentFingerprintInflight: Promise<string> | null = null;
  * the warm-base name from this fingerprint so a new release (SANDBOX_VERSION
  * bump / runtime source change) automatically gets a fresh warm base.
  */
-export async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  const key = runtimeVersionKey();
-  if (runtimeFingerprintCache?.key === key) return runtimeFingerprintCache.value;
-  if (runtimeFingerprintInflight) return runtimeFingerprintInflight;
+export async function currentRuntimeArtifactFingerprint(
+  mode: 'off' | 'shadow' | 'prefer' | 'required' = config.KORTIX_COMPILED_BOOT_MODE,
+): Promise<string> {
+  const key = `${runtimeVersionKey()}:${snapshotEmbedsAgentForBootMode(mode)}`;
+  const cached = runtimeFingerprintCache.get(key);
+  if (cached) return cached;
 
-  runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
+  const fingerprint = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: runtimeArtifactsForBootMode(mode),
   })
-    .then((value) => {
-      runtimeFingerprintCache = { key, value };
-      runtimeFingerprintInflight = null;
-      return value;
-    })
     .catch((err) => {
-      runtimeFingerprintInflight = null;
+      runtimeFingerprintCache.delete(key);
       throw err;
     });
-  return runtimeFingerprintInflight;
+  runtimeFingerprintCache.set(key, fingerprint);
+  return fingerprint;
 }
 
 export function runtimeArtifactsForBootMode(

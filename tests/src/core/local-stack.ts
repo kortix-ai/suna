@@ -272,6 +272,50 @@ export async function ensureLocalMigrations(
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
   }
+  await waitForLocalRestSchema(supabase);
+}
+
+export async function waitForLocalRestSchema(
+  supabase: LocalSupabaseEnvironment,
+  options: { request?: typeof fetch; timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  if (!supabase.API_URL || !supabase.SERVICE_ROLE_KEY) {
+    throw new Error("local Supabase schema readiness requires API_URL and SERVICE_ROLE_KEY");
+  }
+  const url = localEndpoint(supabase.API_URL, "local Supabase", "/rest/v1/");
+  const request = options.request ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 90_000;
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = "no response";
+  while (Date.now() < deadline) {
+    try {
+      const response = await request(url, {
+        method: "GET",
+        headers: {
+          apikey: supabase.SERVICE_ROLE_KEY,
+          authorization: `Bearer ${supabase.SERVICE_ROLE_KEY}`,
+          accept: "application/openapi+json",
+          "accept-profile": "public",
+        },
+        signal: AbortSignal.timeout(Math.max(1, Math.min(2_000, deadline - Date.now()))),
+      });
+      lastStatus = `HTTP ${response.status}`;
+      const body = await response.json() as { code?: unknown; paths?: Record<string, unknown> };
+      if (response.ok && body.paths?.["/rpc/atomic_use_credits"] && body.paths?.["/rpc/atomic_add_credits"]) {
+        return;
+      }
+      if (typeof body.code === "string" && /^PGRST\d+$/.test(body.code)) {
+        lastStatus += `, ${body.code}`;
+      } else if (response.ok) {
+        lastStatus += ", credit RPCs absent";
+      }
+    } catch {
+      lastStatus = "connection or schema response unavailable";
+    }
+    const delay = Math.min(options.intervalMs ?? 250, deadline - Date.now());
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  throw new Error(`local PostgREST schema did not become ready within ${timeoutMs}ms (${lastStatus})`);
 }
 
 export async function localApiHealthy(apiUrl: string): Promise<boolean> {

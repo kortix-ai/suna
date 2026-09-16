@@ -21,3 +21,9 @@ describe('canServeLastKnownGoodRuntime', () => {
     }
   });
 });
+
+
+test('a declared runtime requirement refuses last-ready images until the matching image is built', () => {
+  expect(canServeLastKnownGoodRuntime({source: 'session-start', requireCurrentRuntime: true})).toBe(false);
+  expect(canServeLastKnownGoodRuntime({source: 'session-start', requireCurrentRuntime: false})).toBe(true);
+});

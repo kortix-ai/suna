@@ -71,7 +71,7 @@ export function useFileMkdir() {
 
 export function useFileRename() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useMutation<boolean, Error, { from: string; to: string }>({
     mutationFn: ({ from, to }) => renameFile(from, to),

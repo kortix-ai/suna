@@ -1,3 +1,4 @@
+import type { PiModelLimits } from '../../git-proxy/pi-model-limits';
 import { agentConfigEtag } from './compile-agent-config';
 
 export interface SessionRuntimeEnvInput {
@@ -59,6 +60,7 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
+  agentResourcesSha?: string;
 }
 
 /**
@@ -95,6 +97,7 @@ export function auditRelayEnvPassthrough(
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = input.repositoryAccess ?? true;
   const compiledBootMode = input.compiledBootMode ?? 'off';
+  const gitHintMatchesResources = !input.agentResourcesSha || input.baseSha === input.agentResourcesSha;
   const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
@@ -116,14 +119,14 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_SESSION_FRESH: '1',
           ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
-          ...(input.gitDeltaBundleBase64
+          ...(gitHintMatchesResources && input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
             : {}),
-          ...(input.gitDeltaBundleRemote ? { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' } : {}),
-          ...(input.gitDeltaParentSha
+          ...(gitHintMatchesResources && input.gitDeltaBundleRemote ? { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' } : {}),
+          ...(gitHintMatchesResources && input.gitDeltaParentSha
             ? { KORTIX_GIT_DELTA_PARENT_SHA: input.gitDeltaParentSha }
             : {}),
-          ...(input.gitDeltaParentCommitBase64
+          ...(gitHintMatchesResources && input.gitDeltaParentCommitBase64
             ? { KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: input.gitDeltaParentCommitBase64 }
             : {}),
         }
@@ -144,7 +147,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // the archive would disclose files that mode withholds.
   const snapshotMode = input.projectSnapshotMode ?? 'git';
   const projectSnapshotEnv: Record<string, string> =
-    allowsFullRepository && input.freshSession && snapshotMode !== 'git'
+    allowsFullRepository && input.freshSession && gitHintMatchesResources && snapshotMode !== 'git'
       ? {
           KORTIX_PROJECT_SNAPSHOT_MODE: snapshotMode,
           ...(input.projectSnapshotPin ? { KORTIX_PROJECT_SNAPSHOT_PIN: input.projectSnapshotPin } : {}),
@@ -164,6 +167,15 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
+    ...(input.agentResourcesSha ? {
+      KORTIX_AGENT_RESOURCES_SHA: input.agentResourcesSha,
+      ...(allowsFullRepository ? {
+        KORTIX_COMPILED_BOOT_MODE: 'required',
+        KORTIX_BASE_SHA: input.agentResourcesSha,
+        KORTIX_BASE_REF: input.agentResourcesSha,
+        KORTIX_DEFAULT_BRANCH: input.agentResourcesSha,
+      } : {}),
+    } : {}),
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
@@ -215,6 +227,7 @@ export function buildPiWorkerSessionEnvVars(input: {
   apiUrl: string;
   frontendUrl?: string;
   opencodeModel?: string | null;
+  modelLimits?: PiModelLimits;
 }): Record<string, string> {
   return {
     KORTIX_PROJECT_ID: input.projectId,
@@ -226,11 +239,28 @@ export function buildPiWorkerSessionEnvVars(input: {
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_AGENT: input.agentName,
     KORTIX_API_URL: input.apiUrl,
+    KORTIX_MODEL_CONFIG_URL: `${input.apiUrl.replace(/\/+$/, '')}/projects/${input.projectId}/sessions/${input.sessionId}/model`,
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // No repo checkout exists on a worker box.
     KORTIX_PROJECT_AUTO_CLONE: '0',
+    // The worker defaults to its scripted `faux` provider when this is unset
+    // (`KORTIX_MODEL_MODE ?? 'faux'`, apps/kortix-worker/src/worker.ts). That
+    // default belongs to the benchmarks, which measure infrastructure with no
+    // credentials — a REAL session that inherits it answers every prompt with
+    // an empty assistant turn and no error anywhere, which reads as "pi never
+    // replies". A session is always real; only a bench opts into faux.
+    KORTIX_MODEL_MODE: 'real',
+    // P1.8 — the durable transcript log. The worker write-throughs every
+    // mutation here, so history survives the process and a stopped session's
+    // transcript is readable without waking its sandbox. The worker appends
+    // `/sessions/<id>/log` to this base (session-store.ts) and authenticates
+    // with its own KORTIX_TOKEN, which the route scopes to this session alone.
+    KORTIX_STORE_URL: `${input.apiUrl.replace(/\/+$/, '')}/projects/${input.projectId}`,
     // The resolved session model override. The worker maps it onto the
-    // gateway exactly like a baked model ref (env wins over bake).
+    // gateway exactly like a baked model ref (env wins over bake). Absent, the
+    // compiled artifact's own baked model is used — which is why this stays
+    // conditional and must not fall back to the platform resolution.
     ...(input.opencodeModel ? { KORTIX_MODEL: input.opencodeModel } : {}),
+    ...(input.modelLimits ? { KORTIX_MODEL_LIMITS: JSON.stringify(input.modelLimits) } : {}),
   };
 }

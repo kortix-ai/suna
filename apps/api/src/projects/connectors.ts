@@ -379,6 +379,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     // rewritten when this hash changes. Leaving them out would let a header
     // edit commit to kortix.yaml and never reach the gateway.
     headers: spec.headers,
+    ...(spec.provider === 'mcp' ? { catalogVersion: 'resources-prompts-v1' } : {}),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }

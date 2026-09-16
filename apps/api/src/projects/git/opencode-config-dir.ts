@@ -1,4 +1,4 @@
-import { manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
+import { manifestCandidatePaths, manifestConfigDir, parseManifestText } from '@kortix/manifest-schema';
 import { runGitCapture } from './mirror';
 import type { GitBackedProject } from './types';
 
@@ -38,11 +38,7 @@ export async function resolveOpencodeConfigDirAtSha(
     const manifest = await runGitCapture(['show', `${sourceSha}:${candidate.path}`], mirror);
     if (manifest.exitCode !== 0) continue;
     const parsed = parseManifestText(manifest.stdout, candidate.format);
-    const opencode = parsed.opencode;
-    if (opencode && typeof opencode === 'object' && !Array.isArray(opencode)) {
-      configDir =
-        safeOpencodeConfigDir((opencode as Record<string, unknown>).config_dir) ?? configDir;
-    }
+    configDir = safeOpencodeConfigDir(manifestConfigDir(parsed)) ?? configDir;
     break;
   }
   for (const filename of ['opencode.jsonc', 'opencode.json']) {

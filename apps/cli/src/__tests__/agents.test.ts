@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { CANONICAL_SKILL, wireCodingAgents } from '../agents';
+import { CANONICAL_SKILL, PI_CONFIG_DIR, canonicalSkillPath, wireCodingAgents } from '../agents';
 
 let dir: string;
 
@@ -31,6 +31,45 @@ afterEach(() => {
 });
 
 describe('wireCodingAgents', () => {
+  /**
+   * Every link this writes must RESOLVE.
+   *
+   * The fixture above pre-creates `.kortix/opencode/commands`, a directory no
+   * starter template ships — so the suite proved the link was created without
+   * ever proving it pointed at anything. In a real repo `.claude/commands`
+   * dangled on every `kortix init`, and on a pi project (whose config dir is
+   * `.kortix/pi`) so did the rest of them. A broken symlink is worse than a
+   * missing one: it looks wired.
+   */
+  test('no link it writes dangles, even when the config dir is bare', () => {
+    const bare = mkdtempSync(join(tmpdir(), 'kortix-bare-'));
+    try {
+      // Exactly what `getStarterFiles({template:'pi'})` lays down: a manifest
+      // and agent markdown, and NO commands/ directory anywhere.
+      mkdirSync(join(bare, PI_CONFIG_DIR, 'agents'), { recursive: true });
+      writeFileSync(join(bare, PI_CONFIG_DIR, 'agents', 'kortix.md'), '# agent', 'utf8');
+
+      const result = wireCodingAgents({
+        repoRoot: bare,
+        agents: ['opencode', 'claude', 'codex', 'pi'],
+        overwrite: false,
+        configDir: PI_CONFIG_DIR,
+      });
+
+      const dangling: string[] = [];
+      for (const entry of result.written) {
+        const path = entry.split(' \u2192 ')[0];
+        if (path === 'AGENTS.md') continue;
+        const abs = join(bare, path);
+        // existsSync follows the link: false on a symlink to nothing.
+        if (!existsSync(abs)) dangling.push(entry);
+      }
+      expect(dangling).toEqual([]);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
   test('all agents → native discovery links for opencode/claude/codex/pi + one AGENTS.md', () => {
     mkdirSync(join(dir, '.claude'), { recursive: true });
     mkdirSync(join(dir, '.pi'), { recursive: true });
@@ -124,5 +163,58 @@ describe('wireCodingAgents', () => {
     const third = wireCodingAgents({ repoRoot: dir, agents, overwrite: true });
     expect(third.skipped).toEqual([]);
     expect(lstatSync(join(dir, '.opencode')).isSymbolicLink()).toBe(true);
+  });
+});
+
+/**
+ * `kortix init --template pi` scaffolds `.kortix/pi`, not `.kortix/opencode`.
+ *
+ * Before this, `wireCodingAgents` built every link from a hardcoded
+ * `.kortix/opencode`, so a pi project got `.opencode` and `.agents` symlinks
+ * pointing at a directory that does not exist, plus an AGENTS.md naming a skill
+ * file that does not exist. Nothing errored — every local coding tool simply
+ * discovered nothing, which is the worst way for this to fail.
+ */
+describe('wireCodingAgents — a pi project keeps its config in .kortix/pi', () => {
+  let piDir: string;
+
+  beforeEach(() => {
+    piDir = mkdtempSync(join(tmpdir(), 'kortix-agents-pi-'));
+    for (const sub of ['agents', 'skills/kortix-cli', 'commands']) {
+      mkdirSync(join(piDir, '.kortix', 'pi', sub), { recursive: true });
+    }
+    writeFileSync(join(piDir, '.kortix', 'pi', 'skills', 'kortix-cli', 'SKILL.md'), '# skill\n');
+  });
+
+  afterEach(() => rmSync(piDir, { recursive: true, force: true }));
+
+  test('every link it writes resolves to something that exists', () => {
+    wireCodingAgents({
+      repoRoot: piDir,
+      agents: ['opencode', 'codex', 'claude', 'pi'],
+      overwrite: true,
+      configDir: PI_CONFIG_DIR,
+    });
+    for (const rel of ['.opencode', '.agents', '.claude/skills', '.claude/agents', '.pi/skills']) {
+      const abs = join(piDir, rel);
+      expect(lstatSync(abs).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(abs)).toContain('.kortix/pi');
+      // The point of the fix: it must not dangle.
+      expect(existsSync(abs)).toBe(true);
+    }
+  });
+
+  test('AGENTS.md points at a skill file that is actually there', () => {
+    wireCodingAgents({ repoRoot: piDir, agents: ['pi'], overwrite: true, configDir: PI_CONFIG_DIR });
+    const md = readFileSync(join(piDir, 'AGENTS.md'), 'utf8');
+    expect(md).toContain(canonicalSkillPath(PI_CONFIG_DIR));
+    expect(md).not.toContain('.kortix/opencode');
+    expect(existsSync(join(piDir, canonicalSkillPath(PI_CONFIG_DIR)))).toBe(true);
+  });
+
+  test('omitting configDir still produces the OpenCode layout', () => {
+    expect(canonicalSkillPath()).toBe('.kortix/opencode/skills/kortix-cli/SKILL.md');
+    wireCodingAgents({ repoRoot: dir, agents: ['opencode'], overwrite: true });
+    expect(readlinkSync(join(dir, '.opencode'))).toBe('.kortix/opencode');
   });
 });

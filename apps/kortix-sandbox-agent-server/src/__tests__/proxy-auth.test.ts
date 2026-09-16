@@ -187,6 +187,16 @@ describe('daemon proxy auth gate', () => {
     expect('apiToken' in cfg).toBe(false)
   })
 
+  it('loads a purpose-bound environment RPC secret separately from the session token', () => {
+    const cfg = loadConfig({
+      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_ENV_RPC_SECRET: 'rpc-only-secret',
+    } as NodeJS.ProcessEnv)
+
+    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
+    expect(cfg.envRpcSecret).toBe('rpc-only-secret')
+  })
+
   it('parses the one-time replacement branch restore signal', () => {
     expect(loadConfig({ KORTIX_SESSION_BRANCH_RESTORE: '1' }).sessionBranchRestore).toBe(true)
     expect(loadConfig({}).sessionBranchRestore).toBe(false)
@@ -1137,6 +1147,38 @@ describe('daemon proxy auth gate', () => {
     expect(res.status).toBe(503)
     const body = (await res.json()) as { reason: string }
     expect(body.reason).toBe('initial_opencode_session_pending')
+  })
+
+  it('holds native file reads until checkout and workspace setup finish', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-file-readiness-'))
+    const bootState = { repoMaterializationError: null, timeline: [], workspaceReady: false }
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const headers = { [KORTIX_USER_CONTEXT_HEADER]: signed }
+    try {
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: true, workspace: root, projectTarget: root }),
+        fakeOpencode('down'),
+        Date.now(),
+        bootState,
+      )
+      expect((await app.request('/file/content?path=proof.txt')).status).toBe(401)
+      const absent = await app.request('/file/content?path=proof.txt', { headers })
+      expect(absent.status).toBe(503)
+      expect(((await absent.json()) as { reason: string }).reason).toBe('repo_not_materialized')
+      mkdirSync(join(root, '.git'))
+      writeFileSync(join(root, 'proof.txt'), 'PI_READY_FILE')
+      const installing = await app.request('/file/content?path=proof.txt', { headers })
+      expect(installing.status).toBe(503)
+      expect(((await installing.json()) as { reason: string }).reason).toBe('workspace_not_ready')
+      expect(installing.headers.get('x-kortix-boot-phase')).toBeTruthy()
+      bootState.workspaceReady = true
+      const ready = await app.request('/file/content?path=proof.txt', { headers })
+      expect(ready.status).toBe(200)
+      expect(((await ready.json()) as { content: string }).content).toBe('PI_READY_FILE')
+      expect((await app.request('/file/content?path=missing.txt', { headers })).status).toBe(404)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {

@@ -110,6 +110,7 @@ jobs:
           set -euo pipefail
           if [[ "$TEST_LANE" == "packages" && "$TEST_MODE" == "full" ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
+            export KORTIX_PACKAGE_SKIP_WORKER_QUALITY=1
           fi
           echo "[ci] lane=$TEST_LANE sha=$TEST_SHA command=pnpm test -- $TEST_ARGS"
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose

@@ -1,15 +1,22 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 
-// `findOpenCodeFiles` resolves `getClient()` fresh on every call — swap the
+// `findOpenCodeFiles` resolves `getWorkspaceClient()` fresh on every call — swap the
 // implementation per-test via `clientImpl` to control exactly what
 // `client.find.files()` / `client.file.list()` resolve to.
 let clientImpl: {
   find: { files: (args: { query: string; type?: string; limit: number }) => Promise<{ data?: unknown }> };
   file: { list: (args: { path: string }) => Promise<{ data?: unknown }> };
 };
+let workspaceClientCalls = 0;
 
 mock.module('../../core/runtime/client', () => ({
-  getClient: () => clientImpl,
+  getClient: () => {
+    throw new Error('file search must not use the control runtime');
+  },
+  getWorkspaceClient: () => {
+    workspaceClientCalls += 1;
+    return clientImpl;
+  },
 }));
 
 const { findOpenCodeFiles } = await import('./files');
@@ -33,6 +40,7 @@ function queryAwareFiles(matches: unknown[]) {
 }
 
 beforeEach(() => {
+  workspaceClientCalls = 0;
   clientImpl = {
     find: { files: async () => ({ data: [] }) },
     file: { list: async () => ({ data: [] }) },
@@ -40,6 +48,12 @@ beforeEach(() => {
 });
 
 describe('findOpenCodeFiles — ranking and dedup', () => {
+  test('uses the repository-owning workspace runtime', async () => {
+    clientImpl.find.files = queryAwareFiles(['src/app.ts']);
+    await expect(findOpenCodeFiles('app')).resolves.toEqual(['src/app.ts']);
+    expect(workspaceClientCalls).toBe(1);
+  });
+
   test('ranks an exact basename match first, then prefix, then substring, then path-substring', async () => {
     // `find.files({ query })` is trusted as already server-filtered — this
     // function's own job is ranking what comes back, not re-filtering it

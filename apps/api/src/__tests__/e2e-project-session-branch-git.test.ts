@@ -47,7 +47,7 @@ describe('session branch git transport', () => {
     if (root) await rm(root, { recursive: true, force: true });
   });
 
-  test('creates GitHub session branches through the refs API without git fetch', async () => {
+  test.each([false, true])('creates GitHub branches without git fetch with pinned commit=%s', async pinned => {
     const baseSha = 'a'.repeat(40);
 
     const result = JSON.parse(bunEval(`
@@ -82,17 +82,17 @@ describe('session branch git transport', () => {
           gitAuthToken: 'github-token',
         },
         'session-branch-002',
-        'main',
+        ${JSON.stringify(pinned ? baseSha : 'main')},
       );
       process.stdout.write(JSON.stringify({
         methods: requests.map((request) => request.method),
-        body: requests[1]?.body ?? null,
+        body: requests.at(-1)?.body ?? null,
         branchWorkExists: existsSync(process.env.KORTIX_GIT_BRANCH_WORK_DIR),
         cacheExists: existsSync(process.env.KORTIX_GIT_CACHE_DIR),
       }));
     `));
 
-    expect(result.methods).toEqual(['GET', 'POST']);
+    expect(result.methods).toEqual(pinned ? ['POST'] : ['GET', 'POST']);
     expect(result.body).toEqual({
       ref: 'refs/heads/session-branch-002',
       sha: baseSha,
@@ -101,7 +101,7 @@ describe('session branch git transport', () => {
     expect(result.cacheExists).toBe(false);
   });
 
-  test('creates the remote session branch without materializing a full mirror cache', async () => {
+  test.each([false, true])('creates a remote branch without a mirror with pinned commit=%s', async pinned => {
     const source = join(root, 'source');
     const origin = join(root, 'origin.git');
     mkdirSync(source, { recursive: true });
@@ -116,6 +116,10 @@ describe('session branch git transport', () => {
     git(['-c', 'init.defaultBranch=main', 'init', '--bare', origin]);
     git(['remote', 'add', 'origin', origin], source);
     git(['push', '--quiet', 'origin', 'main'], source);
+    const pinnedSha = git(['rev-parse', 'HEAD'], source);
+    writeFileSync(join(source, 'README.md'), '# moved branch\n', 'utf8');
+    git(['commit', '-am', 'move main'], source);
+    git(['push', '--quiet', 'origin', 'main'], source);
 
     bunEval(`
       const { createRemoteSessionBranch } = await import(${JSON.stringify(gitTransportModuleUrl())});
@@ -127,13 +131,13 @@ describe('session branch git transport', () => {
           manifestPath: 'kortix.yaml',
         },
         'session-branch-001',
-        'main',
+        ${JSON.stringify(pinned ? pinnedSha : 'main')},
       );
     `);
 
     const baseSha = git(['--git-dir', origin, 'rev-parse', 'refs/heads/main']);
     const sessionSha = git(['--git-dir', origin, 'rev-parse', 'refs/heads/session-branch-001']);
-    expect(sessionSha).toBe(baseSha);
+    expect(sessionSha).toBe(pinned ? pinnedSha : baseSha);
 
     const cacheDir = process.env.KORTIX_GIT_CACHE_DIR!;
     const cacheEntries = existsSync(cacheDir) ? readdirSync(cacheDir) : [];

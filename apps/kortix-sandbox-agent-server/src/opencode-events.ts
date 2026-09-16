@@ -65,6 +65,7 @@ type OpencodeEventHandlers = {
 
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
+  connectTimeoutMs?: number
   /**
    * How long one subscribe attempt may wait for OpenCode's response HEADERS.
    * Only the header phase is bounded; the timer is cleared the moment the
@@ -79,7 +80,7 @@ export interface OpencodeEventLoopOptions {
   listeningWaitMaxMs?: number
 }
 
-const SUBSCRIBE_HEADERS_TIMEOUT_MS = 10_000
+const SUBSCRIBE_HEADERS_TIMEOUT_MS = 5_000
 const LISTENING_WAIT_MAX_MS = 5_000
 
 /** Resolve once the current OpenCode may be talked to, or after `maxMs`.
@@ -123,34 +124,27 @@ export function startOpencodeEventLoop(
   // from "an established subscription dropped" (real fault, back off). See the
   // retry loop below.
   let everConnected = false
-  let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  const reconcileTimer = handlers.onReconcile
+    ? setInterval(() => handlers.onReconcile?.(), options.reconcileIntervalMs ?? 30_000)
+    : null
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
     const controller = new AbortController()
     abortController = controller
-    // Bound the HEADER phase only (cleared once `fetch` resolves): a subscribe
-    // dropped in OpenCode's bind→handler window must not hang forever.
-    const headersTimeoutMs = options.subscribeHeadersTimeoutMs ?? SUBSCRIBE_HEADERS_TIMEOUT_MS
-    const headersTimer = setTimeout(
-      () => controller.abort(new DOMException('subscribe headers timeout', 'TimeoutError')),
-      headersTimeoutMs,
-    )
+    const connectTimeoutMs = options.connectTimeoutMs ?? options.subscribeHeadersTimeoutMs ?? SUBSCRIBE_HEADERS_TIMEOUT_MS
+    const connectTimer = setTimeout(() => {
+      logger.warn('[opencode-events] subscription headers timed out', { connectTimeoutMs })
+      controller.abort(new DOMException('subscribe headers timeout', 'TimeoutError'))
+    }, connectTimeoutMs)
     let res: Response
     try {
       res = await fetch(url, {
         headers: { Accept: 'text/event-stream' },
         signal: controller.signal,
       })
-    } catch (err) {
-      if (!stopping && (err as Error)?.name === 'TimeoutError') {
-        logger.warn('[opencode-events] subscribe got no response headers; retrying', {
-          timeoutMs: headersTimeoutMs,
-        })
-      }
-      throw err
     } finally {
-      clearTimeout(headersTimer)
+      clearTimeout(connectTimer)
     }
     if (!res.ok || !res.body) {
       throw new Error(`/event subscribe non-ok: ${res.status}`)
@@ -162,12 +156,6 @@ export function startOpencodeEventLoop(
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
     // reconnect after the turn already relayed is a no-op.
     handlers.onConnected?.()
-    if (!reconcileTimer && handlers.onReconcile) {
-      reconcileTimer = setInterval(
-        () => handlers.onReconcile?.(),
-        options.reconcileIntervalMs ?? 30_000,
-      )
-    }
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()

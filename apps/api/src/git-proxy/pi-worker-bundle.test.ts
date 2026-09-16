@@ -2,22 +2,91 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { __resetPiWorkerBundleForTests, getPiWorkerBundle } from './pi-worker-bundle';
+import { mintWireMessageId, newestWireIdTime } from '../projects/wire-message-id';
 import { compilePiRuntime } from './compiled-pi-runtime';
+import { __resetPiWorkerBundleForTests, getPiWorkerBundle } from './pi-worker-bundle';
 
 const WORKER_DIST = resolve(
   import.meta.dir,
   '../../../kortix-worker/dist/worker-runtime.mjs',
 );
+const workerDistExists = existsSync(WORKER_DIST);
+if (!workerDistExists && process.env.KORTIX_REQUIRE_PI_WORKER_BUNDLE === '1') {
+  throw new Error(`required pi worker bundle is missing: ${WORKER_DIST}`);
+}
 
 const roots: string[] = [];
+const servers: Server[] = [];
+
+interface RuntimeTranscriptMessage {
+  info: { id: string; role: string; parentID?: string };
+  parts: Array<{ type: string; text?: string }>;
+}
+
+interface RuntimeTranscriptPage {
+  messages: RuntimeTranscriptMessage[];
+  has_more: boolean;
+  epoch: string;
+  seq: number;
+}
+
 afterEach(async () => {
   __resetPiWorkerBundleForTests();
   delete process.env.KORTIX_PI_WORKER_BUNDLE_PATH;
+  await Promise.all(
+    servers.splice(0).map(
+      (server) => new Promise<void>((resolveClose) => server.close(() => resolveClose())),
+    ),
+  );
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+async function startSessionLogStore(sessionId: string): Promise<{
+  url: string;
+  items: Array<{ _kortixAppendId?: string }>;
+  authorization: Array<string | undefined>;
+}> {
+  const items: Array<{ _kortixAppendId?: string }> = [];
+  const authorization: Array<string | undefined> = [];
+  const path = `/sessions/${sessionId}/log`;
+  const server = createServer((req, res) => {
+    if (req.url !== path) {
+      res.writeHead(404).end();
+      return;
+    }
+    authorization.push(req.headers.authorization);
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(items));
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405).end();
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const item = JSON.parse(body) as { _kortixAppendId?: string };
+      if (!items.some((candidate) => candidate._kortixAppendId === item._kortixAppendId)) {
+        items.push(item);
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+  });
+  servers.push(server);
+  await new Promise<void>((resolveListen) =>
+    server.listen(0, '127.0.0.1', () => resolveListen()),
+  );
+  const port = (server.address() as { port: number }).port;
+  return { url: `http://127.0.0.1:${port}`, items, authorization };
+}
 
 describe('getPiWorkerBundle', () => {
   test('rejects a bundle without the worker entrypoint sentinel', async () => {
@@ -48,7 +117,7 @@ describe('getPiWorkerBundle', () => {
 // the artifact would boot in a worker sandbox, serving /health. Skipped when
 // the dist bundle has not been built (CI builds it in the Docker stage; run
 // `bun run build` in apps/kortix-worker locally).
-describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bundle)', () => {
+describe.skipIf(!workerDistExists)('compiled pi runtime artifact (real bundle)', () => {
   test('boots under node and serves /health with the baked identity', async () => {
     process.env.KORTIX_PI_WORKER_BUNDLE_PATH = WORKER_DIST;
     const bundle = await getPiWorkerBundle();
@@ -79,12 +148,12 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     try {
-      let health: { ok?: boolean } | null = null;
+      let health: { ok?: boolean; confined?: boolean } | null = null;
       for (let i = 0; i < 100; i++) {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           if (res.ok) {
-            health = (await res.json()) as { ok?: boolean };
+            health = (await res.json()) as { ok?: boolean; confined?: boolean };
             break;
           }
         } catch {
@@ -93,6 +162,9 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
         await new Promise((r) => setTimeout(r, 50));
       }
       expect(health?.ok).toBe(true);
+      // Started bare (no --permission) on purpose: the field must say so rather
+      // than echo what the entrypoint would have passed.
+      expect(health?.confined).toBe(false);
       // The double-start regression crashed the process ~immediately AFTER
       // health first answered, so a single poll flaky-passed. Survival for a
       // beat plus a second answer is the actual assertion.
@@ -110,7 +182,7 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
 // web session page reads since #6987 — /state, paged /messages, the sequenced
 // /events SSE — served by the REAL compiled artifact, driven through a real
 // faux turn. Skipped like the sibling when dist has not been built.
-describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read surface', () => {
+describe.skipIf(!workerDistExists)('compiled pi runtime — session read surface', () => {
   test('a turn renders: transcript, state, sequenced events, health identity', async () => {
     process.env.KORTIX_PI_WORKER_BUNDLE_PATH = WORKER_DIST;
     const bundle = await getPiWorkerBundle();
@@ -131,13 +203,20 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
 
     const port = 18900 + Math.floor(Math.random() * 500);
     const TOKEN = 'read-surface-token';
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const store = await startSessionLogStore(sessionId);
     const child = spawn('node', [runtimePath], {
       env: {
         ...process.env,
         PORT: String(port),
         KORTIX_MODEL_MODE: 'faux',
+        KORTIX_FAUX_SCRIPT: JSON.stringify([
+          { text: 'rendered, chief' },
+          { text: 'composer route rendered' },
+        ]),
         KORTIX_PROJECT_ID: 'project-e2e',
-        KORTIX_SESSION_ID: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        KORTIX_SESSION_ID: sessionId,
+        KORTIX_STORE_URL: store.url,
         KORTIX_TOKEN: TOKEN,
         KORTIX_AGENT: 'dev',
       },
@@ -166,23 +245,33 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
       const denied = await fetch(`${base}/kortix/opencode/state`);
       expect(denied.status).toBe(401);
 
-      // Drive one scripted faux turn.
-      const turn = await fetch(`${base}/prompt`, {
+      // Drive the synchronous product route. Deployed workers do not expose
+      // the scripted benchmark routes, even when the caller is authenticated.
+      const turn = await fetch(`${base}/session/${rootId}/message`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: 'render me', script: [{ text: 'rendered, chief' }] }),
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'render me' }] }),
       });
       expect(turn.ok).toBe(true);
+
+      const benchmarkDisabled = await fetch(`${base}/prompt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: 'nope' }),
+      });
+      expect(benchmarkDisabled.status).toBe(404);
+      // ...and the product route refuses the same request without its bearer.
+      const promptDenied = await fetch(`${base}/session/${rootId}/message`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'nope' }] }),
+      });
+      expect(promptDenied.status).toBe(401);
 
       // Transcript: user + assistant, ids unique and sorted, text present.
       const page = (await (
         await fetch(`${base}/kortix/opencode/messages/${rootId}?limit=20`, authed)
-      ).json()) as {
-        messages: Array<{ info: { id: string; role: string }; parts: Array<{ type: string; text?: string }> }>;
-        has_more: boolean;
-        epoch: string;
-        seq: number;
-      };
+      ).json()) as RuntimeTranscriptPage;
       const roles = page.messages.map((m) => m.info.role);
       // EXACTLY one user message: pi emits its own user message_start, which
       // the adapter must skip (the worker publishes the user turn itself) —
@@ -212,13 +301,22 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
       // State: identity + roster + idle status for the root.
       const state = (await (await fetch(`${base}/kortix/opencode/state`, authed)).json()) as {
         identity: { opencode_session_id: string };
-        agents: { known: boolean; value: Array<{ name: string; model: { providerID: string } | null }> };
+        agents: {
+          known: boolean;
+          value: Array<{
+            name: string;
+            model: { providerID: string; modelID: string } | null;
+          }>;
+        };
         sessions: { value: Array<{ id: string; title: string }> };
         statuses: { value: Record<string, { type: string }> };
       };
       expect(state.identity.opencode_session_id).toBe(rootId);
       expect(state.agents.value.map((a) => a.name)).toEqual(['dev']);
-      expect(state.agents.value[0]?.model?.providerID).toBe('openrouter');
+      expect(state.agents.value[0]?.model).toEqual({
+        providerID: 'kortix',
+        modelID: 'anthropic/claude-sonnet-4.5',
+      });
       expect(state.sessions.value[0]?.id).toBe(rootId);
       expect(state.statuses.value[rootId]?.type).toBe('idle');
       // The first user line names the session.
@@ -243,7 +341,57 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
       expect(buffer).toContain('rendered, chief');
       const seqs = [...buffer.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
       expect(seqs.length).toBeGreaterThan(2);
+      // The COMPOSER delivery route: the API sends every composer/queue prompt
+      // to POST /session/:rootId/prompt_async (engine.ts postPrompt), 204 +
+      // background turn. This is the route that was 404ing, so the user never
+      // got a reply. Drive it with a scripted faux turn and the API's wire id.
+      const wireId = mintWireMessageId({
+        nowMs: Date.now(),
+        newestKnownTime: newestWireIdTime(ids),
+        random: () => 0,
+      }).id;
+      const asyncRes = await fetch(`${base}/session/${rootId}/prompt_async`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authed.headers },
+        body: JSON.stringify({ messageID: wireId, parts: [{ type: 'text', text: 'over the composer route' }] }),
+      });
+      expect(asyncRes.status).toBe(204);
+      // The turn runs in the background; poll the transcript until it settles.
+      let asyncPage: RuntimeTranscriptPage | null = null;
+      for (let i = 0; i < 100; i++) {
+        asyncPage = (await (
+          await fetch(`${base}/kortix/opencode/messages/${rootId}?limit=40`, authed)
+        ).json()) as RuntimeTranscriptPage;
+        if (
+          asyncPage.messages.some(
+            (message) =>
+              message.info.role === 'assistant' && message.info.parentID === wireId,
+          )
+        ) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      // The user message reused the API's wire id verbatim (the turn oracle keys on it).
+      const userMsg = asyncPage?.messages.find(
+        (message) => message.info.role === 'user' && message.info.id === wireId,
+      );
+      expect(userMsg).toBeDefined();
+      expect(
+        userMsg?.parts.some(
+          (part) => part.type === 'text' && part.text === 'over the composer route',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(asyncPage)).toContain('composer route rendered');
+      // The health turn probe reported the in-flight turn under that id while it ran.
+      const probe = await (
+        await fetch(`${base}/kortix/health?turn=1&turn_message_id=${wireId}`)
+      ).json();
+      expect(probe).toHaveProperty('turn_in_flight');
+
       expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+      expect(store.items.length).toBeGreaterThan(0);
+      expect(new Set(store.authorization)).toEqual(new Set([`Bearer ${TOKEN}`]));
     } finally {
       child.kill('SIGKILL');
     }

@@ -8,7 +8,7 @@
  */
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
-import { getSupabaseAccessToken } from '@/lib/auth-token';
+import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { handleApiError } from '@/lib/error-handler';
@@ -31,7 +31,7 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
 
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
-    getToken: () => getSupabaseAccessToken(),
+    getToken: () => getSupabaseAccessTokenWithRetry({ invalidateBetweenAttempts: false }),
     clientSource: 'web',
     getUserId: async () => {
       try {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveOpenCodeEnvironmentResources } from './compile-agent-resources';
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
@@ -14,6 +15,8 @@ import {
   COMPILED_RUNTIME_FORMAT,
   compileOpenCodeRuntime,
   type CompiledRuntimeManifest,
+  type OpenCodeEnvironmentResources,
+  environmentResourcesDigest,
 } from "./compiled-runtime";
 
 export interface StoredCompiledRuntimeArtifact {
@@ -23,6 +26,7 @@ export interface StoredCompiledRuntimeArtifact {
   sourceSha: string;
   cacheHit: boolean;
   manifest: CompiledRuntimeManifest;
+  environmentResources?: OpenCodeEnvironmentResources;
 }
 
 interface CachedRuntimeMetadata {
@@ -34,6 +38,7 @@ interface CachedRuntimeMetadata {
   sha256: string;
   size: number;
   manifest: CompiledRuntimeManifest;
+  environmentResources?: OpenCodeEnvironmentResources;
 }
 
 const builds = new Map<string, Promise<StoredCompiledRuntimeArtifact>>();
@@ -63,7 +68,7 @@ function artifactKey(
 ): string {
   return createHash("sha256")
     .update(
-      `${COMPILED_RUNTIME_FORMAT}\0${projectId}\0${ref}\0${sourceSha}\0${agentBundleSha256}`,
+      `${COMPILED_RUNTIME_FORMAT}\0agent-environment-resources-blob-v1\0${projectId}\0${ref}\0${sourceSha}\0${agentBundleSha256}`,
     )
     .digest("hex");
 }
@@ -162,6 +167,9 @@ async function readCachedArtifact(
       metadata.size !== runtime.size ||
       metadata.sha256 !== sha256 ||
       JSON.stringify(embeddedManifest) !== JSON.stringify(metadata.manifest) ||
+      (metadata.manifest.agent_resources_sha256
+        ? environmentResourcesDigest(metadata.environmentResources ?? {}) !== metadata.manifest.agent_resources_sha256
+        : metadata.environmentResources !== undefined) ||
       runtime.size <= 0
     ) {
       return null;
@@ -173,6 +181,7 @@ async function readCachedArtifact(
       sourceSha,
       cacheHit: true,
       manifest: metadata.manifest,
+      environmentResources: metadata.environmentResources,
     };
   } catch {
     return null;
@@ -204,6 +213,7 @@ async function compileArtifact(
     agentBundle: agentBundle.source,
     opencodeConfigDir,
     opencodeConfigArchiveBase64: opencodeConfigArchive?.toString("base64") ?? null,
+    environmentResources: await resolveOpenCodeEnvironmentResources(project, sourceSha),
   });
   const stagedPath = `${runtimePath}.${crypto.randomUUID()}.tmp`;
   try {
@@ -218,6 +228,7 @@ async function compileArtifact(
       sha256: artifact.sha256,
       size: artifact.size,
       manifest: artifact.manifest,
+      environmentResources: artifact.environmentResources,
     };
     await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, {
       mode: 0o600,
@@ -229,6 +240,7 @@ async function compileArtifact(
       sourceSha,
       cacheHit: false,
       manifest: artifact.manifest,
+      environmentResources: artifact.environmentResources,
     };
   } finally {
     await rm(stagedPath, { force: true });

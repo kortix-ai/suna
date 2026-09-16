@@ -41,6 +41,25 @@ const render = (parts: Part[], { open = true, running = false, bare = false } = 
   );
 
 describe('isFileChipPart', () => {
+  test('image results retain the tool attachment renderer', () => {
+    expect(
+      isFileChipPart(
+        tool('image-read', 'read', {
+          status: 'completed',
+          attachments: [{ type: 'file', mime: 'image/png', url: '/kortix/part/image' }],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isFileChipPart(
+        tool('plain-read', 'read', {
+          status: 'completed',
+          attachments: [],
+        }),
+      ),
+    ).toBe(true);
+  });
+
   test('whole-file reads and writes are chips', () => {
     expect(isFileChipPart(tool('1', 'read', { status: 'completed' }))).toBe(true);
     expect(isFileChipPart(tool('2', 'write', { status: 'completed' }))).toBe(true);

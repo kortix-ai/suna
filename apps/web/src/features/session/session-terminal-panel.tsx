@@ -19,10 +19,12 @@ import {
   useCreatePty,
   useRuntimePtyList,
   useRuntimeStore,
+  useSessionWorkspace,
   type Pty,
 } from '@kortix/sdk/react';
 import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import dynamic from 'next/dynamic';
+import { useParams } from 'next/navigation';
 import React, { useCallback, useEffect, useRef } from 'react';
 
 // Lazy-load to avoid SSR issues with xterm.js
@@ -49,7 +51,7 @@ const SANDBOX_WAKING_RETRY_INTERVAL_MS = 3_000;
  */
 export function SessionTerminalPanel({
   sessionId,
-  projectId,
+  projectId: explicitProjectId,
   projectSessionId,
   hidden,
 }: {
@@ -60,7 +62,14 @@ export function SessionTerminalPanel({
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const { id: routeProjectId } = useParams<{ id: string }>();
+  const projectId = explicitProjectId ?? routeProjectId;
+  const { phase: workspacePhase, retry: retryWorkspace } = useSessionWorkspace(
+    projectId,
+    projectSessionId,
+    { enabled: !hidden },
+  );
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
   // health. Bind every PTY operation to this session's explicit runtime URL.
@@ -92,7 +101,7 @@ export function SessionTerminalPanel({
   /** `/start` was already requested for the current waking episode. */
   const wakeRequestedRef = useRef(false);
   const ensurePty = useCallback(() => {
-    if (!serverUrl || hidden || ensuringRef.current) return;
+    if (workspacePhase !== 'ready' || !serverUrl || hidden || ensuringRef.current) return;
     ensuringRef.current = true;
     createPty
       .mutateAsync({
@@ -106,7 +115,7 @@ export function SessionTerminalPanel({
       .catch(() => {
         ensuringRef.current = false;
       });
-  }, [createPty, hidden, serverUrl, sessionId, setTerminalPty, tI18nHardcoded]);
+  }, [createPty, hidden, serverUrl, sessionId, setTerminalPty, workspacePhase, tI18nHardcoded]);
 
   useEffect(() => {
     if (serverUrl) {
@@ -160,6 +169,7 @@ export function SessionTerminalPanel({
     createPty.reset();
     setServerRetryAttempt((attempt) => attempt + 1);
     if (!serverUrl) {
+      void retryWorkspace();
       requestRuntimeReconnect();
       return;
     }
@@ -168,7 +178,7 @@ export function SessionTerminalPanel({
       return;
     }
     ensurePty();
-  }, [createPty, ensurePty, isListError, refetchPtys, serverUrl]);
+  }, [createPty, ensurePty, isListError, refetchPtys, retryWorkspace, serverUrl]);
 
   // A parked/booting sandbox answers PTY list/create with a readiness 503 —
   // a pending state, never a terminal error. Keep the connecting spinner and

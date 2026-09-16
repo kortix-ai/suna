@@ -110,7 +110,7 @@ export function useWorkspaceSearch(
   query: string,
   options?: UseWorkspaceSearchOptions,
 ): WorkspaceSearchState {
-  const serverUrl = useRuntimeStore((state) => state.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((state) => state.getActiveWorkspaceUrl());
   const {
     debounceMs = 150,
     maxResults = 50,

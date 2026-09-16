@@ -19,6 +19,7 @@
     "test:all": "bash scripts/test.sh && bash scripts/test.sh integration"
   },
   "dependencies": {
+    "esbuild": "0.28.1",
     "@aws-sdk/client-s3": "^3.1131.0",
     "@aws-sdk/credential-provider-node": "3.972.62",
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
@@ -45,6 +46,7 @@
     "e2b": "2.37.0",
     "hono": "^4.4.0",
     "jose": "^5.9.6",
+    "jsonc-parser": "3.3.1",
     "nodemailer": "^9.0.5",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",

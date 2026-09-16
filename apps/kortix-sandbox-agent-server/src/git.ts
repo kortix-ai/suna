@@ -55,7 +55,7 @@ function execGit(
  */
 export function runGit(
   args: string[],
-  opts: { cwd?: string; input?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; input?: string; timeoutMs?: number; maxOutputBytes?: number } = {},
 ): Promise<ExecResult> {
   const timeoutMs = opts.timeoutMs ?? 10_000
   return new Promise((resolve, reject) => {
@@ -66,6 +66,8 @@ export function runGit(
     })
     let stdout = ''
     let stderr = ''
+    let outputBytes = 0
+    let outputExceeded = false
     let timer: ReturnType<typeof setTimeout> | undefined
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
@@ -73,10 +75,25 @@ export function runGit(
         child.kill('SIGKILL')
       }, timeoutMs)
     }
-    child.stdout?.on('data', (d) => (stdout += d.toString()))
-    child.stderr?.on('data', (d) => (stderr += d.toString()))
+    const collect = (data: string, isError: boolean) => {
+      if (outputExceeded) return
+      outputBytes += Buffer.byteLength(data)
+      if (opts.maxOutputBytes && outputBytes > opts.maxOutputBytes) {
+        outputExceeded = true
+        child.kill('SIGKILL')
+        return
+      }
+      if (isError) stderr += data
+      else stdout += data
+    }
+    child.stdout?.setEncoding('utf8').on('data', (data) => collect(data, false))
+    child.stderr?.setEncoding('utf8').on('data', (data) => collect(data, true))
     child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
-    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer)
+      if (outputExceeded) { reject(new Error(`Git output exceeds ${opts.maxOutputBytes} bytes`)); return }
+      resolve({ code: code ?? 1, stdout, stderr })
+    })
     if (opts.input !== undefined) {
       child.stdin?.end(opts.input)
     }
@@ -897,6 +914,23 @@ export async function acquireProjectViaGit(cfg: Config): Promise<void> {
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
       'clone', '--branch', base, '--single-branch', ...depthArgs,
     ]
+    const pinnedBase = /^[a-f0-9]{40}$/.test(base)
+    const cloneAtBase = async (filterArgs: string[]) => {
+      if (!pinnedBase) return gitWithAuth(cloneCredential, repoUrl, [
+        ...baseCloneArgs, ...filterArgs, repoUrl, tmpTarget,
+      ], { timeoutMs: 35_000 })
+      await mkdir(tmpTarget, { recursive: true })
+      const initialized = await execGit(['init', tmpTarget])
+      if (initialized.code !== 0) return initialized
+      const remote = await execGit(['-C', tmpTarget, 'remote', 'add', 'origin', repoUrl])
+      if (remote.code !== 0) return remote
+      const fetched = await gitWithAuth(cloneCredential, repoUrl, [
+        '-C', tmpTarget, '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+        'fetch', '--no-tags', ...depthArgs, ...filterArgs, 'origin', base,
+      ], { timeoutMs: 35_000 })
+      if (fetched.code !== 0) return fetched
+      return execGit(['-C', tmpTarget, 'checkout', '--detach', 'FETCH_HEAD'])
+    }
     const isTransientGit = (s: string) =>
       /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply|Operation too slow|transfer closed|server hung up|remote end hung up|Stream closed|HTTP 5/i.test(s)
     // The upstream has no base branch yet — a freshly provisioned managed repo
@@ -906,7 +940,7 @@ export async function acquireProjectViaGit(cfg: Config): Promise<void> {
     // exactly like a warm/baked one — 100% from local git, never blocked on the
     // remote having `main`.
     const isEmptyUpstream = (s: string) =>
-      /Remote branch .+ not found in upstream|Could not find remote branch|You appear to have cloned an empty repository|remote HEAD refers to nonexistent ref/i.test(s)
+      !pinnedBase && /Remote branch .+ not found in upstream|Could not find remote branch|You appear to have cloned an empty repository|remote HEAD refers to nonexistent ref/i.test(s)
     const MAX_CLONE_ATTEMPTS = 4
     let cloned = { code: -1, stdout: '', stderr: '' } as Awaited<ReturnType<typeof gitWithAuth>>
     for (let attempt = 1; attempt <= MAX_CLONE_ATTEMPTS; attempt++) {
@@ -914,12 +948,7 @@ export async function acquireProjectViaGit(cfg: Config): Promise<void> {
       // Blobless partial clone keeps full history but defers file blobs, cutting
       // the boot-time transfer from a full-history pack to roughly the working
       // tree. This is the dominant per-session boot cost on large repos.
-      cloned = await gitWithAuth(cloneCredential, repoUrl, [
-        ...baseCloneArgs,
-        ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
-        repoUrl,
-        tmpTarget,
-      ], { timeoutMs: 35_000 })
+      cloned = await cloneAtBase(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : [])
       if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr) && !isEmptyUpstream(cloned.stderr)) {
         // Remote may not advertise uploadpack.allowFilter — fall back to a full
         // clone so a non-supporting host still boots (just slower). Skip this for
@@ -928,7 +957,7 @@ export async function acquireProjectViaGit(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneCredential, repoUrl, [...baseCloneArgs, repoUrl, tmpTarget], { timeoutMs: 35_000 })
+        cloned = await cloneAtBase([])
       }
       if (cloned.code === 0) break
       // Empty upstream is terminal-but-fine: stop retrying and init locally below.

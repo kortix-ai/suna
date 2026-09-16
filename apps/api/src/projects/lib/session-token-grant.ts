@@ -45,6 +45,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { existingProjectMirrorPath, runGitCapture } from '../git/mirror';
+import { piWorkerRuntimeIdentityFromSessionMetadata, sessionMetadataClaimsPiWorker } from './session-sandbox-metadata';
 import {
   agentGrantDiffers,
   isAgentLaunchableForProject,
@@ -283,6 +284,7 @@ async function resolveCurrentGrant(input: {
   sessionAgent: string;
   runningAgent: string;
   forceRefresh: boolean;
+  sourceSha?: string;
 }): Promise<AgentGrant | null> {
   try {
     const project = await loadGitProjectRow(input.projectId);
@@ -290,7 +292,7 @@ async function resolveCurrentGrant(input: {
     return await resolveSessionAgentGrant({
       projectId: input.projectId,
       repoUrl: project?.repoUrl ?? '',
-      defaultBranch: project?.defaultBranch,
+      defaultBranch: input.sourceSha ?? project?.defaultBranch,
       manifestPath: project?.manifestPath,
       sessionAgent: input.sessionAgent,
       requestedAgent: input.runningAgent,
@@ -299,6 +301,19 @@ async function resolveCurrentGrant(input: {
   } catch (err) {
     throw new SessionGrantRemintError(input.sessionId, err);
   }
+}
+
+async function loadSessionAgent(input: { projectId: string; sessionId: string }) {
+  const [session] = await db.select({ agentName: projectSessions.agentName, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
+    .limit(1);
+  if (!sessionMetadataClaimsPiWorker(session?.metadata)) return { agentName: session?.agentName };
+  const identity = piWorkerRuntimeIdentityFromSessionMetadata(session?.metadata);
+  if (!identity || !session?.agentName?.trim()) {
+    throw new SessionGrantRemintError(input.sessionId, new Error('Pi runtime identity is incomplete'));
+  }
+  return { agentName: session.agentName, sourceSha: identity.sha };
 }
 
 function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
@@ -314,7 +329,7 @@ function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
 }
 
 async function applyResolvedGrant(
-  input: { projectId: string; sessionId: string },
+  input: { projectId: string; sessionId: string; sourceSha?: string },
   stored: AgentGrant | null,
   running: AgentGrant | null,
   /** A second, forced read of the manifest. Used ONLY to break the same-blob
@@ -324,7 +339,7 @@ async function applyResolvedGrant(
    *  contradicts is the glitch, and the stored grant stays. */
   reresolve?: () => Promise<AgentGrant | null>,
 ): Promise<RemintDecision> {
-  const staleRead = agentGrantDiffers(stored, running)
+  const staleRead = !input.sourceSha && agentGrantDiffers(stored, running)
     ? await resolvedFromStaleCommit(input.projectId, stored, running)
     : false;
   let decision = remintDecisionFor(stored, running, { staleRead });
@@ -391,19 +406,23 @@ export async function remintGrantForAgentSwitch(
     requestedAgent: string | null;
   },
 ): Promise<RemintDecision> {
+  const session = await loadSessionAgent(input);
   const requested = input.requestedAgent?.trim();
   // The agent that will ACTUALLY run. `project_sessions.agent_name` is the
   // create-time agent and nothing ever updates it, so it is the fallback, not
   // the reference point.
   let runningAgent =
-    requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : input.sessionAgent;
+    requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : session.agentName ?? input.sessionAgent;
+  if (session.sourceSha && runningAgent !== session.agentName) {
+    throw new SessionGrantRemintError(input.sessionId, new Error('Pi agent switching requires a new session'));
+  }
   // INC-2026-09-15. A name this project does not declare NEVER reaches the
   // token. `chief-of-staff`, an agent of a different project, was written onto
   // ~50 session tokens of unrelated projects and stripped every one of them of
   // its CLI and connector access. The proxy already drops such a name from the
   // body before this runs; this is the last line, for any path that does not.
   if (
-    runningAgent !== input.sessionAgent &&
+    !session.sourceSha && runningAgent !== input.sessionAgent &&
     !(await agentLaunchableInProject(input.projectId, runningAgent))
   ) {
     console.error('[session-token-grant] refused to re-point a session token at an undeclared agent', {
@@ -431,9 +450,10 @@ export async function remintGrantForAgentSwitch(
       ...input,
       runningAgent,
       forceRefresh: true,
+      sourceSha: session.sourceSha,
     });
   const running = await resolve();
-  return applyResolvedGrant(input, stored, running, resolve);
+  return applyResolvedGrant({ ...input, sourceSha: session.sourceSha }, stored, running, resolve);
 }
 
 /**
@@ -491,34 +511,11 @@ export async function reconcileStoredSessionAgentGrant(input: {
   sessionId: string;
 }): Promise<AgentGrant | null> {
   const stored = await loadStoredSessionGrant(input.sessionId);
-
-  let runningAgent = stored?.agent?.trim() ?? '';
-  // Self-heal INC-2026-09-15: a stored agent the project does not declare is not
-  // an identity to keep serving. Fall back to the session's own agent below.
-  if (runningAgent && !(await agentLaunchableInProject(input.projectId, runningAgent))) {
-    console.error('[session-token-grant] stored session grant names an undeclared agent; healing to the session agent', {
-      sessionId: input.sessionId,
-      projectId: input.projectId,
-      storedAgent: runningAgent,
-    });
-    runningAgent = '';
-  }
-  if (!runningAgent) {
-    try {
-      const [session] = await db
-        .select({ agentName: projectSessions.agentName })
-        .from(projectSessions)
-        .where(
-          and(
-            eq(projectSessions.sessionId, input.sessionId),
-            eq(projectSessions.projectId, input.projectId),
-          ),
-        )
-        .limit(1);
-      runningAgent = session?.agentName?.trim() || DEFAULT_AGENT_SENTINEL;
-    } catch (err) {
-      throw new SessionGrantRemintError(input.sessionId, err);
-    }
+  const session = await loadSessionAgent(input);
+  let runningAgent = (session.sourceSha ? session.agentName : stored?.agent?.trim())
+    || session.agentName?.trim() || DEFAULT_AGENT_SENTINEL;
+  if (!session.sourceSha && runningAgent && !(await agentLaunchableInProject(input.projectId, runningAgent))) {
+    runningAgent = session.agentName?.trim() || DEFAULT_AGENT_SENTINEL;
   }
 
   // This path refreshes connector and CLI authorization only. Secret delivery
@@ -529,10 +526,11 @@ export async function reconcileStoredSessionAgentGrant(input: {
       ...input,
       sessionAgent: runningAgent,
       runningAgent,
-      forceRefresh: shouldForceGrantRefresh(input.projectId),
+      forceRefresh: session.sourceSha ? true : shouldForceGrantRefresh(input.projectId),
+      sourceSha: session.sourceSha,
     });
   } catch (err) {
-    if (!stored) throw err;
+    if (session.sourceSha || !stored) throw err;
     console.error('[session-token-grant] manifest unreadable; serving the last-known-good session grant', {
       sessionId: input.sessionId,
       projectId: input.projectId,
@@ -544,8 +542,8 @@ export async function reconcileStoredSessionAgentGrant(input: {
   }
   let decision: RemintDecision;
   try {
-    decision = await applyResolvedGrant(input, stored, running, () =>
-      resolveCurrentGrant({ ...input, sessionAgent: runningAgent, runningAgent, forceRefresh: true }),
+    decision = await applyResolvedGrant({ ...input, sourceSha: session.sourceSha }, stored, running, () =>
+      resolveCurrentGrant({ ...input, sessionAgent: runningAgent, runningAgent, forceRefresh: true, sourceSha: session.sourceSha }),
     );
   } catch (err) {
     // A refused widening (`running` unrestricted, `stored` narrower) or a
@@ -553,7 +551,7 @@ export async function reconcileStoredSessionAgentGrant(input: {
     // grant is the authority the token already carries, so answer with it and
     // let the next call retry the write. Only a token with nothing stored
     // has no safe answer.
-    if (!stored) throw err;
+    if (session.sourceSha || !stored) throw err;
     console.error('[session-token-grant] could not apply the resolved session grant; serving the stored grant', {
       sessionId: input.sessionId,
       projectId: input.projectId,

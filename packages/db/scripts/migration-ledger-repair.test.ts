@@ -7,6 +7,9 @@ const CURRENT_SQL = '20260730000452547_sandbox_deadline';
 const CONNECTOR = '20260729215216867_executor_policy_arg_conditions';
 const LEGACY_APP_ACCESS = '20260807192000000_add_app_access_control';
 const LEGACY_APP_ACCESS_VALIDATE = '20260807192000001_validate_app_access_constraints';
+const LEGACY_CONSUMER_BOUNDARY = '20260805165801277_secret_consumer_boundary';
+const LEGACY_SESSION_WORKER_LOG = '20260828170156721_session_worker_log';
+const LEGACY_PI_RUNTIME_ARTIFACTS = '20260829160353474_pi_runtime_artifacts';
 const RUN_ON = new Date('2026-07-29T16:46:37.325Z');
 
 function row(name: string, runOn = RUN_ON): MigrationLedgerRow {
@@ -67,6 +70,43 @@ describe('planMigrationLedgerRepair', () => {
     });
   });
 
+  test('maps the byte-identical secret-consumer filename without reapplying its enum', () => {
+    const plan = planMigrationLedgerRepair([row(LEGACY_CONSUMER_BOUNDARY)]);
+
+    expect(plan).toEqual({
+      connectorMigrationIsMissing: false,
+      legacyRunOn: null,
+      renames: [
+        {
+          legacyName: LEGACY_CONSUMER_BOUNDARY,
+          currentName: '20260805202913539_secret_consumer_boundary',
+        },
+      ],
+    });
+  });
+
+  test('maps the applied pi filenames without requiring connector repair', () => {
+    const plan = planMigrationLedgerRepair([
+      row(LEGACY_SESSION_WORKER_LOG),
+      row(LEGACY_PI_RUNTIME_ARTIFACTS),
+    ]);
+
+    expect(plan).toEqual({
+      connectorMigrationIsMissing: false,
+      legacyRunOn: null,
+      renames: [
+        {
+          legacyName: LEGACY_SESSION_WORKER_LOG,
+          currentName: '20260916101228944_session_worker_log',
+        },
+        {
+          legacyName: LEGACY_PI_RUNTIME_ARTIFACTS,
+          currentName: '20260916101229944_pi_runtime_artifacts',
+        },
+      ],
+    });
+  });
+
   test('rejects a ledger that contains both names for one migration', () => {
     expect(() => planMigrationLedgerRepair([row(LEGACY_SQL), row(CURRENT_SQL)])).toThrow(
       'contains both',
@@ -78,4 +118,59 @@ describe('planMigrationLedgerRepair', () => {
       'without its table migration',
     );
   });
+});
+
+const PI_PREVIEW_MIGRATIONS = [
+  [
+    "20260902070000000_session_worker_log",
+    "20260916101228944_session_worker_log"
+  ],
+  [
+    "20260902070001000_pi_runtime_artifacts",
+    "20260916101229944_pi_runtime_artifacts"
+  ],
+  [
+    "20260902084011462_filesystems",
+    "20260916101230944_filesystems"
+  ],
+  [
+    "20260903055848254_sandbox_compute_environment_workload.nontransaction",
+    "20260916101231944_sandbox_compute_environment_workload.nontransaction"
+  ],
+  [
+    "20260903080719873_pi_runtime_identity",
+    "20260916101232944_pi_runtime_identity"
+  ],
+  [
+    "20260904065901557_session_worker_log_append_id",
+    "20260916101233944_session_worker_log_append_id"
+  ],
+  [
+    "20260904065927143_session_worker_log_append_id_unique.concurrent",
+    "20260916101234944_session_worker_log_append_id_unique.concurrent"
+  ],
+  [
+    "20260908195702338_session_attachments",
+    "20260916101235944_session_attachments"
+  ],
+  [
+    "20260908200910776_pi_private_storage_access",
+    "20260916101236944_pi_private_storage_access"
+  ]
+] as const;
+
+test.each(PI_PREVIEW_MIGRATIONS)('preserves the applied preview migration %s', (legacyName, currentName) => {
+  expect(planMigrationLedgerRepair([row(legacyName)])).toEqual({
+    connectorMigrationIsMissing: false,
+    legacyRunOn: null,
+    renames: [{ legacyName, currentName }],
+  });
+  expect(planMigrationLedgerRepair([row(currentName)])).toBeNull();
+});
+
+test('rejects two historical names that identify the same applied Pi migration', () => {
+  expect(() => planMigrationLedgerRepair([
+    row('20260828170156721_session_worker_log'),
+    row('20260902070000000_session_worker_log'),
+  ])).toThrow('contains both');
 });

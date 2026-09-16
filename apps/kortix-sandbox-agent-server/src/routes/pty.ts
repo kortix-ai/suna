@@ -1,3 +1,4 @@
+import { workspaceAccess } from '../workspace-access'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 
@@ -86,6 +87,8 @@ export type AttachOrCreateResult =
  */
 export function createPtyRegistry(cfg: Config): PtyRegistry {
   const entries = new Map<string, PtyEntry>()
+  const access = workspaceAccess(cfg)
+  if (access) access.terminalActive = () => [...entries.values()].some(entry => entry.meta.status === 'running')
 
   function broadcast(entry: PtyEntry, chunk: string): void {
     entry.scrollback.push(chunk)
@@ -116,6 +119,7 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
     id: string,
     opts: { command?: string; args?: string[]; cwd?: string; title?: string; env?: Record<string, string> },
   ): PtyEntry {
+    if (access?.locked) throw new Error('Workspace history is busy. Retry after recovery.')
     const command = opts.command?.trim() || process.env.SHELL || '/bin/bash'
     const args = opts.args ?? (opts.command ? [] : ['-l'])
     const cwd = opts.cwd || cfg.workspace

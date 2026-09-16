@@ -1,4 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import { resetMcpSessionCache } from './call';
+beforeEach(() => resetMcpSessionCache());
 import type { ConnectorSpec } from '../projects/connectors';
 import type { GitBackedProject } from '../projects/git';
 import {
@@ -103,6 +105,9 @@ describe('MCP catalog materialization', () => {
       credential: 'catalog-access-token',
       mcpFetchImpl: async (_url, init) => {
         requests.push({ headers: init.headers, body: init.body });
+        const method = JSON.parse(init.body ?? '{}').method;
+        if (method === 'initialize') return { status: 200, ok: true, text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} } } }) };
+        if (method === 'notifications/initialized') return { status: 202, ok: true, text: async () => '' };
         return {
           status: 200,
           ok: true,
@@ -125,9 +130,9 @@ describe('MCP catalog materialization', () => {
       },
     });
 
-    expect(requests).toHaveLength(1);
-    const request = requests[0];
-    if (!request) throw new Error('expected one MCP catalog request');
+    expect(requests).toHaveLength(3);
+    const request = requests[2];
+    if (!request) throw new Error('expected MCP tools/list after initialization');
     expect(request.headers.Authorization).toBe('Bearer catalog-access-token');
     expect(request.headers['X-Tenant']).toBe('tenant-123');
     expect(JSON.parse(request.body ?? '')).toMatchObject({
@@ -150,10 +155,10 @@ describe('MCP catalog materialization', () => {
     });
 
     expect(result.actions).toEqual([]);
-    expect(result.error).toBe('MCP tools/list failed: HTTP 401');
+    expect(result.error).toBe('MCP initialize failed: HTTP 401');
     expect(catalogPersistenceState(true, result)).toEqual({
       status: 'error',
-      lastError: 'MCP tools/list failed: HTTP 401',
+      lastError: 'MCP initialize failed: HTTP 401',
     });
     expect(JSON.stringify(result)).not.toContain('catalog-access-token');
   });

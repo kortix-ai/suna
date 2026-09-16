@@ -7,6 +7,12 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
+  CLAUDE_CODE_SHA256_AMD64,
+  CLAUDE_CODE_SHA256_ARM64,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_SHA256_AMD64,
+  CODEX_CLI_SHA256_ARM64,
+  CODEX_CLI_VERSION,
   OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
   OPENCODE_VERSION,
@@ -49,6 +55,26 @@ describe('runtime version drift guards', () => {
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').anydoc");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').codexCli");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').claudeCode");
+    expect(dockerfile).toContain(
+      'codex-${CODEX_CLI_VERSION}-linux-${cli_arch}.tgz',
+    );
+    expect(dockerfile).toContain(
+      'claude-code-linux-${cli_arch}-${CLAUDE_CODE_VERSION}.tgz',
+    );
+    expect(dockerfile).toContain('codexCliSha256Amd64');
+    expect(dockerfile).toContain('codexCliSha256Arm64');
+    expect(dockerfile).toContain('claudeCodeSha256Amd64');
+    expect(dockerfile).toContain('claudeCodeSha256Arm64');
+    expect(dockerfile).toContain(`test "$(codex --version)" = "codex-cli \${CODEX_CLI_VERSION}"`);
+    expect(dockerfile).toContain(
+      `test "$(claude --version)" = "\${CLAUDE_CODE_VERSION} (Claude Code)"`,
+    );
+    expect(dockerfile).toContain('DISABLE_UPDATES=1');
+    expect(dockerfile.indexOf('codex-${CODEX_CLI_VERSION}')).toBeLessThan(
+      dockerfile.indexOf('opencode-ai@${OPENCODE_VERSION}'),
+    );
     expect(dockerfile).toContain('pnpmSha256Amd64');
     expect(dockerfile).toContain('pnpmSha256Arm64');
     expect(dockerfile).toContain('uvSha256Amd64');
@@ -84,6 +110,14 @@ describe('runtime version drift guards', () => {
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain(`@firecrawl/anydoc@${ANYDOC_VERSION}`);
+    expect(merged).toContain(`codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz`);
+    expect(merged).toContain(
+      `claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz`,
+    );
+    expect(merged).toContain(`test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"`);
+    expect(merged).toContain(
+      `test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
+    );
     expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     expect(merged).toContain(BUN_VERSION);
     for (const digest of [
@@ -93,6 +127,10 @@ describe('runtime version drift guards', () => {
       UV_SHA256_ARM64,
       BUN_SHA256_AMD64,
       BUN_SHA256_ARM64,
+      CODEX_CLI_SHA256_AMD64,
+      CODEX_CLI_SHA256_ARM64,
+      CLAUDE_CODE_SHA256_AMD64,
+      CLAUDE_CODE_SHA256_ARM64,
     ]) {
       expect(merged).toContain(digest);
     }

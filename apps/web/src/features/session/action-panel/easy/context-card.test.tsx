@@ -329,6 +329,18 @@ describe('Empty-state actions: Add context (Task 5)', () => {
     expect(addContextCalls).toBe(1);
   });
 
+  test('"Add context" is absent when the runtime accepts text prompt parts only', () => {
+    const card = ContextCard({
+      ...empty,
+      sessionId: 's1',
+      onOpenDetail: () => {},
+      onOpenFile: () => {},
+      onAddContext: undefined,
+    }) as ReactElement<PanelCardProps>;
+
+    expect(card.props.emptyActions).toBeUndefined();
+  });
+
   // Mutation-checked: temporarily restoring the removed "Connect apps" button
   // (empty state) or footer row (non-empty state) makes this fail — proving
   // it isn't vacuously true for a card that never had the text to begin with.

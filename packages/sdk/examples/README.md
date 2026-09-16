@@ -63,3 +63,6 @@ alongside:
 > out of the box. Against a **local** API, a cloud sandbox can't reach
 > `localhost` — front it with a public tunnel (`cloudflared tunnel --url
 > http://localhost:8010`) and start the API with `KORTIX_URL` set to that URL.
+
+`session-file-attachments.ts` uploads a CSV through private session storage and
+sends its immutable reference. The first file tool creates the workspace copy.

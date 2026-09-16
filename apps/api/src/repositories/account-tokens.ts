@@ -1,14 +1,14 @@
-import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
-import { accountTokens, accounts, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { accountTokens, accounts, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import type { AgentGrant } from '@kortix/db';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
-  hashSecretKey,
   candidateSecretKeyHashes,
   generateAccountTokenPair,
-  isApiKeySecretConfigured,
+  hashSecretKey,
   isAccountToken,
+  isApiKeySecretConfigured,
 } from '../shared/crypto';
-import type { AgentGrant } from '@kortix/db';
+import { db } from '../shared/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +23,8 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token belongs to a specific session (sandbox connector
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
+  runtimeKind?: 'worker' | 'environment' | null;
+  runtimeId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
@@ -40,6 +42,9 @@ export interface CreateAccountTokenParams {
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
    *  through the gateway is attributed to the session. */
   sessionId?: string | null;
+  /** Exact runtime principal. Null is accepted only for legacy worker tokens. */
+  runtimeKind?: 'worker' | 'environment' | null;
+  runtimeId?: string | null;
   expiresAt?: Date;
   /** Set for agent-session tokens — the resolved per-agent grant to stamp
    *  onto the token (already ∩ the launching user's role). */
@@ -161,6 +166,8 @@ export async function createAccountToken(
       userId: params.userId,
       projectId: params.projectId ?? null,
       sessionId: params.sessionId ?? null,
+      runtimeKind: params.runtimeKind ?? null,
+      runtimeId: params.runtimeId ?? null,
       name: params.name,
       publicKey,
       secretKeyHash,
@@ -378,6 +385,8 @@ export async function validateAccountToken(
         userId: accountTokens.userId,
         projectId: accountTokens.projectId,
         sessionId: accountTokens.sessionId,
+        runtimeKind: accountTokens.runtimeKind,
+        runtimeId: accountTokens.runtimeId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
         lastUsedAt: accountTokens.lastUsedAt,
@@ -426,18 +435,34 @@ export async function validateAccountToken(
     // active. This closes the stopped/deleted-session replay window without
     // affecting human CLI tokens, and permits the daemon's boot callbacks.
     if (row.sessionId) {
-      const [lease] = await db
-        .select({ status: sessionSandboxes.status })
-        .from(sessionSandboxes)
-        .where(
-          and(
-            eq(sessionSandboxes.sessionId, row.sessionId),
-            eq(sessionSandboxes.accountId, row.accountId),
-            ...(row.projectId ? [eq(sessionSandboxes.projectId, row.projectId)] : []),
-            inArray(sessionSandboxes.status, ['provisioning', 'active']),
-          ),
-        )
-        .limit(1);
+      const [lease] =
+        row.runtimeKind === 'environment'
+          ? await db
+              .select({ status: sessionEnvironments.status })
+              .from(sessionEnvironments)
+              .where(
+                and(
+                  eq(sessionEnvironments.sessionId, row.sessionId),
+                  eq(sessionEnvironments.accountId, row.accountId),
+                  ...(row.projectId ? [eq(sessionEnvironments.projectId, row.projectId)] : []),
+                  ...(row.runtimeId ? [eq(sessionEnvironments.environmentId, row.runtimeId)] : []),
+                  inArray(sessionEnvironments.status, ['provisioning', 'active']),
+                ),
+              )
+              .limit(1)
+          : await db
+              .select({ status: sessionSandboxes.status })
+              .from(sessionSandboxes)
+              .where(
+                and(
+                  eq(sessionSandboxes.sessionId, row.sessionId),
+                  eq(sessionSandboxes.accountId, row.accountId),
+                  ...(row.projectId ? [eq(sessionSandboxes.projectId, row.projectId)] : []),
+                  ...(row.runtimeId ? [eq(sessionSandboxes.sandboxId, row.runtimeId)] : []),
+                  inArray(sessionSandboxes.status, ['provisioning', 'active']),
+                ),
+              )
+              .limit(1);
       if (!lease) return { isValid: false, error: 'Session token is not active' };
     }
 
@@ -470,6 +495,8 @@ export async function validateAccountToken(
       tokenId: row.tokenId,
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
+      runtimeKind: row.runtimeKind ?? null,
+      runtimeId: row.runtimeId ?? null,
       agentGrant: row.agentGrant ?? null,
     };
   } catch (err) {

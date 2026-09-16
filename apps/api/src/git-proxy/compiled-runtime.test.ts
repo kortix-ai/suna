@@ -175,7 +175,13 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     const capturePath = join(root, 'node-trampoline.txt');
     const { runtimePath } = await materializeRuntime(`
 import { writeFileSync } from "node:fs";
-writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
+import { Database } from "bun:sqlite";
+export async function startCompiledRuntime() {
+  const db = new Database(":memory:");
+  const value = db.query("select 42 as value").get().value;
+  writeFileSync(process.env.CAPTURE_PATH, typeof Bun + ":" + value);
+  db.close();
+}
 `);
     const child = Bun.spawn(['node', runtimePath], {
       env: {
@@ -192,7 +198,7 @@ writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
     ]);
 
     expect(exitCode, stderr).toBe(0);
-    expect(await readFile(capturePath, 'utf8')).toBe('object');
+    expect(await readFile(capturePath, 'utf8')).toBe('object:42');
   });
 
   test('rejects a runtime identity that differs from the compiled artifact', async () => {
@@ -212,6 +218,14 @@ writeFileSync(process.env.CAPTURE_PATH, typeof Bun);
 
     expect(exitCode).toBe(78);
     expect(stderr).toContain('Compiled runtime identity mismatch for KORTIX_PROJECT_ID');
+  });
+
+  test('reports deferred startup errors without dumping the encoded daemon source', async () => {
+    const { runtimePath } = await materializeRuntime('export async function startCompiledRuntime() { throw new Error("startup failed"); }');
+    const child = Bun.spawn([process.execPath, runtimePath], { stdout: 'pipe', stderr: 'pipe' });
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toBe('Compiled Kortix daemon failed: startup failed\n');
   });
 
   test('rejects malformed compiler input', () => {

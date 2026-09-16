@@ -3,6 +3,9 @@ import {
   getCurrentRuntimeDbSandboxId,
   getCurrentRuntimeSandboxId,
   getCurrentRuntimeUrl,
+  getCurrentWorkspaceRuntimeSandboxId,
+  getCurrentWorkspaceRuntimeUrl,
+  currentRuntimeStore,
 } from '../current-runtime';
 import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-options';
@@ -29,6 +32,14 @@ export function getActiveOpenCodeUrl(): string {
   return getDefaultSandboxUrl();
 }
 
+/** Resolve the runtime that owns files, PTYs, and user-exposed ports. */
+export function getActiveWorkspaceUrl(): string {
+  const workspace = getCurrentWorkspaceRuntimeUrl();
+  if (workspace) return workspace;
+  if (currentRuntimeStore.getState().dataRuntimeKind === 'environment') return '';
+  return getActiveOpenCodeUrl();
+}
+
 /**
  * sandboxId for the active runtime.
  * - With an active session: the session's sandbox external id (current-runtime).
@@ -36,6 +47,14 @@ export function getActiveOpenCodeUrl(): string {
  */
 export function getActiveSandboxId(): string | undefined {
   return getCurrentRuntimeSandboxId() ?? platformConfig().sandboxId ?? undefined;
+}
+
+/** Provider id for files, PTYs, and preview ports. */
+export function getActiveWorkspaceSandboxId(): string | undefined {
+  const workspace = getCurrentWorkspaceRuntimeSandboxId();
+  if (workspace) return workspace;
+  if (currentRuntimeStore.getState().dataRuntimeKind === 'environment') return undefined;
+  return getActiveSandboxId();
 }
 
 /**
@@ -77,7 +96,7 @@ export function getBackendPort(): number {
  */
 export function deriveSubdomainOpts(): ResolvedPreviewOptions {
   return resolvePreviewOptions({
-    sandboxId: getActiveSandboxId() || '',
+    sandboxId: getActiveWorkspaceSandboxId() || '',
     backendPort: getBackendPort(),
     apiBaseUrl: getBackendUrl(),
   });

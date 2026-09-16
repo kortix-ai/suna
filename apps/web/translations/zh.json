@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "已保存新请求使用的模型。已接受的请求将继续使用原来的模型。",
+    "changeFailed": "无法更改模型",
     "search": "搜索模型",
     "free": "免费",
     "addProvider": "添加提供商",
@@ -18368,6 +18370,10 @@
       "textff5bd8333c4e": "你，以及可以管理此项目的人",
       "text36d8691ae566": "知道链接的任何人，以及你的团队",
       "text4fb2abecc0a6": "知道密码的任何人，以及你的团队",
+      "text069bf3d7e248": "无法打开工作区。",
+      "text1cd3cef84e36": "无法提交回复。请重试。",
+      "textb4c89a8de9da": "更新会话权限失败。",
+      "text9deef600048b": "正在加载对话",
       "text03a01dd53ffa": "按 ↑ 编辑排队的消息",
       "text1eb132d9d4da": "队列已暂停",
       "textf8e64a37950a": "排队的消息",

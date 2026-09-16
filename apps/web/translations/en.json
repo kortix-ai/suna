@@ -820,8 +820,8 @@
           "description": "Control which tools and destinations can receive project secrets."
         },
         "pi_worker": {
-          "name": "Pi Worker Runtime (compiled)",
-          "description": "Run sessions with the experimental Pi worker runtime."
+          "name": "Legacy compiled boot prebuild",
+          "description": "Prebuild OpenCode artifacts for YAML v2. YAML v3 always uses Pi, regardless of this flag."
         }
       }
     },
@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Model saved for new prompts. Accepted prompts keep their model.",
+    "changeFailed": "Could not change the model",
     "search": "Search models",
     "free": "Free",
     "addProvider": "Add provider",
@@ -18368,6 +18370,10 @@
       "textff5bd8333c4e": "You, and anyone who can manage this project",
       "text36d8691ae566": "Anyone with the URL, plus your team",
       "text4fb2abecc0a6": "Anyone with the password, plus your team",
+      "text069bf3d7e248": "Could not open the workspace.",
+      "text1cd3cef84e36": "Could not submit the response. Try again.",
+      "textb4c89a8de9da": "Failed to update session permissions",
+      "text9deef600048b": "Loading conversation",
       "text03a01dd53ffa": "Press ↑ to edit queued messages",
       "text1eb132d9d4da": "Queue paused",
       "textf8e64a37950a": "Queued messages",

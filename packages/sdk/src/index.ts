@@ -511,4 +511,5 @@ export {
   type KortixAppViewerOptions,
 } from './core/auth/app-viewer';
 
+export * from './core/pi/agent';
 export * from './core/rest/projects-client/provider-connections';

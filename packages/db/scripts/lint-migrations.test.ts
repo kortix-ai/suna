@@ -61,7 +61,7 @@ describe('backfill-DML guard (centralized_audit_v2 outage class)', () => {
   test('rejects a top-level UPDATE without a backfill-safe sign-off', () => {
     const { errors } = lintMigration(
       GOOD_NAME,
-      'ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = \'x\' WHERE kind IS NULL;\n',
+      "ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
     );
     expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
   });
@@ -150,10 +150,7 @@ describe('CONCURRENTLY in a plain .sql migration', () => {
 
 describe('mixed-version guard (the 20260713220001000 class)', () => {
   test('rejects an unannotated unique index drop', () => {
-    const { errors } = lintMigration(
-      GOOD_NAME,
-      'DROP INDEX kortix.idx_projects_account_repo;\n',
-    );
+    const { errors } = lintMigration(GOOD_NAME, 'DROP INDEX kortix.idx_projects_account_repo;\n');
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(true);
   });
 
@@ -187,7 +184,10 @@ describe('mixed-version guard (the 20260713220001000 class)', () => {
   });
 
   test('does not fire on an unrelated additive migration', () => {
-    const { errors } = lintMigration(GOOD_NAME, 'ALTER TABLE kortix.accounts ADD COLUMN note text;\n');
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'ALTER TABLE kortix.accounts ADD COLUMN note text;\n',
+    );
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(false);
   });
 
@@ -283,7 +283,9 @@ describe('.concurrent.ts escape hatch', () => {
         '};',
       ].join('\n'),
     );
-    expect(errors.some((e) => e.includes('IMPLICIT transaction') || e.includes('statements'))).toBe(true);
+    expect(errors.some((e) => e.includes('IMPLICIT transaction') || e.includes('statements'))).toBe(
+      true,
+    );
   });
 
   test('accepts separate pgm.sql() calls for each statement', () => {
@@ -293,7 +295,7 @@ describe('.concurrent.ts escape hatch', () => {
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
         "  pgm.sql(`set lock_timeout = '180s'`);",
-        "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
+        '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
         '};',
       ].join('\n'),
     );
@@ -333,7 +335,7 @@ describe('.concurrent.ts escape hatch', () => {
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
         "  pgm.sql(`set lock_timeout = '180s'`);",
-        "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
+        '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
         '};',
       ].join('\n'),
     );
@@ -352,6 +354,59 @@ describe('.concurrent.ts escape hatch', () => {
       ].join('\n'),
     );
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(false);
+  });
+});
+
+describe('.nontransaction.ts constraint transition', () => {
+  const NAME = '20260101000000000_expand_widget_check.nontransaction.ts';
+
+  test('accepts an explicitly justified constraint transition', () => {
+    const { errors } = lintMigration(
+      NAME,
+      [
+        '// constraint-transition: validate the replacement before dropping the old check',
+        '// mixed-version-safe: old writers use values accepted by both constraints',
+        'export const up = (pgm) => {',
+        '  pgm.noTransaction();',
+        "  pgm.sql(`alter table kortix.widgets add constraint widgets_kind_check_v2 check (kind in ('a', 'b')) not valid`);",
+        '  pgm.sql(`alter table kortix.widgets validate constraint widgets_kind_check_v2`);',
+        '  pgm.sql(`alter table kortix.widgets drop constraint widgets_kind_check`);',
+        '};',
+        'export const down = false;',
+      ].join('\n'),
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('rejects an unclassified non-transactional migration', () => {
+    const { errors } = lintMigration(
+      NAME,
+      [
+        'export const up = (pgm) => {',
+        '  pgm.noTransaction();',
+        '  pgm.sql(`select 1`);',
+        '};',
+      ].join('\n'),
+    );
+    expect(errors.some((error) => error.includes('constraint-transition'))).toBe(true);
+  });
+
+  test('rejects an unfilled constraint-transition scaffold', () => {
+    const { errors } = lintMigration(
+      NAME,
+      [
+        '// constraint-transition: TODO explain the lock boundary',
+        '// mixed-version-safe: TODO explain old-code compatibility',
+        'export const up = (pgm) => {',
+        '  pgm.noTransaction();',
+        '  pgm.sql(`alter table kortix.TODO_TABLE add constraint TODO_V2 check (true) not valid`);',
+        '  pgm.sql(`alter table kortix.TODO_TABLE validate constraint TODO_V2`);',
+        '  pgm.sql(`alter table kortix.TODO_TABLE drop constraint TODO_OLD`);',
+        '};',
+        'export const down = false;',
+      ].join('\n'),
+    );
+    expect(errors.some((error) => error.includes('TODO'))).toBe(true);
   });
 });
 
@@ -382,7 +437,7 @@ describe('CONCURRENTLY lock_timeout floor', () => {
     );
   }
 
-  test("rejects the 5s value that failed prod", () => {
+  test('rejects the 5s value that failed prod', () => {
     const errors = lockTimeoutErrors(concurrentFile('5s'));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("lock_timeout = '5s'");

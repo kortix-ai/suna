@@ -439,6 +439,65 @@ describe('projectWorking', () => {
     expect(inFlight.source).toBe('stream');
   });
 
+  test('an unsettled Stop bars the stopped turn’s content and busy frames', () => {
+    for (const stream of [
+      { type: 'idle' as const, origin: 'local' as const, atMs: T0 },
+      { type: 'busy' as const, origin: 'wire' as const, atMs: T0 + 100 },
+    ]) {
+      expect(projectWorking({
+        optimistic: null,
+        abort: { atMs: T0, settledAtMs: null },
+        server: { turns: [turn()], atMs: T0 + 200 },
+        stream,
+        activity: { atMs: T0 + 100 },
+        nowMs: T0 + 300,
+      }).state).toBe('idle');
+    }
+  });
+
+  test('Stop followed by a send produces a new working transition before the old idle frame', () => {
+    const active = {
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 100 },
+      stream: { type: 'busy' as const, atMs: T0 },
+      activity: { atMs: T0 + 100 },
+      nowMs: T0 + 200,
+    };
+    expect(projectWorking(active).state).toBe('working');
+    expect(projectWorking({ ...active, abort: { atMs: T0 + 150 } }).state).toBe('idle');
+    expect(projectWorking({
+      ...active,
+      abort: null,
+      optimistic: { messageId: 'msg_next', atMs: T0 + 250 },
+      activity: { atMs: T0 + 300 },
+      nowMs: T0 + 350,
+    }).state).toBe('working');
+  });
+
+  test('a settled Stop releases new content but keeps older content stopped', () => {
+    const input = {
+      optimistic: null,
+      server: null,
+      abort: { atMs: T0, settledAtMs: T0 + 200 },
+      stream: { type: 'busy' as const, atMs: T0 + 100 },
+      nowMs: T0 + 400,
+    };
+    expect(projectWorking({ ...input, activity: { atMs: T0 + 100 } }).state).toBe('idle');
+    expect(projectWorking({ ...input, activity: { atMs: T0 + 300 } }).state).toBe('working');
+    expect(projectWorking({ ...input, stream: { type: 'busy', atMs: T0 + 300 } }).state).toBe('working');
+  });
+
+  test('an unanswered Stop cannot hide live stream output beyond its bound', () => {
+    expect(projectWorking({
+      optimistic: null,
+      server: null,
+      abort: { atMs: T0 },
+      stream: { type: 'busy', atMs: T0 + OPTIMISTIC_ABORT_MAX_MS },
+      activity: { atMs: T0 + OPTIMISTIC_ABORT_MAX_MS },
+      nowMs: T0 + OPTIMISTIC_ABORT_MAX_MS,
+    }).state).toBe('working');
+  });
+
   test('a settled stop stops barring reads issued after the settlement', () => {
     // The abort failed, or a new turn started right after it: an open turn a
     // read saw AFTER the cancel was acknowledged is a real turn again.

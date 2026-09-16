@@ -14,6 +14,12 @@ const BASE_INPUT = {
   apiUrl: 'https://api.kortix.test/v1',
 };
 
+test('only Pi workers receive the session model configuration endpoint', () => {
+  expect(buildPiWorkerSessionEnvVars({ ...BASE_INPUT, apiUrl: `${BASE_INPUT.apiUrl}/` }).KORTIX_MODEL_CONFIG_URL)
+    .toBe('https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/model');
+  expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_MODEL_CONFIG_URL');
+});
+
 describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
   test('never injects the prompt or turn-ledger identity', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
@@ -298,6 +304,30 @@ describe('audit relay emission knobs', () => {
 });
 
 describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
+  // 2026-08-28: every pi session on pi.kortix.com answered with an EMPTY
+  // assistant turn and no error. The worker reads
+  // `KORTIX_MODEL_MODE ?? 'faux'`, this builder never set it, and the faux
+  // provider emits nothing — so the model, the credential and the entitlement
+  // all looked fine while nothing could ever reply.
+  test('boots the worker in real model mode, never the benchmark faux provider', () => {
+    const env = buildPiWorkerSessionEnvVars({
+      projectId: 'p',
+      sessionId: 's',
+      agentName: 'kortix',
+      apiUrl: 'https://api.example.test',
+    });
+    expect(env.KORTIX_MODEL_MODE).toBe('real');
+    // The worker appends `/sessions/<id>/log` to this base, so it must be the
+    // PROJECT root with no trailing slash — otherwise every append doubles the
+    // slash and 404s.
+    expect(env.KORTIX_STORE_URL).toBe('https://api.example.test/projects/p');
+    expect(env.KORTIX_STORE_URL).not.toMatch(/\/$/);
+    // No explicit session model: the compiled artifact's baked model is used,
+    // so KORTIX_MODEL must stay absent rather than fall back to the platform
+    // resolution, which would clobber the bake.
+    expect(env.KORTIX_MODEL).toBeUndefined();
+  });
+
   const input = {
     projectId: 'proj-1',
     sessionId: 'sess-1',
@@ -315,7 +345,13 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       KORTIX_SERVICE_PORT: '8000',
       KORTIX_AGENT_NAME: 'dev',
       KORTIX_AGENT: 'dev',
+      // A session is always REAL. The worker's own default is the benchmark
+      // faux provider, which answers every prompt with an empty turn.
+      KORTIX_MODEL_MODE: 'real',
+      // P1.8: the durable transcript log the worker write-throughs to.
+      KORTIX_STORE_URL: 'https://api.kortix.test/v1/projects/proj-1',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
+      KORTIX_MODEL_CONFIG_URL: 'https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/model',
       KORTIX_FRONTEND_URL: 'https://kortix.test',
       KORTIX_PROJECT_AUTO_CLONE: '0',
       KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
@@ -338,6 +374,13 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_MODEL');
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
+});
+
+
+test('an explicit Pi model receives the limits resolved for that same model', () => {
+  const limits = { model: 'gpt-5.6-luna', context: 1050000, output: 128000 };
+  const env = buildPiWorkerSessionEnvVars({ projectId: 'p', sessionId: 's', agentName: 'build', apiUrl: 'https://api.example.test', opencodeModel: limits.model, modelLimits: limits });
+  expect(JSON.parse(env.KORTIX_MODEL_LIMITS!)).toEqual(limits);
 });
 
 describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
@@ -408,4 +451,33 @@ describe('buildSessionRuntimeEnv — S3 project snapshot pin', () => {
     expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_MODE');
     expect(env).not.toHaveProperty('KORTIX_PROJECT_SNAPSHOT_PIN');
   });
+});
+
+test('only declared resources add an immutable resource pin, including restricted and replacement environments', () => {
+  expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_AGENT_RESOURCES_SHA');
+  for (const workspaceMode of ['runtime', 'branch'] as const) {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: workspaceMode === 'branch', restoreSessionBranch: true, agentResourcesSha: 'a'.repeat(40) });
+    expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
+  }
+});
+
+test.each([true, false])('resource-bearing OpenCode boots its pinned compiled daemon on fresh=%s', freshSession => {
+  const pin = 'a'.repeat(40);
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession, restoreSessionBranch: !freshSession, compiledBootMode: 'off', agentResourcesSha: pin });
+  expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
+  expect(env.KORTIX_BASE_SHA).toBe(pin);
+  expect(env.KORTIX_BASE_REF).toBe(pin);
+  expect(env.KORTIX_DEFAULT_BRANCH).toBe(pin);
+});
+test.each([undefined, 'b'.repeat(40)])('resource pin rejects Git hints without its exact source (%s)', baseSha => {
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, agentResourcesSha: 'a'.repeat(40), baseSha, gitDeltaBundleBase64: 'moved', gitDeltaBundleRemote: true, gitDeltaParentSha: 'c'.repeat(40), gitDeltaParentCommitBase64: 'parent', projectSnapshotMode: 'prefer-s3', projectSnapshotPin: 'moved-snapshot' });
+  expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
+  for (const key of ['KORTIX_GIT_DELTA_BUNDLE_BASE64', 'KORTIX_GIT_DELTA_BUNDLE_REMOTE', 'KORTIX_GIT_DELTA_PARENT_SHA', 'KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64', 'KORTIX_PROJECT_SNAPSHOT_PIN']) expect(env).not.toHaveProperty(key);
+});
+
+test.each(['read', 'runtime'] as const)('resource pin does not grant repository access to %s workspaces', workspaceMode => {
+  const env = buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: false, agentResourcesSha: 'a'.repeat(40), freshSession: true, compiledBootMode: 'required' });
+  expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
+  expect(env.KORTIX_AGENT_RESOURCES_SHA).toBe('a'.repeat(40));
+  for (const key of ['KORTIX_REPO_URL', 'KORTIX_COMPILED_BOOT_MODE', 'KORTIX_BASE_SHA']) expect(env).not.toHaveProperty(key);
 });

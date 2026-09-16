@@ -159,6 +159,30 @@ describe('the other calls', () => {
     expect(rendered('session.prompt')).not.toContain('/v1/p/');
   });
 
+  test('a Pi prompt snippet never teaches mutable model or agent overrides', () => {
+    const snippet = callSnippet('session.prompt', {
+      agent: 'support',
+      compiledRuntime: true,
+    });
+    const text = [snippet.sdk, ...snippet.notes].join('\n');
+
+    expect(snippet.sdk).toContain(".send('Refund order 4182')");
+    expect(text).not.toContain("{ agent: 'support' }");
+    expect(text).not.toContain('.setAgent(');
+    expect(text).toContain('compiled');
+  });
+
+  test('a Pi model snippet exposes the persisted model mutation', () => {
+    const snippet = callSnippet('session.model', {
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      compiledRuntime: true,
+    });
+
+    expect(isCopyableHttp(snippet.http)).toBe(true);
+    expect(snippet.sdk).toContain('.changeModel(');
+  });
+
   test('the model change shows both hops and neither spells the runtime field', () => {
     const snippet = callSnippet('session.model', {
       projectId: PROJECT_ID,

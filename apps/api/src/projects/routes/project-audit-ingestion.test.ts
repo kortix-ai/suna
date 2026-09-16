@@ -4,7 +4,7 @@
  * the project_sessions and service_accounts rows selected by the handler.
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { auditEvents, serviceAccounts, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
@@ -24,6 +24,7 @@ process.env.SUPABASE_URL = 'https://supabase.test.kortix.local';
 const ACCOUNT_ID = 'd7100000-0000-4000-a000-000000000001';
 const PROJECT_ID = 'd7200000-0000-4000-a000-000000000001';
 const SESSION_ID = 'd7300000-0000-4000-a000-000000000001';
+const ENVIRONMENT_ID = 'd7300000-0000-4000-a000-000000000002';
 const AGENT_ID = 'd7400000-0000-4000-a000-000000000001';
 const HUMAN_ID = 'd7500000-0000-4000-a000-000000000001';
 
@@ -44,6 +45,7 @@ const identityRows = [{ serviceAccountId: AGENT_ID, agentName: 'trusted-agent' }
 
 function rowsFor(table: unknown): unknown[] {
   if (table === sessionSandboxes) return [sandboxScope];
+  if (table === sessionEnvironments) return [sandboxScope];
   if (table === serviceAccounts) return identityRows;
   return [];
 }
@@ -87,10 +89,15 @@ mock.module('../../shared/db', () => ({
 
 const { projectsApp } = await import('../lib/app');
 projectsApp.use('*', async (c, next) => {
-  c.set('authType', 'apiKey');
-  c.set('apiKeyType', 'sandbox');
+  const environment = c.req.header('x-test-runtime-kind') === 'environment';
+  c.set('authType', environment ? 'pat' : 'apiKey');
+  if (!environment) c.set('apiKeyType', 'sandbox');
   c.set('accountId', ACCOUNT_ID);
-  c.set('sandboxId', SESSION_ID);
+  c.set('sandboxId', environment ? ENVIRONMENT_ID : SESSION_ID);
+  if (environment) {
+    c.set('sessionId', SESSION_ID);
+    c.set('sessionRuntimeKind', 'environment');
+  }
   await next();
 });
 await import('./project-audit');
@@ -132,6 +139,22 @@ afterAll(() => {
 });
 
 describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
+  test('accepts the environment runtime principal for its parent session', async () => {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-runtime-kind': 'environment',
+        },
+        body: JSON.stringify({ events: [hostileEvent()] }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   test('cannot promote forged sandbox provenance into canonical audit columns', async () => {
     const response = await projectsApp.request(
       `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,

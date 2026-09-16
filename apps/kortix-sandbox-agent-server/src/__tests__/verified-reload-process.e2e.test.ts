@@ -154,6 +154,8 @@ describe('the live port is a property of the process, never a variable beside it
     expect(swapped.outcome).toBe('swapped')
     expect(supervisor.getActivePort()).toBe(standby)
 
+    await Bun.sleep(200)
+
     // The only code path that rewrites the port variable without touching the
     // process: a config whose pair does not contain the live port.
     supervisor.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config, configDir)
@@ -163,7 +165,7 @@ describe('the live port is a property of the process, never a variable beside it
     expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
     // reconfigure() marks `starting` until the next probe; the probe asks the
     // process's real port, so it comes back `ok` on its own.
-    await waitFor(() => supervisor?.getState() === 'ok', 5_000)
+    await waitFor(() => supervisor?.getState() === 'ok', 1_500)
   }, 20_000)
 
   test('a candidate half that already answers is declined, never "proven" by the incumbent', async () => {
@@ -202,4 +204,49 @@ describe('the live port is a property of the process, never a variable beside it
       squatter.stop(true)
     }
   }, 20_000)
+
+  test('a probe from the previous configuration cannot mark the new workspace ready', async () => {
+    const { workspace, configDir, binary } = fakeOpencode()
+    const nextWorkspace = join(root, 'next-workspace')
+    mkdirSync(nextWorkspace)
+    let oldRequests = 0
+    let newRequests = 0
+    let newReady = false
+    const oldResponse = Promise.withResolvers<Response>()
+    const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname !== '/session') return new Response('unavailable', { status: 503 })
+      if (url.searchParams.get('directory') === workspace) {
+        oldRequests++
+        return oldResponse.promise
+      }
+      newRequests++
+      return newReady ? Response.json([]) : new Response('not ready', { status: 503 })
+    } })
+    writeFileSync(binary, '#!/usr/bin/env bun\nconsole.log("opencode server listening on http://127.0.0.1:" + Bun.argv[Bun.argv.indexOf("--port") + 1]); setInterval(() => {}, 1000)\n')
+    const cfg = {
+      workspace, projectTarget: workspace, opencodeInternalPort: server.port,
+      opencodeStandbyPort: reservePort(), gitUserName: 'Kortix Agent', gitUserEmail: 'agent@kortix.ai',
+    } as Config
+    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+      binaryPathOverride: binary, configPathOverride: join(root, 'runtime-config.json'),
+    })
+    try {
+      await supervisor.start()
+      await waitFor(() => oldRequests > 0, 1_500)
+      supervisor.reconfigure({ ...cfg, projectTarget: nextWorkspace }, configDir)
+      await waitFor(() => newRequests > 0, 1_500)
+      oldResponse.resolve(Response.json([]))
+      await Bun.sleep(200)
+      expect(supervisor.getState()).toBe('starting')
+      newReady = true
+      await waitFor(() => supervisor?.getState() === 'ok', 1_500)
+      expect(oldRequests).toBe(1)
+      expect(newRequests).toBeLessThan(15)
+    } finally {
+      oldResponse.resolve(new Response('closed', { status: 503 }))
+      await supervisor.stop()
+      server.stop(true)
+    }
+  }, 10_000)
 })

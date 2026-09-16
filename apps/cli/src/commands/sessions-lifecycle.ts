@@ -89,12 +89,13 @@ Needs project.session.start.
 
 const MODEL_HELP = help`Usage: kortix sessions model <session-id> <model-id> [options]
 
-Change the model a session runs, mid-session. A live sandbox is re-pointed and
-its runtime restarts, which ENDS the turn running right now; a stopped session
-stores the value for its next start. The reply says which happened:
+Change the model a session runs. Pi applies it to newly accepted prompts and
+preserves active and queued prompts. OpenCode restarts its live runtime.
+The reply says which happened:
 
   applied_live true    the running box answers from the new model now
   applied_live false   stored; it takes effect at the next start
+  applies_to next_prompt  Pi uses the selection for new prompts without restarting
   push_failed  true    stored, but the live push FAILED — the running harness
                        still answers from the OLD model
 
@@ -328,6 +329,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   let result: {
     opencode_model: string;
     applied_live: boolean;
+    applies_to?: 'next_prompt';
     push_failed?: true;
     detail?: string;
   };
@@ -354,7 +356,9 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   }
   process.stdout.write(
     `${status.ok(
-      result.applied_live
+      result.applies_to === 'next_prompt'
+        ? `Stored ${C.bold}${result.opencode_model}${C.reset}${C.dim} for new prompts. Accepted prompts keep their model.${C.reset}`
+        : result.applied_live
         ? `Now running ${C.bold}${result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
         : `Stored ${C.bold}${result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,

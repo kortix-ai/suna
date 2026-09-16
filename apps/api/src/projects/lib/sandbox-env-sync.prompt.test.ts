@@ -14,17 +14,19 @@
 // re-pushed, and resolving the binding set stays FAIL-CLOSED — it re-reads the
 // agent's grant, and a grant we cannot prove must refuse the turn.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sessionEnvironments } from '@kortix/db';
 import { config } from '../../config';
 
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Everything the two paths do, in the order they did it. */
 let events: string[] = [];
 let envPushes: Array<{ url: string }> = [];
 let bindings: NetworkBoundarySecretBinding[] = [];
 let boundaryResolveError: Error | null = null;
+let environmentRows: Array<typeof SESSION_ROW> = [];
 
 const SESSION_ROW = {
   createdBy: 'user-1',
@@ -45,13 +47,15 @@ const SESSION_ROW = {
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => {
-          const rows = [SESSION_ROW];
+          const rows = table === sessionEnvironments ? environmentRows : [SESSION_ROW];
           return {
             limit: async () => rows,
-            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve(rows).then(resolve, reject),
+            then: (
+              resolve: (value: typeof rows) => unknown,
+              reject?: (reason: unknown) => unknown,
+            ) => Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),
@@ -106,9 +110,12 @@ const {
   __resetPromptModelSignatureCacheForTests,
   propagateProjectSecretsToActiveSandboxes,
   syncSandboxEnvForPrompt,
+  syncSessionRuntimesEnvForPrompt,
 } = await import('./sandbox-env-sync');
 
-function binding(overrides: Partial<NetworkBoundarySecretBinding> = {}): NetworkBoundarySecretBinding {
+function binding(
+  overrides: Partial<NetworkBoundarySecretBinding> = {},
+): NetworkBoundarySecretBinding {
   return {
     secretId: 'secret-1',
     identifier: 'billing-api',
@@ -147,9 +154,33 @@ beforeEach(() => {
   envPushes = [];
   bindings = [binding()];
   boundaryResolveError = null;
+  environmentRows = [];
 });
 
 describe('syncSandboxEnvForPrompt — egress-enforced secrets', () => {
+  test('the session wrapper pushes an already-active environment without provisioning one', async () => {
+    environmentRows = [
+      {
+        ...SESSION_ROW,
+        externalId: 'env-ext-1',
+        provider: 'daytona',
+        config: { serviceKey: 'env-service-key' },
+      },
+    ];
+
+    await syncSessionRuntimesEnvForPrompt({
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      externalId: 'ext-1',
+      serviceKey: 'svc-key',
+      previewUrl: 'https://sandbox.test',
+      providerHeaders: {},
+      providerName: 'platinum',
+    });
+
+    expect(envPushes).toHaveLength(2);
+  });
+
   test('a boundary secret never reaches a provider, and an unchanged env is pushed once', async () => {
     await prompt();
     await prompt();
@@ -214,7 +245,9 @@ describe('propagateProjectSecretsToActiveSandboxes — egress-enforced secrets',
       ok: false,
       synced: 0,
       failed: 1,
-      results: [{ session_id: 'sess-1', status: 'failed', reason: 'could not resolve the secrets grant' }],
+      results: [
+        { session_id: 'sess-1', status: 'failed', reason: 'could not resolve the secrets grant' },
+      ],
     });
     expect(envPushes).toEqual([]);
   });

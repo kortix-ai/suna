@@ -180,6 +180,7 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             if (windowed === null && req.body) init.duplex = 'half'
             const upstreamRes = await fetch(target, init)
             const outHeaders = new Headers()
+            // fetch decodes the body. Encoding and length must describe the forwarded bytes.
             upstreamRes.headers.forEach((v, k) => {
               const lk = k.toLowerCase()
               // fetch decompresses the body. Do not make the caller decode it again.

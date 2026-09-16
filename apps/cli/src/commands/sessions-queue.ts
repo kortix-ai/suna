@@ -70,17 +70,13 @@ Needs project.session.start — the same permission as sending a message.
 `;
 
 /**
- * Mint an OpenCode wire message id.
- *
- * The API refuses anything that is not `msg_` + 12 hex + 14 base62
- * (PROMPT_WIRE_MESSAGE_ID in apps/api/src/projects/routes/r8.ts): OpenCode
- * decides "has this prompt already been answered?" by id ORDER, so the id has
- * to sort above everything already on the transcript. Same construction as the
- * SDK's `ascendingId`, which is not on the public `@kortix/sdk` surface.
+ * Mint the shared runtime wire ID: low 48 clock bits and 14 base62 characters.
+ * CLI submissions do not read the transcript. Both durable submission paths
+ * request server-side placement at delivery so clock skew cannot skip a prompt.
  */
 export function wireMessageId(now = Date.now(), counter = 1): string {
   const encoded = BigInt(now) * BigInt(0x1000) + BigInt(counter);
-  const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
+  const hex = (encoded & BigInt(0xffffffffffff)).toString(16).padStart(12, '0');
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   let random = '';
   for (let i = 0; i < 14; i += 1) random += chars[Math.floor(Math.random() * 62)];
@@ -104,6 +100,7 @@ export async function queueSessionPrompt(
   const body: Record<string, unknown> = {
     client_message_id: crypto.randomUUID(),
     message_id: wireMessageId(),
+    remint_on_delivery: true,
     parts: [{ type: 'text', text }],
     client_sent_at_ms: Date.now(),
   };

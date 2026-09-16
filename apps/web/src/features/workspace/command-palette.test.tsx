@@ -520,7 +520,7 @@ describe('LEGACY_SETTINGS_TAB_MAP', () => {
 describe('command palette — model list chrome', () => {
   const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
   const modelsPage = source.slice(
-    source.indexOf("{page === 'models' && ("),
+    source.indexOf("{page === 'models' &&"),
     source.indexOf("{page === 'files' &&"),
   );
 

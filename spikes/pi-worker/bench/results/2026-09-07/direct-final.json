@@ -1,0 +1,1125 @@
+{
+  "schema": 1,
+  "at": "2026-09-07T13:20:39.181Z",
+  "model": "gpt-5.6-luna",
+  "rounds": 5,
+  "node": "v22.23.1",
+  "versions": {
+    "pi": "0.84.3",
+    "opencode": "1.18.23"
+  },
+  "bundleSha256": "5a2f71ea2c2f8c60468db90c8b322687b0f8a6ba6fe7ff3b8b06aee5f87448ba",
+  "gateway": "https://pi.kortix.com/v1/llm",
+  "sourceBaseSha": "90bc33aef9c9925fcb8bbc1ad6dc1efd7453c74a",
+  "directEnvironment": true,
+  "workerUsed": false,
+  "resources": {
+    "cpuMax": "200000 100000",
+    "memoryMax": "4294967296"
+  },
+  "persistence": {
+    "pi": "JSONL message_end append with fsync; benchmark harness, fresh agent per session",
+    "opencode": "native SQLite; fresh session per sample"
+  },
+  "method": "Alternating runtime order; one excluded warmup per runtime; same model, gateway, six workspace tool names, user prompts and system instruction. Runtime-generated prompt additions and tool schemas differ. Process readiness excludes environment provisioning.",
+  "starts": [
+    {
+      "runtime": "pi",
+      "startupMs": 103.93427599999995
+    },
+    {
+      "runtime": "opencode",
+      "startupMs": 1335.612826
+    }
+  ],
+  "warmups": [
+    {
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 5.13823699999989,
+      "completionMs": 1806.791497,
+      "firstTokenMs": 1650.5112179999999,
+      "assistantMessageIds": [
+        "msg_07c05b0da000T3pl4ikZfPlqaY"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1650.517298,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 250.66613199999983,
+      "completionMs": 1896.5351250000003,
+      "firstTokenMs": 1702.513672,
+      "assistantMessageIds": [
+        "msg_07c05bb76001WaTiZ3sWuYa3KF"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 88,
+      "textDeltaCount": 1,
+      "lastTextMs": 1702.5277320000005,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 2355,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      }
+    }
+  ],
+  "samples": [
+    {
+      "round": 0,
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 3.1195740000002843,
+      "completionMs": 1546.7502539999996,
+      "firstTokenMs": 1365.3656680000004,
+      "assistantMessageIds": [
+        "msg_07c05c470000iOqbm5n7dQxBMR"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1365.3719279999996,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 0,
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 111.86120699999992,
+      "completionMs": 1116.3843900000002,
+      "firstTokenMs": 938.613409999999,
+      "assistantMessageIds": [
+        "msg_07c05c79b001yWCWgApDiELtDG"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 31,
+      "textDeltaCount": 1,
+      "lastTextMs": 938.6155799999988,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 3,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2352
+        }
+      }
+    },
+    {
+      "round": 0,
+      "runtime": "pi",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 3.772864999999001,
+      "completionMs": 4520.229738,
+      "firstTokenMs": 1334.331596,
+      "assistantMessageIds": [
+        "msg_07c05cfa1000xTI5S25VypqXpk"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 265,
+      "textDeltaCount": 257,
+      "lastTextMs": 4428.967339999999,
+      "output": "Hash tables store key-value pairs for fast lookup. A hash function converts each key into an integer, then maps that integer to an index in an underlying array. When inserting a pair, the table computes the key’s hash, chooses the corresponding bucket, and stores the key and value there. To retrieve a value, it hashes the requested key, examines the same bucket, and compares stored keys until it finds a match. Because different keys can produce the same index, hash tables need collision handling. Separate chaining stores multiple entries in each bucket, often using a list or another small collection. Open addressing searches for another empty array position according to a probing rule, such as linear or quadratic probing. Tables maintain efficiency by resizing when they become too full. A load factor, calculated as stored entries divided by capacity, commonly determines when resizing occurs. During resizing, all entries are rehashed because their array positions depend on the new capacity. With a well-designed hash function and suitable capacity, insertion, lookup, and deletion usually take constant average time. In the worst case, many collisions can make operations linear. Deletion requires care, especially with open addressing, where removed positions may need special markers so later searches continue correctly. Hash tables do not inherently preserve insertion order unless additional mechanisms provide that behavior.",
+      "tokens": {
+        "input": 710,
+        "output": 261,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 0,
+      "runtime": "opencode",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 10.702955000000657,
+      "completionMs": 4508.825528000001,
+      "firstTokenMs": 1028.8155079999997,
+      "assistantMessageIds": [
+        "msg_07c05ddec001bx8cGr6j6N6z1i"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 295,
+      "textDeltaCount": 255,
+      "lastTextMs": 4513.411254999999,
+      "output": "Hash tables. are data structures that store pairs of keys and values, enabling fast average-case lookup, insertion, and deletion. A hash function converts each key into a numerical hash code, then maps that code to an index in an underlying array of buckets. When inserting an item, the table computes the key’s index and stores the pair there. To retrieve a value, it hashes the requested key, visits the corresponding bucket, and compares stored keys until it finds a match.\n\nDifferent keys can produce the same index, creating a collision. Common collision-handling methods include chaining, which stores multiple entries in each bucket, and open addressing, which searches for another available array position using a probing pattern. The table tracks its load factor, the ratio of stored entries to available positions. If this ratio becomes too high, the table resizes, usually allocating a larger array and rehashing every entry.\n\nHash functions should distribute keys evenly and execute quickly. With a good function and controlled load factor, operations generally take constant time, written O(1), although poorly distributed keys or excessive collisions can make them slower. Hash tables are widely used for dictionaries, caches, indexes, sets, symbol tables, and database-related tasks where rapid key-based access is important and predictable ordering is unnecessary.",
+      "tokens": {
+        "total": 2633,
+        "input": 34,
+        "output": 259,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2340
+        }
+      }
+    },
+    {
+      "round": 0,
+      "runtime": "pi",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 2.7393239999983052,
+      "completionMs": 3722.4256449999993,
+      "firstTokenMs": 3505.9860899999985,
+      "firstToolResultMs": 1517.5932079999984,
+      "assistantMessageIds": [
+        "msg_07c05f28a000nc4VwD2JmKmJ8u",
+        "msg_07c05fbcd000eYicFYXE0lRBMy"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 22,
+      "textDeltaCount": 7,
+      "lastTextMs": 3574.1324060000006,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "input": 774,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 0,
+      "runtime": "opencode",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 7.74873099999968,
+      "completionMs": 3055.6444779999983,
+      "firstTokenMs": 2805.5000249999975,
+      "firstToolResultMs": 1650.003686,
+      "assistantMessageIds": [
+        "msg_07c05fe5f001X5mHcif5GKIDrv",
+        "msg_07c0604a2001bPTwptPIPZawHV"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 74,
+      "textDeltaCount": 7,
+      "lastTextMs": 2901.1276099999995,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "total": 2471,
+        "input": 77,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2383
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 9.623373999998876,
+      "completionMs": 1765.2027899999994,
+      "firstTokenMs": 1320.999502999999,
+      "assistantMessageIds": [
+        "msg_07c060a7f0018eDR7ethCN4007"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 33,
+      "textDeltaCount": 1,
+      "lastTextMs": 1321.0026429999998,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 3,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2352
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 2.532592999999906,
+      "completionMs": 1600.6725490000026,
+      "firstTokenMs": 1404.3925820000004,
+      "assistantMessageIds": [
+        "msg_07c0615ed0007j3rqKoLElGFnk"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1404.3975420000024,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "opencode",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 8.506172000001243,
+      "completionMs": 4375.363827999998,
+      "firstTokenMs": 1132.2044279999973,
+      "assistantMessageIds": [
+        "msg_07c0617ec001yLCumg5OoDThJF"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 290,
+      "textDeltaCount": 250,
+      "lastTextMs": 4217.864064999998,
+      "output": "Hash tables. Hash tables store key-value pairs for fast lookup, insertion, and deletion. They use a hash function to transform each key into an integer, which determines an index in an array of buckets. To insert a pair, the table hashes the key, visits the corresponding bucket, and stores the key and value there. To find a value, it hashes the search key in the same way and examines that bucket. Because different keys can produce the same index, collisions must be handled. One method, chaining, stores multiple entries in each bucket, often using a linked list or another collection. Another method, open addressing, searches for another empty position according to a probing strategy, such as linear or quadratic probing. A good hash function distributes keys evenly, reducing collisions and keeping operations near constant time on average. As the table fills, performance can decline, so it periodically resizes by creating a larger array and rehashing every entry. The load factor, usually the number of stored entries divided by bucket count, helps determine when resizing is needed. Hash tables do not automatically preserve insertion order, and their worst-case operations can be linear if many keys collide. They are widely used for dictionaries, caches, symbol tables, sets, and database indexing.",
+      "tokens": {
+        "total": 2628,
+        "input": 3,
+        "output": 254,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2371
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "pi",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 1.4271820000030857,
+      "completionMs": 4059.1283949999997,
+      "firstTokenMs": 1131.8430579999986,
+      "assistantMessageIds": [
+        "msg_07c062bf8000EVp3mlEhyOacQ9"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 266,
+      "textDeltaCount": 258,
+      "lastTextMs": 3848.4077469999975,
+      "output": "Hash tables store key-value pairs for fast lookup. They use a hash function to convert each key into an integer, which determines an array index, or bucket. When inserting a pair, the table hashes the key, locates its bucket, and stores the key and value there. When searching, it hashes the requested key again and checks the corresponding bucket, avoiding a scan of every stored item.\n\nDifferent keys can produce the same index, creating a collision. Common collision-handling methods include chaining, where each bucket contains a list of entries, and open addressing, where the table searches for another available position using a probing sequence. During lookup or deletion, the table follows the same method to find the correct entry.\n\nA good hash function distributes keys evenly, reducing collisions. Hash tables usually maintain a load factor, the ratio of stored entries to available buckets. If that ratio becomes too high, the table resizes, creates a larger array, and rehashes all entries.\n\nWith a well-designed function and moderate load factor, insertion, lookup, and deletion take average constant time, written O(1). In the worst case, many collisions can make operations O(n). Hash tables are widely used for dictionaries, caches, sets, indexes, and symbol tables because they combine flexibility with efficient access.",
+      "tokens": {
+        "input": 710,
+        "output": 262,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "opencode",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 4.970596999999543,
+      "completionMs": 2846.515625,
+      "firstTokenMs": 2654.915774000001,
+      "firstToolResultMs": 1566.5863850000023,
+      "assistantMessageIds": [
+        "msg_07c06391d001L9bgVL38RZY6Eb",
+        "msg_07c063f92001tMYphzfjwSja1D"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 74,
+      "textDeltaCount": 7,
+      "lastTextMs": 2735.2950469999996,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "total": 2471,
+        "input": 3,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2457
+        }
+      }
+    },
+    {
+      "round": 1,
+      "runtime": "pi",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 1.9992629999978817,
+      "completionMs": 2931.9286280000015,
+      "firstTokenMs": 2751.811383,
+      "firstToolResultMs": 1606.663923,
+      "assistantMessageIds": [
+        "msg_07c0648c4000fCi1ox8qwDZmHj",
+        "msg_07c064e79000Nt77STiD7dKeD5"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 22,
+      "textDeltaCount": 7,
+      "lastTextMs": 2798.3349789999993,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "input": 774,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 2.106432999993558,
+      "completionMs": 1259.8470929999967,
+      "firstTokenMs": 1100.1973169999983,
+      "assistantMessageIds": [
+        "msg_07c0652b1000C9PukMvET5Jtew"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1100.2016670000012,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 8.632223000000522,
+      "completionMs": 1370.0126100000052,
+      "firstTokenMs": 1358.3656130000018,
+      "assistantMessageIds": [
+        "msg_07c0655150015s4OQXXk5js8sL"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 39,
+      "textDeltaCount": 1,
+      "lastTextMs": 1358.3680930000046,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 3,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2352
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "pi",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 2.3468829999983427,
+      "completionMs": 4350.503431999998,
+      "firstTokenMs": 1178.8308990000005,
+      "assistantMessageIds": [
+        "msg_07c065d500008AYhbPL3IV6Ry8"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 268,
+      "textDeltaCount": 260,
+      "lastTextMs": 4204.872625000004,
+      "output": "Hash tables. are data structures that store pairs of keys and values, allowing fast lookup, insertion, and deletion. They use a hash function to convert each key into an integer, called a hash code. This code is transformed into an index identifying a location in an underlying array. When storing a pair, the table computes the key’s index and places the value there. When searching, it repeats the calculation, immediately locating the likely position instead of examining every item.\n\nDifferent keys can produce the same index, creating a collision. One common solution, separate chaining, stores multiple pairs in a list or similar collection at each index. Another, open addressing, searches for another available array position according to a probing rule. A good hash function distributes keys evenly, reducing collisions and preserving performance.\n\nAs the table fills, operations may become slower. To prevent this, the table monitors its load factor, the proportion of occupied space. When the load factor becomes too high, it resizes the array, usually making it larger, and rehashes every existing key into new positions. Average-case operations are typically constant time, written O(1), though poor hashing or many collisions can make worst-case operations O(n). Keys should generally remain unchanged while stored, because changing a key can make its pair impossible to find.",
+      "tokens": {
+        "input": 710,
+        "output": 264,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "opencode",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 7.261260999999649,
+      "completionMs": 4621.092400000001,
+      "firstTokenMs": 1004.9681340000025,
+      "assistantMessageIds": [
+        "msg_07c066bb6001ddw7kQYqE8Ry7L"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 304,
+      "textDeltaCount": 264,
+      "lastTextMs": 4455.830886000003,
+      "output": "Hash tables. A hash table stores key-value pairs so data can be found quickly. It uses a hash function to transform each key into an integer, which determines an array position called a bucket or slot. To insert a pair, the table hashes the key and places the pair in the corresponding slot. To search, it hashes the requested key again and examines that slot, usually achieving constant average-time performance.\n\nDifferent keys can produce the same position, creating a collision. Hash tables handle collisions through chaining or open addressing. With chaining, each slot contains a collection, often a linked list, holding all pairs assigned there. With open addressing, collided pairs are placed in other available slots according to a probing rule, such as linear or quadratic probing.\n\nWhen the table becomes crowded, operations can slow because collisions increase. The load factor measures how full the table is. Once it passes a chosen threshold, the table resizes, usually by creating a larger array and rehashing every existing key. Good hash functions distribute keys evenly, while poor ones create clusters and reduce efficiency.\n\nHash tables require keys to have consistent hashing and equality behavior. They are useful for dictionaries, caches, sets, indexes, and symbol tables. Average lookup, insertion, and deletion are constant time, though worst-case performance can become linear when many keys collide.",
+      "tokens": {
+        "total": 2642,
+        "input": 3,
+        "output": 268,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2371
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "pi",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 1.3075920000046608,
+      "completionMs": 3726.2029150000017,
+      "firstTokenMs": 3523.0770370000027,
+      "firstToolResultMs": 2434.487863000002,
+      "assistantMessageIds": [
+        "msg_07c068254000alr3wjM6jcYEyo",
+        "msg_07c0689ee000R6lJ73ZGPEcn0B"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 22,
+      "textDeltaCount": 7,
+      "lastTextMs": 3611.916602999998,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "input": 774,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 2,
+      "runtime": "opencode",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 5.749287999999069,
+      "completionMs": 2860.421040000001,
+      "firstTokenMs": 2664.5761820000043,
+      "firstToolResultMs": 1464.9967290000059,
+      "assistantMessageIds": [
+        "msg_07c068c9000112w4j1rAm9M9vD",
+        "msg_07c0692fe0017BtshRzWU3sKl9"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 74,
+      "textDeltaCount": 7,
+      "lastTextMs": 2703.0373360000012,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "total": 2471,
+        "input": 3,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2457
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 6.434348999995564,
+      "completionMs": 1282.6632909999971,
+      "firstTokenMs": 1100.3943119999967,
+      "assistantMessageIds": [
+        "msg_07c0697eb001O7F8IJR3BbhZ3L"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 39,
+      "textDeltaCount": 1,
+      "lastTextMs": 1100.396461999997,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 3,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2352
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 1.385022000002209,
+      "completionMs": 1537.6275640000022,
+      "firstTokenMs": 1368.3212540000022,
+      "assistantMessageIds": [
+        "msg_07c06a0cd000X1lXiadhy4Y2Dp"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1368.3492140000017,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "opencode",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 6.44844899999589,
+      "completionMs": 5648.832077999992,
+      "firstTokenMs": 2155.1659019999934,
+      "assistantMessageIds": [
+        "msg_07c06a33d001MYjF449KSSzYwm"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 305,
+      "textDeltaCount": 265,
+      "lastTextMs": 5449.415513999993,
+      "output": "Hash tables. store key-value pairs for fast lookup, insertion, and deletion. They use a hash function to convert each key into an integer, which determines an index in an underlying array. To find a value, the table hashes the requested key, checks the corresponding location, and compares stored keys until it finds a match.\n\nDifferent keys can produce the same index, creating a collision. Tables handle collisions commonly through chaining or open addressing. With chaining, each array position references a collection, often a linked list or dynamic array, containing entries that share that index. With open addressing, all entries remain in the array, and the table searches alternative positions according to a probing strategy, such as linear or quadratic probing.\n\nAs entries accumulate, performance can decline because collisions become more frequent. A load factor measures how full the table is. When it exceeds a chosen threshold, the table usually resizes by creating a larger array and rehashing every entry. A good hash function distributes keys evenly, while a suitable size and collision strategy preserve efficiency.\n\nAverage-case operations are typically constant time, written O(1), though worst-case operations can become O(n) if many keys collide. Hash tables generally require unique keys, and updating an existing key replaces its associated value. They are widely used for dictionaries, caches, indexes, and sets.",
+      "tokens": {
+        "total": 2643,
+        "input": 3,
+        "output": 269,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2371
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "pi",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 1.5303019999992102,
+      "completionMs": 4143.011161999995,
+      "firstTokenMs": 1160.5770399999892,
+      "assistantMessageIds": [
+        "msg_07c06bc6b000SIHZ8Wxgjmuny9"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 260,
+      "textDeltaCount": 252,
+      "lastTextMs": 4004.5195349999995,
+      "output": "Hash tables store key-value pairs for fast lookup. They use a hash function to convert each key into an integer, which determines an index in an underlying array. When inserting a pair, the table hashes the key and places the value in the corresponding bucket. When searching, it hashes the requested key again and checks that bucket, usually comparing stored keys to confirm a match.\n\nDifferent keys can produce the same index, creating collisions. One common solution, chaining, stores multiple entries in each bucket, often using a linked list or dynamic array. Another, open addressing, searches for another available position according to a probing strategy. Deletion requires care, especially with open addressing, because removing an entry can disrupt later searches.\n\nA good hash function distributes keys evenly, reducing collisions. Performance also depends on the load factor, which is the ratio of stored entries to available positions. When the load factor becomes too high, the table typically resizes by allocating a larger array and rehashing every entry.\n\nWith a suitable hash function and controlled load factor, insertion, lookup, and deletion usually take constant average time, written O(1). In the worst case, many collisions can make operations O(n). Hash tables sacrifice ordering for speed, although specialized designs can preserve insertion order.",
+      "tokens": {
+        "input": 710,
+        "output": 256,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "opencode",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 4.118646000002627,
+      "completionMs": 3374.6783330000035,
+      "firstTokenMs": 3196.9678600000043,
+      "firstToolResultMs": 2141.9330880000052,
+      "assistantMessageIds": [
+        "msg_07c06c9bd001iG2s6iI6ruuQvl",
+        "msg_07c06d2a5001sTIhz0s5Uc0Q7R"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 74,
+      "textDeltaCount": 7,
+      "lastTextMs": 3242.693195,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "total": 2471,
+        "input": 3,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2457
+        }
+      }
+    },
+    {
+      "round": 3,
+      "runtime": "pi",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 2.098933000001125,
+      "completionMs": 2657.411884000001,
+      "firstTokenMs": 2452.798052000013,
+      "firstToolResultMs": 1348.315539000003,
+      "assistantMessageIds": [
+        "msg_07c06d9b500024ozF3xdfw6kjD",
+        "msg_07c06df22000FzwN5d1soFTftP"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 22,
+      "textDeltaCount": 7,
+      "lastTextMs": 2500.9267309999996,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "input": 774,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "pi",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 1.8623319999896921,
+      "completionMs": 1155.753125999996,
+      "firstTokenMs": 1084.1827639999974,
+      "assistantMessageIds": [
+        "msg_07c06e423000iqd5V3FX7E46qp"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 9,
+      "textDeltaCount": 1,
+      "lastTextMs": 1084.1862140000012,
+      "output": "READY",
+      "tokens": {
+        "input": 691,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "opencode",
+      "case": "short",
+      "ok": true,
+      "sessionCreateMs": 7.4534310000017285,
+      "completionMs": 1386.1120740000042,
+      "firstTokenMs": 1174.501323000004,
+      "assistantMessageIds": [
+        "msg_07c06e64c0012FcmzOEQtWa7qT"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 41,
+      "textDeltaCount": 1,
+      "lastTextMs": 1174.5036030000047,
+      "output": "READY",
+      "tokens": {
+        "total": 2360,
+        "input": 3,
+        "output": 5,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2352
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "pi",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 2.124201999991783,
+      "completionMs": 4037.2700840000034,
+      "firstTokenMs": 1112.424515000006,
+      "assistantMessageIds": [
+        "msg_07c06ee6f000YwuicV6x1vINLZ"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 253,
+      "textDeltaCount": 245,
+      "lastTextMs": 3975.7913770000014,
+      "output": "Hash tables store key-value pairs for fast lookup. They use a hash function to convert each key into an integer, which determines an index in an array of buckets. To insert a pair, the table hashes the key, finds the corresponding bucket, and stores the key and value there. To find a value, it hashes the search key and examines that bucket for a matching key. To remove an entry, it follows the same process and deletes the matching pair.\n\nDifferent keys can produce the same index, creating a collision. Common collision strategies include chaining, where each bucket contains a list of entries, and open addressing, where the table searches for another available position according to a probing rule. A good hash function spreads keys evenly, reducing collisions and improving performance.\n\nWhen the table becomes too full, it resizes, usually by allocating a larger array and rehashing every existing key. Its load factor, the ratio of stored entries to bucket capacity, helps determine when resizing occurs. Average insertion, lookup, and deletion take constant time, written O(1), although poor hashing or excessive collisions can make operations O(n). Hash tables require additional memory but are widely used for dictionaries, sets, caches, indexes, and symbol tables.",
+      "tokens": {
+        "input": 710,
+        "output": 249,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "opencode",
+      "case": "stream",
+      "ok": true,
+      "sessionCreateMs": 8.757302000012714,
+      "completionMs": 4860.927584000005,
+      "firstTokenMs": 1216.4540149999957,
+      "assistantMessageIds": [
+        "msg_07c06fbc90017KHgun9LDdiie0"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 293,
+      "textDeltaCount": 253,
+      "lastTextMs": 4560.659725000005,
+      "output": "Hash tables store key-value pairs for fast lookup. They use an array of buckets and a hash function that converts each key into a numerical index. When inserting an item, the table hashes its key, calculates a bucket position, and stores the key and value there. To find an item, it hashes the searched key in the same way, then examines the corresponding bucket.\n\nDifferent keys can produce the same index, creating a collision. Tables commonly handle collisions through chaining, where each bucket contains a list of entries, or open addressing, where the table searches for another available position according to a probing rule. A good hash function distributes keys evenly, reducing collisions and keeping operations efficient.\n\nThe table’s load factor, calculated as stored entries divided by bucket count, indicates how full it is. As the load factor grows, lookups may slow down, so the table typically resizes by allocating a larger array and rehashing every entry. Average insertion, deletion, and lookup usually take constant time, written O(1), although poor distribution or excessive collisions can make them O(n).\n\nKeys must be comparable and consistently hashed: equal keys must generate equal hash values. Values can be any suitable data. Hash tables prioritize speed, while requiring extra memory and offering no inherent ordering.",
+      "tokens": {
+        "total": 2631,
+        "input": 3,
+        "output": 257,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2371
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "pi",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 1.5333519999985583,
+      "completionMs": 3661.8146569999953,
+      "firstTokenMs": 3453.4381399999984,
+      "firstToolResultMs": 2362.609482,
+      "assistantMessageIds": [
+        "msg_07c0712db000OSmrsXtdUtIAdM",
+        "msg_07c071ad6000sIITmHtW6bhgtV"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 22,
+      "textDeltaCount": 7,
+      "lastTextMs": 3491.274793999997,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "input": 774,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "round": 4,
+      "runtime": "opencode",
+      "case": "tool",
+      "ok": true,
+      "sessionCreateMs": 6.158379000000423,
+      "completionMs": 2889.2638759999973,
+      "firstTokenMs": 2695.878960000002,
+      "firstToolResultMs": 1424.0690829999949,
+      "assistantMessageIds": [
+        "msg_07c071d54001pK6QiJITd1jCkQ",
+        "msg_07c0723a3001dLnGI4OsP7QAzQ"
+      ],
+      "observedModels": [
+        "kortix/gpt-5.6-luna"
+      ],
+      "eventCount": 74,
+      "textDeltaCount": 7,
+      "lastTextMs": 2815.2392799999943,
+      "output": "KORTIX_BENCH_TOOL",
+      "tokens": {
+        "total": 2471,
+        "input": 3,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 2457
+        }
+      }
+    }
+  ],
+  "summary": [
+    {
+      "key": "pi/short",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 1365.3656680000004,
+        "min": 1084.1827639999974,
+        "max": 1404.3925820000004
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 1537.6275640000022,
+        "min": 1155.753125999996,
+        "max": 1600.6725490000026
+      },
+      "firstToolResultMs": null,
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 2.106432999993558,
+        "min": 1.385022000002209,
+        "max": 3.1195740000002843
+      }
+    },
+    {
+      "key": "opencode/short",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 1174.501323000004,
+        "min": 938.613409999999,
+        "max": 1358.3656130000018
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 1370.0126100000052,
+        "min": 1116.3843900000002,
+        "max": 1765.2027899999994
+      },
+      "firstToolResultMs": null,
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 8.632223000000522,
+        "min": 6.434348999995564,
+        "max": 111.86120699999992
+      }
+    },
+    {
+      "key": "pi/stream",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 1160.5770399999892,
+        "min": 1112.424515000006,
+        "max": 1334.331596
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 4143.011161999995,
+        "min": 4037.2700840000034,
+        "max": 4520.229738
+      },
+      "firstToolResultMs": null,
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 2.124201999991783,
+        "min": 1.4271820000030857,
+        "max": 3.772864999999001
+      }
+    },
+    {
+      "key": "opencode/stream",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 1132.2044279999973,
+        "min": 1004.9681340000025,
+        "max": 2155.1659019999934
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 4621.092400000001,
+        "min": 4375.363827999998,
+        "max": 5648.832077999992
+      },
+      "firstToolResultMs": null,
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 8.506172000001243,
+        "min": 6.44844899999589,
+        "max": 10.702955000000657
+      }
+    },
+    {
+      "key": "pi/tool",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 3453.4381399999984,
+        "min": 2452.798052000013,
+        "max": 3523.0770370000027
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 3661.8146569999953,
+        "min": 2657.411884000001,
+        "max": 3726.2029150000017
+      },
+      "firstToolResultMs": {
+        "n": 5,
+        "median": 1606.663923,
+        "min": 1348.315539000003,
+        "max": 2434.487863000002
+      },
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 1.9992629999978817,
+        "min": 1.3075920000046608,
+        "max": 2.7393239999983052
+      }
+    },
+    {
+      "key": "opencode/tool",
+      "attempted": 5,
+      "passed": 5,
+      "firstTokenMs": {
+        "n": 5,
+        "median": 2695.878960000002,
+        "min": 2654.915774000001,
+        "max": 3196.9678600000043
+      },
+      "completionMs": {
+        "n": 5,
+        "median": 2889.2638759999973,
+        "min": 2846.515625,
+        "max": 3374.6783330000035
+      },
+      "firstToolResultMs": {
+        "n": 5,
+        "median": 1566.5863850000023,
+        "min": 1424.0690829999949,
+        "max": 2141.9330880000052
+      },
+      "sessionCreateMs": {
+        "n": 5,
+        "median": 5.749287999999069,
+        "min": 4.118646000002627,
+        "max": 7.74873099999968
+      }
+    }
+  ]
+}

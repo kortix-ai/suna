@@ -31,6 +31,12 @@
   "bunSha256Arm64": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b",
   "opencode": "1.18.23",
   "opencodeSdk": "1.18.23",
+  "codexCli": "0.153.2",
+  "codexCliSha256Amd64": "1fd52113294979c9936a110cab7cb9d5e9d1e28086f112fd6748a05826a9e5a0",
+  "codexCliSha256Arm64": "df2f8f764bf86aeae51d71cc37686dcbd2c24e4bce9a9d1e8f249141fd99fac3",
+  "claudeCode": "2.1.236",
+  "claudeCodeSha256Amd64": "2414f2c35505033e1cc8e50f0d7f3c49fe1af180820a236b1d4733bca4c7bc9d",
+  "claudeCodeSha256Arm64": "7a921243dbbb9d9771d6a59530c38fc820508b3d660ec5aad361f7ecb225f9d5",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
   "anydoc": "0.1.6"

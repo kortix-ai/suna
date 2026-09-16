@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../http/config';
-import { setCurrentRuntime } from '../session/current-runtime';
+import { setCurrentRuntime, setCurrentWorkspaceRuntime } from '../session/current-runtime';
 
 // This file used to fake `getActiveOpenCodeUrl` entirely via
 // `mock.module('../session/server-store/active', ...)`. That's a process-wide,
@@ -48,7 +48,9 @@ const {
   dropClientForUrl,
   dropPublicClientForUrl,
   getClientForUrl,
+  getWorkspaceClient,
   getPublicClientForUrl,
+  RuntimeNotReadyError,
   resetClient,
   resetPublicClient,
   systemReload,
@@ -108,6 +110,26 @@ test('getClientForUrl caches one client per url; dropClientForUrl evicts it', ()
   dropClientForUrl('http://x.local/p/s1/8000');
   const a3 = getClientForUrl('http://x.local/p/s1/8000');
   expect(a3).not.toBe(a1);
+});
+
+test('getWorkspaceClient sends project and VCS reads to the environment runtime', async () => {
+  const calls = captureRequests();
+  setCurrentRuntime('http://backend.local/v1/p/worker-1/8000', 'worker-1', null, 'environment');
+  setCurrentWorkspaceRuntime('http://backend.local/v1/p/environment-1/8000', 'environment-1');
+
+  await getWorkspaceClient().project.current();
+  await getWorkspaceClient().vcs.diff({ mode: 'branch' });
+
+  expect(calls.map((call) => call.url)).toEqual([
+    'http://backend.local/v1/p/environment-1/8000/project/current',
+    'http://backend.local/v1/p/environment-1/8000/vcs/diff?mode=branch',
+  ]);
+});
+
+test('getWorkspaceClient never falls back to the Pi worker while its environment is pending', () => {
+  setCurrentRuntime('http://backend.local/v1/p/worker-1/8000', 'worker-1', null, 'environment');
+
+  expect(() => getWorkspaceClient()).toThrow(RuntimeNotReadyError);
 });
 
 // ── getPublicClientForUrl — the UNAUTHENTICATED client factory, for routes the

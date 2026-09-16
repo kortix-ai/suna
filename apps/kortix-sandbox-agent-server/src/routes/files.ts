@@ -270,10 +270,7 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
-    // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
-    // for the SPA shell and reject it.
-    return new Response(snapshot.data, {
+    return new Response(new Uint8Array(snapshot.data), {
       status: 200,
       headers: {
         'Content-Type': mimeTypeFor(resolved, true),

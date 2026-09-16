@@ -57,6 +57,13 @@ afterEach(() => {
 })
 
 describe('resolveOpencodeConfigDir', () => {
+  test('the shared YAML directory overrides the legacy runtime directory', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'kortix_version: 2\nconfig_dir: config/shared\nopencode:\n  config_dir: old/oc\n')
+    mkdirSync(join(workspace, 'config/shared'), { recursive: true })
+    writeFileSync(join(workspace, 'config/shared/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'config/shared'))
+  })
+
   test('falls back to the baked default when the repo is not yet cloned', async () => {
     // No kortix.toml, no .kortix/opencode — i.e. the pre-clone state. This is
     // exactly the situation that produced the no-custom-agents bug.
@@ -73,6 +80,16 @@ describe('resolveOpencodeConfigDir', () => {
     mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })
     writeFileSync(join(workspace, '.kortix/opencode/opencode.json'), '{}')
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.kortix/opencode'))
+  })
+
+  test.each([
+    ['kortix.yaml', '{kortix_version: 2, config_dir: config/shared}'],
+    ['kortix.toml', 'kortix_version = 2\nconfig_dir = "config/shared"\n'],
+  ])('reads shared configuration from %s with the pinned Bun parser', async (filename, content) => {
+    writeFileSync(join(workspace, filename!), content!)
+    mkdirSync(join(workspace, 'config/shared'), { recursive: true })
+    writeFileSync(join(workspace, 'config/shared/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'config/shared'))
   })
 
   test('honors a custom opencode.config_dir from kortix.yaml', async () => {

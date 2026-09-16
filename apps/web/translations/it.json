@@ -1482,6 +1482,8 @@
     }
   },
   "modelSelector": {
+    "savedForNewPrompts": "Modello salvato per le nuove richieste. Le richieste già accettate mantengono il proprio modello.",
+    "changeFailed": "Impossibile cambiare il modello",
     "search": "Cerca modelli",
     "free": "Gratis",
     "addProvider": "Aggiungi provider",
@@ -18368,6 +18370,10 @@
       "textff5bd8333c4e": "Tu e chiunque possa gestire questo progetto",
       "text36d8691ae566": "Chiunque abbia l’URL, oltre al tuo team",
       "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team",
+      "text069bf3d7e248": "Impossibile aprire lo spazio di lavoro.",
+      "text1cd3cef84e36": "Impossibile inviare la risposta. Riprova.",
+      "textb4c89a8de9da": "Impossibile aggiornare le autorizzazioni della sessione.",
+      "text9deef600048b": "Caricamento della conversazione",
       "text03a01dd53ffa": "Premi ↑ per modificare i messaggi in coda",
       "text1eb132d9d4da": "Coda in pausa",
       "textf8e64a37950a": "Messaggi in coda",

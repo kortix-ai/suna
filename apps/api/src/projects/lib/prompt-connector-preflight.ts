@@ -13,6 +13,10 @@ import { effectiveRunningAgent } from './secret-grant';
 import type { RequiredConnectorConnection } from '@kortix/api-contract';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
 import {
+  piWorkerRuntimeIdentityFromSessionMetadata,
+  sessionMetadataClaimsPiWorker,
+} from './session-sandbox-metadata';
+import {
   RequiredConnectorConnectionUnavailableError,
   missingRequiredConnectorConnectionsForSession,
 } from './session-connector-bindings';
@@ -76,7 +80,11 @@ export async function missingPromptConnectorConnections(input: {
   try {
     const [[session], [project]] = await Promise.all([
       db
-        .select({ requiredConnectors: projectSessions.requiredConnectors })
+        .select({
+          requiredConnectors: projectSessions.requiredConnectors,
+          metadata: projectSessions.metadata,
+          agentName: projectSessions.agentName,
+        })
         .from(projectSessions)
         .where(
           and(
@@ -97,9 +105,14 @@ export async function missingPromptConnectorConnections(input: {
         .limit(1),
     ]);
 
-    // A project without a default branch still has explicit session requirements.
+    const piIdentity = piWorkerRuntimeIdentityFromSessionMetadata(session?.metadata);
+    if (sessionMetadataClaimsPiWorker(session?.metadata) && !piIdentity) {
+      throw new Error('Pi session runtime identity is incomplete');
+    }
+    if (piIdentity && !project) throw new Error('Pi session project is unavailable');
+    const sourceRef = piIdentity?.sha ?? project?.defaultBranch;
     let manifestRequired: string[] = [];
-    if (project?.defaultBranch) {
+    if (project && sourceRef) {
       // NOT forceRefresh. The warm-claim path uses it because it runs once per
       // session; this runs once per prompt, and the mirror's own TTL is the
       // right freshness for a per-turn read.
@@ -112,14 +125,16 @@ export async function missingPromptConnectorConnections(input: {
         {
           projectId: input.projectId,
           repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
+          defaultBranch: sourceRef,
           manifestPath: project.manifestPath ?? 'kortix.yaml',
           gitAuthToken: null,
         },
         { rethrowReadErrors: true },
       );
       manifestRequired = requiredConnectorsForAgent(
-        effectiveRunningAgent(input.requestedAgent, input.sessionAgent),
+        piIdentity
+          ? (session?.agentName ?? input.sessionAgent)
+          : effectiveRunningAgent(input.requestedAgent, input.sessionAgent),
         loaded,
       );
     }

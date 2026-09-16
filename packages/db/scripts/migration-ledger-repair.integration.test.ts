@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import {
   migrationLedgerRepairConnectorName,
@@ -12,16 +11,22 @@ const adminUrl = process.env.MIGRATION_REPAIR_ADMIN_URL;
 const suite = adminUrl ? describe : describe.skip;
 const migrationsDir = join(import.meta.dir, '..', 'migrations');
 const databaseName = `kortix_migration_repair_${process.pid}_${Date.now()}`;
+const piDatabaseName = `kortix_pi_migration_repair_${process.pid}_${Date.now()}`;
 const databaseUrl = adminUrl ? new URL(adminUrl) : null;
 if (databaseUrl) databaseUrl.pathname = `/${databaseName}`;
+const piDatabaseUrl = adminUrl ? new URL(adminUrl) : null;
+if (piDatabaseUrl) piDatabaseUrl.pathname = `/${piDatabaseName}`;
 
 let admin: pg.Client;
+let runner: typeof import('node-pg-migrate')['runner'];
 
 suite('migration ledger rename repair', () => {
   beforeAll(async () => {
+    ({ runner } = await import('node-pg-migrate'));
     admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
     await admin.query(`create database "${databaseName}"`);
+    await admin.query(`create database "${piDatabaseName}"`);
 
     const client = new pg.Client({ connectionString: databaseUrl?.toString() });
     await client.connect();
@@ -40,13 +45,28 @@ suite('migration ledger rename repair', () => {
       `);
 
       const migrationNames = readdirSync(migrationsDir)
-        .filter((filename) => filename.endsWith('.sql') || filename.endsWith('.concurrent.ts'))
+        .filter(
+          (filename) =>
+            filename.endsWith('.sql') ||
+            filename.endsWith('.concurrent.ts') ||
+            filename.endsWith('.nontransaction.ts'),
+        )
         .sort()
         .map((filename) => filename.replace(/\.sql$/, '').replace(/\.ts$/, ''));
       const connectorIndex = migrationNames.indexOf(migrationLedgerRepairConnectorName);
       expect(connectorIndex).toBeGreaterThan(0);
 
-      for (const [index, name] of migrationNames.slice(0, connectorIndex).entries()) {
+      const renamedDeadlineNames = new Set([
+        '20260730000452547_sandbox_deadline',
+        '20260730000452600_sandbox_deadline_index.concurrent',
+      ]);
+      const appliedNames = migrationNames.filter(
+        (name) =>
+          name !== migrationLedgerRepairConnectorName &&
+          !renamedDeadlineNames.has(name),
+      );
+
+      for (const [index, name] of appliedNames.entries()) {
         await client.query(
           `insert into kortix_migrations.pgmigrations (name, run_on)
            values ($1, $2::timestamptz)`,
@@ -62,10 +82,75 @@ suite('migration ledger rename repair', () => {
     } finally {
       await client.end();
     }
+
+    const piClient = new pg.Client({ connectionString: piDatabaseUrl?.toString() });
+    await piClient.connect();
+    try {
+      await piClient.query(`
+        create schema kortix_migrations;
+        create table kortix_migrations.pgmigrations (
+          id serial primary key,
+          name varchar(255) not null,
+          run_on timestamp not null
+        );
+      `);
+
+      const currentPiNames = [
+        '20260916101228944_session_worker_log',
+        '20260916101229944_pi_runtime_artifacts',
+        '20260916101230944_filesystems',
+        '20260916101231944_sandbox_compute_environment_workload.nontransaction',
+        '20260916101232944_pi_runtime_identity',
+        '20260916101233944_session_worker_log_append_id',
+        '20260916101234944_session_worker_log_append_id_unique.concurrent',
+        '20260916101235944_session_attachments',
+        '20260916101236944_pi_private_storage_access',
+      ];
+      const currentConsumerBoundaryName = '20260805202913539_secret_consumer_boundary';
+      const legacyConsumerBoundaryName = '20260805165801277_secret_consumer_boundary';
+      const legacyPiNames = [
+        '20260828170156721_session_worker_log',
+        '20260829160353474_pi_runtime_artifacts',
+        '20260902084011462_filesystems',
+        '20260903055848254_sandbox_compute_environment_workload.nontransaction',
+        '20260903080719873_pi_runtime_identity',
+        '20260904065901557_session_worker_log_append_id',
+        '20260904065927143_session_worker_log_append_id_unique.concurrent',
+        '20260908195702338_session_attachments',
+        '20260908200910776_pi_private_storage_access',
+      ];
+      const migrationNames = readdirSync(migrationsDir)
+        .filter(
+          (filename) =>
+            filename.endsWith('.sql') ||
+            filename.endsWith('.concurrent.ts') ||
+            filename.endsWith('.nontransaction.ts'),
+        )
+        .sort()
+        .map((filename) => filename.replace(/\.sql$/, '').replace(/\.ts$/, ''));
+      const historicalNames = migrationNames
+        .filter(
+          (name) =>
+            !currentPiNames.includes(name) && name !== currentConsumerBoundaryName,
+        )
+        .concat(legacyConsumerBoundaryName, legacyPiNames)
+        .sort();
+
+      for (const name of historicalNames) {
+        await piClient.query(
+          `insert into kortix_migrations.pgmigrations (name, run_on)
+           values ($1, $2::timestamptz)`,
+          [name, '2026-09-01T00:00:00.123456Z'],
+        );
+      }
+    } finally {
+      await piClient.end();
+    }
   });
 
   afterAll(async () => {
     await admin.query(`drop database if exists "${databaseName}" with (force)`);
+    await admin.query(`drop database if exists "${piDatabaseName}" with (force)`);
     await admin.end();
   });
 
@@ -123,9 +208,17 @@ suite('migration ledger rename repair', () => {
       const ledger = await client.query<{ name: string }>(
         `select name
            from kortix_migrations.pgmigrations
+          where name = any($1::text[])
           order by run_on, id`,
+        [
+          [
+            migrationLedgerRepairConnectorName,
+            '20260730000452547_sandbox_deadline',
+            '20260730000452600_sandbox_deadline_index.concurrent',
+          ],
+        ],
       );
-      expect(ledger.rows.slice(-3).map((row) => row.name)).toEqual([
+      expect(ledger.rows.map((row) => row.name)).toEqual([
         migrationLedgerRepairConnectorName,
         '20260730000452547_sandbox_deadline',
         '20260730000452600_sandbox_deadline_index.concurrent',
@@ -139,6 +232,105 @@ suite('migration ledger rename repair', () => {
             and column_name = 'conditions'`,
       );
       expect(columns.rows[0]?.count).toBe(3);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('repairs every applied renamed migration before strict order validation', async () => {
+    const runnerOptions = {
+      databaseUrl: piDatabaseUrl?.toString(),
+      dir: migrationsDir,
+      migrationsTable: 'pgmigrations',
+      migrationsSchema: 'kortix_migrations',
+      createMigrationsSchema: true,
+      singleTransaction: true,
+      logger: console,
+    } as const;
+
+    expect(
+      await repairMigrationLedger({
+        databaseUrl: piDatabaseUrl?.toString() ?? '',
+        migrationsDir,
+        applyConnectorMigration: async () => {
+          throw new Error('the pi rename must not reapply an existing migration');
+        },
+      }),
+    ).toBe(true);
+
+    const pending = await runner({
+      ...runnerOptions,
+      direction: 'up',
+      count: Number.POSITIVE_INFINITY,
+      checkOrder: true,
+      dryRun: true,
+    });
+    expect(pending).toEqual([]);
+    expect(pending.map((migration) => migration.name)).not.toContain(
+      '20260805202913539_secret_consumer_boundary',
+    );
+
+    const client = new pg.Client({ connectionString: piDatabaseUrl?.toString() });
+    await client.connect();
+    try {
+      const ledger = await client.query<{ name: string }>(
+        `select name
+           from kortix_migrations.pgmigrations
+          where name = any($1::text[])
+          order by run_on, id`,
+        [
+          [
+            '20260828170156721_session_worker_log',
+            '20260829160353474_pi_runtime_artifacts',
+            '20260805165801277_secret_consumer_boundary',
+            '20260805202913539_secret_consumer_boundary',
+            '20260916101228944_session_worker_log',
+            '20260916101229944_pi_runtime_artifacts',
+          ],
+        ],
+      );
+      expect(ledger.rows.map((row) => row.name)).toEqual([
+        '20260805202913539_secret_consumer_boundary',
+        '20260916101228944_session_worker_log',
+        '20260916101229944_pi_runtime_artifacts',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('upgrades the latest preview names without rerunning SQL', async () => {
+    const client = new pg.Client({ connectionString: piDatabaseUrl?.toString() });
+    await client.connect();
+    try {
+      await client.query(`
+        update kortix_migrations.pgmigrations
+           set name = case name
+             when '20260916101228944_session_worker_log'
+               then '20260902070000000_session_worker_log'
+             when '20260916101229944_pi_runtime_artifacts'
+               then '20260902070001000_pi_runtime_artifacts'
+             else name end;
+      `);
+      const options = {
+        databaseUrl: piDatabaseUrl?.toString() ?? '',
+        migrationsDir,
+        applyConnectorMigration: async () => {
+          throw new Error('Pi upgrades must not rerun applied SQL');
+        },
+      };
+      expect(await repairMigrationLedger(options)).toBe(true);
+      expect(await repairMigrationLedger(options)).toBe(false);
+      expect(await runner({
+        databaseUrl: options.databaseUrl,
+        dir: migrationsDir,
+        migrationsTable: 'pgmigrations',
+        migrationsSchema: 'kortix_migrations',
+        direction: 'up',
+        count: Number.POSITIVE_INFINITY,
+        checkOrder: true,
+        dryRun: true,
+      })).toEqual([]);
     } finally {
       await client.end();
     }

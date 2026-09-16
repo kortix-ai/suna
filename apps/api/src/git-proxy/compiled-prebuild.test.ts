@@ -3,6 +3,7 @@ import type { GitBackedProject } from '../projects/git/types';
 import {
   prebuildCompiledBootArtifacts,
   prebuildDefaultBranchArtifacts,
+  prebuildManifestRuntime,
 } from './compiled-prebuild';
 
 const project: GitBackedProject = {
@@ -80,4 +81,64 @@ describe('compiled boot prebuild', () => {
     expect(result?.runtime.sourceSha).toBe('a'.repeat(40));
   });
 
+});
+
+describe('manifest runtime prebuild', () => {
+  test('Pi environment prebuild starts while the matching worker artifact is still compiling', async () => {
+    const calls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = prebuildManifestRuntime(project, 'https://api.test/git', false, {
+      refresh: async () => {}, resolveTip: async () => 'a'.repeat(40),
+      resolveRuntime: async () => 'pi',
+      pi: async (_project, tip) => { calls.push(`pi:${await tip(project, 'main')}`); await gate; },
+      environment: async (_project, sha) => { calls.push(`environment:${sha}`); },
+      opencode: async () => { throw new Error('unexpected OpenCode build'); },
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      expect(calls.sort()).toEqual([`environment:${'a'.repeat(40)}`, `pi:${'a'.repeat(40)}`]);
+    } finally { release(); }
+    await pending;
+  });
+  for (const enabled of [false, true]) {
+    test(`Pi builds only Pi with legacy compiled boot enabled=${enabled}`, async () => {
+      const calls: string[] = [];
+      const sha = 'a'.repeat(40);
+      await prebuildManifestRuntime(project, 'https://api.test/git', enabled, {
+        refresh: async () => { calls.push('refresh'); },
+        resolveTip: async () => { calls.push('tip'); return sha; },
+        resolveRuntime: async (_project, ref) => { calls.push(`manifest:${ref}`); return 'pi'; },
+        pi: async (_project, resolveTip) => { calls.push(`pi:${await resolveTip(project, 'main')}`); },
+        opencode: async () => { calls.push('opencode'); },
+      });
+      expect(calls).toEqual(['refresh', 'tip', `manifest:${sha}`, `pi:${sha}`]);
+    });
+  }
+
+  test('OpenCode preserves the compiled boot switch', async () => {
+    for (const enabled of [false, true]) {
+      const calls: string[] = [];
+      await prebuildManifestRuntime(project, 'https://api.test/git', enabled, {
+        refresh: async () => {},
+        resolveTip: async () => 'a'.repeat(40),
+        resolveRuntime: async () => 'opencode',
+        pi: async () => { calls.push('pi'); },
+        opencode: async (_project, ref, sha, url) => { calls.push(`${ref}:${sha}:${url}`); },
+      });
+      expect(calls).toEqual(enabled ? [`main:${'a'.repeat(40)}:https://api.test/git`] : []);
+    }
+  });
+
+  test('invalid manifests fail without compiling either runtime', async () => {
+    const calls: string[] = [];
+    await expect(prebuildManifestRuntime(project, 'https://api.test/git', true, {
+      refresh: async () => {},
+      resolveTip: async () => 'a'.repeat(40),
+      resolveRuntime: async () => { throw new Error('runtime contradicts version'); },
+      pi: async () => { calls.push('pi'); },
+      opencode: async () => { calls.push('opencode'); },
+    })).rejects.toThrow('runtime contradicts version');
+    expect(calls).toEqual([]);
+  });
 });

@@ -41,7 +41,94 @@ const APP_ACCESS_RENAMES = [
   },
 ] as const;
 
-const MIGRATION_RENAMES = [...SANDBOX_DEADLINE_RENAMES, ...APP_ACCESS_RENAMES] as const;
+const SECRET_CONSUMER_RENAMES = [
+  {
+    legacyName: '20260805165801277_secret_consumer_boundary',
+    currentName: '20260805202913539_secret_consumer_boundary',
+    filename: '20260805202913539_secret_consumer_boundary.sql',
+    sha256: '9de8e240356235c49d577e219ca83518eceaacfaab16243aa9b6f15847a2e7d1',
+  },
+] as const;
+
+const PI_RUNTIME_RENAMES = [
+  {
+    legacyName: '20260828170156721_session_worker_log',
+    currentName: '20260916101228944_session_worker_log',
+    filename: '20260916101228944_session_worker_log.sql',
+    sha256: '0fafe47bb6b45c50ff4f6b56175337623cea81a2f722eec6294fb60cd35e84e5',
+  },
+  {
+    legacyName: '20260829160353474_pi_runtime_artifacts',
+    currentName: '20260916101229944_pi_runtime_artifacts',
+    filename: '20260916101229944_pi_runtime_artifacts.sql',
+    sha256: '87d0bbacf0fa853f80ad506696e3f556d45c3b934c4d25a9a1edf48ad36fd803',
+  },
+] as const;
+
+const PI_PREVIEW_RENAMES = [
+  {
+    legacyName: '20260902070000000_session_worker_log',
+    currentName: '20260916101228944_session_worker_log',
+    filename: '20260916101228944_session_worker_log.sql',
+    sha256: '0fafe47bb6b45c50ff4f6b56175337623cea81a2f722eec6294fb60cd35e84e5',
+  },
+  {
+    legacyName: '20260902070001000_pi_runtime_artifacts',
+    currentName: '20260916101229944_pi_runtime_artifacts',
+    filename: '20260916101229944_pi_runtime_artifacts.sql',
+    sha256: '87d0bbacf0fa853f80ad506696e3f556d45c3b934c4d25a9a1edf48ad36fd803',
+  },
+  {
+    legacyName: '20260902084011462_filesystems',
+    currentName: '20260916101230944_filesystems',
+    filename: '20260916101230944_filesystems.sql',
+    sha256: 'a4db1396b871384028ebf878f559cf80e35461fc0e71c8053cdcc84659fc0350',
+  },
+  {
+    legacyName: '20260903055848254_sandbox_compute_environment_workload.nontransaction',
+    currentName: '20260916101231944_sandbox_compute_environment_workload.nontransaction',
+    filename: '20260916101231944_sandbox_compute_environment_workload.nontransaction.ts',
+    sha256: '4348daf2732634177ac42a17ad0066a09c0f0bc91e38d3cf94fb361e5c4cb723',
+  },
+  {
+    legacyName: '20260903080719873_pi_runtime_identity',
+    currentName: '20260916101232944_pi_runtime_identity',
+    filename: '20260916101232944_pi_runtime_identity.sql',
+    sha256: '5290ae45398104543acc38db89b8b432ecfb1af2e2b7a74abeee365b5965bc84',
+  },
+  {
+    legacyName: '20260904065901557_session_worker_log_append_id',
+    currentName: '20260916101233944_session_worker_log_append_id',
+    filename: '20260916101233944_session_worker_log_append_id.sql',
+    sha256: 'b6fe2eb26cd832fcf3f511db69f38124e6009829e0086149b573cf4cea660273',
+  },
+  {
+    legacyName: '20260904065927143_session_worker_log_append_id_unique.concurrent',
+    currentName: '20260916101234944_session_worker_log_append_id_unique.concurrent',
+    filename: '20260916101234944_session_worker_log_append_id_unique.concurrent.ts',
+    sha256: '777421983ad4e151b4a59a0b77b534d4a8793742a0bf3b2d7a95391931ab9868',
+  },
+  {
+    legacyName: '20260908195702338_session_attachments',
+    currentName: '20260916101235944_session_attachments',
+    filename: '20260916101235944_session_attachments.sql',
+    sha256: '37205c418db6051baddb369cef84b21795395b13816e3f0a5ee0c3cc15dd2700',
+  },
+  {
+    legacyName: '20260908200910776_pi_private_storage_access',
+    currentName: '20260916101236944_pi_private_storage_access',
+    filename: '20260916101236944_pi_private_storage_access.sql',
+    sha256: '5f93e30acd7144ff87c1adb7a1a6f5070613e690fdc5b4bfba35749f44a5af68',
+  },
+] as const;
+
+const MIGRATION_RENAMES = [
+  ...SANDBOX_DEADLINE_RENAMES,
+  ...SECRET_CONSUMER_RENAMES,
+  ...APP_ACCESS_RENAMES,
+  ...PI_RUNTIME_RENAMES,
+  ...PI_PREVIEW_RENAMES,
+] as const;
 
 const REPAIR_NAMES = [
   CONNECTOR_POLICY_MIGRATION.name,
@@ -69,6 +156,15 @@ export function planMigrationLedgerRepair(
 
   if (renames.length === 0) return null;
 
+  const plannedNames = new Map<string, string>();
+  for (const { legacyName, currentName } of renames) {
+    const previous = plannedNames.get(currentName);
+    if (previous) {
+      throw new Error(`Migration ledger contains both ${previous} and ${legacyName}.`);
+    }
+    plannedNames.set(currentName, legacyName);
+  }
+
   for (const rename of MIGRATION_RENAMES) {
     if (byName.has(rename.legacyName) && byName.has(rename.currentName)) {
       throw new Error(
@@ -86,8 +182,7 @@ export function planMigrationLedgerRepair(
     );
   }
 
-  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES
-    .filter(({ legacyName }) => byName.has(legacyName))
+  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES.filter(({ legacyName }) => byName.has(legacyName))
     .map(({ legacyName }) => byName.get(legacyName)?.runOn)
     .filter((runOn): runOn is Date => runOn instanceof Date);
   const legacyRunOn =
@@ -142,6 +237,45 @@ async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRe
   }
 }
 
+async function reorderAppliedRenames(
+  client: pg.Client,
+  renames: MigrationLedgerRepairPlan['renames'],
+): Promise<void> {
+  const movedNames = renames
+    .map(({ currentName }) => currentName)
+    .sort();
+  if (movedNames.length === 0) return;
+
+  const firstName = movedNames[0];
+  const result = await client.query(
+    `with boundary as (
+       select coalesce(
+                max(run_on) filter (where name < $1),
+                min(run_on) - interval '1 microsecond',
+                timestamp 'epoch'
+              ) as anchor
+         from kortix_migrations.pgmigrations
+     ), ordered as (
+       select id, row_number() over (order by name, id) as position
+         from kortix_migrations.pgmigrations
+        where name >= $1
+     ), normalized as (
+       select ordered.id,
+              boundary.anchor + ordered.position * interval '1 microsecond' as run_on
+         from ordered
+         cross join boundary
+     )
+     update kortix_migrations.pgmigrations as ledger
+        set run_on = normalized.run_on
+       from normalized
+      where ledger.id = normalized.id`,
+    [firstName],
+  );
+  if ((result.rowCount ?? 0) < movedNames.length) {
+    throw new Error('Migration ledger repair could not reorder the renamed migrations.');
+  }
+}
+
 async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
@@ -189,6 +323,8 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
         );
       }
     }
+
+    await reorderAppliedRenames(client, plan.renames);
 
     await client.query('commit');
     return true;

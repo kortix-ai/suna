@@ -91,6 +91,19 @@ describe('scopeControl', () => {
     expect(scopeControl('model').live).toBe(true);
   });
 
+  test('Pi model changes apply to new prompts while its agent remains fixed', () => {
+    expect(scopeControl('model', true)).toMatchObject({
+      live: true,
+      badge: 'New prompts',
+    });
+    expect(scopeControl('agent', true)).toMatchObject({
+      live: false,
+      badge: 'Fixed at start',
+    });
+    expect(scopeControl('secrets', true).live).toBe(true);
+    expect(scopeControl('connections', true).live).toBe(true);
+  });
+
   test('the optional fallback starts a separate session', () => {
     expect(START_NEW_SESSION_ACTION.toLowerCase()).toContain('new session');
   });

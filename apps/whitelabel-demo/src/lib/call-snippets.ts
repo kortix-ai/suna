@@ -86,6 +86,8 @@ export interface SnippetContext {
   agent?: string | null;
   /** The model a mid-session change would move to. */
   model?: string | null;
+  /** True when the session runs an immutable compiled worker bundle. */
+  compiledRuntime?: boolean;
   executionId?: string;
   /** The project name a provision would send, when the field is filled in. */
   projectName?: string;
@@ -254,6 +256,27 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
 
 function sessionPrompt(ctx: SnippetContext): CallSnippet {
   const agent = ctx.agent ?? null;
+  if (ctx.compiledRuntime) {
+    return {
+      id: 'session.prompt',
+      title: 'Send a prompt',
+      summary: 'The compiled bundle owns the model and agent for every message.',
+      sdk: [
+        'await kortix',
+        '  .session(projectId, sessionId)',
+        "  .send('Refund order 4182');",
+      ].join('\n'),
+      http: {
+        kind: 'runtime',
+        summary:
+          'The SDK resolves this session’s runtime and sends the text. The compiled bundle supplies its model and agent; the prompt carries no mutable override.',
+      },
+      serverInjected: [],
+      notes: [
+        'Do not send model, agent, or variant options to a compiled session. Change the project configuration and start a new session instead.',
+      ],
+    };
+  }
   return {
     id: 'session.prompt',
     title: 'Send a prompt (and switch agent per message)',
@@ -323,6 +346,7 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 
+
   return {
     id: 'session.model',
     title: 'Change the model mid-session',
@@ -348,8 +372,8 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'The upstream body field is named after the session runtime; `changeModel()` writes it for you. This app never spells it in client code (scripts/sdk-boundary.mjs keeps provider terminology out of the browser bundle) — the real field name is in `src/app/api/session-model/route.ts`.',
-      'The reply carries `applied_live`. False means the model was stored and applies at the NEXT start; telling someone the model changed when their next answer comes from the old one is a lie worth avoiding.',
-      'A live change restarts the runtime, which ends any in-flight turn.',
+      'When `applies_to` is `next_prompt`, active and queued prompts retain their accepted model. The compiled agent, source SHA and permissions stay unchanged.',
+      'Otherwise, `applied_live` reports a runtime restart. Check `push_failed` before reporting success. A stored change without `applies_to` applies at the next start.',
     ],
   };
 }

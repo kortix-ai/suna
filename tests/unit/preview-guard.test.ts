@@ -42,7 +42,7 @@ describe('preview guard — the self-healer a branch environment runs on its own
 
   it('validates a patched Caddyfile before asking the edge to reload it', () => {
     const validate = PREVIEW_GUARD_SCRIPT.indexOf('caddy validate --adapter caddyfile --config /dev/stdin');
-    const reload = PREVIEW_GUARD_SCRIPT.indexOf('caddy reload --config /etc/caddy/Caddyfile');
+    const reload = PREVIEW_GUARD_SCRIPT.indexOf('caddy reload --config /dev/stdin --adapter caddyfile');
     expect(validate).toBeGreaterThan(-1);
     expect(reload).toBeGreaterThan(validate);
     expect(PREVIEW_GUARD_SCRIPT).toContain('lb_try_duration 30s');

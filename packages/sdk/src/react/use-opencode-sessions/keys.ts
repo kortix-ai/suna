@@ -130,11 +130,14 @@ export const opencodeKeys = {
   tools: (providerID: string, modelID: string) =>
     ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
   skills: () => ['opencode', 'skills', activeServerKey()] as const,
-  projects: () => ['opencode', 'projects', activeServerKey()] as const,
-  currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
+  projects: (serverId?: string) =>
+    ['opencode', 'projects', serverId ?? activeServerKey()] as const,
+  currentProject: (serverId?: string) =>
+    ['opencode', 'project', 'current', serverId ?? activeServerKey()] as const,
   commands: () => ['opencode', 'commands', activeServerKey()] as const,
   providers: () => ['opencode', 'providers', activeServerKey()] as const,
-  pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
+  pathInfo: (serverId?: string) =>
+    ['opencode', 'path-info', serverId ?? activeServerKey()] as const,
   mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
   worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
   /**

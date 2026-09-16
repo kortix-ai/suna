@@ -40,6 +40,7 @@ export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
+export * from './filesystems';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.
@@ -50,5 +51,7 @@ export type {
   ProjectGitConnection,
   ProjectFileEntry,
 } from './shared';
+
+export * from './session-attachments';
 export * from './provider-connections';
 export * from './model-access';

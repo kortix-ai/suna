@@ -85,7 +85,10 @@
                   },
                   {
                     "not": {
-                      "const": "default"
+                      "enum": [
+                        "default",
+                        "pi-worker"
+                      ]
                     }
                   }
                 ]
@@ -145,8 +148,17 @@
           }
         },
         "default": {
-          "type": "string",
-          "minLength": 1
+          "allOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+            },
+            {
+              "not": {
+                "const": "pi-worker"
+              }
+            }
+          ]
         }
       },
       "additionalProperties": true

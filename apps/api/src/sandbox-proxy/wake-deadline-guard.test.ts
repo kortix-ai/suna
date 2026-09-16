@@ -14,6 +14,7 @@ import * as realKortixUserContext from '../shared/kortix-user-context';
 
 let ensureRunningCalls: string[] = [];
 let deadlineAt: Date | null = new Date(Date.now() + 60 * 60_000);
+let sessionMetadata: Record<string, unknown> = {};
 
 mock.module('../config', () => ({ config: {} }));
 mock.module('../shared/preview-ownership', () => ({
@@ -60,7 +61,7 @@ mock.module('../shared/db', () => ({
       const rows = isDeadlineProbe
         ? deadlineAt === null
           ? []
-          : [{ deadlineAt }]
+          : [{ deadlineAt, sessionMetadata }]
         : [
             {
               sandboxId: 'sb-1',
@@ -94,6 +95,7 @@ function reset(nextDeadline: Date | null) {
   recoveryCalls.length = 0;
   providerStatusBeforeWake = 'running';
   deadlineAt = nextDeadline;
+  sessionMetadata = {};
 }
 
 describe('wakeSandbox — a provider start obeys the deadline', () => {
@@ -126,6 +128,19 @@ describe('wakeSandbox — a provider start obeys the deadline', () => {
 
     await wakeSandbox('ext-1');
 
+    expect(recoveryCalls).toEqual([]);
+  });
+
+  test.each([
+    { sandbox_slug: 'pi-worker', pi_worker_boot: true, pi_worker_ref: 'main', pi_worker_sha: 'a'.repeat(40) },
+    { sandbox_slug: 'pi-worker' },
+    { runtimeArtifact: { runtimeProfile: 'pi-worker' } },
+  ])('a Pi worker never enters legacy proxy wake, even with a live deadline: %j', async (metadata) => {
+    reset(new Date(Date.now() + 60 * 60_000));
+    sessionMetadata = metadata;
+    providerStatusBeforeWake = 'stopped';
+    await wakeSandbox('ext-1');
+    expect(ensureRunningCalls).toEqual([]);
     expect(recoveryCalls).toEqual([]);
   });
 

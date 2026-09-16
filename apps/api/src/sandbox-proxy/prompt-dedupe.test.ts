@@ -5,6 +5,7 @@ import {
   claimPromptDelivery,
   isNonIdempotentSessionWrite,
   promptDeliveryKey,
+  promptDeliveryMatchesMessage,
   releasePromptDelivery,
   shouldClaimPromptDelivery,
 } from './prompt-dedupe';
@@ -234,6 +235,20 @@ describe('promptDeliveryKey', () => {
         expect(key.startsWith('hash:')).toBe(true);
       }
     });
+  });
+});
+
+describe('promptDeliveryMatchesMessage', () => {
+  test('binds a claim to its original message until release or expiry', () => {
+    expect(claimPromptDelivery('key', 1000, 'message-one')).toBe(true);
+    expect(claimPromptDelivery('key', 1001, 'message-two')).toBe(false);
+    expect(promptDeliveryMatchesMessage('key', 'message-one', 1001)).toBe(true);
+    expect(promptDeliveryMatchesMessage('key', 'message-two', 1001)).toBe(false);
+    expect(promptDeliveryMatchesMessage('key', 'message-one', 601000)).toBe(false);
+    releasePromptDelivery('key');
+    expect(promptDeliveryMatchesMessage('key', 'message-one', 1001)).toBe(false);
+    expect(claimPromptDelivery('key', 1002, 'message-two')).toBe(true);
+    expect(promptDeliveryMatchesMessage('key', 'message-two', 1003)).toBe(true);
   });
 });
 

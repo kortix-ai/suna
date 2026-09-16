@@ -1,5 +1,9 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { homedir } from 'node:os'
+import { createExecutionOnlyRuntime } from './execution-only'
+import { prepareEnvironmentWorkspace } from './environment-workspace'
+import { prepareEnvironmentResources, prepareOpenCodeEnvironmentResources } from './environment-resources'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { dispatchCli, isManagementSubcommand } from './cli'
@@ -96,6 +100,8 @@ export function resetClaimedInitialTurnForTests(): void {
 }
 
 
+export { main as startCompiledRuntime }
+
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
@@ -139,6 +145,11 @@ async function main() {
   // opencode failure never takes it down. Reachable via /proxy/<staticPort>.
   const staticWeb = startStaticWebServer(cfg.staticPort)
   bootMark('static-web')
+
+  if (cfg.workload === 'environment') {
+    await runEnvironmentMode(cfg, bootTime, bootState, bootMark, staticWeb)
+    return
+  }
 
   // Warm snapshot seed capture. This boots a session-less runtime, warms
   // opencode, writes the capture pin, and later adopts the forked session env
@@ -355,7 +366,12 @@ async function main() {
   // After the repo lands we install config deps + injected skills there and
   // dispose the instances in place (~50 ms) so the next request re-detects
   // the git root and re-reads config. No hint → the serial boot below.
-  const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
+  const resourcePreparation = process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined
+    ? repoMaterializePromise.then(() => prepareOpenCodeEnvironmentResources(cfg))
+    : Promise.resolve()
+  void resourcePreparation.catch(() => {})
+  if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) bootState.workspaceReady = false
+  const earlyOpencodeConfigDir = cfg.autoClone && process.env.KORTIX_AGENT_RESOURCES_SHA === undefined ? resolveHintedOpencodeConfigDir(cfg) : null
   // Only the early-spawn path can expose a half-built workspace; every other
   // boot leaves this undefined and the proxy gate below is inert.
   if (earlyOpencodeConfigDir) bootState.workspaceReady = false
@@ -387,6 +403,7 @@ async function main() {
   let opencodeStartedFromCompiledConfig = false
   const compiledOpencodeStartPromise: Promise<void> | null = hasCompiledOpencodeConfig
     ? (async () => {
+        await resourcePreparation
         await ensureOpencodeConfigDeps(compiledOpencodeConfigDir)
         await ensureInjectedManagedSkills(compiledOpencodeConfigDir)
         bootMark('compiled-config-deps')
@@ -405,6 +422,14 @@ async function main() {
   // resolution, readiness probe, initial session creation) think the workspace
   // is ready.
   await repoMaterializePromise
+  try {
+    await resourcePreparation
+  } catch (err) {
+    bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+    bootState.workspaceReady = false
+    logger.error('[boot] environment resource preparation failed', err)
+    return
+  }
   bootMark('repo-materialized')
   await compiledOpencodeStartPromise
   await earlyOpencodeStartPromise
@@ -623,6 +648,7 @@ function armSeedAdoption(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
+      if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) bootState.workspaceReady = false
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
@@ -636,9 +662,19 @@ function armSeedAdoption(
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
         }
       }
+      if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) {
+        await prepareOpenCodeEnvironmentResources(cfg2)
+        opencode.reconfigure(cfg2, await resolveOpencodeConfigDir(cfg2), createProjectEnvStore())
+        await opencode.restart()
+        bootState.workspaceReady = !bootState.repoMaterializationError
+      }
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
       logger.info('[seed] adoption complete', { adoptMs: Date.now() - t0, timeline: bootState.timeline })
-    })()
+    })().catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      bootState.workspaceReady = false
+      logger.error('[seed] adoption failed', err)
+    })
   }
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
@@ -1129,6 +1165,60 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
  * on default-branch HEAD instead of minting a session branch. A monitor watches
  * what is shipped, not what some session is working on.
  */
+async function runEnvironmentMode(
+  cfg: Config,
+  bootTime: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+  staticWeb: ReturnType<typeof startStaticWebServer>,
+): Promise<void> {
+  bootState.workspaceReady = false
+  bootState.initialOpenCodeSessionRequired = false
+  const projectEnv = createProjectEnvStore()
+  await startEgressShim()
+  writeAgentEnvFile(projectEnv)
+  const runtime = createExecutionOnlyRuntime()
+  const server = startProxy(cfg, runtime, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(runtime, server, staticWeb)
+  bootMark('proxy-up')
+  try {
+    await configureGlobalGitIdentity(cfg, homedir())
+    await configureGitCredentialHelper(cfg, homedir())
+    bootMark('git-identity')
+    await prepareEnvironmentWorkspace(cfg)
+    await prepareEnvironmentResources(cfg)
+    await configureRepoCredentialHelper(cfg, cfg.projectTarget)
+    scheduleHistoryBackfill(cfg, cfg.projectTarget)
+    bootMark('repo-materialized')
+    bootState.workspaceReady = true
+    bootMark('environment-ready')
+    scheduleRuntimeAssetsReconcile(cfg)
+    try {
+      const onBoot = await resolveSandboxOnBoot(cfg)
+      if (onBoot) {
+        const logPath = '/var/log/kortix-on-boot.log'
+        mkdirSync(dirname(logPath), { recursive: true })
+        const out = openSync(logPath, 'a')
+        const child = spawn('bash', ['-lc', onBoot], {
+          cwd: cfg.projectTarget,
+          env: process.env,
+          detached: true,
+          stdio: ['ignore', out, out],
+        })
+        closeSync(out)
+        child.on('error', (err) => logger.warn('[environment] on_boot failed', { error: err.message }))
+        child.unref()
+      }
+    } catch (err) {
+      logger.warn('[environment] on_boot setup failed', { error: (err as Error).message })
+    }
+  } catch (err) {
+    bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+    bootState.workspaceReady = false
+    logger.error('[environment] workspace setup failed', err)
+  }
+}
+
 async function runMonitorMode(
   cfg: Config,
   bootTime: number,
@@ -1374,6 +1464,7 @@ async function runWarmSeedMode(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) bootState.workspaceReady = false
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
@@ -1400,6 +1491,10 @@ async function runWarmSeedMode(
       const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
+      if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) {
+        bootState.workspaceReady = false
+        await prepareOpenCodeEnvironmentResources(cfg2)
+      }
       await repairOpencodeConfigDir(adoptedOpencodeConfigDir)
       await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
         logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
@@ -1443,6 +1538,7 @@ async function runWarmSeedMode(
         llmProxyBaseUrl() != null &&
         opencode.getState() === 'ok' &&
         !gatewayCatalogChanged &&
+        process.env.KORTIX_AGENT_RESOURCES_SHA === undefined &&
         !bootState.repoMaterializationError
       ) {
         // LLM gateway: required for the session to function.
@@ -1472,9 +1568,14 @@ async function runWarmSeedMode(
         )
         bootMark('adopt-opencode-restarted')
       }
+      if (process.env.KORTIX_AGENT_RESOURCES_SHA !== undefined) bootState.workspaceReady = !bootState.repoMaterializationError
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
       logger.info('[seed] fork adoption complete', { adoptMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
-    })()
+    })().catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      bootState.workspaceReady = false
+      logger.error('[seed] adoption failed', err)
+    })
   }
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
