@@ -55,10 +55,11 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
+            if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             return [];

@@ -18360,7 +18360,11 @@
       "textb38cb5e18525": "that loop and shows its working. Worth twenty minutes?",
       "textff5bd8333c4e": "You, and anyone who can manage this project",
       "text36d8691ae566": "Anyone with the URL, plus your team",
-      "text4fb2abecc0a6": "Anyone with the password, plus your team"
+      "text4fb2abecc0a6": "Anyone with the password, plus your team",
+      "text03a01dd53ffa": "Press ↑ to edit queued messages",
+      "text1eb132d9d4da": "Queue paused",
+      "textf8e64a37950a": "Queued messages",
+      "textcd5f943d5863": "Not sent"
     }
   },
   "projectOnboarding": {

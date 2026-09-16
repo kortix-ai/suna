@@ -268,6 +268,17 @@ account never clears it.
 
 Create or reconnect the required connection. Then retry session creation.
 
+The durable prompt route (`POST /projects/:id/sessions/:sid/prompts`) checks
+these requirements before queueing. A refusal returns the same `409` contract
+and creates no prompt. A failed requirements lookup returns `503`, not `409`.
+If requirements change after enqueueing, delivery preserves the refusal message
+in `last_error` and fails the prompt without repeating a permanent refusal.
+
+Stop (`POST .../prompts/hold {"held":true}`) immediately exposes every pending
+or claimed prompt as `waiting` with reason `held`. Reload preserves that state.
+The worker checks the persisted hold before each delivery attempt. Resume
+clears the hold; Stop does not discard the prompt.
+
 ## 4. Secret scope
 
 The `secrets` field narrows the selected agent's project-secret grant.

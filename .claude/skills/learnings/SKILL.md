@@ -5206,3 +5206,25 @@ the helper fall back to a repository dotenv file for a deployed target.
 **Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
 the role insert and cleanup delete. The preview journey must observe the grant
 through `/v1/user-roles` and render the admin overview.
+
+
+### Preserve permanent prompt refusals and persist Stop before acknowledging it (2026-09-15)
+
+**Incident.** LibreMax session `5889a055-6bad-42f2-8511-50c573946408`
+retained a binding to a disabled Gmail connector. The proxy returned `409`,
+but delivery discarded the body and retried until `delivery outcome: pending`.
+The UI displayed Thinking although the model received no prompt. Stop marked
+claimed rows only in their payload, so reload still read `delivering`.
+
+**Rule.** Validate connector requirements before enqueueing. Preserve permanent
+refusals at delivery and never retry them as readiness failures. Persist the
+public hold for claimed rows before acknowledging Stop. Check that hold before
+each delivery attempt. Inspect stored bindings when the resolved scope omits
+a disabled connector; a resolved scope is not a list of all stored bindings.
+
+**Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
+HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
+refusal sends once and Stop prevents a second POST after a transient failure.
+Production recovery removed the stale binding through the session scope API.
+The original hello received an assistant reply, and `GET /prompts` returned `[]`.

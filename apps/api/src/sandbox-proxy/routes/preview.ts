@@ -1,3 +1,4 @@
+import { promptConnectorRefusalBody } from '../../projects/lib/prompt-connector-refusal';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -594,34 +595,8 @@ async function connectorGateRefusal(
     }
     throw err;
   }
-  if (verdict.ok) return null;
-
-  if (verdict.kind === 'unavailable') {
-    return jsonProxyError(
-      {
-        error:
-          verdict.aliases.length === 1
-            ? `Required connection "${verdict.aliases[0]}" is unavailable`
-            : `Required connections ${verdict.aliases.map((a) => `"${a}"`).join(', ')} are unavailable`,
-        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
-        connectors: verdict.aliases,
-      },
-      409,
-      origin,
-    );
-  }
-  return jsonProxyError(
-    {
-      // `message` as well as `error`: the SDK prefers `message` and otherwise
-      // substitutes a generic "Failed to send message", which would bury this.
-      error: 'Create the required connections before continuing this session.',
-      message: 'Create the required connections before continuing this session.',
-      code: 'CONNECTOR_CONNECTION_REQUIRED',
-      connector_connections: verdict.connections,
-    },
-    409,
-    origin,
-  );
+  const refusal = promptConnectorRefusalBody(verdict);
+  return refusal ? jsonProxyError(refusal, 409, origin) : null;
 }
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would

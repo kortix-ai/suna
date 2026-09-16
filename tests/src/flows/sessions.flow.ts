@@ -1254,3 +1254,115 @@ console.log(JSON.stringify({ checkout, files: files.status, git: git.status }));
     });
   },
 );
+
+
+flow(
+  'SESS-29',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const sessionId = randomUUID();
+    const commandId = randomUUID();
+    const params = { projectId: project.id, sessionId };
+    const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    try {
+      await db.connect();
+      await ctx.step('create a session requiring an unavailable connector', async () => {
+        const config = await owner.put(
+          '/v1/projects/:projectId/agents/:agentName/config',
+          { connectors: 'all', secrets: 'none', skills: 'all', kortix_cli: 'all' },
+          { params: { projectId: project.id, agentName: 'kortix' } },
+        );
+        config.status(200);
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, required_connectors)
+        VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'project', '["missing-gmail"]'::jsonb)`,
+          [sessionId, ctx.P.accountId, project.id, ctx.P.OWNER.userId],
+        );
+      });
+      await ctx.step('POST returns the connector refusal and creates no inbox row', async () => {
+        const response = await owner.post(
+          promptPath,
+          {
+            client_message_id: 'blocked-connector',
+            message_id: 'msg_0123456789abAbCdEfGhIjKlMn',
+            parts: [{ type: 'text', text: 'hello' }],
+          },
+          { params },
+        );
+        response.status(409).body().has('$.code', 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
+        const listed = await owner.get(promptPath, { params });
+        listed.status(200);
+        if (listed.json<any>().prompts.length !== 0)
+          throw new Error('refused prompt entered the queue');
+      });
+      await ctx.step(
+        'Stop holds an in-flight delivery immediately and GET preserves the hold',
+        async () => {
+          // A claimed row models the instant between worker claim and network send.
+          // Its lease prevents the background worker from claiming the fixture.
+          await db.query(
+            `INSERT INTO kortix.session_lifecycle_commands
+        (command_id, command_type, source, status, project_id, session_id, account_id,
+         actor_user_id, payload, locked_by, locked_until)
+        VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+          '{"text":"hello","clientMessageId":"stop-running"}'::jsonb, 'SESS-29', now() + interval '1 hour')`,
+            [commandId, project.id, sessionId, ctx.P.accountId, ctx.P.OWNER.userId],
+          );
+          const held = await owner.post(`${promptPath}/hold`, { held: true }, { params });
+          held.status(200);
+          for (const response of [held, await owner.get(promptPath, { params })]) {
+            response.status(200);
+            const mine = response.json<any>().prompts.find((p: any) => p.prompt_id === commandId);
+            if (mine?.state !== 'waiting' || mine?.reason !== 'held')
+              throw new Error(`Stop state: ${JSON.stringify(mine)}`);
+          }
+          const stored = await db.query(
+            'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+            [commandId],
+          );
+          if (!stored.rows[0]?.result.held || !stored.rows[0]?.payload.stopPausedOnDelivery)
+            throw new Error('Stop did not persist both markers');
+        },
+      );
+      await ctx.step('Resume clears both hold markers on a claimed delivery', async () => {
+        const response = await owner.post(`${promptPath}/hold`, { held: false }, { params });
+        response.status(200);
+        const stored = await db.query(
+          'SELECT result, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1',
+          [commandId],
+        );
+        if (stored.rows[0]?.result.held || stored.rows[0]?.payload.stopPausedOnDelivery)
+          throw new Error('Resume left a hold marker');
+      });
+    } finally {
+      await db
+        .query('DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1', [commandId])
+        .catch(() => {});
+      await db
+        .query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId])
+        .catch(() => {});
+      await db.end();
+    }
+  },
+);

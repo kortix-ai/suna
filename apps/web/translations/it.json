@@ -18360,7 +18360,11 @@
       "textb38cb5e18525": "il ciclo e mostra il proprio lavoro. Ha venti minuti?",
       "textff5bd8333c4e": "Tu e chiunque possa gestire questo progetto",
       "text36d8691ae566": "Chiunque abbia l’URL, oltre al tuo team",
-      "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team"
+      "text4fb2abecc0a6": "Chiunque abbia la password, oltre al tuo team",
+      "text03a01dd53ffa": "Premi ↑ per modificare i messaggi in coda",
+      "text1eb132d9d4da": "Coda in pausa",
+      "textf8e64a37950a": "Messaggi in coda",
+      "textcd5f943d5863": "Non inviato"
     }
   },
   "projectOnboarding": {

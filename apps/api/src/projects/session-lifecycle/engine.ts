@@ -1,3 +1,9 @@
+import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
+import {
+  assertInboxDeliveryActive,
+  InboxDeliveryPaused,
+  releasePausedInboxDelivery,
+} from './inbox-delivery-hold';
 import {
   connectorCalls,
   projectSessions,
@@ -408,6 +414,7 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
+  beforeSend?: () => Promise<void>,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -496,6 +503,7 @@ export async function continueSession(
   };
   const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
+    await beforeSend?.();
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
@@ -578,6 +586,7 @@ export async function continueSession(
 
   const loaded = { row: project, userId };
   const openOnce = async () => {
+    await beforeSend?.();
     const [fresh] = await db
       .select({
         status: projectSessions.status,
@@ -1824,6 +1833,7 @@ export async function executeQueuedContinue(
         // redelivery. See `withNextDeliveryAttempt`.
         attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId,
         tl,
+        payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined,
       );
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -2000,12 +2010,17 @@ export async function executeQueuedContinue(
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
+    if (e instanceof InboxDeliveryPaused) {
+      await releasePausedInboxDelivery(row.commandId);
+      return 'queued';
+    }
+    const retryable = !(e instanceof PromptDeliveryRefused);
     await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
-      retryable: true,
+      retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
     });
-    return 'queued';
+    return retryable ? 'queued' : 'failed';
   }
 }
 
@@ -2503,10 +2518,12 @@ async function postPrompt(
       }
       return 'accepted';
     }
+    await throwIfPromptRefused(res);
     if (res.status !== 404)
       console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
     return 'failed';
   } catch (err) {
+    if (err instanceof PromptDeliveryRefused) throw err;
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.

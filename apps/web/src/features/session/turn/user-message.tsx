@@ -970,9 +970,7 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
-  leading,
   leadingStatus,
-  alwaysVisible = false,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -985,21 +983,11 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered FIRST in the fade group: a queued prompt's controls
-   * (`QueuedPromptActions`) — remove, send-now, retry. Same row as copy /
-   * rewind so a pending bubble does not grow a second strip, and so the X
-   * does not reserve a column beside the bubble.
-   */
-  leading?: React.ReactNode;
-  /**
    * Rendered before `leading` and ALWAYS visible — a queued prompt's status
    * word (`QueuedPromptStatus`). The dim is what marks a bubble as queued;
    * the word is what makes the dim legible, so it does not wait for a hover.
    */
   leadingStatus?: React.ReactNode;
-  /** Keep the row visible without hover — a failed send must not be a thing
-   *  the user has to hunt for. */
-  alwaysVisible?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -1008,7 +996,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leading && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !leadingStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -1022,30 +1010,27 @@ export function UserMessageActions({
       <div
         className={cn(
           'flex items-center gap-2 transition-opacity duration-150',
-          alwaysVisible
-            ? 'opacity-100'
-            : // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
-              //
-              // A touch screen has no hover, so under 768px this row would sit
-              // at zero opacity for the whole session: the timestamp, Copy and
-              // Edit-from-here all present, all invisible, all unreachable.
-              // Worse than absent, because the row still holds its height.
-              //
-              // Touch browsers also emulate `:hover` on tap and leave it stuck
-              // on the last-tapped element until you tap elsewhere — so the
-              // pre-fix behavior was not "never shows", it was "one arbitrary
-              // turn's actions stay lit while every other turn's stay hidden".
-              //
-              // Appended rather than folded into the desktop classes on
-              // purpose: the only utility it truly conflicts with is the bare
-              // `opacity-0`, and a variant always sorts after its bare
-              // counterpart. The two `opacity-100` variants it sits beside
-              // agree with it, so no ordering assumption is being made and the
-              // desktop string is unchanged.
-              'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
+          // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
+          //
+          // A touch screen has no hover, so under 768px this row would sit
+          // at zero opacity for the whole session: the timestamp, Copy and
+          // Edit-from-here all present, all invisible, all unreachable.
+          // Worse than absent, because the row still holds its height.
+          //
+          // Touch browsers also emulate `:hover` on tap and leave it stuck
+          // on the last-tapped element until you tap elsewhere — so the
+          // pre-fix behavior was not "never shows", it was "one arbitrary
+          // turn's actions stay lit while every other turn's stay hidden".
+          //
+          // Appended rather than folded into the desktop classes on
+          // purpose: the only utility it truly conflicts with is the bare
+          // `opacity-0`, and a variant always sorts after its bare
+          // counterpart. The two `opacity-100` variants it sits beside
+          // agree with it, so no ordering assumption is being made and the
+          // desktop string is unchanged.
+          'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
         )}
       >
-        {leading}
         {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
           entirely when there is no meta at all — the optimistic turn would
@@ -1200,9 +1185,7 @@ export function UserMessage({
   editPending,
   onEditCancel,
   onEditSend,
-  leadingActions,
   leadingStatus,
-  actionsAlwaysVisible = false,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1236,12 +1219,8 @@ export function UserMessage({
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
   onEditSend?: (messageId: string, text: string) => void;
-  /** See `UserMessageActions.leading` — a queued prompt's status + controls. */
-  leadingActions?: React.ReactNode;
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
-  /** See `UserMessageActions.alwaysVisible`. */
-  actionsAlwaysVisible?: boolean;
   /**
    * Files this message is KNOWN to carry that its parts do not show yet. The
    * runtime streams a message's parts text-first and the file parts seconds
@@ -1460,9 +1439,7 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
-      leading={leadingActions}
       leadingStatus={leadingStatus}
-      alwaysVisible={actionsAlwaysVisible}
     />
   );
 

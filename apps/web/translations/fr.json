@@ -18360,7 +18360,11 @@
       "textb38cb5e18525": "ce processus et montre son travail. Vous avez vingt minutes ?",
       "textff5bd8333c4e": "Vous et toute personne pouvant gérer ce projet",
       "text36d8691ae566": "Toute personne disposant du lien, ainsi que votre équipe",
-      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe"
+      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe",
+      "text03a01dd53ffa": "Appuyez sur ↑ pour modifier les messages en attente",
+      "text1eb132d9d4da": "File d’attente en pause",
+      "textf8e64a37950a": "Messages en attente",
+      "textcd5f943d5863": "Non envoyé"
     }
   },
   "projectOnboarding": {
