@@ -5295,3 +5295,11 @@ sequential manifest reads; all existing assertions remain required.
 ### Bound archive transfer concurrency separately from pipeline admissions (2026-09-16)
 
 **Rule:** Inspect per-phase completions and timeouts before increasing total migration workers. Give bulk archive I/O its own concurrency bound and resumable chunk layout. Preserve existing remote receipts when changing chunk size. **Incident:** 105 archive attempts timed out in 30 minutes; 60 upload workers stayed busy while global admissions collapsed to eight. **Enforcement:** private `archiveLayout` tests preserve legacy receipts and reject mixed layouts. `archive-network-slot.ts` limits live transfers through process leases. A real 11,498,162-byte workspace pilot passed three part readbacks and the complete six-file archive gate after switching new uploads to 4 MiB parts.
+
+### Keep capacity recovery reachable at low throughput (2026-09-16)
+
+**Rule:** A capacity recovery gate must be reachable at the reduced admission limit. Use measured successes at low throughput to probe upward, while retaining failure-based backoff. **Incident:** the Suna pipeline fell to 16 admissions and verified 14 sessions in three minutes. The provider monitor required 20 verified sessions in three minutes before raising admission, so it could not recover promptly even with zero recent provider failures. **Enforcement:** the production routing monitor probes upward by 16 after six verified sessions in three minutes, zero preferred-provider failures, and a three-minute interval. The existing pipeline pressure controller still reduces admission on sustained errors.
+
+### Retry incomplete archive lease reads during concurrent creation (2026-09-16)
+
+**Rule:** Treat a partially written network-slot lease as temporary contention. Retry slot acquisition after the creator finishes writing. **Incident:** an archive uploader read a newly created empty lease file and failed with `SyntaxError: JSON Parse error: Unexpected EOF`. The batch retried, but the failure consumed an archive attempt and lowered throughput. **Enforcement:** `archive-network-slot.ts` retries syntax and disappearing-file races while it scans the network lease pool.

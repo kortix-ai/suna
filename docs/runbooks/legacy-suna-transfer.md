@@ -1155,3 +1155,19 @@ to 32. The next dispatcher uses a 45-minute archive attempt timeout and retains
 a 128-pipeline ceiling. This prevents a large multi-part archive or network-slot
 wait from causing a premature global backoff. The 1,120/hour observation is a
 burst result; the sustained 30-minute rate before this probe was 720/hour.
+
+At 14:59 UTC, pipeline admission was 16, and the provider monitor counted 14
+verified Platinum sessions in three minutes with zero recent provider failures.
+Its previous 20-session threshold blocked an increase at that rate. A live
+control raised admission to 32. The supervised provider monitor now probes
+another 16 admissions after six verified sessions in three minutes, zero
+preferred-provider failures, and three minutes since the prior probe. Its
+ceiling remains 128. The pipeline controller still backs off on sustained
+pressure. Archive network slots remain at 32 after the 48-slot timeout probe.
+The monitor restarted under `run-transfer-services.ts` at 15:00:22 UTC.
+The pipeline controller reached 64 admissions at 15:04:14 UTC. At 15:05:25
+UTC, three distinct Platinum `/files` attempts had returned HTTP 502 or 503.
+The monitor routed new sessions to Daytona and reduced admission to 16. It
+continues probing for Platinum recovery. Existing session providers do not
+change. An archive network-slot lease read also hit a partial JSON write;
+new uploader processes retry that transient lease race.
