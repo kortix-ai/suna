@@ -1219,3 +1219,24 @@ not a sustained 30-minute result. When fewer than 100 fresh Suna sessions
 remain, the next destination-recovery run increases from two workers/eight
 selected reviews to eight workers/32 selected reviews, ordered latest first.
 The current recovery run loaded the previous limits.
+
+At 19:05–19:12 UTC, Platinum `/files` returned another distinct-session 5xx
+burst at 40 admissions. The monitor routed new sessions to Daytona, and the
+pipeline reduced admission before probing upward again. The Platinum adapter
+already spaced write starts by 100 ms; it did not limit simultaneous uploads.
+New apply subprocesses now use `platinum-file-slot.ts` to cap in-flight
+`/files` PUT requests at 12. The adapter still stages each upload, verifies
+its hash before finalizing, and checks restored files by download. The
+router returned to Platinum at 19:13 UTC and raised admission to 40 at
+19:16 UTC. Eight Platinum sessions had verified after the adapter change by
+19:15 UTC. The current batch loaded the older admission-pressure code; its
+replacement starts after the batch finishes.
+
+At 19:19 UTC, PostgreSQL `CONNECTION_CLOSED` recurred while source captures
+also failed. The pipeline backed off from 40 to 30, then the router restored
+40 at 19:21 UTC. The local `route get` command put both the production
+PostgreSQL endpoint and `api.platinum.dev` on `ipsec0` (MTU 1280). Subsequent
+TCP and HTTP probes to both endpoints succeeded. This establishes a shared
+egress path, not a proven VPN fault. The in-flight Platinum upload limit did
+not eliminate the cross-service connection burst. Do not claim that a
+five-minute 1,000/hour sample is sustained throughput.
