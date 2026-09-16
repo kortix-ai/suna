@@ -55,7 +55,6 @@ ALTER TABLE "kortix"."prompt_attachment_references" ADD CONSTRAINT "prompt_attac
 CREATE INDEX "idx_prompt_attachment_references_attachment" ON "kortix"."prompt_attachment_references" USING btree ("attachment_id");--> statement-breakpoint
 CREATE INDEX "idx_prompt_attachments_user_status" ON "kortix"."prompt_attachments" USING btree ("user_id","status");--> statement-breakpoint
 CREATE INDEX "idx_prompt_attachments_expiry" ON "kortix"."prompt_attachments" USING btree ("expires_at");
-
 -- API-owned metadata contains private object paths. Browser roles cannot read
 -- or write either table, even if a later blanket grant adds table privileges.
 REVOKE ALL ON TABLE "kortix"."prompt_attachments", "kortix"."prompt_attachment_references" FROM anon, authenticated;

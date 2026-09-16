@@ -20,6 +20,7 @@ export {
   accounts,
   accountMembers,
   accountMemberships,
+  accountScimUsers,
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,

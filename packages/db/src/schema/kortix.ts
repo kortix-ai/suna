@@ -265,6 +265,28 @@ export const accountMemberships = kortixSchema.table(
   (table) => [primaryKey({ columns: [table.userId, table.accountId] })],
 );
 
+export const accountScimUsers = kortixSchema.table(
+  'account_scim_users',
+  {
+    scimId: uuid('scim_id').notNull(),
+    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    invitationId: uuid('invitation_id'),
+    userName: text('user_name').notNull(),
+    externalId: text('external_id'),
+    active: boolean('active').default(true).notNull(),
+    profile: jsonb('profile').$type<Record<string, unknown>>().default({}).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.scimId] }),
+    uniqueIndex('account_scim_users_account_email').on(table.accountId, table.userName),
+    index('account_scim_users_account_user').on(table.accountId, table.userId),
+  ],
+);
+
 // Pending invitations for users not yet members (or not yet signed up). On
 // signup or first /v1/accounts call we auto-claim invites matching the user's
 // email and convert them into account_members rows.

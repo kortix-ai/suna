@@ -14,7 +14,6 @@
 //     resolves (an invited account is enabled; active:false made Okta loop)
 //
 // What we deliberately skip:
-//   - Pagination beyond the default page (small directories fit; revisit if needed)
 //   - Full filter grammar — only `userName eq` / `id eq` / `displayName eq` are
 //     supported, which covers the request patterns Okta and Azure AD actually use.
 //

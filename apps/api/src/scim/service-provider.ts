@@ -112,12 +112,15 @@ const SCHEMA_DEFS = [
       attr('userName', 'string', { required: true, uniqueness: 'server' }),
       attr('active', 'boolean'),
       attr('externalId', 'string'),
+      attr('displayName', 'string'),
+      attr('title', 'string'),
+      attr('groups', 'complex', { multiValued: true, mutability: 'readOnly', subAttributes: [attr('value', 'string')] }),
       attr('emails', 'complex', {
         multiValued: true,
-        subAttributes: [attr('value', 'string'), attr('primary', 'boolean')],
+        subAttributes: [attr('value', 'string'), attr('type', 'string'), attr('primary', 'boolean')],
       }),
       attr('name', 'complex', {
-        subAttributes: [attr('givenName', 'string'), attr('familyName', 'string')],
+        subAttributes: [attr('givenName', 'string'), attr('familyName', 'string'), attr('formatted', 'string')],
       }),
     ],
   },

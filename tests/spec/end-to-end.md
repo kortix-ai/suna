@@ -1033,9 +1033,24 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SBX-5` A project member reads the project sandbox inventory. Non-members are rejected.
 `SBX-6` Daytona and Platinum webhooks reject unsigned provider payloads.
 `SCIM-5` SCIM resource-type, schema, and user-replacement routes preserve tenant and bearer-token boundaries.
-`SCIM-6` Entra deactivation accepts string `"False"`, case-insensitive `Active`, and RFC pathless attribute objects. Each returns `active:false`, removes access, and makes the user absent on read-back. The last owner remains protected with `409`; pending invitations also deactivate.
+`SCIM-6` Entra deactivation accepts string `"False"`, case-insensitive `Active`, and RFC pathless attribute objects. Each returns `active:false`, removes access, and preserves an inactive user on read-back. The last owner remains protected with `409`; pending invitations also deactivate.
 
 `SCIM-7` Entra `Remove members` with a `value` array removes only the listed members. An empty array removes none. A malformed array returns 400 without changing membership. RFC filtered removal remains supported; a bare removal clears membership. Read-back must preserve every unrelated member.
+
+`SCIM-8` SCIM group membership takes precedence over stale SSO claims. After SCIM adds a member, a real authenticated request with an older token lacking the group preserves membership. After SCIM removes a member, an older token claiming the group cannot restore it. Entra pathless group updates persist externalId and displayName, and retries preserve the resource ID.
+
+`SCIM-9` SCIM deactivation and deletion prevent existing SSO tokens from recreating membership, even with auto_create_members enabled. Deactivated users remain readable as inactive and retain their ID and externalId. Explicit reactivation restores membership. DELETE retries return 204; explicit SCIM creation restores the same identity after deletion.
+`SCIM-10` A pending SCIM user keeps its ID and external ID after first SSO login. Pending group grants appear in read-back. Cached IDs support repeated group changes. Renaming cannot bypass deactivation.
+
+`SCIM-11` Group PATCH operations are atomic. Attribute and operation names are case-insensitive. Pathless adds and explicit member replacement persist exact membership. Malformed operations and invalid PUT members return 400 without changing state.
+
+`SCIM-12` SCIM profile updates persist name subattributes and filtered work email. Invalid user patches return 400 without changing state. Filters accept case-insensitive operators and escaped strings. Pagination returns stable pages and count zero returns the total without resources.
+
+`SCIM-13` An identity has independent SCIM state in each account. Deactivation in one account preserves access to another. POST, PUT, and DELETE cannot remove the last owner. Revoking a SCIM token immediately rejects further requests.
+
+`SCIM-14` Inactive users retain directory group assignments without retaining account access, including before first login. Changes made while inactive determine membership after reactivation. DELETE clears the directory assignments and explicit recreation does not restore them.
+
+
 `SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement that stamps `last_activity_at` and advances `updated_at` beyond `created_at`, so the adopted session lists immediately and its activity sort is current. The contract requires `last_activity_at > created_at` and `updated_at >= last_activity_at` on the adopted row. Later lifecycle writes can advance `updated_at` before read-back. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.
