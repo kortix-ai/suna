@@ -1,3 +1,5 @@
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
+import { config } from '../../config';
 import {
   isProjectSessionVisibleTo,
   type SecretGrant,
@@ -166,39 +168,86 @@ export interface SessionListCursor {
 }
 
 /**
- * Opaque, URL-safe cursor. Opaque ON PURPOSE: the encoding is this module's
- * business, so the ordering key can change without breaking a client that
- * round-trips the string it was handed. It is not a secret and not signed — it
- * only names a position, and every row behind it still goes through the same
- * visibility fold, so a forged cursor can skip a page but never widen access.
+ * Who a cursor was issued to. A cursor is SEALED against this, so one issued to
+ * a viewer on one project cannot be replayed by another viewer or on another
+ * project — it simply fails to open and the list starts from the top.
  */
-export function encodeSessionCursor(cursor: SessionListCursor): string {
-  return Buffer.from(`${cursor.updatedAt.toISOString()}|${cursor.sessionId}`, 'utf8').toString(
-    'base64url',
+export interface SessionCursorScope {
+  projectId: string;
+  viewerId: string;
+}
+
+function cursorKey(scope: SessionCursorScope): Buffer {
+  if (!config.API_KEY_SECRET) throw new Error('API_KEY_SECRET is required');
+  return Buffer.from(
+    hkdfSync('sha256', config.API_KEY_SECRET, scope.projectId, `kortix-session-cursor-v1:${scope.viewerId}`, 32),
   );
 }
 
-/** Null for anything that is not a cursor this module wrote — a bad cursor
- *  starts from the top rather than failing the request. */
-export function decodeSessionCursor(raw: string | null | undefined): SessionListCursor | null {
+/**
+ * Sealed, URL-safe cursor.
+ *
+ * ENCRYPTED, not merely encoded. A page under-fills whenever the visibility
+ * fold drops most of a chunk, and the scan position then advances to the last
+ * row SCANNED — which is frequently a session this viewer may not see. A
+ * base64 cursor therefore handed the viewer that session's id and its
+ * `updated_at`: not access, but confirmation that it exists and when it was
+ * last active, which is exactly what the private/restricted visibility modes
+ * exist to withhold. Sealing the payload makes the cursor carry no information
+ * at all to anyone but this server.
+ *
+ * Keyed per (project, viewer) so a cursor is also non-transferable.
+ */
+export function encodeSessionCursor(cursor: SessionListCursor, scope: SessionCursorScope): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', cursorKey(scope), iv);
+  const payload = `${cursor.updatedAt.toISOString()}|${cursor.sessionId}`;
+  const ciphertext = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  return [
+    'v1',
+    iv.toString('base64url'),
+    cipher.getAuthTag().toString('base64url'),
+    ciphertext.toString('base64url'),
+  ].join('.');
+}
+
+/**
+ * Null for anything this scope did not seal — a malformed, forged, expired-key,
+ * or foreign cursor starts the list from the top rather than failing the
+ * request. The value arrives from a client and is never trusted input.
+ */
+export function decodeSessionCursor(
+  raw: string | null | undefined,
+  scope: SessionCursorScope,
+): SessionListCursor | null {
   if (!raw) return null;
-  let decoded: string;
+  const [version, iv, tag, ciphertext, extra] = raw.split('.');
+  if (version !== 'v1' || !iv || !tag || !ciphertext || extra !== undefined) return null;
+  let payload: string;
   try {
-    decoded = Buffer.from(raw, 'base64url').toString('utf8');
+    const decipher = createDecipheriv('aes-256-gcm', cursorKey(scope), Buffer.from(iv, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    payload = Buffer.concat([
+      decipher.update(Buffer.from(ciphertext, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
   } catch {
     return null;
   }
-  const separator = decoded.indexOf('|');
+  const separator = payload.indexOf('|');
   if (separator <= 0) return null;
-  const updatedAt = new Date(decoded.slice(0, separator));
-  const sessionId = decoded.slice(separator + 1);
+  const updatedAt = new Date(payload.slice(0, separator));
+  const sessionId = payload.slice(separator + 1);
   if (!sessionId || Number.isNaN(updatedAt.getTime())) return null;
   return { updatedAt, sessionId };
 }
 
 /** The cursor that resumes AFTER this row. */
-export function cursorForRow(row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'>): string {
-  return encodeSessionCursor({ updatedAt: row.updatedAt, sessionId: row.sessionId });
+export function cursorForRow(
+  row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'>,
+  scope: SessionCursorScope,
+): string {
+  return encodeSessionCursor({ updatedAt: row.updatedAt, sessionId: row.sessionId }, scope);
 }
 
 /** Default page size for the session list, and the ceiling a caller may ask

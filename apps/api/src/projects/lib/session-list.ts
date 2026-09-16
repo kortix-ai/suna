@@ -48,6 +48,7 @@ import {
   SESSION_PAGE_MAX_LIMIT,
   cursorForRow,
   decodeSessionCursor,
+  type SessionCursorScope,
   selectSessionRowsForViewer,
   type ProjectSessionListScope,
   type SessionInventoryItem,
@@ -99,6 +100,13 @@ export async function loadProjectSessionInventory(input: {
   /** Opaque cursor from a previous page's `nextCursor`. */
   cursor?: string | null;
 }): Promise<ProjectSessionInventory> {
+  // A cursor is sealed to (project, viewer): it carries the scan position, which
+  // can name a row this viewer may not see. See `encodeSessionCursor`.
+  const cursorScope: SessionCursorScope = {
+    projectId: input.projectId,
+    viewerId: input.userId,
+  };
+
   const limit = Math.min(
     Math.max(Math.trunc(input.limit ?? SESSION_PAGE_DEFAULT_LIMIT), 1),
     SESSION_PAGE_MAX_LIMIT,
@@ -148,7 +156,7 @@ export async function loadProjectSessionInventory(input: {
   const ownerIdentities = new Map<string, SessionOwnerIdentity>();
   const runtimeStatusBySession = new Map<string, RuntimeStatus>();
 
-  let cursor = decodeSessionCursor(input.cursor);
+  let cursor = decodeSessionCursor(input.cursor, cursorScope);
   let nextCursor: string | null = null;
   let exhausted = false;
 
@@ -237,7 +245,7 @@ export async function loadProjectSessionInventory(input: {
       if (items.length >= limit) break;
       items.push(item);
       scannedRows.push(item.row);
-      nextCursor = cursorForRow(item.row);
+      nextCursor = cursorForRow(item.row, cursorScope);
     }
 
     // Did the page fill before we reached the end of this chunk? Then the rows
@@ -248,7 +256,7 @@ export async function loadProjectSessionInventory(input: {
     // would drop its tail permanently.
     if (items.length < limit) {
       const lastChunkRow = chunk[chunk.length - 1]!;
-      nextCursor = cursorForRow(lastChunkRow);
+      nextCursor = cursorForRow(lastChunkRow, cursorScope);
       cursor = { updatedAt: lastChunkRow.updatedAt, sessionId: lastChunkRow.sessionId };
       if (chunk.length < chunkSize) {
         exhausted = true;

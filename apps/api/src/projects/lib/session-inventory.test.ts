@@ -437,21 +437,47 @@ describe('runtime status map tolerates a superset', () => {
   });
 });
 
+const SCOPE = { projectId: 'P1', viewerId: 'U1' };
+
 describe('session list cursor', () => {
-  test('round-trips a position through the opaque encoding', () => {
+  test('round-trips a position through the sealed encoding', () => {
     const updatedAt = new Date('2026-09-16T10:11:12.345Z');
-    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'S1' });
-    const decoded = decodeSessionCursor(encoded);
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'S1' }, SCOPE);
+    const decoded = decodeSessionCursor(encoded, SCOPE);
     expect(decoded?.sessionId).toBe('S1');
     expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
   });
 
   test('is URL-safe — it travels in a query string', () => {
-    const encoded = encodeSessionCursor({
-      updatedAt: new Date('2026-09-16T10:11:12.345Z'),
-      sessionId: 'S1',
-    });
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T10:11:12.345Z'), sessionId: 'S1' },
+      SCOPE,
+    );
     expect(encoded).toBe(encodeURIComponent(encoded));
+  });
+
+  test('carries neither the session id nor the timestamp in the clear', () => {
+    // The scan position can name a row the viewer may NOT see — that is the
+    // whole point of sealing it. A cursor that merely base64-encoded the tuple
+    // disclosed a private session's id and last-activity time to anyone who
+    // could read their own URL.
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'HIDDEN-SESSION' }, SCOPE);
+    expect(encoded).not.toContain('HIDDEN-SESSION');
+    expect(encoded).not.toContain('2026-09-16');
+    // …and not after an undo of every encoding a client could try.
+    const decodedText = Buffer.from(encoded, 'base64url').toString('latin1');
+    expect(decodedText).not.toContain('HIDDEN-SESSION');
+  });
+
+  test('a cursor does not open for another viewer or another project', () => {
+    const encoded = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    expect(decodeSessionCursor(encoded, { projectId: 'P1', viewerId: 'U2' })).toBeNull();
+    expect(decodeSessionCursor(encoded, { projectId: 'P2', viewerId: 'U1' })).toBeNull();
+    expect(decodeSessionCursor(encoded, SCOPE)?.sessionId).toBe('S1');
   });
 
   test('a session id containing the separator survives the round trip', () => {
@@ -459,27 +485,35 @@ describe('session list cursor', () => {
     // is bounded by it. A split on the last one would truncate this id.
     const sessionId = 'weird|id|with|pipes';
     const decoded = decodeSessionCursor(
-      encodeSessionCursor({ updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId }),
+      encodeSessionCursor({ updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId }, SCOPE),
+      SCOPE,
     );
     expect(decoded?.sessionId).toBe(sessionId);
   });
 
-  test('anything that is not a cursor decodes to null, never a throw', () => {
+  test('anything this scope did not seal decodes to null, never a throw', () => {
     // A bad cursor starts the list from the top. It must not fail the request:
     // the value reaches us from a client and is not trusted input.
-    expect(decodeSessionCursor(null)).toBeNull();
-    expect(decodeSessionCursor(undefined)).toBeNull();
-    expect(decodeSessionCursor('')).toBeNull();
-    expect(decodeSessionCursor('not-base64-at-all!!')).toBeNull();
-    expect(decodeSessionCursor(Buffer.from('nopipe').toString('base64url'))).toBeNull();
-    expect(decodeSessionCursor(Buffer.from('|S1').toString('base64url'))).toBeNull();
-    expect(decodeSessionCursor(Buffer.from('not-a-date|S1').toString('base64url'))).toBeNull();
-    expect(decodeSessionCursor(Buffer.from('2026-09-16T00:00:00Z|').toString('base64url'))).toBeNull();
+    expect(decodeSessionCursor(null, SCOPE)).toBeNull();
+    expect(decodeSessionCursor(undefined, SCOPE)).toBeNull();
+    expect(decodeSessionCursor('', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('not-sealed-at-all!!', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v1.aaa.bbb.ccc', SCOPE)).toBeNull();
+    expect(decodeSessionCursor('v2.aaa.bbb.ccc', SCOPE)).toBeNull();
+    // A tampered ciphertext fails the GCM tag rather than yielding a position.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(decodeSessionCursor([v, iv, tag, `${ct}AA`].join('.'), SCOPE)).toBeNull();
   });
 
   test('cursorForRow names the row it is given', () => {
     const updatedAt = new Date('2026-09-16T10:11:12.345Z');
-    expect(decodeSessionCursor(cursorForRow({ updatedAt, sessionId: 'S9' }))?.sessionId).toBe('S9');
+    expect(
+      decodeSessionCursor(cursorForRow({ updatedAt, sessionId: 'S9' }, SCOPE), SCOPE)?.sessionId,
+    ).toBe('S9');
   });
 
   test('the page ceiling is at or above the default', () => {
