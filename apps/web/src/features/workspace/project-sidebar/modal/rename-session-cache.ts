@@ -1,4 +1,5 @@
 import type { ProjectSession } from '@kortix/sdk';
+import { mapProjectSessionListCache } from '@kortix/sdk/react';
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 /**
@@ -33,29 +34,34 @@ export function applySessionRename(
   return next;
 }
 
+/** Every list entry the optimistic write touched, as it was before. */
+export type RenameSnapshot = Array<[QueryKey, unknown]>;
+
 /**
  * `onMutate`'s cache write, extracted so it can be driven against a real
  * `QueryClient` in a unit test — no component mount, no `mock.module`.
  *
- * Reads whatever is currently cached under `queryKey`, applies the rename
- * with `applySessionRename` when there is something to rename, and returns
- * the snapshot the caller must pass to `rollbackOptimisticRename` on
- * failure. Caller is expected to have already run `cancelQueries` on
- * `queryKey`; that step is async and stays in the mutation, not here.
+ * `queryKey` is a PREFIX: the rename modal passes the list family
+ * (`[...qk.project.sessionsScope(id), 'list']`), so every loaded list is
+ * painted — both scopes, and both cache shapes (a bare array, and the paged
+ * `{ pages, pageParams }` entry the sidebar reads). Returns the snapshot the
+ * caller must pass to `rollbackOptimisticRename` on failure. Caller is
+ * expected to have already run `cancelQueries` on `queryKey`; that step is
+ * async and stays in the mutation, not here.
  */
 export function beginOptimisticRename(
   queryClient: QueryClient,
   queryKey: QueryKey,
   sessionId: string | null,
   name: string,
-): { previous: ProjectSession[] | undefined } {
-  const previous = queryClient.getQueryData<ProjectSession[]>(queryKey);
-  if (sessionId && previous) {
-    queryClient.setQueryData<ProjectSession[]>(
-      queryKey,
-      applySessionRename(previous, sessionId, name),
-    );
-  }
+): { previous: RenameSnapshot } {
+  if (!sessionId) return { previous: [] };
+  const previous = queryClient
+    .getQueriesData<unknown>({ queryKey })
+    .filter(([, data]) => data !== undefined);
+  queryClient.setQueriesData<unknown>({ queryKey }, (data: unknown) =>
+    mapProjectSessionListCache(data, (sessions) => applySessionRename(sessions, sessionId, name)),
+  );
   return { previous };
 }
 
@@ -88,18 +94,24 @@ export function applyRenameResponse(
   );
 }
 
-/**
- * `onError`'s restore: puts the pre-rename snapshot from
- * `beginOptimisticRename` back into the cache, undoing whatever the
- * optimistic write did. `previous` is `undefined` when `onMutate` never ran
- * (no snapshot to restore, e.g. the cache was empty) — a no-op, not a clear.
- */
-export function rollbackOptimisticRename(
+/** `applyRenameResponse` over every loaded list under the `queryKey` prefix. */
+export function applyRenameResponseToCache(
   queryClient: QueryClient,
   queryKey: QueryKey,
-  previous: ProjectSession[] | undefined,
+  updated: ProjectSession,
 ): void {
-  if (previous) {
-    queryClient.setQueryData(queryKey, previous);
+  queryClient.setQueriesData<unknown>({ queryKey }, (data: unknown) =>
+    mapProjectSessionListCache(data, (sessions) => applyRenameResponse(sessions, updated)),
+  );
+}
+
+/**
+ * `onError`'s restore: puts every list `beginOptimisticRename` snapshotted back
+ * into the cache. An empty snapshot (nothing was cached) is a no-op, not a
+ * clear.
+ */
+export function rollbackOptimisticRename(queryClient: QueryClient, previous: RenameSnapshot): void {
+  for (const [key, data] of previous) {
+    queryClient.setQueryData(key, data);
   }
 }

@@ -1258,6 +1258,8 @@
       "loadError": "Impossibile caricare le sessioni",
       "empty": "Nessuna sessione",
       "noMatches": "Nessuna sessione corrisponde ai filtri attivi.",
+      "loadingMore": "Caricamento di altre sessioni",
+      "loadMoreError": "Impossibile caricare altre sessioni",
       "actions": "Azioni della sessione",
       "actionsFor": "Azioni per {title}",
       "reviewCount": "Da rivedere: {count}",

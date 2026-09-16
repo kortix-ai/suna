@@ -1,6 +1,8 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
+import type { ProjectSession } from '../../core/rest/projects-client';
+import { isProjectSessionPagesData, mapProjectSessionListCache } from '../project-session-pages';
 import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
 
@@ -237,15 +239,20 @@ export function patchKortixSessionTitleMirrors(
     if (rec.name === title) return row;
     return { ...rec, name: title };
   };
+  const patchRows = (rows: ProjectSession[]) => {
+    let changed = false;
+    const next = rows.map((row) => {
+      const patched = patchRow(row) as ProjectSession;
+      if (patched !== row) changed = true;
+      return patched;
+    });
+    return changed ? next : rows;
+  };
   queryClient.setQueriesData({ queryKey: qk.project.sessionsScope(projectId) }, (data: unknown) => {
-    if (Array.isArray(data)) {
-      let changed = false;
-      const next = data.map((row) => {
-        const patched = patchRow(row);
-        if (patched !== row) changed = true;
-        return patched;
-      });
-      return changed ? next : data;
+    // A list (an array or `qk.project.sessionPages` infinite data) patches its
+    // rows; the single-session detail entry is one row.
+    if (Array.isArray(data) || isProjectSessionPagesData(data)) {
+      return mapProjectSessionListCache(data, patchRows);
     }
     return patchRow(data);
   });

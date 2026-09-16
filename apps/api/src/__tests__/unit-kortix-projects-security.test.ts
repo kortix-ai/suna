@@ -52,11 +52,14 @@ describe('kortix-projects authorization safety', () => {
       'await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);',
     );
     const inventoryRead = route.indexOf('loadProjectSessionInventory({');
+    const inventoryPageRead = route.indexOf('loadProjectSessionInventoryPage({');
 
     expect(routeStart).toBeGreaterThanOrEqual(0);
     expect(routeEnd).toBeGreaterThan(routeStart);
     expect(capabilityGate).toBeGreaterThanOrEqual(0);
     expect(inventoryRead).toBeGreaterThan(capabilityGate);
+    // The paged form (`?limit=`) is the same read and sits behind the same gate.
+    expect(inventoryPageRead).toBeGreaterThan(capabilityGate);
     // The route itself must not have grown a second, ungated session read.
     expect(route).not.toContain('.from(projectSessions)');
   });

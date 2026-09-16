@@ -35,7 +35,14 @@ import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindi
 import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory } from '../lib/session-list';
+import { loadProjectSessionInventory, loadProjectSessionInventoryPage } from '../lib/session-list';
+import {
+  SESSION_PAGE_MAX_LIMIT,
+  encodeSessionCursor,
+  parseSessionCursor,
+  parseSessionPageLimit,
+  type SessionCursor,
+} from '../lib/session-page';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -227,6 +234,14 @@ projectsApp.openapi(
 
 // GET /v1/projects/:projectId/sessions
 
+// `?limit=` / `?cursor=` opt into keyset pages; with neither, the route returns
+// the bare array it always has, so existing CLI, mobile, and published SDK
+// callers are unaffected. See lib/session-page.ts.
+const SessionPageSchema = z.object({
+  sessions: z.array(SessionSchema),
+  next_cursor: z.string().nullable(),
+});
+
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -238,10 +253,19 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          limit: z.string().optional().openapi({
+            description: `Page size, 1–${SESSION_PAGE_MAX_LIMIT}. Present (or with \`cursor\`), the response is one page: \`{ sessions, next_cursor }\`.`,
+          }),
+          cursor: z.string().optional().openapi({
+            description: 'The `next_cursor` of the previous page.',
+          }),
         }),
       },
     responses: {
-        200: json(z.array(SessionSchema), 'Sessions'),
+        200: json(
+          z.union([z.array(SessionSchema), SessionPageSchema]),
+          'Sessions — an array, or one page when `limit` or `cursor` is set',
+        ),
         // The list is polled; a repeat with a matching If-None-Match ends here
         // with no body. Declared so the OpenAPI contract matches what ships.
         304: { description: 'Not modified — the ETag still matches' },
@@ -250,13 +274,25 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  const query = c.req.valid('query') as { scope?: ProjectSessionListScope; limit?: string; cursor?: string };
+  const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
+  const paged = query.limit !== undefined || query.cursor !== undefined;
+  let pageLimit = 0;
+  let pageAfter: SessionCursor | null = null;
+  if (paged) {
+    try {
+      pageLimit = parseSessionPageLimit(query.limit);
+      pageAfter = query.cursor === undefined ? null : parseSessionCursor(query.cursor);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'Invalid page request' }, 400);
+    }
+  }
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const inventory = await loadProjectSessionInventory({
+  const inventoryInput = {
     projectId,
     accountId: loaded.row.accountId,
     userId: loaded.userId,
@@ -271,12 +307,15 @@ projectsApp.openapi(
         projectId,
         'project.members.manage',
       ),
-  });
+  };
+  const inventory = paged
+    ? await loadProjectSessionInventoryPage({ ...inventoryInput, limit: pageLimit, after: pageAfter })
+    : await loadProjectSessionInventory({ ...inventoryInput });
   if (!inventory.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
   }
 
-  const body = inventory.items.map((item) => {
+  const sessions = inventory.items.map((item) => {
     const row = item.row;
     const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
     return serializeSession(row, {
@@ -298,6 +337,13 @@ projectsApp.openapi(
       trimListMetadata: true,
     });
   });
+  const body =
+    'nextCursor' in inventory
+      ? {
+          sessions,
+          next_cursor: inventory.nextCursor ? encodeSessionCursor(inventory.nextCursor) : null,
+        }
+      : sessions;
 
   // The sidebar re-fetches this list several times per session open (six in the
   // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
@@ -306,7 +352,7 @@ projectsApp.openapi(
   // serve a stale inventory: the response is private and always re-validated,
   // it just does not have to be re-transferred.
   const serialized = JSON.stringify(body);
-  const etag = `W/"${Bun.hash(serialized).toString(36)}-${body.length}"`;
+  const etag = `W/"${Bun.hash(serialized).toString(36)}-${sessions.length}"`;
   c.header('Cache-Control', 'private, no-cache');
   c.header('ETag', etag);
   if (c.req.header('if-none-match') === etag) return c.body(null, 304);

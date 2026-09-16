@@ -110,7 +110,6 @@ import {
   featureFlags,
   getProject,
   getProjectDetail,
-  listProjectSessions,
   listProjectsForAccount,
   normalizeAppPathname,
   systemReload,
@@ -126,6 +125,8 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useProjectSessionPages,
+  useProjectSessionRow,
   useRuntimeAgents,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
@@ -197,6 +198,35 @@ function sanitizeCmdkValue(value: string): string {
  * a user could not tell apart either. `command-palette-search.test.ts` asserts
  * it for every row the palette can render at once.
  */
+/** Most session rows a palette search shows. */
+export const PALETTE_SESSION_RESULT_CAP = 50;
+
+/**
+ * Whether an open palette search should load another page of sessions.
+ *
+ * The palette reads the paged session list, so a session older than the
+ * loaded pages has no row to match. While a query has fewer matches than the
+ * result cap, pages keep loading until the cap fills or the pages end.
+ * Browsing without a query shows the most recent sessions and loads nothing.
+ */
+export function shouldLoadMorePaletteSessions(state: {
+  open: boolean;
+  hasQuery: boolean;
+  matchCount: number;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+}): boolean {
+  return (
+    state.open &&
+    state.hasQuery &&
+    state.matchCount < PALETTE_SESSION_RESULT_CAP &&
+    state.hasNextPage &&
+    !state.isFetchingNextPage &&
+    !state.isFetchNextPageError
+  );
+}
+
 export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
   return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
 }
@@ -863,11 +893,17 @@ export function CommandPalette() {
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
-  const { data: projectSessionsList } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
+  // The sidebar's loaded session pages (same key, so no extra request while the
+  // sidebar is mounted). Recent sessions are the newest, so the first page
+  // holds them; search covers the loaded pages.
+  const {
+    data: projectSessionsList,
+    hasNextPage: hasMoreProjectSessions,
+    fetchNextPage: fetchMoreProjectSessions,
+    isFetchingNextPage: isFetchingMoreProjectSessions,
+    isFetchNextPageError: moreProjectSessionsFailed,
+  } = useProjectSessionPages(projectId ?? undefined, {
     enabled: open && !!projectId,
-    ...contract('inventory'),
   });
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
@@ -896,9 +932,9 @@ export function CommandPalette() {
   });
   const openChangeRequestCount = openChangeRequests?.change_requests.length ?? 0;
   const sendToSession = useChatSendStore((state) => state.sendToSession);
-  const currentProjectSession = projectSessionsList?.find(
-    (session) => session.session_id === currentSessionId,
-  );
+  const currentProjectSession = useProjectSessionRow(projectId ?? undefined, currentSessionId ?? undefined, {
+    enabled: open,
+  });
 
   // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
   // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
@@ -1436,9 +1472,23 @@ export function CommandPalette() {
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
       0,
-      50,
+      PALETTE_SESSION_RESULT_CAP,
     );
   }, [projectSessionsList, query]);
+
+  // A search reaches past the loaded session pages — see
+  // `shouldLoadMorePaletteSessions`.
+  const loadMorePaletteSessions = shouldLoadMorePaletteSessions({
+    open,
+    hasQuery: query.trim().length > 0,
+    matchCount: filteredProjectSessionsList.length,
+    hasNextPage: Boolean(hasMoreProjectSessions),
+    isFetchingNextPage: isFetchingMoreProjectSessions,
+    isFetchNextPageError: moreProjectSessionsFailed,
+  });
+  useEffect(() => {
+    if (loadMorePaletteSessions) void fetchMoreProjectSessions();
+  }, [loadMorePaletteSessions, fetchMoreProjectSessions, projectSessionsList]);
 
   const rootSessionResults = useMemo(() => {
     if (!hasQuery || !projectId) return [];

@@ -1,4 +1,5 @@
 import type { ProjectSession } from '@kortix/sdk';
+import { type ProjectSessionPagesData, upsertProjectSessionInPages } from '@kortix/sdk/react';
 
 /**
  * JAY-599 / T21 — an adopted warm session must appear in the session list
@@ -69,20 +70,34 @@ export function reconcileSessionsAfterCreate(input: {
   void input.started.then(input.invalidate, input.invalidate);
 }
 
+function adoptedRow(session: ProjectSession, adoptedAtIso: string): ProjectSession {
+  const { warm: _warm, ...metadata } = (session.metadata ?? {}) as Record<string, unknown>;
+  return { ...session, metadata: { ...metadata, last_activity_at: adoptedAtIso } };
+}
+
 export function seedAdoptedWarmSession(
   sessions: ProjectSession[] | undefined,
   session: ProjectSession,
   adoptedAtIso: string,
 ): ProjectSession[] {
-  const { warm: _warm, ...metadata } = (session.metadata ?? {}) as Record<string, unknown>;
-  const adopted: ProjectSession = {
-    ...session,
-    metadata: { ...metadata, last_activity_at: adoptedAtIso },
-  };
+  const adopted = adoptedRow(session, adoptedAtIso);
   if (!sessions) return [adopted];
   const index = sessions.findIndex((existing) => existing.session_id === adopted.session_id);
   if (index === -1) return [adopted, ...sessions];
   const next = sessions.slice();
   next[index] = adopted;
   return next;
+}
+
+/**
+ * The same seed for the paged list the sidebar reads
+ * (`qk.project.sessionPages`). Before the first page has loaded there is
+ * nothing to seed: a fabricated page would claim the list ends at one session.
+ */
+export function seedAdoptedWarmSessionPages(
+  data: ProjectSessionPagesData | undefined,
+  session: ProjectSession,
+  adoptedAtIso: string,
+): ProjectSessionPagesData | undefined {
+  return upsertProjectSessionInPages(data, adoptedRow(session, adoptedAtIso));
 }

@@ -237,6 +237,26 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list', scope] as const,
 
     /**
+     * The PAGED sessions list (`listProjectSessionsPage` through
+     * `useInfiniteQuery`), whose cache entry is `{ pages, pageParams }`, not
+     * an array.
+     *
+     * Under the `'list'` family on purpose: every existing list refetch
+     * (`[...sessionsScope, 'list']` — the SSE title mirror, the title ladder)
+     * and every `sessionsScope` invalidation reaches it with no edit.
+     *
+     * The `'pages'` segment comes BEFORE `scope`, so this key is a SIBLING of
+     * `sessions(id, scope)`, never an extension of it. The two entries hold
+     * different shapes; if the array key were a prefix of this one, a
+     * prefix-matched writer of arrays would land on infinite data.
+     *
+     * `pageSize` is part of the key: pages of 20 and pages of 50 carry
+     * different cursors and must never share an entry.
+     */
+    sessionPages: (id: string, scope: 'visible' | 'project' = 'visible', pageSize = 50) =>
+      [...qk.project.sessionsScope(id), 'list', 'pages', scope, pageSize] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to

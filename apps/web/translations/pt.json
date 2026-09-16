@@ -1258,6 +1258,8 @@
       "loadError": "Não foi possível carregar as sessões",
       "empty": "Ainda não existem sessões",
       "noMatches": "Nenhuma sessão corresponde aos filtros ativos.",
+      "loadingMore": "Carregando mais sessões",
+      "loadMoreError": "Não foi possível carregar mais sessões",
       "actions": "Ações da sessão",
       "actionsFor": "Ações para {title}",
       "reviewCount": "A aguardar revisão: {count}",

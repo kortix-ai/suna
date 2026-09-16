@@ -1258,6 +1258,8 @@
       "loadError": "Учитавање сесија није успело",
       "empty": "Још нема сесија",
       "noMatches": "Ниједна сесија не одговара активним филтерима.",
+      "loadingMore": "Učitavanje još sesija",
+      "loadMoreError": "Nije moguće učitati još sesija",
       "actions": "Радње сесије",
       "actionsFor": "Радње за {title}",
       "reviewCount": "Чека преглед: {count}",

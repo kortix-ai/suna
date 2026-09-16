@@ -101,6 +101,8 @@ need a running session. Each mirrors a method on the
 | `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
+| `useProjectSessionPages(projectId, { scope?, pageSize? })` | The project's sessions as a TanStack infinite query: `data` is the loaded sessions, de-duplicated; call `fetchNextPage()` while `hasNextPage`. |
+| `useProjectSessionRow(projectId, sessionId)` | One session row: the copy a loaded session page holds, else `GET /sessions/:id`. Use it instead of searching a full session list. |
 
 ## Next
 

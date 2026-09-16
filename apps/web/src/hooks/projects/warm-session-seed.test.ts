@@ -1,7 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 
 import type { ProjectSession } from '@kortix/sdk';
-import { reconcileSessionsAfterCreate, seedAdoptedWarmSession } from './warm-session-seed';
+import {
+  reconcileSessionsAfterCreate,
+  seedAdoptedWarmSession,
+  seedAdoptedWarmSessionPages,
+} from './warm-session-seed';
 
 const AT = '2026-08-17T10:00:00.000Z';
 
@@ -145,5 +149,39 @@ describe('reconcileSessionsAfterCreate', () => {
     await Promise.resolve();
 
     expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('seedAdoptedWarmSessionPages', () => {
+  const pagesOf = (...groups: ProjectSession[][]) => ({
+    pages: groups.map((sessions, index) => ({
+      sessions,
+      next_cursor: index < groups.length - 1 ? `c${index}` : null,
+    })),
+    pageParams: groups.map((_, index) => (index === 0 ? null : `c${index - 1}`)),
+  });
+
+  test('puts the adopted session at the top of the first page, marker dropped and activity stamped', () => {
+    const data = pagesOf([makeSession({ session_id: 'a' })], [makeSession({ session_id: 'b' })]);
+    const result = seedAdoptedWarmSessionPages(
+      data,
+      makeSession({ session_id: 'w1', metadata: { warm: true, other: 1 } as never }),
+      AT,
+    )!;
+    const top = result.pages[0]!.sessions[0]!;
+    expect(result.pages[0]!.sessions.map((s) => s.session_id)).toEqual(['w1', 'a']);
+    expect(top.metadata).toEqual({ other: 1, last_activity_at: AT } as never);
+    expect(result.pages[1]).toBe(data.pages[1]);
+  });
+
+  test('replaces the row in place when a page already holds it', () => {
+    const data = pagesOf([makeSession({ session_id: 'a' })], [makeSession({ session_id: 'w1' })]);
+    const result = seedAdoptedWarmSessionPages(data, makeSession({ session_id: 'w1' }), AT)!;
+    expect(result.pages[0]!.sessions.map((s) => s.session_id)).toEqual(['a']);
+    expect(result.pages[1]!.sessions[0]!.metadata).toEqual({ last_activity_at: AT } as never);
+  });
+
+  test('seeds nothing before the first page has loaded', () => {
+    expect(seedAdoptedWarmSessionPages(undefined, makeSession({ session_id: 'w1' }), AT)).toBeUndefined();
   });
 });

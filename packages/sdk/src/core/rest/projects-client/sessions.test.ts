@@ -26,6 +26,7 @@ import {
   getSessionTranscript,
   getSessionTurn,
   listProjectSessions,
+  listProjectSessionsPage,
   listSessionPrompts,
   listSessionPublicShares,
   reloadProjectSessionConfig,
@@ -78,6 +79,36 @@ test('listProjectSessions requests the manager-only project inventory scope', as
   await listProjectSessions('P1', { scope: 'project' });
   expect(last().url).toContain('/projects/P1/sessions?scope=project');
   expect(last().method).toBe('GET');
+});
+
+test('listProjectSessionsPage asks for one page and returns sessions with next_cursor', async () => {
+  nextResponse = { status: 200, body: { sessions: [{ session_id: 'S1' }], next_cursor: 'c1' } };
+  const page = await listProjectSessionsPage('P1');
+  expect(last().method).toBe('GET');
+  expect(last().url).toMatch(/\/projects\/P1\/sessions\?limit=50$/);
+  expect(page).toEqual({ sessions: [{ session_id: 'S1' } as ProjectSession], next_cursor: 'c1' });
+});
+
+test('listProjectSessionsPage sends scope, limit and an encoded cursor', async () => {
+  nextResponse = { status: 200, body: { sessions: [], next_cursor: null } };
+  await listProjectSessionsPage('P1', {
+    scope: 'project',
+    limit: 20,
+    cursor: '2026-09-16T10:00:00.123456Z|a b',
+  });
+  const url = new URL(last().url);
+  expect(url.pathname).toEndWith('/projects/P1/sessions');
+  expect(url.searchParams.get('scope')).toBe('project');
+  expect(url.searchParams.get('limit')).toBe('20');
+  expect(url.searchParams.get('cursor')).toBe('2026-09-16T10:00:00.123456Z|a b');
+});
+
+test('listProjectSessionsPage omits the default visible scope and a null cursor', async () => {
+  nextResponse = { status: 200, body: { sessions: [], next_cursor: null } };
+  await listProjectSessionsPage('P1', { scope: 'visible', cursor: null });
+  const url = new URL(last().url);
+  expect(url.searchParams.has('scope')).toBe(false);
+  expect(url.searchParams.has('cursor')).toBe(false);
 });
 
 test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apart', async () => {

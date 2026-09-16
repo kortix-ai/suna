@@ -155,3 +155,31 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
     expect(refetched).toHaveLength(2);
   });
 });
+
+describe('a title held only by a paged list', () => {
+  test('counts as resolved: no refetch ladder for a session already titled on a loaded page', async () => {
+    const refetched: unknown[] = [];
+    const client = {
+      getQueryData: () => undefined,
+      getQueriesData: () => [
+        [
+          qk.project.sessionPages('project-1'),
+          {
+            pages: [
+              { sessions: [{ session_id: 'session-1', custom_name: null, name: 'Paged Title' }], next_cursor: null },
+            ],
+            pageParams: [null],
+          },
+        ],
+      ],
+      refetchQueries: async (input: unknown) => {
+        refetched.push(input);
+      },
+    } as unknown as Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
+
+    expect(
+      await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] }),
+    ).toBe(true);
+    expect(refetched).toEqual([]);
+  });
+});

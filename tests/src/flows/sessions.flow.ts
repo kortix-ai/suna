@@ -1414,3 +1414,132 @@ flow(
     }
   },
 );
+
+flow(
+  'SESS-31',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: ['GET /v1/projects/:projectId/sessions'],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const { randomUUID } = await import('node:crypto');
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({
+      connectionString: databaseUrl,
+      ssl: local ? false : { rejectUnauthorized: false },
+    });
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const path = '/v1/projects/:projectId/sessions';
+    const params = { projectId: project.id };
+    // Newest first. Rows 1 and 2 share one millisecond and differ only in
+    // microseconds: a cursor truncated to milliseconds would skip row 2.
+    const instants = [
+      '2026-01-05T10:00:00.000900Z',
+      '2026-01-05T10:00:00.000400Z',
+      '2026-01-04T10:00:00Z',
+      '2026-01-03T10:00:00Z',
+      '2026-01-02T10:00:00Z',
+    ];
+    const visibleIds = instants.map(() => randomUUID());
+    const deletedId = randomUUID();
+    const allIds = [...visibleIds, deletedId];
+
+    const walk = async (query: Record<string, string>) => {
+      const ids: string[] = [];
+      const pageSizes: number[] = [];
+      let cursor: string | null = null;
+      do {
+        const response = await owner.get(path, {
+          params,
+          query: cursor ? { ...query, cursor } : query,
+        });
+        response.status(200);
+        const body = response.json<any>();
+        if (!Array.isArray(body.sessions) || !('next_cursor' in body)) {
+          throw new Error(`A paged read must return { sessions, next_cursor }: ${JSON.stringify(body)}`);
+        }
+        pageSizes.push(body.sessions.length);
+        ids.push(...body.sessions.map((session: any) => session.session_id));
+        cursor = body.next_cursor;
+      } while (cursor && pageSizes.length < 10);
+      return { ids, pageSizes };
+    };
+
+    await db.connect();
+    try {
+      await ctx.step('seed five listed sessions and one soft-deleted session', async () => {
+        for (const [index, sessionId] of visibleIds.entries()) {
+          await db.query(
+            `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, updated_at)
+             VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', $5::timestamptz)`,
+            [sessionId, team.id, project.id, ctx.P.OWNER.userId, instants[index]],
+          );
+        }
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+           (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, updated_at, metadata)
+           VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', '2026-01-06T10:00:00Z',
+                   jsonb_build_object('deletedAt', '2026-01-06T10:00:00Z'))`,
+          [deletedId, team.id, project.id, ctx.P.OWNER.userId],
+        );
+      });
+
+      await ctx.step('without limit or cursor the list is still a bare array', async () => {
+        const response = await owner.get(path, { params });
+        response.status(200);
+        const body = response.json<any>();
+        if (!Array.isArray(body)) throw new Error('The unpaged list must stay a bare array');
+        const ids = body.map((session: any) => session.session_id).sort();
+        if (JSON.stringify(ids) !== JSON.stringify([...visibleIds].sort())) {
+          throw new Error(`Unpaged list returned ${JSON.stringify(ids)}`);
+        }
+      });
+
+      await ctx.step('limit=2 walks every listed session once, newest first, in three pages', async () => {
+        const { ids, pageSizes } = await walk({ limit: '2' });
+        if (JSON.stringify(ids) !== JSON.stringify(visibleIds)) {
+          throw new Error(`Paged order ${JSON.stringify(ids)} != ${JSON.stringify(visibleIds)}`);
+        }
+        if (JSON.stringify(pageSizes) !== JSON.stringify([2, 2, 1])) {
+          throw new Error(`Page sizes ${JSON.stringify(pageSizes)} != [2,2,1]`);
+        }
+      });
+
+      await ctx.step('the project scope pages the soft-deleted session too', async () => {
+        const { ids, pageSizes } = await walk({ scope: 'project', limit: '4' });
+        if (JSON.stringify(ids) !== JSON.stringify([deletedId, ...visibleIds])) {
+          throw new Error(`Project-scope paged order ${JSON.stringify(ids)}`);
+        }
+        if (JSON.stringify(pageSizes) !== JSON.stringify([4, 2])) {
+          throw new Error(`Project-scope page sizes ${JSON.stringify(pageSizes)} != [4,2]`);
+        }
+      });
+
+      await ctx.step('an out-of-range limit or a malformed cursor is 400', async () => {
+        for (const query of [{ limit: '0' }, { limit: '201' }, { limit: 'ten' }, { cursor: 'not-a-cursor' }]) {
+          const response = await owner.get(path, { params, query });
+          response.status(400);
+        }
+      });
+
+      await ctx.step('a non-member cannot page another project', async () => {
+        const response = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .get(path, { params, query: { limit: '2' } });
+        response.status([403, 404]);
+      });
+    } finally {
+      await db
+        .query('DELETE FROM kortix.project_sessions WHERE session_id = ANY($1::text[])', [allIds])
+        .catch(() => {});
+      await db.end();
+    }
+  },
+);

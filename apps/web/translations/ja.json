@@ -1258,6 +1258,8 @@
       "loadError": "セッションを読み込めませんでした",
       "empty": "セッションはまだありません",
       "noMatches": "有効なフィルターに一致するセッションがありません。",
+      "loadingMore": "セッションをさらに読み込み中",
+      "loadMoreError": "セッションをさらに読み込めませんでした",
       "actions": "セッション操作",
       "actionsFor": "{title} の操作",
       "reviewCount": "確認待ち：{count}",

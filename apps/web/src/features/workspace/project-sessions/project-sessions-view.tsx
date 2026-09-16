@@ -22,6 +22,7 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
+import { useLoadMoreSentinel } from '@/hooks/use-load-more-sentinel';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
@@ -33,19 +34,27 @@ import {
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
+import Loading from '@/components/ui/loading';
 import {
   deleteProjectSession,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk, useProjectSessionPages } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import {
   buildSessionSearchIndex,
@@ -192,30 +201,39 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   );
   const creatingSession = useIsCreatingProjectSession(projectId);
 
-  const sessionsQuery = useQuery({
+  const tSidebar = useTranslations('sidebar');
+  const sessionsQuery = useProjectSessionPages(projectId, {
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
     // reader uses. It includes accessible warm and soft-deleted rows, but never
-    // sessions the manager cannot open. It MUST carry its own scope segment in
-    // the key (see qk.project.sessions' doc comment). Sharing the default-scope key here
-    // is the exact bug this file existed to fix.
-    queryKey: qk.project.sessions(projectId, 'project'),
-    queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
+    // sessions the manager cannot open. The scope is part of the page key
+    // (see qk.project.sessionPages).
+    //
+    // Paged: the inventory of a large project is thousands of sessions. The
+    // next page loads as the foot of the list scrolls into range.
+    scope: 'project',
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
     // was invisible here until the window regained focus, while the sidebar
     // and header had already moved on. Three surfaces, three policies, one
     // name: that divergence IS the bug.
-    refetchInterval: (query) =>
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: false,
       }),
     // The poll stops once every session settles, so without this a session
     // deleted from another surface would linger here indefinitely.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
+  });
+  const { hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = sessionsQuery;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useLoadMoreSentinel({
+    rootRef: scrollRef,
+    hasMore: Boolean(hasNextPage) && !isFetchNextPageError,
+    isLoadingMore: isFetchingNextPage,
+    loadMore: fetchNextPage,
   });
 
   const invalidateSessions = useCallback(() => {
@@ -493,7 +511,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
           {sessionsQuery.isLoading ? (
             <SessionListSkeleton />
-          ) : sessionsQuery.isError ? (
+          ) : sessionsQuery.isError && !sessionsQuery.data ? (
             <ErrorState
               size="sm"
               title={tI18nComplete.raw('textb6d85433a7ee')}
@@ -506,7 +524,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : sessions.length === 0 ? (
+          ) : sessions.length === 0 && !hasNextPage ? (
             <EmptyState
               size="sm"
               icon={ChatIcon}
@@ -531,7 +549,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 )
               }
             />
-          ) : grouped.sections.length === 0 ? (
+          ) : grouped.sections.length === 0 && !hasNextPage ? (
             // Covers BOTH "the filters/search match nothing" and "every section
             // was hidden via the menu's Show list" — `visibleSessions.length`
             // alone cannot see the second, and the list would otherwise render
@@ -570,7 +588,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                    it, which makes the percentage definite. */
             <div className="relative min-h-0 flex-1">
               <div className="absolute inset-0">
-                <FadedScrollArea fadeColor="from-background" className="pt-4">
+                <FadedScrollArea ref={scrollRef} fadeColor="from-background" className="pt-4">
                   <div className="space-y-4 pb-6" aria-live="polite">
                     {grouped.sections.map((section) => (
                       <SessionsSection
@@ -623,6 +641,32 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         })}
                       </SessionsSection>
                     ))}
+                    {/* The scroll sentinel and the loading or retry row. With
+                        search or filters active and no match loaded yet, this is
+                        the whole list: loading continues until a match appears
+                        or the pages end. */}
+                    {hasNextPage ? (
+                      <div ref={loadMoreRef}>
+                        {isFetchNextPageError ? (
+                          <div className="flex items-center gap-2 px-2">
+                            <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                              {tSidebar('sessionList.loadMoreError')}
+                            </p>
+                            <Button variant="outline" size="sm" onClick={() => fetchNextPage()}>
+                              {tSidebar('retry')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div
+                            className="text-muted-foreground flex h-8 items-center gap-2 px-2 text-xs"
+                            role="status"
+                          >
+                            <Loading className="size-3" variant="spokes" />
+                            {tSidebar('sessionList.loadingMore')}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </FadedScrollArea>
               </div>

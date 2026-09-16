@@ -159,6 +159,8 @@ export * from './query-keys';
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
+export * from './use-project-session-pages';
+export * from './project-session-pages';
 export * from './invalidate-project';
 export * from './use-feature-flag';
 

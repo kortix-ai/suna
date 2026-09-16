@@ -39,8 +39,8 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { qk, useProjectSessionRow } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -115,13 +115,8 @@ export function SessionSiteHeader({
   const projectSessionId = projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
 
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
-    enabled: isProjectSession,
-    ...contract('inventory'),
-  });
-  const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
+  const projectSession =
+    useProjectSessionRow(projectId, projectSessionId, { enabled: isProjectSession }) ?? null;
   // Two verdicts, deliberately not one flag. `can_manage_sharing` is the
   // owner's right to change who can open the session; `can_manage_lifecycle`
   // is the manager-tier right to stop/restart/reload it. Reading the first for

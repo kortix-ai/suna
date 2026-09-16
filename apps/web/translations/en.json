@@ -1258,6 +1258,8 @@
       "loadError": "Failed to load sessions",
       "empty": "No sessions yet",
       "noMatches": "No sessions match the active filters.",
+      "loadingMore": "Loading more sessions",
+      "loadMoreError": "Couldn't load more sessions",
       "actions": "Session actions",
       "actionsFor": "Actions for {title}",
       "reviewCount": "Awaiting your review: {count}",

@@ -86,7 +86,6 @@ import {
   formatRuntimeError,
   getProjectDetail,
   isSessionFresh,
-  listProjectSessions,
   sessionStartKey,
   setActiveInstanceCookie,
   updateProjectSession,
@@ -101,6 +100,7 @@ import {
   readStartStash,
   startSessionWithPrompt,
   useRuntimeConnectionStore,
+  useProjectSessionRow,
   useSession,
   useWakeEscalation,
 } from '@kortix/sdk/react';
@@ -192,19 +192,17 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+  // The row the sidebar's loaded session pages already hold (its polls keep
+  // it fresh), or the single-session read for a session on no loaded page.
+  // Reading the whole project inventory to find one row is what this replaced.
+  const currentProjectSession = useProjectSessionRow(projectId, sessionId, {
     enabled: !!user && !!projectId,
-    // The always-mounted sidebar owns title/status polling for this shared key.
-    // A second observer timer here produced independent list requests between
-    // the sidebar's polls during long turns.
-    refetchOnWindowFocus: false,
-    ...contract('inventory'),
   });
-  const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
-  const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
+  const initialOpenCodeSessionId = findInitialSessionPin(
+    currentProjectSession ? [currentProjectSession] : undefined,
+    sessionId,
+  );
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness

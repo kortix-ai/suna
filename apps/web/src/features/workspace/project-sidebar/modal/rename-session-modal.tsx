@@ -13,7 +13,6 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectSession } from '@kortix/sdk';
 import { updateProjectSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +20,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 import {
-  applyRenameResponse,
+  applyRenameResponseToCache,
   beginOptimisticRename,
   rollbackOptimisticRename,
 } from './rename-session-cache';
@@ -53,13 +52,11 @@ export function RenameSessionModal({
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
 
-  // The optimistic write below targets the DEFAULT ('visible') scope only —
-  // that is the scope every reader except the manager-only inventory page
-  // uses, and the only one this component has a cached row to paint over.
-  // `onSettled`'s invalidation, further down, uses the sessionsScope PREFIX
-  // instead, so the 'project'-scoped inventory page (never painted
-  // optimistically) still catches up via a real refetch.
-  const sessionsQueryKey = qk.project.sessions(projectId);
+  // The optimistic write paints every loaded session LIST — both scopes, the
+  // paged lists the sidebar and Sessions page read and any unpaged one — via
+  // the list-family prefix. `onSettled`'s invalidation still uses the wider
+  // sessionsScope prefix, so the detail read reconciles too.
+  const sessionsQueryKey = [...qk.project.sessionsScope(projectId), 'list'];
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => {
@@ -80,9 +77,7 @@ export function RenameSessionModal({
       // `updated_at`, so this replaces the optimistic guess from `onMutate`
       // with the real thing. MERGED, not substituted: the PATCH response
       // carries fewer fields than the list row — see `applyRenameResponse`.
-      queryClient.setQueryData<ProjectSession[]>(sessionsQueryKey, (sessions) =>
-        sessions ? applyRenameResponse(sessions, updated) : sessions,
-      );
+      applyRenameResponseToCache(queryClient, sessionsQueryKey, updated);
       successToast(
         name
           ? tI18nHardcoded('i18nComplete.textac667905c07f', { value0: name })
@@ -92,7 +87,7 @@ export function RenameSessionModal({
       onOpenChange(false);
     },
     onError: (err, _name, context) => {
-      rollbackOptimisticRename(queryClient, sessionsQueryKey, context?.previous);
+      rollbackOptimisticRename(queryClient, context?.previous ?? []);
       errorToast(
         err instanceof Error ? err.message : tI18nHardcoded.raw('i18nComplete.text8d0a49d459d7'),
       );

@@ -176,6 +176,39 @@ describe('qk.project', () => {
   // overwrite what the other saw. The two scoped forms are SIBLINGS, not
   // parent and child — proven below by both being distinct AND both sitting
   // directly under `sessionsScope(id)`.
+  describe('sessionPages is the paged list, a sibling of sessions under the list family', () => {
+    const listFamily = () => [...qk.project.sessionsScope(id), 'list'];
+
+    test('defaults to the visible scope and 50 sessions per page', () => {
+      expect(qk.project.sessionPages(id)).toEqual(qk.project.sessionPages(id, 'visible', 50));
+    });
+
+    test('scope and page size are both part of the key', () => {
+      expect(qk.project.sessionPages(id, 'project')).not.toEqual(
+        qk.project.sessionPages(id, 'visible') as never,
+      );
+      expect(qk.project.sessionPages(id, 'visible', 20)).not.toEqual(
+        qk.project.sessionPages(id, 'visible', 50) as never,
+      );
+    });
+
+    test('sits under the list family, so list refetches and sessionsScope invalidation reach it', () => {
+      expect(startsWith(qk.project.sessionPages(id), listFamily())).toBe(true);
+      expect(startsWith(qk.project.sessionPages(id), qk.project.sessionsScope(id))).toBe(true);
+    });
+
+    test('is never extended by, and never extends, the unpaged array key', () => {
+      // Different cache shapes: an array and `{ pages, pageParams }`. A prefix
+      // relation would let an exact-key writer of one shape reach the other.
+      for (const scope of ['visible', 'project'] as const) {
+        const array = qk.project.sessions(id, scope);
+        const pages = qk.project.sessionPages(id, scope);
+        expect(startsWith(pages, array)).toBe(false);
+        expect(startsWith(array, pages)).toBe(false);
+      }
+    });
+  });
+
   describe('sessions is scoped, sessionsScope is the shared invalidation prefix', () => {
     test('default scope is "visible", matching listProjectSessions\' own default', () => {
       expect(qk.project.sessions(id)).toEqual(qk.project.sessions(id, 'visible'));

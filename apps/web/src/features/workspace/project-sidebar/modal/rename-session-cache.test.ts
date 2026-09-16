@@ -2,8 +2,10 @@ import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   applyRenameResponse,
+  applyRenameResponseToCache,
   applySessionRename,
   beginOptimisticRename,
   rollbackOptimisticRename,
@@ -87,67 +89,104 @@ describe('applySessionRename', () => {
  * mounting anything or mocking a module.
  */
 describe('beginOptimisticRename + rollbackOptimisticRename', () => {
-  const QUERY_KEY = ['project-sessions', 'p1'];
+  // The rename modal passes the list-family PREFIX, so every loaded list —
+  // either scope, arrays and paged lists alike — is painted and restored.
+  const LIST_FAMILY = [...qk.project.sessionsScope('p1'), 'list'];
+  const ARRAY_KEY = qk.project.sessions('p1');
+  const PAGES_KEY = qk.project.sessionPages('p1');
 
-  test('begin writes the new name into the cache and returns the pre-rename snapshot', () => {
+  const pagesOf = (...groups: ProjectSession[][]) => ({
+    pages: groups.map((sessions, index) => ({
+      sessions,
+      next_cursor: index < groups.length - 1 ? `c${index}` : null,
+    })),
+    pageParams: groups.map((_, index) => (index === 0 ? null : `c${index - 1}`)),
+  });
+  type Pages = ReturnType<typeof pagesOf>;
+
+  test('begin writes the new name into an array list and a paged list', () => {
     const queryClient = new QueryClient();
-    const original = [makeSession({ session_id: 's1', custom_name: 'Old name' })];
-    queryClient.setQueryData(QUERY_KEY, original);
+    queryClient.setQueryData(ARRAY_KEY, [makeSession({ session_id: 's1', custom_name: 'Old name' })]);
+    queryClient.setQueryData(
+      PAGES_KEY,
+      pagesOf([makeSession({ session_id: 's0' })], [makeSession({ session_id: 's1', custom_name: 'Old name' })]),
+    );
 
-    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
+    beginOptimisticRename(queryClient, LIST_FAMILY, 's1', 'New name');
 
-    expect(previous).toBe(original);
-    expect(queryClient.getQueryData<ProjectSession[]>(QUERY_KEY)?.[0].custom_name).toBe('New name');
+    expect(queryClient.getQueryData<ProjectSession[]>(ARRAY_KEY)?.[0].custom_name).toBe('New name');
+    const pages = queryClient.getQueryData<Pages>(PAGES_KEY)!;
+    expect(pages.pages[1].sessions[0].custom_name).toBe('New name');
+    expect(pages.pages[0].sessions[0].custom_name).toBeNull();
   });
 
-  test('the rollback path restores the exact pre-rename snapshot', () => {
-    // The case the Important review finding asked for: drive begin, THEN
-    // rollback, and assert the cache is back to what it was before either
-    // ran — not just that the two functions individually behave.
+  test('the rollback path restores the exact pre-rename snapshot of every list', () => {
+    // Drive begin, THEN rollback, and assert the cache is back to what it was
+    // before either ran — not just that the two functions individually behave.
     const queryClient = new QueryClient();
     const s2 = makeSession({ session_id: 's2', custom_name: 'Other' });
-    const original = [makeSession({ session_id: 's1', custom_name: 'Old name' }), s2];
-    queryClient.setQueryData(QUERY_KEY, original);
+    const originalArray = [makeSession({ session_id: 's1', custom_name: 'Old name' }), s2];
+    const originalPages = pagesOf([makeSession({ session_id: 's1', custom_name: 'Old name' })], [s2]);
+    queryClient.setQueryData(ARRAY_KEY, originalArray);
+    queryClient.setQueryData(PAGES_KEY, originalPages);
 
-    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
+    const { previous } = beginOptimisticRename(queryClient, LIST_FAMILY, 's1', 'New name');
     // Sanity check: the optimistic write actually landed before rolling it
     // back — otherwise the restore assertion below would pass vacuously.
-    expect(queryClient.getQueryData<ProjectSession[]>(QUERY_KEY)?.[0].custom_name).toBe('New name');
+    expect(queryClient.getQueryData<ProjectSession[]>(ARRAY_KEY)?.[0].custom_name).toBe('New name');
+    expect(queryClient.getQueryData<Pages>(PAGES_KEY)?.pages[0].sessions[0].custom_name).toBe('New name');
 
-    rollbackOptimisticRename(queryClient, QUERY_KEY, previous);
+    rollbackOptimisticRename(queryClient, previous);
 
-    // `toEqual`, not `toBe`: QueryClient's default structural sharing
-    // rebuilds a fresh array/object on every `setQueryData` call, even when
-    // the values it produces are deeply equal to what went in. Reference
-    // stability is `applySessionRename`'s own contract (covered above,
-    // directly, with no QueryClient involved) — here the property under test
-    // is that the CONTENT is exactly what it was before the rename.
-    const restored = queryClient.getQueryData<ProjectSession[]>(QUERY_KEY);
-    expect(restored).toEqual(original);
-    expect(restored?.[0].custom_name).toBe('Old name');
-    expect(restored?.[1].custom_name).toBe('Other');
+    // `toEqual`, not `toBe`: QueryClient's structural sharing rebuilds fresh
+    // objects on every `setQueryData`. The CONTENT is what must be restored.
+    expect(queryClient.getQueryData(ARRAY_KEY)).toEqual(originalArray);
+    expect(queryClient.getQueryData(PAGES_KEY)).toEqual(originalPages);
   });
 
   test('no sessionId (nothing selected yet): begin leaves the cache untouched', () => {
     const queryClient = new QueryClient();
     const original = [makeSession({ session_id: 's1', custom_name: 'Old name' })];
-    queryClient.setQueryData(QUERY_KEY, original);
+    queryClient.setQueryData(ARRAY_KEY, original);
 
-    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, null, 'New name');
+    const { previous } = beginOptimisticRename(queryClient, LIST_FAMILY, null, 'New name');
 
-    expect(previous).toBe(original);
-    expect(queryClient.getQueryData(QUERY_KEY)).toBe(original);
+    expect(previous).toEqual([]);
+    expect(queryClient.getQueryData(ARRAY_KEY)).toBe(original);
   });
 
-  test('an empty cache: begin returns undefined, and rolling that back is a no-op', () => {
+  test('an empty cache: begin snapshots nothing, and rolling that back is a no-op', () => {
     const queryClient = new QueryClient();
 
-    const { previous } = beginOptimisticRename(queryClient, QUERY_KEY, 's1', 'New name');
-    expect(previous).toBeUndefined();
+    const { previous } = beginOptimisticRename(queryClient, LIST_FAMILY, 's1', 'New name');
+    expect(previous).toEqual([]);
 
-    rollbackOptimisticRename(queryClient, QUERY_KEY, previous);
+    rollbackOptimisticRename(queryClient, previous);
 
-    expect(queryClient.getQueryData(QUERY_KEY)).toBeUndefined();
+    expect(queryClient.getQueryData(ARRAY_KEY)).toBeUndefined();
+    expect(queryClient.getQueryData(PAGES_KEY)).toBeUndefined();
+  });
+});
+
+describe('applyRenameResponseToCache', () => {
+  test('merges the PATCH response into a paged list without blanking list-only fields', () => {
+    const queryClient = new QueryClient();
+    const key = qk.project.sessionPages('p1');
+    queryClient.setQueryData(key, {
+      pages: [{ sessions: [makeSession({ session_id: 's1', owner_email: 'owner@example.com' })], next_cursor: null }],
+      pageParams: [null],
+    });
+
+    applyRenameResponseToCache(
+      queryClient,
+      [...qk.project.sessionsScope('p1'), 'list'],
+      makeSession({ session_id: 's1', name: 'Server name', custom_name: 'Server name', owner_email: null }),
+    );
+
+    const row = queryClient.getQueryData<{ pages: { sessions: ProjectSession[] }[] }>(key)!.pages[0]
+      .sessions[0];
+    expect(row.custom_name).toBe('Server name');
+    expect(row.owner_email).toBe('owner@example.com');
   });
 });
 

@@ -139,6 +139,16 @@ caller with project-manager permissions. It adds accessible unavailable, warm, a
 ownership and runtime-state metadata. Both list scopes omit every session the
 caller cannot open.
 
+`sessions.list()` returns every session in one response. On a project with
+thousands of sessions, read pages instead with `project(id).sessions.page()`.
+It takes the same `scope`, plus `limit` (1–200, default 50) and `cursor`, and
+returns `{ sessions, next_cursor }` ordered newest first by `updated_at`. Pass
+`next_cursor` back as `cursor` until it is `null`. If no session changes during
+the walk, every session appears exactly once. A session updated mid-walk moves
+to the top of the order: that walk can return it twice or not at all, so
+de-duplicate by `session_id` and restart from the first page when you need a
+complete set.
+
 ### GitHub — `kortix.github`
 
 Account-scoped GitHub App install and repo linking, not project-scoped.

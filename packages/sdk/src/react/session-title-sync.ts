@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import { sessionStartKey } from '../core/rest/projects-client';
+import { findCachedProjectSession } from './project-session-pages';
 import { qk } from './query-keys';
 
 type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'> & {
@@ -24,7 +25,7 @@ function readRealTitle(value: unknown): string | null {
 }
 
 function cachedSessionHasTitle(
-  queryClient: Pick<QueryClient, 'getQueryData'>,
+  queryClient: Pick<QueryClient, 'getQueryData'> & Partial<Pick<QueryClient, 'getQueriesData'>>,
   projectId: string,
   sessionId: string,
 ): boolean {
@@ -35,7 +36,16 @@ function cachedSessionHasTitle(
   // default and what the sidebar/list surfaces actually read.
   const list = queryClient.getQueryData<unknown>(qk.project.sessions(projectId));
   const detail = queryClient.getQueryData<unknown>(qk.project.session(projectId, sessionId));
-  const candidates = [...(Array.isArray(list) ? list : []), detail];
+  // Paged lists (`qk.project.sessionPages`) hold rows too. `getQueriesData`
+  // is optional so lean test fakes that only stub `getQueryData` keep working.
+  const paged = queryClient.getQueriesData
+    ? findCachedProjectSession(
+        queryClient as Pick<QueryClient, 'getQueriesData'>,
+        projectId,
+        sessionId,
+      )
+    : undefined;
+  const candidates = [...(Array.isArray(list) ? list : []), paged, detail];
   return candidates.some((candidate) => {
     if (!candidate || typeof candidate !== 'object') return false;
     const session = candidate as Record<string, unknown>;

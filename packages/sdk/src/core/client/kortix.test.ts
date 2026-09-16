@@ -172,6 +172,17 @@ test('project(id).sessions.list forwards manager inventory scope', async () => {
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');
 });
 
+test('project(id).sessions.page binds the project and forwards scope, limit and cursor', async () => {
+  await kortix.project('PID123').sessions.page({ scope: 'project', limit: 10, cursor: 'C1' });
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions?scope=project&limit=10&cursor=C1');
+  expect(last().method).toBe('GET');
+});
+
+test('projects.sessionsPage is the unbound page read', async () => {
+  await kortix.projects.sessionsPage('PID123');
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions?limit=50');
+});
+
 test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
     const requestUrl = String(url);

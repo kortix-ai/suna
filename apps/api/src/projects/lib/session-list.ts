@@ -40,7 +40,7 @@ import {
 import { db } from '../../shared/db';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import type { ProjectRole } from '../access';
 import {
@@ -49,6 +49,7 @@ import {
   type SessionInventoryItem,
   type SessionOwnerIdentity,
 } from './session-inventory';
+import { collectSessionPage, type SessionCursor } from './session-page';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -67,14 +68,7 @@ export interface ProjectSessionInventory {
   subject: ShareSubject;
 }
 
-/**
- * Read one project's session inventory for one viewer.
- *
- * `probeManageCapability` is injected rather than imported so this module stays
- * free of the request context (and unit-testable without one) — the route
- * passes the same `project.members.manage` probe the lifecycle routes use.
- */
-export async function loadProjectSessionInventory(input: {
+interface ProjectSessionInventoryInput {
   projectId: string;
   accountId: string;
   userId: string;
@@ -83,7 +77,18 @@ export async function loadProjectSessionInventory(input: {
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
   probeManageCapability: () => Promise<boolean>;
-}): Promise<ProjectSessionInventory> {
+}
+
+/**
+ * Read one project's session inventory for one viewer.
+ *
+ * `probeManageCapability` is injected rather than imported so this module stays
+ * free of the request context (and unit-testable without one) — the route
+ * passes the same `project.members.manage` probe the lifecycle routes use.
+ */
+export async function loadProjectSessionInventory(
+  input: ProjectSessionInventoryInput,
+): Promise<ProjectSessionInventory> {
   // Step 1 — everything that does not depend on the session rows runs together
   // with the session read itself.
   const [rows, runtimeRows, subject, canManageProject] = await Promise.all([
@@ -159,5 +164,132 @@ export async function loadProjectSessionInventory(input: {
     ownerIdentities,
     runtimeStatusBySession,
     subject,
+  };
+}
+
+export interface ProjectSessionInventoryPage {
+  /** False when `scope: 'project'` was asked for without manager standing. */
+  authorized: boolean;
+  /** One page of rows the viewer may see, in `updated_at DESC, session_id DESC` order. */
+  items: SessionInventoryItem[];
+  /** Where the next page starts, or null when this page is the last. */
+  nextCursor: SessionCursor | null;
+  canManageProject: boolean;
+  grantsBySession: Map<string, SecretGrant[]>;
+  ownerIdentities: Map<string, SessionOwnerIdentity>;
+}
+
+/**
+ * One page of the inventory `loadProjectSessionInventory` returns whole.
+ *
+ * Same tenant predicates, same visibility fold, same manager-standing
+ * derivation — applied per batch instead of over every row the project has.
+ * The per-row reads (runtime status, grants, owner identities) are scoped to
+ * the batch, so a page costs the same on a project with 60 sessions as on one
+ * with 16,000. Batching and the scan budget live in `session-page.ts`.
+ */
+export async function loadProjectSessionInventoryPage(
+  input: ProjectSessionInventoryInput & { limit: number; after: SessionCursor | null },
+): Promise<ProjectSessionInventoryPage> {
+  const [subject, canManageProject] = await Promise.all([
+    resolveShareSubject(input.userId),
+    viewerManagerStanding(
+      input.effectiveRole,
+      input.boundCredentialSessionId,
+      input.probeManageCapability,
+    ),
+  ]);
+
+  const grantsBySession = new Map<string, SecretGrant[]>();
+  const ownerIdentities = new Map<string, SessionOwnerIdentity>();
+  if (input.scope === 'project' && !canManageProject) {
+    return {
+      authorized: false,
+      items: [],
+      nextCursor: null,
+      canManageProject,
+      grantsBySession,
+      ownerIdentities,
+    };
+  }
+
+  // The exact stored instant as text. A JS `Date` drops the microseconds, and
+  // the keyset below would skip rows in the cursor's millisecond — see
+  // session-page.ts.
+  const cursorAt = sql<string>`to_char(${projectSessions.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+  const page = await collectSessionPage({
+    limit: input.limit,
+    after: input.after,
+    readBatch: async (after, size) => {
+      const batch = await db
+        .select({ row: projectSessions, cursorAt })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.projectId, input.projectId),
+            eq(projectSessions.accountId, input.accountId),
+            after
+              ? sql`(${projectSessions.updatedAt}, ${projectSessions.sessionId}) < (${after.updatedAt}::timestamptz, ${after.sessionId})`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+        .limit(size);
+      return batch.map((entry) => ({
+        row: entry.row,
+        cursor: { updatedAt: entry.cursorAt, sessionId: entry.row.sessionId },
+      }));
+    },
+    selectVisible: async (rows) => {
+      if (rows.length === 0) return [];
+      const [runtimeRows, batchGrants, batchOwners] = await Promise.all([
+        db
+          .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+          .from(sessionSandboxes)
+          .where(
+            and(
+              eq(sessionSandboxes.projectId, input.projectId),
+              eq(sessionSandboxes.accountId, input.accountId),
+              inArray(
+                sessionSandboxes.sessionId,
+                rows.map((row) => row.sessionId),
+              ),
+            ),
+          ),
+        loadSessionGrants(
+          rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
+        ),
+        resolveSessionOwnerIdentities(
+          rows
+            .map((row) => row.createdBy)
+            .filter((ownerId): ownerId is string => Boolean(ownerId)),
+          input.accountId,
+        ),
+      ]);
+      for (const [sessionId, grants] of batchGrants) grantsBySession.set(sessionId, grants);
+      for (const [ownerId, identity] of batchOwners) ownerIdentities.set(ownerId, identity);
+
+      return selectSessionRowsForViewer({
+        rows,
+        scope: input.scope,
+        canManageProject,
+        subject,
+        grantsBySession: batchGrants,
+        runtimeStatusBySession: new Map(runtimeRows.map((row) => [row.sessionId, row.status])),
+        callerSessionId: input.boundCredentialSessionId,
+        boundCredentialSessionId: input.boundCredentialSessionId,
+      }).items;
+    },
+    rowOf: (item) => item.row,
+  });
+
+  return {
+    authorized: true,
+    items: page.items,
+    nextCursor: page.nextCursor,
+    canManageProject,
+    grantsBySession,
+    ownerIdentities,
   };
 }

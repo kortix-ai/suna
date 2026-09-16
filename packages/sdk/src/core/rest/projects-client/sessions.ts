@@ -211,6 +211,36 @@ export async function listProjectSessions(
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }
 
+/** One page of `listProjectSessionsPage`. */
+export interface ProjectSessionPage {
+  /** Newest first: `updated_at DESC, session_id DESC`. */
+  sessions: ProjectSession[];
+  /** Pass as `cursor` for the next page; `null` on the last page. */
+  next_cursor: string | null;
+}
+
+/**
+ * One page of a project's sessions, for lists that load as the user scrolls.
+ *
+ * Same rows, fields, and scope rules as `listProjectSessions`, which returns
+ * every session in one response. Walk `next_cursor` until it is `null`.
+ *
+ * @param options.limit - Sessions per page, 1–200. Defaults to 50.
+ * @param options.cursor - The previous page's `next_cursor`.
+ */
+export async function listProjectSessionsPage(
+  projectId: string,
+  options?: { scope?: 'visible' | 'project'; limit?: number; cursor?: string | null },
+) {
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  params.set('limit', String(options?.limit ?? 50));
+  if (options?.cursor) params.set('cursor', options.cursor);
+  return unwrap(
+    await backendApi.get<ProjectSessionPage>(`/projects/${projectId}/sessions?${params}`),
+  );
+}
+
 /**
  * Set who can see/open a session (private | project | members). Owner or
  * project manager only. Reuses the connector/secret sharing intent shape.

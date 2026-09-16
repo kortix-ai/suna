@@ -355,6 +355,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxHealth: P.getProjectSandboxHealth,
     sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
+    /** One page of a project's sessions; walk `next_cursor`. */
+    sessionsPage: P.listProjectSessionsPage,
     createSession: P.createProjectSession,
   };
 
@@ -703,6 +705,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       sessions: {
         list: (options?: Parameters<typeof P.listProjectSessions>[1]) =>
           P.listProjectSessions(projectId, options),
+        /** One page of this project's sessions; walk `next_cursor` until it is `null`. */
+        page: (options?: Parameters<typeof P.listProjectSessionsPage>[1]) =>
+          P.listProjectSessionsPage(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
         /** Pre-create the session a present user is about to start. Ordinary session; ignore failures. */

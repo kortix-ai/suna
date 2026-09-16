@@ -55,6 +55,7 @@ import {
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
+import { useLoadMoreSentinel } from '@/hooks/use-load-more-sentinel';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -69,13 +70,12 @@ import {
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listChangeRequests,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk, useProjectSessionPages } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -90,7 +90,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -208,12 +208,23 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
-    refetchInterval: (query) =>
+  // One page at a time: a project can hold thousands of sessions, and the
+  // list used to download and mount every one of them. The next page loads as
+  // the foot of the list scrolls into range (`useLoadMoreSentinel`).
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useProjectSessionPages(projectId, {
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: Boolean(activeSessionId),
       }),
     // Focus IS the cross-tab signal this list has: a session started in
@@ -221,7 +232,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // other way to appear here before the 60s open-session poll. The
     // sessions page already refetches on focus for the same reason.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
+  });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useLoadMoreSentinel({
+    rootRef: scrollRef,
+    hasMore: Boolean(hasNextPage) && !isFetchNextPageError,
+    isLoadingMore: isFetchingNextPage,
+    loadMore: fetchNextPage,
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
@@ -295,10 +312,43 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   const viewState = resolveSessionListViewState({
     isLoading,
-    isError,
+    // A failed NEXT page keeps the loaded pages on screen; the foot of the
+    // list carries its own retry.
+    isError: isError && !data,
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
   });
+
+  // The foot of the list: the scroll sentinel, plus the loading or retry row.
+  // Also rendered under "no matches": the loaded pages may hold no match while
+  // a later page does, so loading continues until one appears or the pages end.
+  const listFoot = hasNextPage ? (
+    <div ref={loadMoreRef} className="px-2 pb-2">
+      {isFetchNextPageError ? (
+        <div className="flex items-center gap-2">
+          <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {t('sessionList.loadMoreError')}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => fetchNextPage()}
+          >
+            {t('retry')}
+          </Button>
+        </div>
+      ) : (
+        <div
+          className="text-muted-foreground flex h-8 items-center gap-2 text-xs"
+          role="status"
+        >
+          <Loading className="size-3" variant="spokes" />
+          {t('sessionList.loadingMore')}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   // Everything below the header — skeleton, error, empty, or the grouped list.
   // Kept as one function so the header stays mounted across all four states
@@ -340,9 +390,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     if (viewState === 'no-matches') {
       return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {t('sessionList.noMatches')}
-        </div>
+        <>
+          {!hasNextPage && (
+            <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+              {t('sessionList.noMatches')}
+            </div>
+          )}
+          {listFoot}
+        </>
       );
     }
 
@@ -439,7 +494,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     };
 
     return (
-      <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
+      <FadedScrollArea
+        ref={scrollRef}
+        fadeColor="from-background"
+        className="h-full min-h-0 space-y-px"
+      >
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -467,6 +526,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             ))}
           </SessionListSection>
         ))}
+        {listFoot}
       </FadedScrollArea>
     );
   }

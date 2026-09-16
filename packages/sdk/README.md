@@ -235,6 +235,11 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Large projects: page instead of reading every session at once.
+let page = await kortix.project(pid).sessions.page({ limit: 50 });
+while (page.next_cursor) {
+  page = await kortix.project(pid).sessions.page({ limit: 50, cursor: page.next_cursor });
+}
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)

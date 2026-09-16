@@ -30,6 +30,7 @@ import {
 import {
   reconcileSessionsAfterCreate,
   seedAdoptedWarmSession,
+  seedAdoptedWarmSessionPages,
 } from '@/hooks/projects/warm-session-seed';
 import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
@@ -44,7 +45,7 @@ import {
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
-import { prefetchSessionStart, qk } from '@kortix/sdk/react';
+import { type ProjectSessionPagesData, prefetchSessionStart, qk } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -286,8 +287,14 @@ export function useNewProjectSession(projectId: string | undefined) {
           // taken but never made it this far (a scope-replacement failure,
           // say) never seeds a phantom row here — see warm-session-seed.ts.
           if (adoptedWarmSession) {
+            const adoptedAt = new Date().toISOString();
             queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
-              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
+              seedAdoptedWarmSession(current, adoptedWarmSession!, adoptedAt),
+            );
+            // The paged list the sidebar reads (`useProjectSessionPages`).
+            queryClient.setQueryData<ProjectSessionPagesData>(
+              qk.project.sessionPages(projectId),
+              (current) => seedAdoptedWarmSessionPages(current, adoptedWarmSession!, adoptedAt),
             );
           }
           // The row exists — kick provisioning so it overlaps the navigation.

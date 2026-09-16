@@ -1258,6 +1258,8 @@
       "loadError": "无法加载会话",
       "empty": "暂无会话",
       "noMatches": "没有会话符合当前筛选条件。",
+      "loadingMore": "正在加载更多会话",
+      "loadMoreError": "无法加载更多会话",
       "actions": "会话操作",
       "actionsFor": "{title} 的操作",
       "reviewCount": "等待你审阅：{count}",

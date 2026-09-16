@@ -20,9 +20,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   type CreateSessionPublicShareInput,
   createSessionPublicShare,
-  listProjectSessions,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk, useProjectSessionRow } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
@@ -46,14 +45,8 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   // control that can only fail. Only an explicit `false` withholds it: the
   // inventory is not loaded on every surface this hook serves, and an unknown
   // answer must not silently remove a control from the owner.
-  const { data: sessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
-    enabled: !!projectId && !!sessionId,
-    ...contract('inventory'),
-  });
   const canManageSharing =
-    sessions?.find((s) => s.session_id === sessionId)?.can_manage_sharing !== false;
+    useProjectSessionRow(projectId, sessionId)?.can_manage_sharing !== false;
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 

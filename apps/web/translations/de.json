@@ -1258,6 +1258,8 @@
       "loadError": "Sitzungen konnten nicht geladen werden",
       "empty": "Noch keine Sitzungen",
       "noMatches": "Keine Sitzung entspricht den aktiven Filtern.",
+      "loadingMore": "Weitere Sitzungen werden geladen",
+      "loadMoreError": "Weitere Sitzungen konnten nicht geladen werden",
       "actions": "Sitzungsaktionen",
       "actionsFor": "Aktionen für {title}",
       "reviewCount": "Zur Prüfung: {count}",
