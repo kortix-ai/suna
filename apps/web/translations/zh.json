@@ -1233,6 +1233,8 @@
     "selectAllConversations": "全选对话",
     "deselectAllConversations": "取消全选对话",
     "loadMore": "加载更多",
+    "loadingMore": "加载中…",
+    "loadMoreSessions": "加载更多会话",
     "remaining": "剩余",
     "newSession": "新会议",
     "collapse": "折叠侧边栏",

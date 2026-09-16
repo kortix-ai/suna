@@ -1233,6 +1233,8 @@
     "selectAllConversations": "Seleziona tutte le conversazioni",
     "deselectAllConversations": "Deseleziona tutte le conversazioni",
     "loadMore": "Carica altro",
+    "loadingMore": "Caricamento…",
+    "loadMoreSessions": "Carica altre sessioni",
     "remaining": "rimanenti",
     "newSession": "Nuova sessione",
     "collapse": "Comprimi barra laterale",

@@ -21,6 +21,250 @@ linked, not inlined.
 
 ## Register
 
+<<<<<<< HEAD
+||||||| parent of 6f52904b61 (perf(sessions): the project session list is a keyset page, not the whole inventory (#7308))
+### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
+
+**When:** writing or reviewing any admission/quota gate that reserves a
+resource before doing work — a memory budget, a connection semaphore, a rate
+limiter. Three defects, one incident, each sufficient alone:
+
+1. **`Number(req.headers.get('content-length'))` is `0` when the header is
+   absent, and `0` fails a `> 0` test.** Platinum's `budgetBytesFor` then fell
+   through to its fallback — `MAX_REQUEST_BODY_BYTES`, 128 MiB — so every body
+   with no declared length reserved the entire transport cap. Against a 1.25 GiB
+   pool that is TEN concurrent requests for the whole fleet.
+2. **Admission was strict FIFO** (`if (!waiters.length && inUse + want <= BUDGET)`),
+   so once one waiter existed a 32-byte request queued behind it regardless of
+   size. The mis-charge did not slow large uploads; it stopped everything.
+3. **A timed-out waiter spliced itself out and rejected without calling
+   `drain()`**, so the queue stayed stranded after the wait expired.
+
+GET and HEAD skip the budget by construction, which is exactly the shape prod
+showed and the fastest way to recognise this class: **same sandbox, same
+second, `GET /global/health` 200 in 0.84 s and `POST /file/mkdir` with a
+32-byte body 503 after 50.7 s — and the same route with NO body 400 in 0.83 s.**
+The only variable is whether a request body exists. That one probe rules out
+auth, connectors, token minting and agent resolution in three curls.
+
+*Incident:* prod 2026-09-15 18:00Z onward. Every POST to a Platinum sandbox
+failed while GETs served normally, so no prompt could reach the daemon: 9-13
+sessions/hour, ~48 queued prompts/hour dead-lettered, a paying customer
+mailing support "not getting any responses back". Defect (1) shipped in
+platinum#1007 at 20:42Z; defect (3) survived the first fix and caused a second
+episode at 08:00-09:59Z the next morning (37 undelivered, 12 dead-lettered)
+until platinum#5e8d99bc.
+
+*Enforcers:* platinum `bodyBudget.test.ts` — an undeclared body pre-charges a
+slice not the cap, `settle` returns the over-reservation and drains the waiters
+it unblocks, and 64 concurrent undeclared proxy bodies are admitted with 0
+refusals. Kortix-side, `deliver.test.ts` pins that a ready-stage runtime whose
+POSTs keep failing classifies `unreachable`, not `pending`.
+
+### A queued prompt must never spend the dead-letter budget on a path that is simply down (2026-09-16)
+
+**When:** classifying a failed delivery. `postPrompt` collapsed "nobody
+answered for the box" into the same `failed` as "the daemon answered and
+refused", so a spent deadline always reported `pending` — which
+`executeQueuedContinue` retries on `markCommandFailed`'s `attempts < 5` with a
+2 s ladder. Five attempts is about five minutes, after which the user's typed
+message is ABANDONED and their bubble reads `Not sent - delivery outcome
+pending`. The `unreachable` ladder already existed for exactly this case:
+attempts refunded, 30 s / 120 s / 480 s backoff, a fresh idempotency key, and
+instant re-arm when a wake confirms the runtime is back.
+
+**Rules.** (1) A retry class is a claim about the FAILURE, not about the call
+that returned it — 502/503/504 and a thrown fetch are the path being down, not
+the prompt being wrong. (2) `last_error` is customer-facing copy, not a log
+line: `delivery outcome: pending` told a paying customer nothing and they
+mailed support to ask what it meant. (3) The freshest verdict decides — a path
+that comes back and then refuses on its own terms is `pending` again.
+
+*Enforcer:* `deliver.test.ts` (4 cases), `DELIVERY_FAILURE_COPY` in
+`session-lifecycle/types.ts`.
+
+
+### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
+
+**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
+every API route that calls a daemon path the daemon does not serve, and give
+each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
+"sandbox not found". Never pick 502 for a permanent refusal: the `index.ts`
+edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
+twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
+pins the daemon marker and the 501 mapping.
+### Preserve SCIM group changes when old SSO sessions make requests (2026-09-16)
+
+**When:** reconciling SAML group claims. Leave SCIM-managed groups to SCIM. Mark
+existing groups as SCIM-managed when the provisioning API takes ownership.
+*Incident:* Azure added Ivan to Engineering on dev; reloading his older SSO
+session deleted the membership. Pathless group attributes also returned success
+without persisting. *Enforcer:* `SCIM-8` uses real signed Supabase tokens to
+prove old claims cannot undo SCIM additions or removals, and checks read-back.
+
+### Resolve SCIM identities across the complete auth directory (2026-09-16)
+
+**When:** matching provisioned users by email. Query the normalized email in
+`auth.users` and prefer the existing account member for duplicate identities.
+Do not treat a lookup failure as a missing user and create an invitation.
+*Near-miss:* SCIM searched only the first 1,000 auth users; dev held 2,816 users.
+*Enforcer:* `scim/user-lookup.test.ts` covers the truncated directory and lookup
+failures; `SCIM-6` verifies provisioning and deactivation over HTTP.
+
+### Test Entra's actual SCIM PATCH payloads (2026-09-16)
+
+**When:** parsing SCIM user or group updates. Normalize Entra string booleans,
+case-insensitive attributes, and pathless attribute objects. A removal value
+array selects members; only an omitted value and filter mean remove all.
+*Incident:* dev investigation reproduced ignored user deactivation and removal
+of unrelated group members. *Enforcer:* HTTP flows `SCIM-6` and `SCIM-7` prove
+deactivation, last-owner protection, selective removal, and persisted read-back.
+
+### Test SCIM ingress without a User-Agent (2026-09-16)
+
+**When:** routing enterprise directory provisioning through AWS WAF. Entra omits
+`User-Agent`; supply a relay identity only on account-scoped SCIM routes when
+the header is absent or empty. Preserve the bearer, body, and sender headers.
+*Incident:* Azure's dev connection test returned HTML `403` before SCIM auth;
+the identical request with a User-Agent reached Kortix. All five local SCIM
+flows passed because their HTTP client sent a header. *Enforcer:*
+`api-router/worker.test.mjs` covers SCIM methods, discovery, and route boundaries.
+
+=======
+### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
+
+**When:** writing or reviewing any admission/quota gate that reserves a
+resource before doing work — a memory budget, a connection semaphore, a rate
+limiter. Three defects, one incident, each sufficient alone:
+
+1. **`Number(req.headers.get('content-length'))` is `0` when the header is
+   absent, and `0` fails a `> 0` test.** Platinum's `budgetBytesFor` then fell
+   through to its fallback — `MAX_REQUEST_BODY_BYTES`, 128 MiB — so every body
+   with no declared length reserved the entire transport cap. Against a 1.25 GiB
+   pool that is TEN concurrent requests for the whole fleet.
+2. **Admission was strict FIFO** (`if (!waiters.length && inUse + want <= BUDGET)`),
+   so once one waiter existed a 32-byte request queued behind it regardless of
+   size. The mis-charge did not slow large uploads; it stopped everything.
+3. **A timed-out waiter spliced itself out and rejected without calling
+   `drain()`**, so the queue stayed stranded after the wait expired.
+
+GET and HEAD skip the budget by construction, which is exactly the shape prod
+showed and the fastest way to recognise this class: **same sandbox, same
+second, `GET /global/health` 200 in 0.84 s and `POST /file/mkdir` with a
+32-byte body 503 after 50.7 s — and the same route with NO body 400 in 0.83 s.**
+The only variable is whether a request body exists. That one probe rules out
+auth, connectors, token minting and agent resolution in three curls.
+
+*Incident:* prod 2026-09-15 18:00Z onward. Every POST to a Platinum sandbox
+failed while GETs served normally, so no prompt could reach the daemon: 9-13
+sessions/hour, ~48 queued prompts/hour dead-lettered, a paying customer
+mailing support "not getting any responses back". Defect (1) shipped in
+platinum#1007 at 20:42Z; defect (3) survived the first fix and caused a second
+episode at 08:00-09:59Z the next morning (37 undelivered, 12 dead-lettered)
+until platinum#5e8d99bc.
+
+*Enforcers:* platinum `bodyBudget.test.ts` — an undeclared body pre-charges a
+slice not the cap, `settle` returns the over-reservation and drains the waiters
+it unblocks, and 64 concurrent undeclared proxy bodies are admitted with 0
+refusals. Kortix-side, `deliver.test.ts` pins that a ready-stage runtime whose
+POSTs keep failing classifies `unreachable`, not `pending`.
+
+### A queued prompt must never spend the dead-letter budget on a path that is simply down (2026-09-16)
+
+**When:** classifying a failed delivery. `postPrompt` collapsed "nobody
+answered for the box" into the same `failed` as "the daemon answered and
+refused", so a spent deadline always reported `pending` — which
+`executeQueuedContinue` retries on `markCommandFailed`'s `attempts < 5` with a
+2 s ladder. Five attempts is about five minutes, after which the user's typed
+message is ABANDONED and their bubble reads `Not sent - delivery outcome
+pending`. The `unreachable` ladder already existed for exactly this case:
+attempts refunded, 30 s / 120 s / 480 s backoff, a fresh idempotency key, and
+instant re-arm when a wake confirms the runtime is back.
+
+**Rules.** (1) A retry class is a claim about the FAILURE, not about the call
+that returned it — 502/503/504 and a thrown fetch are the path being down, not
+the prompt being wrong. (2) `last_error` is customer-facing copy, not a log
+line: `delivery outcome: pending` told a paying customer nothing and they
+mailed support to ask what it meant. (3) The freshest verdict decides — a path
+that comes back and then refuses on its own terms is `pending` again.
+
+*Enforcer:* `deliver.test.ts` (4 cases), `DELIVERY_FAILURE_COPY` in
+`session-lifecycle/types.ts`.
+
+### A list endpoint with no bound is a latent outage, and a POLLED one is a scheduled one (2026-09-16)
+
+**When:** adding or reviewing any endpoint that returns "all the X for this Y",
+and any client that polls one. `GET /v1/projects/:projectId/sessions` returned
+every session row the viewer could see. It was correct at 60 rows and fine for a
+year. At 12,617 sessions it was ~11.1 MB of JSON, re-fetched **every 5 seconds**
+— because the sidebar's poll gate (`shouldPollProjectSessions`) asks whether ANY
+row is still `queued`/`branching`/`provisioning`, and over twelve thousand rows
+one always is. Unbounded list × unbounded poll predicate = the product becomes
+unusable with no code change and no alert. **Rules.** (1) A collection endpoint
+ships with a default `limit` and a hard ceiling from the first commit; "callers
+only have a few" is an assumption about data you have not verified, and the
+learning register exists because those assumptions expire. (2) Page by KEYSET on
+a unique tuple, never `OFFSET` — rows are written constantly, so an offset page
+skips and repeats between requests. (3) A poll interval derived from "does any
+row have state X" must be derived from a BOUNDED set, or it never backs off.
+(4) Bounding a list changes what every `.find()` on it can still see: seven
+surfaces here resolved the CURRENT session by scanning that list, and a session
+older than page one silently answered `null` — which read as "you may not share
+or stop this". When you bound a list, grep every consumer for `.find(` and move
+id lookups to the read-by-id route. *Incident:* prod, customer project, reported
+as "ITS GIGA LAGGING"; no alert fired — every request was a 200.
+*Enforcer:* `SESSION_PAGE_MAX_LIMIT` (route rejects `limit > 200` with 400) and
+the cursor/paging tests in `apps/api/src/projects/lib/session-inventory.test.ts`.
+
+||||||| fd612fe8b7
+
+### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
+
+**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
+every API route that calls a daemon path the daemon does not serve, and give
+each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
+"sandbox not found". Never pick 502 for a permanent refusal: the `index.ts`
+edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
+twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
+pins the daemon marker and the 501 mapping.
+### Preserve SCIM group changes when old SSO sessions make requests (2026-09-16)
+
+**When:** reconciling SAML group claims. Leave SCIM-managed groups to SCIM. Mark
+existing groups as SCIM-managed when the provisioning API takes ownership.
+*Incident:* Azure added Ivan to Engineering on dev; reloading his older SSO
+session deleted the membership. Pathless group attributes also returned success
+without persisting. *Enforcer:* `SCIM-8` uses real signed Supabase tokens to
+prove old claims cannot undo SCIM additions or removals, and checks read-back.
+
+### Resolve SCIM identities across the complete auth directory (2026-09-16)
+
+**When:** matching provisioned users by email. Query the normalized email in
+`auth.users` and prefer the existing account member for duplicate identities.
+Do not treat a lookup failure as a missing user and create an invitation.
+*Near-miss:* SCIM searched only the first 1,000 auth users; dev held 2,816 users.
+*Enforcer:* `scim/user-lookup.test.ts` covers the truncated directory and lookup
+failures; `SCIM-6` verifies provisioning and deactivation over HTTP.
+
+### Test Entra's actual SCIM PATCH payloads (2026-09-16)
+
+**When:** parsing SCIM user or group updates. Normalize Entra string booleans,
+case-insensitive attributes, and pathless attribute objects. A removal value
+array selects members; only an omitted value and filter mean remove all.
+*Incident:* dev investigation reproduced ignored user deactivation and removal
+of unrelated group members. *Enforcer:* HTTP flows `SCIM-6` and `SCIM-7` prove
+deactivation, last-owner protection, selective removal, and persisted read-back.
+
+### Test SCIM ingress without a User-Agent (2026-09-16)
+
+**When:** routing enterprise directory provisioning through AWS WAF. Entra omits
+`User-Agent`; supply a relay identity only on account-scoped SCIM routes when
+the header is absent or empty. Preserve the bearer, body, and sender headers.
+*Incident:* Azure's dev connection test returned HTML `403` before SCIM auth;
+the identical request with a User-Agent reached Kortix. All five local SCIM
+flows passed because their HTTP client sent a header. *Enforcer:*
+`api-router/worker.test.mjs` covers SCIM methods, discovery, and route boundaries.
+
+>>>>>>> 6f52904b61 (perf(sessions): the project session list is a keyset page, not the whole inventory (#7308))
 ### Refresh provider credentials before blaming sandbox authentication (2026-09-16)
 
 **When:** a resumed terminal receives an upstream authentication refusal. Daytona

@@ -1233,6 +1233,8 @@
     "selectAllConversations": "Изаберите све разговоре",
     "deselectAllConversations": "Поништи избор свих разговора",
     "loadMore": "Учитајте више",
+    "loadingMore": "Учитавање…",
+    "loadMoreSessions": "Учитајте још сесија",
     "remaining": "преостало",
     "newSession": "Нова сесија",
     "collapse": "Скупи бочну траку",
