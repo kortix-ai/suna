@@ -613,7 +613,9 @@ export function InstantSessionShell({
                   className="flex min-w-0 flex-col"
                   data-queue-tone={firstPromptRow?.state === 'failed' ? 'failed' : 'pending'}
                 >
-                  {/* Runtime startup has not started an agent response. */}
+                  {/* The composer shows Stop from this send on, so the one
+                      Thinking row sits here, above any queued bubbles. A failed
+                      delivery shows its cause instead. */}
                   <OptimisticTurn
                     text={buildOptimisticPromptTextWithUploads(
                       effectiveSubmission.text,
@@ -625,7 +627,7 @@ export function InstantSessionShell({
                     onFileClick={openFileInComputer}
                     deferPreview
                     sessionId={sessionId}
-                    busy={false}
+                    busy={firstPromptRow?.state !== 'failed'}
                     leadingStatus={
                       firstPromptRow?.state === 'failed' ? (
                         <QueuedPromptFailure

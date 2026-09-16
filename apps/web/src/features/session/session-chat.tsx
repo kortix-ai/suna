@@ -69,11 +69,11 @@ import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
 import {
+  fallbackBusyRowAfterTurnId,
   freshSendHint,
-  projectionShowsWork,
-  queuedStatusVisible,
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
+  workingTurnDrawsBusyRow,
 } from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
@@ -766,6 +766,26 @@ export function SessionReportCard({
   );
 }
 
+/**
+ * The error a turn renders, which also hides its own Thinking row: the first
+ * assistant message error, or a dismissed question tool error. `SessionChat`
+ * reads the same answer to decide whether the fallback row must draw instead.
+ */
+function resolveTurnError(turn: Turn): string | undefined {
+  const msgError = getTurnError(turn);
+  if (msgError) return msgError;
+  for (const msg of turn.assistantMessages) {
+    for (const part of msg.parts) {
+      if (part.type !== 'tool') continue;
+      const tool = part as ToolPart;
+      if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
+        return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
+      }
+    }
+  }
+  return undefined;
+}
+
 function SessionTurnImpl({
   turn,
   isLast,
@@ -945,23 +965,7 @@ function SessionTurnImpl({
     [allParts, working, pricingLookup],
   );
 
-  // Turn error — derived directly from message data (same approach as SolidJS reference).
-  // Falls back to checking for dismissed question tool errors when no message-level error exists.
-  const turnError = useMemo(() => {
-    const msgError = getTurnError(turn);
-    if (msgError) return msgError;
-    // Check for dismissed question tool errors
-    for (const msg of turn.assistantMessages) {
-      for (const part of msg.parts) {
-        if (part.type !== 'tool') continue;
-        const tool = part as ToolPart;
-        if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
-          return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
-        }
-      }
-    }
-    return undefined;
-  }, [turn]);
+  const turnError = useMemo(() => resolveTurnError(turn), [turn]);
 
   /**
    * Was the turn ACTUALLY aborted, as opposed to failing with a message that
@@ -3426,6 +3430,18 @@ export function SessionChat({
     }
     return byId;
   }, [promptInbox.prompts]);
+  // Every id a prompt the inbox is delivering right now can render under,
+  // including the synthetic `queued-` id a bubble with no message id uses.
+  const deliveringPromptIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const prompt of promptInbox.prompts) {
+      if (prompt.state !== 'delivering') continue;
+      if (prompt.message_id) ids.add(prompt.message_id);
+      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
+      ids.add(`queued-${prompt.prompt_id}`);
+    }
+    return ids;
+  }, [promptInbox.prompts]);
   const unrunTurnIds = useMemo(() => {
     const ids = new Set<string>();
     for (const prompt of promptInbox.prompts) {
@@ -3487,8 +3503,9 @@ export function SessionChat({
       workingTurnId: wt.userMessage.info.id,
       activeTurnId: working.turnId,
       pendingDelivery: !!working.pendingDelivery,
+      deliveringBelow: workingTurn.pendingTurnIds.some((id) => deliveringPromptIds.has(id)),
     });
-  }, [turns, workingTurn, working.turnId, working.pendingDelivery]);
+  }, [turns, workingTurn, working.turnId, working.pendingDelivery, deliveringPromptIds]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -3514,30 +3531,44 @@ export function SessionChat({
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
   // see `resolveLastTurnWorking` for the split and the defect it removes.
-  const queuedStatusOnScreen = useMemo(
-    () =>
-      queuedStatusVisible({
-        turns,
-        pendingTurnIds,
-        pendingPromptIds: pendingPromptsByMessageId,
-        queueListRows: queueRows.rows.length + queueRows.heldCount,
-      }),
-    [turns, pendingTurnIds, pendingPromptsByMessageId, queueRows],
-  );
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
-    // same frame instead of the card flickering 300ms earlier. Pending delivery
-    // yields Thinking only to a queued status the user can see.
-    projectionBusy: projectionShowsWork({
-      busy: isBusy,
-      pendingDelivery: !!working.pendingDelivery,
-      queuedStatusVisible: queuedStatusOnScreen,
-    }),
+    // same frame instead of the card flickering 300ms earlier. It is the SAME
+    // value the composer's Stop reads: while Stop shows, a Thinking row shows.
+    projectionBusy: isBusy,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
-  const someTurnDrawsBusyRow =
-    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;
+  const workingTurnHasError = useMemo(() => {
+    const wt = turns.find((t) => t.userMessage.info.id === workingTurn.workingTurnId);
+    return !!wt && !!resolveTurnError(wt);
+  }, [turns, workingTurn.workingTurnId]);
+  const someTurnDrawsBusyRow = workingTurnDrawsBusyRow({
+    lastTurnWorking,
+    workingTurnId: workingTurn.workingTurnId,
+    suppressed: suppressWorkingTurnBusy,
+    workingTurnHasError,
+    isRetrying: !!getRetryInfo(sessionStatus),
+  });
+  const showFallbackBusyRow =
+    lastTurnWorking &&
+    !someTurnDrawsBusyRow &&
+    !(
+      showFirstPromptPreview &&
+      firstPromptSource &&
+      queuedSyntheticMessages.length === 0 &&
+      turns.length === 0
+    );
+  const fallbackBusyRowTurnId = useMemo(
+    () =>
+      fallbackBusyRowAfterTurnId({
+        turns,
+        pendingTurnIds,
+        pendingPromptIds: pendingPromptsByMessageId,
+        deliveringPromptIds,
+      }),
+    [turns, pendingTurnIds, pendingPromptsByMessageId, deliveringPromptIds],
+  );
   /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
@@ -5774,6 +5805,13 @@ export function SessionChat({
                                   }
                                 />
                               )}
+                              {/* Queued bubbles follow this turn. The waiting
+                                  row stays above them, where the working turn
+                                  draws its own, so it never jumps. */}
+                              {showFallbackBusyRow &&
+                                fallbackBusyRowTurnId === turn.userMessage.info.id && (
+                                  <SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />
+                                )}
                             </TurnViewport>
                           );
                         })}
@@ -5841,14 +5879,7 @@ export function SessionChat({
                     />
                     {/* Active runtime work can precede its transcript turn. Pending
                         delivery already has a queued status and shows no thinking row. */}
-                    {lastTurnWorking &&
-                      !someTurnDrawsBusyRow &&
-                      !(
-                        showFirstPromptPreview &&
-                        firstPromptSource &&
-                        queuedSyntheticMessages.length === 0 &&
-                        turns.length === 0
-                      ) && (
+                    {showFallbackBusyRow && fallbackBusyRowTurnId === null && (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble

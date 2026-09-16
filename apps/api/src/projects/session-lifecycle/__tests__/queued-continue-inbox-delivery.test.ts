@@ -50,6 +50,7 @@ const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) &
 let completeDuringRequeue = false;
 let deliveryStarts: string[] = [];
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
@@ -308,6 +309,10 @@ mock.module('../store', () => ({
   },
   MAX_LANDING_RETRIES: 2,
   markInboxDeliveryStarted: async (commandId: string) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async (commandId: string, availableAt: Date) => {
+    unverifiedRequeues.push({ commandId, availableAt });
+    simulatedInFlightCommands.delete(commandId);
+  },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
@@ -447,6 +452,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 beforeEach(() => {
   pauseAfterPosts = null;
   requeues = [];
+  unverifiedRequeues = [];
   completeDuringRequeue = false;
   deliveryStarts = [];
   unlandedRequeues = [];
@@ -1185,6 +1191,52 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const openCodeId =
       (BigInt(NOW_MS - 60_000) * BigInt(0x1000)) & BigInt(0xffffffffffff);
     expect(wireIdTime(sent)!).toBeGreaterThan(openCodeId);
+  });
+
+  test('a redelivery whose answered check cannot read the transcript is not re-sent blind', async () => {
+    // 2026-09-17, local: a live turn was settled `runtime_gone` and its prompt
+    // redelivered. The transcript held two replies to it, but the full read
+    // failed and the guard failed open, so the user saw the prompt twice.
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          ...baseRow().payload,
+          remintOnDelivery: true,
+          redeliveries: 1,
+          redeliveredMessageIds: [NEWER_TRANSCRIPT_ID],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(unverifiedRequeues).toHaveLength(1);
+    expect(unverifiedRequeues[0].availableAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test('an answered check that stays unreadable is bounded, so the prompt is not stranded', async () => {
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, remintOnDelivery: true, redeliveries: 1 },
+        result: { answer_check_failures: 3 },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(unverifiedRequeues).toEqual([]);
+    expect(capturedBodies).toHaveLength(1);
   });
 
   test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {

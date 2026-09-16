@@ -4,6 +4,7 @@ import {
   _electron,
   type Locator,
   type ElectronApplication,
+  type Page,
 } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -89,6 +90,18 @@ const authOptions = {
 };
 
 /** Check rendered geometry: a source-string assertion cannot detect collapsed flex lists. */
+/** Stop and Thinking read one busy value: exactly one row while Stop shows, none otherwise. */
+async function expectThinkingMatchesStop(page: Page) {
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  const rows = page.getByTestId("session-busy-indicator");
+  await expect
+    .poll(async () => {
+      const stopVisible = await stop.isVisible();
+      return (await rows.count()) === (stopVisible ? 1 : 0);
+    })
+    .toBe(true);
+}
+
 async function expectSeparateRows(rows: Locator) {
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   const boxes = await rows.evaluateAll((elements) =>
@@ -677,8 +690,8 @@ for (const runtime of runtimes) {
         }
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
         await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
+        await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
-          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);
         }
         const row = page
@@ -799,7 +812,7 @@ for (const runtime of runtimes) {
           expect((await heldRequest).ok()).toBe(true);
           await page.reload();
           await expect(pending).toBeVisible({ timeout: 60_000 });
-          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          await expectThinkingMatchesStop(page);
           const held = await api<{ prompts: Array<{ prompt_id: string; state: string; reason: string }> }>(
             auth.access_token, "GET", `/projects/${project.id}/sessions/${sessionId}/prompts`,
           );
@@ -811,7 +824,7 @@ for (const runtime of runtimes) {
           );
           await page.reload();
           await expect(page.getByText(/the session was not ready in time/)).toBeVisible({ timeout: 60_000 });
-          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          await expectThinkingMatchesStop(page);
           bootSessionId = await createDatabaseSession(loadEnv(), {
             projectId: project.id,
             accountId: accounts[0].account_id,
@@ -838,10 +851,10 @@ for (const runtime of runtimes) {
               .getByRole("paragraph")
               .getByText("First prompt still starting", { exact: true }),
           ).toBeVisible();
-          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          await expectThinkingMatchesStop(page);
           await page.reload();
           await expect(input).toBeVisible({ timeout: 30_000 });
-          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          await expectThinkingMatchesStop(page);
           await expect(
             page
               .getByRole("paragraph")

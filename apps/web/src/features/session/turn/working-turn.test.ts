@@ -2,11 +2,22 @@ import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   freshSendHint,
-  projectionShowsWork,
-  queuedStatusVisible,
+  fallbackBusyRowAfterTurnId,
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
+  workingTurnDrawsBusyRow,
 } from './working-turn';
+
+test('a finished answer yields its row to a prompt being delivered below it', () => {
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'answered',
+    activeTurnId: null,
+    pendingDelivery: false,
+    deliveringBelow: true,
+  })).toBe(true);
+});
 
 test('a confirmed active turn keeps its working row through completed intermediate steps', () => {
   expect(shouldSuppressWorkingTurnBusy({
@@ -16,11 +27,20 @@ test('a confirmed active turn keeps its working row through completed intermedia
     activeTurnId: 'running',
     pendingDelivery: false,
   })).toBe(false);
+  // A null active id is missing evidence, not another turn. Suppressing on it
+  // moved Thinking below the Quick Queue bubbles for a frame (2026-09-17).
   expect(shouldSuppressWorkingTurnBusy({
     hasPendingTurns: true,
     newestAssistantCompleted: true,
     workingTurnId: 'running',
     activeTurnId: null,
+    pendingDelivery: false,
+  })).toBe(false);
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'queued-next',
     pendingDelivery: false,
   })).toBe(true);
   expect(shouldSuppressWorkingTurnBusy({
@@ -291,60 +311,78 @@ describe('resolveWorkingTurn — a transcript with no assistant content at all',
   });
 });
 
-describe('pending delivery hides Thinking only behind a visible queued status', () => {
-  const pendingPrompt = new Set(['queued-bubble']);
+describe('the fallback Thinking row stays above the queue', () => {
+  const queued = new Set(['queued-a', 'queued-b']);
 
-  test('a delivered prompt with no queued status keeps Thinking under a live Stop', () => {
-    // 2026-09-17, local: the Quick Queue interrupt ended the previous turn and
-    // the next prompt ran for 11s. No bubble was pending, yet the working
-    // projection still reported pending delivery, so only Stop showed work.
-    const visible = queuedStatusVisible({
-      turns: [turn('answered', 'done'), turn('running')],
+  test('it follows the last turn before the first queued bubble', () => {
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('done', 'done'), turn('running', 'done'), turn('queued-a'), turn('queued-b')],
       pendingTurnIds: new Set(),
-      pendingPromptIds: new Set(),
-      queueListRows: 0,
-    });
-    expect(visible).toBe(false);
-    expect(projectionShowsWork({ busy: true, pendingDelivery: true, queuedStatusVisible: visible })).toBe(true);
-  });
-
-  test('a pending transcript bubble or Queue List row explains the wait instead', () => {
-    const bubble = queuedStatusVisible({
-      turns: [turn('answered', 'done'), turn('queued-bubble')],
-      pendingTurnIds: new Set(),
-      pendingPromptIds: pendingPrompt,
-      queueListRows: 0,
-    });
-    const listRow = queuedStatusVisible({
-      turns: [turn('answered', 'done')],
-      pendingTurnIds: new Set(),
-      pendingPromptIds: new Set(),
-      queueListRows: 1,
-    });
-    const unreached = queuedStatusVisible({
-      turns: [turn('answered', 'done'), turn('later')],
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('running'), turn('later')],
       pendingTurnIds: new Set(['later']),
       pendingPromptIds: new Set(),
-      queueListRows: 0,
-    });
-    for (const visible of [bubble, listRow, unreached]) {
-      expect(visible).toBe(true);
-      expect(projectionShowsWork({ busy: true, pendingDelivery: true, queuedStatusVisible: visible })).toBe(false);
-    }
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
   });
 
-  test('an answered turn does not count as a queued bubble', () => {
-    expect(queuedStatusVisible({
-      turns: [turn('queued-bubble', 'open')],
+  test('a prompt being delivered owns the row, directly under its bubble', () => {
+    // 2026-09-17, local: the previous answer had finished and the next Quick
+    // Queue prompt was mid-delivery (9 attachments). Thinking sat under the
+    // finished answer, above the prompt the agent was about to run.
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('answered', 'done'), turn('queued-a'), turn('queued-b')],
       pendingTurnIds: new Set(),
-      pendingPromptIds: pendingPrompt,
-      queueListRows: 0,
-    })).toBe(false);
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(['queued-a']),
+    })).toBe('queued-a');
   });
 
-  test('ordinary work follows busy alone', () => {
-    expect(projectionShowsWork({ busy: true, pendingDelivery: false, queuedStatusVisible: true })).toBe(true);
-    expect(projectionShowsWork({ busy: false, pendingDelivery: false, queuedStatusVisible: false })).toBe(false);
-    expect(projectionShowsWork({ busy: false, pendingDelivery: true, queuedStatusVisible: false })).toBe(false);
+  test('with no queue, or a queue that starts the transcript, it stays at the end', () => {
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('done', 'done'), turn('running')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(),
+      deliveringPromptIds: new Set(),
+    })).toBeNull();
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('queued-a'), turn('queued-b')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(),
+    })).toBeNull();
+  });
+});
+
+describe('a busy session always draws exactly one Thinking row', () => {
+  test('an aborted reply finishes its turn, so the running prompt below is the working turn', () => {
+    // 2026-09-17, local: a Quick Queue interrupt aborted the previous answer.
+    // The live stream stalled, so the page had the aborted reply without its
+    // completion stamp and no reply to the running prompt yet. The working
+    // turn landed on the aborted answer, which never draws Thinking.
+    const aborted = {
+      userMessage: { info: { id: 'answered' } },
+      assistantMessages: [
+        { info: { time: { completed: 1 } } },
+        { info: { time: {}, error: { name: 'MessageAbortedError' } } },
+      ],
+    };
+    expect(resolveWorkingTurn({
+      turns: [aborted, turn('running')],
+      hintMessageId: null,
+    })).toEqual({ workingTurnId: 'running', pendingTurnIds: [] });
+  });
+
+  test('a working turn that cannot draw its row hands it to the fallback', () => {
+    const base = { lastTurnWorking: true, workingTurnId: 'turn', suppressed: false, isRetrying: false };
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false })).toBe(true);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: true, isRetrying: true })).toBe(true);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, suppressed: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, workingTurnId: null })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, lastTurnWorking: false })).toBe(false);
   });
 });

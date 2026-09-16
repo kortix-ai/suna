@@ -6,7 +6,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
-import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -372,6 +372,34 @@ export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Pr
  * sent stale; the payload merge (`||`) is the durable half.
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
+/**
+ * Put back a REDELIVERY whose already-answered check could not read the
+ * transcript. A prompt that was posted before may already have its answer on
+ * record; re-sending it blind shows the user the same prompt twice. The row
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (engine.ts)
+ * the drain sends it anyway, so an unreadable box cannot strand the prompt.
+ */
+export async function requeueUnverifiedRedelivery(
+  commandId: string,
+  availableAt: Date,
+): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || '{"admission_reason": "answer_unverified"}'::jsonb
+        || jsonb_build_object('answer_check_failures',
+             COALESCE((${sessionLifecycleCommands.result}->>'answer_check_failures')::int, 0) + 1)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
+}
 
 /** How many times a prompt the runtime accepted-but-never-wrote is re-sent
  *  under a fresh key before it is dead-lettered for the user to retry. */
@@ -1056,6 +1084,7 @@ export async function claimDueLifecycleCommands(input: {
     )
     .orderBy(
       asc(sessionLifecycleCommands.availableAt),
+      asc(inboxLaneSql),
       asc(inboxSentAtSql),
       asc(inboxWireIdSql),
       asc(sessionLifecycleCommands.commandId),

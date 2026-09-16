@@ -207,8 +207,9 @@ export async function admitInboxPrompt(
   // into that turn: the terminal relay admits it as its own turn afterward.
   let sandbox = await deps.readSandbox(row.sessionId);
   if (sessionHoldsTurnAuthority(sandbox)) {
-    // Only the head may reconcile or arm an interrupt. A later Quick Queue
-    // row must not stop a turn before an older Queue List row is served.
+    // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
+    // of every Queue List row (`inbox-order.ts`), so its head arms the
+    // interrupt even while older Queue List entries wait.
     const isHead =
       !(await deps.hasInFlightPrompt(row.sessionId, row.commandId)) &&
       !(await deps.hasOlderPendingPrompt(row.sessionId, row));

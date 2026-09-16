@@ -29,24 +29,37 @@ function between(source: string, start: string, end: string): string {
  */
 describe('the waiting row has a fallback when no turn owns it', () => {
   test('the fallback knows exactly when a turn is drawing the row itself', () => {
-    expect(chat).toContain(
-      'const someTurnDrawsBusyRow =\n    lastTurnWorking && workingTurn.workingTurnId !== null && !suppressWorkingTurnBusy;',
-    );
+    const gate = between(chat, 'const someTurnDrawsBusyRow = workingTurnDrawsBusyRow({', '});');
+    expect(gate).toContain('lastTurnWorking,');
+    expect(gate).toContain('workingTurnId: workingTurn.workingTurnId,');
+    expect(gate).toContain('suppressed: suppressWorkingTurnBusy,');
+    // An errored working turn hides its own row, so the fallback must draw.
+    expect(gate).toContain('workingTurnHasError,');
+    expect(gate).toContain('isRetrying: !!getRetryInfo(sessionStatus),');
+  });
+
+  test('Stop and Thinking read one busy value', () => {
+    // The composer's Stop reads `isBusy`. Any extra gate on the row reopened the
+    // Stop-without-Thinking state users kept reporting.
+    const busy = between(chat, 'const lastTurnWorking = resolveLastTurnWorking({', '});');
+    expect(busy).toContain('projectionBusy: isBusy,');
+    expect(chat).toContain('isBusy={isBusy}');
   });
 
   test('the trailing row is gated on that, not on an empty transcript', () => {
-    const row = between(chat, '{lastTurnWorking &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
+    const row = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
     // The old gate. `turns.length === 0` is why a session with one queued
     // bubble drew nothing at all.
     expect(chat).not.toContain('{isBusy && turns.length === 0 && <SessionBusyIndicator');
+    expect(chat).toContain('const showFallbackBusyRow =\n    lastTurnWorking &&\n    !someTurnDrawsBusyRow &&');
     expect(row).toContain('<SessionBusyIndicator');
     expect(row).toContain('sessionId={sessionId}');
   });
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
-    const row = between(chat, '{lastTurnWorking &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
+    const gate = between(chat, 'const showFallbackBusyRow =', 'const fallbackBusyRowTurnId');
     // First prompts and Enter submissions share this stand-in exclusion.
-    expect(row).toMatch(
+    expect(gate).toMatch(
       /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
     );
     expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
@@ -56,8 +69,14 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   });
 
   test('it sits where the stand-in sat, so the crossfade does not move it', () => {
-    const row = between(chat, '{lastTurnWorking &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
+    const row = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
     expect(row).toContain("className={turns.length === 0 ? undefined : 'mt-6'}");
+  });
+
+  test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
+    const inTurn = between(chat, '{showFallbackBusyRow &&\n                                fallbackBusyRowTurnId === turn.userMessage.info.id', '</TurnViewport>');
+    expect(inTurn).toContain('<SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />');
+    expect(chat).toContain('fallbackBusyRowAfterTurnId({');
   });
 });
 

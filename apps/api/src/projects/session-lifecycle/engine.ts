@@ -1175,6 +1175,14 @@ interface InboxTranscriptState {
 /** Newest-N read for placement. Only the tip decides where a re-mint lands,
  *  and a first delivery has no delivered id an `answered` check could match. */
 const INBOX_TRANSCRIPT_TIP_LIMIT = 8;
+/** A full read serves only the redelivery answered check. A long transcript
+ *  with inline attachments is megabytes, so it gets more than the tip's 5s. */
+const INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS = 15_000;
+const INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS = 5_000;
+/** First wait before re-checking an unreadable redelivery; doubles per failure. */
+const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
+/** How many redelivery answered-checks may fail before the prompt is sent anyway. */
+const MAX_ANSWER_CHECK_FAILURES = 3;
 
 async function readInboxTranscriptState(
   row: SessionLifecycleCommandRow,
@@ -1195,7 +1203,9 @@ async function readInboxTranscriptState(
     const res = await fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(
+        opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
+      ),
     });
     if (!res.ok) return empty;
     const tip = parsePlacementTip(await res.json().catch(() => null));
@@ -1816,6 +1826,31 @@ export async function executeQueuedContinue(
     }
     const transcript = await transcriptPromise;
     tl.mark('transcript-read');
+    // A prompt POSTed before may already be answered. An unreadable transcript
+    // cannot prove it is not, so the redelivery waits and re-checks instead of
+    // re-sending blind, up to MAX_ANSWER_CHECK_FAILURES times. A first delivery
+    // was never posted, so its fail-open read stays safe.
+    const alreadyPosted = deliveryAttempt > 0 || redeliveries > 0;
+    const answerCheckFailures = Number(
+      (row.result as { answer_check_failures?: unknown } | null)?.answer_check_failures ?? 0,
+    );
+    if (
+      alreadyPosted &&
+      !transcript.read &&
+      answerCheckFailures < MAX_ANSWER_CHECK_FAILURES
+    ) {
+      console.warn('[session-lifecycle] redelivery waits — the answered check could not read the transcript', {
+        sessionId: row.sessionId,
+        commandId: row.commandId,
+        redeliveries,
+        answerCheckFailures,
+      });
+      await lifecycleStore.requeueUnverifiedRedelivery(
+        row.commandId,
+        new Date(Date.now() + ANSWER_CHECK_RETRY_BASE_MS * 2 ** answerCheckFailures),
+      );
+      return 'queued';
+    }
     // The already-answered guard is not redelivery-only. Every re-mint path
     // re-reads the transcript, and an assistant reply parented on one of THIS
     // prompt's delivered ids proves the same thing on all of them: the turn

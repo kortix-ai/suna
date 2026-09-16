@@ -5778,3 +5778,78 @@ those fields were populated, rejecting the entire provisioning request.
 Validate the provider's actual mappings with populated values before declaring synchronization
 healthy. Keep discovery schemas, create payloads, filtered PATCH paths, removals, and read-back
 responses consistent. SCIM-15 and user-profile.test.ts enforce this contract.
+
+### 2026-09-17 — Quick Queue must not wait behind Queue List to interrupt
+
+A local session had an older Queue List entry and a newer Quick Queue entry
+waiting on one active response. Admission armed the tool-boundary interrupt
+only for the FIFO head, and the head was the Queue List entry. The Quick Queue
+entry recorded 72 `turn_active` refusals while the response kept working.
+
+Quick Queue is a lane ahead of Queue List. The inbox order key is
+`(lane, clientSentAtMs, wireMessageId, commandId)`, with lane 1 only for an
+explicit `placement: 'composer'`. A first prompt, an automation row, or an older
+producer has no placement and keeps its send-order place ahead of Queue List.
+Every listing, admission, batch, strand repair, promotion, and claim uses this key.
+
+Enforcement: `inbox-order.test.ts` covers lane order and rows without placement.
+`integration-prompt-inbox.test.ts` proves listing, interrupt arming, refusal of
+the older Queue List row, and terminal promotion against real PostgreSQL.
+
+### 2026-09-17 — A live runtime's handoff is visible work
+
+A Quick Queue interrupt ended one turn. The next prompt's five attachments took
+9.6s to reach the running runtime. Stop showed and the tinted bubble waited, but
+Thinking was hidden because the projection reported pending delivery.
+
+Pending delivery hides Thinking only while a queued status is visible and no
+runtime is ready (boot, parked, unreachable). With `runtimeReady` true, a busy
+session always shows Thinking, placed above the queued bubbles.
+
+Enforcement: `working-turn.test.ts` covers the live-runtime handoff and keeps the
+boot and no-runtime cases hidden.
+
+### 2026-09-17 — A redelivery must not re-send when its answered check cannot read
+
+A local session settled a running turn `runtime_gone` at 23:08:58 and redelivered
+its prompt. The daemon was still running that turn and interrupted it 12s later.
+OpenCode's transcript held two replies to the first delivery, so the drain's
+already-answered guard would have dropped the redelivery. The guard read the
+full transcript with a 5s timeout and failed open, so the prompt ran twice.
+
+A prompt already POSTed once (`deliveryAttempt` or `redeliveries` above zero)
+never re-sends on an unreadable transcript. It waits 5s, 10s, then 20s and
+counts `answer_check_failures`; after three failures it sends, so an unreadable
+box cannot strand it. First deliveries keep the fail-open read. The full read
+gets 15s. The daemon's turn-end relay was also failing on a stale tunnel URL,
+which leaves the API to infer turn ends by polling.
+
+Enforcement: `queued-continue-inbox-delivery.test.ts` covers the blocked blind
+re-send and the bound; `integration-prompt-inbox.test.ts` covers the requeue SQL.
+
+### 2026-09-17 — Stop visible means exactly one Thinking row
+
+Three reports in one day showed Stop with no Thinking row. Each gate added to the
+row reopened the gap: pending delivery with a visible queued bubble, and a working
+turn chosen from an aborted reply. With a stalled live stream the tab held a Quick
+Queue interrupt's aborted reply without its completion stamp, so the working-turn
+fallback picked that turn, and a turn with an error never draws Thinking.
+
+The row reads the same `isBusy` value as Stop, with no extra gate. An errored reply
+finishes its turn when choosing the working turn. When the working turn cannot draw
+its row (no id, suppressed, or an unretried error), the fallback row draws above
+any queued bubbles. The boot shell's first prompt draws the row while it is busy.
+
+Enforcement: `working-turn.test.ts` (aborted reply, fallback hand-off),
+`session-chat-busy-row-fallback.test.ts` (one busy value), and journey 27's
+`expectThinkingMatchesStop` at every queue checkpoint.
+
+### 2026-09-17 — Thinking follows the prompt being delivered
+
+With the previous answer finished and the next Quick Queue prompt mid-delivery
+(`delivery_started_at` set, 9 attachments, no turn yet), Thinking sat under the
+finished answer, above the prompt the agent was about to run. A prompt whose inbox
+state is `delivering` is the work in progress: the fallback row renders directly
+under its bubble, and a finished answer above it yields its own row.
+
+Enforcement: `working-turn.test.ts` covers the delivering anchor and the yield.

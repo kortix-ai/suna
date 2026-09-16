@@ -784,9 +784,11 @@ models remain billable. Subscription coverage does not include sandbox compute.
 ### Durable prompt placement
 
 `createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
-`placement: 'transcript' | 'composer'`. Both use the same server FIFO and wait
-for the active turn to finish. Placement controls where a client presents the
-pending message. Legacy rows default to `composer`.
+`placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
+every `composer` (Queue List) entry and ends the active response after its
+current tool call. `composer` waits for the active response to finish. Each
+placement keeps submission order. A row without placement keeps its submission
+order ahead of `composer` entries and is presented as `composer`.
 
 `SessionPrompt.full_text` preserves complete text for rendering after reload;
 `text` remains the bounded preview. List responses expose attachment names and
@@ -795,7 +797,8 @@ parts and captured model options for undo.
 
 Queued work keeps `useSessionWorking().state` at `working` so it can be stopped.
 `pendingDelivery: true` distinguishes a send waiting for runtime delivery from an
-active agent response. Render pending status for that phase, not a thinking indicator.
+active agent response. The web app still shows one working indicator whenever the
+session is `working`, so Stop is never the only sign of work.
 A timed-out or skipped cancel does not acknowledge an abort receipt.
 
 A worker claim only checks admission and keeps the prompt waiting. Delivery starts
@@ -804,7 +807,7 @@ even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
 Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
-advance automatically in submission order. Queue List entries stay editable
+advance automatically; Quick Queue entries run first. Queue List entries stay editable
 until delivery begins. Stop pauses pending entries; Resume releases that hold.
 
 Pass the inbox IDs, in queue order, as `pendingMessageIds` to

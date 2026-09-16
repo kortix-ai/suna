@@ -1,3 +1,5 @@
+import { showTurnBusyIndicator } from '../turn-busy-visibility';
+
 /**
  * WHICH turn is the one the agent is working on.
  *
@@ -37,7 +39,9 @@
 
 interface TurnLike {
   userMessage: { info: { id: string } };
-  assistantMessages: ReadonlyArray<{ info: { time?: { completed?: number } | object } }>;
+  assistantMessages: ReadonlyArray<{
+    info: { time?: { completed?: number } | object; error?: unknown };
+  }>;
 }
 
 const completedAt = (info: { time?: object }): number | undefined =>
@@ -52,51 +56,85 @@ export interface WorkingTurnResolution {
 }
 
 /** A completed assistant message can be an intermediate step of an active
- * turn. Only a finished turn without active-turn evidence yields its row to
- * the trailing busy indicator while later prompts wait. */
+ * turn. The working turn yields its row only on evidence: pending delivery, or
+ * a projection naming a different active turn. A null active id is a gap
+ * between readings; suppressing on it moved Thinking below queued bubbles. */
 export function shouldSuppressWorkingTurnBusy(input: {
   hasPendingTurns: boolean;
   newestAssistantCompleted: boolean;
   workingTurnId: string;
   activeTurnId: string | null;
   pendingDelivery: boolean;
+  /** A queued prompt after this turn is being delivered to the runtime now. */
+  deliveringBelow?: boolean;
 }): boolean {
   if (!input.hasPendingTurns || !input.newestAssistantCompleted) return false;
-  return input.pendingDelivery || input.activeTurnId !== input.workingTurnId;
+  return (
+    input.pendingDelivery ||
+    !!input.deliveringBelow ||
+    (input.activeTurnId !== null && input.activeTurnId !== input.workingTurnId)
+  );
 }
 
-/**
- * Is a queued status on screen? It mirrors the transcript's `pending` bubble
- * rule and counts Queue List rows, including a held queue's Resume row.
- */
-export function queuedStatusVisible(input: {
-  turns: ReadonlyArray<TurnLike>;
+interface QueuedTurnInput {
   pendingTurnIds: ReadonlySet<string>;
   /** Every id an inbox prompt can render under. */
   pendingPromptIds: { has(id: string): boolean };
-  queueListRows: number;
-}): boolean {
-  if (input.queueListRows > 0) return true;
-  return input.turns.some((turn) => {
-    const id = turn.userMessage.info.id;
-    return (
-      input.pendingTurnIds.has(id) ||
-      (turn.assistantMessages.length === 0 && input.pendingPromptIds.has(id))
-    );
-  });
+}
+
+/** Ids a prompt the inbox is delivering right now can render under. */
+interface DeliveringTurnInput {
+  deliveringPromptIds: { has(id: string): boolean };
+}
+
+/** The transcript's `pending` bubble rule for a turn nobody is working on. */
+function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
+  const id = turn.userMessage.info.id;
+  return (
+    input.pendingTurnIds.has(id) ||
+    (turn.assistantMessages.length === 0 && input.pendingPromptIds.has(id))
+  );
 }
 
 /**
- * Does the transcript show the session's work? Pending delivery hides
- * Thinking only while a queued status explains the wait. Without one, the
- * composer's Stop would be the only sign that anything is running.
+ * Where the fallback Thinking row goes when no turn draws its own. A prompt
+ * the inbox is delivering is the work in progress, so the row sits directly
+ * under its bubble. Otherwise it follows the last turn before the first queued
+ * bubble, so it never sits under prompts the agent has not reached. `null` puts
+ * it at the transcript's end: nothing is queued, or the queue starts the
+ * transcript.
  */
-export function projectionShowsWork(input: {
-  busy: boolean;
-  pendingDelivery: boolean;
-  queuedStatusVisible: boolean;
+export function fallbackBusyRowAfterTurnId(
+  input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike> },
+): string | null {
+  const delivering = input.turns.find((turn) =>
+    input.deliveringPromptIds.has(turn.userMessage.info.id),
+  );
+  if (delivering) return delivering.userMessage.info.id;
+  const firstQueued = input.turns.findIndex((turn) => isQueuedTurn(turn, input));
+  if (firstQueued <= 0) return null;
+  return input.turns[firstQueued - 1].userMessage.info.id;
+}
+
+/**
+ * Does the working turn draw the Thinking row itself? It does not when it has
+ * no id, when a finished answer yields it to the queue, or when its reply
+ * reported an error that is not being retried. Then the fallback row draws, so
+ * a busy session (Stop visible) never shows zero rows.
+ */
+export function workingTurnDrawsBusyRow(input: {
+  lastTurnWorking: boolean;
+  workingTurnId: string | null;
+  suppressed: boolean;
+  workingTurnHasError: boolean;
+  isRetrying: boolean;
 }): boolean {
-  return input.busy && !(input.pendingDelivery && input.queuedStatusVisible);
+  if (!input.lastTurnWorking || input.workingTurnId === null || input.suppressed) return false;
+  return showTurnBusyIndicator({
+    working: true,
+    hasError: input.workingTurnHasError,
+    isRetrying: input.isRetrying,
+  });
 }
 
 /**
@@ -176,7 +214,9 @@ export function resolveWorkingTurn(input: {
   if (newestWithContent >= 0) {
     const t = turns[newestWithContent];
     const newest = t.assistantMessages[t.assistantMessages.length - 1];
-    if (!completedAt(newest.info)) return pick(newestWithContent);
+    // An errored reply (an abort, a provider failure) ended its turn even when
+    // its completion stamp has not reached this tab.
+    if (!completedAt(newest.info) && !newest.info.error) return pick(newestWithContent);
   }
 
   // Rule 3, with the one fact the transcript cannot hold: the SERVER still has
