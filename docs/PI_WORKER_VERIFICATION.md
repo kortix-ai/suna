@@ -1,4 +1,4 @@
-# Pi worker verification — 2026-09-07
+# Pi worker verification
 
 Branch: `pi-worker`. No merge to `main`, `staging`, or `prod`.
 Draft PR: [#6998](https://github.com/kortix-ai/suna/pull/6998).
@@ -6,6 +6,7 @@ Preview: [pi.kortix.com](https://pi.kortix.com).
 Architecture: [walkthrough, Q&A, and diagram](./PI_WORKER_WALKTHROUGH.md).
 
 Latest UI and streaming checks: [runtime UI verification](./PI_RUNTIME_UI_VERIFICATION.md).
+Latest integration: [September 16 acceptance](#committed-fixture-acceptance-at-d18343d8d1).
 
 ## Native Pi terminal — 2026-09-09
 
@@ -2461,3 +2462,40 @@ The patched test also passes against the unchanged `52f05ed28b` runtime, 1/1
 with zero skips in 22.9 seconds:
 [deployed fixture proof](https://pi.kortix.com/_tests/20260916105208-g0ugmg/report.html).
 The full browser result and committed-fixture census follow separately.
+
+### Committed-fixture acceptance at `d18343d8d1`
+
+[Deployment 35087659818](https://github.com/kortix-ai/suna/actions/runs/35087659818)
+succeeds. API health, checkout, and all three application image tags match
+`d18343d8d1c93b7536facd4f22957cb78314961d`. This commit changes the attachment
+fixture and documentation only. Application code matches `52f05ed28b`.
+
+- `pnpm test -- --target-api-full`: 471 passed, zero failed, four existing skips.
+  The root lane exits zero in 310.5 seconds. `SESS-31` passes within this census.
+  [Exact-source API/CLI report](https://pi.kortix.com/_tests/20260916110248-z8k25n/report.html).
+- The preceding `pnpm test -- --target-full` browser lane passes all 34 journeys
+  in 806.6 seconds. It includes cold terminal wake and retries across session
+  switches. [Browser report](https://pi.kortix.com/_tests/20260916105400-browser52/index.html).
+  The original full invocation still exits one because its API fixture failed.
+  The corrected API lane replaces that failure; it does not rewrite the old run.
+- All 61 archived reports are restored. The frontend has a 4 GiB limit, zero
+  restarts, and no OOM event during the deployed runs.
+
+The next CI package run exposes a separate Bun 1.3.14 native failure:
+`EEXIST: file already exists, epoll_ctl` while evaluating the skipped ledger
+integration suite. The migration runner now imports in `beforeAll`, only when
+that suite is enabled. The final Linux DB package run passes 283 tests with
+22 configured skips. Enabling the real PostgreSQL fixture passes all 21 focused
+unit/integration tests on Linux and locally. DB typecheck passes. This does not
+establish a general fix for Bun's earlier subprocess timeouts.
+
+The first local DB rerun has three disposable-container readiness failures.
+A retained, owned diagnostic container proves `initdb` exits one with
+`No space left on device`, without an OOM kill. Removing one verified unused
+Supabase Studio image cache restores capacity. No running container or database
+volume is removed. The unchanged local DB command then passes 283 tests with
+22 configured skips in 18.29 seconds.
+
+Production remains **NOT YET**. Security checks, the remaining parity inventory,
+workspace backup, and matched latency benchmarks remain open. No automatic
+environment deletion or merge to main, staging, or prod is enabled.

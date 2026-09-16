@@ -7277,3 +7277,24 @@ input takes 891 ms locally because each slash starts another suffix search.
 **Rule:** scan backward once, then slice. Preserve legacy whitespace and slash behavior.
 **Enforcer:** `manifest-config-dir.test.ts` requires the adversarial input to finish
 within 100 ms and verifies both runtime names and shared-config precedence.
+
+### Do not initialize migration runners for skipped integration suites (2026-09-16)
+
+**Near-miss:** the Pi package CI run raises Bun's native `EEXIST: epoll_ctl`
+while loading `node-pg-migrate` in a skipped ledger integration suite. Its three
+tests never execute, and suite registration then fails.
+**Rule:** import the runner inside the enabled suite's `beforeAll`. Keep the real
+database assertions and run both disabled and enabled fixture paths.
+**Enforcer:** the DB package command exercises the disabled path. The enabled
+ledger suite verifies strict ordering and that applied Pi SQL never runs twice.
+
+### Retain one owned diagnostic container when readiness hides its exit (2026-09-16)
+
+**Incident:** three local Pi DB checks report only PostgreSQL readiness timeouts.
+Their containers use `--rm`, which removes the startup log after `initdb` exits.
+A retained diagnostic container records `No space left on device`, exit one,
+and `OOMKilled: false`. One unused Studio image cache restores capacity.
+**Rule:** inspect an owned container's exit and log before changing readiness
+budgets. Remove only verified unused, downloadable caches. Preserve database volumes.
+**Enforcer:** ordinary `docker image rm` refuses images referenced by containers.
+The unchanged DB suite must pass after recovery; this incident passes 283 tests.

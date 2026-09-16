@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import {
   migrationLedgerRepairConnectorName,
@@ -19,9 +18,11 @@ const piDatabaseUrl = adminUrl ? new URL(adminUrl) : null;
 if (piDatabaseUrl) piDatabaseUrl.pathname = `/${piDatabaseName}`;
 
 let admin: pg.Client;
+let runner: typeof import('node-pg-migrate')['runner'];
 
 suite('migration ledger rename repair', () => {
   beforeAll(async () => {
+    ({ runner } = await import('node-pg-migrate'));
     admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
     await admin.query(`create database "${databaseName}"`);
