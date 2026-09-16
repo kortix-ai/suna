@@ -26,18 +26,22 @@ import {
  * thing to do. One column with one gap gives the checklist a reason to be
  * where it is, and gives both blocks the same left and right edges.
  *
- * ## Where the column sits: dead centre
+ * ## Where the column sits: on the midline
  *
- * `m-auto` on the column, in a scroller that is a flex column: centred on
- * both axes, the same distance from the top edge as from the bottom. #7103
- * had pinned the group to the page midline (composer's lower edge on the
- * half-way line, heading stacking up, the lower half empty ballast); Marko
- * saw it on dev and asked why it was "not dead center anymore" (2026-09-04).
- * With nothing under the composer any more the column is short, and a short
- * block reads as centred only when it IS centred — anchored to the midline
- * it sits visibly high. When the container is shorter than the column the
- * auto margins resolve to zero and the scroller scrolls from the top, so
- * nothing is ever unreachable.
+ * The scroller splits into two equal halves (`grow basis-0` each — a
+ * percentage basis needs a definite ancestor height and silently falls back
+ * to content height without one). The upper half is
+ * `justify-end`, so the ask group sits at its bottom edge: the composer's
+ * lower edge is on the half-way line and the heading stacks up from it. The
+ * lower half stays empty, which is where the `/` menu opens
+ * (`slashMenuPlacement="below"`). Typing a longer prompt grows the composer
+ * UPWARD, so the heading moves and the midline does not.
+ *
+ * #7112 had moved the group to dead centre (`m-auto`); Jay moved it back to
+ * the midline on 2026-09-16. When the container is shorter than the group,
+ * the upper half stops at its content height (a flex item's `min-height: auto`),
+ * the lower half shrinks to zero,
+ * and the scroller scrolls from the top, so nothing is ever unreachable.
  *
  * Shared by the project index page AND the instant session shell's empty
  * state, so a brand-new session opens onto the identical surface.
@@ -109,15 +113,17 @@ export function ProjectHomeWelcomeBody({
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
       {/*
-        `m-auto` — centred on both axes (see the header). `py-8` is symmetric,
-        so it cannot bias the centre; it is breathing room for a short
-        container, where the auto margins have gone to zero. `shrink-0` so a
-        short container scrolls the column rather than compressing it.
-        `gap-10` separates the ask group from whatever a host puts beneath it.
+        The upper half (see the header). `grow basis-0` takes half the free
+        height, and `min-height: auto` keeps it at least as tall as the group.
+        `justify-end` puts the group at its extreme bottom, on the midline.
+        `mt-8` on the column is breathing room for a short container. It is a
+        margin on the child, not padding on this half: padding adds to a
+        `basis-0` item's size and pushes the group 16px below the midline.
       */}
-      <div className="m-auto flex w-full max-w-3xl shrink-0 flex-col gap-10 py-8 sm:px-4">
-        <div className="flex w-full flex-col gap-6">
-          {/*
+      <div className="flex grow basis-0 flex-col justify-end">
+        <div className="mx-auto mt-8 flex w-full max-w-3xl flex-col gap-10 sm:px-4">
+          <div className="flex w-full flex-col gap-6">
+            {/*
               `w-full` with no `max-w`: the line runs the full column and breaks
               where the column ends, which is the composer's own right edge.
 
@@ -133,9 +139,9 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
-          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
-            {greeting.before}{' '}
-            {/*
+            <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
+              {greeting.before}{' '}
+              {/*
                 A real <button>, not a <span> with an onClick: this is the only
                 interactive thing in the heading, and it has to be reachable by
                 keyboard and announced as pressable. A button is phrasing content,
@@ -154,56 +160,62 @@ export function ProjectHomeWelcomeBody({
                 noise on every load for a control nobody needs to find. The
                 pointer cursor and the tooltip are the whole invitation.
               */}
-            <button
-              type="button"
-              title={tI18nComplete.raw('texteff2ec3d9dcd')}
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                setBurst((current) => ({
-                  id: (current?.id ?? 0) + 1,
-                  // Canvas fractions, measured against the viewport, because
-                  // the confetti canvas is portalled to <body> at `fixed
-                  // inset-0`. Centre of the word, so the burst comes out of
-                  // the name rather than from somewhere near it.
-                  origin: {
-                    x: (rect.left + rect.width / 2) / window.innerWidth,
-                    y: (rect.top + rect.height / 2) / window.innerHeight,
-                  },
-                }));
-              }}
-              className="text-foreground focus-visible:ring-ring inline cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:outline-none"
-            >
-              {displayName}
-            </button>
-            {spaceBefore(greeting.after) ? ' ' : ''}
-            {greeting.after}
-          </h1>
+              <button
+                type="button"
+                title={tI18nComplete.raw('texteff2ec3d9dcd')}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setBurst((current) => ({
+                    id: (current?.id ?? 0) + 1,
+                    // Canvas fractions, measured against the viewport, because
+                    // the confetti canvas is portalled to <body> at `fixed
+                    // inset-0`. Centre of the word, so the burst comes out of
+                    // the name rather than from somewhere near it.
+                    origin: {
+                      x: (rect.left + rect.width / 2) / window.innerWidth,
+                      y: (rect.top + rect.height / 2) / window.innerHeight,
+                    },
+                  }));
+                }}
+                className="text-foreground focus-visible:ring-ring inline cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+              >
+                {displayName}
+              </button>
+              {spaceBefore(greeting.after) ? ' ' : ''}
+              {greeting.after}
+            </h1>
 
-          {/* Keyed on the press count, so each press is a fresh mount and a
+            {/* Keyed on the press count, so each press is a fresh mount and a
               fresh burst. Rendered here rather than inside the <h1> because a
               canvas is not phrasing content; it portals to <body> anyway, so
               its position in this tree has no visual effect. */}
-          {burst ? (
-            <IdentityConfetti
-              key={burst.id}
-              label={name}
-              emoji={icon?.icon}
-              glyph={icon?.icon_glyph}
-              origin={burst.origin}
-            />
-          ) : null}
+            {burst ? (
+              <IdentityConfetti
+                key={burst.id}
+                label={name}
+                emoji={icon?.icon}
+                glyph={icon?.icon_glyph}
+                origin={burst.origin}
+              />
+            ) : null}
 
-          {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
-        </div>
+            {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
+          </div>
 
-        {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
+          {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
             have the chat input there & that's it"). The "Get started" setup
             checklist (`ProjectHomeSections`) and the "Start with" starter
             prompts (`StarterPromptBand`) both used to fill this slot; both
             components still exist for hosts that want them, and the setup
             steps stay reachable from Customize. `onPickSuggestion` stays on
             the props so those hosts keep their contract. */}
+        </div>
       </div>
+
+      {/* The lower half: empty ballast that keeps the group on the midline, and
+          the room the `/` menu opens into. It shrinks to zero first when the
+          container is short. */}
+      <div className="grow basis-0" aria-hidden />
     </div>
   );
 }
