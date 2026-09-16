@@ -88,6 +88,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         description: 'Language and keyboard shortcuts.',
         icon: SlidersHorizontal,
       },
+      { tab: 'provider-connections', label: 'My providers', description: 'Your subscriptions and provider API keys, reusable across projects.', icon: Link },
       // Labelled "API keys", routed at `/settings/tokens`. The id has to be
       // `tokens` — it is the URL segment, and the account page already spends
       // `api-keys` on a legacy redirect (`RENAMED` in `settings-tabs.ts`) —

@@ -90,13 +90,15 @@ export async function removeKortixPty(baseUrl: string, ptyId: string): Promise<v
  * custom headers) the OpenCode-backed terminal used, just pointed at
  * `/kortix/pty` instead of OpenCode's `/pty`.
  *
- * `opts.wake` marks the attach as USER-INITIATED (the panel's first connect, or
- * "Reconnect now"). A parked sandbox refuses the upgrade with 503, which the
+ * `opts.wake` marks the attach as USER-INITIATED (the panel opened, or a person
+ * pressed a control). A parked sandbox refuses the upgrade with 503, which the
  * browser can only surface as close code 1006 — so without this marker the
  * terminal reconnects forever against a box that nothing in the loop will ever
  * wake. The API resumes a stopped box only for a marked attach
- * (`shouldWakeStoppedSandboxForWsAttach`), so automatic backoff retries — which
- * must never resurrect a box — leave it off.
+ * (`shouldWakeStoppedSandboxForWsAttach`). The wake is asynchronous: the row
+ * stays `stopped` until the provider confirms the box, so a caller keeps the
+ * marker on its retries until the attach opens, and drops it after that. A
+ * socket that later drops because the box parked must not resurrect it.
  */
 export async function getKortixPtyWebSocketUrl(
   ptyId: string,

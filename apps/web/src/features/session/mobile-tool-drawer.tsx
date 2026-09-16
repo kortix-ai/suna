@@ -70,7 +70,11 @@ export function MobileToolDrawer({
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">
           {view === 'terminal' && (
-            <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+            <SessionTerminalPanel
+              sessionId={sessionId}
+              projectId={projectId}
+              projectSessionId={projectSessionId}
+            />
           )}
           {view === 'browser' && (
             <BrowserPanel

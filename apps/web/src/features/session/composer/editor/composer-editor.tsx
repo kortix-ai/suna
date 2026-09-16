@@ -17,6 +17,7 @@ import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
+import { isCursorOnFirstVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
@@ -117,6 +118,8 @@ export interface ComposerEditorProps {
   disabled?: boolean;
   autoFocus?: boolean;
   onSubmit: () => void;
+  /** Up with the caret on the first visual row — see `createSubmitOnEnterHandler`. */
+  onArrowUpAtStart?: () => boolean;
   /**
    * Fires ONLY on the empty↔non-empty boundary — once when the first character
    * is typed, once when the last is deleted, never in between. This is the
@@ -268,12 +271,32 @@ export function createUpdateHandler(
 export function createSubmitOnEnterHandler(
   onSubmit: () => void,
   isDisabled: () => boolean,
+  /**
+   * Up from the first visual row. Returns whether it acted — `false` leaves
+   * the key to ProseMirror, so Up still moves the caret when there is nothing
+   * to take back.
+   */
+  onArrowUpAtStart?: () => boolean,
 ): (view: EditorView, event: KeyboardEvent) => boolean {
-  return (_view, event) => {
+  return (view, event) => {
     if (isDisabled()) return false;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       onSubmit();
+      return true;
+    }
+    if (
+      event.key === 'ArrowUp' &&
+      onArrowUpAtStart &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.isComposing &&
+      isCursorOnFirstVisualLine(view) &&
+      onArrowUpAtStart()
+    ) {
+      event.preventDefault();
       return true;
     }
     return false;
@@ -341,6 +364,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       disabled,
       autoFocus,
       onSubmit,
+      onArrowUpAtStart,
       onEmptyChange,
       onDocChange,
       agents,
@@ -378,6 +402,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       onSubmitRef.current = onSubmit;
     }, [onSubmit]);
+
+    const onArrowUpAtStartRef = useRef(onArrowUpAtStart);
+    useEffect(() => {
+      onArrowUpAtStartRef.current = onArrowUpAtStart;
+    }, [onArrowUpAtStart]);
 
     const disabledRef = useRef(disabled ?? false);
     useEffect(() => {
@@ -531,6 +560,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         createSubmitOnEnterHandler(
           () => onSubmitRef.current(),
           () => disabledRef.current || mentionOwnsEnterRef.current || slashOwnsEnterRef.current,
+          // An open `@`/`/` menu claims arrow keys through `mentionOwnsEnterRef`
+          // / `slashOwnsEnterRef` above, so Up never reaches this while one is open.
+          () => onArrowUpAtStartRef.current?.() ?? false,
         ),
       [],
     );

@@ -163,23 +163,28 @@ mock.module('../shared/db', () => {
           return [];
         };
         return {
-          from: (table: any) => ({
-            // `.where(...)` is both awaitable (resolveShareSubject awaits it
-            // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (condition: any) => {
-              let ordered = false;
-              const query = {
-                orderBy: () => {
-                  ordered = true;
-                  return query;
-                },
-                limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
-                then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
-                  Promise.resolve(rowsFor(ordered)).then(resolve, reject),
-              };
-              return query;
-            },
-          }),
+          from: (table: any) => {
+            const afterFrom: Record<string, unknown> = {
+              // loadSandbox joins project_sessions for the session's own agent.
+              leftJoin: () => afterFrom,
+              // `.where(...)` is both awaitable (resolveShareSubject awaits it
+              // directly, expecting an array) and chainable via `.limit(n)`.
+              where: (condition: any) => {
+                let ordered = false;
+                const query = {
+                  orderBy: () => {
+                    ordered = true;
+                    return query;
+                  },
+                  limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
+                  then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                    Promise.resolve(rowsFor(ordered)).then(resolve, reject),
+                };
+                return query;
+              },
+            };
+            return afterFrom;
+          },
         };
       },
       update: (table: unknown) => ({
@@ -1341,6 +1346,65 @@ describe('Preview proxy: forwarding', () => {
       headers: { Authorization: 'Bearer test' },
     });
     expect(mockFetchCalls[0].url).toContain('/api/v2/data');
+  });
+});
+
+describe('Preview proxy: provider credential recovery', () => {
+  const providerRejection = JSON.stringify({
+    statusCode: 401,
+    code: 'UNAUTHORIZED',
+    message: 'unauthorized: authentication failed: Invalid or expired token',
+  });
+
+  const providerRefusals: typeof mockFetchResponses = [
+    { status: 401, body: providerRejection, headers: { 'content-type': 'application/json' } },
+    { status: 307, body: '', headers: { location: 'https://api.auth.daytona.io/user_management/authorize?state=opaque' } },
+  ];
+  for (const rejected of providerRefusals) {
+    test(`refreshes rejected Daytona ingress credentials after ${rejected.status}`, async () => {
+      mockFetchResponses = [rejected, { status: 200, body: '[]' }];
+      const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+      expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+      expect(mockFetchCallCount).toBe(2);
+      expect(mockWakeCalls).toEqual([]);
+    });
+  }
+
+  test('stops after one credential refresh and does not expose provider login redirects', async () => {
+    mockFetchResponses = Array.from({ length: 5 }, () => ({ status: 401, body: providerRejection }));
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe('sandbox_provider_auth_unavailable');
+    expect(mockFetchCallCount).toBe(2);
+  });
+
+  test('invalidates provider credentials without replaying a PTY creation', async () => {
+    mockFetchResponses = [{ status: 401, body: providerRejection }];
+    const app = createProxyTestApp();
+    const response = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: '{}',
+    });
+    expect(response.status).toBe(503);
+    expect(mockFetchCallCount).toBe(1);
+    mockFetchResponses = [{ status: 200, body: '[]' }];
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, { headers: { Authorization: 'Bearer test' } });
+    expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+  });
+
+  test('preserves application OAuth redirects', async () => {
+    mockFetchResponses = [{ status: 307, body: '', headers: { location: 'https://accounts.example.com/login' } }];
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://accounts.example.com/login');
+    expect(mockFetchCallCount).toBe(1);
   });
 });
 

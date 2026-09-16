@@ -1,4 +1,8 @@
 import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import {
+  SANDBOX_SHELL_TOOL_APT_LIST,
+  SANDBOX_SHELL_TOOL_LINK_COMMAND,
+} from './shell-tools';
 
 export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -15,7 +19,7 @@ export const META_AGENT_GUIDE = [
   '',
   'You coordinate work. You do not perform project work in this sandbox.',
   '',
-  '- This sandbox is minimal on purpose: the `kortix` CLI, git, and nothing else.',
+  '- This sandbox is minimal on purpose: the `kortix` CLI, git, and shell tools (rg, fd, jq). Nothing else.',
   '- Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
   '  never bare `pip`), Node, browsers, and document tooling preinstalled. Never plan around what a',
   '  session might be missing — just give it the task.',
@@ -65,7 +69,9 @@ FROM debian:bookworm-slim
 RUN apt-get update \\
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
       ca-certificates curl git gzip libatomic1 sudo util-linux \\
- && rm -rf /var/lib/apt/lists/*
+      ${SANDBOX_SHELL_TOOL_APT_LIST} \\
+ && rm -rf /var/lib/apt/lists/* \\
+ && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}
 
 RUN useradd --create-home --shell /bin/bash kortix \\
  && mkdir -p /workspace /opt/kortix /ephemeral/kortix-master/opencode \\

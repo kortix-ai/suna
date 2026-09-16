@@ -270,3 +270,5 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(candidates[0]?.billingMode).toBe('platform-fee');
   });
 });
+
+mock.module('../provider-connections/store', () => ({ resolveUserProviderConnection: async () => null }));

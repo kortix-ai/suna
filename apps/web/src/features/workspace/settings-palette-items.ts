@@ -48,6 +48,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  'provider-connections',
   'tokens',
   'credits',
   'plan',
@@ -123,6 +124,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // The word "account" is deliberately absent: it belongs to the rows that
   // configure one (`command-palette-search.test.ts` pins that every hit for
   // "account" owns the word).
+  'provider-connections': 'my providers personal chatgpt codex subscriptions api keys bring your own',
   tokens:
     'api keys key tokens token personal access pat cli command line terminal secret credential authentication ci',
   // The row that answers "how much have I got left". It carries `usage`

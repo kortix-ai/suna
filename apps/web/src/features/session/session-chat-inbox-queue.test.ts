@@ -37,12 +37,14 @@ describe('stop reaches the queue that actually holds the messages', () => {
     expect(stop).not.toContain('queueDrain');
   });
 
-  test('the queued bubbles read the SERVER hold, which every tab can see', () => {
-    // The queue is drawn IN the transcript, not in a composer strip.
-    expect(chat).toContain('held={queueRows.held}');
-    expect(chat).toContain('<QueuedPromptBubbles');
+  test('the queued list reads the SERVER hold, which every tab can see', () => {
+    // REWRITTEN when the queue moved out of the transcript: queued entries are
+    // listed above the composer. The paused state is the server's
+    // hold count, never a tab-local flag.
+    expect(chat).toContain('<QueuedPromptList');
+    expect(chat).toContain('heldCount={queueRows.heldCount}');
+    expect(chat).not.toContain('<QueuedPromptBubbles');
     expect(chat).not.toContain('queuePaused=');
-    expect(chat).not.toContain('queuedMessages={queuedMessages}');
   });
 
   test('a rewind removes the queued rows instead of holding them', () => {
@@ -101,22 +103,13 @@ describe('stop reaches the queue that actually holds the messages', () => {
   });
 });
 
-describe('"send now" addresses the thing that actually holds the row', () => {
-  test('every row is dispatched through the inbox, by its own id, and nothing else touches the hold', () => {
-    // `retry` is the inbox's own "run this one next": it promotes the row past
-    // the ordering gate and releases the stop's hold in one call, IN THAT
-    // ORDER. Releasing the hold separately beforehand made every held row due
-    // at the same instant and kicked a drain that claims by
-    // `available_at, created_at` — so the OLDEST row ran, not the one the user
-    // clicked. See `session-chat-stop-send-ordering.test.ts`.
-    const sendNow = between(
-      chat,
-      'const handleQueueSendNow = useCallback(',
-      '// ---- Triple-ESC to stop ----',
-    );
-    expect(sendNow).toMatch(/promptInbox\s*\.retry\(id\)/);
-    expect(sendNow).not.toContain('promptInbox.hold(');
-    expect(sendNow).not.toContain('queueDrain');
+describe('queue row actions address the inbox that holds the row', () => {
+  test('there is no per-row "send now": reordering is a non-goal, and Resume releases the hold', () => {
+    expect(chat).not.toContain('handleQueueSendNow');
+    expect(chat).not.toContain('stopThenSendNow');
+    const resume = between(chat, 'const handleResumeQueue = useCallback(', '}, [promptInbox.hold]);');
+    expect(resume).toContain('promptInbox.hold(false)');
+    expect(resume).toContain('setResumePending(false)');
   });
 
   test('undo re-creates the prompt from what the DELETE handed back', () => {
@@ -159,20 +152,22 @@ describe('"send now" addresses the thing that actually holds the row', () => {
 });
 
 describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
-  test('every send paints the transcript bubble under the WIRE id — no "will it wait?" branch', () => {
-    // The old rule painted nothing for a prompt that would wait, so the queue
-    // strip drew it instead, and the hand-off between the two surfaces was
-    // where it doubled, blinked and jumped. Now the bubble is in the
-    // transcript from the first frame under the id the inbox row carries;
-    // its turn renders dimmed until the agent reaches it (`pending`).
-    const send = between(chat, "playSound('send');", 'anchorTurn(messageID);');
+  test('an idle send paints the transcript bubble under the WIRE id; a queued send paints nothing there', () => {
+    // REWRITTEN when the queue moved out of the transcript. Enter while a turn runs — or while
+    // anything is already queued — puts the prompt in the list above the
+    // composer and nothing in the transcript; it enters the transcript when the
+    // runtime echoes it. Idle with an empty queue, the bubble is painted on
+    // Enter under the id the inbox row carries.
+    const send = between(chat, "playSound('send');", 'const receiptTurnId');
     expect(send).toContain(
       'const messageID = mintSessionWireMessageId(sessionId, clientMessageId);',
     );
-    expect(send).toContain(
-      'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
+    expect(send).toContain('isBusyRef.current || queueRowsRef.current.some(');
+    expect(send).toMatch(
+      /if \(willQueue\) \{\s*useQueuedDraftStore\.getState\(\)\.add\([\s\S]*\} else \{\s*beginOptimisticSend\(sessionId, messageID, optimisticText, \[textPartId\]\);/,
     );
-    expect(send).not.toContain('willWaitInInbox');
+    // A queued send never marks a bubble it never painted.
+    expect(chat).toContain('if (!willQueue) markOptimisticSendDispatched(sessionId, messageID);');
     expect(chat).not.toContain('willWaitInInbox');
   });
 
@@ -185,7 +180,7 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     const paint = between(
       chat,
       'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
-      'const sendingIntoRunningTurn',
+      'setFreshSend(',
     );
     expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
   });
@@ -211,11 +206,9 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     );
   });
 
-  test('the claimed bubble keeps its row: controls, and its queued dimming', () => {
-    // Hiding the duplicate must not cost the surviving copy the chrome the row
-    // is the only source of (the X, send-now, retry, its error) nor let it read
-    // as running while the server still holds the prompt.
-    expect(chat).toContain('byId.set(firstTurnClaim.messageId, claimed);');
+  test('the claimed bubble keeps its queued dimming', () => {
+    // Hiding the duplicate must not let the surviving copy read as running
+    // while the server still holds the prompt.
     expect(chat).toContain('if (firstTurnClaim) ids.add(firstTurnClaim.messageId);');
   });
 
@@ -231,12 +224,8 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
       '}, [promptInbox.prompts, sessionId]);',
     );
     expect(effect).toContain('store.registerOptimisticEcho(');
-    const rowsByMessageId = between(
-      chat,
-      'const inboxRowsByMessageId = useMemo(() => {',
-      'const queueRows = useMemo(',
-    );
-    expect(rowsByMessageId).not.toContain('registerOptimisticEcho');
+    const queueRows = between(chat, 'const queueRows = useMemo(', 'const canTakeBackQueue');
+    expect(queueRows).not.toContain('registerOptimisticEcho');
   });
 
   test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
@@ -246,6 +235,41 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
     expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
     expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
+  });
+});
+
+describe('Up takes the queue back into the composer', () => {
+  test('only what the server actually removed comes back, in queue order, above the draft', () => {
+    const takeBack = between(
+      chat,
+      'const handleTakeBackQueue = useCallback(',
+      '// ---- Triple-ESC to stop ----',
+    );
+    expect(takeBack).toContain('row.takeBackEligible');
+    // Drafts are read BEFORE the removals: removing a row prunes its draft.
+    expect(takeBack.indexOf('useQueuedDraftStore.getState().bySession[sessionId]')).toBeLessThan(
+      takeBack.indexOf('promptInbox.remove(row.id)'),
+    );
+    expect(takeBack).toContain('Promise.allSettled(');
+    expect(takeBack).toContain('composeTakeBack({ removed, drafts })');
+    expect(takeBack).toContain('.setPrefill(sessionId, text, files)');
+    // Anything that cannot come back losslessly goes back to the queue.
+    expect(takeBack).toContain('restoreQueuedMessage(prompt,');
+  });
+
+  test('the composer gets the key handler and the hint', () => {
+    expect(chat).toContain('onArrowUpAtStart={handleTakeBackQueue}');
+    // The hint shows only while there is something Up would take back.
+    expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
+  });
+
+  test('only the first prompt is drawn as a turn before the runtime has it', () => {
+    const synthetic = between(
+      chat,
+      'const queuedSyntheticMessages = useMemo(',
+      'const rawTurns = useMemo(',
+    );
+    expect(synthetic).toContain('if (!isFirstPromptRow(prompt)) continue;');
   });
 });
 

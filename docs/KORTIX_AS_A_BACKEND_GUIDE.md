@@ -214,6 +214,14 @@ Do not pass an OAuth provider token to `updateCredential()`.
 Declare `connectors_required` on the agent. Each entry must also exist in
 `connectors`.
 
+Only `require_connectors` and the running agent's `connectors_required` declare
+mandatory connectors. A `connector_bindings` entry selects a connection; it does
+not make the connector mandatory. If an optional bound connector becomes disabled
+or its connection is revoked, unrelated prompts remain admissible. Connector
+calls still enforce the connector's status, connection, and agent permissions.
+Explicit requirements are checked at prompt admission and delivery as well as
+session creation.
+
 Session creation resolves required connectors before sandbox startup.
 Missing connections return:
 
@@ -267,6 +275,17 @@ not granted the connector at all. That is a manifest fault, and connecting an
 account never clears it.
 
 Create or reconnect the required connection. Then retry session creation.
+
+The durable prompt route (`POST /projects/:id/sessions/:sid/prompts`) checks
+these requirements before queueing. A refusal returns the same `409` contract
+and creates no prompt. A failed requirements lookup returns `503`, not `409`.
+If requirements change after enqueueing, delivery preserves the refusal message
+in `last_error` and fails the prompt without repeating a permanent refusal.
+
+Stop (`POST .../prompts/hold {"held":true}`) immediately exposes every pending
+or claimed prompt as `waiting` with reason `held`. Reload preserves that state.
+The worker checks the persisted hold before each delivery attempt. Resume
+clears the hold; Stop does not discard the prompt.
 
 ## 4. Secret scope
 

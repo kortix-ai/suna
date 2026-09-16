@@ -24,6 +24,25 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+    const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
+    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
+    const job = workflow.jobs.deploy;
+    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job['continue-on-error']).toBeUndefined();
+    const commands = job.steps.map((step) => step.run ?? '').join('\n');
+    expect(commands).toContain('deploy --env dev');
+    expect(commands).not.toContain('--env prod');
+    expect(commands).not.toContain('--env staging');
+    expect(commands).toContain('DEPLOYED_COMMIT:${GITHUB_SHA}');
+    expect(commands).toContain('dev-api-kortix-router/settings');
+    expect(commands).toContain('.text == $sha');
+    expect(commands).toContain("-H 'User-Agent:'");
+    expect(commands).toContain('[ "$status" = 401 ]');
+    expect(commands).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
+  });
+
   test('keeps the staging API on EKS in config and deployment metadata', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
@@ -328,6 +347,61 @@ describe('api-router worker', () => {
       'Kortix-Webhook-Relay/1.0',
     );
     expect(await proxiedRequest.text()).toBe('{"event":"test"}');
+  });
+
+  test.each(['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])(
+    'relays Entra SCIM %s without a User-Agent and preserves authentication',
+    async (method) => {
+      let proxiedRequest;
+      globalThis.fetch = async (request) => {
+        proxiedRequest = request;
+        return Response.json({ schemas: [], detail: 'Invalid SCIM token' }, { status: 401 });
+      };
+      const response = await worker.fetch(
+        new Request('https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', {
+          method,
+          headers: { Authorization: 'Bearer invalid-test-token' },
+          ...(method === 'GET' ? {} : { body: '{"Operations":[]}' }),
+        }),
+        env,
+      );
+      expect(proxiedRequest.headers.get('User-Agent')).toBe('Kortix-SCIM-Relay/1.0');
+      expect(proxiedRequest.headers.get('Authorization')).toBe('Bearer invalid-test-token');
+      expect(response.status).toBe(401);
+      if (method !== 'GET') expect(await proxiedRequest.text()).toBe('{"Operations":[]}');
+    },
+  );
+
+  test.each(['Users', 'Groups/test-group', 'ServiceProviderConfig', 'ResourceTypes/User', 'Schemas/urn:ietf:params:scim:schemas:core:2.0:User'])(
+    'normalizes an empty SCIM User-Agent for %s',
+    async (resource) => {
+      let proxiedRequest;
+      globalThis.fetch = async (request) => {
+        proxiedRequest = request;
+        return Response.json({});
+      };
+      await worker.fetch(new Request(`https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/${resource}`, {
+        headers: { 'User-Agent': '' },
+      }), env);
+      expect(proxiedRequest.headers.get('User-Agent')).toBe('Kortix-SCIM-Relay/1.0');
+    },
+  );
+
+  test.each([
+    ['https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', 'Entra/1.0', 'Entra/1.0'],
+    ['https://gateway-dev.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Users', null, null],
+    ['https://dev-api.kortix.com/scim/v2/accounts/not-an-account/Users', null, null],
+    ['https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/Unknown', null, null],
+  ])('preserves sender headers and SCIM routing boundaries: %s', async (url, userAgent, expected) => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({});
+    };
+    await worker.fetch(new Request(url, {
+      headers: userAgent ? { 'User-Agent': userAgent } : {},
+    }), env);
+    expect(proxiedRequest.headers.get('User-Agent')).toBe(expected);
   });
 
   test('preserves a webhook sender User-Agent', async () => {

@@ -2,6 +2,7 @@ export type SandboxProvisioningFailureCategory =
   | 'provider-capacity'
   | 'git-auth'
   | 'invalid-secret-boundary-policy'
+  | 'snapshot-too-large'
   | 'sandbox-provider';
 
 export interface SandboxProvisioningFailure {
@@ -20,6 +21,25 @@ export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
 export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =
   "A network-boundary secret in this project has an invalid outbound policy, so no session can start. " +
   'Two secrets cannot inject the same header for the same host. Fix the secret delivery settings — retrying will not help.';
+
+export const SNAPSHOT_TOO_LARGE_MESSAGE =
+  "This project's sandbox image is larger than the provider allows, so no session can start on it. " +
+  'Slim the image down — retrying will not help.';
+
+/**
+ * The project's custom sandbox image is over the provider's snapshot ceiling.
+ *
+ * PERMANENT and user-fixable, and it used to be neither: with no pattern here it
+ * fell through to `sandbox-provider`, whose copy blames the provider and tells
+ * the user to "Try again" — for a build that can never succeed. Prod
+ * 2026-09-16: a project's `kortix-tpl-` snapshot measured 10.04 GB against
+ * Daytona's 10 GB cap, and every new Daytona session on that project either
+ * sat in `provisioning` or came back with "The sandbox provider could not
+ * start this session. Try again." The 40 MB it was over was nowhere in the
+ * message, so there was nothing to act on.
+ */
+const SNAPSHOT_TOO_LARGE_PATTERN =
+  /exceeds maximum allowed size|snapshot size .* exceeds|image (?:size )?too large|exceeds the maximum snapshot size/i;
 
 const CAPACITY_PATTERN =
   /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
@@ -58,6 +78,18 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
     return {
       category: 'invalid-secret-boundary-policy',
       userMessage: INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
+      isCapacity: false,
+      isGitAuth: false,
+    };
+  }
+
+  // Before the capacity branch: a provider at capacity is transient, this is
+  // not, and a message that says "try again in a minute" for a 10 GB image is
+  // worse than no message.
+  if (SNAPSHOT_TOO_LARGE_PATTERN.test(rawMessage)) {
+    return {
+      category: 'snapshot-too-large',
+      userMessage: SNAPSHOT_TOO_LARGE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
     };

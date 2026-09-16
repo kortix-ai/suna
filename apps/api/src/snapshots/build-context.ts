@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
-import { buildFastSandboxDockerfile, buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
@@ -73,12 +73,6 @@ const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
 const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
-const fastMachineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_FAST_MACHINE_DOC_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.fast.md');
-const lazyToolsSrcPath = () => process.env.KORTIX_SNAPSHOT_LAZY_TOOLS_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/lazy-tools');
-const runtimeVersionsSrcPath = () => process.env.KORTIX_SNAPSHOT_RUNTIME_VERSIONS_PATH
-  || resolve(REPO_ROOT, 'packages/shared/src/runtime-versions.json');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -248,95 +242,6 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   );
   return { contextDir, composedPath, dockerfileName };
 }
-
-/** Stage the shared slim runtime selected by KORTIX_FAST_COLD_BOOT_ENABLED. */
-export async function stageFastBuildContext(): Promise<StagedContext> {
-  const agentPath = agentBinPath();
-  const cliPath = cliBinPath();
-  const entrypointPath = entrypointSrcPath();
-  const opencodeWarmupPath = opencodeWarmupSrcPath();
-  const slackPath = slackCliSrcPath();
-  const machinePath = fastMachineDocSrcPath();
-  const lazyToolsPath = lazyToolsSrcPath();
-  const runtimeVersionsPath = runtimeVersionsSrcPath();
-  const opencodeConfigPath = opencodeConfigSrcPath();
-
-  await assertExists(agentPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
-  await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExists(opencodeWarmupPath, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
-  await assertExists(machinePath, 'KORTIX_SNAPSHOT_FAST_MACHINE_DOC_PATH');
-  await assertExists(runtimeVersionsPath, 'KORTIX_SNAPSHOT_RUNTIME_VERSIONS_PATH');
-  await assertExistsDir(slackPath, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExistsDir(lazyToolsPath, 'KORTIX_SNAPSHOT_LAZY_TOOLS_PATH');
-  await assertExistsDir(opencodeConfigPath, 'KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH');
-  await assertRuntimeArtifactsCurrent(agentPath, cliPath, cliAttestationPath());
-
-  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-fast-snap-'));
-  try {
-    await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
-    await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
-    await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
-    await copyFile(opencodeWarmupPath, join(contextDir, 'kortix-opencode-warmup'));
-    await copyFile(machinePath, join(contextDir, 'MACHINE.fast.md'));
-    await copyFile(runtimeVersionsPath, join(contextDir, 'runtime-versions.json'));
-    await cp(slackPath, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-    await cp(lazyToolsPath, join(contextDir, 'lazy-tools'), { recursive: true });
-    await stageOpencodeConfigTree(
-      opencodeConfigPath,
-      join(contextDir, 'kortix-opencode-config'),
-    );
-    await stageManagedSkills(join(contextDir, 'managed-skills'));
-    await writeFileFs(
-      join(contextDir, 'kortix-llm-catalog.json'),
-      JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-    );
-    await stageScaffoldRepo(contextDir);
-
-    const dockerfileName = 'Dockerfile';
-    const composedPath = join(contextDir, dockerfileName);
-    const composed = buildFastSandboxDockerfile({
-      agentBinaryPath: 'kortix-agent.gz',
-      cliBinaryPath: 'kortix.gz',
-      entrypointScriptPath: 'kortix-entrypoint',
-      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
-      machineDocPath: 'MACHINE.fast.md',
-      slackCliPath: 'kortix-slack-cli',
-      lazyToolsPath: 'lazy-tools',
-      catalogPath: 'kortix-llm-catalog.json',
-      managedSkillsPath: 'managed-skills',
-      runtimeVersionsPath: 'runtime-versions.json',
-      opencodeConfigPath: 'kortix-opencode-config',
-      scaffoldPath: 'scaffold.git',
-    });
-    await guardBuildahPortable(composed);
-    await writeComposedDockerfile(composedPath, composed);
-    for (const required of [
-      dockerfileName,
-      'kortix-agent.gz',
-      'kortix.gz',
-      'kortix-entrypoint',
-      'kortix-opencode-warmup',
-      'MACHINE.fast.md',
-      'runtime-versions.json',
-      'kortix-slack-cli',
-      'lazy-tools/install',
-      'kortix-opencode-config',
-      'managed-skills',
-      'kortix-llm-catalog.json',
-      'scaffold.git',
-    ]) {
-      await stat(join(contextDir, required)).catch(() => {
-        throw new Error(`fast build context staging incomplete: ${required} missing in ${contextDir}`);
-      });
-    }
-    return { contextDir, composedPath, dockerfileName };
-  } catch (error) {
-    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-}
-
 
 /**
  * The pi worker image: node + a boot script, nothing else. The actual harness
@@ -554,7 +459,7 @@ export async function stagePiWorkerBuildContext(): Promise<StagedContext> {
   return { contextDir, composedPath, dockerfileName };
 }
 
-export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
+export type RuntimeBuildProfile = 'standard' | 'meta' | 'app' | 'pi-worker';
 
 /** Select one runtime renderer for every provider adapter. */
 export async function stageRuntimeBuildContext(input: {
@@ -572,8 +477,6 @@ export async function stageRuntimeBuildContext(input: {
       return stageMetaBuildContext();
     case 'pi-worker':
       return stagePiWorkerBuildContext();
-    case 'fast':
-      return stageFastBuildContext();
     default:
       return stageBuildContext(
         input.snapshotName,

@@ -1,6 +1,7 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { getClient } from '../../core/runtime/client';
+import { getClient, getClientForUrl, RuntimeNotReadyError } from '../../core/runtime/client';
 import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
+import { ApiError } from '../../core/http/api/errors';
 import {
   SessionSyncController,
   type SessionSyncPage,
@@ -8,7 +9,7 @@ import {
   type SessionSyncTelemetryEvent,
   loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
-import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
@@ -48,6 +49,7 @@ interface RegistryEntry {
   consumers: number;
   lastUsedAt: number;
   client?: SessionMessageClient;
+  runtimeUrl?: string;
   prefetchedSource?: SessionPrefetchSource;
 }
 
@@ -178,7 +180,7 @@ export async function readSessionMessagePage(
     ) {
       throw new SandboxNotReadyError(message);
     }
-    throw new Error(message);
+    throw new ApiError(message, { status });
   }
   const items = (Array.isArray(result.data) ? result.data : []).filter(
     (item): item is { info: Message; parts: Part[] } =>
@@ -202,7 +204,17 @@ function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): v
 }
 
 function resolveClient(key: string): SessionMessageClient {
-  return controllers.get(key)?.client ?? getClient();
+  const entry = controllers.get(key);
+  if (!entry) throw new RuntimeNotReadyError('Session synchronization controller was retired');
+  if (entry.client) return entry.client;
+  // A retained retry belongs to its original sandbox, even after navigation.
+  // Capture a late URL only while that sandbox is still the active runtime.
+  if (!entry.runtimeUrl && entry.runtimeScope === runtimeScopeKey()) {
+    entry.runtimeUrl = getCurrentRuntimeUrl() ?? undefined;
+  }
+  if (!entry.runtimeUrl) throw new RuntimeNotReadyError();
+  entry.client = getClientForUrl(entry.runtimeUrl);
+  return entry.client;
 }
 
 function createController(sessionId: string, key: string): SessionSyncController {
@@ -248,7 +260,7 @@ function getOrCreateRegistryEntry(
   const key = controllerKey(sessionId, runtimeScope);
   const existing = controllers.get(key);
   if (existing) {
-    existing.client = client;
+    if (client) existing.client = client;
     existing.lastUsedAt = Date.now();
     return existing;
   }
@@ -257,6 +269,9 @@ function getOrCreateRegistryEntry(
     runtimeScope: runtimeScopeKey(runtimeScope),
     controller: createController(sessionId, key),
     client,
+    runtimeUrl: runtimeScopeKey(runtimeScope) === runtimeScopeKey()
+      ? getCurrentRuntimeUrl() ?? undefined
+      : undefined,
     consumers: initialConsumers,
     lastUsedAt: Date.now(),
   };
@@ -310,7 +325,6 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
   const key = controllerKey(sessionId, runtimeScope);
   let entry = controllers.get(key);
   if (entry) {
-    entry.client = undefined;
     entry.consumers += 1;
     entry.lastUsedAt = Date.now();
   } else {
