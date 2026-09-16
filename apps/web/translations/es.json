@@ -18468,7 +18468,11 @@
       "textbcbfbec31cb8": "Cada miembro con su propia cuenta",
       "textb1e4036909b6": "Comprobando las opciones de inicio de sesión del servidor…",
       "text6b05881dfe08": "No se pudieron comprobar las opciones de inicio de sesión del servidor.",
-      "text7bc4d9a2803c": "Dónde obtenerlo:"
+      "text7bc4d9a2803c": "Dónde obtenerlo:",
+      "text1b0b2274e844": "Cómo funcionan los conectores",
+      "textc01e20fa9cb4": "Elige una aplicación del catálogo",
+      "texte5184a0338e3": "Conecta una cuenta: una compartida o una propia por miembro",
+      "texte951e68b68a3": "Los agentes la usan en cada sesión que ejecutan"
     }
   },
   "projectOnboarding": {

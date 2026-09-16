@@ -5251,16 +5251,16 @@ export function SetCredentialModal({
               <span key={link.href}>
                 {index > 0 ? ' · ' : null}
                 {link.external ? (
-                  <a
+                  <Link
                     href={link.href}
                     target="_blank"
                     rel="noreferrer"
                     className="text-foreground hover:underline"
                   >
                     {link.label}
-                  </a>
+                  </Link>
                 ) : (
-                  <Link href={link.href} className="text-foreground hover:underline">
+                  <Link href={link.href} target="_blank" rel="noreferrer" className="text-foreground hover:underline">
                     {link.label}
                   </Link>
                 )}

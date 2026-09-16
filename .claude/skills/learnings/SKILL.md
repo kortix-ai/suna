@@ -106,7 +106,21 @@ as "ITS GIGA LAGGING"; no alert fired — every request was a 200.
 *Enforcer:* `SESSION_PAGE_MAX_LIMIT` (route rejects `limit > 200` with 400) and
 the cursor/paging tests in `apps/api/src/projects/lib/session-inventory.test.ts`.
 
-||||||| fd612fe8b7
+### A branch environment outlives its PR number — the bootstrap must evict the previous instance (2026-09-16)
+
+**When:** a branch's pull request is closed and reopened under a new number
+(revert-and-reopen), or any deploy to a persistent branch sandbox. The instance
+is named `pr-<number>` but the SANDBOX is keyed by branch and reused, so the
+old instance's compose project, config dir, and last-good set survive — and
+every instance binds the same host ports, so the old stack wins the port race
+and every deploy dies on `Bind for 127.0.0.1:15432 failed: port is already
+allocated`. *Incident:* PR #7236 (connector-flow, reopened after #7074's
+revert) — every preview deploy failed 2026-09-15/16 until the label toggle
+destroyed the sandbox. *Enforcer:* the bootstrap
+(`tests/src/core/sandbox-preview.ts`) downs every foreign `kortix-pr-*`
+project, removes stale instance dirs, and drops the foreign `last-good.env`
+before starting its stack. Note: the bootstrap runs from the DEFAULT branch
+(`deploy-preview.yml`), so the fix is live only once merged to `main`.
 
 ### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
 

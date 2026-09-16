@@ -506,6 +506,16 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [projectId],
   );
 
+  // The zero-state IS the onboarding (Jay, 2026-09-16). The moment before the
+  // FIRST add is the only unguided moment left in the connector flow — the
+  // slug page's "Finish setting up" stepper owns everything after — so a
+  // project with no connectors gets one compact three-step strip above the
+  // catalogue, and the first connector added removes it forever. No tour, no
+  // dismiss state, nothing for a returning user to scroll past. `settled`
+  // gates it so a project that HAS connectors never flashes it while the
+  // list loads.
+  const showConnectorOnboarding = catalogActive && settled && !isError && connectors.length === 0;
+
   return (
     /* Global rules and Add both open as a SPLIT column beside the grid, never
        as an overlay — the list stays readable (and clickable) while either is
@@ -628,6 +638,37 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
             <>
+              {/* First-run onboarding, carried by the zero-state — see
+                  `showConnectorOnboarding` above. Three steps, one line each:
+                  the whole story a new project owner needs before the first
+                  add, in the setup stepper's own visual language. */}
+              {showConnectorOnboarding ? (
+                <section
+                  aria-labelledby="connector-onboarding-title"
+                  className="bg-popover mb-6 rounded-md border px-4 py-3"
+                >
+                  <h2
+                    id="connector-onboarding-title"
+                    className="text-foreground text-sm font-medium"
+                  >
+                    {tI18nComplete.raw('text1b0b2274e844')}
+                  </h2>
+                  <ol className="mt-2.5 flex flex-col gap-x-10 gap-y-2 sm:flex-row sm:flex-wrap">
+                    {(['textc01e20fa9cb4', 'texte5184a0338e3', 'texte951e68b68a3'] as const).map(
+                      (key, index) => (
+                        <li key={key} className="flex items-center gap-2.5">
+                          <span className="bg-secondary text-foreground flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
+                            {index + 1}
+                          </span>
+                          <span className="text-muted-foreground text-sm">
+                            {tI18nComplete.raw(key)}
+                          </span>
+                        </li>
+                      ),
+                    )}
+                  </ol>
+                </section>
+              ) : null}
               {/* A pointer back to what the project already has, not a second
                   tab: only while a search is active, only while it matches,
                   and capped at 4 — see `ConnectedConnectorCard` above for why

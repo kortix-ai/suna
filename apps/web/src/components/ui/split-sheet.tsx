@@ -361,7 +361,7 @@ function SplitSheetPanel({
       data-instant={instant ? '' : undefined}
       onKeyDown={handleKeyDown}
       className={cn(
-        'bg-popover col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col outline-none',
+        'bg-surface  col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col outline-none',
         // `cover` keeps the panel on the page's own cell at every width.
         !cover && '@3xl/split-sheet:col-start-2 @3xl/split-sheet:border-l',
         // Enter only. The column itself snaps: animating grid tracks re-wraps

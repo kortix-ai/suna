@@ -19,7 +19,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SplitSheet, SplitSheetMain, SplitSheetTrigger } from '@/components/ui/split-sheet';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -408,20 +407,25 @@ export function CatalogConnectorPage({
           backHref={`/projects/${encodeURIComponent(projectId)}/connectors`}
           icon={<CatalogDetailIcon entry={entry} />}
           title={entry.name}
-          status={
-            alreadyAdded ? (
-              <Badge variant="success" size="sm">
-                {projectMatches.length === 1
-                  ? tI18nComplete.raw('text6b02e0d363a4')
-                  : tI18nComplete('text2fa7425980f8', { value0: projectMatches.length })}
-              </Badge>
-            ) : undefined
-          }
+          /* No ADDED badge in the header (Jay, 2026-09-17): the "In this
+             project" list below already says it, with the connectors named. */
         >
+          {/* The description leads (Jay, 2026-09-17: Overview above the meta
+          card) — what the app IS comes before where its links live. */}
+          {entry.description ? (
+            <section className="space-y-2" aria-labelledby="connector-overview-title">
+              <h2 id="connector-overview-title" className="text-foreground text-sm font-medium">
+                {tI18nComplete.raw('textd4b1ea5708dd')}
+              </h2>
+              {/* The full prose, unclamped — the header carries identity only. */}
+              <p className="text-muted-foreground max-w-[64ch] text-sm text-pretty whitespace-pre-line">
+                {entry.description}
+              </p>
+            </section>
+          ) : null}
+
           {/* The Linear-integration-page shape (Jay, 2026-09-14): a meta card of
-          labeled facts — Website, Docs — with the one action at its right,
-          then the description as a real Overview section instead of clamped
-          header prose. */}
+          labeled facts — Website, Docs — with the one action at its right. */}
           <section className="bg-popover rounded-md border px-4 py-3">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               {websiteUrl ? (
@@ -503,18 +507,6 @@ export function CatalogConnectorPage({
                   </li>
                 ))}
               </ul>
-            </section>
-          ) : null}
-
-          {entry.description ? (
-            <section className="space-y-2" aria-labelledby="connector-overview-title">
-              <h2 id="connector-overview-title" className="text-foreground text-sm font-medium">
-                {tI18nComplete.raw('textd4b1ea5708dd')}
-              </h2>
-              {/* The full prose, unclamped — the header carries identity only. */}
-              <p className="text-muted-foreground max-w-[64ch] text-sm text-pretty whitespace-pre-line">
-                {entry.description}
-              </p>
             </section>
           ) : null}
 

@@ -88,10 +88,10 @@ export function AppConnectorSplitPage({
           closeAction={
             <Hint label={tI18nComplete.raw('text7d9eb7acb13e')} side="bottom" sideOffset={4}>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="icon-base"
                 aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
-                className="text-muted-foreground hover:text-foreground shrink-0"
+                className="shrink-0"
                 onClick={() => router.push(appHref)}
               >
                 <XIcon className="size-4" />

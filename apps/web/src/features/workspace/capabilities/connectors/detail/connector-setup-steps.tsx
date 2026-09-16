@@ -13,7 +13,6 @@ import {
   StepperItem,
   StepperSeparator,
   StepperTitle,
-  StepperTrigger,
 } from '@/components/ui/stepper';
 
 interface SetupStep {
@@ -119,7 +118,15 @@ export function ConnectorSetupSteps({
 
   return (
     /* One bordered card, same shape as the connection panel above it — the
-       checklist reads as one object, not loose page prose (Jay, 2026-09-14). */
+       checklist reads as one object, not loose page prose (Jay, 2026-09-14).
+       Composed from the design-system Stepper, kept deliberately PLAIN
+       (Jay, 2026-09-17: "keep it simple"): every step is the same quiet
+       tile — a check when done, its number otherwise — with one continuous
+       hairline rail between tiles and muted hints. The separator is
+       ABSOLUTE inside each item (top of tile height to row bottom), the
+       primitive's canonical vertical-with-text shape, so it can never
+       collapse into a floating stub. The failure story lives in the
+       connection panel above; the sync hint only points at it. */
     <section
       className="bg-popover space-y-3 rounded-md border px-4 py-3"
       aria-labelledby="connector-setup-title"
@@ -127,36 +134,23 @@ export function ConnectorSetupSteps({
       <h2 id="connector-setup-title" className="text-foreground text-sm font-medium">
         {tI18nComplete.raw('text51eb40d78f0a')}
       </h2>
-      <Stepper
-        orientation="vertical"
-        value={active}
-        count={steps.length}
-        className="flex w-full flex-col"
-      >
+      <Stepper orientation="vertical" value={active} count={steps.length} className="w-full">
         {steps.map((step, index) => (
-          <div key={step.title} className="flex gap-3.5">
-            <StepperItem step={index + 1} completed={step.done} className="items-center">
-              <StepperTrigger asChild>
-                <span className="flex shrink-0">
-                  <StepperIndicator className="size-6 text-xs font-medium tabular-nums">
-                    {step.done ? <CheckIcon className="size-3.5" /> : index + 1}
-                  </StepperIndicator>
-                </span>
-              </StepperTrigger>
-              <StepperSeparator className="bg-secondary m-0" />
+          /* The row gap lives INSIDE the text column (`pb-3`), never on the
+             row itself: the rail stretches to the row's content box, so
+             padding on the row would sit below the rail's reach and cut a
+             gap between one tile and the next. */
+          <div key={step.title} className="flex w-full gap-3">
+            <StepperItem step={index + 1} completed={step.done} className="relative">
+              <StepperIndicator className="bg-secondary text-secondary-foreground tabular-nums">
+                {step.done ? <CheckIcon className="size-3.5" /> : index + 1}
+              </StepperIndicator>
+              <StepperSeparator className="absolute top-6 bottom-0 left-3 m-0 -translate-x-1/2" />
             </StepperItem>
-            <div
-              className={
-                index === steps.length - 1 ? 'min-w-0 flex-1 pt-0.5' : 'min-w-0 flex-1 pt-0.5 pb-5'
-              }
-            >
-              <StepperTitle className="text-foreground text-sm font-medium">
-                {step.title}
-              </StepperTitle>
+            <div className={index < steps.length - 1 ? 'min-w-0 flex-1 pb-3' : 'min-w-0 flex-1'}>
+              <StepperTitle className="text-foreground leading-6">{step.title}</StepperTitle>
               {step.hint ? (
-                <StepperDescription className="text-muted-foreground text-xs text-pretty">
-                  {step.hint}
-                </StepperDescription>
+                <StepperDescription className="text-xs text-pretty">{step.hint}</StepperDescription>
               ) : null}
             </div>
           </div>
