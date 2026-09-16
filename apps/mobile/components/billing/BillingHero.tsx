@@ -14,7 +14,7 @@ import * as React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
-import { ArrowUpRight, ChevronRight, CircleHelp } from 'lucide-react-native';
+import { ArrowUpRightIcon as ArrowUpRight, CaretRightIcon as ChevronRight, QuestionIcon as CircleHelp } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -160,7 +160,7 @@ export function BillingHero({
             {action ? (
               <Button size="lg" className="mt-6 justify-between rounded-full" onPress={action.onPress}>
                 <Text>{action.label}</Text>
-                <Icon as={action.external ? ArrowUpRight : ChevronRight} size={18} strokeWidth={2.75} />
+                <Icon as={action.external ? ArrowUpRight : ChevronRight} size={18} />
               </Button>
             ) : null}
           </>

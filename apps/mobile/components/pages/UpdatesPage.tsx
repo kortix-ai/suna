@@ -5,11 +5,11 @@ import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
-  ArrowDownToLine,
-  GitCommit,
-  Menu,
-  Tag,
-} from 'lucide-react-native';
+  DownloadSimpleIcon as ArrowDownToLine,
+  GitCommitIcon as GitCommit,
+  ListIcon as Menu,
+  TagIcon as Tag,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,6 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { Ionicons } from '@expo/vector-icons';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
 
 // ─── Version type classification ─────────────────────────────────────────
@@ -284,7 +283,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               onPress={handleOpenDialog}
               className="mt-4 self-start"
             >
-              <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
+              <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} />
               <Text>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>
@@ -459,7 +458,6 @@ function VersionEntryCard({
             as={isDev ? GitCommit : Tag}
             size={13}
             color={withAlpha(foreground, isDark ? 0.35 : 0.3)}
-            strokeWidth={2}
           />
           <Text
             className={`font-mono font-roobert-semibold text-foreground ${isMajor ? 'text-[18px]' : isDev ? 'text-[13px]' : 'text-[16px]'}`}
@@ -558,7 +556,7 @@ function VersionEntryCard({
         {/* Dev SHA link */}
         {isDev && entry.sha && (
           <View className="flex-row items-center mt-2" style={{ gap: 4 }}>
-            <Icon as={GitCommit} size={11} color={withAlpha(foreground, isDark ? 0.3 : 0.25)} strokeWidth={2} />
+            <Icon as={GitCommit} size={11} color={withAlpha(foreground, isDark ? 0.3 : 0.25)} />
             <Text className="font-mono text-[11px] text-muted-foreground/50">{entry.sha.substring(0, 8)}</Text>
           </View>
         )}

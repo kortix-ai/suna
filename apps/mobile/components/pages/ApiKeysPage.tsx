@@ -18,21 +18,20 @@ import {
 import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
 import {
-  Key,
-  Plus,
-  Trash2,
-  Copy,
-  Check,
-  Shield,
-  RefreshCw,
-  Bot,
-  AlertCircle,
-  ExternalLink,
-} from 'lucide-react-native';
+  KeyIcon as Key,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  ShieldIcon as Shield,
+  ArrowClockwiseIcon as RefreshCw,
+  RobotIcon as Bot,
+  WarningCircleIcon as AlertCircle,
+  ArrowSquareOutIcon as ExternalLink,
+} from '@/lib/icons';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';

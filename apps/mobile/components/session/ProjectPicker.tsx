@@ -23,7 +23,7 @@ import React, {
 import { TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { Check, ChevronUp, Search as SearchIcon } from 'lucide-react-native';
+import { CheckIcon as Check, CaretUpIcon as ChevronUp, MagnifyingGlassIcon as SearchIcon } from '@/lib/icons';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -184,7 +184,6 @@ export function ProjectPicker() {
             as={ChevronUp}
             size={12}
             color={mutedColor}
-            strokeWidth={2.2}
           />
         </Button>
       </View>
@@ -238,7 +237,7 @@ export function ProjectPicker() {
                 backgroundColor: inputBg,
               }}
             >
-              <Icon as={SearchIcon} size={14} color={mutedColor} strokeWidth={2.2} />
+              <Icon as={SearchIcon} size={14} color={mutedColor} />
               <TextInput
                 value={search}
                 onChangeText={setSearch}
@@ -296,7 +295,7 @@ export function ProjectPicker() {
                 </Text>
               </View>
               {!selectedProjectId && (
-                <Icon as={Check} size={16} color={fgColor} strokeWidth={2.5} />
+                <Icon as={Check} size={16} color={fgColor} />
               )}
             </Button>
           )}
@@ -365,7 +364,7 @@ export function ProjectPicker() {
                       )}
                     </View>
                     {isSelected && (
-                      <Icon as={Check} size={16} color={fgColor} strokeWidth={2.5} />
+                      <Icon as={Check} size={16} color={fgColor} />
                     )}
                   </Button>
                 );

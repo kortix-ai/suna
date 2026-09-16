@@ -10,7 +10,7 @@ import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore } from '@/stores/tab-store';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import * as Haptics from 'expo-haptics';
-import { ExternalLink, Globe } from 'lucide-react-native';
+import { ArrowSquareOutIcon as ExternalLink, GlobeIcon as Globe } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import React, { useCallback } from 'react';
 import { Pressable, View } from 'react-native';
@@ -55,7 +55,7 @@ export function SandboxPreviewCard({ port, title, description, path }: SandboxPr
       style={{ borderColor }}
     >
       <View className="flex-row items-center">
-        <Icon as={Globe} size={18} className="text-foreground/70" strokeWidth={2} />
+        <Icon as={Globe} size={18} className="text-foreground/70" />
         <View className="ml-3 flex-1">
           <Text className="font-roobert-medium text-[14px] text-foreground" numberOfLines={1}>
             {displayTitle}
@@ -67,7 +67,7 @@ export function SandboxPreviewCard({ port, title, description, path }: SandboxPr
           )}
         </View>
         <View className="flex-row items-center rounded-lg bg-muted/60 px-2.5 py-1.5">
-          <Icon as={ExternalLink} size={12} className="text-foreground mr-1" strokeWidth={2.2} />
+          <Icon as={ExternalLink} size={12} className="text-foreground mr-1" />
           <Text className="font-roobert-medium text-[11px] text-foreground">Open</Text>
         </View>
       </View>

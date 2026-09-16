@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Lock, Check } from 'lucide-react-native';
+import { LockIcon as Lock, CheckIcon as Check } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { ModeLogo } from './ModeLogo';
@@ -106,7 +106,7 @@ export function ModelToggle({
             ]}
           >
             {isBasicSelected && (
-              <Check size={14} strokeWidth={3} color={colors.onAccent} />
+              <Check size={14} color={colors.onAccent} />
             )}
           </View>
         </View>
@@ -137,9 +137,9 @@ export function ModelToggle({
             ]}
           >
             {isAdvancedSelected ? (
-              <Check size={14} strokeWidth={3} color={colors.onAccent} />
+              <Check size={14} color={colors.onAccent} />
             ) : !canAccessAdvanced ? (
-              <Lock size={14} strokeWidth={2} color={colors.muted} />
+              <Lock size={14} color={colors.muted} />
             ) : null}
           </View>
         </View>

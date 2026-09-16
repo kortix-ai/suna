@@ -6,7 +6,7 @@
  */
 
 import { useProductionStripeIds, ENV_MODE } from '@/lib/utils/env-config';
-import { Sparkles, Zap, Rocket, Crown, Users, Building2 } from 'lucide-react-native';
+import { SparkleIcon as Sparkles, LightningIcon as Zap, RocketIcon as Rocket, CrownIcon as Crown, UsersIcon as Users, BuildingsIcon as Building2 } from '@/lib/icons';
 
 export interface PricingTier {
   id: string;  // Backend tier key (e.g., 'free', 'tier_2_20')

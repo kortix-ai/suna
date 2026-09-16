@@ -10,14 +10,14 @@ import { BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  ArrowLeft,
-  ExternalLink,
-  CheckCircle2,
-  Plus,
-  Check,
-  X,
-  Settings,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowSquareOutIcon as ExternalLink,
+  CheckCircleIcon as CheckCircle2,
+  PlusIcon as Plus,
+  CheckIcon as Check,
+  XIcon as X,
+  GearSixIcon as Settings,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -414,7 +414,6 @@ export function ComposioConnectorContent({
                               ? 'text-primary-foreground'
                               : 'text-muted-foreground'
                           }
-                          strokeWidth={2.5}
                         />
                       </View>
                       <View className="ml-3 flex-1">
@@ -428,7 +427,6 @@ export function ComposioConnectorContent({
                             as={Check}
                             size={14}
                             className="text-primary-foreground"
-                            strokeWidth={3}
                           />
                         </View>
                       )}
@@ -547,7 +545,6 @@ export function ComposioConnectorContent({
                         ? 'text-primary-foreground'
                         : 'text-muted-foreground'
                     }
-                    strokeWidth={2.5}
                   />
                 </View>
                 <View className="ml-3 flex-1">
@@ -561,7 +558,6 @@ export function ComposioConnectorContent({
                       as={Check}
                       size={14}
                       className="text-primary-foreground"
-                      strokeWidth={3}
                     />
                   </View>
                 )}
@@ -628,11 +624,11 @@ export function ComposioConnectorContent({
                 connectionName.length > 0 &&
                 (nameAvailability.available ? (
                   <View className="h-6 w-6 items-center justify-center rounded-full bg-kortix-green/10">
-                    <Icon as={Check} size={16} className="text-kortix-green" strokeWidth={2.5} />
+                    <Icon as={Check} size={16} className="text-kortix-green" />
                   </View>
                 ) : (
                   <View className="h-6 w-6 items-center justify-center rounded-full bg-destructive/10">
-                    <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
+                    <Icon as={X} size={16} className="text-destructive" />
                   </View>
                 ))}
             </View>
@@ -930,7 +926,7 @@ export function ComposioConnectorContent({
         className="items-center pb-12 pt-12"
         style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
         <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
-          <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
+          <Icon as={ExternalLink} size={40} className="text-foreground" />
         </View>
         <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
           {t('connections.connector.completeInBrowser')}
@@ -1004,7 +1000,7 @@ export function ComposioConnectorContent({
         className="items-center pb-12 pt-16"
         style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
         <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-kortix-green/10">
-          <Icon as={CheckCircle2} size={44} className="text-kortix-green" strokeWidth={2} />
+          <Icon as={CheckCircle2} size={44} className="text-kortix-green" />
         </View>
         <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
           {t('connections.connector.allSet')}
@@ -1121,7 +1117,6 @@ const ConnectionListItem = React.memo(({ connection, isSelected, onPress }: Conn
           as={CheckCircle2}
           size={20}
           className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-          strokeWidth={2.5}
         />
       </View>
       <View className="ml-3 flex-1">
@@ -1131,7 +1126,7 @@ const ConnectionListItem = React.memo(({ connection, isSelected, onPress }: Conn
       </View>
       {isSelected && (
         <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+          <Icon as={Check} size={14} className="text-primary-foreground" />
         </View>
       )}
     </Pressable>

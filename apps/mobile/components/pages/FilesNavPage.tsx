@@ -28,22 +28,22 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import {
-  GitBranch,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ArrowDownUp,
-  Download,
-  RefreshCw,
-  Folder,
-  FolderOpen,
-  Check,
-  X,
-  History,
-  GitCommitHorizontal,
-  LayoutGrid,
-  List,
-} from 'lucide-react-native';
+  GitBranchIcon as GitBranch,
+  CaretDownIcon as ChevronDown,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowsDownUpIcon as ArrowDownUp,
+  DownloadIcon as Download,
+  ArrowClockwiseIcon as RefreshCw,
+  FolderIcon as Folder,
+  FolderOpenIcon as FolderOpen,
+  CheckIcon as Check,
+  XIcon as X,
+  ClockCounterClockwiseIcon as History,
+  GitCommitIcon as GitCommitHorizontal,
+  SquaresFourIcon as LayoutGrid,
+  ListIcon as List,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -72,7 +72,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface FilesNavPageProps {
@@ -240,7 +239,6 @@ function VersionSheet({
                 <Icon
                   as={GitBranch}
                   size={26}
-                  strokeWidth={1.5}
                   color={withAlpha(fg, 0.25)}
                 />
               </View>
@@ -546,7 +544,7 @@ function FileCard({
         pressed && { opacity: 0.7 },
       ]}
     >
-      <FileIcon size={18} color={iconColor} strokeWidth={2} style={{ marginRight: 8 }} />
+      <FileIcon size={18} color={iconColor} style={{ marginRight: 8 }} />
       <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
         {file.name}
       </Text>
@@ -679,7 +677,7 @@ export function FilesNavPage({
               onPress={() => { haptics.selection(); setViewMode((v) => (v === 'list' ? 'grid' : 'list')); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Icon as={viewMode === 'list' ? LayoutGrid : List} size={18} color={fg} strokeWidth={2} />
+              <Icon as={viewMode === 'list' ? LayoutGrid : List} size={18} color={fg} />
             </Button>
             <Button variant="ghost" size="icon" className="mr-1" onPress={() => filesQuery.refetch()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {filesQuery.isFetching ? <ActivityIndicator size="small" color={muted} /> : <Icon as={RefreshCw} size={18} color={fg} />}

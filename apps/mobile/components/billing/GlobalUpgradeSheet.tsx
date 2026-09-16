@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { Check, ChevronRight, UserPlus, Users } from 'lucide-react-native';
+import { CheckIcon as Check, CaretRightIcon as ChevronRight, UserPlusIcon as UserPlus, UsersIcon as Users } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/button';
@@ -152,7 +152,7 @@ export function GlobalUpgradeSheet() {
           {offer.canManageBilling ? (
             <Button size="lg" className="justify-between rounded-full" onPress={handleViewPlans}>
               <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
-              <Icon as={ChevronRight} size={18} strokeWidth={2.75} />
+              <Icon as={ChevronRight} size={18} />
             </Button>
           ) : (
             <SettingsGroup>

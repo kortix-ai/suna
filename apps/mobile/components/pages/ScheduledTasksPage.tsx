@@ -19,32 +19,31 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
-  Search,
-  X,
-  Plus,
-  Clock,
-  Play,
-  Pause,
-  Trash2,
-  ChevronRight,
-  Timer,
-  Webhook,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  SkipForward,
-  Loader2,
-  Pencil,
-  RotateCw,
-  Calendar,
-  Save,
-  Copy,
-  Check,
-} from 'lucide-react-native';
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+  PlusIcon as Plus,
+  ClockIcon as Clock,
+  PlayIcon as Play,
+  PauseIcon as Pause,
+  TrashIcon as Trash2,
+  CaretRightIcon as ChevronRight,
+  TimerIcon as Timer,
+  WebhooksLogoIcon as Webhook,
+  CheckCircleIcon as CheckCircle2,
+  XCircleIcon as XCircle,
+  WarningIcon as AlertTriangle,
+  SkipForwardIcon as SkipForward,
+  RadioButtonIcon,
+  PencilIcon as Pencil,
+  ArrowClockwiseIcon as RotateCw,
+  CalendarIcon as Calendar,
+  FloppyDiskIcon as Save,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import { BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
@@ -756,7 +755,7 @@ function TaskDetailSheet({
                       {isRunning ? (
                         <ActivityIndicator size="small" color={theme.primaryForeground} />
                       ) : (
-                        <Play size={16} color={theme.primaryForeground} fill={theme.primaryForeground} />
+                        <Play size={16} color={theme.primaryForeground} weight="fill" />
                       )}
                       <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
                         {isRunning ? 'Running...' : 'Run Now'}
@@ -992,7 +991,7 @@ function ExecutionRow({ execution, isDark, onOpenSession }: { execution: Executi
     failed: { color: (isDark ? THEME.dark.destructive : THEME.light.destructive), icon: XCircle },
     timeout: { color: THEME.accent.orange, icon: AlertTriangle },
     skipped: { color: muted, icon: SkipForward },
-    running: { color: THEME.accent.blue, icon: Loader2 },
+    running: { color: THEME.accent.blue, icon: RadioButtonIcon },
     pending: { color: muted, icon: Clock },
   };
 

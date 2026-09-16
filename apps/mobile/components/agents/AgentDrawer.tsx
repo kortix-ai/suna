@@ -8,17 +8,17 @@ import { useBillingContext } from '@/contexts/BillingContext';
 import BottomSheet, { BottomSheetScrollView, BottomSheetView, BottomSheetModal, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import {
-  Plus,
-  Zap,
-  ArrowLeft,
-  Brain,
-  Wrench,
-  Server,
-  Sparkles,
-  Lock,
-  ChevronRight,
-  Plug,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  LightningIcon as Zap,
+  ArrowLeftIcon as ArrowLeft,
+  BrainIcon as Brain,
+  WrenchIcon as Wrench,
+  HardDrivesIcon as Server,
+  SparkleIcon as Sparkles,
+  LockIcon as Lock,
+  CaretRightIcon as ChevronRight,
+  PlugIcon as Plug,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
@@ -274,9 +274,9 @@ export function AgentDrawer({
         <View style={styles.connectionsRow}>
           <View style={[styles.connectionsIcon, { backgroundColor: c.hover }]}>
             {hasFreeTier ? (
-              <Lock size={18} color={c.mutedForeground} strokeWidth={2} />
+              <Lock size={18} color={c.mutedForeground} />
             ) : (
-              <Plug size={18} color={c.foreground} strokeWidth={2} />
+              <Plug size={18} color={c.foreground} />
             )}
           </View>
           <View style={styles.connectionsTextContainer}>

@@ -10,7 +10,7 @@
 import React, { useMemo } from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { FilePlus, FileMinus, FilePen, type LucideIcon } from 'lucide-react-native';
+import { FilePlusIcon as FilePlus, FileMinusIcon as FileMinus, NotePencilIcon as FilePen, type AppIcon } from '@/lib/icons';
 import type { ProjectCommitFile } from '@/lib/projects/projects-client';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
@@ -23,7 +23,7 @@ export interface DiffRow {
   text: string;
 }
 
-export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = false): { icon: LucideIcon; color: string } {
+export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = false): { icon: AppIcon; color: string } {
   if (status === 'added') return { icon: FilePlus, color: THEME.accent.green };
   if (status === 'deleted') return { icon: FileMinus, color: isDark ? THEME.dark.destructive : THEME.light.destructive };
   return { icon: FilePen, color: THEME.accent.blue };

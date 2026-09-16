@@ -9,7 +9,7 @@ import { useLanguage } from '@/contexts';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import { XIcon as X } from '@/lib/icons';
 import { log } from '@/lib/logger';
 import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
@@ -113,7 +113,6 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
               as={X}
               size={24}
               className="text-foreground"
-              strokeWidth={2}
             />
           </Button>
 

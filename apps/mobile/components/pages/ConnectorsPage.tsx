@@ -27,21 +27,21 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Zap,
-  Boxes,
-  Globe,
-  ChevronRight,
-  RefreshCw,
-  Trash2,
-  Plug,
-  Unplug,
-  ShieldCheck,
-  Check,
-  Search,
-  Plus,
-  X,
-  type LucideIcon,
-} from 'lucide-react-native';
+  LightningIcon as Zap,
+  CubeIcon as Boxes,
+  GlobeIcon as Globe,
+  CaretRightIcon as ChevronRight,
+  ArrowClockwiseIcon as RefreshCw,
+  TrashIcon as Trash2,
+  PlugIcon as Plug,
+  PlugsIcon as Unplug,
+  ShieldCheckIcon as ShieldCheck,
+  CheckIcon as Check,
+  MagnifyingGlassIcon as Search,
+  PlusIcon as Plus,
+  XIcon as X,
+  type AppIcon,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -81,7 +81,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface ConnectorsPageProps {
@@ -102,7 +101,7 @@ const CONNECT_RETURN_URL = 'kortix://connectors';
 const CONNECT_SUCCESS_URI = 'kortix://connectors/success';
 const CONNECT_ERROR_URI = 'kortix://connectors/error';
 
-function providerIcon(provider: ConnectorProvider): LucideIcon {
+function providerIcon(provider: ConnectorProvider): AppIcon {
   if (provider === 'pipedream') return Zap;
   if (provider === 'mcp') return Boxes;
   return Globe; // openapi | postman | graphql | http
@@ -997,7 +996,7 @@ const POLICY_ACTION_META: Record<PolicyAction, { label: string; color: string }>
 };
 const POLICY_ACTION_ORDER: PolicyAction[] = ['always_run', 'require_approval', 'block'];
 
-const DEFAULT_MODE_OPTIONS: { value: PolicyDefaultMode; label: string; desc: string; icon: LucideIcon }[] = [
+const DEFAULT_MODE_OPTIONS: { value: PolicyDefaultMode; label: string; desc: string; icon: AppIcon }[] = [
   { value: 'risk', label: 'Ask before risky actions', desc: 'Write / destructive tools pause for approval', icon: ShieldCheck },
   { value: 'allow_all', label: 'Run everything', desc: 'No approval prompts (legacy)', icon: Zap },
 ];
@@ -1128,7 +1127,7 @@ function PoliciesView({ projectId }: { projectId: string }) {
               <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                 {/* was hardcoded white — invisible against theme.primary's near-white
                     dark-mode fill; primaryForeground is built to contrast it */}
-                {on && <Check size={13} color={theme.primaryForeground} strokeWidth={3} />}
+                {on && <Check size={13} color={theme.primaryForeground} />}
               </View>
             </Pressable>
           );

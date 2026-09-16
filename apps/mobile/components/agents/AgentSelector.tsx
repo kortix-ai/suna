@@ -1,5 +1,5 @@
 import { Icon } from '@/components/ui/icon';
-import { ChevronDown } from 'lucide-react-native';
+import { CaretDownIcon as ChevronDown } from '@/lib/icons';
 import * as React from 'react';
 import { Platform, Pressable, View } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
@@ -58,7 +58,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         ]}
         hitSlop={ANDROID_HIT_SLOP}>
         <ModeLogo mode={mode} height={10} />
-        <Icon as={ChevronDown} size={9} className="text-foreground/60" strokeWidth={2} />
+        <Icon as={ChevronDown} size={9} className="text-foreground/60" />
       </Pressable>
     );
   }
@@ -79,7 +79,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       ]}
       hitSlop={ANDROID_HIT_SLOP}>
       <ModeLogo mode={mode} height={11} />
-      <Icon as={ChevronDown} size={9} className="text-foreground/50" strokeWidth={2} />
+      <Icon as={ChevronDown} size={9} className="text-foreground/50" />
     </Pressable>
   );
 }

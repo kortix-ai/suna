@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { WifiOff, Wifi } from 'lucide-react-native';
+import { WifiSlashIcon as WifiOff, WifiHighIcon as Wifi } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useOnlineStatus } from '@/lib/network/use-online-status';

@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
+import { CheckIcon, XIcon } from '@/lib/icons';
 import { THEME } from '@/lib/utils/theme';
 import type { FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 
@@ -86,7 +86,7 @@ export function ModelSelector({
           hitSlop={12}
           className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
         >
-          <Ionicons name="close" size={20} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+          <XIcon size={20} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
         </Button>
       </View>
 
@@ -147,7 +147,7 @@ export function ModelSelector({
                   </View>
                 )}
                 {isSelected && (
-                  <Ionicons name="checkmark" size={18} color={THEME.accent.green} />
+                  <CheckIcon size={18} color={THEME.accent.green} />
                 )}
               </View>
             </Button>

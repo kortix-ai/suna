@@ -7,7 +7,7 @@
 
 import * as React from 'react';
 import { Pressable, View, type TextInputProps } from 'react-native';
-import { Plus, Search, X } from 'lucide-react-native';
+import { PlusIcon as Plus, MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';

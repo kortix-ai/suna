@@ -24,22 +24,22 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Container,
-  Package,
-  FileCode,
-  CircleCheck,
-  CircleX,
-  Clock,
-  Loader,
-  Sparkles,
-  SquarePen,
-  Trash2,
-  RefreshCw,
-  Plus,
-  X,
-  TriangleAlert,
-  type LucideIcon,
-} from 'lucide-react-native';
+  ShippingContainerIcon as Container,
+  PackageIcon as Package,
+  FileCodeIcon as FileCode,
+  CheckCircleIcon as CircleCheck,
+  XCircleIcon as CircleX,
+  ClockIcon as Clock,
+  RadioButtonIcon,
+  SparkleIcon as Sparkles,
+  NotePencilIcon as SquarePen,
+  TrashIcon as Trash2,
+  ArrowClockwiseIcon as RefreshCw,
+  PlusIcon as Plus,
+  XIcon as X,
+  WarningIcon as TriangleAlert,
+  type AppIcon,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
@@ -70,7 +70,6 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SandboxPageProps {
@@ -86,13 +85,13 @@ interface SandboxPageProps {
 
 // ─── labels / helpers (web parity) ────────────────────────────────────────────
 
-function getStatusStyle(status: ProjectSnapshotStatus, isDark: boolean): { label: string; color: string; bg: string; icon: LucideIcon; spin?: boolean } {
+function getStatusStyle(status: ProjectSnapshotStatus, isDark: boolean): { label: string; color: string; bg: string; icon: AppIcon; spin?: boolean } {
   const destructive = isDark ? THEME.dark.destructive : THEME.light.destructive;
   switch (status) {
     case 'ready':
       return { label: 'Ready', color: THEME.accent.green, bg: withAlpha(THEME.accent.green, 0.12), icon: CircleCheck };
     case 'building':
-      return { label: 'Building', color: THEME.accent.blue, bg: withAlpha(THEME.accent.blue, 0.12), icon: Loader, spin: true };
+      return { label: 'Building', color: THEME.accent.blue, bg: withAlpha(THEME.accent.blue, 0.12), icon: RadioButtonIcon, spin: true };
     case 'failed':
       return { label: 'Failed', color: destructive, bg: withAlpha(destructive, 0.12), icon: CircleX };
   }
@@ -375,7 +374,7 @@ function SandboxTemplateSheet({
     }
   };
 
-  const ModeButton = ({ m, icon: Icon, title, sub }: { m: Mode; icon: LucideIcon; title: string; sub: string }) => {
+  const ModeButton = ({ m, icon: Icon, title, sub }: { m: Mode; icon: AppIcon; title: string; sub: string }) => {
     const active = mode === m;
     return (
       <Pressable

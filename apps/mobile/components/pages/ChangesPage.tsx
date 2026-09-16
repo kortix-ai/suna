@@ -21,22 +21,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  GitPullRequest,
-  GitMerge,
-  GitPullRequestClosed,
-  GitBranch,
-  FilePlus,
-  FileMinus,
-  FilePen,
-  TriangleAlert,
-  CircleCheck,
-  Check,
-  X,
-  ChevronRight,
-  Plus,
-  GitCompare,
-  type LucideIcon,
-} from 'lucide-react-native';
+  GitPullRequestIcon as GitPullRequest,
+  GitMergeIcon as GitMerge,
+  GitPullRequestIcon as GitPullRequestClosed,
+  GitBranchIcon as GitBranch,
+  FilePlusIcon as FilePlus,
+  FileMinusIcon as FileMinus,
+  NotePencilIcon as FilePen,
+  WarningIcon as TriangleAlert,
+  CheckCircleIcon as CircleCheck,
+  CheckIcon as Check,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  PlusIcon as Plus,
+  GitDiffIcon as GitCompare,
+  type AppIcon,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
@@ -70,7 +70,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface ChangesPageProps {
@@ -87,7 +86,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
 const shortSha = (sha: string | null) => (sha ? sha.slice(0, 7) : '');
 
-function getStatusMeta(status: ChangeRequestStatus, isDark: boolean): { label: string; color: string; icon: LucideIcon } {
+function getStatusMeta(status: ChangeRequestStatus, isDark: boolean): { label: string; color: string; icon: AppIcon } {
   switch (status) {
     case 'open':
       return { label: 'Open', color: THEME.accent.green, icon: GitPullRequest };

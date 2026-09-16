@@ -2,7 +2,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import { Share2, FolderOpen, Trash2, type LucideIcon } from 'lucide-react-native';
+import { ShareNetworkIcon as Share2, FolderOpenIcon as FolderOpen, TrashIcon as Trash2, type AppIcon } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { View, Alert, Pressable, Platform } from 'react-native';
@@ -20,7 +20,7 @@ interface ThreadActionsDrawerProps {
 }
 
 interface ActionRowProps {
-  icon: LucideIcon;
+  icon: AppIcon;
   label: string;
   onPress: () => void;
   destructive?: boolean;
@@ -51,7 +51,7 @@ const ActionRow = React.memo(function ActionRow({
       <View
         className={`w-10 h-10 rounded-2xl items-center justify-center ${destructive ? 'bg-destructive/10' : 'bg-muted'}`}
       >
-        <Icon as={icon} size={20} className={textClass} strokeWidth={2} />
+        <Icon as={icon} size={20} className={textClass} />
       </View>
       <Text
         className={`font-roobert-medium text-base flex-1 ${textClass}`}

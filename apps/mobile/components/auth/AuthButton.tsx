@@ -3,7 +3,7 @@ import { Pressable, View, ActivityIndicator } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowRight } from 'lucide-react-native';
+import { ArrowRightIcon as ArrowRight } from '@/lib/icons';
 import { useThemeColors } from '@/lib/theme-colors';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);

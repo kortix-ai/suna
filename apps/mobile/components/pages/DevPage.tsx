@@ -17,7 +17,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import { Copy, Check, UserPlus, Github } from 'lucide-react-native';
+import { CopyIcon as Copy, CheckIcon as Check, UserPlusIcon as UserPlus, GithubLogoIcon as Github } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -35,7 +35,6 @@ const MONO = 'Menlo';
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface DevPageProps {

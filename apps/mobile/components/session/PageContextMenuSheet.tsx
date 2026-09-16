@@ -15,19 +15,19 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import {
-  Copy,
-  Eye,
-  EyeOff,
-  FileText,
-  FilePlus,
-  FolderPlus,
-  Image as ImageIcon,
-  LayoutGrid,
-  List,
-  Plug,
-  RefreshCw,
-  Upload,
-} from 'lucide-react-native';
+  CopyIcon as Copy,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  FileTextIcon as FileText,
+  FilePlusIcon as FilePlus,
+  FolderPlusIcon as FolderPlus,
+  ImageIcon,
+  SquaresFourIcon as LayoutGrid,
+  ListIcon as List,
+  PlugIcon as Plug,
+  ArrowClockwiseIcon as RefreshCw,
+  UploadIcon as Upload,
+} from '@/lib/icons';
 
 import type { SandboxFile } from '@/api/types';
 import type { FilesPageRef } from '@/components/pages/FilesPage';

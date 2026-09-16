@@ -10,7 +10,7 @@ import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowUpRight, Check, Plus, Settings } from 'lucide-react-native';
+import { ArrowUpRightIcon as ArrowUpRight, CheckIcon as Check, PlusIcon as Plus, GearSixIcon as Settings } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Avatar } from '@/components/kortix/avatar';
@@ -100,7 +100,7 @@ export function AccountSwitcherSheet({
               <Text className="ml-3 flex-1 font-roobert-medium text-[14px] text-foreground" numberOfLines={1}>
                 {account.name}
               </Text>
-              {selected && <Icon as={Check} size={16} color={theme.primary} strokeWidth={2.4} />}
+              {selected && <Icon as={Check} size={16} color={theme.primary} />}
             </Pressable>
           );
         })}
@@ -151,7 +151,7 @@ function ActionRow({
       className="active:opacity-80"
     >
       <View className="flex-row items-center px-2 py-2.5">
-        <Icon as={icon} size={16} className="text-muted-foreground" strokeWidth={2.2} />
+        <Icon as={icon} size={16} className="text-muted-foreground" />
         <Text className="ml-3 flex-1 font-roobert-medium text-[14px] text-foreground">{label}</Text>
       </View>
     </Pressable>

@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Globe, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
+import { ArrowLeftIcon as ArrowLeft, GlobeIcon as Globe, CheckCircleIcon as CheckCircle2, WarningCircleIcon as AlertCircle, InfoIcon as Info } from '@/lib/icons';
 import { useLanguage } from '@/contexts';
 import { useDiscoverCustomMcpTools, type CustomMcpResponse } from '@/hooks/useCustomMcp';
 import * as Haptics from 'expo-haptics';

@@ -19,16 +19,16 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Timer,
-  Clock,
-  Play,
-  Pause,
-  Trash2,
-  X,
-  ChevronRight,
-  TriangleAlert,
-  Check,
-} from 'lucide-react-native';
+  TimerIcon as Timer,
+  ClockIcon as Clock,
+  PlayIcon as Play,
+  PauseIcon as Pause,
+  TrashIcon as Trash2,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  WarningIcon as TriangleAlert,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -61,7 +61,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SchedulesPageProps {
@@ -185,7 +184,7 @@ function ScheduleCreateSheet({
                 {TIMEZONES.map((tz, i) => (
                   <Pressable key={tz} onPress={() => { haptics.selection(); setTimezone(tz); setTzOpen(false); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
                     <Text style={{ flex: 1, fontSize: 13.5, fontFamily: MONO, color: fg }}>{tz}</Text>
-                    {timezone === tz && <Icon as={Check} size={15} color={theme.primary} strokeWidth={3} />}
+                    {timezone === tz && <Icon as={Check} size={15} color={theme.primary} />}
                   </Pressable>
                 ))}
               </View>

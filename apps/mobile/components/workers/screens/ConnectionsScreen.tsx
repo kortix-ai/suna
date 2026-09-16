@@ -27,17 +27,17 @@ import {
   type ComposioConnection,
 } from '@/hooks/useComposio';
 import {
-  Plus,
-  CheckCircle2,
-  Settings,
-  X,
-  Store,
-  Trash2,
-  Server,
-  Lock,
-  Search,
-  Plug,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  CheckCircleIcon as CheckCircle2,
+  GearSixIcon as Settings,
+  XIcon as X,
+  StorefrontIcon as Store,
+  TrashIcon as Trash2,
+  HardDrivesIcon as Server,
+  LockIcon as Lock,
+  MagnifyingGlassIcon as Search,
+  PlugIcon as Plug,
+} from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/connections/ComposioConnector';
 import { ComposioToolsContent } from '@/components/settings/connections/ComposioToolsSelector';

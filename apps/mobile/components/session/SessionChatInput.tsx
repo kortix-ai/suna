@@ -24,18 +24,29 @@ import {
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
 import {
-  Infinity as InfinityIcon,
-  Slash as SlashIcon,
-  Info as InfoIcon,
-  X as XIcon,
-  Plus as PlusIcon,
-  Paperclip as PaperclipIcon,
-  Settings as SettingsIcon,
-  ChevronRight as ChevronRightIcon,
-} from 'lucide-react-native';
+  InfinityIcon,
+  InfoIcon,
+  XIcon,
+  PlusIcon,
+  PaperclipIcon,
+  GearSixIcon as SettingsIcon,
+  CaretRightIcon as ChevronRightIcon,
+  FileIcon,
+  TerminalIcon,
+  CaretDownIcon,
+  ListIcon,
+  StopIcon,
+  ArrowUpIcon,
+  CaretLeftIcon,
+  CheckIcon,
+  type AppIcon,
+  UserIcon,
+  CpuIcon,
+  LightningIcon,
+} from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
+import Svg, { Line } from 'react-native-svg';
 import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
@@ -517,7 +528,7 @@ function SessionChatInputImpl({
                       />
                     ) : (
                       <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', padding: 4 }}>
-                        <Ionicons name="document-outline" size={22} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+                        <FileIcon size={22} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
                         <RNText
                           numberOfLines={2}
                           style={{ fontSize: 9, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, textAlign: 'center', marginTop: 2 }}
@@ -547,7 +558,7 @@ function SessionChatInputImpl({
                       }}
                       hitSlop={4}
                     >
-                      <XIcon size={9} color={THEME.dark.foreground} strokeWidth={3} />
+                      <XIcon size={9} color={THEME.dark.foreground} />
                     </Button>
                   </View>
                 ))}
@@ -576,12 +587,7 @@ function SessionChatInputImpl({
                     borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                   }}
                 >
-                  <Ionicons
-                    name="terminal-outline"
-                    size={12}
-                    color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
-                    style={{ marginRight: 6 }}
-                  />
+                  <TerminalIcon size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 6 }} />
                   <RNText
                     style={{
                       fontSize: 13,
@@ -600,7 +606,7 @@ function SessionChatInputImpl({
                     hitSlop={8}
                     style={{ marginLeft: 6 }}
                   >
-                    <Ionicons name="close" size={12} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+                    <XIcon size={12} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
                   </Button>
                 </View>
                 {stagedCommand.description && (
@@ -666,7 +672,7 @@ function SessionChatInputImpl({
                           backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                         }}
                       >
-                        <PlusIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} strokeWidth={2} />
+                        <PlusIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
                       </Button>
                     )}
 
@@ -697,12 +703,7 @@ function SessionChatInputImpl({
                         {model?.modelName ? ` · ${model.modelName}` : ''}
                         {variant ? ` · ${variantLabel}` : ''}
                       </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={9}
-                        color={isDark ? THEME.dark.border : THEME.light.border}
-                        style={{ marginLeft: 2 }}
-                      />
+                      <CaretDownIcon size={9} color={isDark ? THEME.dark.border : THEME.light.border} style={{ marginLeft: 2 }} />
                     </Button>
 
                     {/* Compact autocontinue indicator — only when mode is active */}
@@ -758,7 +759,7 @@ function SessionChatInputImpl({
                           backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                         }}
                       >
-                        <Ionicons name="list-outline" size={11} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 3 }} />
+                        <ListIcon size={11} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 3 }} />
                         <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
                           Queue
                         </Text>
@@ -778,7 +779,7 @@ function SessionChatInputImpl({
                           backgroundColor: themeColors.primary,
                         }}
                       >
-                        <Ionicons name="stop" size={12} color={themeColors.primaryForeground} />
+                        <StopIcon size={12} color={themeColors.primaryForeground} weight="fill" />
                       </Button>
                     ) : hasContent ? (
                       <Button
@@ -795,11 +796,7 @@ function SessionChatInputImpl({
                           backgroundColor: canSend ? themeColors.primary : (isDark ? THEME.dark.border : THEME.light.border),
                         }}
                       >
-                        <Ionicons
-                          name="arrow-up"
-                          size={14}
-                          color={canSend ? themeColors.primaryForeground : (isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground)}
-                        />
+                        <ArrowUpIcon size={14} color={canSend ? themeColors.primaryForeground : (isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground)} />
                       </Button>
                     ) : (
                       <Button
@@ -816,7 +813,7 @@ function SessionChatInputImpl({
                           backgroundColor: isDark ? THEME.dark.border : THEME.light.border,
                         }}
                       >
-                        <Ionicons name="arrow-up" size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+                        <ArrowUpIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
                       </Button>
                     )}
                   </View>
@@ -920,12 +917,7 @@ function AutoContinueButton({
       >
         {label}
       </Text>
-      <Ionicons
-        name="chevron-down"
-        size={10}
-        color={isActive ? (THEME.accent.purple) : mutedColor}
-        style={{ marginLeft: 4 }}
-      />
+      <CaretDownIcon size={10} color={isActive ? (THEME.accent.purple) : mutedColor} style={{ marginLeft: 4 }} />
     </Button>
   );
 }
@@ -1051,7 +1043,7 @@ function ActionsSheet({
           </Text>
         </View>
 
-        {/* Settings-style rows: plain stroked lucide icon, title + subtitle,
+        {/* Settings-style rows: plain icon, title + subtitle,
             chevron, and a thin divider between rows (no per-row card bg). */}
         <View style={{ paddingHorizontal: 20 }}>
           {rows.map((row, idx) => {
@@ -1072,7 +1064,6 @@ function ActionsSheet({
                     as={row.icon}
                     size={18}
                     color={isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8)}
-                    strokeWidth={2.2}
                   />
                   <View style={{ marginLeft: 16, flex: 1 }}>
                     <Text
@@ -1100,7 +1091,6 @@ function ActionsSheet({
                     as={ChevronRightIcon}
                     size={16}
                     color={isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.35)}
-                    strokeWidth={2.2}
                   />
                 </Button>
                 {!isLast && (
@@ -1125,13 +1115,15 @@ function ActionsSheet({
 function InfinityOffIcon({ color, size }: { color: string; size: number }) {
   return (
     <View style={{ width: size, height: size }}>
-      <InfinityIcon color={color} size={size} strokeWidth={2.4} />
-      <SlashIcon
-        color={color}
-        size={size}
-        strokeWidth={2}
+      <InfinityIcon color={color} size={size} />
+      <Svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
         style={{ position: 'absolute', left: 0, top: 0 }}
-      />
+      >
+        <Line x1={22} y1={2} x2={2} y2={22} stroke={color} strokeWidth={2} strokeLinecap="round" />
+      </Svg>
     </View>
   );
 }
@@ -1226,7 +1218,7 @@ function AutoContinueSheet({
               hitSlop={12}
               style={{ marginRight: 12 }}
             >
-              <Ionicons name="chevron-back" size={22} color={muted} />
+              <CaretLeftIcon size={22} color={muted} />
             </Button>
             <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
               {detailAlg.label}
@@ -1245,7 +1237,7 @@ function AutoContinueSheet({
               <Text style={{ color: THEME.accent.purple, fontFamily: 'Roobert-Medium', fontSize: 13 }}>
                 Use
               </Text>
-              <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />
+              <CheckIcon size={18} color={THEME.accent.purple} />
             </Button>
           </View>
 
@@ -1339,7 +1331,7 @@ function AutoContinueSheet({
                   Manual — you send each message
                 </Text>
               </View>
-              {!isActive && <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />}
+              {!isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
             </Button>
 
             <Button
@@ -1358,7 +1350,7 @@ function AutoContinueSheet({
                 backgroundColor: isActive ? withAlpha(THEME.accent.purple, 0.08) : 'transparent',
               }}
             >
-              <InfinityIcon color={isActive ? (THEME.accent.purple) : muted} strokeWidth={2.2} size={18} />
+              <InfinityIcon color={isActive ? (THEME.accent.purple) : muted} size={18} />
               <View style={{ marginLeft: 12, flex: 1 }}>
                 <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                   On
@@ -1369,7 +1361,7 @@ function AutoContinueSheet({
                     : 'Pick an algorithm and the agent will continue on its own'}
                 </Text>
               </View>
-              {isActive && <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />}
+              {isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
             </Button>
           </View>
 
@@ -1420,7 +1412,7 @@ function AutoContinueSheet({
                     <InfoIcon size={18} color={muted} />
                   </Button>
                   {isSelected && (
-                    <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />
+                    <CheckIcon size={18} color={THEME.accent.purple} />
                   )}
                 </View>
               </Button>
@@ -1517,10 +1509,10 @@ function SlashCommandSuggestions({
 
 type ConfigTab = 'agent' | 'model' | 'thinking';
 
-const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
-  { key: 'agent', label: 'Agent', icon: 'person-outline' },
-  { key: 'model', label: 'Model', icon: 'hardware-chip-outline' },
-  { key: 'thinking', label: 'Thinking', icon: 'flash-outline' },
+const TAB_CONFIG: { key: ConfigTab; label: string; icon: AppIcon }[] = [
+  { key: 'agent', label: 'Agent', icon: UserIcon },
+  { key: 'model', label: 'Model', icon: CpuIcon },
+  { key: 'thinking', label: 'Thinking', icon: LightningIcon },
 ];
 
 const ConfigSheet = forwardRef<
@@ -1648,11 +1640,7 @@ const ConfigSheet = forwardRef<
                   gap: 5,
                 }}
               >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={14}
-                  color={isActive ? fgColor : mutedColor}
-                />
+                <tab.icon size={14} color={isActive ? fgColor : mutedColor} />
                 <Text
                   style={{
                     fontSize: 13,
@@ -1708,7 +1696,7 @@ const ConfigSheet = forwardRef<
                 ) : null}
               </View>
               {isSelected && (
-                <Ionicons name="checkmark" size={20} color={fgColor} />
+                <CheckIcon size={20} color={fgColor} />
               )}
             </Button>
           );
@@ -1801,7 +1789,7 @@ const ConfigSheet = forwardRef<
                       </Text>
                     </View>
                     {isSelected && (
-                      <Ionicons name="checkmark" size={20} color={fgColor} />
+                      <CheckIcon size={20} color={fgColor} />
                     )}
                   </Button>
                 );
@@ -1840,7 +1828,7 @@ const ConfigSheet = forwardRef<
                 </Text>
               </View>
               {!selectedVariant && (
-                <Ionicons name="checkmark" size={20} color={fgColor} />
+                <CheckIcon size={20} color={fgColor} />
               )}
             </Button>
             {variants.map((v) => {
@@ -1875,7 +1863,7 @@ const ConfigSheet = forwardRef<
                     </Text>
                   </View>
                   {isSelected && (
-                    <Ionicons name="checkmark" size={20} color={fgColor} />
+                    <CheckIcon size={20} color={fgColor} />
                   )}
                 </Button>
               );

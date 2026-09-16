@@ -7,7 +7,7 @@
 import React, { useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, CalendarClock, Hourglass, KeyRound, Plus } from 'lucide-react-native';
+import { RobotIcon as Bot, CalendarDotsIcon as CalendarClock, HourglassIcon as Hourglass, KeyIcon as KeyRound, PlusIcon as Plus } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';

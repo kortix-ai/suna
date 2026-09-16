@@ -7,7 +7,7 @@
 import React, { useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Webhook } from 'lucide-react-native';
+import { PlusIcon as Plus, WebhooksLogoIcon as Webhook } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';

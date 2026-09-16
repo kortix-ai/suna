@@ -4,7 +4,7 @@ import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, Search, CheckCircle2, X } from 'lucide-react-native';
+import { ArrowLeftIcon as ArrowLeft, MagnifyingGlassIcon as Search, CheckCircleIcon as CheckCircle2, XIcon as X } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { THEME } from '@/lib/utils/theme';

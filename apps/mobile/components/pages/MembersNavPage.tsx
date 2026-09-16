@@ -20,17 +20,17 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Users,
-  UserPlus,
-  Mail,
-  Shield,
-  Clock,
-  RefreshCw,
-  X,
-  ChevronRight,
-  Check,
-  Trash2,
-} from 'lucide-react-native';
+  UsersIcon as Users,
+  UserPlusIcon as UserPlus,
+  EnvelopeIcon as Mail,
+  ShieldIcon as Shield,
+  ClockIcon as Clock,
+  ArrowClockwiseIcon as RefreshCw,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  CheckIcon as Check,
+  TrashIcon as Trash2,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -71,7 +71,7 @@ const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
   manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
 };
 
-interface PageTabLike { id: string; label: string; icon: string }
+interface PageTabLike { id: string; label: string }
 interface MembersNavPageProps {
   page: PageTabLike;
   projectId: string;

@@ -14,19 +14,19 @@ import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  User,
-  CreditCard,
-  Moon,
-  Sun,
-  Globe,
-  LogOut,
-  ChevronRight,
-  FlaskConical,
-  Trash2,
-  Wallet,
-  BarChart3,
-  Plug,
-} from 'lucide-react-native';
+  UserIcon as User,
+  CreditCardIcon as CreditCard,
+  MoonIcon as Moon,
+  SunIcon as Sun,
+  GlobeIcon as Globe,
+  SignOutIcon as LogOut,
+  CaretRightIcon as ChevronRight,
+  FlaskIcon as FlaskConical,
+  TrashIcon as Trash2,
+  WalletIcon as Wallet,
+  ChartBarIcon as BarChart3,
+  PlugIcon as Plug,
+} from '@/lib/icons';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -412,7 +412,7 @@ const SettingsItem = React.memo(
           {isLoading ? (
             <KortixLoader size="small" customSize={20} />
           ) : (
-            <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+            <Icon as={icon} size={20} className={iconColor} />
           )}
           <Text className={`font-roobert-medium text-lg ${textColor}`}>{label}</Text>
           {showBadge && (
@@ -423,7 +423,7 @@ const SettingsItem = React.memo(
         </View>
 
         {!destructive && !isLoading && (
-          <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
+          <Icon as={ChevronRight} size={16} className="text-foreground/40" />
         )}
       </AnimatedPressable>
     );

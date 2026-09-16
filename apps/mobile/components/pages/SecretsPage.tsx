@@ -22,19 +22,18 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import {
-  Plus,
-  Trash2,
-  Pencil,
-  Eye,
-  EyeOff,
-  Key,
-  AlertTriangle,
-  Search,
-  X,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  PencilIcon as Pencil,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  KeyIcon as Key,
+  WarningIcon as AlertTriangle,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 

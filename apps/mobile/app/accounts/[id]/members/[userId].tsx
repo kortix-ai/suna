@@ -8,7 +8,7 @@ import React, { useMemo } from 'react';
 import { Alert, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, FolderGit2, LogOut, ShieldAlert, UserMinus, Users, X } from 'lucide-react-native';
+import { CheckIcon as Check, GitBranchIcon as FolderGit2, SignOutIcon as LogOut, ShieldWarningIcon as ShieldAlert, UserMinusIcon as UserMinus, UsersIcon as Users, XIcon as X } from '@/lib/icons';
 
 import { Icon } from '@/components/ui/icon';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -263,7 +263,6 @@ export default function MemberDetailScreen() {
                           as={allowed ? Check : X}
                           size={18}
                           className={allowed ? 'text-foreground/80' : 'text-muted-foreground'}
-                          strokeWidth={2.2}
                         />
                       )
                     }

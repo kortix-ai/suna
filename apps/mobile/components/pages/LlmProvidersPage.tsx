@@ -24,17 +24,16 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import {
-  Plus,
-  Unplug,
-  ChevronDown,
-  ChevronUp,
-  Cpu,
-  Check,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  PlugsIcon as Unplug,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+  CpuIcon as Cpu,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
@@ -52,7 +51,7 @@ import {
   buildCustomProviderConfigUpdate,
   type CustomProviderFormValues,
 } from '@/lib/kortix/custom-provider-config';
-import { Globe } from 'lucide-react-native';
+import { GlobeIcon as Globe } from '@/lib/icons';
 import { SearchBar } from '@/components/kortix/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';

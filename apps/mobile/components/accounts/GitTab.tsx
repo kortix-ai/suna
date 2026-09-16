@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Github, RotateCw } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, GithubLogoIcon as Github, ArrowClockwiseIcon as RotateCw } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';

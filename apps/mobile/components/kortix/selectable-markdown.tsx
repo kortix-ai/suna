@@ -31,7 +31,7 @@ import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Copy, Image as ImageIcon } from 'lucide-react-native';
+import { CopyIcon as Copy, ImageIcon } from '@/lib/icons';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -616,7 +616,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
               borderColor: isDark ? THEME.dark.border : THEME.light.border,
             }]}
           >
-            <Copy size={16} color={colors.text} strokeWidth={2} />
+            <Copy size={16} color={colors.text} />
             <RNText style={[drawerStyles.copyButtonText, { color: colors.text }]}>
               {copied ? 'Copied!' : 'Copy All'}
             </RNText>

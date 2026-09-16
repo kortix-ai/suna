@@ -10,7 +10,7 @@ import React from 'react';
 import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
+import { InfoIcon as Info, PlusIcon as Plus, CheckIcon as Check, CheckCircleIcon as CheckCircle2 } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { DynamicConfigForm } from './DynamicConfigForm';
@@ -128,7 +128,6 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
           as={CheckCircle2}
           size={20}
           className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-          strokeWidth={2.5}
         />
       </View>
       <View className="ml-3 flex-1">
@@ -146,7 +145,7 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
       </View>
       {isSelected && (
         <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+          <Icon as={Check} size={14} className="text-primary-foreground" />
         </View>
       )}
     </AnimatedPressable>
@@ -293,7 +292,6 @@ export function TriggerConfigStep({
                           as={Plus}
                           size={20}
                           className="text-primary-foreground"
-                          strokeWidth={2.5}
                         />
                       </View>
                       <View className="ml-3 flex-1">

@@ -6,7 +6,7 @@
  * only renders and delegates.
  */
 import * as React from 'react';
-import { ChevronDown, MoreHorizontal } from 'lucide-react-native';
+import { CaretDownIcon as ChevronDown, DotsThreeIcon as MoreHorizontal } from '@/lib/icons';
 
 import { Icon } from '@/components/ui/icon';
 import { ListRow } from '@/components/kortix/list-row';

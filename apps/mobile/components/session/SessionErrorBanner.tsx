@@ -11,7 +11,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CircleAlert, CreditCard } from 'lucide-react-native';
+import { WarningCircleIcon as CircleAlert, CreditCardIcon as CreditCard } from '@/lib/icons';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ── Detection helpers ──────────────────────────────────────────────────────

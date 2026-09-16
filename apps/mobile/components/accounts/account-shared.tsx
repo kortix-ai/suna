@@ -13,7 +13,7 @@
 
 import React, { useMemo } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { Crown, ShieldCheck, User, X, type LucideIcon } from 'lucide-react-native';
+import { CrownIcon as Crown, ShieldCheckIcon as ShieldCheck, UserIcon as User, XIcon as X, type AppIcon } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { SettingsRow } from '@/components/kortix/settings-list';
@@ -33,7 +33,7 @@ export const ACCOUNT_ROLE_LABEL: Record<AccountRole, string> = {
 
 export const ACCOUNT_ROLES: AccountRole[] = ['owner', 'admin', 'member'];
 
-export const ACCOUNT_ROLE_ICON: Record<AccountRole, LucideIcon> = {
+export const ACCOUNT_ROLE_ICON: Record<AccountRole, AppIcon> = {
   owner: Crown,
   admin: ShieldCheck,
   member: User,

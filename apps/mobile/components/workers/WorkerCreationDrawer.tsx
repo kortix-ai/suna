@@ -14,13 +14,13 @@ import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
-  Wrench,
-  MessageSquare,
-  Globe,
-  ChevronRight,
-  ArrowLeft,
-  Sparkles,
-} from 'lucide-react-native';
+  WrenchIcon as Wrench,
+  ChatIcon as MessageSquare,
+  GlobeIcon as Globe,
+  CaretRightIcon as ChevronRight,
+  ArrowLeftIcon as ArrowLeft,
+  SparkleIcon as Sparkles,
+} from '@/lib/icons';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useCreateAgent, useCreateNewAgent } from '@/lib/agents/hooks';

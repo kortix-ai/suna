@@ -1,7 +1,7 @@
 /**
  * dock-menu — the single source of truth for what the project dock can reach.
  *
- * Pure data and pure functions only. No React, no lucide, no zustand: this
+ * Pure data and pure functions only. No React, no icons, no zustand: this
  * module is unit-tested under `bun test`, which cannot load native modules.
  * Icon keys are resolved to components in `components/session/dock-icons.ts`.
  */

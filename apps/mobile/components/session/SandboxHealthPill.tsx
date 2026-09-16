@@ -11,7 +11,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { ArrowLeftRight, CircleAlert } from 'lucide-react-native';
+import { ArrowsLeftRightIcon as ArrowLeftRight, WarningCircleIcon as CircleAlert } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -151,7 +151,6 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
             as={CircleAlert}
             size={12}
             color={fg}
-            strokeWidth={2.2}
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>
@@ -178,7 +177,6 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
             as={ArrowLeftRight}
             size={12}
             color={fg}
-            strokeWidth={2.2}
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>

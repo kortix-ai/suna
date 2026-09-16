@@ -1,15 +1,27 @@
 import { TextClassContext } from '@/components/ui/text';
+import type { AppIcon, AppIconProps } from '@/lib/icons';
 import { cn } from '@/lib/utils/index';
-import type { LucideIcon, LucideProps } from 'lucide-react-native';
 import { cssInterop } from 'nativewind';
 import * as React from 'react';
+import { StyleSheet, type TextStyle } from 'react-native';
 
-type IconProps = LucideProps & {
-  as: LucideIcon;
-} & React.RefAttributes<LucideIcon>;
+type IconProps = AppIconProps & {
+  as: AppIcon;
+  className?: string;
+};
 
-function IconImpl({ as: IconComponent, ...props }: IconProps) {
-  return <IconComponent {...props} />;
+function IconImpl({ as: IconComponent, color, style, ...props }: IconProps) {
+  // Phosphor fills with the `color` prop and ignores `style.color`, so the
+  // className color (`text-*`) is read from the style here. An explicit
+  // `color` prop still wins, the same precedence lucide had.
+  const styleColor = (StyleSheet.flatten(style) as TextStyle | undefined)?.color;
+  return (
+    <IconComponent
+      color={color ?? (typeof styleColor === 'string' ? styleColor : undefined)}
+      style={style}
+      {...props}
+    />
+  );
 }
 
 cssInterop(IconImpl, {
@@ -23,24 +35,19 @@ cssInterop(IconImpl, {
 });
 
 /**
- * A wrapper component for Lucide icons with Nativewind `className` support via `cssInterop`.
+ * Renders an app icon from `@/lib/icons` with Nativewind `className` support.
  *
- * This component allows you to render any Lucide icon while applying utility classes
- * using `nativewind`. It avoids the need to wrap or configure each icon individually.
+ * `text-*` classes set the icon color; `size-*` / `h-*` / `w-*` set its size.
+ * Never pass `weight` — `DEFAULT_ICON_WEIGHT` applies app-wide. The only
+ * override is `weight="fill"` for a solid glyph.
  *
- * @component
  * @example
  * ```tsx
- * import { ArrowRight } from 'lucide-react-native';
- * import { Icon } from '@/registry/components/ui/icon';
+ * import { ArrowRightIcon } from '@/lib/icons';
+ * import { Icon } from '@/components/ui/icon';
  *
- * <Icon as={ArrowRight} className="text-red-500" size={16} />
+ * <Icon as={ArrowRightIcon} className="text-muted-foreground" size={16} />
  * ```
- *
- * @param {LucideIcon} as - The Lucide icon component to render.
- * @param {string} className - Utility classes to style the icon using Nativewind.
- * @param {number} size - Icon size (defaults to 14).
- * @param {...LucideProps} ...props - Additional Lucide icon props passed to the "as" icon.
  */
 function Icon({ as: IconComponent, className, size = 14, ...props }: IconProps) {
   const textClass = React.useContext(TextClassContext);

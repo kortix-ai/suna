@@ -9,7 +9,7 @@ import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { Zap, Plus, Play, Pause, Settings, Trash2, Clock, Link2 } from 'lucide-react-native';
+import { LightningIcon as Zap, PlusIcon as Plus, PlayIcon as Play, PauseIcon as Pause, GearSixIcon as Settings, TrashIcon as Trash2, ClockIcon as Clock, LinkSimpleIcon as Link2 } from '@/lib/icons';
 import { useAgentTriggers, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
 import { TriggerCreationDrawer } from '@/components/triggers/TriggerCreationDrawer';
 import * as Haptics from 'expo-haptics';

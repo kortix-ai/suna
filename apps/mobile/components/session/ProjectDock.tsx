@@ -21,7 +21,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
-import { Plus, type LucideIcon } from 'lucide-react-native';
+import { PlusIcon as Plus, type AppIcon } from '@/lib/icons';
 
 import { Icon } from '@/components/ui/icon';
 import { ListRow } from '@/components/kortix/list-row';
@@ -65,7 +65,7 @@ function DockRow({
   index: number;
   reduced: boolean;
   title: string;
-  icon: LucideIcon;
+  icon: AppIcon;
   onPress: () => void;
 }) {
   const style = useAnimatedStyle(() => {

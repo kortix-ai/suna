@@ -11,7 +11,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { AlertCircle, FolderGit2, Pencil, RotateCw, Trash2, UserPlus } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, GitBranchIcon as FolderGit2, PencilIcon as Pencil, ArrowClockwiseIcon as RotateCw, TrashIcon as Trash2, UserPlusIcon as UserPlus } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';

@@ -537,3 +537,34 @@ DECISION (Jay, 2026-09-16): a dialog is a floating surface, so it uses the
 same token as bottom sheets (`getSheetBg` → `THEME.*.popover`): white in
 light, 9% in dark, matching web `--popover`. Call sites set shape/width only,
 never a background.
+
+## Icon library — lucide-react-native → Phosphor (`@/lib/icons`)
+
+Stock RNR components import their icons from `lucide-react-native`. The app
+moved to Phosphor (`phosphor-react-native@3.0.6`, one registry at
+`lib/icons/index.ts`). A registry-wide substitution, like the `@/lib/utils`
+import path, not a behavior fork.
+
+Import-line delta only (aliased back to the stock local names, so function
+bodies are unchanged):
+
+| File | Stock | App |
+| --- | --- | --- |
+| `accordion.tsx` | `ChevronDown` | `CaretDownIcon as ChevronDown` |
+| `alert.tsx` | `type LucideIcon` | `type AppIcon` (also the `icon` prop type) |
+| `checkbox.tsx` | `Check` | `CheckIcon as Check` |
+| `context-menu.tsx` | `Check, ChevronDown, ChevronRight, ChevronUp` | `CheckIcon`, `CaretDownIcon`, `CaretRightIcon`, `CaretUpIcon` aliased |
+| `dialog.tsx` | `X` | `XIcon as X` |
+| `dropdown-menu.tsx` | same as context-menu | same as context-menu |
+| `menubar.tsx` | same as context-menu | same as context-menu |
+| `select.tsx` | `Check, ChevronDown, ChevronDownIcon, ChevronUpIcon` | `CheckIcon`, `CaretDownIcon` (×2), `CaretUpIcon` aliased |
+
+One non-import line: `checkbox.tsx` drops
+`strokeWidth={Platform.OS === 'web' ? 2.5 : 3.5}` — Phosphor has no stroke
+width; the app weight applies.
+
+`icon.tsx` is rewritten: `as: AppIcon` (was `LucideIcon`), and `IconImpl`
+passes the `className` color from `style.color` to the `color` prop, because
+Phosphor fills with `color` and ignores `style.color` (default `#000`). An
+explicit `color` prop still wins. `size` mapping and `TextClassContext` are
+unchanged from stock.

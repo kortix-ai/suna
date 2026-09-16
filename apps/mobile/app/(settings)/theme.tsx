@@ -5,7 +5,7 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
+import { SunIcon as Sun, MoonIcon as Moon, CheckIcon as Check, MonitorIcon as Monitor } from '@/lib/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -165,7 +165,6 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
               as={icon}
               size={18}
               className={isSelected ? 'text-primary-foreground' : 'text-primary'}
-              strokeWidth={2.5}
             />
           </View>
           <View className="flex-1">
@@ -176,7 +175,7 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
 
         {isSelected && (
           <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Icon as={Check} size={12} className="text-primary-foreground" strokeWidth={3} />
+            <Icon as={Check} size={12} className="text-primary-foreground" />
           </View>
         )}
       </View>

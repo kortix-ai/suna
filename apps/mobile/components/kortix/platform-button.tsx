@@ -16,7 +16,7 @@ import * as React from 'react';
 import { Platform, View } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { useColorScheme } from 'nativewind';
-import type { LucideIcon } from 'lucide-react-native';
+import { type AppIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -67,8 +67,8 @@ export interface PlatformButtonProps {
   label?: string;
   /** SF Symbol for the native iOS button, e.g. "plus", "chevron.left". */
   systemImage?: SFSymbol;
-  /** Lucide icon for the design-system fallback. */
-  icon?: LucideIcon;
+  /** Icon (from `@/lib/icons`) for the design-system fallback. */
+  icon?: AppIcon;
   /** Design-system variant used off iOS (and on iOS without the native module). */
   fallbackVariant?: 'default' | 'secondary' | 'outline' | 'ghost';
   /** Design-system size for a labelled fallback button; icon-only uses `icon`. */
@@ -79,6 +79,14 @@ export interface PlatformButtonProps {
    * platforms and older iOS use the fallback.
    */
   glass?: boolean;
+  /**
+   * Glass only: draw this app icon (e.g. a bespoke SVG) over the glass circle
+   * instead of the SF Symbol. SwiftUI `Image` renders only SF Symbols, so the
+   * symbol stays in place, invisible, to keep the circle's size, and a
+   * non-interactive React Native overlay draws the icon. Taps reach the
+   * native button through the overlay.
+   */
+  glassIcon?: AppIcon;
   accessibilityLabel: string;
   disabled?: boolean;
   onPress: () => void;
@@ -91,6 +99,7 @@ export function PlatformButton({
   fallbackVariant = 'default',
   fallbackSize = 'default',
   glass = false,
+  glassIcon,
   accessibilityLabel,
   disabled,
   onPress,
@@ -105,8 +114,10 @@ export function PlatformButton({
       buttonStyle,
       controlSize,
       disabled: disabledModifier,
+      opacity,
       padding,
     } = swiftUIModifiers;
+    const iconColor = THEME[colorScheme === 'dark' ? 'dark' : 'light'].foreground;
     return (
       <View style={{ margin: -GLASS_SHADOW_BLEED }} pointerEvents="box-none">
         <Host matchContents colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
@@ -121,9 +132,20 @@ export function PlatformButton({
               padding({ horizontal: GLASS_SHADOW_BLEED, vertical: GLASS_SHADOW_BLEED }),
             ]}
             onPress={onPress}>
-            <Image systemName={systemImage} size={17} />
+            <Image
+              systemName={systemImage}
+              size={17}
+              modifiers={glassIcon ? [opacity(0)] : undefined}
+            />
           </NativeButton>
         </Host>
+        {glassIcon ? (
+          <View
+            pointerEvents="none"
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon as={glassIcon} size={20} color={iconColor} />
+          </View>
+        ) : null}
       </View>
     );
   }

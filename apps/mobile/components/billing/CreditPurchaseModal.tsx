@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Pressable, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { AlertCircle } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { formatCredits } from '@kortix/shared';
 import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
@@ -137,7 +137,7 @@ export function CreditPurchaseModal({
             </Text>
             <View className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 mb-4">
               <View className="flex-row items-start gap-2">
-                <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" />
                 <Text className="flex-1 text-sm font-roobert text-destructive">
                   Please upgrade your subscription to the $200/month tier to unlock credit purchases for unlimited usage.
                 </Text>
@@ -233,7 +233,7 @@ export function CreditPurchaseModal({
             {error && (
               <View className="mb-4 bg-destructive/10 border border-destructive/20 rounded-lg p-4">
                 <View className="flex-row items-start gap-2">
-                  <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                  <Icon as={AlertCircle} size={16} className="text-destructive mt-0.5" />
                   <Text className="flex-1 text-sm font-roobert text-destructive">
                     {error}
                   </Text>

@@ -10,7 +10,7 @@
  */
 import { Tabs } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { FolderClosed, User } from 'lucide-react-native';
+import { FolderIcon as FolderClosed, UserIcon as User } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 
 import { Icon } from '@/components/ui/icon';
@@ -23,8 +23,9 @@ import { THEME } from '@/lib/utils/theme';
  * iOS tab icons: template PNGs, not SF Symbols. UIKit draws an SF Symbol at
  * the tab bar's fixed symbol size (~25pt wide for `folder`) with no size
  * control in react-native-screens 4.16; a template image renders at its own
- * point size and takes the bar's tint. Same Lucide glyphs as Android
- * (FolderClosed, User), rasterized at 20pt @1x/@2x/@3x, stroke-width 2.
+ * point size and takes the bar's tint. Same Phosphor glyphs as Android
+ * (`FolderIcon`, `UserIcon`) at `DEFAULT_ICON_WEIGHT` (`bold`), rasterized
+ * at 20pt @1x/@2x/@3x. Re-rasterize them if that weight changes.
  *
  * `renderingMode="template"` is required since expo-router 56: a `src` icon
  * renders as `original` (untinted black pixels) unless the bar sets
@@ -82,7 +83,6 @@ function FloatingTabsLayout() {
             <Icon
               as={FolderClosed}
               size={20}
-              strokeWidth={2}
               className="text-foreground"
             />
           ),
@@ -96,7 +96,6 @@ function FloatingTabsLayout() {
             <Icon
               as={User}
               size={20}
-              strokeWidth={2}
               className="text-foreground"
             />
           ),

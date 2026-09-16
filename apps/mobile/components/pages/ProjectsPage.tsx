@@ -15,8 +15,7 @@ import {
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { Search, X, FolderGit2, Clock, MessageSquare, ChevronRight } from 'lucide-react-native';
+import { MagnifyingGlassIcon as Search, XIcon as X, GitBranchIcon as FolderGit2, ClockIcon as Clock, ChatIcon as MessageSquare, CaretRightIcon as ChevronRight } from '@/lib/icons';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';

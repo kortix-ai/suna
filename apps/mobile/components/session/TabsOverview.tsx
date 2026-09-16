@@ -21,7 +21,8 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { getPageTabIcon } from '@/components/session/page-tab-icons';
+import { CheckCircleIcon, CheckIcon, PlusIcon, XCircleIcon, XIcon, ChatCircleIcon } from '@/lib/icons';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { Session } from '@/lib/opencode/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
@@ -250,7 +251,7 @@ export function TabsOverview({
               onPress={onNewSession}
               className="h-auto w-auto flex-row items-center rounded-xl bg-card border border-border px-5 py-3 active:opacity-70"
             >
-              <Ionicons name="add" size={18} color={iconColor} />
+              <PlusIcon size={18} color={iconColor} />
               <Text className="text-sm ml-2 text-foreground">New Session</Text>
             </Button>
           </View>
@@ -267,9 +268,7 @@ export function TabsOverview({
             const title = isPage
               ? (pageTab?.label || (tabId.startsWith('page:project:') ? `Project - ${(tabState?.projectName as string) || 'Untitled'}` : tabId))
               : (session?.title || 'New Session');
-            const cardIcon = isPage
-              ? (pageTab?.icon || 'help-outline')
-              : 'chatbubble-outline';
+            const CardIcon = isPage ? getPageTabIcon(tabId) : ChatCircleIcon;
 
             const screenshotUri = screenshots[tabId];
             const previewText = !screenshotUri && !isPage
@@ -332,7 +331,7 @@ export function TabsOverview({
                         isSelected ? 'bg-primary' : 'border border-border'
                       }`}>
                         {isSelected && (
-                          <Ionicons name="checkmark" size={12} color={isDark ? THEME.dark.primaryForeground : THEME.light.primaryForeground} />
+                          <CheckIcon size={12} color={isDark ? THEME.dark.primaryForeground : THEME.light.primaryForeground} />
                         )}
                       </View>
                     ) : (
@@ -346,7 +345,7 @@ export function TabsOverview({
                         className="h-auto w-auto ml-1 p-0.5 active:bg-transparent active:opacity-70"
                         hitSlop={8}
                       >
-                        <Ionicons name="close" size={14} color={mutedColor} />
+                        <XIcon size={14} color={mutedColor} />
                       </Button>
                     )}
                   </View>
@@ -387,7 +386,7 @@ export function TabsOverview({
                       </View>
                     ) : (
                       <View className="flex-1 rounded-lg bg-muted/30 items-center justify-center">
-                        <Ionicons name={cardIcon as any} size={24} color={mutedColor} />
+                        <CardIcon size={24} color={mutedColor} />
                       </View>
                     )}
                   </View>
@@ -443,7 +442,7 @@ export function TabsOverview({
           onPress={onNewSession}
           className="rounded-full"
         >
-          <Ionicons name="add" size={24} color={iconColor} />
+          <PlusIcon size={24} color={iconColor} />
         </Button>
 
         <Button
@@ -480,7 +479,7 @@ export function TabsOverview({
             }}
             className="h-auto w-auto flex-row items-center justify-start rounded-none px-6 py-3.5 active:opacity-70"
           >
-            <Ionicons name="checkmark-circle-outline" size={20} color={iconColor} />
+            <CheckCircleIcon size={20} color={iconColor} />
             <Text className="text-[15px] ml-4 text-foreground">Select Tabs</Text>
           </Button>
           <Button
@@ -491,7 +490,7 @@ export function TabsOverview({
             }}
             className="h-auto w-auto flex-row items-center justify-start rounded-none px-6 py-3.5 active:opacity-70"
           >
-            <Ionicons name="close-circle-outline" size={20} color={destructiveColor} />
+            <XCircleIcon size={20} color={destructiveColor} />
             <Text className="text-[15px] ml-4" style={{ color: destructiveColor }}>
               Close All Tabs
             </Text>

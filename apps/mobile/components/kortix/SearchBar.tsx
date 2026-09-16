@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View, Keyboard } from 'react-native';
-import { Search, X } from 'lucide-react-native';
+import { MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -46,7 +46,6 @@ export function SearchBar({
         as={Search}
         size={18}
         className="text-muted-foreground"
-        strokeWidth={2}
       />
       <Input
         value={value}
@@ -69,7 +68,6 @@ export function SearchBar({
             as={X}
             size={16}
             className="text-muted-foreground"
-            strokeWidth={2}
           />
         </Button>
       )}

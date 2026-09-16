@@ -22,7 +22,7 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 // module re-exported, without importing that retired module.
 import { Pressable } from 'react-native-gesture-handler';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
+import { CheckIcon, ExportIcon, type AppIcon, LockIcon, GlobeIcon, UsersIcon, CheckSquareIcon, SquareIcon } from '@/lib/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -41,25 +41,25 @@ type ShareMode = 'project' | 'private' | 'members';
 
 const MODE_OPTIONS: Array<{
   mode: ShareMode;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: AppIcon;
   label: string;
   description: string;
 }> = [
   {
     mode: 'private',
-    icon: 'lock-closed-outline',
+    icon: LockIcon,
     label: 'Only you',
     description: 'Private to you',
   },
   {
     mode: 'project',
-    icon: 'globe-outline',
+    icon: GlobeIcon,
     label: 'Whole team',
     description: 'Everyone in this project',
   },
   {
     mode: 'members',
-    icon: 'people-outline',
+    icon: UsersIcon,
     label: 'Select members',
     description: 'Only the members you pick',
   },
@@ -227,7 +227,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
               style={{
                 backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05),
               }}>
-              <Ionicons name="share-outline" size={20} color={fgColor} />
+              <ExportIcon size={20} color={fgColor} />
             </View>
             <View className="flex-1">
               <Text className="font-roobert-semibold text-lg" style={{ color: fgColor }}>
@@ -267,7 +267,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                   },
                   pressed && { opacity: 0.7 },
                 ]}>
-                <Ionicons name={opt.icon} size={19} color={on ? theme.primary : mutedColor} />
+                <opt.icon size={19} color={on ? theme.primary : mutedColor} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text className="font-roobert-medium text-[15px]" style={{ color: fgColor }}>
                     {opt.label}
@@ -276,7 +276,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                     {opt.description}
                   </Text>
                 </View>
-                {on && <Ionicons name="checkmark" size={18} color={theme.primary} />}
+                {on && <CheckIcon size={18} color={theme.primary} />}
               </Pressable>
             );
           })}
@@ -333,11 +333,11 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                         {m.email ?? m.user_id}
                         {isViewer ? ' (you)' : ''}
                       </Text>
-                      <Ionicons
-                        name={on ? 'checkbox' : 'square-outline'}
-                        size={20}
-                        color={on ? theme.primary : mutedColor}
-                      />
+                      {on ? (
+                        <CheckSquareIcon size={20} color={theme.primary} weight="fill" />
+                      ) : (
+                        <SquareIcon size={20} color={mutedColor} />
+                      )}
                     </Pressable>
                   );
                 })

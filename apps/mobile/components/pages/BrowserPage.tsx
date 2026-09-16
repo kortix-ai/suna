@@ -4,13 +4,13 @@ import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Globe,
-  RefreshCw,
-  X,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as RefreshCw,
+  XIcon as X,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -184,10 +184,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const titleNode = (
     <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
       <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} />
       </Pressable>
       <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} />
       </Pressable>
 
       <View
@@ -204,7 +204,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           overflow: 'hidden',
         }}
       >
-        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} strokeWidth={2} />}
+        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} />}
         {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
         <TextInput
           value={urlInput}
@@ -239,10 +239,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const rightActions = (
     <View className="flex-row items-center">
       <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} />
       </Pressable>
       <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
-        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} strokeWidth={2.2} />
+        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} />
       </Pressable>
     </View>
   );
@@ -288,7 +288,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           />
         ) : (
           <View className="flex-1 items-center justify-center px-8">
-            <Icon as={Globe} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+            <Icon as={Globe} size={32} className="text-muted-foreground/40" />
             <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">Browser</Text>
             <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
               {!sandboxId

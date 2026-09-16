@@ -17,7 +17,8 @@
 import { Icon } from '@/components/ui/icon';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import type { ReasoningPart } from '@/lib/opencode/types';
-import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { BrainIcon as Brain, CaretRightIcon as ChevronRight } from '@/lib/icons';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -137,23 +138,6 @@ function GroupedReasoningCardImpl({ parts, isStreaming = false }: GroupedReasoni
   }, [reasoningStreaming, pulse]);
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
-  // Spinner rotation while streaming
-  const spin = useSharedValue(0);
-  useEffect(() => {
-    if (reasoningStreaming) {
-      spin.value = withRepeat(
-        withTiming(360, { duration: 1000, easing: Easing.linear }),
-        -1,
-        false,
-      );
-    } else {
-      spin.value = 0;
-    }
-  }, [reasoningStreaming, spin]);
-  const spinStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${spin.value}deg` }],
-  }));
-
   // Chevron rotation
   const chevronRotation = useSharedValue(0);
   useEffect(() => {
@@ -192,7 +176,7 @@ function GroupedReasoningCardImpl({ parts, isStreaming = false }: GroupedReasoni
         }}
       >
         <Animated.View style={pulseStyle}>
-          <Icon as={Brain} size={13} color={mutedColor} strokeWidth={2} />
+          <Icon as={Brain} size={13} color={mutedColor} />
         </Animated.View>
 
         {/* Preview text or "Reasoning" fallback */}
@@ -247,14 +231,12 @@ function GroupedReasoningCardImpl({ parts, isStreaming = false }: GroupedReasoni
 
         {/* Loading spinner while streaming */}
         {reasoningStreaming && (
-          <Animated.View style={spinStyle}>
-            <Icon as={Loader2} size={11} color={mutedColor} strokeWidth={2} />
-          </Animated.View>
+          <KortixLoader customSize={11} />
         )}
 
         {/* Chevron */}
         <Animated.View style={chevronStyle}>
-          <Icon as={ChevronRight} size={11} color={mutedColor} strokeWidth={2} />
+          <Icon as={ChevronRight} size={11} color={mutedColor} />
         </Animated.View>
       </Pressable>
 

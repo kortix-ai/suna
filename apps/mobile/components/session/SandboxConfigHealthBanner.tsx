@@ -14,7 +14,8 @@ import { Animated, Easing, Platform, Pressable, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
-import { CheckCircle2, Copy, Loader, ShieldAlert, SquarePen } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { CheckCircleIcon as CheckCircle2, CopyIcon as Copy, ShieldWarningIcon as ShieldAlert, NotePencilIcon as SquarePen } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -39,7 +40,6 @@ export function SandboxConfigHealthBanner() {
   } = useSandboxConfigStatus();
 
   const pingAnim = useRef(new Animated.Value(0)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!hasProblem) return;
@@ -54,24 +54,6 @@ export function SandboxConfigHealthBanner() {
     loop.start();
     return () => loop.stop();
   }, [hasProblem, pingAnim]);
-
-  useEffect(() => {
-    if (!isStartingFix) {
-      spinAnim.stopAnimation();
-      spinAnim.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.timing(spinAnim, {
-        toValue: 1,
-        duration: 900,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isStartingFix, spinAnim]);
 
   const handleFix = useCallback(async () => {
     try {
@@ -112,7 +94,6 @@ export function SandboxConfigHealthBanner() {
 
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
-  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const taskTargetLabel = configFixProject
     ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})`
@@ -132,7 +113,7 @@ export function SandboxConfigHealthBanner() {
       <View className="flex-row items-start" style={{ gap: 10 }}>
         {/* Shield + pulsing dot */}
         <View style={{ marginTop: 2, width: 18, height: 18, position: 'relative' }}>
-          <Icon as={ShieldAlert} size={16} color={amberSoft} strokeWidth={2} />
+          <Icon as={ShieldAlert} size={16} color={amberSoft} />
           <View
             style={{
               position: 'absolute',
@@ -183,7 +164,7 @@ export function SandboxConfigHealthBanner() {
                 gap: 3,
               }}
             >
-              <Icon as={CheckCircle2} size={10} color={emeraldFg} strokeWidth={2.5} />
+              <Icon as={CheckCircle2} size={10} color={emeraldFg} />
               <Text
                 className="font-roobert-medium"
                 style={{ color: emeraldFg, fontSize: 10 }}
@@ -228,11 +209,10 @@ export function SandboxConfigHealthBanner() {
               }}
             >
               {isStartingFix ? (
-                <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                  <Icon as={Loader} size={12} color={primaryFg} strokeWidth={2.5} />
-                </Animated.View>
+                // The button fill inverts the theme, so the loader does too.
+                <KortixLoader customSize={12} forceTheme={isDark ? 'light' : 'dark'} />
               ) : (
-                <Icon as={SquarePen} size={12} color={primaryFg} strokeWidth={2.5} />
+                <Icon as={SquarePen} size={12} color={primaryFg} />
               )}
               <Text
                 className="font-roobert-semibold"
@@ -254,7 +234,7 @@ export function SandboxConfigHealthBanner() {
                 gap: 6,
               }}
             >
-              <Icon as={Copy} size={12} className="text-foreground" strokeWidth={2.2} />
+              <Icon as={Copy} size={12} className="text-foreground" />
               <Text className="font-roobert-medium text-foreground" style={{ fontSize: 12 }}>
                 Prompt
               </Text>

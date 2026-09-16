@@ -18,17 +18,17 @@ import { Linking, Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Bell,
-  BookOpen,
-  Camera,
-  Globe,
-  LifeBuoy,
-  LogOut,
-  Trash2,
-  Users,
-  Volume2,
-  Wallet,
-} from 'lucide-react-native';
+  BellIcon as Bell,
+  BookOpenIcon as BookOpen,
+  CameraIcon as Camera,
+  GlobeIcon as Globe,
+  LifebuoyIcon as LifeBuoy,
+  SignOutIcon as LogOut,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+  SpeakerHighIcon as Volume2,
+  WalletIcon as Wallet,
+} from '@/lib/icons';
 
 import {
   AlertDialog,
@@ -345,7 +345,7 @@ function ProfileHeader({
         ) : null}
         {/* The ring in the page colour cuts the badge out of the photo edge. */}
         <View className="absolute -bottom-0.5 -right-0.5 size-7 items-center justify-center rounded-full border-2 border-background bg-secondary">
-          <Icon as={Camera} size={14} strokeWidth={2.2} className="text-foreground" />
+          <Icon as={Camera} size={14} className="text-foreground" />
         </View>
       </Pressable>
       {name ? (

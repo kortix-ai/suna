@@ -25,7 +25,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ArrowClockwiseIcon, TerminalIcon, WarningCircleIcon } from '@/lib/icons';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import type { WebViewErrorEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -1296,7 +1296,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
               onPress={handleReconnect}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="refresh-outline" size={18} color={fgColor} />
+              <ArrowClockwiseIcon size={18} color={fgColor} />
             </Button>
           </View>
         }
@@ -1306,14 +1306,14 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
       {/* Content */}
       {!sandboxUrl ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="terminal-outline" size={32} color={mutedColor} style={{ marginBottom: 12, opacity: 0.5 }} />
+          <TerminalIcon size={32} color={mutedColor} style={{ marginBottom: 12, opacity: 0.5 }} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: mutedColor }}>
             No sandbox available
           </Text>
         </View>
       ) : error ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Ionicons name="alert-circle-outline" size={32} color={destructiveColor} style={{ marginBottom: 12 }} />
+          <WarningCircleIcon size={32} color={destructiveColor} style={{ marginBottom: 12 }} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fgColor, marginBottom: 4, textAlign: 'center' }}>
             Terminal Error
           </Text>
@@ -1321,7 +1321,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             {error}
           </Text>
           <Button onPress={handleReconnect}>
-            <Ionicons name="refresh-outline" size={14} color={themeColors.primaryForeground} style={{ marginRight: 6 }} />
+            <ArrowClockwiseIcon size={14} color={themeColors.primaryForeground} style={{ marginRight: 6 }} />
             <Text>Retry</Text>
           </Button>
         </View>

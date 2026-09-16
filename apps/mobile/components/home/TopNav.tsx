@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
 import { Pressable, View, Dimensions, Platform } from 'react-native';
-import { Menu, Coins, Sparkles, TextAlignStart } from 'lucide-react-native';
+import { ListIcon as Menu, CoinsIcon as Coins, SparkleIcon as Sparkles, TextAlignLeftIcon as TextAlignStart } from '@/lib/icons';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useCreditBalance } from '@/lib/billing';
@@ -115,7 +115,7 @@ export function TopNav({
         hitSlop={ANDROID_HIT_SLOP}
         accessibilityLabel="Open menu"
         accessibilityHint="Opens the navigation drawer">
-        <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
+        <Icon as={TextAlignStart} size={20} className="text-foreground" />
       </Button>
 
       <View className="absolute right-6 flex-row items-center gap-2">
@@ -132,7 +132,7 @@ export function TopNav({
           style={rightUpgradeAnimatedStyle}
           accessibilityRole="button"
           accessibilityLabel="Upgrade">
-          <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
+          <Icon as={Sparkles} size={14} className="text-primary-foreground" />
           <Text className="font-roobert-semibold text-xs text-primary-foreground">
             {t('billing.upgrade')}
           </Text>
@@ -145,7 +145,7 @@ export function TopNav({
           hitSlop={ANDROID_HIT_SLOP}
           accessibilityLabel="View usage"
           accessibilityHint="Opens usage details">
-          <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
+          <Icon as={Coins} size={16} className="text-primary" />
           <Text className="font-roobert-semibold text-sm text-primary">
             {formatCredits(creditBalance?.balance || 0)}
           </Text>

@@ -4,7 +4,7 @@ import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils/index';
 import * as MenubarPrimitive from '@rn-primitives/menubar';
 import { Portal } from '@rn-primitives/portal';
-import { Check, ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
+import { CheckIcon as Check, CaretDownIcon as ChevronDown, CaretRightIcon as ChevronRight, CaretUpIcon as ChevronUp } from '@/lib/icons';
 import * as React from 'react';
 import {
   Platform,

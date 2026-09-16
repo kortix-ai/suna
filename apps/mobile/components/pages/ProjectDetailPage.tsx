@@ -32,7 +32,6 @@ import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 // `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
 // legacy touchable, which itself just proxies react-native-gesture-handler's
@@ -42,27 +41,30 @@ const BottomSheetTouchable = GestureHandlerPressable;
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
-  FolderGit2,
-  MessageSquare,
-  ListTodo,
-  Clock,
-  Trash2,
-  Pencil,
-  CheckCircle2,
-  Circle,
-  Loader2,
-  AlertTriangle,
-  Ban,
-  FolderOpen,
-  Code2,
-  FileText,
-  Plus,
-  Play,
-  Paperclip,
-  X as XIcon,
-  File as FileIcon,
-  Search,
-} from 'lucide-react-native';
+  GitBranchIcon as FolderGit2,
+  ChatIcon as MessageSquare,
+  ListChecksIcon as ListTodo,
+  ClockIcon as Clock,
+  TrashIcon as Trash2,
+  PencilIcon as Pencil,
+  CheckCircleIcon as CheckCircle2,
+  CircleIcon as Circle,
+  RadioButtonIcon,
+  WarningIcon as AlertTriangle,
+  ProhibitIcon as Ban,
+  FolderOpenIcon as FolderOpen,
+  CodeSimpleIcon as Code2,
+  FileTextIcon as FileText,
+  PlusIcon as Plus,
+  PlayIcon as Play,
+  PaperclipIcon as Paperclip,
+  XIcon,
+  FileIcon,
+  MagnifyingGlassIcon as Search,
+  ArrowLeftIcon,
+  PlayIcon,
+  ArrowSquareOutIcon,
+} from '@/lib/icons';
 
 import { FileItem } from '@/components/files/FileItem';
 import { FileViewer } from '@/components/files/FileViewer';
@@ -118,13 +120,13 @@ type Tab = 'files' | 'sessions' | 'tasks' | 'about';
 // Pipeline: todo → [START] → in_progress → input_needed/awaiting_review → [APPROVE] → completed
 const STATUS_CONFIG: Record<string, { icon: typeof Circle; color: string; label: string }> = {
   todo: { icon: Circle, color: THEME.light.mutedForeground, label: 'Planned' },
-  in_progress: { icon: Loader2, color: THEME.accent.blue, label: 'Running' },
+  in_progress: { icon: RadioButtonIcon, color: THEME.accent.blue, label: 'Running' },
   input_needed: { icon: AlertTriangle, color: THEME.accent.purple, label: 'Input Needed' },
   awaiting_review: { icon: AlertTriangle, color: THEME.accent.orange, label: 'Awaiting Review' },
   completed: { icon: CheckCircle2, color: THEME.accent.green, label: 'Completed' },
   cancelled: { icon: Ban, color: THEME.light.mutedForeground, label: 'Cancelled' },
   // Agent statuses (separate enum, but reused for visual parity)
-  running: { icon: Loader2, color: THEME.accent.blue, label: 'Running' },
+  running: { icon: RadioButtonIcon, color: THEME.accent.blue, label: 'Running' },
   failed: { icon: AlertTriangle, color: THEME.accent.red, label: 'Failed' },
   stopped: { icon: Ban, color: THEME.light.mutedForeground, label: 'Stopped' },
 };
@@ -763,7 +765,7 @@ export function ProjectDetailPage({
                     paddingHorizontal: 4,
                     marginBottom: 4,
                   }}>
-                  <Ionicons name="arrow-back" size={16} color={mutedStrong} />
+                  <ArrowLeftIcon size={16} color={mutedStrong} />
                   <RNText
                     style={{ fontSize: 12, fontFamily: 'Menlo', color: mutedStrong }}
                     numberOfLines={1}>
@@ -1532,7 +1534,7 @@ export function ProjectDetailPage({
                             backgroundColor: fg,
                             opacity: isBusy ? 0.5 : 1,
                           }}>
-                          <Ionicons name="play" size={13} color={bg} />
+                          <PlayIcon size={13} color={bg} weight="fill" />
                           <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: bg }}>
                             {startTask.isPending ? 'Starting…' : 'Start task'}
                           </RNText>
@@ -1593,7 +1595,7 @@ export function ProjectDetailPage({
                         backgroundColor: cardBg,
                         marginBottom: 16,
                       }}>
-                      <Ionicons name="open-outline" size={14} color={mutedStrong} />
+                      <ArrowSquareOutIcon size={14} color={mutedStrong} />
                       <RNText style={{ flex: 1, fontSize: 13, fontFamily: 'Roobert', color: fg }}>
                         Open worker session
                       </RNText>
@@ -1872,7 +1874,6 @@ export function ProjectDetailPage({
                 as={editField === 'name' ? FolderGit2 : Pencil}
                 size={20}
                 color={fg}
-                strokeWidth={1.8}
               />
             </View>
             <View className="flex-1">
@@ -2334,7 +2335,7 @@ export function ProjectDetailPage({
                   <Play
                     size={14}
                     color={canSubmit ? themeColors.primaryForeground : mutedStrong}
-                    fill={canSubmit ? themeColors.primaryForeground : 'transparent'}
+                    weight={canSubmit ? 'fill' : undefined}
                   />
                 ) : null}
                 <RNText

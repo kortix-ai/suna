@@ -3,9 +3,10 @@
  * every hamburger: PageHeader, SettingsHeader (`onOpenMenu`), and
  * FloatingMenuButton.
  *
- * Transparent (`ghost`) icon button with a static Lucide `Menu` icon: no fill
- * at rest, no open/close animation (Jay, 2026-09-16). `active:bg-accent`
- * while pressed comes from the ghost variant.
+ * Transparent (`ghost`) icon button with the bespoke `MenuIcon`
+ * (`components/icons/menu-icon.tsx`, three left-aligned bars; Jay,
+ * 2026-09-17): no fill at rest, no open/close animation (Jay, 2026-09-16).
+ * `active:bg-accent` while pressed comes from the ghost variant.
  *
  * `-ml-2.5` (−10pt) pulls the button left by the gap between its 40pt box and
  * the 20pt icon, so the icon's left edge sits on the page's padding edge —
@@ -13,13 +14,15 @@
  * keeps its size (40pt + 10pt hit slop).
  *
  * iOS 26+ (with the ExpoUI module): a native Liquid Glass circle
- * (`PlatformButton glass`, SF Symbol `line.3.horizontal`; Jay, 2026-09-16).
+ * (`PlatformButton glass`; Jay, 2026-09-16). SwiftUI draws only SF Symbols,
+ * so `glassIcon` overlays `MenuIcon` on the circle and hides the
+ * `line.3.horizontal` placeholder that sizes it.
  * The glass circle is visible, so its edge — not the glyph — sits on the
  * padding edge (no negative margin).
  */
 
 import * as React from 'react';
-import { Menu } from 'lucide-react-native';
+import { MenuIcon } from '@/components/icons/menu-icon';
 
 import { hasLiquidGlass, PlatformButton } from '@/components/kortix/platform-button';
 import { Button } from '@/components/ui/button';
@@ -31,7 +34,8 @@ export function MenuButton({ onPress }: { onPress?: () => void }) {
       <PlatformButton
         glass
         systemImage="line.3.horizontal"
-        icon={Menu}
+        glassIcon={MenuIcon}
+        icon={MenuIcon}
         fallbackVariant="ghost"
         accessibilityLabel="Open menu"
         onPress={() => onPress?.()}
@@ -46,7 +50,7 @@ export function MenuButton({ onPress }: { onPress?: () => void }) {
       onPress={onPress}
       accessibilityLabel="Open menu"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-      <Icon as={Menu} size={20} className="text-foreground" />
+      <Icon as={MenuIcon} size={20} className="text-foreground" />
     </Button>
   );
 }

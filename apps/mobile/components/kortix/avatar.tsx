@@ -2,8 +2,8 @@ import { Avatar as AvatarRoot, AvatarFallback } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icon';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { getIconFromName } from '@/lib/utils/icon-mapping';
-import { Layers, MessageSquare, Zap } from 'lucide-react-native';
-import type { LucideIcon } from 'lucide-react-native';
+import { StackIcon as Layers, ChatIcon as MessageSquare, LightningIcon as Zap } from '@/lib/icons';
+import { type AppIcon } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Text, type ViewProps } from 'react-native';
@@ -17,8 +17,8 @@ interface AvatarProps extends ViewProps {
   /** Size of the avatar container (default: 48) */
   size?: number;
 
-  /** Icon to display (Lucide icon component or icon name string) */
-  icon?: LucideIcon | string;
+  /** Icon to display (icon component from `@/lib/icons` or icon name string) */
+  icon?: AppIcon | string;
 
   /** Icon color (overrides defaults) */
   iconColor?: string;
@@ -125,7 +125,7 @@ export function Avatar({
   const finalBorderColor = borderColor || defaults.border;
 
   // Get icon component
-  const getIconComponent = (): LucideIcon | null => {
+  const getIconComponent = (): AppIcon | null => {
     if (!icon) {
       // Default icons based on variant
       switch (variant) {
@@ -170,7 +170,7 @@ export function Avatar({
         {useKortixSymbol ? (
           <KortixLogo size={symbolSize} variant="symbol" color="dark" />
         ) : IconComponent ? (
-          <Icon as={IconComponent} size={iconSize} color={finalIconColor} strokeWidth={2.5} />
+          <Icon as={IconComponent} size={iconSize} color={finalIconColor} />
         ) : fallbackText ? (
           <Text
             style={{

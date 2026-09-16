@@ -10,7 +10,7 @@ import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
-import { Trash2, Calendar, XCircle, AlertTriangle, CheckCircle } from 'lucide-react-native';
+import { TrashIcon as Trash2, CalendarIcon as Calendar, XCircleIcon as XCircle, WarningIcon as AlertTriangle, CheckCircleIcon as CheckCircle } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -143,7 +143,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
               <>
                 <View className="mb-8 items-center pt-4">
                   <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-                    <Icon as={Calendar} size={28} className="text-destructive" strokeWidth={2} />
+                    <Icon as={Calendar} size={28} className="text-destructive" />
                   </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
                     {t('accountDeletion.deletionScheduled')}
@@ -157,7 +157,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   <View className="bg-destructive/5 border border-destructive/20 rounded-3xl p-5">
                     <View className="flex-row items-center gap-3 mb-4">
                       <View className="h-11 w-11 rounded-full bg-destructive/10 items-center justify-center">
-                        <Icon as={Calendar} size={20} className="text-destructive" strokeWidth={2.5} />
+                        <Icon as={Calendar} size={20} className="text-destructive" />
                       </View>
                       <View className="flex-1">
                         <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
@@ -190,7 +190,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
               <>
                 <View className="mb-8 items-center pt-4">
                   <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-                    <Icon as={Trash2} size={28} className="text-destructive" strokeWidth={2} />
+                    <Icon as={Trash2} size={28} className="text-destructive" />
                   </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
                     {t('accountDeletion.deleteYourAccount')}
@@ -218,7 +218,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                 <View className="mb-6 bg-primary/5 rounded-2xl p-5">
                   <View className="flex-row items-start gap-3">
                     <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Icon as={AlertTriangle} size={18} className="text-primary" strokeWidth={2.5} />
+                      <Icon as={AlertTriangle} size={18} className="text-primary" />
                     </View>
                     <View className="flex-1">
                       <Text className="text-sm font-roobert-semibold text-foreground mb-1">
@@ -341,7 +341,6 @@ function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label
             as={IconComponent} 
             size={16} 
             className={textColor} 
-            strokeWidth={2.5} 
           />
           <Text className={`${textColor} text-sm font-roobert-medium`}>
             {label}

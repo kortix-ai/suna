@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import * as Haptics from 'expo-haptics';
-import { Share, FolderOpen, Trash2, X } from 'lucide-react-native';
+import { ExportIcon as Share, FolderOpenIcon as FolderOpen, TrashIcon as Trash2, XIcon as X } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { View, Pressable, Modal, TouchableWithoutFeedback, Platform } from 'react-native';
@@ -63,7 +63,6 @@ function ActionItem({ icon, label, onPress, destructive = false }: ActionItemPro
         as={icon}
         size={20}
         className={textClass}
-        strokeWidth={2.5}
       />
       <Text
         className={`font-roobert-medium text-[15px] flex-1 leading-5 ${textClass}`}
@@ -155,7 +154,6 @@ export function ThreadActionsMenu({
                     as={X}
                     size={16}
                     className="text-muted-foreground"
-                    strokeWidth={2.5}
                   />
                 </Pressable>
               </View>

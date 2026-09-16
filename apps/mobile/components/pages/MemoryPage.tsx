@@ -24,20 +24,19 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import {
-  Brain,
-  BookOpen,
-  Wrench,
-  Eye,
-  FileText,
-  Search as SearchIcon,
-  Trash2,
-  Clock,
-  Tag,
-} from 'lucide-react-native';
-import type { LucideIcon } from 'lucide-react-native';
+  BrainIcon as Brain,
+  BookOpenIcon as BookOpen,
+  WrenchIcon as Wrench,
+  EyeIcon as Eye,
+  FileTextIcon as FileText,
+  MagnifyingGlassIcon as SearchIcon,
+  TrashIcon as Trash2,
+  ClockIcon as Clock,
+  TagIcon as Tag,
+} from '@/lib/icons';
+import { type AppIcon } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 
@@ -87,7 +86,7 @@ interface MemoryStats {
 // Kortix's accent palette has 6 colors (blue/yellow/orange/green/purple/red);
 // several of the original design's hues (indigo, sky, teal) have no direct
 // token and are mapped to their closest accent by rendered appearance.
-const TYPE_CONFIG: Record<string, { icon: LucideIcon; color: string; label: string }> = {
+const TYPE_CONFIG: Record<string, { icon: AppIcon; color: string; label: string }> = {
   episodic: { icon: BookOpen, label: 'Episodic', color: THEME.accent.purple }, // was violet
   semantic: { icon: Brain, label: 'Semantic', color: THEME.accent.blue }, // was blue
   procedural: { icon: Wrench, label: 'Procedural', color: THEME.accent.orange }, // was amber

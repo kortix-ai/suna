@@ -7,7 +7,7 @@
  * so the mobile Sessions page renders the same title/status/grouping logic.
  *
  * Pure data and pure functions only. No React, no React Native, no expo, no
- * lucide, no zustand — this module is unit-tested under `bun test`, which
+ * icons, no zustand — this module is unit-tested under `bun test`, which
  * cannot load native modules.
  */
 

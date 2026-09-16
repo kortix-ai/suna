@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View, Pressable, Modal, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ArrowsLeftRightIcon, CaretDownIcon, CheckCircleIcon, ClockIcon } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -61,17 +61,12 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           onPress={() => { haptics.selection(); setExpanded((v) => !v); }}
           className="flex-1 flex-row items-center rounded-lg px-3 py-2 active:opacity-60"
         >
-          <Ionicons name="time-outline" size={18} color={iconColor} />
+          <ClockIcon size={18} color={iconColor} />
           <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Previous Chats</Text>
           <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
             <Text className="text-muted-foreground" style={{ fontSize: 12, lineHeight: 16 }}>{total}</Text>
           </View>
-          <Ionicons
-            name="chevron-down"
-            size={16}
-            color={mutedColor}
-            style={{ transform: [{ rotate: expanded ? '0deg' : '-90deg' }] }}
-          />
+          <CaretDownIcon size={16} color={mutedColor} style={{ transform: [{ rotate: expanded ? '0deg' : '-90deg' }] }} />
         </Pressable>
         <Button
           variant="ghost"
@@ -82,11 +77,11 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
           hitSlop={6}
         >
           {migrateDone ? (
-            <Ionicons name="checkmark-circle" size={16} color={THEME.accent.green} />
+            <CheckCircleIcon size={16} color={THEME.accent.green} weight="fill" />
           ) : isMigrating || migrateAll.isPending ? (
             <ActivityIndicator size="small" color={mutedColor} />
           ) : (
-            <Ionicons name="swap-horizontal" size={16} color={mutedColor} />
+            <ArrowsLeftRightIcon size={16} color={mutedColor} />
           )}
         </Button>
       </View>

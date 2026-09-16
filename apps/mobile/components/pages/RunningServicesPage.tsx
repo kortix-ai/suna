@@ -14,18 +14,17 @@ import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
-  Menu,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Server,
-  Square,
-  Trash2,
-  FileText,
-} from 'lucide-react-native';
+  ListIcon as Menu,
+  PlayIcon as Play,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  HardDrivesIcon as Server,
+  SquareIcon as Square,
+  TrashIcon as Trash2,
+  FileTextIcon as FileText,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Ionicons } from '@expo/vector-icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   getSandboxServices,
@@ -234,7 +233,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <Pressable onPress={handleReconcile} hitSlop={8} className="p-1">
-            <Icon as={RefreshCw} size={18} color={mutedColor} strokeWidth={2} />
+            <Icon as={RefreshCw} size={18} color={mutedColor} />
           </Pressable>
         }
       />
@@ -314,7 +313,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
           {/* Empty state */}
           {!isLoading && filteredServices.length === 0 && (
             <View className="items-center justify-center py-16">
-              <Icon as={Server} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+              <Icon as={Server} size={32} className="text-muted-foreground/40" />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Services</Text>
               <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
                 {filter === 'all'
@@ -397,7 +396,7 @@ function ServiceCard({
               className="w-8 h-8 rounded-[10px] items-center justify-center"
               style={{ backgroundColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.06 : 0.04) }}
             >
-              <Icon as={Server} size={16} color={fgColor} strokeWidth={1.8} />
+              <Icon as={Server} size={16} color={fgColor} />
             </View>
             {isRunning && (
               <View className="absolute -bottom-0.5 -right-0.5">
@@ -615,7 +614,7 @@ function ActionButton({
         gap: label ? 4 : 0,
       }}
     >
-      <Icon as={IconComponent} size={12} color={textColor} strokeWidth={2.2} />
+      <Icon as={IconComponent} size={12} color={textColor} />
       {label ? (
         <Text className="text-[11px] font-roobert-medium" style={{ color: textColor }}>
           {label}

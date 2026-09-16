@@ -12,7 +12,7 @@ import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertCircle, MoreVertical, Plus, Search, Sparkles } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, DotsThreeVerticalIcon as MoreVertical, PlusIcon as Plus, MagnifyingGlassIcon as Search, SparkleIcon as Sparkles } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -202,7 +202,7 @@ export default function ProjectsTab() {
             onPress={() => onRowMenu(item)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             className="p-1">
-            <Icon as={MoreVertical} size={18} className="text-muted-foreground" strokeWidth={2.2} />
+            <Icon as={MoreVertical} size={18} className="text-muted-foreground" />
           </Pressable>
         </Pressable>
       );
@@ -232,7 +232,7 @@ export default function ProjectsTab() {
           <View className="flex-row items-center gap-2">
             {showUpgrade && (
               <Button variant="secondary" size="sm" onPress={openUpgrade}>
-                <Icon as={Sparkles} size={15} className="text-kortix-blue" strokeWidth={2.4} />
+                <Icon as={Sparkles} size={15} className="text-kortix-blue" />
                 <Text className="font-medium text-sm">Upgrade</Text>
               </Button>
             )}

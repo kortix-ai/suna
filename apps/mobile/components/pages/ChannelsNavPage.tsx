@@ -21,14 +21,14 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Check,
-  Copy,
-  ExternalLink,
-  Trash2,
-  X,
-  Plug,
-  CircleCheck,
-} from 'lucide-react-native';
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  TrashIcon as Trash2,
+  XIcon as X,
+  PlugIcon as Plug,
+  CheckCircleIcon as CircleCheck,
+} from '@/lib/icons';
 import { SlackIcon } from '@/components/icons/slack-icon';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface ChannelsNavPageProps {

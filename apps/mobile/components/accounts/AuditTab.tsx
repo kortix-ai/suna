@@ -9,7 +9,7 @@ import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { AlertCircle, ChevronsDown, Download, RotateCw } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, CaretDoubleDownIcon as ChevronsDown, DownloadIcon as Download, ArrowClockwiseIcon as RotateCw } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';

@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { Building2, CalendarDays, Trash2 } from 'lucide-react-native';
+import { BuildingsIcon as Building2, CalendarDotsIcon as CalendarDays, TrashIcon as Trash2 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';

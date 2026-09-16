@@ -15,12 +15,12 @@ import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import * as Linking from 'expo-linking';
 import {
-  RefreshCw,
-  ExternalLink,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-} from 'lucide-react-native';
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowSquareOutIcon as ExternalLink,
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+} from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';

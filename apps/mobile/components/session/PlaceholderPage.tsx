@@ -9,7 +9,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { getPageTabIcon } from '@/components/session/page-tab-icons';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
@@ -31,6 +31,7 @@ export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer,
   const insets = useSafeAreaInsets();
 
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const PageIcon = getPageTabIcon(page.id);
 
   return (
     <View className="flex-1 bg-background">
@@ -56,7 +57,7 @@ export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer,
             marginBottom: 20,
           }}
         >
-          <Ionicons name={page.icon as any} size={30} color={mutedColor} />
+          <PageIcon size={30} color={mutedColor} />
         </View>
         <Text
           className="text-foreground text-center"

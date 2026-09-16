@@ -19,15 +19,15 @@ import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linki
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  GitBranch,
-  ExternalLink,
-  FlaskConical,
-  ChevronDown,
-  Trash2,
-  UserPlus,
-  Github,
-  Check,
-} from 'lucide-react-native';
+  GitBranchIcon as GitBranch,
+  ArrowSquareOutIcon as ExternalLink,
+  FlaskIcon as FlaskConical,
+  CaretDownIcon as ChevronDown,
+  TrashIcon as Trash2,
+  UserPlusIcon as UserPlus,
+  GithubLogoIcon as Github,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -51,7 +51,6 @@ const MONO = 'Menlo';
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SettingsNavPageProps {

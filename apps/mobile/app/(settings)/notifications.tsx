@@ -1,16 +1,16 @@
 import * as React from 'react';
 import { Alert, Linking } from 'react-native';
 import {
-  AlertTriangle,
-  Bell,
-  BellOff,
-  CheckCircle2,
-  HelpCircle,
-  Settings2,
-  ShieldCheck,
-  Smartphone,
-  Volume2,
-} from 'lucide-react-native';
+  WarningIcon as AlertTriangle,
+  BellIcon as Bell,
+  BellSlashIcon as BellOff,
+  CheckCircleIcon as CheckCircle2,
+  QuestionIcon as HelpCircle,
+  SlidersHorizontalIcon as Settings2,
+  ShieldCheckIcon as ShieldCheck,
+  DeviceMobileIcon as Smartphone,
+  SpeakerHighIcon as Volume2,
+} from '@/lib/icons';
 
 import { Switch } from '@/components/ui/switch';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';

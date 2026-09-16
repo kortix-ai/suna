@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, KeyRound, Monitor, Timer } from 'lucide-react-native';
+import { ClockIcon as Clock, KeyIcon as KeyRound, MonitorIcon as Monitor, TimerIcon as Timer } from '@/lib/icons';
 
 import { Switch } from '@/components/ui/switch';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';

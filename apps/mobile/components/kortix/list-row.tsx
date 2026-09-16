@@ -1,7 +1,7 @@
 // apps/mobile/components/kortix/list-row.tsx
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { CaretRightIcon as ChevronRight } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';

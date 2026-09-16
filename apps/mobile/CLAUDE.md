@@ -25,7 +25,7 @@ Kortix-specific: 23 files, built on top of `components/ui/`. **There is no
 | Single-line text field | `@/components/ui/input` → `<Input>` | raw `<TextInput>` |
 | Multi-line text field | `@/components/ui/textarea` → `<Textarea>` | raw `<TextInput multiline>` |
 | Field label | `@/components/ui/label` → `<Label>` | ad-hoc label `<Text>` with custom size/weight |
-| Icons | `@/components/ui/icon` → `<Icon as={LucideIcon} />` | ad-hoc svg/vector-icon usage in screens |
+| Icons | `@/components/ui/icon` → `<Icon as={XIcon} />`, or `<XIcon />`, with icons from `@/lib/icons` — see **Icons** below | importing `phosphor-react-native`, `lucide-react-native`, or `@expo/vector-icons`; ad-hoc svg in screens |
 | Dialog (centered overlay) | `@/components/ui/dialog` → `<Dialog>` + parts | custom centered overlay, raw `Modal` |
 | Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts | `Alert.alert`, custom confirm overlays |
 | Inline alert | `@/components/ui/alert` → `<Alert>` + `AlertTitle` / `AlertDescription` | custom banner boxes |
@@ -206,6 +206,29 @@ Loading state is always `@/components/ui/skeleton`'s `<Skeleton>` (a
 `bg-accent animate-pulse` box) or the Kortix Lottie spinner
 (`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`.
 
+## Icons
+
+One library: Phosphor (`phosphor-react-native`), the same glyphs and weight as
+`apps/web`.
+
+- Import every icon from `@/lib/icons`. Add a missing one to
+  `lib/icons/index.ts`: one import line (`phosphor-react-native/src/icons/<Name>`)
+  and one `withAppWeight` export line. Never import the package elsewhere:
+  Metro tree shaking is off, so the package barrel ships 1,512 icons in 6
+  weights.
+- Never pass `weight`. `DEFAULT_ICON_WEIGHT` in `lib/icons/icon-config.ts`
+  (`bold`) sets it for the whole app. The only override is `weight="fill"` for a
+  solid glyph (a filled star, a checked box). There is no `strokeWidth`.
+- Pass an icon as a value with the `AppIcon` type (`icon: AppIcon`), never a
+  string name.
+- Color: `<Icon className="text-*">` or an explicit `color` prop. Phosphor
+  ignores `style.color`; `components/ui/icon.tsx` reads it for you. A bare
+  `<XIcon />` without `color` renders black.
+- Brand marks (Google, Apple, Gmail, Slack, provider logos) are SVG components
+  in `components/icons/`, not registry icons.
+- `lib/icons/icon-imports.test.ts` enforces this: retired libraries, direct
+  package imports, unused registry entries, non-`fill` weights, spinner glyphs.
+
 ## Do / Don't
 
 - ✅ One source of truth per primitive; extend the primitive when it lacks something.
@@ -304,7 +327,13 @@ that drops props silently breaks the screens that still pass them.
    The permanent record of what deviates is `scratchpad/rnr-fork-delta.md`,
    which IS tracked — that file, not the captures, is the source of truth.
 
-   Exactly six files may differ, all recorded in `rnr-fork-delta.md`:
+   Stock RNR imports its icons from `lucide-react-native`. This app imports the
+   same glyphs from `@/lib/icons` (Phosphor). In 8 files (`accordion`, `alert`,
+   `checkbox`, `context-menu`, `dialog`, `dropdown-menu`, `menubar`, `select`)
+   that import line is the icon delta, and `icon.tsx` is rewritten for Phosphor.
+   These are recorded in `rnr-fork-delta.md` → Icon library, and are not forks.
+
+   Beyond the icon delta, exactly six files may differ, all recorded in `rnr-fork-delta.md`:
    `text.tsx` (adds `font-roobert` to the base class — 164 importers depend on
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that

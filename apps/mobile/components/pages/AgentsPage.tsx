@@ -19,15 +19,15 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import {
-  Bot,
-  Star,
-  Copy,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Pencil,
-  Plus,
-} from 'lucide-react-native';
+  RobotIcon as Bot,
+  StarIcon as Star,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CaretLeftIcon as ChevronLeft,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -43,7 +43,6 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface AgentsPageProps {
@@ -198,7 +197,7 @@ function Badge({ label, icon, isDark }: { label: string; icon?: 'star'; isDark: 
   const bg = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.07 : 0.05);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: bg }}>
-      {icon === 'star' && <Star size={10} color={THEME.accent.orange} fill={THEME.accent.orange} />}
+      {icon === 'star' && <Star size={10} color={THEME.accent.orange} weight="fill" />}
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted }}>{label}</Text>
     </View>
   );
@@ -237,7 +236,7 @@ function AgentRow({
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
             {agent.name}
           </Text>
-          {isDefault && <Star size={12} color={THEME.accent.orange} fill={THEME.accent.orange} />}
+          {isDefault && <Star size={12} color={THEME.accent.orange} weight="fill" />}
           {mode && (
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>· {mode}</Text>
           )}

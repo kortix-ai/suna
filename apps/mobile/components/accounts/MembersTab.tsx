@@ -16,15 +16,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import {
-  AlertCircle,
-  ListChecks,
-  Mail,
-  RotateCw,
-  Shield,
-  Trash2,
-  UserPlus,
-  Users,
-} from 'lucide-react-native';
+  WarningCircleIcon as AlertCircle,
+  ListChecksIcon as ListChecks,
+  EnvelopeIcon as Mail,
+  ArrowClockwiseIcon as RotateCw,
+  ShieldIcon as Shield,
+  TrashIcon as Trash2,
+  UserPlusIcon as UserPlus,
+  UsersIcon as Users,
+} from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';

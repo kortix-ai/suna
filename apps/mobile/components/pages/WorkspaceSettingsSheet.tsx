@@ -20,21 +20,21 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Switch } from '@/components/ui/switch';
 import {
-  Settings,
-  Zap,
-  Shield,
-  Server,
-  ChevronRight,
-  ChevronDown,
-  Plus,
-  Trash2,
-  Power,
-  Plug,
-  AlertCircle,
-  Check,
-  X,
-  ExternalLink,
-} from 'lucide-react-native';
+  GearSixIcon as Settings,
+  LightningIcon as Zap,
+  ShieldIcon as Shield,
+  HardDrivesIcon as Server,
+  CaretRightIcon as ChevronRight,
+  CaretDownIcon as ChevronDown,
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  PowerIcon as Power,
+  PlugIcon as Plug,
+  WarningCircleIcon as AlertCircle,
+  CheckIcon as Check,
+  XIcon as X,
+  ArrowSquareOutIcon as ExternalLink,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';

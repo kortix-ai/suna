@@ -13,7 +13,7 @@ import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import { Brain, Wrench, Server, Zap, X, ArrowLeft } from 'lucide-react-native';
+import { BrainIcon as Brain, WrenchIcon as Wrench, HardDrivesIcon as Server, LightningIcon as Zap, XIcon as X, ArrowLeftIcon as ArrowLeft } from '@/lib/icons';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';

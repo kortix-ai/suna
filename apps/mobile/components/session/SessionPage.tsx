@@ -28,8 +28,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { ListIcon as MenuIcon, XIcon as CloseIcon, StackIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { haptics } from '@/lib/haptics';
@@ -1172,7 +1171,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
                 className="h-auto w-auto ml-3 p-1 active:bg-transparent active:opacity-70"
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon="ellipsis-horizontal" size={20} />
+                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon={DotsThreeIcon} size={20} />
               </Button>
             )}
             {onboardingMode && onSkipOnboarding && (
@@ -1237,7 +1236,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
                       borderWidth: 1,
                       borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                     }}>
-                      <Ionicons name="layers-outline" size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+                      <StackIcon size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
                       <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, letterSpacing: 0.3 }}>
                         Compaction
                       </RNText>
@@ -1465,12 +1464,7 @@ function QueuePanel({
           paddingVertical: 10,
         }}
       >
-        <Ionicons
-          name="list-outline"
-          size={14}
-          color={mutedText}
-          style={{ marginRight: 6 }}
-        />
+        <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
         <RNText
           style={{
             flex: 1,
@@ -1493,14 +1487,14 @@ function QueuePanel({
           hitSlop={8}
           className="h-auto w-auto mr-2 p-0 active:bg-transparent active:opacity-70"
         >
-          <Ionicons name="close" size={14} color={mutedText} />
+          <XIcon size={14} color={mutedText} />
         </Button>
         {/* Expand/collapse chevron */}
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={14}
-          color={mutedText}
-        />
+        {expanded ? (
+          <CaretUpIcon size={14} color={mutedText} />
+        ) : (
+          <CaretDownIcon size={14} color={mutedText} />
+        )}
       </Button>
 
       {/* Expanded list */}
@@ -1558,7 +1552,7 @@ function QueuePanel({
                     hitSlop={6}
                     className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
-                    <Ionicons name="send" size={12} color={THEME.accent.blue} />
+                    <PaperPlaneTiltIcon size={12} color={THEME.accent.blue} weight="fill" />
                   </Button>
                   {/* Move up */}
                   {idx > 0 && (
@@ -1569,7 +1563,7 @@ function QueuePanel({
                       hitSlop={6}
                       className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
-                      <Ionicons name="arrow-up" size={12} color={mutedText} />
+                      <ArrowUpIcon size={12} color={mutedText} />
                     </Button>
                   )}
                   {/* Move down */}
@@ -1581,7 +1575,7 @@ function QueuePanel({
                       hitSlop={6}
                       className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
-                      <Ionicons name="arrow-down" size={12} color={mutedText} />
+                      <ArrowDownIcon size={12} color={mutedText} />
                     </Button>
                   )}
                   {/* Remove */}
@@ -1592,7 +1586,7 @@ function QueuePanel({
                     hitSlop={6}
                     className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
-                    <Ionicons name="close" size={12} color={mutedText} />
+                    <XIcon size={12} color={mutedText} />
                   </Button>
                 </View>
               </View>

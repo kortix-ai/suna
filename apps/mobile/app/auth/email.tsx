@@ -17,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { ChevronLeft } from 'lucide-react-native';
+import { CaretLeftIcon as ChevronLeft } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 
 import { PillInput } from '@/components/kortix/pill-input';

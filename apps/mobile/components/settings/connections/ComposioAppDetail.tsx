@@ -4,9 +4,9 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import {
-  ArrowLeft,
-  Wrench
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  WrenchIcon as Wrench,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { THEME } from '@/lib/utils/theme';

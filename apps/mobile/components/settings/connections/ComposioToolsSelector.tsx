@@ -4,7 +4,7 @@ import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
-import { CheckCircle2, Search, AlertCircle, Save, X, Pencil } from 'lucide-react-native';
+import { CheckCircleIcon as CheckCircle2, MagnifyingGlassIcon as Search, WarningCircleIcon as AlertCircle, FloppyDiskIcon as Save, XIcon as X, PencilIcon as Pencil } from '@/lib/icons';
 import { useLanguage } from '@/contexts';
 import {
   useComposioToolsBySlug,
@@ -580,7 +580,7 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
           selected ? 'bg-primary' : 'border-2 border-muted-foreground/30 bg-transparent'
         }`}>
         {selected && (
-          <Icon as={CheckCircle2} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+          <Icon as={CheckCircle2} size={16} className="text-primary-foreground" />
         )}
       </View>
 

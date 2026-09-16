@@ -19,14 +19,14 @@ import * as WebBrowser from 'expo-web-browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import {
-  AlertCircle,
-  ArrowUpDown,
-  BadgeCheck,
-  Calendar,
-  CreditCard,
-  Receipt,
-  RotateCcw,
-} from 'lucide-react-native';
+  WarningCircleIcon as AlertCircle,
+  ArrowsDownUpIcon as ArrowUpDown,
+  SealCheckIcon as BadgeCheck,
+  CalendarIcon as Calendar,
+  CreditCardIcon as CreditCard,
+  ReceiptIcon as Receipt,
+  ArrowCounterClockwiseIcon as RotateCcw,
+} from '@/lib/icons';
 import { formatCredits } from '@kortix/shared';
 
 import {

@@ -20,6 +20,7 @@ import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
+import { DotsThreeIcon } from '@/lib/icons';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
 
@@ -70,7 +71,7 @@ export function PageHeader({
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  // AnimatedToggleIcon takes a raw `color` prop (Reanimated/Ionicons can't
+  // AnimatedToggleIcon takes a raw `color` prop (Reanimated can't
   // resolve a className), so the foreground token is read from THEME — the
   // hex-free source of truth for exactly this "className can't reach it"
   // case (see lib/theme-colors.ts's header comment for the same pattern).
@@ -123,7 +124,7 @@ export function PageHeader({
             <AnimatedToggleIcon
               open={!!isRightDrawerOpen}
               color={iconColor}
-              icon="ellipsis-horizontal"
+              icon={DotsThreeIcon}
               size={ICON_SIZE}
             />
           </Button>

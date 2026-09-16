@@ -3,13 +3,13 @@ import { View, ScrollView, Pressable, ActivityIndicator, FlatList } from 'react-
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  ArrowLeft,
-  Globe,
-  CheckCircle2,
-  Circle,
-  Save,
-  Search
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  GlobeIcon as Globe,
+  CheckCircleIcon as CheckCircle2,
+  CircleIcon as Circle,
+  FloppyDiskIcon as Save,
+  MagnifyingGlassIcon as Search,
+} from '@/lib/icons';
 import { log } from '@/lib/logger';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
@@ -237,7 +237,7 @@ export function CustomMcpToolsSelector({
         onPress={handleClose}
         className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
       >
-        <Icon as={ArrowLeft} size={24} className="text-foreground" strokeWidth={2} />
+        <Icon as={ArrowLeft} size={24} className="text-foreground" />
       </Pressable>
 
       <View className="mb-8">
@@ -334,7 +334,6 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
             as={CheckCircle2}
             size={16}
             className="text-primary-foreground"
-            strokeWidth={2.5}
           />
         )}
       </View>

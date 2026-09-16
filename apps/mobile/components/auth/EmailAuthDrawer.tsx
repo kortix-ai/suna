@@ -8,8 +8,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Mail, ArrowRight, X, Check } from 'lucide-react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EnvelopeIcon as Mail, ArrowRightIcon as ArrowRight, XIcon as X, CheckIcon as Check } from '@/lib/icons';
+import { GmailIcon } from '@/components/icons/auth-icons';
 import { openInbox } from 'react-native-email-link';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useAuth } from '@/hooks/useAuth';
@@ -181,7 +181,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       }}
                       className="flex-row items-center justify-center gap-2"
                     >
-                      <Icon as={Mail} size={20} className="text-foreground" strokeWidth={2.5} />
+                      <Icon as={Mail} size={20} className="text-foreground" />
                       <Text className="text-foreground text-[16px] font-roobert-medium">
                         {t('auth.openEmailAppBtn')}
                       </Text>
@@ -201,9 +201,8 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                     }}
                     className="flex-row items-center justify-center gap-2"
                   >
-                    <MaterialCommunityIcons 
-                      name="gmail" 
-                      size={22} 
+                    <GmailIcon
+                      size={20}
                       color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                     />
                     <Text className="text-foreground text-[16px] font-roobert-medium">

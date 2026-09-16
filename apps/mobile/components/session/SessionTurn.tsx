@@ -10,11 +10,11 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
 import { GroupedReasoningCard } from '@/components/session/GroupedReasoningCard';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SessionErrorBanner } from './SessionErrorBanner';
 import ReAnimated, {
   useSharedValue,
@@ -28,31 +28,42 @@ import ReAnimated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import {
-  Terminal,
-  FileCode2,
-  Search,
-  Globe,
-  Glasses,
-  CheckSquare,
-  Cpu,
-  SquareKanban,
+  TerminalIcon as Terminal,
+  FileCodeIcon as FileCode2,
+  MagnifyingGlassIcon as Search,
+  GlobeIcon as Globe,
+  EyeglassesIcon as Glasses,
+  CheckSquareIcon as CheckSquare,
+  CpuIcon as Cpu,
+  KanbanIcon as SquareKanban,
   ImageIcon,
-  Presentation,
-  List,
-  Scissors,
-  MessageCircle,
-  ChevronRight,
-  ChevronDown,
-  Check,
-  CircleAlert,
-  Loader2,
-  ExternalLink,
-  FileText,
-  Folder,
-  FolderPlus,
-  MonitorPlay,
-  type LucideIcon,
-} from 'lucide-react-native';
+  PresentationIcon as Presentation,
+  ListIcon as List,
+  ScissorsIcon as Scissors,
+  ChatCircleIcon as MessageCircle,
+  CaretRightIcon as ChevronRight,
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  ArrowSquareOutIcon as ExternalLink,
+  FileTextIcon as FileText,
+  FolderIcon as Folder,
+  FolderPlusIcon as FolderPlus,
+  MonitorPlayIcon as MonitorPlay,
+  type AppIcon,
+  FileTextIcon,
+  TimerIcon,
+  TerminalIcon,
+  CheckCircleIcon,
+  DotsThreeCircleIcon,
+  CircleIcon,
+  XCircleIcon,
+  PaperPlaneTiltIcon,
+  SlackLogoIcon,
+  FileIcon,
+  CheckIcon,
+  CopyIcon,
+} from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
@@ -243,9 +254,7 @@ function SandboxImage({
   if (phase === 'probing' || !source) {
     return (
       <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: placeholderBg }}>
-        <ReAnimated.View>
-          <Loader2 size={20} color={muted(isDark)} />
-        </ReAnimated.View>
+        <KortixLoader customSize={20} />
       </View>
     );
   }
@@ -386,7 +395,7 @@ function getToolInput(tool: ToolPart): Record<string, any> {
 
 // ─── Tool icon resolver ──────────────────────────────────────────────────────
 
-const TOOL_ICON_MAP: Record<string, LucideIcon> = {
+const TOOL_ICON_MAP: Record<string, AppIcon> = {
   terminal: Terminal,
   'file-pen': FileCode2,
   search: Search,
@@ -404,7 +413,7 @@ const TOOL_ICON_MAP: Record<string, LucideIcon> = {
   cpu: Cpu,
 };
 
-function getToolLucideIcon(iconName: string): LucideIcon {
+function getToolIconByName(iconName: string): AppIcon {
   return TOOL_ICON_MAP[iconName] ?? Cpu;
 }
 
@@ -1053,11 +1062,11 @@ function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
 
   if (todos.length === 0) return null;
 
-  const statusIcons: Record<string, { icon: string; color: string }> = {
-    completed: { icon: 'checkmark-circle', color: THEME.accent.green },
-    in_progress: { icon: 'ellipsis-horizontal-circle', color: THEME.accent.blue },
-    pending: { icon: 'ellipse-outline', color: muted(isDark) },
-    cancelled: { icon: 'close-circle-outline', color: muted(isDark) },
+  const statusIcons: Record<string, { icon: AppIcon; color: string; solid?: boolean }> = {
+    completed: { icon: CheckCircleIcon, color: THEME.accent.green, solid: true },
+    in_progress: { icon: DotsThreeCircleIcon, color: THEME.accent.blue },
+    pending: { icon: CircleIcon, color: muted(isDark) },
+    cancelled: { icon: XCircleIcon, color: muted(isDark) },
   };
 
   return (
@@ -1075,10 +1084,10 @@ function TodosExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
               borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
             }}
           >
-            <Ionicons
-              name={st.icon as any}
+            <st.icon
               size={16}
               color={st.color}
+              weight={st.solid ? 'fill' : undefined}
               style={{ marginRight: 8, marginTop: 1 }}
             />
             <View style={{ flex: 1 }}>
@@ -1561,7 +1570,7 @@ function ShowExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean
     return (
       <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <Ionicons name="document-text-outline" size={14} color={muted(isDark)} style={{ marginRight: 6 }} />
+          <FileTextIcon size={14} color={muted(isDark)} style={{ marginRight: 6 }} />
           <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: monoFont, color: mutedStrong(isDark), flex: 1 }}>
             {parsedOutput.path}
           </Text>
@@ -2394,7 +2403,7 @@ const ShowToolCard = React.memo(function ShowToolCard({
           }}
         >
           {isRunning ? (
-            <SpinningLoader size={16} color={muted(isDark)} />
+            <KortixLoader customSize={16} />
           ) : (
             <IconComponent size={16} color={mutedStrong(isDark)} />
           )}
@@ -2571,7 +2580,7 @@ const ToolCard = React.memo(function ToolCard({
 
   const displaySubtitle = questionSubtitle || info.subtitle;
 
-  const IconComponent = getToolLucideIcon(info.icon);
+  const IconComponent = getToolIconByName(info.icon);
   const iconColor = mutedStrong(isDark);
 
   const hasExpandable = toolHasExpandableContent(tool);
@@ -2697,7 +2706,7 @@ const ToolCard = React.memo(function ToolCard({
         {/* Right side: status indicator or chevron */}
         <View style={{ marginLeft: 'auto', paddingLeft: 8 }}>
           {isRunning ? (
-            <SpinningLoader size={14} color={muted(isDark)} />
+            <KortixLoader customSize={14} />
           ) : isError ? (
             <CircleAlert size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
           ) : projectNavTarget ? (
@@ -2732,30 +2741,6 @@ const ToolCard = React.memo(function ToolCard({
     </View>
   );
 });
-
-// ─── Spinning Loader ─────────────────────────────────────────────────────────
-
-function SpinningLoader({ size, color }: { size: number; color: string }) {
-  const rotation = useSharedValue(0);
-
-  useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 1000, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <ReAnimated.View style={animatedStyle}>
-      <Loader2 size={size} color={color} />
-    </ReAnimated.View>
-  );
-}
 
 // ─── Mention highlighting ────────────────────────────────────────────────────
 
@@ -3162,11 +3147,11 @@ function SessionTurnImpl({
           >
             {/* Channel badge + user name */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Ionicons
-                name={channelMessageInfo.platform === 'Telegram' ? 'paper-plane-outline' : 'logo-slack'}
-                size={14}
-                color={channelMessageInfo.platform === 'Telegram' ? CHANNEL_BRAND_COLORS.telegram : CHANNEL_BRAND_COLORS.other}
-              />
+              {channelMessageInfo.platform === 'Telegram' ? (
+                <PaperPlaneTiltIcon size={14} color={CHANNEL_BRAND_COLORS.telegram} />
+              ) : (
+                <SlackLogoIcon size={14} color={CHANNEL_BRAND_COLORS.other} />
+              )}
               <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: channelMessageInfo.platform === 'Telegram' ? CHANNEL_BRAND_COLORS.telegram : CHANNEL_BRAND_COLORS.other }}>
                 {channelMessageInfo.platform}
               </Text>
@@ -3202,11 +3187,7 @@ function SessionTurnImpl({
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons
-                name="timer-outline"
-                size={14}
-                color={mutedStrong(isDark)}
-              />
+              <TimerIcon size={14} color={mutedStrong(isDark)} />
               <Text
                 style={{
                   fontSize: 14,
@@ -3250,11 +3231,7 @@ function SessionTurnImpl({
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons
-                name="terminal-outline"
-                size={14}
-                color={mutedStrong(isDark)}
-              />
+              <TerminalIcon size={14} color={mutedStrong(isDark)} />
               <Text
                 style={{
                   fontSize: 14,
@@ -3359,7 +3336,7 @@ function SessionTurnImpl({
             >
               <View className="flex-row items-start">
                 <View className="mt-0.5 mr-2">
-                  <SpinningLoader size={14} color={isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4)} />
+                  <KortixLoader customSize={14} />
                 </View>
                 <View className="flex-1">
                   <Text className="text-xs text-muted-foreground" style={{ lineHeight: 16 }}>
@@ -3456,11 +3433,13 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
       )}
       {/* File info row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, gap: 8 }}>
-        <Ionicons
-          name={isImage ? 'image-outline' : file.mime === 'application/pdf' ? 'document-text-outline' : 'document-outline'}
-          size={16}
-          color={muted(isDark)}
-        />
+        {isImage ? (
+          <ImageIcon size={16} color={muted(isDark)} />
+        ) : file.mime === 'application/pdf' ? (
+          <FileTextIcon size={16} color={muted(isDark)} />
+        ) : (
+          <FileIcon size={16} color={muted(isDark)} />
+        )}
         <Text
           numberOfLines={1}
           style={{
@@ -3510,11 +3489,11 @@ function UserMessageActions({
         hitSlop={6}
         style={{ padding: 5, borderRadius: 6 }}
       >
-        <Ionicons
-          name={copied ? 'checkmark' : 'copy-outline'}
-          size={13}
-          color={copied ? copiedColor : mutedColor}
-        />
+        {copied ? (
+          <CheckIcon size={13} color={copiedColor} />
+        ) : (
+          <CopyIcon size={13} color={mutedColor} />
+        )}
       </Button>
     </View>
   );
@@ -3599,11 +3578,11 @@ function TurnActions({
         hitSlop={6}
         style={{ padding: 5, borderRadius: 6 }}
       >
-        <Ionicons
-          name={copied ? 'checkmark' : 'copy-outline'}
-          size={14}
-          color={copied ? THEME.accent.green : mutedColor}
-        />
+        {copied ? (
+          <CheckIcon size={14} color={THEME.accent.green} />
+        ) : (
+          <CopyIcon size={14} color={mutedColor} />
+        )}
       </Button>
     </Animated.View>
   );

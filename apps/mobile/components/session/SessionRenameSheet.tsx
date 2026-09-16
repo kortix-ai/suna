@@ -9,7 +9,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
+import { PencilIcon } from '@/lib/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
@@ -108,7 +108,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
               style={{
                 backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05),
               }}>
-              <Ionicons name="pencil-outline" size={20} color={fgColor} />
+              <PencilIcon size={20} color={fgColor} />
             </View>
             <View className="flex-1">
               <Text className="font-roobert-semibold text-lg" style={{ color: fgColor }}>

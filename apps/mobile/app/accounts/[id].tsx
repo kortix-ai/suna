@@ -11,7 +11,7 @@ import * as React from 'react';
 import { ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { AlertCircle, RotateCw } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, ArrowClockwiseIcon as RotateCw } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';

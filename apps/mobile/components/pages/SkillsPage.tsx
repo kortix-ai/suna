@@ -19,14 +19,14 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import {
-  Sparkles,
-  Copy,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Pencil,
-  Plus,
-} from 'lucide-react-native';
+  SparkleIcon as Sparkles,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CaretLeftIcon as ChevronLeft,
+  PencilIcon as Pencil,
+  PlusIcon as Plus,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -42,7 +42,6 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SkillsPageProps {

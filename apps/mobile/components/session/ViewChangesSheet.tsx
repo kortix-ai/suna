@@ -20,16 +20,16 @@ import {
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import {
-  X,
-  ChevronRight,
-  ChevronDown,
-  FilePlus2,
-  FileX2,
-  FileEdit,
-  FileCode2,
-  Rows3,
-  Columns2,
-} from 'lucide-react-native';
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  CaretDownIcon as ChevronDown,
+  FilePlusIcon as FilePlus2,
+  FileXIcon as FileX2,
+  NotePencilIcon as FileEdit,
+  FileCodeIcon as FileCode2,
+  RowsIcon as Rows3,
+  ColumnsIcon as Columns2,
+} from '@/lib/icons';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';

@@ -23,16 +23,16 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
-  ArrowUpRight,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Monitor,
-  Moon,
-  Palette,
-  Sun,
-  type LucideIcon,
-} from 'lucide-react-native';
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  MonitorIcon as Monitor,
+  MoonIcon as Moon,
+  PaletteIcon as Palette,
+  SunIcon as Sun,
+  type AppIcon,
+} from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -249,8 +249,8 @@ export function SettingsGroup({
 }
 
 export interface SettingsRowProps {
-  /** Lucide icon in the 20pt leading slot. */
-  icon?: LucideIcon;
+  /** Icon (from `@/lib/icons`) in the 20pt leading slot. */
+  icon?: AppIcon;
   /** Custom leading content instead of `icon` (flag emoji, avatar). */
   leading?: React.ReactNode;
   label: string;
@@ -274,7 +274,7 @@ export interface SettingsRowProps {
   multiline?: boolean;
 }
 
-const TRAILING_ICON = { size: 16, strokeWidth: 2.75 } as const;
+const TRAILING_ICON_SIZE = 16;
 
 export function SettingsRow({
   icon,
@@ -296,7 +296,7 @@ export function SettingsRow({
       <Icon
         as={external ? ArrowUpRight : ChevronRight}
         className="text-muted-foreground/70"
-        {...TRAILING_ICON}
+        size={TRAILING_ICON_SIZE}
       />
     ) : null;
 
@@ -307,7 +307,6 @@ export function SettingsRow({
         as={icon}
         size={18}
         className={destructive ? 'text-destructive' : 'text-foreground/80'}
-        strokeWidth={2.2}
       />
     ) : null);
 
@@ -342,7 +341,7 @@ export function SettingsRow({
         ) : null}
         {checked ? (
           <View className="ml-3">
-            <Icon as={Check} className="text-primary" {...TRAILING_ICON} />
+            <Icon as={Check} className="text-primary" size={TRAILING_ICON_SIZE} />
           </View>
         ) : null}
         {trailing ? <View className="ml-3">{trailing}</View> : null}
@@ -353,7 +352,7 @@ export function SettingsRow({
 
 const APPEARANCE_OPTIONS: {
   value: ThemePreference;
-  icon: LucideIcon;
+  icon: AppIcon;
   labelKey: string;
   fallback: string;
 }[] = [

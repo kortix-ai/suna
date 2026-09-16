@@ -10,7 +10,7 @@ import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTyp
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { AlertCircle, FileText } from 'lucide-react-native';
+import { WarningCircleIcon as AlertCircle, FileTextIcon as FileText } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
@@ -246,7 +246,6 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
             as={AlertCircle}
             size={48}
             className="text-destructive mb-4"
-            strokeWidth={1.5}
           />
           <Text className="text-sm text-muted-foreground text-center">
             Failed to load image
@@ -941,7 +940,6 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           as={AlertCircle}
           size={48}
           className="text-destructive mb-4"
-          strokeWidth={1.5}
         />
         <Text className="text-sm text-muted-foreground text-center mb-2">
           Failed to load PDF
@@ -1310,7 +1308,6 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
           as={AlertCircle}
           size={48}
           className="text-destructive mb-4"
-          strokeWidth={1.5}
         />
         <Text className="text-sm text-muted-foreground text-center mb-2">
           Failed to load document
@@ -1378,7 +1375,6 @@ function FallbackPreview({
         as={FileText}
         size={48}
         color={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
-        strokeWidth={1.5}
         className="mb-4"
       />
       <Text className="text-sm font-roobert-medium text-center mb-2">

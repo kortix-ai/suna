@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
-import { Save, AlertCircle } from 'lucide-react-native';
+import { FloppyDiskIcon as Save, WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { Pressable, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useLanguage } from '@/contexts/LanguageContext';

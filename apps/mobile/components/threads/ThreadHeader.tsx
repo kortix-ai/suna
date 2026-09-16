@@ -7,10 +7,10 @@ import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import {
-  ChevronLeft,
-  MoreHorizontal,
-  Check,
-} from 'lucide-react-native';
+  CaretLeftIcon as ChevronLeft,
+  DotsThreeIcon as MoreHorizontal,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -145,7 +145,6 @@ export function ThreadHeader({
             as={ChevronLeft}
             size={24}
             className="text-foreground"
-            strokeWidth={2}
           />
         </AnimatedPressable>
 
@@ -174,7 +173,7 @@ export function ThreadHeader({
                 className="w-7 h-7 items-center justify-center rounded-full bg-primary/15"
                 hitSlop={8}
               >
-                <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
+                <Icon as={Check} size={14} className="text-primary" />
               </Pressable>
             </View>
           ) : (
@@ -220,7 +219,6 @@ export function ThreadHeader({
               as={MoreHorizontal}
               size={20}
               className="text-foreground"
-              strokeWidth={2}
             />
           </AnimatedPressable>
         )}

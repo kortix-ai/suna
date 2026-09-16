@@ -16,7 +16,7 @@ import {
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
+import { ChatCircleDotsIcon, CheckIcon, PencilIcon, XIcon } from '@/lib/icons';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import type {
@@ -267,11 +267,7 @@ export function QuestionPrompt({
           paddingVertical: 6,
         }}
       >
-        <Ionicons
-          name="chatbubble-ellipses-outline"
-          size={12}
-          color={mutedColor}
-        />
+        <ChatCircleDotsIcon size={12} color={mutedColor} />
         <RNText
           style={{ flex: 1, fontSize: 11, marginLeft: 6, color: mutedColor, fontFamily: 'Roobert' }}
           numberOfLines={1}
@@ -289,7 +285,7 @@ export function QuestionPrompt({
           className="h-auto w-auto items-center justify-center p-0 active:bg-transparent active:opacity-70"
           style={{ width: 22, height: 22 }}
         >
-          <Ionicons name="close" size={13} color={mutedColor} />
+          <XIcon size={13} color={mutedColor} />
         </Button>
       </View>
 
@@ -345,7 +341,7 @@ export function QuestionPrompt({
                         justifyContent: 'center',
                       }}
                     >
-                      {isAnswered && <Ionicons name="checkmark" size={8} color={fgColor} />}
+                      {isAnswered && <CheckIcon size={8} color={fgColor} />}
                       {!isAnswered && isActive && (
                         <View style={{ width: 2.5, height: 2.5, borderRadius: 1.25, backgroundColor: fgColor }} />
                       )}
@@ -428,7 +424,7 @@ export function QuestionPrompt({
                         marginRight: 7,
                       }}
                     >
-                      {done && <Ionicons name="checkmark" size={8} color={fgColor} />}
+                      {done && <CheckIcon size={8} color={fgColor} />}
                     </View>
                     <RNText
                       style={{ flex: 1, fontSize: 12, color: fgColor, fontFamily: 'Roobert' }}
@@ -522,7 +518,7 @@ export function QuestionPrompt({
                         justifyContent: 'center',
                       }}
                     >
-                      {isPicked && <Ionicons name="checkmark" size={8} color={fgColor} />}
+                      {isPicked && <CheckIcon size={8} color={fgColor} />}
                     </View>
 
                     <View style={{ flex: 1 }}>
@@ -558,11 +554,7 @@ export function QuestionPrompt({
                     gap: 6,
                   }}
                 >
-                  <Ionicons
-                    name="pencil-outline"
-                    size={10}
-                    color={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.2)}
-                  />
+                  <PencilIcon size={10} color={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.2)} />
                   <RNText style={{ fontSize: 14, color: mutedColor, fontFamily: 'Roobert' }}>
                     Type your own answer
                   </RNText>
@@ -619,7 +611,7 @@ export function QuestionPrompt({
                     className="h-auto w-auto items-center justify-center p-0 active:bg-transparent active:opacity-70"
                     style={{ width: 32, height: 32 }}
                   >
-                    <Ionicons name="close" size={14} color={mutedColor} />
+                    <XIcon size={14} color={mutedColor} />
                   </Button>
                 </View>
               )}

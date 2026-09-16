@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { View, Pressable, Modal, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Calendar, X, ChevronDown } from 'lucide-react-native';
+import { CalendarIcon as Calendar, XIcon as X, CaretDownIcon as ChevronDown } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -154,14 +154,14 @@ export function DateRangePicker({
         onPress={handleOpen}
         className="bg-muted/30 rounded-xl px-3 py-2 flex-row items-center gap-2"
       >
-        <Icon as={Calendar} size={14} className="text-foreground" strokeWidth={2} />
+        <Icon as={Calendar} size={14} className="text-foreground" />
         <Text
           className="font-roobert-medium text-foreground flex-1"
           style={{ fontSize: 12, lineHeight: 16 }}
         >
           {displayText}
         </Text>
-        <Icon as={ChevronDown} size={14} className="text-muted-foreground" strokeWidth={2} />
+        <Icon as={ChevronDown} size={14} className="text-muted-foreground" />
       </Pressable>
 
       <Modal
@@ -185,7 +185,7 @@ export function DateRangePicker({
                   {t('usage.selectPeriod', 'Select Period')}
                 </Text>
                 <Pressable onPress={handleClose}>
-                  <Icon as={X} size={20} className="text-muted-foreground" strokeWidth={2} />
+                  <Icon as={X} size={20} className="text-muted-foreground" />
                 </Pressable>
               </View>
             </View>

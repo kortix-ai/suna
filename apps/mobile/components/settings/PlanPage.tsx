@@ -15,7 +15,7 @@
 import * as React from 'react';
 import { AppState, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowUpRight, Check, Users } from 'lucide-react-native';
+import { ArrowUpRightIcon as ArrowUpRight, CheckIcon as Check, UsersIcon as Users } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -168,7 +168,7 @@ function PlanActionButton({
   return (
     <Button size="lg" className="rounded-full" disabled={!opensWeb} onPress={onPress}>
       <Text>{label}</Text>
-      {opensWeb ? <Icon as={ArrowUpRight} size={18} strokeWidth={2.75} /> : null}
+      {opensWeb ? <Icon as={ArrowUpRight} size={18} /> : null}
     </Button>
   );
 }

@@ -11,7 +11,7 @@ import { View, TextInput } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Switch } from '@/components/ui/switch';
-import { Info } from 'lucide-react-native';
+import { InfoIcon as Info } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { THEME } from '@/lib/utils/theme';
 

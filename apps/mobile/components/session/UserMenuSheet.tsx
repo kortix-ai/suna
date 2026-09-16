@@ -8,17 +8,17 @@ import { useInstanceProgress } from '@/stores/instance-progress';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { SandboxConfigHealthBanner } from './SandboxConfigHealthBanner';
 import {
-  ArrowDownToLine,
-  Check,
-  ChevronRight,
-  LogOut,
-  Monitor,
-  Moon,
-  Settings,
-  SlidersHorizontal,
-  Sun,
-  X,
-} from 'lucide-react-native';
+  DownloadSimpleIcon as ArrowDownToLine,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  SignOutIcon as LogOut,
+  MonitorIcon as Monitor,
+  MoonIcon as Moon,
+  GearSixIcon as Settings,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  SunIcon as Sun,
+  XIcon as X,
+} from '@/lib/icons';
 import { getToggleTrackBg, getToggleActiveBg, useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
@@ -159,7 +159,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
             className="py-3.5 active:opacity-85"
           >
             <View className="flex-row items-center">
-              <Icon as={SlidersHorizontal} size={16} className="text-muted-foreground mr-3" strokeWidth={2.2} />
+              <Icon as={SlidersHorizontal} size={16} className="text-muted-foreground mr-3" />
               <Text className="font-roobert text-[14px] text-muted-foreground">Manage instances</Text>
             </View>
           </Pressable>
@@ -191,7 +191,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               /* Success */
               <View className="rounded-2xl border px-4 py-3 border-kortix-green/20 bg-kortix-green/5">
                 <View className="flex-row items-center">
-                  <Icon as={Check} size={16} color={THEME.accent.green} strokeWidth={2.5} />
+                  <Icon as={Check} size={16} color={THEME.accent.green} />
                   <Text className="ml-2 font-roobert-medium text-[14px] text-kortix-green flex-1">Updated to v{updateResult.currentVersion}</Text>
                 </View>
               </View>
@@ -199,7 +199,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               /* Error */
               <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3 active:opacity-90" style={{ borderColor: withAlpha(destructiveColor, isDark ? 0.2 : 0.15), backgroundColor: withAlpha(destructiveColor, isDark ? 0.05 : 0.03) }}>
                 <View className="flex-row items-center">
-                  <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
+                  <Icon as={X} size={16} className="text-destructive" />
                   <Text className="ml-2 font-roobert-medium text-[14px] text-destructive flex-1">Update failed</Text>
                   <Text className="font-roobert-medium text-xs text-muted-foreground">Tap for details</Text>
                 </View>
@@ -246,7 +246,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                     className="flex-row items-center justify-center rounded-full px-4 py-2 active:opacity-90"
                     style={{ backgroundColor: theme.primary }}
                   >
-                    <Icon as={ArrowDownToLine} size={13} color={theme.primaryForeground} strokeWidth={2.5} />
+                    <Icon as={ArrowDownToLine} size={13} color={theme.primaryForeground} />
                     <Text className="ml-1.5 font-roobert-semibold text-xs" style={{ color: theme.primaryForeground }}>
                       Update
                     </Text>
@@ -273,11 +273,11 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           >
             <View className="py-3.5">
               <View className="flex-row items-center">
-                <Icon as={Settings} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                <Icon as={Settings} size={18} className="text-foreground/80" />
                 <View className="ml-4 flex-1">
                   <Text className="font-roobert-medium text-[15px] text-foreground">Settings</Text>
                 </View>
-                <Icon as={ChevronRight} size={16} className="text-muted-foreground/50" strokeWidth={2.2} />
+                <Icon as={ChevronRight} size={16} className="text-muted-foreground/50" />
               </View>
             </View>
           </Pressable>
@@ -303,7 +303,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                       as={option.icon}
                       size={14}
                       className={active ? 'text-foreground' : 'text-muted-foreground'}
-                      strokeWidth={2.2}
                     />
                     <Text
                       className={`ml-1.5 text-xs font-roobert-medium ${
@@ -330,7 +329,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           >
             <View className="py-3.5">
               <View className="flex-row items-center">
-                <Icon as={LogOut} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                <Icon as={LogOut} size={18} className="text-foreground/80" />
                 <Text
                   className="ml-4 font-roobert-medium text-[15px] text-foreground"
                   style={{ opacity: isSigningOut ? 0.6 : 1 }}

@@ -2646,28 +2646,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNVectorIcons (10.3.0):
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
   - RNWorklets (0.8.3):
     - hermes-engine
     - RCTRequired
@@ -2880,7 +2858,6 @@ DEPENDENCIES:
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.26.2_react-native@0.85.3_react@19.2.3/node_modules/react-native-screens`)"
   - "RNSoundLevel (from `../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level`)"
   - "RNSVG (from `../../../node_modules/.pnpm/react-native-svg@15.15.4_react-native@0.85.3_react@19.2.3/node_modules/react-native-svg`)"
-  - "RNVectorIcons (from `../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons`)"
   - "RNWorklets (from `../../../node_modules/.pnpm/react-native-worklets@0.8.3_@babel+core@7.29.7_@react-native+metro-config@0.87.1_react-native@0.85.3_react@19.2.3/node_modules/react-native-worklets`)"
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.85.3_@babel+core@7.29.7_@react-native+metro-config@0.87.1_@types+react@19.2.18_react@19.2.3/node_modules/react-native/ReactCommon/yoga`)"
 
@@ -3169,8 +3146,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level"
   RNSVG:
     :path: "../../../node_modules/.pnpm/react-native-svg@15.15.4_react-native@0.85.3_react@19.2.3/node_modules/react-native-svg"
-  RNVectorIcons:
-    :path: "../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons"
   RNWorklets:
     :path: "../../../node_modules/.pnpm/react-native-worklets@0.8.3_@babel+core@7.29.7_@react-native+metro-config@0.87.1_react-native@0.85.3_react@19.2.3/node_modules/react-native-worklets"
   Yoga:
@@ -3320,7 +3295,6 @@ SPEC CHECKSUMS:
   RNScreens: 82c8a2b21dfd8b06a627ad48a543a54c2fb97abf
   RNSoundLevel: a48da8668fbde4f792c0bea948e27ab793bee7e1
   RNSVG: 2d3af77f13e69994bb8957f69d46d8bcba1a6be8
-  RNVectorIcons: bd88db8836a8611aff4b44f061364c07002a6c2a
   RNWorklets: 62f2be9792b49bc9e69d62e4ccb2a2199a76d46a
   Yoga: e240fec777ff1f21ef42ccebbb44b6d262125855
 

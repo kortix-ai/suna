@@ -20,18 +20,18 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Key,
-  User,
-  Lock,
-  Users,
-  Globe,
-  Check,
-  ChevronRight,
-  Trash2,
-  X,
-  ShieldAlert,
-  type LucideIcon,
-} from 'lucide-react-native';
+  KeyIcon as Key,
+  UserIcon as User,
+  LockIcon as Lock,
+  UsersIcon as Users,
+  GlobeIcon as Globe,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  TrashIcon as Trash2,
+  XIcon as X,
+  ShieldWarningIcon as ShieldAlert,
+  type AppIcon,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
@@ -53,7 +53,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SecretsNavPageProps {
@@ -128,7 +127,7 @@ function sharingScopeLabel(sharing: ConnectorSharing | null | undefined): string
 
 // ─── Sharing field (project / private / members) ──────────────────────────────
 
-const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; icon: LucideIcon }[] = [
+const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; icon: AppIcon }[] = [
   { mode: 'project', label: 'Everyone', icon: Globe },
   { mode: 'private', label: 'Only me', icon: Lock },
   { mode: 'members', label: 'Members', icon: Users },
@@ -208,7 +207,7 @@ function SharingField({
                   </View>
                   <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
                   <View style={{ width: 20, height: 20, borderRadius: 6, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {on && <Check size={13} color={theme.primaryForeground} strokeWidth={3} />}
+                    {on && <Check size={13} color={theme.primaryForeground} />}
                   </View>
                 </Pressable>
               );

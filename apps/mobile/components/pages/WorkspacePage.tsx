@@ -22,26 +22,25 @@ import {
 import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
 import {
-  Search,
-  X,
-  Bot,
-  Sparkles,
-  Terminal,
-  FolderOpen,
-  Wrench,
-  Plug,
-  Link as LinkIcon,
-  ChevronRight,
-  Copy,
-  Check,
-  FileText,
-  Blocks,
-  ArrowUpRight,
-  MoreHorizontal,
-} from 'lucide-react-native';
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+  RobotIcon as Bot,
+  SparkleIcon as Sparkles,
+  TerminalIcon as Terminal,
+  FolderOpenIcon as FolderOpen,
+  WrenchIcon as Wrench,
+  PlugIcon as Plug,
+  LinkIcon,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  FileTextIcon as FileText,
+  SquaresFourIcon as Blocks,
+  ArrowUpRightIcon as ArrowUpRight,
+  DotsThreeIcon as MoreHorizontal,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/icon';
@@ -598,7 +597,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
               className="p-2 rounded-xl active:opacity-70"
               hitSlop={8}
             >
-              <Icon as={MoreHorizontal} size={18} color={fg} strokeWidth={2} />
+              <Icon as={MoreHorizontal} size={18} color={fg} />
             </Pressable>
           ) : undefined
         }

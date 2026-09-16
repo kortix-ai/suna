@@ -11,7 +11,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/utils/trigger-utils';
-import { Clock, Check, AlertCircle } from 'lucide-react-native';
+import { ClockIcon as Clock, CheckIcon as Check, WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 

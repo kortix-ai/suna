@@ -9,7 +9,7 @@ import { Text } from '@/components/ui/text';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pencil, Trash2, Calendar, Link2, Unlink, Monitor } from 'lucide-react-native';
+import { PencilIcon as Pencil, TrashIcon as Trash2, CalendarIcon as Calendar, LinkSimpleIcon as Link2, LinkBreakIcon as Unlink, MonitorIcon as Monitor } from '@/lib/icons';
 import { haptics } from '@/lib/haptics';
 
 import { AppIcon } from './AppIcon';

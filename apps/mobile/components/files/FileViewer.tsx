@@ -17,7 +17,7 @@ import {
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { X, Download, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react-native';
+import { XIcon as X, DownloadIcon as Download, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, PencilIcon as Pencil, CheckIcon as Check } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -373,7 +373,7 @@ export function FileViewer({
                   {writeMutation.isPending ? (
                     <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                   ) : (
-                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} strokeWidth={2.4} />
+                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} />
                   )}
                   <Text
                     style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
@@ -395,7 +395,6 @@ export function FileViewer({
                         as={ChevronLeft}
                         size={24}
                         color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                        strokeWidth={2}
                       />
                     </AnimatedPressable>
                     <AnimatedPressable
@@ -407,14 +406,13 @@ export function FileViewer({
                         as={ChevronRight}
                         size={24}
                         color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                        strokeWidth={2}
                       />
                     </AnimatedPressable>
                   </>
                 )}
                 {canEdit && (
                   <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
-                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2} />
+                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
                 <AnimatedPressable
@@ -429,7 +427,6 @@ export function FileViewer({
                       as={Download}
                       size={22}
                       color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                      strokeWidth={2}
                     />
                   )}
                 </AnimatedPressable>
@@ -443,7 +440,7 @@ export function FileViewer({
                   onPress={handleCloseGuarded}
                   style={closeAnimatedStyle}
                   className="p-2">
-                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2} />
+                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                 </AnimatedPressable>
               </View>
             )}

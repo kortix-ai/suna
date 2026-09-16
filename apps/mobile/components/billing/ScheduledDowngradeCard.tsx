@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { ArrowRightLeft, CalendarClock, Undo2 } from 'lucide-react-native';
+import { ArrowsLeftRightIcon as ArrowRightLeft, CalendarDotsIcon as CalendarClock, ArrowUUpLeftIcon as Undo2 } from '@/lib/icons';
 
 import {
   AlertDialog,

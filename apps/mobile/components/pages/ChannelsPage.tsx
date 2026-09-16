@@ -21,21 +21,31 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
-  Plus,
-  Search,
-  X,
-  ChevronRight,
-  Trash2,
-  Radio,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  Copy,
-  ExternalLink,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  TrashIcon as Trash2,
+  BroadcastIcon as Radio,
+  ArrowRightIcon as ArrowRight,
+  ArrowLeftIcon as ArrowLeft,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  CaretLeftIcon,
+  type AppIcon,
+  PaperPlaneTiltIcon,
+  SlackLogoIcon,
+  DiscordLogoIcon,
+  ChatCircleIcon,
+  UsersIcon,
+  MicrophoneIcon,
+  EnvelopeIcon,
+  ChatIcon,
+  BroadcastIcon,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import BottomSheet, { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -69,19 +79,19 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
 
-const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
-  telegram: 'paper-plane-outline',
-  slack: 'logo-slack',
-  discord: 'logo-discord',
-  whatsapp: 'chatbubble-outline',
-  teams: 'people-outline',
-  voice: 'mic-outline',
-  email: 'mail-outline',
-  sms: 'chatbox-outline',
+const CHANNEL_TYPE_ICONS: Record<ChannelType, AppIcon> = {
+  telegram: PaperPlaneTiltIcon,
+  slack: SlackLogoIcon,
+  discord: DiscordLogoIcon,
+  whatsapp: ChatCircleIcon,
+  teams: UsersIcon,
+  voice: MicrophoneIcon,
+  email: EnvelopeIcon,
+  sms: ChatIcon,
 };
 
-function getChannelIcon(type: ChannelType): string {
-  return CHANNEL_TYPE_ICONS[type] || 'radio-outline';
+function getChannelIcon(type: ChannelType): AppIcon {
+  return CHANNEL_TYPE_ICONS[type] || BroadcastIcon;
 }
 
 function ChannelTypeIcon({
@@ -103,7 +113,8 @@ function ChannelTypeIcon({
     );
   }
 
-  return <Ionicons name={getChannelIcon(type) as any} size={size} color={color} />;
+  const ChannelIcon = getChannelIcon(type);
+  return <ChannelIcon size={size} color={color} />;
 }
 
 const SUPPORTED_CHANNEL_TYPES: ChannelType[] = ['telegram', 'slack'];
@@ -850,7 +861,7 @@ function AddChannelSheet({
         {view === 'generic-config' && (
           <>
             <Pressable onPress={() => { haptics.tap(); setView('type-select'); setSelectedType(null); setChannelName(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
-              <Ionicons name="chevron-back" size={16} color={muted} />
+              <CaretLeftIcon size={16} color={muted} />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>Back</Text>
             </Pressable>
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Channel Name</Text>

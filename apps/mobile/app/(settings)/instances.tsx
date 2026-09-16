@@ -12,12 +12,12 @@ import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import { BottomSheetModal, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import {
-  Check,
-  Globe,
-  Monitor,
-  Plus,
-  Server,
-} from 'lucide-react-native';
+  CheckIcon as Check,
+  GlobeIcon as Globe,
+  MonitorIcon as Monitor,
+  PlusIcon as Plus,
+  HardDrivesIcon as Server,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -204,7 +204,7 @@ export default function InstancesScreen() {
                           <View className="flex-row items-center" style={{ gap: 8 }}>
                             {isProvisioning && <ActivityIndicator size="small" />}
                             {isActive && !isProvisioning && (
-                              <Icon as={Check} size={16} className="text-primary" strokeWidth={2.7} />
+                              <Icon as={Check} size={16} className="text-primary" />
                             )}
                           </View>
                         </View>
@@ -231,7 +231,7 @@ export default function InstancesScreen() {
           {/* Empty state */}
           {!isLoading && (!instances || instances.length === 0) && !creatingProgress && (
             <View className="items-center justify-center py-12">
-              <Icon as={Server} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+              <Icon as={Server} size={32} className="text-muted-foreground/40" />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Instances</Text>
               <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
                 Tap the button below to add one.
@@ -248,7 +248,7 @@ export default function InstancesScreen() {
           className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
-          <Icon as={Plus} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
+          <Icon as={Plus} size={16} color={themeColors.primaryForeground} />
           <Text className="ml-2 font-roobert-semibold text-[15px]" style={{ color: themeColors.primaryForeground }}>
             New Instance
           </Text>
@@ -335,7 +335,7 @@ const AddInstanceSheet = React.forwardRef<
             </Text>
             <View className="py-4">
               <View className="flex-row items-center mb-3">
-                <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                <Icon as={Monitor} size={18} className="text-foreground/80" />
                 <View className="ml-4 flex-1">
                   <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
                   <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{progress.message}</Text>
@@ -374,7 +374,7 @@ const AddInstanceSheet = React.forwardRef<
                 className="py-3.5 active:opacity-85"
               >
                 <View className="flex-row items-center">
-                  <Icon as={Globe} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                  <Icon as={Globe} size={18} className="text-foreground/80" />
                   <View className="ml-4 flex-1">
                     <Text className="font-roobert-medium text-[15px] text-foreground">Custom URL</Text>
                     <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Connect to any Kortix instance by address</Text>

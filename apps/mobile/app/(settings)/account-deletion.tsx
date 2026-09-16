@@ -19,14 +19,14 @@ import * as React from 'react';
 import { Keyboard, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  Calendar,
-  Clock,
-  CreditCard,
-  FolderClosed,
-  Info,
-  KeyRound,
-  Zap,
-} from 'lucide-react-native';
+  CalendarIcon as Calendar,
+  ClockIcon as Clock,
+  CreditCardIcon as CreditCard,
+  FolderIcon as FolderClosed,
+  InfoIcon as Info,
+  KeyIcon as KeyRound,
+  LightningIcon as Zap,
+} from '@/lib/icons';
 
 import {
   AlertDialog,

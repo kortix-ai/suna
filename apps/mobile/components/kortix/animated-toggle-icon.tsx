@@ -16,20 +16,16 @@ import Reanimated, {
   withTiming,
   interpolate,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
-import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { XIcon, type AppIcon } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
-
-export type AnimatedToggleIconName = React.ComponentProps<typeof Ionicons>['name'] | 'menu-lucide';
 
 export interface AnimatedToggleIconProps {
   /** True → rotates/fades to the close icon. */
   open: boolean;
   /** Base icon color. */
   color: string;
-  /** Which base icon to render. 'menu-lucide' uses the lucide Menu + X pair;
-   *  any other value is passed to Ionicons. */
-  icon: AnimatedToggleIconName;
+  /** The base icon, from `@/lib/icons`. */
+  icon: AppIcon;
   /** Icon + container size. Defaults to 24. */
   size?: number;
 }
@@ -57,20 +53,6 @@ export function AnimatedToggleIcon({
     transform: [{ rotate: `${interpolate(progress.value, [0, 1], [-90, 0])}deg` }],
   }));
 
-  const renderBase = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={MenuIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name={icon} size={size} color={color} />;
-  };
-
-  const renderClose = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={CloseIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name="close" size={size} color={color} />;
-  };
-
   return (
     <View
       style={{
@@ -80,8 +62,12 @@ export function AnimatedToggleIcon({
         justifyContent: 'center',
       }}
     >
-      <Reanimated.View style={baseStyle}>{renderBase()}</Reanimated.View>
-      <Reanimated.View style={closeStyle}>{renderClose()}</Reanimated.View>
+      <Reanimated.View style={baseStyle}>
+        <Icon as={icon} size={size} color={color} />
+      </Reanimated.View>
+      <Reanimated.View style={closeStyle}>
+        <Icon as={XIcon} size={size} color={color} />
+      </Reanimated.View>
     </View>
   );
 }

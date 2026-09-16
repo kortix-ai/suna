@@ -1,12 +1,12 @@
 import * as React from 'react';
 import { type ViewProps } from 'react-native';
 import { Avatar } from '@/components/kortix/avatar';
-import type { LucideIcon } from 'lucide-react-native';
+import { type AppIcon } from '@/lib/icons';
 
 interface ThreadAvatarProps extends ViewProps {
   title?: string;
   size?: number;
-  icon?: LucideIcon | string;
+  icon?: AppIcon | string;
   backgroundColor?: string;
   iconColor?: string;
 }

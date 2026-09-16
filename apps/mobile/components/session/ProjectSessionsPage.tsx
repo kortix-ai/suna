@@ -31,7 +31,7 @@ import { useColorScheme } from 'nativewind';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router/react-navigation';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { Pencil, RotateCcw, Share, Square, Trash2 } from 'lucide-react-native';
+import { PencilIcon as Pencil, ArrowCounterClockwiseIcon as RotateCcw, ExportIcon as Share, SquareIcon as Square, TrashIcon as Trash2 } from '@/lib/icons';
 
 import {
   AlertDialog,

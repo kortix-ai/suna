@@ -16,23 +16,23 @@ import {
 import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
 import {
-  Plus,
-  Trash2,
-  Copy,
-  Check,
-  Shield,
-  Cable,
-  Wifi,
-  WifiOff,
-  Monitor,
-  Terminal,
-  HardDrive,
-  ChevronRight,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  RefreshCw,
-} from 'lucide-react-native';
+  PlusIcon as Plus,
+  TrashIcon as Trash2,
+  CopyIcon as Copy,
+  CheckIcon as Check,
+  ShieldIcon as Shield,
+  PlugsConnectedIcon as Cable,
+  WifiHighIcon as Wifi,
+  WifiSlashIcon as WifiOff,
+  MonitorIcon as Monitor,
+  TerminalIcon as Terminal,
+  HardDriveIcon as HardDrive,
+  CaretRightIcon as ChevronRight,
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';

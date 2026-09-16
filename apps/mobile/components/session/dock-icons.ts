@@ -5,15 +5,38 @@
  * typecheck rather than rendering nothing.
  */
 import {
-  Archive, Bot, ChevronsUpDown, Compass, Download, FolderOpen, GitBranch,
-  GitCompare, GitPullRequest, Key, Layers, Link2, MessageSquare, MoreHorizontal,
-  Pencil, Puzzle, RefreshCw, Settings, Share2, Sparkles, Terminal,
-  Trash2, Users, Brain, Box, Clock, Code,
-  type LucideIcon,
-} from 'lucide-react-native';
+  ArchiveIcon as Archive,
+  RobotIcon as Bot,
+  CaretUpDownIcon as ChevronsUpDown,
+  CompassIcon as Compass,
+  DownloadIcon as Download,
+  FolderOpenIcon as FolderOpen,
+  GitBranchIcon as GitBranch,
+  GitDiffIcon as GitCompare,
+  GitPullRequestIcon as GitPullRequest,
+  KeyIcon as Key,
+  StackIcon as Layers,
+  LinkSimpleIcon as Link2,
+  ChatIcon as MessageSquare,
+  DotsThreeIcon as MoreHorizontal,
+  PencilIcon as Pencil,
+  PuzzlePieceIcon as Puzzle,
+  ArrowClockwiseIcon as RefreshCw,
+  GearSixIcon as Settings,
+  ShareNetworkIcon as Share2,
+  SparkleIcon as Sparkles,
+  TerminalIcon as Terminal,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+  BrainIcon as Brain,
+  PackageIcon as Box,
+  ClockIcon as Clock,
+  CodeIcon as Code,
+  type AppIcon,
+} from '@/lib/icons';
 import type { DockIconKey } from '@/lib/session/dock-menu';
 
-export const DOCK_ICONS: Record<DockIconKey, LucideIcon> = {
+export const DOCK_ICONS: Record<DockIconKey, AppIcon> = {
   // dock rows
   files: FolderOpen,
   browser: Compass,
@@ -46,5 +69,5 @@ export const DOCK_ICONS: Record<DockIconKey, LucideIcon> = {
   delete: Trash2,
 };
 
-/** The pill's trailing affordance. Exported so ProjectDock doesn't re-import lucide. */
+/** The pill's trailing affordance. Exported so ProjectDock doesn't import the glyph itself. */
 export const DOCK_CHEVRON = ChevronsUpDown;

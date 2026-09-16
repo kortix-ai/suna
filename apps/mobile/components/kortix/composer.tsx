@@ -12,7 +12,7 @@
 import * as React from 'react';
 import { Image, ScrollView, TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { ArrowUp, FileText, Plus, X } from 'lucide-react-native';
+import { ArrowUpIcon as ArrowUp, FileTextIcon as FileText, PlusIcon as Plus, XIcon as X } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';

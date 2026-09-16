@@ -20,15 +20,8 @@ import {
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { MessageSquare, Folder, Loader } from 'lucide-react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-  Easing,
-  cancelAnimation,
-} from 'react-native-reanimated';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { ChatIcon as MessageSquare, FolderIcon as Folder } from '@/lib/icons';
 import { getFileIconComponent } from '@/components/files/FileItem';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { MentionItem } from './useMentions';
@@ -71,28 +64,6 @@ export function MentionSuggestions({
   const iconMuted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
   const agentBadgeBg = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
   const agentBadgeFg = isDark ? withAlpha(THEME.dark.foreground, 0.6) : withAlpha(THEME.light.foreground, 0.6);
-
-  // Hooks must run on every render — declare before any early return.
-  const spin = useSharedValue(0);
-  React.useEffect(() => {
-    if (!isLoading) {
-      cancelAnimation(spin);
-      spin.value = 0;
-      return;
-    }
-    spin.value = 0;
-    spin.value = withRepeat(
-      withTiming(1, { duration: 900, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(spin);
-    };
-  }, [isLoading, spin]);
-  const spinnerStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${spin.value * 360}deg` }],
-  }));
 
   if (items.length === 0 && !isLoading) return null;
 
@@ -186,9 +157,7 @@ export function MentionSuggestions({
               paddingVertical: 8,
             }}
           >
-            <Animated.View style={spinnerStyle}>
-              <Icon as={Loader} size={14} color={mutedFg} strokeWidth={2} />
-            </Animated.View>
+            <KortixLoader customSize={14} />
             <Text style={{ color: mutedFg, fontSize: 12, fontFamily: 'Roobert' }}>
               Searching…
             </Text>
@@ -280,7 +249,7 @@ function renderLeadingIcon(
 
   if (item.kind === 'session') {
     return (
-      <Icon as={MessageSquare} size={16} color={iconMuted} strokeWidth={2} />
+      <Icon as={MessageSquare} size={16} color={iconMuted} />
     );
   }
 
@@ -291,7 +260,7 @@ function renderLeadingIcon(
   const fileName = cleanPath.split('/').pop() || cleanPath;
 
   if (isDir) {
-    return <Icon as={Folder} size={16} color={iconMuted} strokeWidth={2} />;
+    return <Icon as={Folder} size={16} color={iconMuted} />;
   }
 
   const IconComponent = getFileIconComponent({
@@ -299,7 +268,7 @@ function renderLeadingIcon(
     path: cleanPath,
     type: 'file',
   } as any);
-  return <Icon as={IconComponent} size={16} color={iconMuted} strokeWidth={2} />;
+  return <Icon as={IconComponent} size={16} color={iconMuted} />;
 }
 
 // ─── Label / description (matches web layout per kind) ───────────────────────

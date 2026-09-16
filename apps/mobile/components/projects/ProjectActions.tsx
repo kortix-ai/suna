@@ -11,7 +11,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Archive, FolderOpen } from 'lucide-react-native';
+import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
 import { chalkColors } from '@kortix/shared';
 
 import {

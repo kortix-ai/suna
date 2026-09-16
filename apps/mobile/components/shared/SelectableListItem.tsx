@@ -28,7 +28,7 @@ import React, { ReactNode } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
-import { Check, ChevronRight } from 'lucide-react-native';
+import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 import { cn } from '@/lib';
 // Use react-native-gesture-handler's Pressable (not RN's own) for correct
@@ -164,7 +164,7 @@ export function SelectableListItem({
             <View
               style={{ backgroundColor: c.foreground }}
               className="h-5 w-5 items-center justify-center rounded-full">
-              <Check size={12} color={c.background} strokeWidth={3} />
+              <Check size={12} color={c.background} />
             </View>
           ) : null}
         </View>

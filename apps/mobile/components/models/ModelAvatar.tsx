@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View, type ViewProps } from 'react-native';
-import { Cpu } from 'lucide-react-native';
+import { CpuIcon as Cpu } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { getModelProviderIcon } from '@/lib/utils/model-provider';
 import { log } from '@/lib/logger';

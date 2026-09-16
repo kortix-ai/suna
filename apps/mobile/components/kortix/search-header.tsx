@@ -11,7 +11,7 @@
 import * as React from 'react';
 import { Keyboard, TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { Search, X } from 'lucide-react-native';
+import { MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -48,7 +48,7 @@ export function SearchHeader({
       {/* Filled pill, 40pt tall — the same height as the header's icon buttons,
           so swapping the header in and out never changes its height. */}
       <View className="h-10 flex-1 flex-row items-center rounded-full bg-secondary pl-3.5">
-        <Icon as={Search} size={18} className="text-foreground" strokeWidth={2.2} />
+        <Icon as={Search} size={18} className="text-foreground" />
         {/* Raw TextInput: the pill owns the border/background, so <Input>'s own
             chrome would have to be overridden class by class. */}
         <TextInput
@@ -77,7 +77,7 @@ export function SearchHeader({
               onChangeText('');
             }}>
             <View className="h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/40">
-              <Icon as={X} size={12} className="text-background" strokeWidth={3} />
+              <Icon as={X} size={12} className="text-background" />
             </View>
           </Button>
         ) : null}

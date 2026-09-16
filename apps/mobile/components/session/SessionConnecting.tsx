@@ -16,7 +16,7 @@
 import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { RotateCcw } from 'lucide-react-native';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/kortix/kortix-loader';

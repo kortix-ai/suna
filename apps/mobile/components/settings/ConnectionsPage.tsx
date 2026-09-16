@@ -17,21 +17,21 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SearchListHeader } from '@/components/kortix/search-list-header';
 import {
-  ArrowLeft,
-  Search,
-  X,
-  ChevronRight,
-  Check,
-  Plug,
-  Globe,
-  Zap,
-  Settings,
-  KeyRound,
-  Eye,
-  EyeOff,
-  Trash2,
-  Shield,
-} from 'lucide-react-native';
+  ArrowLeftIcon as ArrowLeft,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  CheckIcon as Check,
+  PlugIcon as Plug,
+  GlobeIcon as Globe,
+  LightningIcon as Zap,
+  GearSixIcon as Settings,
+  KeyIcon as KeyRound,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  TrashIcon as Trash2,
+  ShieldIcon as Shield,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
@@ -504,7 +504,7 @@ function ConnectionsContent({
                 backgroundColor: hoverBg,
               }}
             >
-              <Icon as={KeyRound} size={20} color={fg} strokeWidth={1.8} />
+              <Icon as={KeyRound} size={20} color={fg} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }}>Pipedream Credentials</Text>
@@ -527,7 +527,7 @@ function ConnectionsContent({
               backgroundColor: isCustomCreds ? withAlpha(THEME.accent.green, 0.12) : hoverBg,
               paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
             }}>
-              <Icon as={isCustomCreds ? Check : Shield} size={10} color={isCustomCreds ? THEME.accent.green : muted} strokeWidth={2} />
+              <Icon as={isCustomCreds ? Check : Shield} size={10} color={isCustomCreds ? THEME.accent.green : muted} />
               <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isCustomCreds ? THEME.accent.green : muted, marginLeft: 4 }}>
                 {isCustomCreds ? 'Your credentials' : 'Kortix Default'}
               </Text>
@@ -604,7 +604,7 @@ function ConnectionsContent({
                   paddingVertical: 8, paddingHorizontal: 14, borderRadius: 9999,
                 }}
               >
-                <Icon as={Trash2} size={14} color={destructiveColor} strokeWidth={1.8} />
+                <Icon as={Trash2} size={14} color={destructiveColor} />
                 <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: destructiveColor, marginLeft: 4 }}>
                   {deleteCreds.isPending ? 'Reverting...' : 'Revert'}
                 </Text>
@@ -731,7 +731,7 @@ function AppRow({
         <ActivityIndicator size="small" color={fg} />
       ) : isConnected ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Icon as={Check} size={14} color={THEME.accent.green} strokeWidth={2.5} />
+          <Icon as={Check} size={14} color={THEME.accent.green} />
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>
             Connected
           </Text>
@@ -785,14 +785,14 @@ function LegacySection({
       <View className="flex-row items-center justify-between">
         <View className="flex-1 flex-row items-center gap-3">
           <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-            <Icon as={IconComponent} size={20} className="text-primary" strokeWidth={2} />
+            <Icon as={IconComponent} size={20} className="text-primary" />
           </View>
           <View className="flex-1">
             <Text className="font-roobert-medium text-base text-foreground">{title}</Text>
             <Text className="font-roobert text-xs text-muted-foreground">{description}</Text>
           </View>
         </View>
-        <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
+        <Icon as={ChevronRight} size={16} className="text-foreground/40" />
       </View>
     </AnimatedPressable>
   );

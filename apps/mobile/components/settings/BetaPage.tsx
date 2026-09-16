@@ -5,7 +5,7 @@ import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Switch } from '@/components/ui/switch';
-import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'lucide-react-native';
+import { StackIcon as Layers, GlobeIcon as Globe, ArrowSquareOutIcon as ExternalLink, WarningCircleIcon as AlertCircle, RocketIcon as Rocket, SparkleIcon as Sparkles } from '@/lib/icons';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
@@ -62,14 +62,14 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-kortix-purple/40 rounded-3xl p-5 overflow-hidden">
               <View className="flex-row items-center gap-3 mb-2">
                 <View className="h-10 w-10 rounded-full bg-kortix-purple/30 items-center justify-center">
-                  <Icon as={Rocket} size={20} className="text-kortix-purple" strokeWidth={2.5} />
+                  <Icon as={Rocket} size={20} className="text-kortix-purple" />
                 </View>
                 <View className="flex-1">
                   <View className="flex-row items-center gap-2">
                     <Text className="text-lg font-roobert-bold text-kortix-purple">
                       OTA Update Test v2.0
                     </Text>
-                    <Icon as={Sparkles} size={16} className="text-kortix-purple" strokeWidth={2.5} />
+                    <Icon as={Sparkles} size={16} className="text-kortix-purple" />
                   </View>
                 </View>
               </View>
@@ -92,7 +92,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
               >
                 <View className="flex-row items-center gap-4 mb-3">
                   <View className="h-12 w-12 rounded-2xl bg-primary/20 items-center justify-center">
-                    <Icon as={Globe} size={22} className="text-primary" strokeWidth={2.5} />
+                    <Icon as={Globe} size={22} className="text-primary" />
                   </View>
                   <View className="flex-1">
                     <Text className="text-base font-roobert-semibold text-foreground mb-1">
@@ -102,7 +102,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                       {t('beta.webSupportDescription')}
                     </Text>
                   </View>
-                  <Icon as={ExternalLink} size={18} className="text-primary" strokeWidth={2.5} />
+                  <Icon as={ExternalLink} size={18} className="text-primary" />
                 </View>
               </Pressable>
             </View>
@@ -123,7 +123,6 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                         as={Layers}
                         size={22}
                         className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-foreground/50'}
-                        strokeWidth={2.5}
                       />
                     </View>
                     <View className="flex-1">
@@ -149,7 +148,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             {/* Warning - Subtle */}
             <View className="bg-muted/30 border border-border/30 rounded-2xl p-4">
               <View className="flex-row items-start gap-3">
-                <Icon as={AlertCircle} size={16} className="text-muted-foreground mt-0.5" strokeWidth={2} />
+                <Icon as={AlertCircle} size={16} className="text-muted-foreground mt-0.5" />
                 <Text className="text-xs font-roobert text-muted-foreground leading-5 flex-1">
                   {t('beta.mobileWarning')}
                 </Text>

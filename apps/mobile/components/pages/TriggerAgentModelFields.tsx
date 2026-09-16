@@ -10,7 +10,7 @@
 
 import React, { useState } from 'react';
 import { View, Pressable, ActivityIndicator } from 'react-native';
-import { ChevronRight, Check } from 'lucide-react-native';
+import { CaretRightIcon as ChevronRight, CheckIcon as Check } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -96,7 +96,7 @@ export function AgentPickerField({
                     <Text style={{ fontSize: 11.5, color: muted, marginTop: 2 }} numberOfLines={1}>{a.description}</Text>
                   ) : null}
                 </View>
-                {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
+                {selected && <Check size={15} color={theme.primary} />}
               </Pressable>
             );
           })}
@@ -171,7 +171,7 @@ export function ModelPickerField({
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, opacity: pressed ? 0.6 : 1 })}
           >
             <Text style={{ flex: 1, fontSize: 13.5, color: fg }}>Default</Text>
-            {value == null && <Check size={15} color={theme.primary} strokeWidth={3} />}
+            {value == null && <Check size={15} color={theme.primary} />}
           </Pressable>
           {models.map((m) => {
             const selected = value === m.modelID;
@@ -182,7 +182,7 @@ export function ModelPickerField({
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderTopWidth: 1, borderTopColor: border, opacity: pressed ? 0.6 : 1 })}
               >
                 <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.modelName}</Text>
-                {selected && <Check size={15} color={theme.primary} strokeWidth={3} />}
+                {selected && <Check size={15} color={theme.primary} />}
               </Pressable>
             );
           })}

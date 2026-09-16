@@ -5,16 +5,16 @@ import { useColorScheme } from 'nativewind';
 import { useQuery } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
-  AlertTriangle,
-  ArrowDownToLine,
-  Bug,
-  Check,
-  RefreshCw,
-  Shield,
-  Sparkles,
-  X,
-  Zap,
-} from 'lucide-react-native';
+  WarningIcon as AlertTriangle,
+  DownloadSimpleIcon as ArrowDownToLine,
+  BugIcon as Bug,
+  CheckIcon as Check,
+  ArrowClockwiseIcon as RefreshCw,
+  ShieldIcon as Shield,
+  SparkleIcon as Sparkles,
+  XIcon as X,
+  LightningIcon as Zap,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
@@ -119,7 +119,6 @@ export default function ChangelogScreen() {
               as={ArrowDownToLine}
               size={15}
               color={isDark ? THEME.light.foreground : THEME.dark.foreground}
-              strokeWidth={2.5}
             />
             <Text
               className="ml-2 font-roobert-semibold text-sm"
@@ -133,7 +132,7 @@ export default function ChangelogScreen() {
         {/* Update success */}
         {updateResult?.success && (
           <View className="mt-4 flex-row items-center self-start rounded-xl bg-kortix-green/15 px-4 py-2.5">
-            <Icon as={Check} size={15} className="text-kortix-green" strokeWidth={2.5} />
+            <Icon as={Check} size={15} className="text-kortix-green" />
             <Text className="ml-2 font-roobert-medium text-sm text-kortix-green">
               Updated to v{updateResult.currentVersion}. Refresh to see changes.
             </Text>
@@ -187,7 +186,7 @@ export default function ChangelogScreen() {
             }}
           >
             <View className="flex-row items-center">
-              <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
+              <Icon as={X} size={16} className="text-destructive" />
               <View className="ml-3 flex-1">
                 <Text className="font-roobert-medium text-[15px] text-destructive">Update failed</Text>
                 <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{updateError.message}</Text>
@@ -312,7 +311,7 @@ function ChangeRow({ change }: { change: ChangelogChange }) {
   return (
     <View className="flex-row items-start py-1">
       <View className="mt-0.5 mr-2.5">
-        <Icon as={ChangeIcon} size={13} color={color} strokeWidth={2.2} />
+        <Icon as={ChangeIcon} size={13} color={color} />
       </View>
       <Text className="flex-1 font-roobert text-[13px] text-foreground/90 leading-[18px]">
         {change.text}

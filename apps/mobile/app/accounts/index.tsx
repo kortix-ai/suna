@@ -7,7 +7,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { PlusIcon as Plus } from '@/lib/icons';
 
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';

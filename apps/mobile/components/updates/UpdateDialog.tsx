@@ -13,17 +13,17 @@ import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import {
-  AlertTriangle,
-  ArrowDownToLine,
-  Bug,
-  Check,
-  RefreshCw,
-  RotateCw,
-  Shield,
-  Sparkles,
-  XCircle,
-  Zap,
-} from 'lucide-react-native';
+  WarningIcon as AlertTriangle,
+  DownloadSimpleIcon as ArrowDownToLine,
+  BugIcon as Bug,
+  CheckIcon as Check,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowClockwiseIcon as RotateCw,
+  ShieldIcon as Shield,
+  SparkleIcon as Sparkles,
+  XCircleIcon as XCircle,
+  LightningIcon as Zap,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
@@ -219,7 +219,7 @@ export function UpdateDialog({
             {/* Header */}
             <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }}>
               <View className="flex-row items-center" style={{ gap: 8 }}>
-                <Icon as={ArrowDownToLine} size={18} color={themeColors.primary} strokeWidth={2.5} />
+                <Icon as={ArrowDownToLine} size={18} color={themeColors.primary} />
                 <Text className="font-roobert-semibold text-[17px] text-foreground">
                   Update to {formatVersion(latestVersion)}
                 </Text>
@@ -254,7 +254,7 @@ export function UpdateDialog({
                     return (
                       <View key={i} className="flex-row items-start" style={{ paddingVertical: 3, gap: 8 }}>
                         <View style={{ marginTop: 2 }}>
-                          <Icon as={config.icon} size={13} color={config.color} strokeWidth={2.2} />
+                          <Icon as={config.icon} size={13} color={config.color} />
                         </View>
                         <Text className="flex-1 font-roobert text-[13px] text-foreground/80" style={{ lineHeight: 18 }}>
                           {change.text}
@@ -287,7 +287,7 @@ export function UpdateDialog({
                 <Text className="font-roobert-medium text-foreground">Cancel</Text>
               </Button>
               <Button onPress={handleConfirm}>
-                <Icon as={ArrowDownToLine} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
+                <Icon as={ArrowDownToLine} size={16} color={themeColors.primaryForeground} />
                 <Text>
                   Update now
                 </Text>
@@ -344,7 +344,7 @@ export function UpdateDialog({
                   justifyContent: 'center',
                 }}
               >
-                <Icon as={XCircle} size={20} color={isDark ? THEME.dark.destructive : THEME.light.destructive} strokeWidth={2} />
+                <Icon as={XCircle} size={20} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
               </View>
               <Text className="font-roobert-medium text-[13px] text-foreground/90 mt-5 tracking-tight">
                 Update failed
@@ -374,7 +374,7 @@ export function UpdateDialog({
                   <Text className="font-roobert-medium text-foreground">Close</Text>
                 </Button>
                 <Button size="sm" onPress={handleRetry}>
-                  <Icon as={RotateCw} size={14} color={themeColors.primaryForeground} strokeWidth={2.5} />
+                  <Icon as={RotateCw} size={14} color={themeColors.primaryForeground} />
                   <Text>
                     Retry
                   </Text>
@@ -531,7 +531,7 @@ function SuccessCheckmark() {
         }}
       >
         <Animated.View style={{ transform: [{ scale }] }}>
-          <Icon as={Check} size={28} color="#FFFFFF" strokeWidth={3} />{/* hex-allowlist: icon on a fixed kortix-green badge, never themed */}
+          <Icon as={Check} size={28} color="#FFFFFF" />{/* hex-allowlist: icon on a fixed kortix-green badge, never themed */}
         </Animated.View>
       </View>
     </View>

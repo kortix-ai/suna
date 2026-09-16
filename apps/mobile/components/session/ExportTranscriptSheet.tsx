@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
+import { DownloadSimpleIcon, ExportIcon, type AppIcon, UserIcon, WrenchIcon, LightbulbIcon, CheckIcon, CopyIcon } from '@/lib/icons';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -218,7 +218,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           style={{ paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 }}>
           {/* Title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <Ionicons name="download-outline" size={18} color={fg} />
+            <DownloadSimpleIcon size={18} color={fg} />
             <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }}>
               Export Transcript
             </Text>
@@ -239,7 +239,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           {/* Options */}
           <View style={{ gap: 8, marginBottom: 16 }}>
             <OptionRow
-              icon="person-outline"
+              icon={UserIcon}
               label="Assistant metadata"
               value={options.assistantMetadata}
               onToggle={() => toggleOption('assistantMetadata')}
@@ -249,7 +249,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               border={border}
             />
             <OptionRow
-              icon="build-outline"
+              icon={WrenchIcon}
               label="Tool call details"
               value={options.toolDetails}
               onToggle={() => toggleOption('toolDetails')}
@@ -259,7 +259,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               border={border}
             />
             <OptionRow
-              icon="bulb-outline"
+              icon={LightbulbIcon}
               label="Thinking / reasoning"
               value={options.thinking}
               onToggle={() => toggleOption('thinking')}
@@ -307,11 +307,11 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
               onPress={handleCopy}
               disabled={!canExport || sharing}
               className="flex-1 rounded-full">
-              <Ionicons
-                name={copied ? 'checkmark' : 'copy-outline'}
-                size={16}
-                color={copied ? THEME.accent.green : fg}
-              />
+              {copied ? (
+                <CheckIcon size={16} color={THEME.accent.green} />
+              ) : (
+                <CopyIcon size={16} color={fg} />
+              )}
               <Text style={{ color: copied ? THEME.accent.green : fg }}>
                 {copied ? 'Copied' : 'Copy'}
               </Text>
@@ -327,7 +327,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 <ActivityIndicator size="small" color={theme.primaryForeground} />
               ) : (
                 <>
-                  <Ionicons name="share-outline" size={16} color={theme.primaryForeground} />
+                  <ExportIcon size={16} color={theme.primaryForeground} />
                   <Text>Share .md</Text>
                 </>
               )}
@@ -342,7 +342,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
 // ─── Option row ─────────────────────────────────────────────────────────────
 
 function OptionRow({
-  icon,
+  icon: RowIcon,
   label,
   value,
   onToggle,
@@ -351,7 +351,7 @@ function OptionRow({
   cardBg,
   border,
 }: {
-  icon: string;
+  icon: AppIcon;
   label: string;
   value: boolean;
   onToggle: () => void;
@@ -372,7 +372,7 @@ function OptionRow({
         paddingHorizontal: 12,
         paddingVertical: 10,
       }}>
-      <Ionicons name={icon as any} size={15} color={muted} style={{ marginRight: 10 }} />
+      <RowIcon size={15} color={muted} style={{ marginRight: 10 }} />
       <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg }}>{label}</Text>
       <Switch checked={value} onCheckedChange={onToggle} />
     </Button>

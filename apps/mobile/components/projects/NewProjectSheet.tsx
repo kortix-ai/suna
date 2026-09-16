@@ -11,7 +11,7 @@ import { View, Pressable, ActivityIndicator, Linking } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Sparkles, Github, Plus, Check, GitBranch, ExternalLink } from 'lucide-react-native';
+import { SparkleIcon as Sparkles, GithubLogoIcon as Github, PlusIcon as Plus, CheckIcon as Check, GitBranchIcon as GitBranch, ArrowSquareOutIcon as ExternalLink } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SheetTextInput } from '@/components/kortix/SheetInput';

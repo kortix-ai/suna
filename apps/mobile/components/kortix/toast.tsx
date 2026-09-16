@@ -10,7 +10,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X } from 'lucide-react-native';
+import { XIcon as X } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
 
 export type ToastType = 'error' | 'success' | 'info' | 'warning';
@@ -101,7 +101,7 @@ export function ToastComponent({ toast, onDismiss }: ToastProps) {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           className="rounded-md p-1"
         >
-          <Icon as={X} size={14} className="text-muted-foreground" strokeWidth={2} />
+          <Icon as={X} size={14} className="text-muted-foreground" />
         </Pressable>
       </View>
     </Animated.View>

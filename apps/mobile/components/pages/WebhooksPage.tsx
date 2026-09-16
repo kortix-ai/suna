@@ -22,18 +22,18 @@ import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  Webhook,
-  Play,
-  Pause,
-  Trash2,
-  X,
-  ChevronRight,
-  TriangleAlert,
-  Copy,
-  CircleCheck,
-  RefreshCw,
-  Lock,
-} from 'lucide-react-native';
+  WebhooksLogoIcon as Webhook,
+  PlayIcon as Play,
+  PauseIcon as Pause,
+  TrashIcon as Trash2,
+  XIcon as X,
+  CaretRightIcon as ChevronRight,
+  WarningIcon as TriangleAlert,
+  CopyIcon as Copy,
+  CheckCircleIcon as CircleCheck,
+  ArrowClockwiseIcon as RefreshCw,
+  LockIcon as Lock,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -60,7 +60,6 @@ import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface WebhooksPageProps {

@@ -9,30 +9,30 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  Folder,
-  FolderOpen,
-  File,
-  FileText,
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileMusic,
-  FileCode,
-  FileCode2,
-  FileJson,
-  FileCog,
-  FileTerminal,
-  FileSpreadsheet,
-  FileType,
-  FileArchive,
-  FileLock,
-  FileBox,
-  FileKey,
-  FileBadge,
-  FileChartLine,
-  Database,
-  ChevronRight,
-} from 'lucide-react-native';
+  FolderIcon as Folder,
+  FolderOpenIcon as FolderOpen,
+  FileIcon as File,
+  FileTextIcon as FileText,
+  FileImageIcon as FileImage,
+  FileVideoIcon as FileVideo,
+  FileAudioIcon as FileAudio,
+  FileAudioIcon as FileMusic,
+  FileCodeIcon as FileCode,
+  FileCodeIcon as FileCode2,
+  FileCodeIcon as FileJson,
+  GearSixIcon as FileCog,
+  TerminalWindowIcon as FileTerminal,
+  FileXlsIcon as FileSpreadsheet,
+  FileTextIcon as FileType,
+  FileArchiveIcon as FileArchive,
+  FileLockIcon as FileLock,
+  FileArchiveIcon as FileBox,
+  FileLockIcon as FileKey,
+  CertificateIcon as FileBadge,
+  ChartLineIcon as FileChartLine,
+  DatabaseIcon as Database,
+  CaretRightIcon as ChevronRight,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
@@ -66,7 +66,7 @@ export function getMutedIconColor(isDark: boolean): string {
 }
 
 /**
- * Returns a Lucide icon component for the given file, mirroring the web
+ * Returns an icon component for the given file, mirroring the web
  * `getFileIcon` mapping (Google Drive-style monochrome icons).
  *
  * The returned icon is rendered with a muted color by callers — this helper
@@ -156,7 +156,7 @@ export function getFileIconComponent(
 }
 
 /**
- * Backwards-compatible helper returning a Lucide icon and a muted color.
+ * Backwards-compatible helper returning an icon and a muted color.
  * The color is theme-aware and mirrors web's `text-muted-foreground` look.
  */
 export function getFileIconAndColor(
@@ -219,7 +219,6 @@ export const FileItem = React.memo(function FileItem({ file, onPress, onLongPres
             as={IconComponent}
             size={22}
             color={iconColor}
-            strokeWidth={1.75}
           />
         </View>
 
@@ -248,7 +247,6 @@ export const FileItem = React.memo(function FileItem({ file, onPress, onLongPres
         as={ChevronRight}
         size={20}
         color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3)}
-        strokeWidth={2}
         className="flex-shrink-0"
       />
     </AnimatedPressable>

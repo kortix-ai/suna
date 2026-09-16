@@ -9,7 +9,7 @@ import * as React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Server, Sparkles, Zap, Lock } from 'lucide-react-native';
+import { HardDrivesIcon as Server, SparkleIcon as Sparkles, LightningIcon as Zap, LockIcon as Lock } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -94,7 +94,7 @@ export function FreeTierBlock({
     <View className="items-center gap-5">
       {/* Icon container - muted rounded square with subtle border */}
       <View className="h-16 w-16 items-center justify-center rounded-2xl border border-border bg-muted">
-        <Icon as={IconComponent} size={28} color={c.foreground} strokeWidth={1.5} />
+        <Icon as={IconComponent} size={28} color={c.foreground} />
       </View>
 
       {/* Title */}
@@ -113,7 +113,7 @@ export function FreeTierBlock({
       <Pressable
         onPress={handlePress}
         className="mt-2 flex-row items-center gap-2 rounded-full px-7 py-3.5 active:opacity-80 bg-primary">
-        <Sparkles size={16} color={c.primaryForeground} strokeWidth={2} />
+        <Sparkles size={16} color={c.primaryForeground} />
         <Text className="font-roobert-semibold text-sm text-primary-foreground">
           {buttonText || config.buttonText}
         </Text>
@@ -158,7 +158,7 @@ export function FreeTierBlock({
         className="rounded-2xl p-4 border border-border bg-card">
         <View className="flex-row items-center gap-3">
           <View className="h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
-            <Icon as={IconComponent} size={20} color={c.foreground} strokeWidth={1.5} />
+            <Icon as={IconComponent} size={20} color={c.foreground} />
           </View>
           <View className="min-w-0 flex-1">
             <Text className="mb-0.5 font-roobert-semibold text-sm text-foreground">

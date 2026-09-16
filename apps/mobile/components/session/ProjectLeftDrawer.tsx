@@ -32,7 +32,13 @@ import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Folder, LayoutGrid, MessagesSquare, Plus, type LucideIcon } from 'lucide-react-native';
+import { CustomizeIcon } from '@/components/icons/customize-icon';
+import {
+  ChatsTeardropIcon,
+  FoldersIcon,
+  NavigationArrowIcon,
+  type AppIcon,
+} from '@/lib/icons';
 import { useDrawerProgress } from 'react-native-drawer-layout';
 import { useAnimatedReaction } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -99,7 +105,7 @@ function ProjectSessionListItem({
       accessibilityLabel={`${title}, ${sessionStatusLabel(status)}`}
       accessibilityState={{ selected: active }}
       className={cn(
-        'flex-row items-center gap-3 rounded-xl active:bg-accent',
+        'flex-row items-center gap-3 rounded-xl active:bg-foreground/5',
         'px-3 py-2',
         active && 'bg-accent'
       )}>
@@ -118,7 +124,7 @@ function NavPill({
   label,
   onPress,
 }: {
-  icon: LucideIcon;
+  icon: AppIcon;
   label: string;
   onPress: () => void;
 }) {
@@ -127,8 +133,8 @@ function NavPill({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      className="flex-row items-center gap-3 rounded-full px-4 py-3 active:bg-accent">
-      <Icon as={icon} size={18} strokeWidth={2.2} className="shrink-0 text-foreground" />
+      className="flex-row items-center gap-3 rounded-full px-4 py-2.5 active:bg-foreground/5">
+      <Icon as={icon} size={18} className="shrink-0 text-foreground" />
       <Text className="font-medium" numberOfLines={1}>
         {label}
       </Text>
@@ -258,7 +264,7 @@ export function ProjectLeftDrawer({
     [navigateOnce, onNavigateRoute]
   );
 
-  // LegacyChatsSection takes raw colours for its Ionicons.
+  // LegacyChatsSection takes raw colours for its icons.
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
@@ -281,10 +287,10 @@ export function ProjectLeftDrawer({
         </View>
       </View>
 
-      <View className="px-2 -mx-1 pb-2">
-        <NavPill icon={MessagesSquare} label="Sessions" onPress={goToSessions} />
-        <NavPill icon={Folder} label="Files" onPress={goToFiles} />
-        <NavPill icon={LayoutGrid} label="All projects" onPress={goToProjects} />
+      <View className="px-2 -mx-1 space-y-1">
+        <NavPill icon={ChatsTeardropIcon} label="Sessions" onPress={goToSessions} />
+        <NavPill icon={FoldersIcon} label="Files" onPress={goToFiles} />
+        <NavPill icon={CustomizeIcon} label="All projects" onPress={goToProjects} />
       </View>
 
       <ScrollView
@@ -333,7 +339,9 @@ export function ProjectLeftDrawer({
           className="absolute inset-x-0 flex-row items-center justify-between px-5"
           style={{ bottom: barBottom }}>
           <Button size="lg" className="rounded-full" onPress={handleNewSession}>
-            <Icon as={Plus} size={20} strokeWidth={2.2} />
+            {/* Web's New session glyph (project-sidebar.tsx), flipped on both axes: tip down-right.
+                One transform, not `mirrored`: Phosphor applies `mirrored` after `style`, which would drop the Y flip. */}
+            <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }, { scaleY: -1 }] }} />
             <Text>New session</Text>
           </Button>
           <Pressable

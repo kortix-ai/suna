@@ -7,7 +7,7 @@ import React from 'react';
 import { View, Pressable, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ChevronRight, Folder } from 'lucide-react-native';
+import { CaretRightIcon as ChevronRight, FolderIcon as Folder } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -60,7 +60,6 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
             ? (isDark ? THEME.dark.foreground : THEME.light.foreground)
             : withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.4)
           }
-          strokeWidth={2}
         />
       </Pressable>
 
@@ -71,7 +70,6 @@ export function FileBreadcrumb({ segments, onNavigate }: FileBreadcrumbProps) {
             as={ChevronRight}
             size={12}
             color={withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.25)}
-            strokeWidth={2}
             style={{ marginHorizontal: 2 }}
           />
           <Pressable

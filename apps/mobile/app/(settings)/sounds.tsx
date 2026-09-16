@@ -1,16 +1,16 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import {
-  AlertCircle,
-  Bell,
-  CircleOff,
-  Music,
-  Play,
-  Send,
-  Vibrate,
-  Volume2,
-  Zap,
-} from 'lucide-react-native';
+  WarningCircleIcon as AlertCircle,
+  BellIcon as Bell,
+  ProhibitIcon as CircleOff,
+  MusicNotesIcon as Music,
+  PlayIcon as Play,
+  PaperPlaneTiltIcon as Send,
+  VibrateIcon as Vibrate,
+  SpeakerHighIcon as Volume2,
+  LightningIcon as Zap,
+} from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';

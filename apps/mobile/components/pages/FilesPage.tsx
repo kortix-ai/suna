@@ -24,23 +24,22 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
-  Upload,
-  FolderPlus,
-  FilePlus,
-  Trash2,
-  AlertCircle,
-  LayoutGrid,
-  List,
-  ChevronRight,
-  Folder,
-  Home,
-  Search,
-  X as XIcon,
-} from 'lucide-react-native';
+  UploadIcon as Upload,
+  FolderPlusIcon as FolderPlus,
+  FilePlusIcon as FilePlus,
+  TrashIcon as Trash2,
+  WarningCircleIcon as AlertCircle,
+  SquaresFourIcon as LayoutGrid,
+  ListIcon as List,
+  CaretRightIcon as ChevronRight,
+  FolderIcon as Folder,
+  HouseIcon as Home,
+  MagnifyingGlassIcon as Search,
+  XIcon,
+} from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
 } from 'react-native-reanimated';
@@ -777,7 +776,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         title={
           isSearchOpen ? (
             <View className="flex-1 flex-row items-center" style={{ gap: 8 }}>
-              <Icon as={Search} size={16} color={mutedColor} strokeWidth={2} />
+              <Icon as={Search} size={16} color={mutedColor} />
               {/* Kept as raw TextInput (not <Input>): needs `ref.focus()` to
                   autofocus on open, and `@/components/ui/input`'s Input is not
                   forwardRef — see apps/mobile/CLAUDE.md. */}
@@ -819,7 +818,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 as={isSearchOpen ? XIcon : Search}
                 size={18}
                 color={fgColor}
-                strokeWidth={2}
               />
             </AnimatedPressable>
 
@@ -834,20 +832,19 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                     as={viewMode === 'list' ? LayoutGrid : List}
                     size={18}
                     color={fgColor}
-                    strokeWidth={2}
                   />
                 </AnimatedPressable>
                 <AnimatedPressable
                   onPress={handleUploadDocument}
                   className="p-2 rounded-xl active:opacity-70"
                 >
-                  <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
+                  <Icon as={Upload} size={18} color={fgColor} />
                 </AnimatedPressable>
                 <AnimatedPressable
                   onPress={openCreateFolder}
                   className="p-2 rounded-xl active:opacity-70"
                 >
-                  <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
+                  <Icon as={FolderPlus} size={18} color={fgColor} />
                 </AnimatedPressable>
               </>
             )}
@@ -891,7 +888,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                       ? withAlpha(THEME.dark.foreground, 0.4)
                       : withAlpha(THEME.light.foreground, 0.4)
                 }
-                strokeWidth={2}
               />
               <Text
                 style={{
@@ -919,7 +915,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                       ? withAlpha(THEME.dark.foreground, 0.25)
                       : withAlpha(THEME.light.foreground, 0.25)
                   }
-                  strokeWidth={2}
                   style={{ marginHorizontal: 2 }}
                 />
                 <Pressable
@@ -975,7 +970,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05),
               }}
             >
-              <Icon as={AlertCircle} size={32} color={isDark ? THEME.dark.destructive : THEME.light.destructive} strokeWidth={2} />
+              <Icon as={AlertCircle} size={32} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
             </View>
             <Text
               className="text-lg font-roobert-semibold text-center mb-2"
@@ -1034,7 +1029,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               <Icon
                 as={Folder}
                 size={36}
-                strokeWidth={1.2}
                 color={
                   isDark
                     ? withAlpha(THEME.dark.foreground, 0.15)
@@ -1072,7 +1066,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   as={Upload}
                   size={16}
                   color={themeColors.primaryForeground}
-                  strokeWidth={2}
                   style={{ marginRight: 8 }}
                 />
                 <Text
@@ -1096,7 +1089,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   as={FolderPlus}
                   size={16}
                   color={fgColor}
-                  strokeWidth={2}
                   style={{ marginRight: 8 }}
                 />
                 <Text
@@ -1120,7 +1112,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   as={FilePlus}
                   size={16}
                   color={fgColor}
-                  strokeWidth={2}
                   style={{ marginRight: 8 }}
                 />
                 <Text
@@ -1210,7 +1201,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
-              <Icon as={FolderPlus} size={20} color={fgColor} strokeWidth={1.8} />
+              <Icon as={FolderPlus} size={20} color={fgColor} />
             </View>
             <View className="flex-1">
               <Text
@@ -1339,7 +1330,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
-              <Icon as={FilePlus} size={20} color={fgColor} strokeWidth={1.8} />
+              <Icon as={FilePlus} size={20} color={fgColor} />
             </View>
             <View className="flex-1">
               <Text className="text-lg font-roobert-semibold" style={{ color: fgColor }}>
@@ -1476,7 +1467,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                     as={RenameIcon}
                     size={20}
                     color={renameIconColor}
-                    strokeWidth={1.8}
                   />
                 </View>
               );
@@ -1641,7 +1631,6 @@ const FileRowCard = React.memo(function FileRowCard({
         as={IconComponent}
         size={18}
         color={iconColor}
-        strokeWidth={2}
         style={{ marginRight: 8 }}
       />
       <Text

@@ -6,19 +6,19 @@ import * as Clipboard from 'expo-clipboard';
 import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Code2,
-  Copy,
-  Download,
-  Key,
-  Menu,
-  PanelRight,
-  RefreshCw,
-  ShieldAlert,
-  Terminal,
-} from 'lucide-react-native';
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+  CodeSimpleIcon as Code2,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+  KeyIcon as Key,
+  ListIcon as Menu,
+  SidebarSimpleIcon as PanelRight,
+  ArrowClockwiseIcon as RefreshCw,
+  ShieldWarningIcon as ShieldAlert,
+  TerminalIcon as Terminal,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { getSSHConnection, setupSSH, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform/client';
@@ -26,7 +26,6 @@ import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
-import { Ionicons } from '@expo/vector-icons';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Cached SSH Meta ────────────────────────────────────────────────────────
@@ -247,7 +246,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 className="flex-row items-center justify-center self-start rounded-full px-5 py-2.5 active:opacity-90"
                 style={{ backgroundColor: themeColors.primary }}
               >
-                <Icon as={Key} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
+                <Icon as={Key} size={15} color={themeColors.primaryForeground} />
                 <Text className="ml-2 font-roobert-semibold text-sm" style={{ color: themeColors.primaryForeground }}>
                   Generate SSH Keys
                 </Text>
@@ -263,7 +262,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                       className="flex-row items-center px-2 py-1 active:opacity-70"
                       hitSlop={4}
                     >
-                      <Icon as={copiedField === 'cached' ? Check : Copy} size={11} className={copiedField === 'cached' ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+                      <Icon as={copiedField === 'cached' ? Check : Copy} size={11} className={copiedField === 'cached' ? 'text-kortix-green' : 'text-muted-foreground'} />
                       <Text className={`ml-1 font-roobert-medium text-[10px] ${copiedField === 'cached' ? 'text-kortix-green' : 'text-muted-foreground'}`}>
                         {copiedField === 'cached' ? 'Copied' : 'Copy'}
                       </Text>
@@ -301,7 +300,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               {/* Connection Info */}
               <View className="flex-row" style={{ gap: 8 }}>
                 <View className="flex-row items-center rounded-lg bg-muted/60 px-3 py-1.5">
-                  <Icon as={Terminal} size={12} className="text-muted-foreground mr-1.5" strokeWidth={2.2} />
+                  <Icon as={Terminal} size={12} className="text-muted-foreground mr-1.5" />
                   <Text className="font-roobert text-xs text-muted-foreground">{sshResult.host}:{sshResult.port}</Text>
                 </View>
                 <View className="rounded-lg bg-muted/60 px-3 py-1.5">
@@ -312,14 +311,14 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               {/* AI Agent Shortcut */}
               <View className="rounded-xl border p-3.5" style={{ borderColor: withAlpha(fg, 0.06), backgroundColor: withAlpha(fg, isDark ? 0.02 : 0.01) }}>
                 <View className="flex-row items-center mb-2" style={{ gap: 8 }}>
-                  <Icon as={Code2} size={16} className="text-muted-foreground" strokeWidth={2} />
+                  <Icon as={Code2} size={16} className="text-muted-foreground" />
                   <Text className="font-roobert-semibold text-sm text-foreground flex-1">Let your AI agent do it</Text>
                   <Pressable
                     onPress={() => copyToClipboard(agentPrompt, 'agent')}
                     className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
                     hitSlop={4}
                   >
-                    <Icon as={copiedField === 'agent' ? Check : Copy} size={12} className={copiedField === 'agent' ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+                    <Icon as={copiedField === 'agent' ? Check : Copy} size={12} className={copiedField === 'agent' ? 'text-kortix-green' : 'text-muted-foreground'} />
                     <Text className={`ml-1 font-roobert-medium text-[11px] ${copiedField === 'agent' ? 'text-kortix-green' : 'text-muted-foreground'}`}>
                       {copiedField === 'agent' ? 'Copied' : 'Copy'}
                     </Text>
@@ -368,7 +367,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                   className="flex-row items-center py-2 active:opacity-70"
                 >
                   <Text className="font-roobert-medium text-[13px] text-muted-foreground">Raw Keys</Text>
-                  <Icon as={showRawKeys ? ChevronUp : ChevronDown} size={14} className="ml-1 text-muted-foreground" strokeWidth={2.2} />
+                  <Icon as={showRawKeys ? ChevronUp : ChevronDown} size={14} className="ml-1 text-muted-foreground" />
                 </Pressable>
 
                 {showRawKeys && (
@@ -397,7 +396,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                   onPress={handleDownloadKey}
                   className="flex-row items-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
                 >
-                  <Icon as={Download} size={12} className="text-foreground mr-1.5" strokeWidth={2.2} />
+                  <Icon as={Download} size={12} className="text-foreground mr-1.5" />
                   <Text className="font-roobert-medium text-xs text-foreground">Download Key</Text>
                 </Pressable>
                 <Pressable
@@ -405,7 +404,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                   disabled={isGenerating}
                   className="flex-row items-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
                 >
-                  <Icon as={RefreshCw} size={12} className="text-foreground mr-1.5" strokeWidth={2.2} />
+                  <Icon as={RefreshCw} size={12} className="text-foreground mr-1.5" />
                   <Text className="font-roobert-medium text-xs text-foreground">Regenerate</Text>
                 </Pressable>
               </View>
@@ -445,7 +444,7 @@ function CodeSection({
         <Text className="font-roobert-semibold text-[15px] text-foreground flex-1">{title}</Text>
         {!!badge && (
           <View className="flex-row items-center rounded-md mr-2 px-1.5 py-0.5 bg-kortix-orange/10">
-            <Icon as={ShieldAlert} size={10} className="text-kortix-orange" strokeWidth={2.2} />
+            <Icon as={ShieldAlert} size={10} className="text-kortix-orange" />
             <Text className="ml-1 font-roobert-medium text-[10px] text-kortix-orange">{badge}</Text>
           </View>
         )}
@@ -454,7 +453,7 @@ function CodeSection({
           className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
           hitSlop={4}
         >
-          <Icon as={isCopied ? Check : Copy} size={12} className={isCopied ? 'text-kortix-green' : 'text-muted-foreground'} strokeWidth={2.2} />
+          <Icon as={isCopied ? Check : Copy} size={12} className={isCopied ? 'text-kortix-green' : 'text-muted-foreground'} />
           <Text className={`ml-1 font-roobert-medium text-[11px] ${isCopied ? 'text-kortix-green' : 'text-muted-foreground'}`}>
             {isCopied ? 'Copied' : 'Copy'}
           </Text>

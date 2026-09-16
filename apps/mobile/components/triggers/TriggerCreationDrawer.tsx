@@ -13,19 +13,19 @@ import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
-  Clock,
-  Sparkles,
-  ChevronRight,
-  Check,
-  Zap,
-  Target,
-  Calendar as CalendarIcon,
-  Link2,
-  CheckCircle2,
-  ArrowLeft,
-  Info,
-  Lock,
-} from 'lucide-react-native';
+  ClockIcon as Clock,
+  SparkleIcon as Sparkles,
+  CaretRightIcon as ChevronRight,
+  CheckIcon as Check,
+  LightningIcon as Zap,
+  TargetIcon as Target,
+  CalendarIcon,
+  LinkSimpleIcon as Link2,
+  CheckCircleIcon as CheckCircle2,
+  ArrowLeftIcon as ArrowLeft,
+  InfoIcon as Info,
+  LockIcon as Lock,
+} from '@/lib/icons';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useAgent } from '@/contexts/AgentContext';
@@ -1049,7 +1049,6 @@ export function TriggerCreationDrawer({
                                 as={Check}
                                 size={12}
                                 className="text-primary-foreground"
-                                strokeWidth={3}
                               />
                             </View>
                           )}
@@ -1323,7 +1322,6 @@ export function TriggerCreationDrawer({
                             as={Info}
                             size={32}
                             color={colorScheme === 'dark' ? THEME.dark.destructive : THEME.light.destructive}
-                            strokeWidth={2}
                           />
                         </View>
                         <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
