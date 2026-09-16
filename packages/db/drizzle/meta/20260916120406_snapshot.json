@@ -1,6 +1,6 @@
 {
-  "id": "e3139c19-244e-457b-91e3-6ad2f88de9ef",
-  "prevId": "9b59b09b-7171-4321-9db8-bfb15f5d4940",
+  "id": "37f20ee6-3b60-4503-b4fa-3f87e7b069ac",
+  "prevId": "ae767386-cf86-4bb0-b8dd-1beb479a9acb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14818,6 +14818,115 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_user_provider_connections": {
+      "name": "project_user_provider_connections",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pool": {
+          "name": "pool",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "project_user_provider_connections_connection": {
+          "name": "project_user_provider_connections_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_user_provider_connections_project_id_projects_project_id_fk": {
+          "name": "project_user_provider_connections_project_id_projects_project_id_fk",
+          "tableFrom": "project_user_provider_connections",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_user_provider_connections_owner_fk": {
+          "name": "project_user_provider_connections_owner_fk",
+          "tableFrom": "project_user_provider_connections",
+          "tableTo": "user_provider_connections",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "connection_id",
+            "user_id",
+            "provider_id"
+          ],
+          "columnsTo": [
+            "connection_id",
+            "user_id",
+            "provider_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_user_provider_connections_project_id_user_id_provider_id_pk": {
+          "name": "project_user_provider_connections_project_id_user_id_provider_id_pk",
+          "columns": [
+            "project_id",
+            "user_id",
+            "provider_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.projects": {
       "name": "projects",
       "schema": "kortix",
@@ -18694,6 +18803,101 @@
       },
       "isRLSEnabled": false
     },
+    "kortix.session_user_provider_connections": {
+      "name": "session_user_provider_connections",
+      "schema": "kortix",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "session_user_provider_connections_connection": {
+          "name": "session_user_provider_connections_connection",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_user_provider_connections_session_id_project_sessions_session_id_fk": {
+          "name": "session_user_provider_connections_session_id_project_sessions_session_id_fk",
+          "tableFrom": "session_user_provider_connections",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "session_user_provider_connections_owner_fk": {
+          "name": "session_user_provider_connections_owner_fk",
+          "tableFrom": "session_user_provider_connections",
+          "tableTo": "user_provider_connections",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "connection_id",
+            "user_id",
+            "provider_id"
+          ],
+          "columnsTo": [
+            "connection_id",
+            "user_id",
+            "provider_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "session_user_provider_connections_session_id_user_id_provider_id_pk": {
+          "name": "session_user_provider_connections_session_id_user_id_provider_id_pk",
+          "columns": [
+            "session_id",
+            "user_id",
+            "provider_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.stripe_webhook_events_processed": {
       "name": "stripe_webhook_events_processed",
       "schema": "kortix",
@@ -20250,6 +20454,121 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.user_provider_connections": {
+      "name": "user_provider_connections",
+      "schema": "kortix",
+      "columns": {
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_type": {
+          "name": "auth_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot": {
+          "name": "slot",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "value_enc": {
+          "name": "value_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "user_provider_connections_user_provider_slot": {
+          "name": "user_provider_connections_user_provider_slot",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_provider_connections_owner_identity": {
+          "name": "user_provider_connections_owner_identity",
+          "nullsNotDistinct": false,
+          "columns": [
+            "connection_id",
+            "user_id",
+            "provider_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "user_provider_connections_auth_type": {
+          "name": "user_provider_connections_auth_type",
+          "value": "\"kortix\".\"user_provider_connections\".\"auth_type\" in ('api_key', 'device_oauth')"
+        }
+      },
       "isRLSEnabled": false
     },
     "kortix.voice_call_read_cursors": {
