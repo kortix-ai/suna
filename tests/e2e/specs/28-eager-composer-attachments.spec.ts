@@ -147,6 +147,28 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     }>(auth.access_token, "GET", `/projects/${project.id}/model-picker`);
     const modelId = defaults.resolvedForCaller ?? "";
     expect(modelId).not.toBe("");
+    // A deployed target keeps its REAL catalog (the stub below is local-only),
+    // and this journey attaches images. The composer refuses an image on a model
+    // whose catalog says it cannot read one, so pin a vision-capable default
+    // first — otherwise the spec asserts against a correct refusal.
+    if (isDeployedTarget()) {
+      const visionModel = Object.entries(picker.models).find(([, model]) => {
+        if ((model as { enabled?: boolean }).enabled === false) return false;
+        const input = (model as { modalities?: { input?: string[] } }).modalities?.input;
+        if (input) return input.includes("image");
+        return (model as { attachment?: boolean }).attachment === true;
+      })?.[0];
+      expect(
+        visionModel,
+        "deployed catalog exposes no vision-capable model for the image assertions",
+      ).toBeTruthy();
+      await api(
+        auth.access_token,
+        "PUT",
+        `/projects/${project.id}/model-defaults`,
+        { scope: "project", model: visionModel as string },
+      );
+    }
     const enabledPicker = {
       ...picker,
       // The deterministic local profile intentionally has no live managed
