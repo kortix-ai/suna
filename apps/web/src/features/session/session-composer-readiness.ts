@@ -110,6 +110,8 @@ const RUNTIME_UNREACHABLE_NOTICE =
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  /** A queued status already describes this send; do not ask for another. */
+  pendingDelivery?: boolean;
   /**
    * The CONTROL PLANE holds an open turn for this session right now — pass
    * `serverHoldsOpenTurn(working)`, never `working.source === 'server'`.
@@ -205,7 +207,7 @@ export function sessionComposerReadiness(input: {
     // session that is merely asleep (RC-3).
     return {
       ready: false,
-      notice: 'This session is idle — your next message starts it automatically and is delivered.',
+      notice: input.pendingDelivery ? null : 'This session is idle — your next message starts it automatically and is delivered.',
       retryable: false,
     };
   }

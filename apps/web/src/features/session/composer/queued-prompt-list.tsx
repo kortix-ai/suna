@@ -31,7 +31,11 @@ export function QueuedPromptList({
   if (rows.length === 0 && heldCount === 0) return null;
 
   return (
-    <section aria-label={copy.raw('textf8e64a37950a')} className="flex w-full flex-col">
+    <section aria-label={t('queueList')} className="flex w-full flex-col">
+      <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-1 text-xs">
+        <span>{t('queueList')}</span>
+        <span>{rows.length}</span>
+      </div>
       {heldCount > 0 && (
         <div
           data-queue-held
@@ -82,9 +86,16 @@ export function QueuedPromptList({
                       {t('queuedFiles', { count: row.attachmentCount })}
                     </span>
                   )}
+                  {!failed && heldCount === 0 && (
+                    <p className="text-xs" role="status">
+                      {row.state === 'sending' || row.state === 'delivering'
+                        ? t('queueSending') : t('queueWaiting')}
+                    </p>
+                  )}
                   {failed && (
                     <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
                       {copy.raw('textcd5f943d5863')}
+                      {row.lastError ? ` — ${row.lastError}` : ''}
                     </p>
                   )}
                 </div>

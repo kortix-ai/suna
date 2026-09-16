@@ -11,6 +11,7 @@
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
+import { DELIVERY_FAILURE_COPY } from '../session-lifecycle/types';
 import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
@@ -52,7 +53,10 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // below would otherwise fall through to `queued` and show a prompt that is
   // already at OpenCode as if it had never been sent.
   if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
-  if (row.status === 'running') return { state: 'delivering', reason: null };
+  // A claim only checks admission. It must not flash Sending during a live turn.
+  if (row.status === 'running' && typeof result.delivery_started_at === 'string') {
+    return { state: 'delivering', reason: null };
+  }
   const admission = result.admission_reason;
   if (typeof admission === 'string') return { state: 'waiting', reason: admission };
   // Parked on a DOWN runtime. Still `queued` — the row IS in line and the server
@@ -139,11 +143,17 @@ export function serializePrompt(row: PromptRow) {
     // How many automatic re-attempts a runtime-unreachable park has spent, out
     // of MAX_RUNTIME_UNREACHABLE_RETRIES. 0 for every other row.
     runtime_retries: typeof result.runtime_retries === 'number' ? result.runtime_retries : 0,
-    last_error: row.lastError ?? null,
+    last_error: readableDeliveryError(row.lastError),
     /** Names + types of this prompt's files, so a reloaded tab can still draw
      *  their tiles while the send is in flight. Never the bytes. */
     attachments: promptAttachments(payload),
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };
+}
+
+/** Older durable rows retain internal outcome labels across deployments. */
+function readableDeliveryError(error: string | null): string | null {
+  const outcome = error?.match(/^delivery outcome: (pending|unreachable|not-landed|no-session|failed)$/)?.[1];
+  return outcome ? DELIVERY_FAILURE_COPY[outcome as keyof typeof DELIVERY_FAILURE_COPY] : error ?? null;
 }

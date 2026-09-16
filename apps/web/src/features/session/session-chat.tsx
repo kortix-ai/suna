@@ -65,7 +65,7 @@ import { statusElapsedFrame } from './turn/status-elapsed';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
-import { freshSendHint, resolveWorkingTurn } from './turn/working-turn';
+import { freshSendHint, resolveWorkingTurn, shouldSuppressWorkingTurnBusy } from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
@@ -240,6 +240,7 @@ import {
   useRuntimeSessions,
   useSessionModelSelection,
   useSessionPrompts,
+  isOptimisticSessionPrompt,
   useSessionStateStore,
   useSessionSync,
   useSessionWorking,
@@ -1555,7 +1556,10 @@ function SessionTurnImpl({
             leadingStatus={
               pendingPrompt?.state === 'failed' || statusState ? (
                 <QueuedPromptStatus
-                  state={pendingPrompt?.state === 'failed' ? 'failed' : statusState!}
+                  state={pendingPrompt?.state === 'failed' ? 'failed'
+                    : pendingPrompt?.reason === 'held' ? 'held'
+                    : pendingPrompt && (isOptimisticSessionPrompt(pendingPrompt) || pendingPrompt.state === 'delivering') ? 'sending'
+                    : statusState!}
                   lastError={pendingPrompt?.last_error}
                   onRetry={
                     pendingPrompt && onRetryQueued
@@ -1945,6 +1949,7 @@ export function SessionChat({
   deferComposerFocus,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tQueue = useTranslations('threads');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation = onboardingActive && onboardingSessionId === sessionId;
@@ -2171,11 +2176,14 @@ export function SessionChat({
     const settlement = sessionState
       ? sessionState.cancel()
       : awaitAbortSettlement(() => abortSession.mutateAsync(sessionId));
-    void settlement.finally(() => {
-      useSessionWorkingStore.getState().settleAbortReceipt(projectSessionId ?? '', Date.now());
+    void settlement.then((result) => {
+      useSessionWorkingStore.getState().settleAbortReceipt(projectSessionId ?? '', Date.now(), result.status);
+      if (result.status === 'timed-out' || result.status === 'failed') {
+        errorToast(tQueue('stopUnconfirmed'));
+      }
     });
     return settlement;
-  }, [sessionId, projectSessionId, sessionState, abortSession]);
+  }, [sessionId, projectSessionId, sessionState, abortSession, tQueue]);
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
@@ -2546,7 +2554,7 @@ export function SessionChat({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
     // same frame instead of the card flickering 300ms earlier.
-    projectionBusy: isBusy,
+    projectionBusy: isBusy && !working.pendingDelivery,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
 
@@ -3104,30 +3112,10 @@ export function SessionChat({
       }
     };
   }, []);
-  /**
-   * Queue rows the transcript does not hold yet, as SYNTHETIC user messages —
-   * fed into the SAME turn list as everything else, sorted by their creation
-   * time, so a queued prompt never renders in a second container below newer
-   * turns. The strip used to draw them after the turns; a send painted as an
-   * optimistic TURN while an older row was still a strip ROW then displayed
-   * newest-first (measured on the shell→chat handoff: Boot 4 above Boot 1–3).
-   * The echo arrives under the same `message_id`, so the synthetic turn
-   * becomes the real one in place — same element, same key.
-   */
+  // Quick Queue entries share the turn renderer. The inbox marks their IDs as
+  // pending until delivery; a client-minted wire ID does not place a message.
   const queuedSyntheticMessages = useMemo(() => {
     const out: NonNullable<typeof messages> = [];
-    // A queued row is by definition newer than everything the transcript
-    // already holds — but its clock is the SENDER TAB's, and the box stamps
-    // real messages from its own. A box running ~1 s ahead sorted a fresh
-    // queued row ABOVE the previous turn (measured). Floor every synthetic
-    // time just past the newest real stamp, keeping the rows' own relative
-    // order.
-    let floor = 0;
-    for (const message of messages ?? []) {
-      const created = (message.info as { time?: { created?: number } }).time?.created;
-      if (typeof created === 'number' && created > floor) floor = created;
-    }
-    let previous = floor;
     for (const prompt of promptInbox.prompts) {
       if (prompt.state === 'failed' && prompt.placement !== 'transcript') continue;
       // Enter sends appear before delivery. Composer entries stay above the input.
@@ -3140,8 +3128,7 @@ export function SessionChat({
         typeof prompt.client_sent_at_ms === 'number'
           ? prompt.client_sent_at_ms
           : Date.parse(prompt.created_at);
-      const createdMs = Math.max(sentAt, previous + 1);
-      previous = createdMs;
+      const createdMs = sentAt;
       out.push({
         info: {
           id,
@@ -3162,12 +3149,27 @@ export function SessionChat({
     }
     return out;
   }, [promptInbox.prompts, transcriptClaimedIds, sessionId]);
+  const pendingDisplayIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const prompt of promptInbox.prompts) {
+      if (prompt.message_id) ids.add(prompt.message_id);
+      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
+      ids.add(`queued-${prompt.prompt_id}`);
+    }
+    // A response is stronger evidence than a queue poll that has not caught up.
+    for (const message of messages ?? []) {
+      if (message.info.role === 'assistant' && message.info.parentID) {
+        ids.delete(message.info.parentID);
+      }
+    }
+    return ids;
+  }, [promptInbox.prompts, messages]);
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
-        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages])
+        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages], { pendingMessageIds: pendingDisplayIds })
         : [],
-    [messages, queuedSyntheticMessages],
+    [messages, queuedSyntheticMessages, pendingDisplayIds],
   );
   /**
    * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
@@ -3419,14 +3421,22 @@ export function SessionChat({
    * turns are their own dimmed bubbles until one runs. Only a FINISHED answer
    * suppresses; a turn streaming between steps has an OPEN assistant message, so
    * `resolveWorkingTurn` rule 1 picks it and this stays false (no flicker).
+   * A completed assistant message can also be an intermediate step. When the
+   * working projection still names this turn, its indicator stays here.
    */
   const suppressWorkingTurnBusy = useMemo(() => {
     if (workingTurn.pendingTurnIds.length === 0) return false;
     const wt = turns.find((t) => t.userMessage.info.id === workingTurn.workingTurnId);
     if (!wt || wt.assistantMessages.length === 0) return false;
     const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
-    return !!(newest.info as { time?: { completed?: number } }).time?.completed;
-  }, [turns, workingTurn]);
+    return shouldSuppressWorkingTurnBusy({
+      hasPendingTurns: true,
+      newestAssistantCompleted: !!(newest.info as { time?: { completed?: number } }).time?.completed,
+      workingTurnId: wt.userMessage.info.id,
+      activeTurnId: working.turnId,
+      pendingDelivery: !!working.pendingDelivery,
+    });
+  }, [turns, workingTurn, working.turnId, working.pendingDelivery]);
   /**
    * Is ANY turn going to draw the waiting row?
    *
@@ -4997,6 +5007,7 @@ export function SessionChat({
   });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
+    pendingDelivery: working.pendingDelivery,
     connection: sessionConnection,
     settling: composerSettling,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
@@ -5389,7 +5400,7 @@ export function SessionChat({
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}
-                              busy={turns.length === 0}
+                              busy={turns.length === 0 && lastTurnWorking}
                             />
                           )}
                         {turns.map((turn, turnIndex) => {
@@ -5432,7 +5443,7 @@ export function SessionChat({
                           // Fall through to the normal turn renderer instead.
 
                           const pendingPrompt =
-                            turn.assistantMessages.length === 0
+                            !isTurnWorking && turn.assistantMessages.length === 0
                               ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
                               : undefined;
                           return (
@@ -5496,8 +5507,9 @@ export function SessionChat({
                                   }
                                   suppressBusyIndicator={suppressWorkingTurnBusy}
                                   pending={
-                                    Boolean(pendingPrompt) ||
-                                    pendingTurnIds.has(turn.userMessage.info.id)
+                                    !isTurnWorking &&
+                                    (Boolean(pendingPrompt) ||
+                                      pendingTurnIds.has(turn.userMessage.info.id))
                                   }
                                   pendingPrompt={pendingPrompt}
                                   onRetryQueued={handleRetryQueuedMessage}
@@ -5601,22 +5613,9 @@ export function SessionChat({
                       }
                       className="mt-2"
                     />
-                    {/* Busy with no turn to attach it to — the same waiting row
-                        the optimistic turn and every live turn use, so it never
-                        changes shape as the first turn materialises.
-
-                        "No turn to attach it to" is not only the empty
-                        transcript. A prompt the SERVER still holds is never the
-                        working turn (`resolveWorkingTurn`), and neither is a
-                        finished answer with queued prompts under it
-                        (`suppressWorkingTurnBusy`) — so on a fresh session the
-                        row vanished the moment the first bubble appeared and
-                        stayed gone until the agent answered, with Stop showing
-                        the whole time. See `someTurnDrawsBusyRow`.
-
-                        Not drawn when the boot stand-in is drawing its own row
-                        (`OptimisticTurn busy`), or the two would stack. */}
-                    {isBusy &&
+                    {/* Active runtime work can precede its transcript turn. Pending
+                        delivery already has a queued status and shows no thinking row. */}
+                    {lastTurnWorking &&
                       !someTurnDrawsBusyRow &&
                       !(
                         showFirstPromptPreview &&

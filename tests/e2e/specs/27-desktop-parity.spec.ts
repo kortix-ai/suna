@@ -562,6 +562,36 @@ for (const runtime of runtimes) {
               databaseUrl,
             );
           }
+          // Keep the cached conversation mounted. The local test sandbox has
+          // no provider behind it, so a real /start eventually marks it stopped.
+          // Prompt acceptance and read-back still use the real API below.
+          await page.route(`**/sessions/${sessionId}/start?*`, async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                stage: "ready",
+                agent_name: "kortix",
+                retriable: false,
+                opencode_session_id: rootId,
+                sandbox: {
+                  sandbox_id: sessionId,
+                  session_id: sessionId,
+                  project_id: project.id,
+                  account_id: accounts[0].account_id,
+                  provider: "daytona",
+                  external_id: sessionId,
+                  base_url: "http://127.0.0.1:1",
+                  status: "active",
+                  config: {},
+                  metadata: {},
+                  last_used_at: null,
+                  created_at: new Date(now).toISOString(),
+                  updated_at: new Date(now).toISOString(),
+                },
+              }),
+            });
+          });
         }
         await installBrowserSessionDirect(
           page,
@@ -611,13 +641,45 @@ for (const runtime of runtimes) {
         };
         const transcriptText = "Enter pending placement";
         const composerText = "Command pending placement";
-        await send(transcriptText, "Enter", "transcript");
         const pending = page
           .locator("[data-pending-prompt-id]")
           .filter({ hasText: transcriptText });
-        await expect(pending).toBeVisible();
-        await expect(pending).toContainText("Queued");
-        await send(composerText, "Meta+Enter", "composer");
+        // Keep the first real API acceptance in flight. A second Enter must
+        // paint and POST without waiting for that response to reach the tab.
+        let releaseAcceptance!: () => void;
+        const acceptanceGate = new Promise<void>((resolve) => { releaseAcceptance = resolve; });
+        const promptsUrl = `**/sessions/${sessionId}/prompts`;
+        await page.route(promptsUrl, async (route) => {
+          const request = route.request();
+          if (request.method() !== "POST" || !request.postData()?.includes(transcriptText)) {
+            await route.continue();
+            return;
+          }
+          const response = await route.fetch();
+          await acceptanceGate;
+          await route.fulfill({ response });
+        });
+        const firstSend = send(transcriptText, "Enter", "transcript");
+        try {
+          await expect(pending).toBeVisible({ timeout: 1_000 });
+          await input.fill(composerText);
+          const nextRequest = page.waitForRequest((request) =>
+            request.method() === "POST" && request.url().endsWith(`/sessions/${sessionId}/prompts`) &&
+            Boolean(request.postData()?.includes(composerText)), { timeout: 1_000 });
+          await input.press("Meta+Enter");
+          await expect(page.locator("[data-queued-prompt-id]").filter({ hasText: composerText }))
+            .toBeVisible({ timeout: 1_000 });
+          expect((await nextRequest).postDataJSON().placement).toBe("composer");
+        } finally {
+          releaseAcceptance();
+          await firstSend;
+          await page.unroute(promptsUrl);
+        }
+        await expect(pending).toContainText("Quick Queue");
+        if (!isDeployedTarget()) {
+          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          await expect(page.getByText(/This session is idle/)).toHaveCount(0);
+        }
         const row = page
           .locator("[data-queued-prompt-id]")
           .filter({ hasText: composerText });
@@ -727,6 +789,28 @@ for (const runtime of runtimes) {
           scale: "css",
         });
         if (!isDeployedTarget()) {
+          // Stop must persist the queue hold, including after navigation.
+          const heldRequest = page.waitForResponse((response) =>
+            response.request().method() === "POST" &&
+            new URL(response.url()).pathname.endsWith(`/sessions/${sessionId}/prompts/hold`),
+          );
+          await page.getByRole("button", { name: "Stop", exact: true }).click();
+          expect((await heldRequest).ok()).toBe(true);
+          await page.reload();
+          await expect(pending).toBeVisible({ timeout: 60_000 });
+          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
+          const held = await api<{ prompts: Array<{ prompt_id: string; state: string; reason: string }> }>(
+            auth.access_token, "GET", `/projects/${project.id}/sessions/${sessionId}/prompts`,
+          );
+          expect(held.prompts.length).toBeGreaterThan(0);
+          expect(held.prompts.every((prompt) => prompt.state === "waiting" && prompt.reason === "held")).toBe(true);
+          await runDatabaseSql(
+            "UPDATE kortix.session_lifecycle_commands SET status = 'dead_lettered', last_error = 'delivery outcome: pending' WHERE command_id = $1",
+            [held.prompts[0].prompt_id], databaseUrl,
+          );
+          await page.reload();
+          await expect(page.getByText(/the session was not ready in time/)).toBeVisible({ timeout: 60_000 });
+          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
           bootSessionId = await createDatabaseSession(loadEnv(), {
             projectId: project.id,
             accountId: accounts[0].account_id,
@@ -753,8 +837,10 @@ for (const runtime of runtimes) {
               .getByRole("paragraph")
               .getByText("First prompt still starting", { exact: true }),
           ).toBeVisible();
+          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
           await page.reload();
           await expect(input).toBeVisible({ timeout: 30_000 });
+          await expect(page.getByText("Thinking", { exact: true })).toHaveCount(0);
           await expect(
             page
               .getByRole("paragraph")

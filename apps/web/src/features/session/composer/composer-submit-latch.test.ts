@@ -1,7 +1,7 @@
 /**
  * One user action = one submission — and the NEXT user action must survive.
  *
- * The latch's BEHAVIOR (defer a typed second message, drop a same-tick
+ * The latch's BEHAVIOR (immediately dispatch a typed second message, drop a same-tick
  * double-fire, release on throw) is asserted with real promises in
  * `submit-latch.test.ts`. This file pins only the composer's WIRING of it,
  * which a behavioral test of the pure module cannot see.
@@ -54,8 +54,8 @@ describe('the composer submits through the latch', () => {
     expect(wiring).toContain('}, []);');
   });
 
-  test('the latch dispatches through a ref, so a deferred re-run reads fresh state', () => {
-    // The deferred re-run fires after the in-flight send settles — an
+  test('the latch dispatches through a ref, so a later submit reads fresh state', () => {
+    // A later submit can arrive during an in-flight send — an
     // arbitrarily later render. Dispatching the closure captured at latch
     // creation would submit against stale attachedFiles/queue props.
     const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');

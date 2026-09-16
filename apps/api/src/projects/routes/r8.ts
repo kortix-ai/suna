@@ -60,6 +60,7 @@ import {
   stopSession,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/engine';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   flattenPromptText,
@@ -803,6 +804,7 @@ projectsApp.openapi(
     // restores a 2000-char preview with no attachments and no model override —
     // a silent, unannounced loss on a button labelled "Undo".
     if (outcome.outcome === 'deleted') {
+      await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
       return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
     }
     if (outcome.outcome === 'delivering') {
@@ -812,12 +814,14 @@ projectsApp.openapi(
       // invisible to the model). Only "a step is answering it" still refuses.
       const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
       if (cancelled.outcome === 'cancelled') {
+        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
         return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
       }
       if (cancelled.outcome === 'not_forwarded') {
         // The row fell back into the queue while the cancel watched it.
         const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
         if (retried.outcome === 'deleted') {
+          await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
           return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
         }
       }
@@ -945,6 +949,7 @@ projectsApp.openapi(
     }
 
     await holdInboxPrompts(sessionId, body.held);
+    if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
     // After the write, before the read-back — either instant orders this
     // snapshot correctly against the hold it just applied (JAY-728).
     const observedAt = new Date().toISOString();

@@ -3253,6 +3253,26 @@ describe("useSyncStore — an echo under the SAME id confirms the optimistic mes
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
 	});
 
+	test("a later update to the running prompt does not consume the sole waiting prompt", () => {
+		const store = useSyncStore.getState();
+		for (const [id, text] of [["msg_running", "run"], ["msg_waiting", "next"]]) {
+			store.optimisticAdd("ses_1", userMessage(id), [textPart(`prt_${id}`, id, text)]);
+			store.markOptimisticDispatched("ses_1", id);
+			store.markOptimisticInboxBacked("ses_1", id);
+		}
+
+		store.applyEvent(userMessageUpdated("msg_running"));
+		store.applyEvent(userMessageUpdated("msg_running"));
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1.map((message) => message.id)).toEqual([
+			"msg_running",
+			"msg_waiting",
+		]);
+		expect(state.parts.msg_waiting?.[0]).toMatchObject({ text: "next" });
+		expect(state.optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
+	});
+
 	test("the first REAL part replaces the optimistic part instead of sitting beside it", () => {
 		const store = useSyncStore.getState();
 		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
@@ -3541,13 +3561,14 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		expect(useSyncStore.getState().messages["ses_1"] ?? []).toEqual([]);
 	});
 
-	test("an inbox-backed message is still superseded by its echo (SSE) — the backing never blocks confirmation", () => {
+	test("an inbox-backed message is superseded when its row names the re-minted echo", () => {
 		const store = useSyncStore.getState();
 		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
 			textPart("prt_client", "msg_wire", "hi"),
 		]);
 		store.markOptimisticDispatched("ses_1", "msg_wire");
 		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		store.registerOptimisticEcho("ses_1", "msg_wire", "msg_reminted");
 
 		store.applyEvent({
 			id: "evt_x",
@@ -3559,6 +3580,44 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		// Once superseded there is nothing left to protect — a later sweep is a no-op.
 		store.clearOptimisticMessages("ses_1");
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+	});
+
+	test("an unrelated user echo cannot consume the sole inbox-backed waiting prompt", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_waiting"), [
+			textPart("prt_waiting", "msg_waiting", "next"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_waiting");
+		store.markOptimisticInboxBacked("ses_1", "msg_waiting");
+
+		store.applyEvent({
+			id: "evt_other_tab",
+			type: "message.updated",
+			properties: { info: userMessage("msg_other_tab") },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_other_tab",
+			"msg_waiting",
+		]);
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
+	});
+
+	test("a runtime read cannot pair an unrelated echo with an inbox-backed waiting prompt", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_waiting"), [
+			textPart("prt_waiting", "msg_waiting", "next"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_waiting");
+		store.markOptimisticInboxBacked("ses_1", "msg_waiting");
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_other_tab"), parts: [] }] as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_other_tab",
+			"msg_waiting",
+		]);
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_waiting")).toBeUndefined();
 	});
 });
 
@@ -3644,12 +3703,13 @@ describe("useSyncStore — a removed user message the control plane still owns k
 		expect(useSyncStore.getState().parts.msg_c?.[0]?.id).toBe("prt_1");
 		expect(useSyncStore.getState().isOptimisticMessage("ses_1", "msg_c")).toBe(true);
 
-		// The re-placed copy arrives under a new id: it supersedes the bubble,
-		// and the alias chain keeps pointing at the id the host keyed on.
+		// The re-placed copy arrives under a new id. The inbox row identifies
+		// which bubble it supersedes, even when that row is read afterward.
 		store.applyEvent({
 			type: "message.updated",
 			properties: { info: userMessage("msg_c2") },
 		} as never);
+		store.registerOptimisticEcho("ses_1", "msg_c", "msg_c2");
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
 		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
 		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
@@ -3949,9 +4009,10 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		useSyncStore.getState().applyEvent(partFrame(REMINT) as never);
 		expect(rolesById()).toEqual([`user:${WIRE}`]);
 
-		// …and the text is not lost: the info frame places the message and the
-		// part it already holds comes with it, as one user bubble.
+		// The info frame places the real message. Once the inbox row names its
+		// original wire id, its text appears as one user bubble.
 		useSyncStore.getState().applyEvent(infoFrame(REMINT) as never);
+		useSyncStore.getState().registerOptimisticEcho(S, WIRE, REMINT);
 		expect(rolesById()).toEqual([`user:${REMINT}`]);
 		const parts = useSyncStore.getState().getMessages(S)[0]?.parts ?? [];
 		expect(parts.map((p) => (p as TextPart).text)).toEqual([TEXT]);

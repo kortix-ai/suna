@@ -1,6 +1,30 @@
 import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { freshSendHint, resolveWorkingTurn } from './working-turn';
+import { freshSendHint, resolveWorkingTurn, shouldSuppressWorkingTurnBusy } from './working-turn';
+
+test('a confirmed active turn keeps its working row through completed intermediate steps', () => {
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'running',
+    pendingDelivery: false,
+  })).toBe(false);
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: null,
+    pendingDelivery: false,
+  })).toBe(true);
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'running',
+    pendingDelivery: true,
+  })).toBe(true);
+});
 
 const turn = (id: string, ...assistant: Array<'open' | 'done'>) => ({
   userMessage: { info: { id } },

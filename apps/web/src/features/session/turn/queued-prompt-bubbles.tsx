@@ -22,7 +22,7 @@ export function QueuedPromptStatus({
   onRetry,
   onRemove,
 }: {
-  state: QueuedPromptState | 'failed';
+  state: QueuedPromptState | 'failed' | 'sending' | 'held';
   lastError?: string | null;
   onRetry?: () => void;
   onRemove?: () => void;
@@ -37,6 +37,7 @@ export function QueuedPromptStatus({
           <>
             <span className="text-kortix-red" role="status" title={lastError ?? undefined}>
               {copy.raw('textcd5f943d5863')}
+              {lastError ? ` — ${lastError}` : ''}
             </span>
             {onRetry && (
               <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
@@ -50,7 +51,11 @@ export function QueuedPromptStatus({
             )}
           </>
         ) : state === 'queued' ? (
-          t('queued')
+          t('quickQueueWaiting')
+        ) : state === 'sending' ? (
+          t('quickQueueSending')
+        ) : state === 'held' ? (
+          copy.raw('text1eb132d9d4da')
         ) : (
           queuedPromptStatusLabel(state)
         )}

@@ -165,10 +165,11 @@ export function InstantSessionShell({
   // send instantly; the stash read stays as a legacy fallback for a hand-off
   // written by a pre-deploy tab.
   const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
+  const firstPromptRow = promptInbox.prompts.find((p) => isFirstPromptRow(p));
   const pendingRowSubmission = useMemo(() => {
     // A row with NO text is still a real send — an attachment-only prompt is a
     // legal message — so the first row that carries either wins.
-    const row = promptInbox.prompts.find((p) => isFirstPromptRow(p));
+    const row = firstPromptRow;
     if (!row) return null;
     // `files` stays empty: this tab never held the bytes. The row's attachment
     // NAMES are what the bubble draws, as pending tiles, so a reloaded tab
@@ -191,7 +192,7 @@ export function InstantSessionShell({
             : ({ state: 'uploading' } as const)
           : undefined,
     };
-  }, [promptInbox.prompts]);
+  }, [firstPromptRow]);
   const shellQueue = useMemo(
     () =>
       projectQueueRows({
@@ -486,12 +487,7 @@ export function InstantSessionShell({
             <div className={SESSION_TRANSCRIPT_CLASS}>
               {effectiveSubmission && !hasTranscript && (
                 <div className="flex min-w-0 flex-col">
-                  {/* The optimistic turn, rendered by the component SessionChat
-                    also renders — not a copy of it. `deferPreview` is the one
-                    difference the shell is entitled to: there is no sandbox yet,
-                    so MessageAttachments paints every tile as pending. The
-                    waiting row underneath says "Thinking" at every boot stage,
-                    exactly as it will once the real chat takes over. */}
+                  {/* Runtime startup has not started an agent response. */}
                   <OptimisticTurn
                     text={buildOptimisticPromptTextWithUploads(
                       effectiveSubmission.text,
@@ -503,6 +499,19 @@ export function InstantSessionShell({
                     onFileClick={openFileInComputer}
                     deferPreview
                     sessionId={sessionId}
+                    busy={false}
+                    leadingStatus={
+                      <QueuedPromptStatus
+                        state={firstPromptRow?.state === 'failed' ? 'failed' : 'queued'}
+                        lastError={firstPromptRow?.last_error}
+                        onRetry={firstPromptRow?.state === 'failed'
+                          ? () => {
+                              void promptInbox.retry(firstPromptRow.prompt_id)
+                                .catch((error) => errorToast(error.message));
+                            }
+                          : undefined}
+                      />
+                    }
                   />
                 </div>
               )}

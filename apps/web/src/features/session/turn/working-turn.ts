@@ -51,6 +51,20 @@ export interface WorkingTurnResolution {
   pendingTurnIds: string[];
 }
 
+/** A completed assistant message can be an intermediate step of an active
+ * turn. Only a finished turn without active-turn evidence yields its row to
+ * the trailing busy indicator while later prompts wait. */
+export function shouldSuppressWorkingTurnBusy(input: {
+  hasPendingTurns: boolean;
+  newestAssistantCompleted: boolean;
+  workingTurnId: string;
+  activeTurnId: string | null;
+  pendingDelivery: boolean;
+}): boolean {
+  if (!input.hasPendingTurns || !input.newestAssistantCompleted) return false;
+  return input.pendingDelivery || input.activeTurnId !== input.workingTurnId;
+}
+
 /**
  * The hint for an idle send this tab just made, while the projection names no
  * turn: the sent turn's CURRENT id, until that turn has an answer.

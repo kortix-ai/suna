@@ -35,11 +35,13 @@ import {
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  markInboxDeliveryStarted,
   markCommandForwarded,
   promoteNextInboxRow,
   requeueForAdmission,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
+import { promptState } from '../projects/lib/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
@@ -686,7 +688,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toEqual([
       row.commandId,
     ]);
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -773,7 +775,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // marker, so the drain re-reads the transcript before delivering.
     expect((after.payload as Record<string, unknown>).remintOnDelivery).toBe(true);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(row.commandId);
   });
 
@@ -931,7 +933,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(after.status).toBe('queued');
     expect(after.result).toMatchObject({ held: true });
     // Visible, but not due: nothing claims it until the user releases the hold.
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -1086,7 +1088,7 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() - interval '11 minutes'
        WHERE command_id = ${stranded.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 1, idempotencyKey: stranded.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(stranded.commandId);
     expect((await readRow(stranded.commandId)).locked_by).toBe('w-reclaim');
   });
@@ -1100,7 +1102,7 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() + interval '2 minutes'
        WHERE command_id = ${working.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 1, idempotencyKey: working.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(working.commandId);
     expect(LIFECYCLE_RUNNING_RECLAIM_GRACE_MS).toBeGreaterThan(0);
   });
@@ -1144,4 +1146,44 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
   });
+});
+
+test('claims only the owning instance before changing queue availability', async () => {
+  const { config } = await import('../config');
+  const original = config.KORTIX_INSTANCE_ID;
+  try {
+    config.KORTIX_INSTANCE_ID = 'queue-owner-test';
+    const row = await enqueue('instance-claim');
+    await setBox('active', {});
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-peer-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    const input = { workerId: 'instance-test', limit: 1, idempotencyKey: row.idempotencyKey! };
+    expect(await claimDueLifecycleCommands(input)).toEqual([]);
+    expect((await readRow(row.commandId)).status).toBe('queued');
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-owner-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    expect((await claimDueLifecycleCommands(input)).map((claimed) => claimed.commandId)).toEqual([row.commandId]);
+  } finally {
+    config.KORTIX_INSTANCE_ID = original;
+  }
+});
+
+
+test('a retry claim resets delivery evidence and stays waiting until admitted', async () => {
+  const row = await enqueue('claim-state');
+  const claim = () => claimDueLifecycleCommands({
+    workerId: 'claim-state-worker', limit: 1, idempotencyKey: row.idempotencyKey!,
+  });
+  const [first] = await claim();
+  expect(promptState(first).state).toBe('queued');
+  await markInboxDeliveryStarted(row.commandId);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
+  await requeueForAdmission(row.commandId, 'turn_active', new Date());
+  const [retry] = await claim();
+  expect(promptState(retry)).toEqual({ state: 'waiting', reason: 'turn_active' });
+  expect(retry.result).not.toHaveProperty('delivery_started_at');
+  await markInboxDeliveryStarted(row.commandId);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
 });

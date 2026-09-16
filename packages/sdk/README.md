@@ -717,3 +717,27 @@ pending message. Legacy rows default to `composer`.
 `text` remains the bounded preview. List responses expose attachment names and
 MIME types without attachment bytes. Removal responses retain the complete
 parts and captured model options for undo.
+
+Queued work keeps `useSessionWorking().state` at `working` so it can be stopped.
+`pendingDelivery: true` distinguishes a send waiting for runtime delivery from an
+active agent response. Render pending status for that phase, not a thinking indicator.
+A timed-out or skipped cancel does not acknowledge an abort receipt.
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
+advance automatically in submission order. Queue List entries stay editable
+until delivery begins. Stop pauses pending entries; Resume releases that hold.
+
+Pass the inbox IDs, in queue order, as `pendingMessageIds` to
+`groupMessagesIntoTurns(messages, { pendingMessageIds })`. Client-minted wire
+IDs still represent waiting prompts. The renderer keeps them after delivered
+turns until the inbox releases them.
+
+Queue acceptance and runtime execution are separate states. Each distinct submission
+appears immediately, including while a previous POST is pending. The working hook
+updates `pendingDelivery` when the same turn becomes active, without waiting for
+a different turn ID or timestamp.

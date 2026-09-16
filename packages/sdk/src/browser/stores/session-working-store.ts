@@ -62,7 +62,7 @@ interface SessionWorkingState {
   noteAbortReceipt: (sessionId: string, atMs: number) => void;
   /** The server acknowledged the cancel. Stamped once — the first
    *  acknowledgement is the one a server read can be measured against. */
-  settleAbortReceipt: (sessionId: string, atMs: number) => void;
+  settleAbortReceipt: (sessionId: string, atMs: number, status?: 'aborted' | 'failed' | 'timed-out' | 'skipped') => void;
   /** One reading of the durable prompt inbox. `atMs` is this tab's clock at
    *  ISSUE/RECEIVE time (age); `serverAtMs` is the server's `observed_at`
    *  (ordering) when the endpoint supplied one. See `WorkingInboxInput`. */
@@ -138,8 +138,9 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       return { aborts: { ...state.aborts, [sessionId]: { atMs, settledAtMs: null } } };
     }),
 
-  settleAbortReceipt: (sessionId, atMs) =>
+  settleAbortReceipt: (sessionId, atMs, status) =>
     set((state) => {
+      if (status === 'timed-out' || status === 'skipped') return state;
       const current = state.aborts[sessionId];
       if (!current || current.settledAtMs != null) return state;
       return { aborts: { ...state.aborts, [sessionId]: { ...current, settledAtMs: atMs } } };

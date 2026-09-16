@@ -117,8 +117,21 @@ export function compareMessagesForDisplay(
  */
 export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
   input: readonly M[],
+  options?: { pendingMessageIds?: ReadonlySet<string> },
 ): TurnLike<M>[] {
-  const messages = [...input].sort(compareMessagesForDisplay);
+  // Client-minted wire IDs are not proof of delivery. Keep inbox placeholders
+  // after the transcript, in the durable queue's order, until they are released.
+  const pendingOrder = new Map(
+    [...(options?.pendingMessageIds ?? [])].map((id, index) => [id, index]),
+  );
+  const messages = [...input].sort((a, b) => {
+    const aPending = pendingOrder.get(a.info.id);
+    const bPending = pendingOrder.get(b.info.id);
+    if (aPending !== undefined && bPending !== undefined) return aPending - bPending;
+    if (aPending !== undefined) return 1;
+    if (bPending !== undefined) return -1;
+    return compareMessagesForDisplay(a, b);
+  });
   const turns: TurnLike<M>[] = [];
   const turnsByUserMsgId = new Map<string, TurnLike<M>>();
 

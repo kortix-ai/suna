@@ -34,6 +34,7 @@ import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { sendQuickQueueControl } from './quick-queue-control';
 import {
   currentInstanceId,
   sandboxBelongsToThisInstance,
@@ -754,6 +755,8 @@ export async function drainSessionLifecycleQueue(
     limit?: number;
     /** Drain one freshly-enqueued callback without waiting behind older work. */
     idempotencyKey?: string;
+    /** Completion wakes target rows already in the inbox; they need no burst delay. */
+    coalesce?: boolean;
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
@@ -765,7 +768,7 @@ export async function drainSessionLifecycleQueue(
   // the rest of the burst was even durable (measured: one of four boot sends
   // delivered a step behind, out of order). A quarter second collects the
   // stragglers and is invisible next to the ~1.3 s delivery itself.
-  if (input.idempotencyKey) {
+  if (input.idempotencyKey && input.coalesce !== false) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const rows = await claimDueLifecycleCommands({
@@ -1104,6 +1107,47 @@ export async function resolveSessionOpencodeEndpoint(
   );
   if (!endpoint) return null;
   return { endpoint, opencodeSessionId: session.opencodeSessionId };
+}
+
+/** Cancel a pending boundary interrupt when its inbox prompt is removed. */
+export async function disarmQuickQueueInterrupt(
+  sessionId: string,
+  actorUserId: string,
+  promptId: string,
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  if (!resolved) return;
+  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm', promptId });
+}
+
+/** Stop holds all inbox rows, so no automatic boundary interrupt may remain. */
+export async function disarmAllQuickQueueInterrupt(
+  sessionId: string,
+  actorUserId: string,
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  if (!resolved) return;
+  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm-all' });
+}
+
+async function armQuickQueueInterrupt(
+  row: SessionLifecycleCommandRow,
+  identity: { opencodeSessionId: string; messageId: string },
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
+  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return;
+  const armed = await sendQuickQueueControl(resolved.endpoint, {
+    kind: 'arm',
+    promptId: row.commandId,
+    opencodeSessionId: identity.opencodeSessionId,
+    messageId: identity.messageId,
+  });
+  if (!armed) {
+    logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+    });
+  }
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */
@@ -1552,6 +1596,7 @@ export async function executeQueuedContinue(
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
+    if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row.commandId);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
@@ -1575,6 +1620,28 @@ export async function executeQueuedContinue(
         { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';
+    }
+    // The row is durable before the daemon may end this turn. The terminal
+    // relay then promotes this same row and delivers it as the next turn.
+    if (admission.interruptAtBoundary) {
+      await armQuickQueueInterrupt(row, admission.interruptAtBoundary);
+    }
+    // A terminal relay can arrive while this row is claimed, before it becomes
+    // queued again. Recheck after the write so that completion cannot lose its wake.
+    if (admission.reason === 'turn_active') {
+      try {
+        if (!(await sessionHoldsLiveTurn(row.sessionId))) {
+          const idempotencyKey = await lifecycleStore.promoteNextInboxRow(row.sessionId);
+          if (idempotencyKey) {
+            void drainSessionLifecycleQueue({ idempotencyKey, coalesce: false }).catch((error) => {
+              logger.error('[session-lifecycle] completion handoff drain failed', { sessionId: row.sessionId, error });
+            });
+          }
+        }
+      } catch (error) {
+        // The row is durably queued. The retry worker remains its fallback.
+        logger.warn('[session-lifecycle] completion handoff check failed', { sessionId: row.sessionId, error });
+      }
     }
     return 'queued';
   }

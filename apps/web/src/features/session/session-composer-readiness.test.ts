@@ -393,3 +393,7 @@ describe('resolveLastTurnWorking', () => {
     ).toBe(false);
   });
 });
+
+test('a queued send does not ask the user to send another message to wake the session', () => {
+  expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking', pendingDelivery: true }).notice).toBeNull();
+});

@@ -1,6 +1,5 @@
 'use client';
 
-import { useDevice } from '@/hooks/use-device';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
@@ -113,7 +112,6 @@ export interface ComposerToolbarProps {
   /** No agent is available to this user — the send is refused. See composer.tsx. */
   agentUnavailable?: boolean;
   onSubmit: () => void;
-  onQueue?: () => void;
 }
 
 export function ComposerToolbar({
@@ -150,11 +148,8 @@ export function ComposerToolbar({
   modelUnavailable,
   agentUnavailable = false,
   onSubmit,
-  onQueue,
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const t = useTranslations('threads');
-  const device = useDevice();
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
@@ -221,30 +216,6 @@ export function ComposerToolbar({
 
         {toolbarSlot}
 
-        {onQueue && canSubmit && !lockForQuestion && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={submitDisabled || disabled}
-            onClick={onQueue}
-            title={t('queueShortcut', { modifier: device === 'mac' ? '⌘' : 'Ctrl+' })}
-            aria-keyshortcuts="Meta+Enter Control+Enter"
-          >
-            {t('queueMessage')}
-          </Button>
-        )}
-        {isBusy && canSubmit && !lockForQuestion && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={submitDisabled || disabled}
-            onClick={onSubmit}
-          >
-            {t('sendMessage')}
-          </Button>
-        )}
         <SendStopControl
           isSending={isSending}
           isBusy={isBusy}

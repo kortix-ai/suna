@@ -93,3 +93,11 @@ describe('QueuedPromptList', () => {
     expect(markup).toContain('3 files');
   });
 });
+
+
+test('Queue List identifies waiting and sending rows without hover', () => {
+  const markup = render({ rows: [row({ id: 'waiting' }), row({ id: 'sending', state: 'delivering', removable: false, takeBackEligible: false })] });
+  expect(markup).toContain('aria-label="Queue List"');
+  expect(markup).toContain('Waiting');
+  expect(markup).toContain('Sending…');
+});

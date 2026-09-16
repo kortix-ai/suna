@@ -121,6 +121,7 @@ mock.module('../store', () => ({
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
+  markInboxDeliveryStarted: async () => {},
   markCommandFailed: async () => {
     throw new Error('not expected in this test');
   },

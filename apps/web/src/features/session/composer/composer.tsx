@@ -1261,7 +1261,7 @@ function ComposerImpl({
    *
    * Created ONCE and dispatching through a ref: the latch's in-flight state
    * must survive re-renders (a fresh latch mid-send would reopen the
-   * double-fire window), while the deferred re-run must read the CURRENT
+   * double-fire window), while each later submit must read the CURRENT
    * dispatch closure, not the one from the render that created the latch.
    */
   const dispatchSubmissionRef = useRef(dispatchSubmission);
@@ -1279,7 +1279,7 @@ function ComposerImpl({
       // worth stashing; a double-fire arrives with the editor already
       // cleared. The stash takes the draft OUT of the editor right now — the
       // user sees the message leave on Enter, exactly as a direct send — and
-      // submits it unchanged once the in-flight send settles. Files ride
+      // submits it immediately, even while another acceptance is pending. Files ride
       // along from the synchronous mirror, not from React state that may not
       // have flushed.
       () => {
@@ -1666,7 +1666,6 @@ function ComposerImpl({
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
               onSubmit={() => handleSubmit()}
-              onQueue={sessionId ? () => handleSubmit('composer') : undefined}
             />
           </div>
         </div>
