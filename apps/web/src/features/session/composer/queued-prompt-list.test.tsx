@@ -55,7 +55,7 @@ describe('QueuedPromptList', () => {
     expect(markup).not.toContain('Queue paused');
   });
 
-  test('✕ only where the server will honour a removal', () => {
+  test('Remove only where the server will honour a removal', () => {
     const markup = render({
       rows: [
         row({ id: 'queued' }),
@@ -66,7 +66,7 @@ describe('QueuedPromptList', () => {
     expect(count(markup, 'aria-label="Remove from queue"')).toBe(1);
   });
 
-  test('a failed row says so and offers Retry and ✕, both visible without hover', () => {
+  test('a failed row says so and offers Retry and Remove, both visible without hover', () => {
     const markup = render({
       rows: [row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })],
     });
@@ -90,6 +90,6 @@ describe('QueuedPromptList', () => {
 
   test('a row with files shows how many', () => {
     const markup = render({ rows: [row({ id: 'a', attachmentCount: 3 })] });
-    expect(markup).toMatch(/<\/svg>3<\/span>/);
+    expect(markup).toContain('3 files');
   });
 });

@@ -423,12 +423,13 @@ projectsApp.openapi(
 // Admission — "may this prompt be delivered NOW?" — is not decided here. It is
 // decided at drain time by `admitInboxPrompt`, on the ORDER of this session's
 // own rows, because that answer changes between the POST and the delivery. A
-// live turn does not hold a prompt back: OpenCode queues it by arrival.
+// live turn holds later prompts until its terminal event releases the next row.
 
 const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
+  placement: z.enum(['transcript', 'composer']).optional(),
   prompt_id: z.string(),
   client_message_id: z.string(),
   message_id: z.string(),
@@ -437,6 +438,7 @@ const SessionPromptSchema = z.object({
   state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
   reason: z.string().nullable(),
   text: z.string(),
+  full_text: z.string().optional(),
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
@@ -449,6 +451,7 @@ const SessionPromptSchema = z.object({
  *  text PREVIEW and no parts at all, which is a display shape, not a restore
  *  shape. */
 const RemovedSessionPromptSchema = z.object({
+  placement: z.enum(['transcript', 'composer']).optional(),
   prompt_id: z.string(),
   client_message_id: z.string(),
   removed_message_ids: z.array(z.string()).optional(),
@@ -462,6 +465,7 @@ function serializeRemovedPrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const parts = Array.isArray(payload.parts) ? payload.parts : [];
   return {
+    placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
     // The ORIGINAL wire id, never the re-minted one: an undo re-creates the
@@ -546,6 +550,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const clientMessageId = normalizeString(body.client_message_id);
     const messageId = normalizeString(body.message_id);
+    if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
+      return c.json({ error: 'placement must be transcript or composer' }, 400);
+    }
     const rawParts = Array.isArray(body.parts) ? body.parts : [];
     if (!clientMessageId || clientMessageId.length > 128) {
       return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
@@ -632,6 +639,7 @@ projectsApp.openapi(
       idempotencyKey,
       clientMessageId,
       wireMessageId: messageId,
+      ...(body.placement ? { placement: body.placement } : {}),
       // OPT-IN, and only one producer sets it: the localStorage migration,
       // whose id is minted at page load — against a transcript this tab has
       // not read yet — for a message the user typed before their last reload.

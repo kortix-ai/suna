@@ -1687,7 +1687,11 @@
     "hintChanged": "询问项目中发生了哪些变化",
     "hintNewLine": "按 Shift+Enter 换行",
     "hintSettings": "按 {modifier}, 打开设置",
-    "hintCompact": "会话过长时，请要求压缩会话"
+    "hintCompact": "会话过长时，请要求压缩会话",
+    "queueMessage": "加入队列",
+    "queueShortcut": "Enter 发送 · {modifier}Enter 加入队列",
+    "queued": "排队中",
+    "queuedFiles": "{count} 个文件"
   },
   "billing": {
     "plan": {

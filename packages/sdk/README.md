@@ -705,3 +705,15 @@ await kortix.projects.setModelAccess(projectId, {
 subscription messages. This also corrects historical runtime costs. Token
 counts remain available. Mixed sessions retain paid API costs; OpenAI API
 models remain billable. Subscription coverage does not include sandbox compute.
+
+### Durable prompt placement
+
+`createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
+`placement: 'transcript' | 'composer'`. Both use the same server FIFO and wait
+for the active turn to finish. Placement controls where a client presents the
+pending message. Legacy rows default to `composer`.
+
+`SessionPrompt.full_text` preserves complete text for rendering after reload;
+`text` remains the bounded preview. List responses expose attachment names and
+MIME types without attachment bytes. Removal responses retain the complete
+parts and captured model options for undo.

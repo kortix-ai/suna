@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { createSessionCommandPayload, withRemintedWireId } from './store';
+import { buildContinueSessionCommandValues, createSessionCommandPayload, withRemintedWireId } from './store';
 import type { CreateSessionCommand } from './types';
 
 const BASE: CreateSessionCommand = {
@@ -61,4 +61,12 @@ describe('withRemintedWireId', () => {
     expect(compile('msg_a').params[1]).toBe('["msg_a"]');
     expect(compile('msg_b').params[1]).toBe('["msg_b"]');
   });
+});
+
+test('durable prompt payload preserves its presentation placement', () => {
+  const values = buildContinueSessionCommandValues({
+    source: 'ui', projectId: 'p', accountId: 'a', sessionId: 's', actorUserId: 'u',
+    text: 'follow up', placement: 'transcript',
+  });
+  expect(values.payload.placement).toBe('transcript');
 });

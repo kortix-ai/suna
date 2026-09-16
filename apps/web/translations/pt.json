@@ -1687,7 +1687,11 @@
     "hintChanged": "Pergunte o que mudou no projeto",
     "hintNewLine": "Pressione Shift+Enter para uma nova linha",
     "hintSettings": "Pressione {modifier}, para abrir as configurações",
-    "hintCompact": "Peça para compactar a sessão quando ela ficar longa"
+    "hintCompact": "Peça para compactar a sessão quando ela ficar longa",
+    "queueMessage": "Adicionar à fila",
+    "queueShortcut": "Enter para enviar · {modifier}Enter para adicionar à fila",
+    "queued": "Na fila",
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
   },
   "billing": {
     "plan": {

@@ -174,6 +174,7 @@ export interface QueuedContinueSessionPayload {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -205,6 +206,7 @@ export interface EnqueueContinueSessionCommandInput {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -224,6 +226,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
+    ...(input.placement ? { placement: input.placement } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
   };
   return {

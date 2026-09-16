@@ -60,3 +60,12 @@ describe('serializePrompt attachments', () => {
     expect(view.attachments).toEqual([{ filename: 'File', mime: 'image/png' }]);
   });
 });
+
+test('reload preserves placement and full code text while keeping the legacy preview bounded', () => {
+  const text = '  const result = await run();\n'.repeat(120);
+  const view = serializePrompt(row({ text, placement: 'transcript' }));
+  expect(view.placement).toBe('transcript');
+  expect(view.full_text).toBe(text);
+  expect(view.text).toHaveLength(2000);
+  expect(serializePrompt(row({ text: 'old row' })).placement).toBe('composer');
+});

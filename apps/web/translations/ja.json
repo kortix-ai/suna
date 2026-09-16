@@ -1687,7 +1687,11 @@
     "hintChanged": "プロジェクトの変更点について質問",
     "hintNewLine": "Shift+Enter を押して改行",
     "hintSettings": "{modifier}, を押して設定を開く",
-    "hintCompact": "長くなったセッションの圧縮を依頼"
+    "hintCompact": "長くなったセッションの圧縮を依頼",
+    "queueMessage": "キューに追加",
+    "queueShortcut": "Enterで送信 · {modifier}Enterでキューに追加",
+    "queued": "待機中",
+    "queuedFiles": "{count}個のファイル"
   },
   "billing": {
     "plan": {

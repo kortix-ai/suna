@@ -428,6 +428,14 @@ describe('POST .../prompts', () => {
   // for a message the user typed before the last reload. The server re-mints
   // against the live root before delivering, which is the only place that can
   // be right — see `remintWireMessageId`.
+  test('persists explicit placement and rejects unsupported locations', async () => {
+    for (const placement of ['transcript', 'composer']) {
+      expect((await post({ ...validBody, placement })).status).toBe(202);
+      expect(enqueued.at(-1)?.placement).toBe(placement);
+    }
+    expect((await post({ ...validBody, placement: 'sidebar' })).status).toBe(400);
+  });
+
   test('remint_on_delivery is carried into the payload', async () => {
     await post({ ...validBody, remint_on_delivery: true });
     expect(enqueued[0].remintOnDelivery).toBe(true);
@@ -567,6 +575,8 @@ describe('GET .../prompts', () => {
         state: 'queued',
         reason: null,
         text: 'say hi',
+        full_text: 'say hi',
+        placement: 'composer',
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
@@ -710,6 +720,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       removed: {
+        placement: 'composer',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',

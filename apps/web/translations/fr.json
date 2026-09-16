@@ -1687,7 +1687,11 @@
     "hintChanged": "Demande ce qui a changé dans ton projet",
     "hintNewLine": "Appuie sur Shift+Enter pour une nouvelle ligne",
     "hintSettings": "Appuie sur {modifier}, pour ouvrir les paramètres",
-    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue"
+    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue",
+    "queueMessage": "Mettre en attente",
+    "queueShortcut": "Entrée pour envoyer · {modifier}Entrée pour mettre en attente",
+    "queued": "En attente",
+    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"
   },
   "billing": {
     "plan": {

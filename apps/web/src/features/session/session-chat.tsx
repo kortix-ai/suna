@@ -6,7 +6,9 @@ import { SessionApprovalPrompt } from '@/features/session/session-approval-promp
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { useTranslations } from '@/i18n/use-translations';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
+import { useQueuedDraftStore, useQueuedDrafts } from '@/stores/queued-draft-store';
 import {
   type SandboxLifecycle,
   type SessionPrompt,
@@ -14,7 +16,7 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
+import { useProjectSession } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -26,11 +28,11 @@ import {
   StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { QueuedPromptList } from './composer/queued-prompt-list';
 import {
   COMPOSER_EDITOR_SELECTOR,
   SUGGESTION_MENU_SELECTOR,
@@ -41,10 +43,8 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import { QueuedPromptList } from './composer/queued-prompt-list';
 import { composeTakeBack, isFirstPromptRow, projectQueueRows } from './queue-projection';
 import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
-import { useQueuedDraftStore, useQueuedDrafts } from '@/stores/queued-draft-store';
 import { ActivityBurst } from './turn/activity-burst';
 import {
   CompactionFailedRow,
@@ -74,19 +74,18 @@ import { Composer as SessionChatInput } from '@/features/session/composer/compos
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
+import {
+  resolveFirstPromptHandover,
+  transcriptCarriesFirstPrompt,
+} from '@/features/session/first-prompt-handover';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
 import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
-import {
-  resolveFirstPromptHandover,
-  transcriptCarriesFirstPrompt,
-} from '@/features/session/first-prompt-handover';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
@@ -103,6 +102,7 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
@@ -624,6 +624,9 @@ interface SessionTurnProps {
    * it fades up to full opacity the moment the agent takes it.
    */
   pending: boolean;
+  pendingPrompt?: SessionPrompt;
+  onRetryQueued?: (id: string) => void;
+  onRemoveQueued?: (id: string) => void;
   /** Files this turn is known to carry that its parts do not show yet — see `UserMessage`. */
   pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
   uploadStatus?: AttachmentUploadStatus;
@@ -750,6 +753,9 @@ function SessionTurnImpl({
   isWorkingTurn,
   suppressBusyIndicator,
   pending,
+  pendingPrompt,
+  onRetryQueued,
+  onRemoveQueued,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -821,8 +827,7 @@ function SessionTurnImpl({
   const compactionInFlight = compactionInfo?.inFlight ?? false;
   // A Stop ended the turn before a step opened under this message: say so. A
   // pending bubble says "Queued" — the dim alone reads as "something is wrong".
-  // Queue controls do not live here: a queued entry is in the list above the
-  // composer (`QueuedPromptList`), not in the transcript.
+  // Pending sends keep their status until the runtime begins their answer.
   const queueState: QueuedPromptState | null = interruptedBeforeRun ? 'interrupted' : null;
   const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
 
@@ -1527,11 +1532,9 @@ function SessionTurnImpl({
       {hasVisibleUserContent && (
         <div
           data-turn-pending={pending || interruptedBeforeRun || undefined}
-          data-turn-queue-state={queueState ?? undefined}
-          className={cn(
-            'duration-slow transition-opacity',
-            (pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS,
-          )}
+          data-turn-queue-state={pendingPrompt?.state ?? queueState ?? undefined}
+          data-pending-prompt-id={pendingPrompt?.prompt_id}
+          className={cn((pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS)}
         >
           <UserMessage
             message={turn.userMessage}
@@ -1544,12 +1547,29 @@ function SessionTurnImpl({
             sessionId={sessionId}
             ownsPlan={ownsPlan}
             onRewind={onRewind}
-            rewindDisabled={rewindDisabled}
+            rewindDisabled={rewindDisabled || pending || interruptedBeforeRun}
             editingText={editingText}
             editPending={editPending}
             onEditCancel={onEditCancel}
             onEditSend={onEditSend}
-            leadingStatus={statusState ? <QueuedPromptStatus state={statusState} /> : undefined}
+            leadingStatus={
+              pendingPrompt?.state === 'failed' || statusState ? (
+                <QueuedPromptStatus
+                  state={pendingPrompt?.state === 'failed' ? 'failed' : statusState!}
+                  lastError={pendingPrompt?.last_error}
+                  onRetry={
+                    pendingPrompt && onRetryQueued
+                      ? () => onRetryQueued(pendingPrompt.prompt_id)
+                      : undefined
+                  }
+                  onRemove={
+                    pendingPrompt && onRemoveQueued
+                      ? () => onRemoveQueued(pendingPrompt.prompt_id)
+                      : undefined
+                  }
+                />
+              ) : undefined
+            }
           />
         </div>
       )}
@@ -3115,15 +3135,12 @@ export function SessionChat({
     }
     let previous = floor;
     for (const prompt of promptInbox.prompts) {
-      if (prompt.state === 'failed') continue;
-      // Only the session's FIRST prompt is drawn as a turn before the runtime
-      // has it. Every other unpainted row is a queued entry, and those are
-      // listed above the composer, never in the transcript.
-      if (!isFirstPromptRow(prompt)) continue;
-      if (!prompt.text.trim()) continue;
+      if (prompt.state === 'failed' && prompt.placement !== 'transcript') continue;
+      // Enter sends appear before delivery. Composer entries stay above the input.
+      if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;
+      if (!(prompt.full_text ?? prompt.text).trim() && !prompt.attachments?.length) continue;
       if (prompt.message_id && transcriptClaimedIds.has(prompt.message_id)) continue;
       if (prompt.wire_message_id && transcriptClaimedIds.has(prompt.wire_message_id)) continue;
-      if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
       const id = prompt.message_id || `queued-${prompt.prompt_id}`;
       const sentAt =
         typeof prompt.client_sent_at_ms === 'number'
@@ -3144,7 +3161,7 @@ export function SessionChat({
             messageID: id,
             sessionID: sessionId,
             type: 'text',
-            text: prompt.text,
+            text: prompt.full_text ?? prompt.text,
           },
         ],
       } as unknown as NonNullable<typeof messages>[number]);
@@ -3229,10 +3246,7 @@ export function SessionChat({
   // the real bubble with no tiles for those seconds. Until then the preview's
   // file NAMES are handed to the real turn to draw as pending tiles, so the
   // strip never blinks out. See `first-prompt-handover.ts`.
-  const transcriptShowsFirstPrompt = useMemo(
-    () => transcriptCarriesFirstPrompt(turns, 0),
-    [turns],
-  );
+  const transcriptShowsFirstPrompt = useMemo(() => transcriptCarriesFirstPrompt(turns, 0), [turns]);
   const previewAttachmentCount = firstPromptPreview?.files.length ?? 0;
   const transcriptCarriesFirstPromptFiles = useMemo(
     () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
@@ -3299,24 +3313,28 @@ export function SessionChat({
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+  }, [
+    projectSessionId,
+    firstPromptPreview,
+    transcriptCarriesFirstPromptFiles,
+    clearFirstPromptPreview,
+  ]);
 
   /** What the real first turn is handed once the stand-in has stepped aside:
    *  the prompt's text and its files' names, so it keeps drawing the bubble
    *  and the pending tiles through any frame where its own parts are still
    *  streaming. Nothing once the transcript carries the files itself. */
-  const firstTurnHandover = useMemo(
-    (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
-      if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
-      const attachments = firstPromptSource.files.map((file) =>
-        file.kind === 'local'
-          ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
-          : { filename: file.filename, mime: file.mime },
-      );
-      return { text: firstPromptSource.text, attachments };
-    },
-    [firstPromptSource, handover.handOverToRealTurn],
-  );
+  const firstTurnHandover = useMemo(():
+    | { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> }
+    | undefined => {
+    if (!firstPromptSource || !handover.handOverToRealTurn) return undefined;
+    const attachments = firstPromptSource.files.map((file) =>
+      file.kind === 'local'
+        ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
+        : { filename: file.filename, mime: file.mime },
+    );
+    return { text: firstPromptSource.text, attachments };
+  }, [firstPromptSource, handover.handOverToRealTurn]);
 
   /**
    * Which turn, if any, draws the plan.
@@ -3352,11 +3370,17 @@ export function SessionChat({
   // Turns the SERVER still holds in its inbox — see `resolveWorkingTurn`'s
   // `unrunTurnIds`. Keyed by every id a bubble can be on screen under, because
   // the drain re-mints `message_id` while the tab still paints `wire_message_id`.
+  const pendingPromptsByMessageId = useMemo(() => {
+    const byId = new Map<string, SessionPrompt>();
+    for (const prompt of promptInbox.prompts) {
+      if (prompt.message_id) byId.set(prompt.message_id, prompt);
+      if (prompt.wire_message_id) byId.set(prompt.wire_message_id, prompt);
+    }
+    return byId;
+  }, [promptInbox.prompts]);
   const unrunTurnIds = useMemo(() => {
     const ids = new Set<string>();
     for (const prompt of promptInbox.prompts) {
-      if (prompt.state !== 'queued' && prompt.state !== 'waiting' && prompt.state !== 'delivering')
-        continue;
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
     }
@@ -3368,9 +3392,7 @@ export function SessionChat({
   // The idle send this tab made last (`handleSend`), scoped to its session.
   // While its turn is unanswered it is the working turn even where the
   // projection names none — see `freshSendHint` for the double jump it removes.
-  const [freshSend, setFreshSend] = useState<{ sessionId: string; messageId: string } | null>(
-    null,
-  );
+  const [freshSend, setFreshSend] = useState<{ sessionId: string; messageId: string } | null>(null);
   const freshSendTurnId = useMemo(() => {
     if (!freshSend || freshSend.sessionId !== sessionId) return null;
     return freshSendHint(
@@ -3708,6 +3730,7 @@ export function SessionChat({
          * for a direct composer send, which has no retry path.
          */
         clientMessageId?: string;
+        placement?: 'transcript' | 'composer';
       },
     ) => {
       setCommandError(null);
@@ -3802,23 +3825,14 @@ export function SessionChat({
         if (block) optimisticText = `${optimisticText}\n\n${block}`;
       }
 
-      // ENTER NEVER INTERRUPTS, AND A QUEUED MESSAGE IS NOT IN THE TRANSCRIPT.
-      //
-      // While a turn runs — or while anything is already queued, so FIFO holds —
-      // the prompt goes to the queued list above the composer
-      // (`QueuedPromptList`) and nothing is painted here. It enters the
-      // transcript as a normal user message when the runtime echoes it. The
-      // draft is written NOW, before the uploads below, so the list shows the
-      // message from the keypress.
-      //
-      // Idle with an empty queue, the bubble is in the transcript from THIS
-      // frame, under the wire id the inbox row carries, and the turn runs at
-      // once.
+      const placement = overrides?.placement ?? 'transcript';
       const willQueue =
-        isBusyRef.current || queueRowsRef.current.some((row) => row.state !== 'failed');
-      if (willQueue) {
+        isBusyRef.current || promptInbox.prompts.some((prompt) => prompt.state !== 'failed');
+      const paintTranscript = placement === 'transcript';
+      if (!paintTranscript) {
         useQueuedDraftStore.getState().add(sessionId, {
           clientMessageId,
+          placement,
           text: rawText,
           files: attachedFiles,
           createdAtMs: sentAtMs,
@@ -3826,17 +3840,11 @@ export function SessionChat({
         });
       } else {
         beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
-        // Inbox-backed from THIS tick, before the first `await` below: the row
-        // it becomes is durable, and this send's own failure paths
-        // (`abandonOptimisticSend`, `recoverFromSendFailure`) are the ONLY things
-        // allowed to take the bubble away. An idle frame landing during the
-        // attachment build used to sweep the bubble as "unconfirmed".
         markOptimisticSendInboxBacked(sessionId, messageID);
-        // Until this turn has an answer it is the working turn, whatever the
-        // inbox row still says (`freshSendHint`). The new bubble glides ONCE to
-        // the top of the screen when it commits (use-auto-scroll.ts).
-        setFreshSend({ sessionId, messageId: messageID });
-        anchorTurn(messageID);
+        if (!willQueue) {
+          setFreshSend({ sessionId, messageId: messageID });
+          anchorTurn(messageID);
+        }
       }
       const receiptTurnId = willQueue ? workingTurnIdRef.current : messageID;
 
@@ -3877,7 +3885,7 @@ export function SessionChat({
         // so just clear busy and drop the optimistic message outright.
         abandonOptimisticSend(sessionId, messageID);
         // The composer puts the draft back in the editor; the list row goes.
-        if (willQueue) useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]);
+        if (!paintTranscript) useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]);
         const classified = classifySessionError(err);
         setCommandError(classified);
         throw err instanceof Error ? err : new Error(classified.message);
@@ -3980,7 +3988,7 @@ export function SessionChat({
       // early), so there is nothing for it to correlate on and the mark never
       // happened. The result was every message rendering twice for the whole
       // turn, until the session went idle and the optimistic sweep ran.
-      if (!willQueue) markOptimisticSendDispatched(sessionId, messageID);
+      if (paintTranscript) markOptimisticSendDispatched(sessionId, messageID);
 
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
@@ -4011,6 +4019,7 @@ export function SessionChat({
             throw new Error('This session has no project — cannot queue a prompt');
           }
           const created = await promptInbox.enqueue({
+            placement,
             clientMessageId,
             messageId: messageID,
             parts: mappedParts,
@@ -4044,7 +4053,8 @@ export function SessionChat({
           // moment, which is what covers the window before the row is
           // delivered and becomes a turn.
           acceptSendReceipt(messageID);
-          if (willQueue) useQueuedDraftStore.getState().markPosted(sessionId, clientMessageId);
+          if (!paintTranscript)
+            useQueuedDraftStore.getState().markPosted(sessionId, clientMessageId);
           return { ok: true } as const;
         } catch (cause) {
           // Ask the INBOX, not the runtime. This prompt's home is a durable
@@ -4082,7 +4092,7 @@ export function SessionChat({
         // ever drop this send's own receipt.
         clearSendReceipt(messageID);
         // The composer puts the draft back in the editor; the list row goes.
-        if (willQueue) useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]);
+        if (!paintTranscript) useQueuedDraftStore.getState().remove(sessionId, [clientMessageId]);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
@@ -4095,6 +4105,7 @@ export function SessionChat({
       projectId,
       projectSessionId,
       promptInbox.enqueue,
+      promptInbox.prompts,
       noteSendReceipt,
       acceptSendReceipt,
       clearSendReceipt,
@@ -4316,8 +4327,8 @@ export function SessionChat({
   }, [promptInbox.hold]);
 
   /**
-   * Up from the composer's first row: take every queued message back into the
-   * composer, one per line, in queue order, above whatever is already typed.
+   * Edit takes the selected composer entry back. Up takes the latest eligible
+   * entry, preserving whatever is already typed.
    *
    * Returns whether it acted, synchronously — the composer keeps Up as a caret
    * move when there is nothing to take back. The removal itself is async: each
@@ -4327,48 +4338,70 @@ export function SessionChat({
    * is re-queued instead of dropped (`composeTakeBack`).
    */
   const takeBackInFlightRef = useRef(false);
-  const handleTakeBackQueue = useCallback((): boolean => {
-    const eligible = queueRowsRef.current.filter((row) => row.takeBackEligible);
-    if (eligible.length === 0) return false;
-    if (takeBackInFlightRef.current) return true;
-    takeBackInFlightRef.current = true;
-    // Captured BEFORE the removals: removing a row prunes its draft.
-    const drafts = useQueuedDraftStore.getState().bySession[sessionId] ?? [];
-    void (async () => {
-      try {
-        const settled = await Promise.allSettled(
-          eligible.map((row) => promptInbox.remove(row.id)),
-        );
-        const removed = settled.flatMap((result) =>
-          result.status === 'fulfilled' && result.value ? [result.value] : [],
-        );
-        if (removed.length === 0) return;
-        const store = useSessionStateStore.getState();
-        for (const prompt of removed) {
-          for (const id of prompt.removed_message_ids ?? [prompt.message_id]) {
-            store.forgetControlPlaneMessage(sessionId, id);
+  const handleTakeBackQueue = useCallback(
+    (promptId?: string): boolean => {
+      const eligible = queueRowsRef.current
+        .filter((row) => row.takeBackEligible && (!promptId || row.id === promptId))
+        .slice(-1);
+      if (eligible.length === 0) return false;
+      if (takeBackInFlightRef.current) return true;
+      takeBackInFlightRef.current = true;
+      // Captured BEFORE the removals: removing a row prunes its draft.
+      const drafts = useQueuedDraftStore.getState().bySession[sessionId] ?? [];
+      void (async () => {
+        try {
+          const settled = await Promise.allSettled(
+            eligible.map((row) => promptInbox.remove(row.id)),
+          );
+          const removed = settled.flatMap((result) =>
+            result.status === 'fulfilled' && result.value ? [result.value] : [],
+          );
+          if (removed.length === 0) {
+            const failure = settled.find((result) => result.status === 'rejected');
+            if (failure?.status === 'rejected') throw failure.reason;
+            return;
           }
+          const store = useSessionStateStore.getState();
+          for (const prompt of removed) {
+            for (const id of prompt.removed_message_ids ?? [prompt.message_id]) {
+              store.forgetControlPlaneMessage(sessionId, id);
+            }
+          }
+          const { text, files, requeue } = composeTakeBack({ removed, drafts });
+          useQueuedDraftStore.getState().remove(
+            sessionId,
+            removed.map((prompt) => prompt.client_message_id),
+          );
+          if (text || files.length > 0) {
+            const restored = removed[0].overrides;
+            if (restored?.agent) localAgentSet(restored.agent);
+            if (restored?.model) localModelSet(restored.model);
+            localVariantSet(restored?.variant ?? undefined);
+            useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, files);
+          }
+          for (const prompt of requeue) {
+            void promptInbox
+              .enqueue(restoreQueuedMessage(prompt, () => mintSessionWireMessageId(sessionId)))
+              .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')));
+          }
+        } catch (error) {
+          errorToast(error instanceof Error ? error.message : String(error));
+        } finally {
+          takeBackInFlightRef.current = false;
         }
-        const { text, files, requeue } = composeTakeBack({ removed, drafts });
-        useQueuedDraftStore.getState().remove(
-          sessionId,
-          removed.map((prompt) => prompt.client_message_id),
-        );
-        if (text || files.length > 0) {
-          useSessionComposerPrefillStore.getState().setPrefill(sessionId, text, files);
-        }
-        for (const prompt of requeue) {
-          void promptInbox
-            .enqueue(restoreQueuedMessage(prompt, () => mintSessionWireMessageId(sessionId)))
-            .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')));
-        }
-      } finally {
-        takeBackInFlightRef.current = false;
-      }
-    })();
-    return true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, promptInbox.remove, promptInbox.enqueue]);
+      })();
+      return true;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [
+      sessionId,
+      promptInbox.remove,
+      promptInbox.enqueue,
+      localAgentSet,
+      localModelSet,
+      localVariantSet,
+    ],
+  );
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -4828,6 +4861,9 @@ export function SessionChat({
           heldCount={queueRows.heldCount}
           resumePending={resumePending}
           onResume={() => void handleResumeQueue()}
+          onEdit={(id) => {
+            handleTakeBackQueue(id);
+          }}
           onRemove={(id) => void handleRemoveQueuedMessage(id)}
           onRetry={handleRetryQueuedMessage}
         />
@@ -4876,6 +4912,7 @@ export function SessionChat({
       resumePending,
       handleResumeQueue,
       handleRemoveQueuedMessage,
+      handleTakeBackQueue,
       handleRetryQueuedMessage,
       tHardcodedUi,
     ],
@@ -5400,6 +5437,10 @@ export function SessionChat({
                           // hiding every subsequent assistant response in that turn.
                           // Fall through to the normal turn renderer instead.
 
+                          const pendingPrompt =
+                            turn.assistantMessages.length === 0
+                              ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
+                              : undefined;
                           return (
                             <TurnViewport
                               // ONE element per prompt: keyed by the id the
@@ -5441,11 +5482,14 @@ export function SessionChat({
                                   isFirstTurn={turnIndex === 0}
                                   // Handed over only once the stand-in has stepped
                                   // aside — while it is up it draws these itself.
-                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
+                                  pendingText={
+                                    turnIndex === 0 ? firstTurnHandover?.text : undefined
+                                  }
                                   pendingAttachments={
-                                    turnIndex === 0 && firstTurnHandover?.attachments.length
+                                    pendingPrompt?.attachments ??
+                                    (turnIndex === 0 && firstTurnHandover?.attachments.length
                                       ? firstTurnHandover.attachments
-                                      : undefined
+                                      : undefined)
                                   }
                                   uploadStatus={
                                     turnIndex === 0 && firstTurnHandover?.attachments.length
@@ -5458,8 +5502,12 @@ export function SessionChat({
                                   }
                                   suppressBusyIndicator={suppressWorkingTurnBusy}
                                   pending={
-                                    lastTurnWorking && pendingTurnIds.has(turn.userMessage.info.id)
+                                    Boolean(pendingPrompt) ||
+                                    pendingTurnIds.has(turn.userMessage.info.id)
                                   }
+                                  pendingPrompt={pendingPrompt}
+                                  onRetryQueued={handleRetryQueuedMessage}
+                                  onRemoveQueued={handleRemoveQueuedMessage}
                                   interruptedBeforeRun={interruptedTurnIds.has(
                                     turn.userMessage.info.id,
                                   )}
@@ -5576,7 +5624,12 @@ export function SessionChat({
                         (`OptimisticTurn busy`), or the two would stack. */}
                     {isBusy &&
                       !someTurnDrawsBusyRow &&
-                      !(showFirstPromptPreview && firstPromptSource && queuedSyntheticMessages.length === 0 && turns.length === 0) && (
+                      !(
+                        showFirstPromptPreview &&
+                        firstPromptSource &&
+                        queuedSyntheticMessages.length === 0 &&
+                        turns.length === 0
+                      ) && (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble
@@ -5605,7 +5658,7 @@ export function SessionChat({
                   style={{
                     left: `${selectionPopup.x}px`,
                     top: `${selectionPopup.y}px`,
-                    transform: "translate(-50%, -100%)",
+                    transform: 'translate(-50%, -100%)',
                   }}
                 >
                   <Button
@@ -5660,13 +5713,13 @@ export function SessionChat({
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
-                onSend={async (text, files, mentions) => {
-                  await handleSend(text, files, mentions);
+                onSend={async (text, files, mentions, placement) => {
+                  await handleSend(text, files, mentions, { placement });
                 }}
                 prefill={composerPrefill}
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
-                onArrowUpAtStart={handleTakeBackQueue}
+                onArrowUpAtStart={() => handleTakeBackQueue()}
                 hint={
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }

@@ -871,6 +871,22 @@ test('createSessionPrompt POSTs the submission name, the wire id, the parts and 
   });
 });
 
+test('createSessionPrompt preserves explicit queue placement on the wire', async () => {
+  for (const placement of ['transcript', 'composer'] as const) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-placement', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `placement-${placement}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'follow up' }],
+      placement,
+    });
+    expect(last().body).toMatchObject({ placement });
+  }
+});
+
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
   // A caller that minted its id somewhere the live transcript was unreadable
   // (the one-time localStorage migration) says so, and the server re-mints

@@ -1687,7 +1687,11 @@
     "hintChanged": "Frage, was sich in deinem Projekt geändert hat",
     "hintNewLine": "Drücke Shift+Enter für eine neue Zeile",
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
-    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird"
+    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
+    "queueMessage": "Einreihen",
+    "queueShortcut": "Enter zum Senden · {modifier}Enter zum Einreihen",
+    "queued": "In Warteschlange",
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
   },
   "billing": {
     "plan": {

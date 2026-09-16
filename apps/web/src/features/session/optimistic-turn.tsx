@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import { MentionChip } from '@/features/session/mention-chip';
 import { buildMentionSegments } from '@/features/session/mention-segments';
@@ -18,9 +18,9 @@ import {
   BUBBLE_SURFACE,
   BUBBLE_TEXT,
   MessageAttachments,
+  UserMessageActions,
   type AttachmentUploadStatus,
   type NormalizedAttachment,
-  UserMessageActions,
 } from '@/features/session/turn/user-message';
 import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
@@ -97,6 +97,7 @@ export function OptimisticTurn({
    * lie about how much is running.
    */
   busy = true,
+  leadingStatus,
   className,
 }: {
   text: string;
@@ -107,6 +108,7 @@ export function OptimisticTurn({
   uploadStatus?: AttachmentUploadStatus;
   sessionId?: string;
   busy?: boolean;
+  leadingStatus?: ReactNode;
   className?: string;
 }) {
   return (
@@ -119,6 +121,7 @@ export function OptimisticTurn({
           deferPreview={deferPreview}
           staged={staged}
           uploadStatus={uploadStatus}
+          leadingStatus={leadingStatus}
         />
       </div>
       {busy && <SessionBusyIndicator sessionId={sessionId} className="mt-6" />}
@@ -133,6 +136,7 @@ function OptimisticUserBubble({
   deferPreview,
   staged,
   uploadStatus,
+  leadingStatus,
 }: {
   text: string;
   agentNames?: string[];
@@ -140,6 +144,7 @@ function OptimisticUserBubble({
   deferPreview?: boolean;
   staged?: ReadonlyArray<{ filename: string; mime: string }>;
   uploadStatus?: AttachmentUploadStatus;
+  leadingStatus?: ReactNode;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
@@ -226,7 +231,7 @@ function OptimisticUserBubble({
           two-clocks bug that already made the elapsed timer run backwards here.
           The row stays empty until `time.created` arrives with the real
           message; the label then appears without moving anything. */}
-      <UserMessageActions timestamp={null} copyText={text} />
+      <UserMessageActions timestamp={null} copyText={text} leadingStatus={leadingStatus} />
     </div>
   );
 }

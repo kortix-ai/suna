@@ -105,6 +105,8 @@ export function serializePrompt(row: PromptRow) {
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
   return {
+    placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
+    full_text: typeof payload.text === 'string' ? payload.text : '',
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
     // The id the message ACTUALLY carries in the transcript, when known: the

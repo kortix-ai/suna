@@ -298,6 +298,21 @@ describe('optimistic queue rows', () => {
     expect(row.created_at).toBe(new Date(1_000).toISOString());
   });
 
+  test('placement and full content survive optimistic acceptance', () => {
+    const text = 'const result = await run();\n'.repeat(120);
+    const inputWithPlacement = {
+      ...input,
+      placement: 'transcript' as const,
+      parts: [{ type: 'text' as const, text }],
+    };
+    const rows = applyOptimisticPrompt([], inputWithPlacement, 1_000);
+    const settled = settleOptimisticPrompt(rows, 'c1', {
+      prompt_id: 'p-real', state: 'waiting', message_id: input.messageId, deduped: false,
+    });
+    expect(settled[0].placement).toBe('transcript');
+    expect(settled[0].full_text).toBe(text.trim());
+  });
+
   test('applyOptimisticPrompt appends once and is idempotent for the same submission', () => {
     const a = applyOptimisticPrompt([], input, 1_000);
     const b = applyOptimisticPrompt(a, input, 2_000);

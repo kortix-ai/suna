@@ -1,25 +1,29 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
-import { cleanPromptText, type QueueRow } from '@/features/session/queue-projection';
 import {
-  stageFirstPromptAttachments,
+  QUEUED_BUBBLE_OPACITY_CLASS,
+  QueuedPromptStatus,
+} from '@/features/session/turn/queued-prompt-bubbles';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import {
   buildOptimisticPromptTextWithUploads,
+  stageFirstPromptAttachments,
 } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import { playSound } from '@/lib/sounds';
@@ -29,9 +33,10 @@ import {
   useFirstPromptPreviewStore,
   usePendingFilesStore,
 } from '@/stores/session-composer-handoff-store';
-import type { SessionStartStage } from '@kortix/sdk';
+import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
+  mintSessionWireMessageId,
   readStartStash,
   startSessionWithPrompt,
   useRuntimeAgents,
@@ -130,7 +135,15 @@ export function InstantSessionShell({
   // first prompt, and anything typed while the box booted stayed invisible
   // until the real chat mounted (measured: four prompts popping in at once,
   // ~15 s later).
-  const [extraSends, setExtraSends] = useState<Array<{ id: string; text: string }>>([]);
+  const [extraSends, setExtraSends] = useState<
+    Array<{
+      id: string;
+      text: string;
+      files: AttachedFile[];
+      placement: 'transcript' | 'composer';
+    }>
+  >([]);
+  const firstSendInFlight = useRef(false);
   const stashedSubmission = useMemo(() => {
     if (!hydrated) return null;
     // `readStartStash` covers the canonical SDK stash (written under the route
@@ -155,16 +168,14 @@ export function InstantSessionShell({
   const pendingRowSubmission = useMemo(() => {
     // A row with NO text is still a real send — an attachment-only prompt is a
     // legal message — so the first row that carries either wins.
-    const row = promptInbox.prompts.find(
-      (p) => p.text.trim().length > 0 || (p.attachments?.length ?? 0) > 0,
-    );
+    const row = promptInbox.prompts.find((p) => isFirstPromptRow(p));
     if (!row) return null;
     // `files` stays empty: this tab never held the bytes. The row's attachment
     // NAMES are what the bubble draws, as pending tiles, so a reloaded tab
     // shows the same seven files the sending tab did instead of a bare
     // sentence (2026-09-04).
     return {
-      text: row.text,
+      text: row.full_text ?? row.text,
       files: [] as AttachedFile[],
       attachments: row.attachments ?? [],
       // The row IS the upload's progress. Its bytes are written to the box
@@ -173,44 +184,51 @@ export function InstantSessionShell({
       // `last_error` is the only place a failed upload is ever named.
       // `state`, never `last_error` alone: the API writes `last_error` on
       // rows it keeps `queued` and retries, and never clears it on success.
-      uploadStatus: (row.attachments?.length ?? 0) > 0
-        ? row.state === 'failed'
-          ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
-          : ({ state: 'uploading' } as const)
-        : undefined,
+      uploadStatus:
+        (row.attachments?.length ?? 0) > 0
+          ? row.state === 'failed'
+            ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
+            : ({ state: 'uploading' } as const)
+          : undefined,
     };
   }, [promptInbox.prompts]);
-  // The queue behind the first prompt: every durable row after the first,
-  // plus the sends this shell has made that no row lists yet (matched by
-  // text, which is all the list view carries).
-  const queuedBehindFirst = useMemo(() => {
-    const rows = promptInbox.prompts.filter((p) => p.text.trim().length > 0);
-    const behind = rows.slice(1).map((p) => ({ id: p.prompt_id, text: p.text }));
-    const listed = new Set(rows.map((p) => p.text.trim()));
-    for (const extra of extraSends) {
-      if (!listed.has(extra.text.trim())) behind.push(extra);
-    }
-    return behind;
-  }, [promptInbox.prompts, extraSends]);
-  // Listed above the composer, exactly where `SessionChat` lists its queue, so
-  // the crossfade into the real chat moves nothing. Read-only: there is no
-  // runtime to remove from or retry against while the box boots.
-  const shellQueueRows = useMemo<QueueRow[]>(
+  const shellQueue = useMemo(
     () =>
-      queuedBehindFirst.map((entry) => {
-        const cleaned = cleanPromptText(entry.text);
-        return {
-          id: entry.id,
+      projectQueueRows({
+        prompts: promptInbox.prompts,
+        drafts: extraSends.map((entry) => ({
           clientMessageId: entry.id,
-          text: cleaned.text,
-          attachmentCount: cleaned.fileCount,
-          state: 'queued',
-          removable: false,
-          takeBackEligible: false,
-        };
+          text: entry.text,
+          files: entry.files,
+          placement: entry.placement,
+          createdAtMs: 0,
+          posted: false,
+        })),
       }),
-    [queuedBehindFirst],
+    [promptInbox.prompts, extraSends],
   );
+  const transcriptQueue = useMemo(() => {
+    const rows = promptInbox.prompts.filter(
+      (p) => !isFirstPromptRow(p) && p.placement === 'transcript',
+    );
+    const listed = new Set(rows.map((p) => p.client_message_id));
+    return [
+      ...rows.map((p) => ({
+        id: p.client_message_id,
+        text: p.full_text ?? p.text,
+        attachments: p.attachments,
+        prompt: p,
+      })),
+      ...extraSends
+        .filter((entry) => entry.placement === 'transcript' && !listed.has(entry.id))
+        .map((entry) => ({
+          id: entry.id,
+          text: buildOptimisticPromptTextWithUploads(entry.text, entry.files),
+          attachments: undefined,
+          prompt: undefined,
+        })),
+    ];
+  }, [promptInbox.prompts, extraSends]);
   // The producer's own copy of the first prompt, drawn from the first frame —
   // the row read above can miss it entirely when a warm box delivers between
   // navigation and the fetch. See `useFirstPromptPreviewStore`.
@@ -234,12 +252,11 @@ export function InstantSessionShell({
    * for a tab that never held the bytes (a reload).
    */
   const textSource = submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
-  const localFiles =
-    submission?.files.length
-      ? submission.files
-      : previewSubmission?.files.length
-        ? previewSubmission.files
-        : (stashedSubmission?.files ?? []);
+  const localFiles = submission?.files.length
+    ? submission.files
+    : previewSubmission?.files.length
+      ? previewSubmission.files
+      : (stashedSubmission?.files ?? []);
   const effectiveSubmission: {
     text: string;
     files: AttachedFile[];
@@ -260,7 +277,12 @@ export function InstantSessionShell({
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
-  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
+  const [prefill, setPrefill] = useState<{
+    text: string;
+    id: number;
+    options?: SessionPromptOverrides | null;
+    mode?: 'merge';
+  } | null>(null);
   const applySuggestion = useCallback((text: string) => {
     setPrefill({ text, id: Date.now() });
   }, []);
@@ -268,54 +290,67 @@ export function InstantSessionShell({
   const handleSend = useCallback(
     async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if (!text.trim() && !files?.length) return;
-      // Hand the PICKS to the real chat through the stash (it seeds the
-      // per-session model/agent stores from them). The prompt itself does not
-      // travel this way any more — it becomes a durable inbox row below.
-      writeStartStash(sessionId, {
-        prompt: '',
-        agent: options.agent ?? null,
-        model: options.model ?? null,
-        variant: options.variant ?? null,
-      });
-      // The durable row, POSTed NOW. Attachments ride as data: URLs — there is
-      // no sandbox to upload into yet. A SECOND message typed while the first
-      // boots POSTs the same way: the admission gate orders rows by
-      // (available_at, created_at), so two rows created in order deliver in
-      // order — which is exactly what the refusal that used to live here was
-      // faking with a toast and a carried draft. AWAITED, and thrown on
-      // failure, so the composer's own recovery puts the text and attachments
-      // back in the editor instead of painting a bubble for a message the
-      // server never got.
+      const first = !submitted && !firstSendInFlight.current;
+      const clientMessageId = crypto.randomUUID();
+      const sentAtMs = Date.now();
+      const messageId = mintSessionWireMessageId(sessionId, clientMessageId);
+      const placement = options.placement ?? 'transcript';
+      if (first) {
+        firstSendInFlight.current = true;
+        setSubmission({ text, files: files ?? [] });
+        writeStartStash(sessionId, {
+          prompt: '',
+          agent: options.agent ?? null,
+          model: options.model ?? null,
+          variant: options.variant ?? null,
+        });
+      } else {
+        setExtraSends((prev) => [
+          ...prev,
+          { id: clientMessageId, text, files: files ?? [], placement },
+        ]);
+      }
       try {
         const parts = [
           { type: 'text' as const, text },
           ...(await stageFirstPromptAttachments(files)),
         ];
-        await startSessionWithPrompt(projectId, sessionId, {
-          parts,
-          overrides: {
-            ...(options.agent ? { agent: options.agent } : {}),
-            ...(options.model ? { model: options.model } : {}),
-            ...(options.variant ? { variant: options.variant } : {}),
-          },
-        });
+        const overrides = {
+          ...(options.agent ? { agent: options.agent } : {}),
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.variant ? { variant: options.variant } : {}),
+        };
+        if (first) {
+          await startSessionWithPrompt(projectId, sessionId, { parts, overrides });
+          onSubmit?.();
+        } else {
+          await promptInbox.enqueue({
+            clientMessageId,
+            messageId,
+            clientSentAtMs: sentAtMs,
+            remintOnDelivery: true,
+            parts,
+            placement,
+            overrides,
+          });
+        }
+        playSound('send');
       } catch (error) {
+        if (first) {
+          setSubmission(null);
+          firstSendInFlight.current = false;
+        }
         errorToast(
           error instanceof Error
             ? error.message
             : tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'),
         );
         throw error;
-      }
-      playSound('send');
-      if (!submitted) {
-        setSubmission({ text, files: files ?? [] });
-        onSubmit?.();
-      } else {
-        setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);
+      } finally {
+        setExtraSends((prev) => prev.filter((entry) => entry.id !== clientMessageId));
       }
     },
-    [sessionId, submitted, projectId, tI18nHardcoded, onSubmit],
+    [sessionId, submitted, projectId, tI18nHardcoded, onSubmit, promptInbox.enqueue],
   );
 
   const handleCommand = useCallback(
@@ -340,6 +375,7 @@ export function InstantSessionShell({
       projectId={projectId}
       draftScope={draftScope}
       prefill={prefill}
+      onPrefillApplied={(id) => setPrefill((current) => (current?.id === id ? null : current))}
       boundAgentName={boundAgentName}
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
@@ -353,7 +389,33 @@ export function InstantSessionShell({
       stopDisabled={!!submitted}
       // What was typed while the box boots — see `shellQueueRows`.
       inputSlot={
-        submitted ? <QueuedPromptList rows={shellQueueRows} heldCount={0} /> : undefined
+        submitted ? (
+          <QueuedPromptList
+            rows={shellQueue.rows}
+            heldCount={shellQueue.heldCount}
+            onResume={() => {
+              void promptInbox.hold(false).catch((error) => errorToast(error.message));
+            }}
+            onRemove={(id) => {
+              void promptInbox.remove(id).catch((error) => errorToast(error.message));
+            }}
+            onRetry={(id) => {
+              void promptInbox.retry(id).catch((error) => errorToast(error.message));
+            }}
+            onEdit={(id) => {
+              void promptInbox
+                .remove(id)
+                .then((removed) => {
+                  const text = removed.parts
+                    .filter((part) => part.type === 'text')
+                    .map((part) => part.text)
+                    .join('\n');
+                  setPrefill({ text, id: Date.now(), mode: 'merge', options: removed.overrides });
+                })
+                .catch((error) => errorToast(error.message));
+            }}
+          />
+        ) : undefined
       }
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
@@ -444,6 +506,43 @@ export function InstantSessionShell({
                   />
                 </div>
               )}
+              {!hasTranscript &&
+                transcriptQueue.map((entry) => (
+                  <div key={entry.id} data-pending-prompt-id={entry.id} className="mt-12">
+                    <OptimisticTurn
+                      text={entry.text}
+                      attachments={entry.attachments}
+                      agentNames={agentNames}
+                      deferPreview
+                      busy={false}
+                      className={QUEUED_BUBBLE_OPACITY_CLASS}
+                      leadingStatus={
+                        <QueuedPromptStatus
+                          state={entry.prompt?.state === 'failed' ? 'failed' : 'queued'}
+                          lastError={entry.prompt?.last_error}
+                          onRetry={
+                            entry.prompt
+                              ? () => {
+                                  void promptInbox
+                                    .retry(entry.prompt!.prompt_id)
+                                    .catch((error) => errorToast(error.message));
+                                }
+                              : undefined
+                          }
+                          onRemove={
+                            entry.prompt
+                              ? () => {
+                                  void promptInbox
+                                    .remove(entry.prompt!.prompt_id)
+                                    .catch((error) => errorToast(error.message));
+                                }
+                              : undefined
+                          }
+                        />
+                      }
+                    />
+                  </div>
+                ))}
             </div>
           </div>
         </div>

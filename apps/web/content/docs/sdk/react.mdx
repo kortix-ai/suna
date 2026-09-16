@@ -106,3 +106,18 @@ need a running session. Each mirrors a method on the
 
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
 - [Reference](/docs/sdk/reference) — the full REST surface these hooks read from.
+
+### Pending prompts
+
+`useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.
+The server runs pending prompts in order after the active turn completes.
+
+Pass `placement: 'transcript'` to display a pending message in the conversation.
+Pass `placement: 'composer'` to keep it in the editable list above the input.
+Placement changes presentation only. Both forms run automatically.
+The web composer uses Enter for transcript placement and Command+Enter
+(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+
+List rows include `full_text` for complete previews after reload. `text` remains
+the bounded preview for older clients. Attachment bytes are excluded from list
+responses. Delete returns the complete prompt for lossless undo.

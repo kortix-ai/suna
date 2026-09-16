@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
@@ -11,7 +12,6 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -75,6 +75,7 @@ import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
 interface StashedDraft {
+  placement: 'transcript' | 'composer';
   content: ReturnType<ComposerEditorHandle['getContent']>;
   doc: JSONContent | null;
   files: AttachedFile[];
@@ -85,6 +86,7 @@ export interface SessionChatInputProps {
     text: string,
     files?: AttachedFile[],
     mentions?: TrackedMention[],
+    placement?: 'transcript' | 'composer',
   ) => void | Promise<void>;
   isBusy?: boolean;
   /**
@@ -1036,8 +1038,10 @@ function ComposerImpl({
     [cycleAgent, onCompactClick, onContextClick],
   );
 
+  const submitPlacementRef = useRef<'transcript' | 'composer'>('transcript');
   const dispatchSubmission = useCallback(
     async (stash?: StashedDraft) => {
+      const placement = stash?.placement ?? submitPlacementRef.current;
       // Ahead of the model check: with no agent to run it, the model this prompt
       // would have used is not the user's problem.
       if (agentUnavailable) {
@@ -1183,7 +1187,7 @@ function ComposerImpl({
       }
 
       try {
-        await onSend(trimmed, filesToSend, mentionsToSend);
+        await onSend(trimmed, filesToSend, mentionsToSend, placement);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
         // AFTER the await, so a send that throws keeps its draft. Explicit,
         // NOT derived from `reset.clear`: the project-home composer passes
@@ -1265,7 +1269,8 @@ function ComposerImpl({
     dispatchSubmissionRef.current = dispatchSubmission;
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback((placement: 'transcript' | 'composer' = 'transcript') => {
+    submitPlacementRef.current = placement;
     // Lazy-created at the first submit (never during render, which the
     // compiler's ref rules forbid) and reused forever after.
     submitLatchRef.current ??= createSubmitLatch<StashedDraft>(
@@ -1286,7 +1291,7 @@ function ComposerImpl({
         editor.clear();
         attachedFilesRef.current = [];
         setAttachedFiles([]);
-        return { content, doc, files };
+        return { content, doc, files, placement: submitPlacementRef.current };
       },
     );
     return submitLatchRef.current();
@@ -1392,7 +1397,7 @@ function ComposerImpl({
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
                     {tHardcodedUi.raw('i18nComplete.text09b4cb469c91')}{' '}
-                    <span className="text-foreground/80 font-medium">
+                    <span className="text-muted-foreground font-medium">
                       {threadContext.parentTitle}
                     </span>
                   </span>
@@ -1501,7 +1506,7 @@ function ComposerImpl({
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
-            'transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+            'duration-normal transition-opacity ease-[cubic-bezier(0.23,1,0.32,1)]',
             'motion-reduce:transition-none',
             isDragOver && 'opacity-30',
           )}
@@ -1660,7 +1665,8 @@ function ComposerImpl({
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
-              onSubmit={handleSubmit}
+              onSubmit={() => handleSubmit()}
+              onQueue={sessionId ? () => handleSubmit('composer') : undefined}
             />
           </div>
         </div>
