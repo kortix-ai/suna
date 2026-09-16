@@ -1181,3 +1181,41 @@ explicit probe completed eight seconds before that timestamp. Two fully
 verified Platinum imports at 16:09 and 16:10 UTC establish post-fallback
 recovery. The routing monitor now accepts two such file-verified imports within
 20 minutes, with zero recent Platinum failures, as recovery evidence.
+
+At 18:41 UTC, the trailing 30-minute ledger count was 225 verified Suna
+sessions (450/hour). The dashboard displayed approximately 490/hour on its
+rolling window. Admission was 16 after repeated provider switches, while only
+12 of 32 archive slots were active. Free disk was 26 GiB. The verified-cache
+pruner validated remote archive receipts and local hashes, then reclaimed
+7,877,599,384 bytes from 2,504 completed workspace archives. The resulting
+free disk was about 34 GiB. A 32-admission probe had no destination failures
+but verified 14 sessions in two minutes. At 48 admissions, three distinct
+Platinum `/files` attempts failed with HTTP 5xx, causing Daytona fallback.
+
+The monitor now resets to 32 rather than 16 on a provider switch and requires
+a three-minute Daytona dwell before returning to Platinum. The next batch
+runner will exclude late imports pinned to the former provider from the new
+provider's admission pressure. The currently running batch loaded the old
+runner code; do not count this change as live until that batch exits.
+
+Follow-up capacity check at 18:48–19:04 UTC: Platinum completed 59 apply
+attempts in the first three minutes at 44 admissions, but 15 of 30 later
+attempts failed during a connection burst. PostgreSQL reported
+`CONNECT_TIMEOUT` / `CONNECTION_CLOSED`; Platinum `/exec` also refused
+connections. The admission controller reduced concurrency to 24. TCP checks
+to both endpoints passed after the burst. The local process file limit was
+1,048,575, with 396 established TCP connections at the check, so file
+descriptor exhaustion was not established. The private migration-create path
+now reserves its existing one-per-second create budget before opening a
+PostgreSQL connection. New subprocesses load this change immediately.
+
+The Platinum monitor is capped at 40 admissions and refreshes a ten-minute
+hold before the current batch can automatically exceed the cap. At 19:00 UTC,
+the last five minutes contained 85 verified Suna sessions (1,020/hour). The
+19:03 check contained 89 (1,068/hour), while the provider monitor reported
+zero outstanding destination failures; the 30-minute rate was still 706/hour.
+These are five-minute rates,
+not a sustained 30-minute result. When fewer than 100 fresh Suna sessions
+remain, the next destination-recovery run increases from two workers/eight
+selected reviews to eight workers/32 selected reviews, ordered latest first.
+The current recovery run loaded the previous limits.
