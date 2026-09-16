@@ -68,8 +68,9 @@ Change `kortix_version` to `2` to select OpenCode. The same shared behavior fiel
 inline/file prompt, agent names, grants, and `config_dir` compile for both versions.
 `config.pi.source` applies only to Pi. Native OpenCode plugins keep their existing
 OpenCode configuration. Pi code and OpenCode plugins are different APIs; changing
-versions does not translate extension code. Pi resource placement currently remains
-v3-only; an OpenCode adapter for those declarations is still outstanding.
+versions does not translate extension code. Both versions accept the same
+`resources.environment` declarations. OpenCode installs them before loading custom
+code. `resources.worker` remains Pi-only.
 
 The API starts prebuilding after the Git push response finishes, when the upstream
 has updated its refs. Compilation runs in the background. If the exact artifact

@@ -2399,3 +2399,65 @@ pending migrations. Migration lint reports zero issues across 125 SQL files.
 The legacy config-directory suffix parser now uses one backward scan. A focused
 50,000-slash regression fails at 891 ms before the change and passes its 100 ms
 bound afterward. All 469 manifest tests and the package typecheck pass.
+
+### Live acceptance at `52f05ed28b`
+
+[Preview deployment 35084505919](https://github.com/kortix-ai/suna/actions/runs/35084505919)
+succeeds. API health, checkout, and API/gateway/frontend image tags match
+`52f05ed28b1f5b3b90a2e63be260062f99f8c135`. The persistent database records all
+nine new migration names and none of their previous names. All 58 archived
+preview reports are restored. Frontend memory is limited to 4 GiB.
+
+- Deployed Linux compiler, schema, session, installer, and event tests pass
+  825/825 across 39 files.
+- Fresh OpenCode session `0cb574f6-080d-4909-b4d4-cd265924a259` loads its helper
+  during module initialization. Fresh Pi session
+  `43274ca2-e612-4e6f-94ff-8d59bfecbe3f` creates no environment until a file tool.
+  Its environment reports `workload: environment`, `opencode: disabled`.
+- Both custom tools read, edit, and delete declared files. A moving source branch
+  cannot replace their helper. Stop/reopen preserves the edited seed, deliberate
+  deletion, and all nine original message envelopes. OpenCode emits 513 deltas;
+  Pi emits 254. Pi also accepts its next prompt after the current branch adds
+  an unavailable required connector. Its pinned source remains authoritative.
+- The real Pi composer returns HTTP 202 and renders 41 changing text states with
+  164 deltas. Reload preserves exact history. After stopping the environment,
+  the Terminal button resumes it, creates a PTY on the environment's URL, and
+  reads `USER_EDIT` from the preserved file. All three owned provider sandboxes
+  are stopped afterward. The fixture YAML is restored and its PAT revoked.
+
+Single observations with DeepSeek V4 Flash on Daytona:
+
+| Runtime | Fresh readiness | First text after prompt | First complete file-tool turn |
+|---|---:|---:|---:|
+| OpenCode | 435,875 ms | 3,377 ms | 8,347 ms |
+| Pi worker | 4,513 ms | 11,613 ms | 30,697 ms |
+
+OpenCode waits for the new default image to install system packages. Pi reuses
+its prepared worker image, then starts the environment at its first file tool.
+These samples have different image/cache states and include model latency.
+They are not a runtime speed comparison or a p50/p95 benchmark. The first Pi
+file-tool turn is slower in this observation; worker readiness alone does not
+establish the product latency target.
+
+CI records intermittent subprocess deadlines. The first package run has two
+CLI failures; ten Linux repeats of that file pass 60/60 tests. The next
+package run passes all 1,279 CLI tests but times out two Pi compiler cases.
+Ten Linux repeats of the complete compiler file pass 130/130 tests. These deadlines occur
+in parallel package runs; their cause remains unconfirmed. No assertion or timeout
+is weakened. [CI run 35084512034, attempt 2](https://github.com/kortix-ai/suna/actions/runs/35084512034)
+passes all four test lanes after the failed package lane is rerun. CodeQL,
+Trivy, and Hadolint remain red. This is not a production release approval.
+
+The first full deployed REST/CLI census at this SHA passes 470 of 475 flows.
+`SESS-31` fails during fixture setup: its provision request uses the suite owner's
+token with a standalone user's account. Four flows skip: `SESS-23`, `CONN-26`,
+and `TUN-6` are already quarantined; `CHN-6` has no connected Slack workspace.
+[The original report](https://pi.kortix.com/_tests/20260916104030-lg4zdb/report.html)
+retains the failure.
+
+The fixture now consistently uses the suite owner. No API authorization or
+assertion changes. `pnpm test -- --id SESS-31` passes locally, 1/1 with zero skips.
+The patched test also passes against the unchanged `52f05ed28b` runtime, 1/1
+with zero skips in 22.9 seconds:
+[deployed fixture proof](https://pi.kortix.com/_tests/20260916105208-g0ugmg/report.html).
+The full browser result and committed-fixture census follow separately.

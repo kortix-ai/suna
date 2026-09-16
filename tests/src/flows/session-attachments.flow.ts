@@ -253,8 +253,8 @@ flow(
     ],
   },
   async (ctx) => {
-    const principal = await ctx.fixtures.user({ label: "SESS-31" });
-    const project = await ctx.fixtures.project({ accountId: principal.accountId!, seed: true });
+    const principal = ctx.P.OWNER;
+    const project = await ctx.fixtures.project({ seed: true });
     const owner = ctx.client.as(principal);
     const branches = await owner.get("/v1/projects/:projectId/branches", { params: { projectId: project.id } });
     branches.status(200);
