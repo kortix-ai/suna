@@ -83,14 +83,25 @@ import {
 
 type Step = 'type' | 'what' | 'how';
 
-/** A random signing key, hex-encoded. */
+/**
+ * A random signing key, hex-encoded.
+ *
+ * NO `Math.random` fallback. This key SIGNS webhook payloads, so a predictable
+ * one is forgeable — and V8's `Math.random` is xorshift128+, whose internal
+ * state is recoverable from a handful of outputs, so the old fallback produced
+ * a key an attacker could reproduce (CodeQL js/insecure-randomness, #6471).
+ * `crypto.getRandomValues` is available in every browser back to IE11 and in
+ * Node >= 19, so that branch was dead code that could only ever weaken the key.
+ * Refusing is the correct failure here: no key at all is safer than one that
+ * looks random and is not.
+ */
 function generateSigningKey(): string {
-  if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
-    const bytes = new Uint8Array(32);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  if (typeof crypto === 'undefined' || !('getRandomValues' in crypto)) {
+    throw new Error('Cannot generate a signing key: this browser has no secure random source.');
   }
-  return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Saved-secret names are UPPER_SNAKE_CASE — mirror the API's own rule so a
