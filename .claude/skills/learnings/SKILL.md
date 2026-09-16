@@ -21,6 +21,32 @@ linked, not inlined.
 
 ## Register
 
+### `RELEASE_SOURCE_SHA` must name a commit that `build-staging` actually BUILT — a `[skip ci]` VERSION bump does not build (2026-09-15)
+
+**When:** promoting. `promote.yml` pins `RELEASE_SOURCE_SHA` to `staging` HEAD, and
+`deploy-prod` RETAGS `staging-<sha8>` images — it never rebuilds. The staging
+VERSION bump commits are `chore(release): staging VERSION → X.Y.Z [skip ci]`, so
+if that bump is HEAD, no image exists for the pinned SHA and the release gate
+fails on a SHA mismatch that looks like a stale deploy. Before promoting, assert
+the pinned SHA appears in a successful `build-staging.yml` run
+(`gh run list --workflow build-staging.yml --branch staging --json headSha`); if
+not, dispatch `gh workflow run build-staging.yml -f sha=<sha>` and wait.
+*Incident:* v0.13.18, pinned `22cd3abe91`, gate red until the build was dispatched
+by hand. *Automation:* none — candidate: `promote.yml` refuses a pinned SHA with
+no green `build-staging` run.
+
+### `require_last_push_approval` on `prod` rejects the release approval when a HUMAN wrote the last commit on the release PR (2026-09-15)
+
+**When:** editing a `release/vX.Y.Z` PR by hand (notes, VERSION, anything). `prod`
+carries `require_last_push_approval: true` plus `dismiss_stale_reviews: true`, so
+a commit authored by the approver invalidates their own approval and the PR stays
+`BLOCKED` with no obvious reason. Do not push to a release PR — re-run
+`promote.yml` with the corrected `title`/`notes` so the bot force-pushes the head,
+then approve. Verify the re-pushed `RELEASE_NOTES.md` is byte-identical to the
+intended text and `RELEASE_SOURCE_SHA` is unchanged before approving.
+*Incident:* v0.13.18, head `0d6a223442` (human) → re-promoted to `342addf824`
+(`github-actions[bot]`), approval then accepted. *Automation:* none.
+
 ### Keep subscription usage separate from API token prices (2026-09-15)
 
 **When:** serving model rates or aggregating session/turn cost. Give ChatGPT/Codex
