@@ -1237,6 +1237,8 @@
     "selectAllConversations": "Sélectionner toutes les conversations",
     "deselectAllConversations": "Désélectionner toutes les conversations",
     "loadMore": "Charger plus",
+    "loadingMore": "Chargement…",
+    "loadMoreSessions": "Charger plus de sessions",
     "remaining": "restants",
     "newSession": "Nouvelle séance",
     "collapse": "Réduire la barre latérale",

@@ -1237,6 +1237,8 @@
     "selectAllConversations": "Alle Unterhaltungen auswählen",
     "deselectAllConversations": "Auswahl aller Unterhaltungen aufheben",
     "loadMore": "Mehr laden",
+    "loadingMore": "Wird geladen …",
+    "loadMoreSessions": "Weitere Sitzungen laden",
     "remaining": "verbleibend",
     "newSession": "Neue Sitzung",
     "collapse": "Seitenleiste einklappen",

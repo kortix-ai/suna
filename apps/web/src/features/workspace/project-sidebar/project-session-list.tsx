@@ -86,7 +86,7 @@ import {
   SquareIcon as Square,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useId, useMemo, useState, type ReactNode } from 'react';
@@ -486,7 +486,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               disabled={isFetchingNextPage}
               onClick={() => fetchNextPage()}
             >
-              {isFetchingNextPage ? 'Loading…' : 'Load more'}
+              {isFetchingNextPage ? t('loadingMore') : t('loadMore')}
             </Button>
           </div>
         )}

@@ -177,6 +177,7 @@ function SessionsSection({
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -628,7 +629,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                           disabled={sessionsQuery.isFetchingNextPage}
                           onClick={() => sessionsQuery.fetchNextPage()}
                         >
-                          {sessionsQuery.isFetchingNextPage ? 'Loading…' : 'Load more sessions'}
+                          {sessionsQuery.isFetchingNextPage
+                            ? tSidebar('loadingMore')
+                            : tSidebar('loadMoreSessions')}
                         </Button>
                       </div>
                     )}
