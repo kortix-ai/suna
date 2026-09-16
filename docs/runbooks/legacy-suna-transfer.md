@@ -1065,3 +1065,31 @@ The deletion manifest is `/tmp/kortix-build-cache-cleanup-1789508987.json`.
 admissions reached 80; the 21:49:37 UTC observation recorded 46 verified imports
 in two minutes, with zero reported quota, transport, capacity, or timeout errors
 in that window. This short sample is not a sustained throughput guarantee.
+
+### Transfer restart and destination data-plane routing — 2026-09-16 02:19 UTC
+
+The coordinator stopped at 01:16 UTC after its three-attempt retry budget, with
+dotenv decryption failures recorded. Environment validation now succeeds without
+printing secret values. The fresh Platinum write probe returned HTTP 503 with
+`control plane is at its in-memory body budget, retry shortly`; this is a provider
+control-plane failure, not local disk exhaustion.
+
+The provider monitor now includes recent destination phase telemetry. It deduplicates
+by session/provider, discounts successful retries, ignores source captures and old
+records, and requires at least three failing sessions and a 5% failure ratio.
+Routing tests plus destination-pressure tests report six passed and 14 assertions.
+The monitor build passes. New work uses Daytona fallback until a fresh full
+Platinum recovery succeeds. Initialized destinations retain their current provider.
+
+`run-transfer-services.ts` started at 02:19:35 UTC and owns coordinator, review,
+stop, archive, provider-monitor, Platinum-probe, cache, and bounded destination
+transfer-recovery workers. It holds a singleton lease and sleep protection and
+restarts exited workers after a delay. The supervisor starts from an environment
+validated for production credentials. Recovery uses existing session IDs and
+checkpoints, with no runtime deletion. Upload/socket failures enter bounded retry
+batches with a fifteen-minute per-session cooldown.
+
+The dashboard API at 02:19:37 UTC returned `running-with-reviews`, one coordinator,
+one batch dispatcher, and 7,424 verified sessions. The dispatcher logged a fresh
+5,000-item batch at 32 admissions. New completions were not yet measured at that
+initial restart check.
