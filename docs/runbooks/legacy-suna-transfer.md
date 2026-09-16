@@ -1093,3 +1093,40 @@ The dashboard API at 02:19:37 UTC returned `running-with-reviews`, one coordinat
 one batch dispatcher, and 7,424 verified sessions. The dispatcher logged a fresh
 5,000-item batch at 32 admissions. New completions were not yet measured at that
 initial restart check.
+
+### Archive upload bottleneck and independent capacity limits — 2026-09-16
+
+The observed 398/hour trailing rate hid a current 204/hour five-minute rate.
+The 30-minute phase telemetry contained 105 archive timeouts. Sixty archive
+workers remained active after global admissions fell to eight. Sample logs
+verified selection, audit, raw records, native history, and manifest, then
+stalled before the 13–19 MB workspace archive received a verified part.
+
+New archives use 4 MiB chunks beneath a distinct `chunks-4m` object namespace.
+Existing part receipts keep their original 32 MiB layout; mixed layouts fail.
+Uploads send the exact buffer used for the expected hash. Upload response bodies
+are closed, request failures are logged, and upload requests have a 90-second
+limit. The pilot session `50179b6d-5dce-488b-ad0b-a415baf52531` completed all six
+archive receipts, including three verified workspace parts totaling 11,498,162
+bytes. It returned to the prepared queue afterward.
+
+A separate archive network lease pool limits transfers independently of session
+pipeline admissions. It started at eight slots, then increased to 16 and 24
+after successful archive readbacks. The 62 old uploader processes were stopped
+for checkpoint-safe retry with the new code; source captures and destination
+imports were not stopped. `run-archive-requeue.ts` returns inactive archive-review
+rows to preparation only with captured/preserved-source evidence and all six
+local artifacts, with a 15-minute requeue cooldown.
+
+A transport probe exposed a local Bun behavior: writing a 1 MiB BunFile slice
+with `Bun.write` copied the entire 11,498,162-byte source. The corrected probe
+materializes the slice buffer explicitly; its 1 MiB curl upload returned HTTP
+200 in 8.599 seconds. Migration chunk hashing/readback still rejects byte
+mismatches. The probe result is not a full-link bandwidth benchmark.
+
+After the change, a two-minute window had 43 successful captures, 15 successful
+archives, and four successful imports, with no failed phase completions in that
+window. Admissions increased from eight to 64 and then 96; archive slots are 24.
+The requested 1,000 verified imports/hour was not yet established at that check.
+Archive-layout tests report two passed, zero failed, four assertions; uploader
+build succeeds.
