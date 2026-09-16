@@ -10,9 +10,9 @@
  * Roobert Regular (design.md §3 Inputs).
  */
 import * as React from 'react';
-import { Image, ScrollView, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { ArrowUpIcon as ArrowUp, FileTextIcon as FileText, PlusIcon as Plus, XIcon as X } from '@/lib/icons';
+import { ArrowUpIcon as ArrowUp, PlusIcon as Plus } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -23,6 +23,7 @@ import type { AttachedFile } from '@/lib/session/attachments';
 import { THEME } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
+import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
 
 /** About seven lines of 16pt text, then the field scrolls. */
 const MAX_INPUT_HEIGHT = 160;
@@ -73,21 +74,13 @@ export function Composer({
       className={cn('rounded-3xl p-2', isDark ? 'bg-card' : 'bg-background', className)}
       style={isDark ? undefined : { boxShadow: LIGHT_SHADOW }}>
       {attachments.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          className="flex-grow-0"
-          contentContainerStyle={{ gap: 8 }}>
-          {attachments.map((file, index) => (
-            <AttachmentChip
-              key={`${file.uri}-${index}`}
-              file={file}
-              disabled={disabled}
-              onRemove={() => onRemoveAttachment?.(index)}
-            />
-          ))}
-        </ScrollView>
+        <View className="pb-1">
+          <ComposerAttachmentTiles
+            files={attachments}
+            disabled={disabled}
+            onRemove={(index) => onRemoveAttachment?.(index)}
+          />
+        </View>
       ) : null}
 
       <TextInput
@@ -152,41 +145,6 @@ export function Composer({
           </Button>
         )}
       </View>
-    </View>
-  );
-}
-
-/** One picked file: thumbnail (or file icon) · name · remove. */
-function AttachmentChip({
-  file,
-  disabled,
-  onRemove,
-}: {
-  file: AttachedFile;
-  disabled: boolean;
-  onRemove: () => void;
-}) {
-  return (
-    <View className="h-12 max-w-56 flex-row items-center gap-2 rounded-2xl bg-secondary pl-1">
-      {file.isImage ? (
-        <Image source={{ uri: file.uri }} className="h-10 w-10 rounded-xl" />
-      ) : (
-        <View className="h-10 w-10 items-center justify-center">
-          <Icon as={FileText} size={18} className="text-muted-foreground" />
-        </View>
-      )}
-      <Text variant="small" numberOfLines={1} className="shrink">
-        {file.name}
-      </Text>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        onPress={onRemove}
-        disabled={disabled}
-        accessibilityLabel={`Remove ${file.name}`}>
-        <Icon as={X} size={16} className="text-muted-foreground" />
-      </Button>
     </View>
   );
 }

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { isMarkdownSeparatorBlock, splitMarkdownBlocks } from './split-blocks';
+import { mathPlugin, type MathPluginHost } from './math-plugin';
+import { isMarkdownSeparatorBlock, splitMarkdown, splitMarkdownBlocks } from './split-blocks';
 
 // The exact markdown-it build react-native-markdown-display parses with, configured the
 // way the chat renderer configures it. Rendering the whole text and rendering every block
@@ -10,10 +11,17 @@ const appRequire = createRequire(import.meta.url);
 const rendererRequire = createRequire(
   realpathSync(appRequire.resolve('react-native-markdown-display/package.json')),
 );
-const MarkdownIt = rendererRequire('markdown-it') as (options: { typographer: boolean }) => {
+type MathToken = { content: string };
+const MarkdownIt = rendererRequire('markdown-it') as (options: { typographer: boolean }) => MathPluginHost & {
   render: (source: string) => string;
+  use: (plugin: (md: MathPluginHost) => void) => unknown;
+  renderer: { rules: Record<string, (tokens: MathToken[], index: number) => string> };
 };
 const md = MarkdownIt({ typographer: true });
+md.use(mathPlugin);
+// markdown-it has no HTML for math tokens; print the TeX so a split that moves it shows.
+md.renderer.rules.math_inline = (tokens, index) => `<m>${JSON.stringify(tokens[index].content)}</m>`;
+md.renderer.rules.math_block = (tokens, index) => `<M>${JSON.stringify(tokens[index].content)}</M>\n`;
 
 // The renderer's fence and code_block rules drop one trailing newline from the
 // code, so a code block cut off at a block end renders the same as one ending in
@@ -84,6 +92,41 @@ describe('splitMarkdownBlocks', () => {
     const text = '- step\n\n  ```sh\n  a\n\n  b\n  ```\n\nAfter';
     const blocks = expectSameRendering(text);
     expect(blocks).toEqual(['- step\n\n  ```sh\n  a\n\n  b\n  ```', 'After']);
+  });
+
+  test('keeps display math with blank lines in one block', () => {
+    const text = 'Intro\n\n$$\na = 1\n\n\nb = 2\n$$\n\nAfter';
+    const blocks = expectSameRendering(text);
+    expect(blocks).toEqual(['Intro', '$$\na = 1\n\n\nb = 2\n$$', 'After']);
+  });
+
+  test('display math closes on a longer dollar run, not on a shorter one', () => {
+    const text = '$$$\na\n$$\n\nb\n$$$$\n\nAfter';
+    const blocks = expectSameRendering(text);
+    expect(blocks).toEqual(['$$$\na\n$$\n\nb\n$$$$', 'After']);
+  });
+
+  test('a one-line $$x$$ is inline math and splits like a paragraph', () => {
+    const blocks = expectSameRendering('$$x$$\n\nNext');
+    expect(blocks).toEqual(['$$x$$', 'Next']);
+  });
+
+  test('display math inside a list item keeps its blank lines', () => {
+    const text = '- step\n\n  $$\n  a\n\n  b\n  $$\n\nAfter';
+    const blocks = expectSameRendering(text);
+    expect(blocks).toEqual(['- step\n\n  $$\n  a\n\n  b\n  $$', 'After']);
+  });
+
+  test('unclosed display math while streaming keeps everything after it in one block', () => {
+    const text = 'Intro\n\n$$\n\\begin{aligned}\n\na &= b';
+    const blocks = expectSameRendering(text);
+    expect(blocks).toEqual(['Intro', '$$\n\\begin{aligned}\n\na &= b']);
+    expect(splitMarkdown(text).endsInOpenFence).toBe(false);
+  });
+
+  test('dollars inside a fence do not open display math', () => {
+    const text = '```\n$$\n```\n\nAfter';
+    expect(expectSameRendering(text)).toEqual(['```\n$$\n```', 'After']);
   });
 
   test('keeps a loose bullet list together', () => {
@@ -235,6 +278,7 @@ describe('splitMarkdownBlocks', () => {
       '    indented code', '> quote', '>', '```', '```js', '~~~', '````', '  ```', '    ```',
       '| a | b |', '| - | - |', '| 1 | 2 |', '', '', '', '\t tab line', '* star', '1. Step',
       '   ```bash', '- ```', '> ```', '> - x', 'Setext\n===', '> ', '``` x `y`', 'a  ',
+      '$$', '$$$', '$$ meta', '  $$', '    $$', '> $$', '- $$', '$x$', '$$x$$', 'a $b', '$$ $',
     ];
     let seed = 20260916;
     const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -260,6 +304,33 @@ describe('splitMarkdownBlocks', () => {
       expect(after[i] === before[i]).toBe(true);
     }
     expect(after[after.length - 1]).toBe('The last paragraph keeps growing with more words');
+  });
+});
+
+describe('splitMarkdown endsInOpenFence', () => {
+  test('is true only while the last fence has no closer', () => {
+    expect(splitMarkdown('Intro\n\n```ts\nconst a = 1;').endsInOpenFence).toBe(true);
+    expect(splitMarkdown('Intro\n\n```ts').endsInOpenFence).toBe(true);
+    expect(splitMarkdown('Intro\n\n```ts\nconst a = 1;\n```').endsInOpenFence).toBe(false);
+    expect(splitMarkdown('```ts\na\n```\n\nOutro').endsInOpenFence).toBe(false);
+    expect(splitMarkdown('~~~\na\n```').endsInOpenFence).toBe(true);
+    expect(splitMarkdown('No code here').endsInOpenFence).toBe(false);
+  });
+
+  test('a container fence ends when a line leaves the container', () => {
+    expect(splitMarkdown('- step\n\n  ```sh\n  a').endsInOpenFence).toBe(true);
+    expect(splitMarkdown('> ```\n> a').endsInOpenFence).toBe(true);
+    expect(splitMarkdown('> ```\n> a\n\nOutside').endsInOpenFence).toBe(false);
+  });
+
+  test('reports the fence state for a single-block reference-definition message too', () => {
+    const text = '[a]: https://kortix.com\n\n```ts\nconst a';
+    expect(splitMarkdown(text)).toEqual({ blocks: [text], endsInOpenFence: true });
+  });
+
+  test('blocks match splitMarkdownBlocks', () => {
+    const text = 'Intro\n\n```js\nfunction a() {}\n\n\nlet c';
+    expect(splitMarkdown(text).blocks).toEqual(splitMarkdownBlocks(text));
   });
 });
 

@@ -14,49 +14,81 @@ import {
   FlatList,
   ScrollView,
   TextInput,
-  useWindowDimensions,
   Animated,
   Easing,
   Platform,
+  type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate } from 'react-native-reanimated';
+import Reanimated, {
+  Easing as ReanimatedEasing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ListIcon as MenuIcon, XIcon as CloseIcon, StackIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
+import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
 import { MenuButton } from '@/components/kortix/menu-button';
+import { PlatformButton } from '@/components/kortix/platform-button';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
-import type { Turn, QuestionRequest, MessageWithParts } from '@/lib/opencode/types';
+import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
 import {
-  findLastUserMessageId,
-  isNearEnd,
   reuseStableTurns,
   shouldFollowNewTurn,
-  shouldRearmStick,
-  shouldReleaseStick,
   shouldReleaseStickOnTouch,
-  shouldUpdateSpacer,
 } from '@/lib/session/stable-turns';
+import {
+  GLIDE_MAX_MS,
+  GLIDE_QUIET_MS,
+  OWN_SCROLL_MS,
+  SEND_GLIDE_ARM_MS,
+  TURN_TOP_OFFSET,
+  anchorSpan,
+  chevronVisible,
+  distanceFromEnd,
+  isAtEnd,
+  momentumFollows,
+  nextFollow,
+  pickAnchorIndex,
+  roomUnderNewestTurn,
+  scrollEnd,
+  settleMotion,
+  turnTopGap,
+} from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
+import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  hasCompactionTurn as findCompactionTurn,
+  isSuppressedFailedCompaction,
+  lastCompactionTurnIndex as findLastCompactionTurnIndex,
+  suppressWorkingTurnBusy as findSuppressWorkingTurnBusy,
+  transcriptBusyRowVisible,
+  type TurnBodyTurn,
+} from '@/lib/session/turn-body';
+import { revertSession } from '@/lib/opencode/session-rewind';
+import { useToast } from '@/components/kortix/toast-provider';
 import {
   hasRunningQuestionTool as findRunningQuestionTool,
   nextQuestionPollDelay,
   shouldPollQuestions as shouldPollQuestionsFor,
 } from '@/lib/session/question-poll';
-import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
+import { useSession, replyToQuestion, rejectQuestion, replyToPermission, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
@@ -81,14 +113,17 @@ import { SessionChatInput, type PromptOptions, type TrackedMention } from './Ses
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
 import { SessionTurn } from './SessionTurn';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
+import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
+import { ToolFilePreviewHost } from '@/components/session/tool/shared/navigation';
+import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { SandboxFile } from '@/api/types';
 import type { Session } from '@/lib/platform/types';
 import { ProjectGreeting } from '@/components/session/ProjectGreeting';
-import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
-import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
 // AnimatedToggleIcon was extracted to components/kortix/animated-toggle-icon.tsx
 // so it can be shared with PageHeader and page-level headers across the app.
@@ -124,12 +159,14 @@ function frozenEmpty<T>(): T[] {
 }
 const EMPTY_MESSAGES = frozenEmpty<MessageWithParts>();
 const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
+const EMPTY_PERMISSIONS = frozenEmpty<PermissionRequest>();
 const EMPTY_TURNS = frozenEmpty<Turn>();
 const EMPTY_SESSIONS = frozenEmpty<Session>();
 const EMPTY_AGENTS = frozenEmpty<Agent>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
 const EMPTY_MODELS = frozenEmpty<FlatModel>();
 const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
+const EMPTY_IDS = frozenEmpty<string>();
 
 /** Returns the previous array while its elements are reference-equal to `next`. */
 function useShallowStableArray<T>(next: T[]): T[] {
@@ -146,9 +183,6 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // of the list (VirtualizedList keeps its initial region), so that count stays
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
-// How long scroll events after a programmatic scroll call are attributed to it.
-const PROGRAMMATIC_SCROLL_MS = 300;
-const ANIMATED_SCROLL_MS = 1000;
 
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
@@ -163,7 +197,6 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   // Onboarding always uses header chrome (no dock, no floating menu). Explicit guard against any call site
   // that might accidentally pass both onboardingMode and chrome="floating".
   const effectiveChrome = onboardingMode ? 'header' : chrome;
-  const { height: windowHeight } = useWindowDimensions();
   // Top inset for the message list. Floating chrome has no header, so the
   // list would start under the status bar and the floating menu button —
   // inset it below them (insets.top + 8 button offset + 40 button + 12 gap).
@@ -192,6 +225,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   const messages = useSyncStore((s) => s.messages[sessionId]);
   const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
   const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? EMPTY_QUESTIONS;
+  const pendingPermissions = useSyncStore((s) => s.permissions[sessionId]) ?? EMPTY_PERMISSIONS;
   const safeMessages = messages ?? EMPTY_MESSAGES;
 
   const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
@@ -589,6 +623,60 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     setMentionFileViewerVisible(true);
   }, []);
 
+  // ── Edit a sent message ────────────────────────────────────────────────
+  // Same mechanism as apps/web `session-chat.tsx` `handleEditSend`: rewind the
+  // session to the message (`POST /session/:id/revert`, what the SDK's
+  // `useSession().rewind` calls), then send the edited text. The server
+  // stages the revert; that send commits it and deletes the reverted messages.
+  const toast = useToast();
+  const [rewindTarget, setRewindTarget] = useState<{ messageId: string; text: string } | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const editPendingRef = useRef(false);
+
+  const handleEditStart = useCallback((messageId: string, text: string) => {
+    setRewindTarget({ messageId, text });
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    if (editPendingRef.current) return;
+    setRewindTarget(null);
+  }, []);
+
+  const handleEditSend = useCallback(
+    async (messageId: string, text: string) => {
+      if (!sandboxUrl || editPendingRef.current) return;
+      editPendingRef.current = true;
+      setEditPending(true);
+      try {
+        const token = await getAuthToken();
+        await revertSession({ sandboxUrl, sessionId, messageId, token });
+      } catch (err: any) {
+        // The editor stays open with the draft, so Send can be tried again.
+        log.error('[SessionPage] Rewind failed:', err?.message || err);
+        toast.error("Couldn't edit the message. Try again.");
+        editPendingRef.current = false;
+        setEditPending(false);
+        return;
+      }
+      // Hide the abandoned messages now; the resend below commits the revert
+      // server-side.
+      const store = useSyncStore.getState();
+      for (const id of rewindHiddenMessageIds(store.messages[sessionId] ?? EMPTY_MESSAGES, messageId)) {
+        store.removeMessage(sessionId, id);
+      }
+      editPendingRef.current = false;
+      setEditPending(false);
+      setRewindTarget(null);
+      const { agent, modelKey, variant } = resolvedRef.current;
+      const options: PromptOptions = {};
+      if (agent?.name) options.agent = agent.name;
+      if (modelKey) options.model = modelKey;
+      if (variant) options.variant = variant;
+      await handleSend(text, options);
+    },
+    [sandboxUrl, sessionId, handleSend, toast],
+  );
+
   // Group messages into turns. Turns whose messages did not change keep their
   // previous object, so memoized SessionTurn rows skip stream renders.
   const prevTurnsRef = useRef<Turn[]>(EMPTY_TURNS);
@@ -599,11 +687,14 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
-  const lastUserMessageId = useMemo(() => findLastUserMessageId(safeMessages), [safeMessages]);
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
   const isFreshSession = turns.length === 0;
+  // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
+  const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
+  // Web refuses a rewind while the runtime is busy or prompts are still queued.
+  const rewindDisabled = isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
 
@@ -615,61 +706,318 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     }).start();
   }, [showFreshHero, heroOpacity]);
 
-  // ── Programmatic scrolls ───────────────────────────────────────────────
-  // Scroll events caused by the list's own scroll calls must not release the
-  // stick or be persisted as the user's reading position.
-  const programmaticScrollUntilRef = useRef(0);
-  const markProgrammaticScroll = useCallback((durationMs: number) => {
-    programmaticScrollUntilRef.current = Math.max(programmaticScrollUntilRef.current, Date.now() + durationMs);
-  }, []);
-  const isProgrammaticScroll = useCallback(() => Date.now() < programmaticScrollUntilRef.current, []);
-
-  // ── Stick to end ───────────────────────────────────────────────────────
-  // While set, every content-size change (and viewport resize) scrolls the
-  // thread to its end without animation, idle or busy. Turn heights arrive
-  // over many layout passes, so this is what makes an opened thread settle at
-  // the true end.
-  // Set: a thread opens with no saved offset to restore; a turn the user sent
-  //      finished its send scroll; a user scroll settles near the end.
-  // Cleared only by user intent: a drag, a send (re-armed after its animated
-  //      scroll), or a non-programmatic scroll that moves up away from the end
-  //      (iOS status-bar tap). A restored saved offset never sets it.
-  const stickToEndRef = useRef(false);
-  // True while the stick was released only by a touch on the idle thread (no
-  // drag since). A new turn not sent by the user then still scrolls into view.
+  // ── Transcript scroll physics ──────────────────────────────────────────
+  // A port of apps/web `use-auto-scroll.ts`. The decisions are pure and tested
+  // in `lib/session/auto-scroll.ts`; this block only feeds them geometry and
+  // applies the result to the FlatList.
+  //
+  // FACT 1 — the room: the footer spacer under the newest reached turn is
+  //   max(24, viewport − span(anchor turn → content end) − topOffset), so that
+  //   turn can sit `topOffset` below the top of the list.
+  // FACT 2 — the end: because of the room, `content − viewport` IS that turn
+  //   at the top while the answer fits, and the answer's tail once it does not.
+  // THE RULE — follow: while on, every layout change puts the list at the end.
+  //   Off: a drag; a foreign scroll away from the end (iOS status-bar tap); a
+  //   touch on an idle thread (so a card the reader expands opens in place).
+  //   On: coming to rest at the end; momentum arriving at the end; a send; the
+  //   scroll-to-bottom button; a new turn while the thread was effectively at
+  //   its end.
+  // THE MOTION — a send or a newly reached turn moves the list in ONE animated
+  //   scroll (≤ GLIDE_MAX_MS), re-aimed if the end moves in flight.
+  const followRef = useRef(true);
+  const draggingRef = useRef(false);
+  // True while follow was released only by a touch on the idle thread (no
+  // drag since). A new turn not sent by the reader then still scrolls into view.
   const releasedByTouchRef = useRef(false);
-  // Whether the last settled user scroll rested near the end.
-  const settledNearEndRef = useRef(false);
-  const sendScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // True from a user send until its stick re-arms (or user intent cancels it).
-  // Leaving the thread in that window counts as leaving at the end.
-  const sendScrollPendingRef = useRef(false);
+  // Whether the last user scroll came to rest at the end.
+  const settledAtEndRef = useRef(false);
 
-  const clearSendScrollTimer = useCallback(() => {
-    if (sendScrollTimerRef.current) clearTimeout(sendScrollTimerRef.current);
-    sendScrollTimerRef.current = null;
+  // Scroll events inside this window are our own writes, not reader intent.
+  const ownScrollUntilRef = useRef(0);
+  const markOwnScroll = useCallback((durationMs: number) => {
+    ownScrollUntilRef.current = Math.max(ownScrollUntilRef.current, Date.now() + durationMs);
   }, []);
-  useEffect(() => clearSendScrollTimer, [clearSendScrollTimer]);
+  const isOwnScroll = useCallback(() => Date.now() < ownScrollUntilRef.current, []);
 
-  const scrollToEndNow = useCallback(() => {
-    markProgrammaticScroll(PROGRAMMATIC_SCROLL_MS);
-    flatListRef.current?.scrollToEnd({ animated: false });
-  }, [markProgrammaticScroll]);
+  // Geometry. Heights come from layout events; the offset from scroll events.
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const scrollGeometryRef = useRef({ contentHeight: 0, viewportHeight: 0 });
+  const turnHeightsRef = useRef(new Map<string, number>());
+  const footerContentHeightRef = useRef(0);
+  // The spacer: `room` is the committed value, `roomRef` the latest computed
+  // one, `renderedRoomRef` the height the spacer was last laid out at.
+  const [room, setRoom] = useState(0);
+  const roomRef = useRef(0);
+  const renderedRoomRef = useRef(0);
+  const lastAnchorRef = useRef<{ id: string; reached: boolean } | null>(null);
 
+  const glideRef = useRef<{
+    target: number;
+    quiet: ReturnType<typeof setTimeout> | null;
+    cap: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const sendGlideUntilRef = useRef(0);
+
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const showScrollButtonRef = useRef(false);
+  const setScrollButton = useCallback((visible: boolean) => {
+    if (showScrollButtonRef.current === visible) return;
+    showScrollButtonRef.current = visible;
+    setShowScrollButton(visible);
+  }, []);
+
+  const reduceMotion = useReducedMotion();
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
+
+  // The working turn and the prompts the agent has not reached yet (web
+  // `resolveWorkingTurn`). Only the working turn reads the session status.
+  const workingTurn = useMemo(
+    () => (isBusy ? resolveWorkingTurn({ turns, hintMessageId: null }) : null),
+    [isBusy, turns],
+  );
+  const workingTurnId = workingTurn?.workingTurnId ?? null;
+  // Stable by content, so rows do not re-render on every stream delta.
+  const pendingTurnIdList = useShallowStableArray(workingTurn?.pendingTurnIds ?? EMPTY_IDS);
+  const pendingTurnIds = useMemo(() => new Set(pendingTurnIdList), [pendingTurnIdList]);
+  // Web `suppressWorkingTurnBusy` / `someTurnDrawsBusyRow`: when no turn draws
+  // the busy row, the transcript end draws it.
+  const suppressWorkingBusy = useMemo(
+    () => (workingTurn ? findSuppressWorkingTurnBusy(turns as unknown as TurnBodyTurn[], workingTurn) : false),
+    [turns, workingTurn],
+  );
+  const showTranscriptBusyRow = transcriptBusyRowVisible({
+    isBusy,
+    workingTurnId,
+    suppressWorkingTurnBusy: suppressWorkingBusy,
+  });
+  // Web `hasCompactionTurn` / `lastCompactionTurnIndex`: a real compaction turn
+  // replaces the optimistic marker; failed attempts before the last compaction
+  // turn render nothing.
+  const hasCompactionTurn = useMemo(() => findCompactionTurn(turns as unknown as TurnBodyTurn[]), [turns]);
+  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns as unknown as TurnBodyTurn[]), [turns]);
+
+  // Web `TurnViewport` spacing: mt-12 between turns, mt-3 between back-to-back
+  // pending turns while the session works.
+  const turnGapAt = useCallback(
+    (list: readonly Turn[], index: number) =>
+      turnTopGap({
+        index,
+        working: isBusy,
+        pending: pendingTurnIds.has(list[index].userMessage.info.id),
+        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].userMessage.info.id),
+      }),
+    [isBusy, pendingTurnIds],
+  );
+
+  // Read by the layout callbacks, which must not re-create on every delta.
+  const layoutInputsRef = useRef({ turns, turnGapAt, pendingTurnIds, interruptedIds, isBusy, topOffset: 0 });
+  layoutInputsRef.current = {
+    turns,
+    turnGapAt,
+    pendingTurnIds,
+    interruptedIds,
+    isBusy,
+    // Floating chrome has no header: the list runs under the status bar and
+    // the menu button, so the newest turn pins below them, where the first
+    // turn sits.
+    topOffset: Math.max(TURN_TOP_OFFSET, listTopInset),
+  };
+
+  /** FACT 1: size the room. `measured` is false while the anchor span is unknown. */
+  const sizeRoom = useCallback((): { measured: boolean; anchorChanged: boolean } => {
+    const { turns: list, turnGapAt: gapAt, pendingTurnIds: pending, interruptedIds: interrupted, isBusy: busy, topOffset } =
+      layoutInputsRef.current;
+    const viewportHeight = viewportHeightRef.current;
+    if (viewportHeight <= 0) return { measured: false, anchorChanged: false };
+
+    let next = 0;
+    let anchorChanged = false;
+    if (list.length > 0) {
+      // Web marks a queued or never-run prompt `data-turn-pending`; the anchor skips those.
+      const isPending = (i: number) => {
+        const id = list[i].userMessage.info.id;
+        return (busy && pending.has(id)) || interrupted.has(id);
+      };
+      const previous = lastAnchorRef.current;
+      const index = pickAnchorIndex(
+        list.length,
+        isPending,
+        previous
+          ? { index: list.findIndex((t) => t.userMessage.info.id === previous.id), reached: previous.reached }
+          : null,
+      );
+      const span = anchorSpan({
+        anchorIndex: index,
+        count: list.length,
+        heightAt: (i) => turnHeightsRef.current.get(list[i].userMessage.info.id),
+        gapAt: (i) => gapAt(list, i),
+        footerHeight: footerContentHeightRef.current,
+      });
+      // A turn in the span has not laid out yet: keep the room until it has.
+      if (span === null) return { measured: false, anchorChanged: false };
+      next = Math.round(roomUnderNewestTurn(viewportHeight, span, topOffset));
+      const anchorId = list[index].userMessage.info.id;
+      anchorChanged = previous !== null && previous.id !== anchorId;
+      lastAnchorRef.current = {
+        id: anchorId,
+        // Reached once, reached for good.
+        reached: (previous?.id === anchorId && previous.reached) || !isPending(index),
+      };
+    } else {
+      lastAnchorRef.current = null;
+    }
+    if (next !== roomRef.current) {
+      roomRef.current = next;
+      setRoom(next);
+    }
+    return { measured: true, anchorChanged };
+  }, []);
+
+  /** The end the list settles at once the latest room is laid out. */
+  const settledEnd = useCallback(
+    () =>
+      scrollEnd(
+        contentHeightRef.current - renderedRoomRef.current + roomRef.current,
+        viewportHeightRef.current,
+      ),
+    [],
+  );
+
+  const updateScrollButton = useCallback(
+    (distance: number) => {
+      setScrollButton(
+        chevronVisible({ following: followRef.current, distanceFromEnd: distance, room: renderedRoomRef.current }),
+      );
+    },
+    [setScrollButton],
+  );
+
+  const setFollow = useCallback(
+    (next: boolean) => {
+      followRef.current = next;
+      if (next) {
+        releasedByTouchRef.current = false;
+        setScrollButton(false);
+      }
+    },
+    [setScrollButton],
+  );
+
+  const settleRef = useRef<() => void>(() => {});
+  const settleFrameRef = useRef<number | null>(null);
+  // Layout and content-size events of one native layout pass arrive together;
+  // one frame lets them all land before the list is moved.
+  const scheduleSettle = useCallback(() => {
+    if (settleFrameRef.current !== null) return;
+    settleFrameRef.current = requestAnimationFrame(() => {
+      settleFrameRef.current = null;
+      settleRef.current();
+    });
+  }, []);
+
+  const cancelGlide = useCallback(() => {
+    const glide = glideRef.current;
+    if (!glide) return;
+    if (glide.quiet) clearTimeout(glide.quiet);
+    clearTimeout(glide.cap);
+    glideRef.current = null;
+    // The glide's own-scroll window was sized for its cap; give it back.
+    ownScrollUntilRef.current = Date.now() + OWN_SCROLL_MS;
+  }, []);
+
+  /** The glide landed: one settle for whatever changed meanwhile. */
+  const endGlide = useCallback(() => {
+    if (!glideRef.current) return;
+    cancelGlide();
+    scheduleSettle();
+  }, [cancelGlide, scheduleSettle]);
+
+  /** Start a glide to `target`, or re-aim the one in flight (it keeps its cap). */
+  const glideTo = useCallback(
+    (target: number) => {
+      const inFlight = glideRef.current;
+      if (Math.abs(currentOffsetRef.current - target) <= 1) {
+        if (inFlight) endGlide();
+        return;
+      }
+      if (inFlight?.quiet) clearTimeout(inFlight.quiet);
+      glideRef.current = {
+        target,
+        quiet: null,
+        cap: inFlight ? inFlight.cap : setTimeout(endGlide, GLIDE_MAX_MS),
+      };
+      markOwnScroll(GLIDE_MAX_MS + OWN_SCROLL_MS);
+      flatListRef.current?.scrollToOffset({ offset: target, animated: true });
+    },
+    [endGlide, markOwnScroll],
+  );
+
+  /** FACT 2 + THE RULE: after any layout change, a following list is at the end. */
+  const settle = useCallback(() => {
+    const { measured, anchorChanged } = sizeRoom();
+    if (!followRef.current || viewportHeightRef.current <= 0) return;
+    const glideArmed = Date.now() < sendGlideUntilRef.current;
+    // A send's glide waits for its turn's own layout, so it starts once, at
+    // the right target, instead of starting short and re-aiming.
+    if (glideArmed && !measured) return;
+    const end = settledEnd();
+    const motion = settleMotion({
+      distance: Math.abs(currentOffsetRef.current - end),
+      end,
+      anchorChanged,
+      glideArmed,
+      glideTarget: glideRef.current?.target ?? null,
+      reduceMotion: reduceMotionRef.current,
+    });
+    if (motion === 'none' || motion === 'wait') return;
+    // The armed glide is spent by the first move it could shape.
+    sendGlideUntilRef.current = 0;
+    if (motion === 'glide') {
+      glideTo(end);
+      return;
+    }
+    markOwnScroll(OWN_SCROLL_MS);
+    flatListRef.current?.scrollToOffset({ offset: end, animated: false });
+  }, [sizeRoom, settledEnd, glideTo, markOwnScroll]);
+  settleRef.current = settle;
+
+  useEffect(
+    () => () => {
+      if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
+      cancelGlide();
+    },
+    [cancelGlide],
+  );
+
+  /** Follow from here and go to the end without animation (thread open, a command). */
   const stickToEnd = useCallback(() => {
-    stickToEndRef.current = true;
-    releasedByTouchRef.current = false;
-    scrollToEndNow();
-  }, [scrollToEndNow]);
+    setFollow(true);
+    cancelGlide();
+    scheduleSettle();
+  }, [setFollow, cancelGlide, scheduleSettle]);
+
+  /** The scroll-to-bottom button: glide to the end and follow from here. */
+  const jumpToEnd = useCallback(() => {
+    setFollow(nextFollow(followRef.current, { type: 'jump-to-end' }));
+    sizeRoom();
+    const end = settledEnd();
+    if (reduceMotionRef.current) {
+      cancelGlide();
+      markOwnScroll(OWN_SCROLL_MS);
+      flatListRef.current?.scrollToOffset({ offset: end, animated: false });
+      return;
+    }
+    glideTo(end);
+  }, [setFollow, sizeRoom, settledEnd, cancelGlide, markOwnScroll, glideTo]);
 
   // When turns appear:
-  // - a turn the user just sent scrolls its bubble to the top, animated, then
-  //   re-arms the stick;
-  // - the first turns of an opened session stick to the end, unless a saved
-  //   offset is restored instead (restoration wins);
-  // - any other new turn (another client, a trigger, a menu action) sticks to
-  //   the end when the thread was effectively at its end.
-  // Later turns follow the end through the stick itself.
+  // - a turn the reader just sent glides to the top of the list in one motion;
+  // - an opened session follows its end, unless a saved offset is restored;
+  // - any other new turn (another client, a trigger) is followed when the
+  //   thread was effectively at its end.
+  // Later growth is followed by `settle` itself.
   const prevTurnCount = useRef(turns.length);
   const openedSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -681,70 +1029,44 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
 
     if (grew && userSentRef.current) {
       userSentRef.current = false;
-      stickToEndRef.current = false;
-      sendScrollPendingRef.current = true;
-      clearSendScrollTimer();
-      // In floating chrome the viewport starts at the screen top, so offset by
-      // the list's top inset to keep the bubble clear of the status bar + menu
-      // button.
-      const targetIndex = turns.length - 1;
-      const viewOffset = effectiveChrome === 'floating' ? listTopInset : 0;
-      sendScrollTimerRef.current = setTimeout(() => {
-        try {
-          markProgrammaticScroll(ANIMATED_SCROLL_MS);
-          try {
-            flatListRef.current?.scrollToIndex({
-              index: targetIndex,
-              viewPosition: 0,
-              viewOffset,
-              animated: true,
-            });
-          } catch {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }
-        } finally {
-          // Re-arm once the animated send scroll is over, even if it threw.
-          sendScrollTimerRef.current = setTimeout(() => {
-            sendScrollTimerRef.current = null;
-            sendScrollPendingRef.current = false;
-            stickToEndRef.current = true;
-          }, ANIMATED_SCROLL_MS);
-        }
-      }, 150);
+      setFollow(nextFollow(followRef.current, { type: 'send' }));
+      sendGlideUntilRef.current = Date.now() + SEND_GLIDE_ARM_MS;
+      scheduleSettle();
       return;
     }
 
     if (firstOpen) {
-      stickToEndRef.current = false;
       releasedByTouchRef.current = false;
-      settledNearEndRef.current = false;
-      if (savedScrollOffset > 0) return;
+      settledAtEndRef.current = false;
+      lastAnchorRef.current = null;
+      turnHeightsRef.current.clear();
+      cancelGlide();
+      if (savedScrollOffset > 0) {
+        followRef.current = false;
+        return;
+      }
       stickToEnd();
       return;
     }
 
     if (
-      !stickToEndRef.current &&
+      !followRef.current &&
       shouldFollowNewTurn({
         grew,
         releasedByTouch: releasedByTouchRef.current,
-        settledNearEnd: settledNearEndRef.current,
+        settledNearEnd: settledAtEndRef.current,
       })
     ) {
       stickToEnd();
     }
-  }, [turns.length, sessionId, savedScrollOffset, effectiveChrome, listTopInset, stickToEnd, clearSendScrollTimer, markProgrammaticScroll]);
+  }, [turns.length, sessionId, savedScrollOffset, setFollow, scheduleSettle, cancelGlide, stickToEnd]);
 
-  // The new turn's cell is not measured yet. The target is always the last
-  // turn, so stick to the end instead of guessing an offset.
   const handleScrollToIndexFailed = useCallback(() => {
-    clearSendScrollTimer();
-    sendScrollPendingRef.current = false;
     stickToEnd();
-  }, [clearSendScrollTimer, stickToEnd]);
+  }, [stickToEnd]);
 
   // Restore scroll position when reopening this tab/session. A restored
-  // position does not stick to the end.
+  // position does not follow the end.
   useEffect(() => {
     if (restoredSessionIdRef.current === sessionId) return;
     if (savedScrollOffset <= 0) {
@@ -753,11 +1075,10 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     }
     if (turns.length === 0) return;
     const timer = setTimeout(() => {
-      stickToEndRef.current = false;
-      sendScrollPendingRef.current = false;
-      clearSendScrollTimer();
+      followRef.current = false;
+      cancelGlide();
       try {
-        markProgrammaticScroll(PROGRAMMATIC_SCROLL_MS);
+        markOwnScroll(OWN_SCROLL_MS);
         flatListRef.current?.scrollToOffset({
           offset: savedScrollOffset,
           animated: false,
@@ -767,22 +1088,22 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
       }
     }, 60);
     return () => clearTimeout(timer);
-  }, [sessionId, savedScrollOffset, turns.length, clearSendScrollTimer, markProgrammaticScroll]);
+  }, [sessionId, savedScrollOffset, turns.length, cancelGlide, markOwnScroll]);
 
   // Persist the scroll offset when a user scroll settles and when leaving the
-  // session. A thread left while stuck to its end, or during a send's scroll,
-  // saves 0 (no position), so it reopens at its end, not at an old offset.
+  // session. A thread left while following its end saves 0 (no position), so
+  // it reopens at its end, not at an old offset.
   const persistScrollOffset = useCallback(
     (targetSessionId: string, offset: number) => {
-      const stuck = stickToEndRef.current || sendScrollPendingRef.current;
-      if (!stuck && isProgrammaticScroll()) return;
-      const value = stuck ? 0 : offset;
+      const following = followRef.current;
+      if (!following && isOwnScroll()) return;
+      const value = following ? 0 : offset;
       if (value === lastSavedOffsetRef.current) return;
       if (value !== 0 && Math.abs(value - lastSavedOffsetRef.current) < 24) return;
       lastSavedOffsetRef.current = value;
       useTabStore.getState().setTabState(targetSessionId, { scrollOffset: value });
     },
-    [isProgrammaticScroll],
+    [isOwnScroll],
   );
 
   useEffect(() => {
@@ -793,71 +1114,73 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     };
   }, [sessionId, savedScrollOffset, persistScrollOffset]);
 
-  // A user scroll that comes to rest near the end sticks to it again. At finger
-  // lift the event carries the drag velocity; with momentum following, the
-  // decision waits for onMomentumScrollEnd.
-  const settleScroll = useCallback(
-    (
-      event: NativeSyntheticEvent<NativeScrollEvent>,
-      velocityY: number | undefined,
-      targetOffsetY: number | undefined,
-    ) => {
+  /** A user scroll came to rest: at the end, follow resumes. */
+  const handleScrollRest = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       const offset = Math.max(0, contentOffset.y || 0);
       currentOffsetRef.current = offset;
-      const programmatic = isProgrammaticScroll();
-      if (!programmatic) {
-        settledNearEndRef.current = isNearEnd(offset, contentSize.height, layoutMeasurement.height);
-      }
-      if (
-        shouldRearmStick({
-          offset,
-          contentHeight: contentSize.height,
-          viewportHeight: layoutMeasurement.height,
-          programmatic,
-          velocityY,
-          targetOffsetY,
-        })
-      ) {
-        stickToEndRef.current = true;
-      }
+      const distance = distanceFromEnd({
+        offset,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+      });
+      if (!isOwnScroll()) settledAtEndRef.current = isAtEnd(distance);
+      const next = nextFollow(followRef.current, { type: 'rest', distanceFromEnd: distance });
+      if (next !== followRef.current) setFollow(next);
+      updateScrollButton(distance);
       persistScrollOffset(sessionId, offset);
     },
-    [sessionId, persistScrollOffset, isProgrammaticScroll],
+    [sessionId, persistScrollOffset, isOwnScroll, setFollow, updateScrollButton],
   );
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      draggingRef.current = false;
+      const offset = Math.max(0, event.nativeEvent.contentOffset.y || 0);
       // iOS only: where the scroll comes to rest after finger lift.
       const target = event.nativeEvent.targetContentOffset;
-      settleScroll(
-        event,
-        event.nativeEvent.velocity?.y ?? 0,
-        target ? Math.max(0, target.y || 0) : undefined,
-      );
+      if (
+        momentumFollows({
+          offset,
+          velocityY: event.nativeEvent.velocity?.y ?? 0,
+          targetOffsetY: target ? Math.max(0, target.y || 0) : undefined,
+        })
+      ) {
+        return; // onMomentumScrollEnd decides.
+      }
+      handleScrollRest(event);
     },
-    [settleScroll],
+    [handleScrollRest],
   );
 
   const handleMomentumScrollEnd = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => settleScroll(event, undefined, undefined),
-    [settleScroll],
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // iOS reports the end of our own animated scroll here too.
+      if (glideRef.current) {
+        endGlide();
+        return;
+      }
+      handleScrollRest(event);
+    },
+    [endGlide, handleScrollRest],
   );
 
-  // A user drag releases the stick and ends any programmatic window.
+  // A drag is reader intent: follow off, any glide or armed glide dropped.
   const handleScrollBeginDrag = useCallback(() => {
-    stickToEndRef.current = false;
+    draggingRef.current = true;
+    setFollow(nextFollow(followRef.current, { type: 'drag-begin' }));
     releasedByTouchRef.current = false;
-    sendScrollPendingRef.current = false;
-    clearSendScrollTimer();
-    programmaticScrollUntilRef.current = 0;
-  }, [clearSendScrollTimer]);
+    sendGlideUntilRef.current = 0;
+    cancelGlide();
+    ownScrollUntilRef.current = 0;
+  }, [setFollow, cancelGlide]);
 
-  // A touch on an idle thread releases the stick, so a card the user expands
+  // A touch on an idle thread releases follow, so a card the reader expands
   // opens in place. While busy, touches keep following the stream.
   const handleListTouchStart = useCallback(() => {
-    if (stickToEndRef.current && shouldReleaseStickOnTouch({ isBusy })) {
-      stickToEndRef.current = false;
+    if (followRef.current && shouldReleaseStickOnTouch({ isBusy })) {
+      followRef.current = false;
       releasedByTouchRef.current = true;
     }
   }, [isBusy]);
@@ -868,32 +1191,90 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
       const offset = Math.max(0, contentOffset.y || 0);
       const prevOffset = currentOffsetRef.current;
       currentOffsetRef.current = offset;
-      if (
-        stickToEndRef.current &&
-        shouldReleaseStick({
-          prevOffset,
-          offset,
-          contentHeight: contentSize.height,
-          viewportHeight: layoutMeasurement.height,
-          programmatic: isProgrammaticScroll(),
-        })
-      ) {
-        stickToEndRef.current = false;
-        releasedByTouchRef.current = false;
-        settledNearEndRef.current = false;
+      const last = scrollGeometryRef.current;
+      const geometryChanged =
+        contentSize.height !== last.contentHeight || layoutMeasurement.height !== last.viewportHeight;
+      scrollGeometryRef.current = { contentHeight: contentSize.height, viewportHeight: layoutMeasurement.height };
+      const distance = distanceFromEnd({
+        offset,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+      });
+
+      const wasFollowing = followRef.current;
+      const next = nextFollow(wasFollowing, {
+        type: 'scroll',
+        ours: isOwnScroll(),
+        geometryChanged,
+        movedTowardEnd: offset >= prevOffset,
+        dragging: draggingRef.current,
+        distanceFromEnd: distance,
+      });
+      if (next !== wasFollowing) {
+        setFollow(next);
+        if (!next) {
+          releasedByTouchRef.current = false;
+          settledAtEndRef.current = false;
+        }
+      }
+      updateScrollButton(distance);
+
+      // A glide lands when it reaches its target or its events go quiet.
+      const glide = glideRef.current;
+      if (glide) {
+        if (Math.abs(offset - glide.target) <= 1) {
+          endGlide();
+        } else {
+          if (glide.quiet) clearTimeout(glide.quiet);
+          glide.quiet = setTimeout(endGlide, GLIDE_QUIET_MS);
+        }
       }
     },
-    [isProgrammaticScroll],
+    [isOwnScroll, setFollow, updateScrollButton, endGlide],
   );
 
-  const handleContentSizeChange = useCallback(() => {
-    if (stickToEndRef.current) scrollToEndNow();
-  }, [scrollToEndNow]);
+  const handleContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      contentHeightRef.current = height;
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
 
-  // The viewport shrinks when the keyboard opens; keep the end in view.
-  const handleListLayout = useCallback(() => {
-    if (stickToEndRef.current) scrollToEndNow();
-  }, [scrollToEndNow]);
+  // The viewport shrinks when the keyboard opens or the composer grows.
+  const handleListLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      viewportHeightRef.current = e.nativeEvent.layout.height;
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
+
+  const handleTurnLayout = useCallback(
+    (id: string, height: number) => {
+      const prev = turnHeightsRef.current.get(id);
+      if (prev !== undefined && Math.abs(prev - height) < 0.5) return;
+      turnHeightsRef.current.set(id, height);
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
+
+  // Footer content above the spacer (compaction marker, busy row) is part of
+  // the span. The wrapper always mounts, so an emptied footer reports 0.
+  const handleFooterContentLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const height = e.nativeEvent.layout.height;
+      if (Math.abs(footerContentHeightRef.current - height) < 0.5) return;
+      footerContentHeightRef.current = height;
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
+
+  const handleSpacerLayout = useCallback((e: LayoutChangeEvent) => {
+    renderedRoomRef.current = e.nativeEvent.layout.height;
+  }, []);
 
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
@@ -913,6 +1294,27 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     },
     [sandboxUrl, sessionId],
   );
+
+  // Permission reply — the Deny / Allow always / Allow once prompt under a
+  // tool row. Same as apps/web `handlePermissionReply`: no optimistic remove;
+  // the prompt leaves the store only once the runtime accepted the reply, so
+  // a failed reply stays visible.
+  const handlePermissionReply = useCallback(
+    async (requestId: string, reply: PermissionReply) => {
+      if (!sandboxUrl) return;
+      try {
+        await replyToPermission(sandboxUrl, requestId, reply);
+        useSyncStore.getState().removePermission(sessionId, requestId);
+      } catch (err: any) {
+        log.error('[SessionPage] Permission reply failed:', err?.message || err);
+        toast.error("Couldn't send the permission reply. Try again.");
+      }
+    },
+    [sandboxUrl, sessionId, toast],
+  );
+
+  // Inline-code file paths in the transcript open the file viewer.
+  const markdownActions = useMemo(() => ({ onOpenFile: handleFileMention }), [handleFileMention]);
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
@@ -972,62 +1374,60 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
     [sandboxUrl, sessionId, stickToEnd],
   );
 
-  // Track last turn height for footer sizing. The spacer fills the viewport
-  // below a short last turn: `max(0, spacerCap - lastTurnHeight)`.
-  // Header chrome subtracts header (~60+insets), input (~90+insets), and footer
-  // bar (~50). 'floating' chrome has no header but adds the ~48pt+8pt tab dock
-  // below the composer (+64), and its container no longer overlaps upward by
-  // 24 (no -24 sheet margin), so the reserved chrome grows by 88 total.
-  const spacerCap = windowHeight - insets.top - insets.bottom - (effectiveChrome === 'floating' ? 283 : 195);
-  const [lastTurnHeight, setLastTurnHeight] = useState(80);
-  const lastTurnHeightRef = useRef(80);
-
-  // Streaming grows the last turn on every wrapped line. Set state only when
-  // the resulting spacer height changes; once the turn is taller than the
-  // viewport the spacer stays at 0 and no render is needed.
-  const handleLastTurnLayout = useCallback(
-    (e: { nativeEvent: { layout: { height: number } } }) => {
-      const h = e.nativeEvent.layout.height;
-      const prev = lastTurnHeightRef.current;
-      lastTurnHeightRef.current = h;
-      if (shouldUpdateSpacer(prev, h, spacerCap)) setLastTurnHeight(h);
-    },
-    [spacerCap],
-  );
-
-  // A cap change (window resize) invalidates the skipped updates above.
-  useEffect(() => {
-    setLastTurnHeight(lastTurnHeightRef.current);
-  }, [spacerCap]);
-
-  // Only the last turn receives status and busy; other turns get stable values,
-  // so their memoized rows skip stream renders. `isLast` (working state)
-  // follows the last user message in store order, as the SDK does; the spacer
-  // follows the displayed order. Every turn gets `pendingQuestions` (one
-  // stable store array) so a pending question tool part is hidden in
+  // Only the working turn (web `resolveWorkingTurn`) receives status and busy;
+  // other turns get stable values, so their memoized rows skip stream renders.
+  // The room follows the displayed order. Every turn gets `pendingQuestions`
+  // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
   const renderTurn = useCallback(
-    ({ item }: { item: Turn }) => {
+    ({ item, index }: { item: Turn; index: number }) => {
       const id = item.userMessage.info.id;
-      const isLast = id === lastUserMessageId;
-      const isLastDisplayed = id === lastTurnId;
+      const isWorkingTurn = id === workingTurnId;
+      // Web: a failed compaction attempt with a later compaction turn is
+      // history — it keeps its row (stable keys, layout) but renders nothing.
+      const suppressed =
+        lastCompactionTurnIndex > index &&
+        isSuppressedFailedCompaction({
+          info: compactionTurnInfo(item as never),
+          isTurnWorking: isWorkingTurn,
+          turnIndex: index,
+          lastCompactionTurnIndex,
+        });
+      // The turn list is read through the ref: depending on `turns` would
+      // re-render every row on each stream delta.
+      const gap = suppressed ? 0 : turnGapAt(layoutInputsRef.current.turns, index);
       return (
-        <View onLayout={isLastDisplayed ? handleLastTurnLayout : undefined}>
+        <View
+          style={gap > 0 ? { marginTop: gap } : undefined}
+          onLayout={(e) => handleTurnLayout(id, e.nativeEvent.layout.height)}>
+          {suppressed ? null : (
           <SessionTurn
             turn={item}
-            isLast={isLast}
-            sessionStatus={isLast ? sessionStatus : undefined}
-            isBusy={isLast ? isBusy : false}
+            isWorkingTurn={isWorkingTurn}
+            sessionStatus={isWorkingTurn ? sessionStatus : undefined}
+            isBusy={isWorkingTurn ? isBusy : false}
+            suppressBusyIndicator={isWorkingTurn && suppressWorkingBusy}
+            sessionId={sessionId}
+            permissions={pendingPermissions}
             pendingQuestions={pendingQuestions}
+            onPermissionReply={handlePermissionReply}
             agentNames={agentNames}
             onFileMention={handleFileMention}
             onSessionMention={handleSessionMention}
             commands={commands}
+            editingText={rewindTarget?.messageId === id ? rewindTarget.text : null}
+            editPending={rewindTarget?.messageId === id ? editPending : false}
+            onEditStart={handleEditStart}
+            onEditCancel={handleEditCancel}
+            onEditSend={handleEditSend}
+            rewindDisabled={rewindDisabled}
+            queueState={interruptedIds.has(id) ? 'interrupted' : null}
           />
+          )}
         </View>
       );
     },
-    [lastUserMessageId, lastTurnId, handleLastTurnLayout, sessionStatus, isBusy, pendingQuestions, agentNames, handleFileMention, handleSessionMention, commands],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1197,6 +1597,7 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
       <View style={{ flex: 1 }} className="bg-background">
+        <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
           data={turns}
@@ -1223,50 +1624,32 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
           keyboardShouldPersistTaps="handled"
           ListFooterComponent={
             <View>
-              {isCompacting && (
-                <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
-                  {/* Divider with Compaction badge */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }} />
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 6,
-                      paddingHorizontal: 10, paddingVertical: 4,
-                      borderRadius: 6,
-                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
-                      borderWidth: 1,
-                      borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
-                    }}>
-                      <StackIcon size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
-                      <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, letterSpacing: 0.3 }}>
-                        Compaction
-                      </RNText>
-                    </View>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }} />
+              {/* Footer content above the spacer — part of the anchor span. */}
+              <View onLayout={handleFooterContentLayout} className="px-4">
+                {/* Web: the optimistic compaction marker, where the real
+                    compaction turn will mount, until that turn exists. */}
+                {isCompacting && !hasCompactionTurn ? (
+                  <View style={{ marginTop: turns.length > 0 ? webSpace(12) : webSpace(2) }}>
+                    <CompactionMarker running />
                   </View>
-                  {/* Compacting indicator */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    {isDark ? (
-                      <KortixSymbolWhite width={14} height={14} />
-                    ) : (
-                      <KortixSymbolBlack width={14} height={14} />
-                    )}
-                    <RNText style={{ fontSize: 14, fontFamily: 'Roobert', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
-                      Compacting session...
-                    </RNText>
-                  </View>
-                </View>
-              )}
-              <View
-                style={{
-                  // Fill remaining viewport so the last turn's user bubble
-                  // sits at the top (see spacerCap).
-                  height: Math.max(0, spacerCap - lastTurnHeight),
-                }}
-              />
+                ) : null}
+                {/* Web: busy with no turn to attach the row to. */}
+                {showTranscriptBusyRow ? (
+                  <SessionBusyIndicator
+                    sessionId={sessionId}
+                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
+                  />
+                ) : null}
+              </View>
+              {/* The room (FACT 1): lets the newest turn pin near the top. */}
+              <View onLayout={handleSpacerLayout} style={{ height: room }} />
             </View>
           }
           onScrollToIndexFailed={handleScrollToIndexFailed}
         />
+        </MarkdownActionsProvider>
+
+        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
         <FreshSessionHero
           projectName={projectName}
@@ -1351,6 +1734,9 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
         sandboxId=""
         sandboxUrl={sandboxUrl}
       />
+
+      {/* File taps inside tool rows (ToolNavigation.openFile) */}
+      <ToolFilePreviewHost />
     </KeyboardAvoidingView>
   );
 }
@@ -1360,6 +1746,53 @@ function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenR
  * thread. Callers pass stable callbacks.
  */
 export const SessionPage = React.memo(SessionPageImpl);
+
+/** Web: `ease-[cubic-bezier(0.23,1,0.32,1)]` on the scroll-to-bottom button. */
+const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
+
+/**
+ * ScrollToBottomButton — apps/web `session-chat.tsx`'s chevron: a round glass
+ * button centred above the composer, shown once the reader is more than 120pt
+ * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
+ * in, `duration-fast` out. Tapping glides to the end and follows from there.
+ *
+ * iOS 26+ draws native Liquid Glass (web `liquid-glass`); elsewhere the
+ * `secondary` round button, the closest token to web's 45% `secondary` glass.
+ */
+function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
+  const progress = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? MOTION.duration.normal : MOTION.duration.fast,
+      easing: SCROLL_BUTTON_EASING,
+    });
+  }, [visible, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.97 + 0.03 * progress.value }],
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents={visible ? 'box-none' : 'none'}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      // 16pt above the 24pt fade that overlaps the bottom of the list.
+      style={[{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center', zIndex: 20 }, style]}
+    >
+      <PlatformButton
+        glass
+        systemImage="chevron.down"
+        icon={CaretDownIcon}
+        fallbackVariant="secondary"
+        accessibilityLabel="Scroll to bottom"
+        onPress={onPress}
+      />
+    </Reanimated.View>
+  );
+}
 
 /**
  * FreshSessionHero — the project greeting centred in the message area of a

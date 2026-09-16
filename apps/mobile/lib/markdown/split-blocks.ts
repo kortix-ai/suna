@@ -6,7 +6,8 @@
  * message streams, only the last block's string changes, so earlier blocks are
  * neither re-parsed nor remounted.
  *
- * A split happens only at a blank line outside fenced code, and not when the
+ * A split happens only at a blank line outside fenced code and display math
+ * (`$$` … `$$`, the markdown-it math rule in `math-plugin.ts`), and not when the
  * next line continues the current construct: an indented line (list item
  * content, indented code), another item of a list, or another blockquote.
  * Merging too much only costs speed; splitting wrongly changes the rendering,
@@ -21,6 +22,10 @@
 
 const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE = /^(`{3,}|~{3,})[ \t]*$/;
+// Display math opens on 2+ dollars with no other dollar on the line, and closes
+// on a line of at least as many dollars (math-plugin.ts `mathBlock`).
+const MATH_OPEN = /^(\${2,})([^$]*)$/;
+const MATH_CLOSE = /^(\${2,})[ \t]*$/;
 const BLANK_LINE = /^[ \t]*$/;
 const INDENTED_LINE = /^[ \t]/;
 const LIST_ITEM = /^ {0,3}(?:[*+-]|\d{1,9}[.)])(?:[ \t]|$)/;
@@ -48,6 +53,7 @@ interface LinePrefix {
 }
 
 interface OpenFence {
+  /** '`' or '~' for fenced code, '$' for display math. */
   marker: string;
   length: number;
   quotes: number;
@@ -119,7 +125,8 @@ function scanPrefix(line: string, withListMarkers: boolean): LinePrefix {
 
 function openFence(line: string): OpenFence | null {
   const prefix = scanPrefix(line, true);
-  const match = FENCE_OPEN.exec(line.slice(prefix.index));
+  const rest = line.slice(prefix.index);
+  const match = FENCE_OPEN.exec(rest) ?? MATH_OPEN.exec(rest);
   if (!match) return null;
   const [, fence, info] = match;
   if (fence[0] === '`' && info.includes('`')) return null;
@@ -148,7 +155,7 @@ function classifyFenceLine(line: string, fence: OpenFence): FenceLine {
   if (prefix.quotes < fence.quotes) return 'exit';
   if (fence.contentColumn !== null && rest !== '' && prefix.column < fence.contentColumn) return 'exit';
 
-  const close = FENCE_CLOSE.exec(rest);
+  const close = (fence.marker === '$' ? MATH_CLOSE : FENCE_CLOSE).exec(rest);
   if (!close || prefix.quotes !== fence.quotes) return 'content';
   if (close[1][0] !== fence.marker || close[1].length < fence.length) return 'content';
 
@@ -179,11 +186,29 @@ function leadingColumns(line: string): number {
   return column;
 }
 
+export interface MarkdownBlocks {
+  blocks: string[];
+  /**
+   * The text ends inside a fenced code block that has no closing fence yet —
+   * while a message streams, the last block's code is still growing. The
+   * renderer holds syntax highlighting for that fence until it closes.
+   */
+  endsInOpenFence: boolean;
+}
+
 export function splitMarkdownBlocks(text: string): string[] {
+  return splitMarkdown(text).blocks;
+}
+
+export function splitMarkdown(text: string): MarkdownBlocks {
+  const scanned = scanBlocks(text);
   // Intentional: a message with a reference definition is one block, so it
   // also renders its rule lines with the markdown hr style, not as separators.
-  if (REFERENCE_DEFINITION.test(text)) return [text];
+  if (REFERENCE_DEFINITION.test(text)) return { blocks: [text], endsInOpenFence: scanned.endsInOpenFence };
+  return scanned;
+}
 
+function scanBlocks(text: string): MarkdownBlocks {
   const blocks: string[] = [];
   let blockStart = -1;
   let blockEnd = -1;
@@ -245,5 +270,5 @@ export function splitMarkdownBlocks(text: string): string[] {
   }
 
   flush();
-  return blocks;
+  return { blocks, endsInOpenFence: fence !== null && fence.marker !== '$' };
 }

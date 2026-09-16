@@ -110,7 +110,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   // Fixed light text over solid saturated status pills (green/amber/red,
   // Slack purple, etc.) — matches Button's own destructive text-white.
-  // `THEME.light.primaryForeground` is the near-white value (hsl(60 0% 98%));
+  // `THEME.light.primaryForeground` is the white value (hsl(0 0% 100%));
   // `THEME.dark.primaryForeground` is near-black (it's the foreground FOR
   // dark-mode's near-white `primary` fill) and would be wrong here.
   const onAccent = THEME.light.primaryForeground;

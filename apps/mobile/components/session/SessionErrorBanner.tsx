@@ -1,126 +1,175 @@
 /**
- * SessionErrorBanner — renders a session turn's error text.
+ * TurnErrorDisplay — a turn's failure, inline.
  *
- * Mirrors apps/web/src/components/session/session-error-banner.tsx, adapted
- * for React Native. Mobile intentionally does NOT expose billing UI, so the
- * insufficient-credits variant is informational only — it formats the error
- * nicely but has no Buy / Auto-top-up buttons (billing is web-only).
+ * Mirrors apps/web `features/session/session-error-banner.tsx`
+ * (`TurnErrorDisplay`, `UsageLimitCard`, `InsufficientCreditsCard`). Routing
+ * lives in `lib/session/turn-error.ts` and is unit-tested:
+ * - an abort (the user pressed Stop, or a runtime respawned) renders nothing;
+ * - a connector refusal renders nothing (its notice owns the remedy);
+ * - out of credits → a warning card with Enable auto top-up · Buy credits;
+ * - free tier / subscription / budget limit → a warning card with Upgrade plan;
+ * - anything else → a red tile with the message as title, the gateway's
+ *   suggestion beneath, the `provider · code · request` meta line, and the
+ *   attempt chain folded.
+ *
+ * Billing actions on mobile: Upgrade plan opens the global upgrade sheet
+ * (`useUpgradeSheetStore`, the Team offer → Plans); both credit actions open
+ * `/billing`, where Buy credits hands off to web billing (no in-app purchase).
+ * `EXPO_PUBLIC_BILLING_ENABLED=false` (self-hosted) hides the buttons and keeps
+ * the card text.
+ *
+ * `SessionErrorBanner` keeps the pre-parity call signature for existing call
+ * sites and renders `TurnErrorDisplay`.
  */
 
-import React from 'react';
-import { View } from 'react-native';
-import { Text } from '@/components/ui/text';
+import { memo } from 'react';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { useRouter } from 'expo-router';
+
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { WarningCircleIcon as CircleAlert, CreditCardIcon as CreditCard } from '@/lib/icons';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { Text } from '@/components/ui/text';
+import {
+  ErrorRow,
+  GatewayAttemptFailureList,
+  GatewayMetaLine,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+  StatusTile,
+} from '@/components/session/turn/error-row';
+import { CreditCardIcon, LightningIcon, WarningCircleIcon } from '@/lib/icons';
+import { webSpace } from '@/lib/session/user-message';
+import {
+  parseBalance,
+  turnErrorCard,
+  turnErrorSuggestion,
+  type TurnErrorInput,
+} from '@/lib/session/turn-error';
+import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 
-// ── Detection helpers ──────────────────────────────────────────────────────
+export {
+  isInsufficientCreditsError,
+  isUsageLimitError,
+  parseBalance,
+  type TurnSendErrorLike,
+} from '@/lib/session/turn-error';
+export { SessionRetryDisplay, useRetrySecondsLeft, type SessionRetryDisplayProps } from './session-retry-display';
 
-/**
- * Detect the upstream 402 "Insufficient credits" surfaced from
- * /v1/router/chat/completions. Matches the same patterns the web uses so the
- * mobile and web banners trigger on the same error strings.
- */
-export function isInsufficientCreditsError(text: string): boolean {
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  return (
-    lower.includes('insufficient credits') ||
-    (lower.includes('payment required') && lower.includes('credit')) ||
-    (lower.includes('402') && lower.includes('credit'))
-  );
-}
+/** Self-hosted builds set this to "false"; billing actions then have nowhere to go. */
+const BILLING_ACTIONS_ENABLED = process.env.EXPO_PUBLIC_BILLING_ENABLED !== 'false';
 
-/** Extract `Balance: $-0.06` style amounts from the error text, if present. */
-export function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
-}
-
-// ── Insufficient-credits card ──────────────────────────────────────────────
-
-function InsufficientCreditsCard({
-  errorText,
-  isDark,
-}: {
-  errorText: string;
-  isDark: boolean;
-}) {
-  const balance = parseBalance(errorText);
-  const message = balance
-    ? `Your balance is ${balance}. Top up on kortix.com to continue.`
-    : 'Top up on kortix.com to continue.';
-
+/** `ROW_ACTIONS` below `sm`: its own full-width line, right-aligned, wrapping. */
+function RowActions({ children }: { children: React.ReactNode }) {
   return (
     <View
       style={{
-        marginTop: 8,
+        width: '100%',
         flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: withAlpha(THEME.accent.orange, 0.3),
-        backgroundColor: isDark ? withAlpha(THEME.accent.orange, 0.08) : withAlpha(THEME.accent.orange, 0.05),
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        gap: webSpace(2),
       }}
     >
-      <Icon
-        as={CreditCard}
-        size={14}
-        color={THEME.accent.orange}
-        style={{ marginTop: 2 }}
-      />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
-          className="text-xs font-roobert-medium text-foreground"
-          style={{ lineHeight: 16 }}
-        >
-          You ran out of credits
-        </Text>
-        <Text
-          className="text-[11px] text-muted-foreground"
-          style={{ lineHeight: 15, marginTop: 2 }}
-        >
-          {message}
-        </Text>
-      </View>
+      {children}
     </View>
   );
 }
 
-// ── Generic error card ─────────────────────────────────────────────────────
-
-function GenericErrorCard({ errorText }: { errorText: string }) {
+function UsageLimitCard({ errorText, style }: { errorText: string; style?: StyleProp<ViewStyle> }) {
+  const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
   return (
-    <View className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 flex-row items-start gap-2">
-      <Icon as={CircleAlert} size={14} className="text-destructive" style={{ marginTop: 2 }} />
-      <Text className="text-sm text-destructive flex-1" style={{ lineHeight: 18 }}>
-        {errorText}
-      </Text>
-    </View>
+    <ErrorRow accessibilityRole="summary" style={style}>
+      <StatusTile tone="warning" icon={LightningIcon} />
+      <ItemContent gap={webSpace(1)}>
+        {/* The server sentence is already the headline — no second line restating it. */}
+        <ItemTitle>{errorText}</ItemTitle>
+      </ItemContent>
+      {BILLING_ACTIONS_ENABLED ? (
+        <RowActions>
+          <Button
+            size="sm"
+            onPress={() => openUpgradeSheet({ reason: 'subscription_required', message: errorText })}
+          >
+            <Icon as={LightningIcon} size={webSpace(3.5)} className="text-primary-foreground" />
+            <Text>Upgrade plan</Text>
+          </Button>
+        </RowActions>
+      ) : null}
+    </ErrorRow>
   );
 }
 
-// ── Public component ───────────────────────────────────────────────────────
+function InsufficientCreditsCard({ errorText, style }: { errorText: string; style?: StyleProp<ViewStyle> }) {
+  const router = useRouter();
+  const balance = parseBalance(errorText);
+  const openBilling = () => router.push('/billing');
+  return (
+    <ErrorRow accessibilityRole="summary" style={style}>
+      <StatusTile tone="warning" icon={CreditCardIcon} />
+      <ItemContent gap={webSpace(0.5)}>
+        <ItemTitle>You ran out of credits</ItemTitle>
+        {/* The balance is the one number the user needs; without one, the raw server text. */}
+        <ItemDescription tabular>{balance ? `Balance ${balance}` : errorText}</ItemDescription>
+      </ItemContent>
+      {BILLING_ACTIONS_ENABLED ? (
+        <RowActions>
+          <Button size="sm" onPress={openBilling}>
+            <Icon as={LightningIcon} size={webSpace(3.5)} className="text-primary-foreground" />
+            <Text>Enable auto top-up</Text>
+          </Button>
+          <Button variant="outline" size="sm" onPress={openBilling}>
+            <Text>Buy credits</Text>
+          </Button>
+        </RowActions>
+      ) : null}
+    </ErrorRow>
+  );
+}
+
+export interface TurnErrorDisplayProps extends TurnErrorInput {
+  style?: StyleProp<ViewStyle>;
+}
+
+function TurnErrorDisplayImpl({ style, ...input }: TurnErrorDisplayProps) {
+  const card = turnErrorCard(input);
+  switch (card.kind) {
+    case 'none':
+      return null;
+    case 'usage-limit':
+      return <UsageLimitCard errorText={card.text} style={style} />;
+    case 'credits':
+      return <InsufficientCreditsCard errorText={card.text} style={style} />;
+    case 'error': {
+      const suggestion = turnErrorSuggestion(card.text, card.gateway);
+      return (
+        <ErrorRow accessibilityRole="alert" style={style}>
+          <StatusTile tone="error" icon={WarningCircleIcon} hasDescription={Boolean(suggestion)} />
+          <ItemContent gap={webSpace(1)}>
+            <ItemTitle>{card.text}</ItemTitle>
+            {suggestion ? <ItemDescription>{suggestion}</ItemDescription> : null}
+            <GatewayMetaLine details={card.gateway} />
+            <GatewayAttemptFailureList details={card.gateway} />
+          </ItemContent>
+        </ErrorRow>
+      );
+    }
+  }
+}
+
+export const TurnErrorDisplay = memo(TurnErrorDisplayImpl);
+TurnErrorDisplay.displayName = 'TurnErrorDisplay';
 
 export interface SessionErrorBannerProps {
   errorText: string;
-  isDark: boolean;
+  /** Unused since the web-parity rebuild; theme comes from the palette. Kept for call sites. */
+  isDark?: boolean;
+  isAbort?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
-/**
- * Render a session-turn error. Specialized card for insufficient-credits;
- * plain destructive card otherwise.
- */
-export function SessionErrorBanner({ errorText, isDark }: SessionErrorBannerProps) {
-  if (!errorText) return null;
-  if (isInsufficientCreditsError(errorText)) {
-    return <InsufficientCreditsCard errorText={errorText} isDark={isDark} />;
-  }
-  return <GenericErrorCard errorText={errorText} />;
+/** Pre-parity entry point. New code renders `TurnErrorDisplay` directly. */
+export function SessionErrorBanner({ errorText, isAbort, style }: SessionErrorBannerProps) {
+  return <TurnErrorDisplay errorText={errorText} isAbort={isAbort} style={style} />;
 }

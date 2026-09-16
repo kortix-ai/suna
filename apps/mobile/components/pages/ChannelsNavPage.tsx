@@ -428,7 +428,7 @@ export function ChannelsNavPage({
                   style={{ backgroundColor: SLACK }}
                 >
                   <SlackIcon width={18} height={18} />
-                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on Slack's solid brand purple */ }}>Add to Slack</Text>
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: THEME.light.primaryForeground /* hex-allowlist: fixed white (hsl(0 0% 100%)) text on Slack's solid brand purple */ }}>Add to Slack</Text>
                 </Button>
               )}
 

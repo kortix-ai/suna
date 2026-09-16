@@ -394,6 +394,26 @@ export function useAbortSession(sandboxUrl: string | undefined) {
   });
 }
 
+// ─── Permission Reply ───────────────────────────────────────────────────────
+
+/**
+ * Answer a pending permission request.
+ * POST {sandboxUrl}/permission/{requestID}/reply — body `{ reply }`, the route
+ * and body the opencode v2 client's `permission.reply` sends (the SDK's
+ * `replyToPermission`).
+ */
+export async function replyToPermission(
+  sandboxUrl: string,
+  requestId: string,
+  reply: 'once' | 'always' | 'reject',
+): Promise<void> {
+  log.log('🔐 [replyToPermission] Replying to:', requestId, reply);
+  await opencodeFetch<void>(sandboxUrl, `/permission/${requestId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ reply }),
+  });
+}
+
 // ─── Question Reply / Reject ────────────────────────────────────────────────
 
 /**

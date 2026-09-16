@@ -3,7 +3,7 @@
  *
  * Shown while a project session provisions its sandbox + resolves its OpenCode
  * root. Uses the brand Lottie loader (KortixLoader) and a shimmering status
- * label (ShimmerText) so the wait reads as alive and on-brand, matching the
+ * label (TextShimmer) so the wait reads as alive and on-brand, matching the
  * provisioning screen's aesthetic rather than a bare ActivityIndicator.
  *
  * When the runtime fails to boot (e.g. a repo-materialization / git-clone
@@ -20,7 +20,8 @@ import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { ShimmerText } from '@/components/kortix/ShimmerText';
+import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { TURN_TYPE } from '@/components/session/tool/shared/styles';
 import { THEME } from '@/lib/utils/theme';
 
 export interface SessionConnectError {
@@ -96,7 +97,9 @@ export function SessionConnecting({
 
       {/* Live status — shimmers while the sandbox warms up */}
       <View className="mt-1.5">
-        <ShimmerText text={statusLabel} size="sm" />
+        <TextShimmer style={TURN_TYPE.sm} numberOfLines={1}>
+          {statusLabel}
+        </TextShimmer>
       </View>
     </View>
   );

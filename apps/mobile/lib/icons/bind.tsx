@@ -1,4 +1,4 @@
-import type { Icon as PhosphorIcon, IconProps } from 'phosphor-react-native';
+import type { Icon as PhosphorIcon, IconProps, IconWeight } from 'phosphor-react-native';
 import * as React from 'react';
 
 import { DEFAULT_ICON_WEIGHT } from './icon-config';
@@ -17,6 +17,19 @@ export type AppIcon = React.ComponentType<AppIconProps>;
 export function withAppWeight(Glyph: PhosphorIcon, name: string): AppIcon {
   const Bound = React.memo(function AppIcon(props: AppIconProps) {
     return <Glyph weight={DEFAULT_ICON_WEIGHT} {...props} />;
+  });
+  Bound.displayName = name;
+  return Bound;
+}
+
+/**
+ * Binds one fixed weight onto a Phosphor glyph, for the rare registry entry
+ * whose web counterpart pins a weight (web `PencilSimpleIcon weight="regular"`
+ * on the message edit button). Call sites still never pass `weight`.
+ */
+export function withFixedWeight(Glyph: PhosphorIcon, weight: IconWeight, name: string): AppIcon {
+  const Bound = React.memo(function AppIcon(props: AppIconProps) {
+    return <Glyph {...props} weight={weight} />;
   });
   Bound.displayName = name;
   return Bound;

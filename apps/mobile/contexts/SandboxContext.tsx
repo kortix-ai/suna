@@ -16,6 +16,7 @@ import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
 import { useOpenCodeEventStream } from '@/lib/opencode/event-stream';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useDisclosureStore } from '@/lib/session/disclosure-store';
 import { log } from '@/lib/logger';
 
 interface SandboxContextValue {
@@ -109,10 +110,12 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   // connects to it (no-ops while undefined).
   useOpenCodeEventStream(override?.sandboxUrl);
 
-  // Reset sync store on logout and clear override
+  // Reset the sync and disclosure stores on logout and clear override
   useEffect(() => {
     if (!isAuthenticated) {
       useSyncStore.getState().reset();
+      // Expand/collapse choices are keyed by part id: drop them with the transcript.
+      useDisclosureStore.getState().clear();
       setOverride(null);
     }
   }, [isAuthenticated]);

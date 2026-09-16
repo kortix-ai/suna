@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -51,6 +51,7 @@ let THEME: (typeof import('./theme'))['THEME'];
 let NAV_THEME: (typeof import('./theme'))['NAV_THEME'];
 let withAlpha: (typeof import('./theme'))['withAlpha'];
 let toHexColor: (typeof import('./theme'))['toHexColor'];
+let MOTION: (typeof import('./theme'))['MOTION'];
 
 beforeAll(async () => {
   const mod = await import('./theme');
@@ -58,6 +59,7 @@ beforeAll(async () => {
   NAV_THEME = mod.NAV_THEME;
   withAlpha = mod.withAlpha;
   toHexColor = mod.toHexColor;
+  MOTION = mod.MOTION;
 });
 
 const css = readFileSync(join(__dirname, '../../global.css'), 'utf8');
@@ -171,17 +173,17 @@ describe('extractBlock parses distinct light/dark blocks', () => {
 
   it('light block does not include .dark:root declarations', () => {
     const lightBlock = extractBlock(':root');
-    // --sidebar-primary differs between light (180 0% 9%) and dark
-    // (225.4 84% 49%); if the parser bled into the dark block the light
+    // --sidebar-border differs between light (0 0% 88.6%) and dark
+    // (0 0% 10.2%); if the parser bled into the dark block the light
     // block would contain the dark value instead of its own.
-    expect(lightBlock).toContain('--sidebar-primary: 180 0% 9%');
-    expect(lightBlock).not.toContain('225.4 84% 49%');
+    expect(lightBlock).toContain('--sidebar-border: 0 0% 88.6%');
+    expect(lightBlock).not.toContain('--sidebar-border: 0 0% 10.2%');
   });
 
   it('dark block does not include :root (light) declarations', () => {
     const darkBlock = extractBlock('.dark:root');
-    expect(darkBlock).toContain('--sidebar-primary: 225.4 84% 49%');
-    expect(darkBlock).not.toContain('--sidebar-primary: 180 0% 9%');
+    expect(darkBlock).toContain('--sidebar-border: 0 0% 10.2%');
+    expect(darkBlock).not.toContain('--sidebar-border: 0 0% 88.6%');
   });
 });
 
@@ -504,5 +506,414 @@ describe('toHexColor matches the real parser for every THEME colour', () => {
   it('throws on input that is not a THEME hsl string', () => {
     expect(() => toHexColor('#ff0000')).toThrow();
     expect(() => toHexColor('hsla(0, 0%, 50%, 1)')).toThrow();
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Web parity: global.css ↔ apps/web/src/app/globals.css
+ *
+ * Everything above pins THEME to global.css. Nothing pinned global.css to web,
+ * so the mobile palette drifted from web for months with every test green.
+ * This block reads web's globals.css at runtime, converts each oklch / hex /
+ * rgb value to HSL, and requires the mobile transcription to agree within
+ * HSL_TOLERANCE in every component.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const WEB_CSS_PATH = join(__dirname, '../../../web/src/app/globals.css');
+const webCss = readFileSync(WEB_CSS_PATH, 'utf8');
+
+/** Max allowed difference per HSL component (degrees for H, points for S/L). */
+const HSL_TOLERANCE = 0.2;
+
+type Hsla = { h: number; s: number; l: number; a: number };
+
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * Collect `--name: value;` declarations from every block whose selector is
+ * exactly `selector` (at the start of a line, followed by `{`), merged in
+ * source order so a later declaration wins — the CSS cascade for same-
+ * specificity rules. web declares `--sidebar-*` twice (a legacy hsl block at
+ * the top of the file and the oklch block later); the later one must win.
+ */
+function webDeclarations(selector: ':root' | '.dark'): Map<string, string> {
+  const css = stripComments(webCss);
+  const escaped = selector.replace(/\./g, '\\.');
+  const selectorRegex = new RegExp(`(^|\\n)[ \\t]*${escaped}[ \\t]*\\{`, 'g');
+  const out = new Map<string, string>();
+  for (let m = selectorRegex.exec(css); m; m = selectorRegex.exec(css)) {
+    const open = css.indexOf('{', m.index);
+    const close = css.indexOf('}', open);
+    const body = css.slice(open + 1, close);
+    for (const d of body.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+      out.set(d[1], d[2].trim());
+    }
+  }
+  return out;
+}
+
+const webRoot = webDeclarations(':root');
+// `.dark` sits on the same element as `:root`, so every token `.dark` does not
+// re-declare (e.g. `--terminal-*`) inherits the `:root` value.
+const webDark = new Map([...webRoot, ...webDeclarations('.dark')]);
+
+/**
+ * Resolve `var(--x)` chains. `var(--color-x)` is a Tailwind `@theme inline`
+ * alias (`--color-ring: var(--ring)`); follow the alias declared in web's
+ * globals.css.
+ */
+function resolveWeb(scope: Map<string, string>, name: string, depth = 0): string {
+  if (depth > 8) throw new Error(`var() cycle resolving --${name}`);
+  let raw = scope.get(name);
+  if (raw === undefined) {
+    const alias = stripComments(webCss).match(
+      new RegExp(`--${name}:\\s*var\\(--([a-z0-9-]+)\\)`)
+    );
+    if (!alias) throw new Error(`web token --${name} not found`);
+    raw = `var(--${alias[1]})`;
+  }
+  const ref = raw.match(/^var\(--([a-z0-9-]+)\)$/);
+  return ref ? resolveWeb(scope, ref[1], depth + 1) : raw;
+}
+
+function srgbToHsla(r: number, g: number, b: number, a: number): Hsla {
+  const clip = (v: number) => Math.min(1, Math.max(0, v));
+  const [R, G, B] = [clip(r), clip(g), clip(b)];
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  let s = 0;
+  if (d > 1e-9) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === R) h = ((G - B) / d) % 6;
+    else if (max === G) h = (B - R) / d + 2;
+    else h = (R - G) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: s * 100, l: l * 100, a };
+}
+
+/**
+ * CSS Color 4 oklch → sRGB (Björn Ottosson's OKLab matrices), clipped to the
+ * sRGB gamut. Out-of-gamut values clip per channel, which is what an sRGB
+ * display renders.
+ */
+function oklchToHsla(L: number, C: number, H: number, a: number): Hsla {
+  const hr = (H * Math.PI) / 180;
+  const A = C * Math.cos(hr);
+  const B = C * Math.sin(hr);
+  const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+  const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+  const s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+  const gamma = (v: number) =>
+    v <= 0.0031308 ? 12.92 * v : 1.055 * Math.sign(v) * Math.abs(v) ** (1 / 2.4) - 0.055;
+  return srgbToHsla(
+    gamma(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    gamma(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    gamma(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s),
+    a
+  );
+}
+
+/** Parse a web CSS color: oklch(), #rrggbb, rgb(), or hsl(). */
+function parseWebColor(value: string): Hsla {
+  const num = (v: string) => (v.endsWith('%') ? Number(v.slice(0, -1)) / 100 : Number(v));
+  let m = value.match(/^oklch\(\s*([\d.]+%?)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+))?\s*\)$/);
+  if (m) return oklchToHsla(num(m[1]), Number(m[2]), Number(m[3]), m[4] ? Number(m[4]) : 1);
+  m = value.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (m) return srgbToHsla(...(m.slice(1, 4).map((x) => parseInt(x, 16) / 255) as [number, number, number]), 1);
+  m = value.match(/^rgb\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+))?\s*\)$/);
+  if (m) return srgbToHsla(Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255, m[4] ? Number(m[4]) : 1);
+  m = value.match(/^hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)$/);
+  if (m) return { h: Number(m[1]), s: Number(m[2]), l: Number(m[3]), a: 1 };
+  throw new Error(`unparseable web color: ${value}`);
+}
+
+/** Parse a mobile global.css value: `H S% L%` or `H S% L% / A`. */
+function parseMobileColor(value: string): Hsla {
+  const m = value.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*(?:\/\s*([\d.]+))?$/);
+  if (!m) throw new Error(`unparseable mobile color: ${value}`);
+  return { h: Number(m[1]), s: Number(m[2]), l: Number(m[3]), a: m[4] ? Number(m[4]) : 1 };
+}
+
+const fmt = (n: number) => String(Number(n.toFixed(1)));
+const fmtHsla = (c: Hsla) =>
+  `${c.s < 0.05 ? 0 : fmt(c.h)} ${fmt(c.s)}% ${fmt(c.l)}%${c.a === 1 ? '' : ` / ${c.a}`}`;
+
+/** Hue is compared only for chromatic colors: an achromatic hue is meaningless. */
+function hslaDrift(mobile: Hsla, web: Hsla): string | null {
+  const hueDiff = Math.min(Math.abs(mobile.h - web.h), 360 - Math.abs(mobile.h - web.h));
+  const chromatic = web.s >= 1 || mobile.s >= 1;
+  const bad =
+    (chromatic && hueDiff > HSL_TOLERANCE) ||
+    Math.abs(mobile.s - web.s) > HSL_TOLERANCE ||
+    Math.abs(mobile.l - web.l) > HSL_TOLERANCE ||
+    Math.abs(mobile.a - web.a) > 0.001;
+  return bad ? fmtHsla(web) : null;
+}
+
+/**
+ * Mobile token → web token. Same name unless listed otherwise.
+ *
+ *   mobile              web
+ *   chrome-background   sidebar  (mobile's name for the drawer/nav surface)
+ *   kortix-base         kortix-base = var(--color-ring) = var(--ring)
+ *
+ * Deliberately NOT in the set:
+ *   border-width        a length, mobile-only (hairline stroke)
+ *   radius              a length; compared separately below
+ *   success / warning   web has no CSS variable; compared against the
+ *                       Tailwind palette classes status.tsx uses (below)
+ */
+const WEB_PARITY_TOKENS: Record<string, string> = {
+  background: 'background',
+  foreground: 'foreground',
+  card: 'card',
+  'card-foreground': 'card-foreground',
+  popover: 'popover',
+  'popover-foreground': 'popover-foreground',
+  primary: 'primary',
+  'primary-foreground': 'primary-foreground',
+  secondary: 'secondary',
+  'secondary-foreground': 'secondary-foreground',
+  muted: 'muted',
+  'muted-foreground': 'muted-foreground',
+  accent: 'accent',
+  'accent-foreground': 'accent-foreground',
+  destructive: 'destructive',
+  'destructive-foreground': 'destructive-foreground',
+  border: 'border',
+  input: 'input',
+  ring: 'ring',
+  'chart-1': 'chart-1',
+  'chart-2': 'chart-2',
+  'chart-3': 'chart-3',
+  'chart-4': 'chart-4',
+  'chart-5': 'chart-5',
+  sidebar: 'sidebar',
+  'sidebar-foreground': 'sidebar-foreground',
+  'sidebar-primary': 'sidebar-primary',
+  'sidebar-primary-foreground': 'sidebar-primary-foreground',
+  'sidebar-accent': 'sidebar-accent',
+  'sidebar-accent-foreground': 'sidebar-accent-foreground',
+  'sidebar-border': 'sidebar-border',
+  'sidebar-ring': 'sidebar-ring',
+  'chrome-background': 'sidebar',
+  'kortix-base': 'kortix-base',
+  'kortix-blue': 'kortix-blue',
+  'kortix-yellow': 'kortix-yellow',
+  'kortix-orange': 'kortix-orange',
+  'kortix-green': 'kortix-green',
+  'kortix-purple': 'kortix-purple',
+  'kortix-red': 'kortix-red',
+  pane: 'pane',
+  surface: 'surface',
+  hover: 'hover',
+  active: 'active',
+  'focus-ring': 'focus-ring',
+  'foreground-strong': 'foreground-strong',
+  'foreground-weak': 'foreground-weak',
+  'terminal-surface': 'terminal-surface',
+  'terminal-fg': 'terminal-fg',
+  'terminal-border': 'terminal-border',
+};
+
+/**
+ * web's status palette is not a CSS variable: status.tsx STATUS_TEXT uses
+ * Tailwind classes (`text-emerald-600 dark:text-emerald-400`). Tailwind 4
+ * resolves those from `tailwindcss/theme.css`. The oklch values are pinned
+ * here (tailwindcss 4.3.3) so this test does not depend on web's
+ * node_modules; a separate test re-reads theme.css when it is installed.
+ */
+const TAILWIND_PALETTE: Record<string, string> = {
+  'emerald-400': 'oklch(76.5% 0.177 163.223)',
+  'emerald-600': 'oklch(59.6% 0.145 163.225)',
+  'amber-400': 'oklch(82.8% 0.189 84.429)',
+  'amber-600': 'oklch(66.6% 0.179 58.318)',
+};
+const STATUS_TSX_PATH = join(__dirname, '../../../web/src/components/ui/status.tsx');
+const TAILWIND_THEME_PATH = join(__dirname, '../../../web/node_modules/tailwindcss/theme.css');
+
+/** Read `tone: 'text-<light> dark:text-<dark>'` from web's STATUS_TEXT. */
+function webStatusShades(tone: 'success' | 'warning'): { light: string; dark: string } {
+  const src = readFileSync(STATUS_TSX_PATH, 'utf8');
+  const m = src.match(
+    new RegExp(`${tone}:\\s*'text-([a-z]+-\\d+)\\s+dark:text-([a-z]+-\\d+)'`)
+  );
+  if (!m) throw new Error(`status.tsx STATUS_TEXT.${tone} not in 'text-X dark:text-Y' form`);
+  return { light: m[1], dark: m[2] };
+}
+
+function paletteColor(shade: string): Hsla {
+  const value = TAILWIND_PALETTE[shade];
+  if (!value) throw new Error(`Tailwind shade ${shade} not pinned in TAILWIND_PALETTE`);
+  return parseWebColor(value);
+}
+
+describe('color conversion helpers are correct', () => {
+  it('converts known oklch values to the sRGB hex they render as', () => {
+    // oklch(0.669 0.1837 248.8066) is web's accent-blue, commented #0099ff.
+    expect(toHexColor(`hsl(${fmtHsla(parseWebColor('oklch(0.669 0.1837 248.8066)'))})`)).toBe(
+      '#0099ff'
+    );
+    expect(toHexColor(`hsl(${fmtHsla(parseWebColor('oklch(15% 0 0)'))})`)).toBe('#0b0b0b');
+    expect(toHexColor(`hsl(${fmtHsla(parseWebColor('oklch(0.1913 0 0)'))})`)).toBe('#141414');
+    expect(toHexColor(`hsl(${fmtHsla(parseWebColor('oklch(1 0 0)'))})`)).toBe('#ffffff');
+    expect(toHexColor(`hsl(${fmtHsla(parseWebColor('#0f0f0f'))})`)).toBe('#0f0f0f');
+  });
+
+  it('the later web --sidebar block wins over the legacy hsl block', () => {
+    expect(webRoot.get('sidebar')).toBe('oklch(0.9672 0 0)');
+    expect(webDark.get('sidebar-border')).toBe('oklch(0.2178 0 0)');
+  });
+
+  it('resolves web --kortix-base through the @theme alias to --ring', () => {
+    expect(resolveWeb(webRoot, 'kortix-base')).toBe(resolveWeb(webRoot, 'ring'));
+  });
+});
+
+describe('global.css matches apps/web globals.css', () => {
+  for (const [scope, mobileScope, web] of [
+    ['light', ':root', webRoot],
+    ['dark', '.dark:root', webDark],
+  ] as const) {
+    it(`every shared ${scope} token matches web within ±${HSL_TOLERANCE}`, () => {
+      const drift: string[] = [];
+      for (const [mobileName, webName] of Object.entries(WEB_PARITY_TOKENS)) {
+        const mobileValue = resolveTokenValue(mobileScope, mobileName);
+        const webValue = resolveWeb(web, webName);
+        const expected = hslaDrift(parseMobileColor(mobileValue), parseWebColor(webValue));
+        if (expected) {
+          drift.push(`--${mobileName}: ${mobileValue} → ${expected}  /* web ${webValue} */`);
+        }
+      }
+      expect(drift).toEqual([]);
+    });
+  }
+
+  it('--radius matches web', () => {
+    expect(rawTokenValue(':root', 'radius')).toBe(resolveWeb(webRoot, 'radius'));
+    expect(rawTokenValue('.dark:root', 'radius')).toBe(resolveWeb(webDark, 'radius'));
+  });
+
+  it('--success / --warning match the Tailwind shades web status.tsx uses', () => {
+    const drift: string[] = [];
+    for (const tone of ['success', 'warning'] as const) {
+      const shades = webStatusShades(tone);
+      for (const [mobileScope, shade] of [
+        [':root', shades.light],
+        ['.dark:root', shades.dark],
+      ] as const) {
+        let mobileValue: string;
+        try {
+          mobileValue = resolveTokenValue(mobileScope, tone);
+        } catch {
+          drift.push(`--${tone} missing in ${mobileScope} → ${fmtHsla(paletteColor(shade))}`);
+          continue;
+        }
+        const expected = hslaDrift(parseMobileColor(mobileValue), paletteColor(shade));
+        if (expected) drift.push(`--${tone} (${mobileScope}): ${mobileValue} → ${expected}`);
+      }
+    }
+    expect(drift).toEqual([]);
+  });
+
+  it.skipIf(!existsSync(TAILWIND_THEME_PATH))(
+    'pinned TAILWIND_PALETTE equals the installed tailwindcss/theme.css',
+    () => {
+      const themeCss = readFileSync(TAILWIND_THEME_PATH, 'utf8');
+      for (const [shade, value] of Object.entries(TAILWIND_PALETTE)) {
+        expect(themeCss).toContain(`--color-${shade}: ${value};`);
+      }
+    }
+  );
+});
+
+describe('THEME carries the web-parity tokens', () => {
+  const keyToToken: Record<string, string> = {
+    destructiveForeground: 'destructive-foreground',
+    sidebar: 'sidebar',
+    sidebarForeground: 'sidebar-foreground',
+    sidebarPrimary: 'sidebar-primary',
+    sidebarPrimaryForeground: 'sidebar-primary-foreground',
+    sidebarAccent: 'sidebar-accent',
+    sidebarAccentForeground: 'sidebar-accent-foreground',
+    sidebarBorder: 'sidebar-border',
+    sidebarRing: 'sidebar-ring',
+    success: 'success',
+    warning: 'warning',
+  };
+  for (const [scope, mobileScope] of [
+    ['light', ':root'],
+    ['dark', '.dark:root'],
+  ] as const) {
+    it(`${scope}: every key matches its global.css token`, () => {
+      const missing: string[] = [];
+      for (const [themeKey, cssName] of Object.entries(keyToToken)) {
+        const value = (THEME[scope] as Record<string, string>)[themeKey];
+        if (value === undefined) {
+          missing.push(themeKey);
+          continue;
+        }
+        sameColor(value, token(mobileScope, cssName));
+      }
+      expect(missing).toEqual([]);
+    });
+  }
+});
+
+/**
+ * React Native cannot read CSS variables for animation timing, so MOTION
+ * transcribes web's `--duration-*` / `--ease-*` tokens as numbers.
+ */
+describe('MOTION matches web motion tokens', () => {
+  it('durations equal web --duration-* in ms', () => {
+    for (const [key, cssName] of [
+      ['fast', 'duration-fast'],
+      ['normal', 'duration-normal'],
+      ['moderate', 'duration-moderate'],
+      ['slow', 'duration-slow'],
+      ['slower', 'duration-slower'],
+    ] as const) {
+      expect(`${key}=${MOTION.duration[key]}ms`).toBe(`${key}=${resolveWeb(webRoot, cssName)}`);
+    }
+  });
+
+  it('easings equal web --ease-* cubic-bezier control points', () => {
+    for (const [key, cssName] of [
+      ['default', 'ease-default'],
+      ['in', 'ease-in'],
+      ['out', 'ease-out'],
+      ['inOut', 'ease-in-out'],
+    ] as const) {
+      const m = resolveWeb(webRoot, cssName).match(/^cubic-bezier\(([^)]+)\)$/);
+      if (!m) throw new Error(`--${cssName} is not a cubic-bezier`);
+      expect([...MOTION.easing[key]] as number[]).toEqual(m[1].split(',').map((n) => Number(n.trim())));
+    }
+  });
+});
+
+describe('tailwind.config.js colors resolve to declared global.css tokens', () => {
+  it('every hsl(var(--x)) in theme.extend.colors is declared in :root and .dark:root', () => {
+    const config = readFileSync(join(__dirname, '../../tailwind.config.js'), 'utf8');
+    const referenced = [...config.matchAll(/hsl\(var\(--([a-z0-9-]+)\)/g)].map((m) => m[1]);
+    expect(referenced).toContain('success');
+    expect(referenced).toContain('sidebar-border');
+    const missing: string[] = [];
+    for (const name of new Set(referenced)) {
+      for (const scope of [':root', '.dark:root'] as const) {
+        try {
+          resolveTokenValue(scope, name);
+        } catch {
+          missing.push(`--${name} in ${scope}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });

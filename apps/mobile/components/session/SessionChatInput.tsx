@@ -15,7 +15,6 @@ import {
   ScrollView,
   Platform,
   StyleSheet,
-  Image,
   Keyboard,
   useWindowDimensions,
   type NativeSyntheticEvent,
@@ -32,7 +31,6 @@ import {
   PaperclipIcon,
   GearSixIcon as SettingsIcon,
   CaretRightIcon as ChevronRightIcon,
-  FileIcon,
   TerminalIcon,
   CaretDownIcon,
   ListIcon,
@@ -51,6 +49,7 @@ import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorho
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadAttachments, withAttachments, type AttachedFile } from '@/lib/session/attachments';
 import { useAttachmentPicker } from './useAttachmentPicker';
+import { ComposerAttachmentTiles } from './composer-attachment-tiles';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -502,67 +501,11 @@ function SessionChatInputImpl({
             {/* Queue / question slot — rendered above textarea */}
             {inputSlot}
 
-            {/* Attached file previews */}
+            {/* Attached file previews — the same tile the sent message draws */}
             {attachedFiles.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 6 }}
-                contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-              >
-                {attachedFiles.map((f, idx) => (
-                  <View
-                    key={idx}
-                    style={{
-                      position: 'relative',
-                      borderRadius: 8,
-                      overflow: 'hidden',
-                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
-                    }}
-                  >
-                    {f.isImage ? (
-                      <Image
-                        source={{ uri: f.uri }}
-                        style={{ width: 52, height: 52, borderRadius: 8 }}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', padding: 4 }}>
-                        <FileIcon size={22} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
-                        <RNText
-                          numberOfLines={2}
-                          style={{ fontSize: 9, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, textAlign: 'center', marginTop: 2 }}
-                        >
-                          {f.name}
-                        </RNText>
-                      </View>
-                    )}
-                    {/* Remove button */}
-                    <Button
-                      variant="ghost"
-                      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
-                      onPress={() => removeAttachedFile(idx)}
-                      style={{
-                        position: 'absolute',
-                        top: 2,
-                        right: 2,
-                        width: 16,
-                        height: 16,
-                        borderRadius: 8,
-                        // Fixed dark scrim + light icon regardless of app
-                        // theme — this overlay sits on top of an arbitrary
-                        // user photo/file thumbnail, not a themed surface.
-                        backgroundColor: withAlpha(THEME.light.foreground, 0.55),
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      hitSlop={4}
-                    >
-                      <XIcon size={9} color={THEME.dark.foreground} />
-                    </Button>
-                  </View>
-                ))}
-              </ScrollView>
+              <View style={{ marginBottom: 6 }}>
+                <ComposerAttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
+              </View>
             )}
 
             {/* Staged command badge */}

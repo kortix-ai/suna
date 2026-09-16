@@ -1,6 +1,7 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const { withNativeWind } = require('nativewind/metro');
 const path = require('path');
+const fs = require('fs');
 
 // Project root and monorepo root
 const projectRoot = __dirname;
@@ -30,9 +31,19 @@ const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-
 const emptyModulePath = path.resolve(projectRoot, 'metro-empty-module.js');
 const stubbedNodeBuiltins = new Set(['readline']);
 
+// MathJax 4 (`lib/math/tex-to-svg.ts`) imports its default font through the
+// package `imports` map (`#default-font/*` -> @mathjax/mathjax-newcm-font).
+// The app renders with the TeX font instead, so the alias points there: the
+// NewCM font never enters the bundle, and without an alias Metro cannot
+// resolve the import at all.
+const DEFAULT_FONT_PREFIX = '#default-font/';
+const mathjaxTexFontDir = fs.realpathSync(path.resolve(mobileNodeModules, '@mathjax/mathjax-tex-font/mjs'));
+
 config.resolver = {
   ...config.resolver,
-  assetExts: config.resolver.assetExts.filter((ext) => ext !== 'svg'),
+  // `webjs`: JavaScript that runs inside a WebView, shipped as a file and never
+  // parsed by Metro (the Mermaid renderer, `assets/mermaid/`).
+  assetExts: [...config.resolver.assetExts.filter((ext) => ext !== 'svg'), 'webjs'],
   sourceExts: [...config.resolver.sourceExts, 'svg'],
   // Watch additional paths in monorepo
   nodeModulesPaths: [mobileNodeModules, path.resolve(monorepoRoot, 'node_modules')],
@@ -52,6 +63,12 @@ config.resolver = {
     if (stubbedNodeBuiltins.has(moduleName)) {
       return {
         filePath: emptyModulePath,
+        type: 'sourceFile',
+      };
+    }
+    if (moduleName.startsWith(DEFAULT_FONT_PREFIX)) {
+      return {
+        filePath: path.join(mathjaxTexFontDir, moduleName.slice(DEFAULT_FONT_PREFIX.length)),
         type: 'sourceFile',
       };
     }

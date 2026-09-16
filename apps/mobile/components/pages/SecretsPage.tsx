@@ -606,7 +606,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                 backgroundColor: destructiveColor, opacity: isDeleting ? 0.5 : 1,
               }}
             >
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on solid destructive red, matches Button's own destructive text-white */ }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: THEME.light.primaryForeground /* hex-allowlist: fixed white (hsl(0 0% 100%)) text on solid destructive red, matches Button's own destructive text-white */ }}>
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </Text>
             </BottomSheetTouchable>

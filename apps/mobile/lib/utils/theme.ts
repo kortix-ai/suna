@@ -84,60 +84,82 @@ export function toHexColor(hslColor: string): string {
 export const THEME = {
   light: {
     background: 'hsl(0 0% 100%)', // --background
-    foreground: 'hsl(180 0% 3.9%)', // --foreground
-    card: 'hsl(0 0% 95.4%)', // --card
-    cardForeground: 'hsl(180 0% 3.9%)', // --card-foreground
+    foreground: 'hsl(0 0% 0%)', // --foreground
+    card: 'hsl(0 0% 95.7%)', // --card
+    cardForeground: 'hsl(0 0% 0%)', // --card-foreground
     popover: 'hsl(0 0% 100%)', // --popover
-    popoverForeground: 'hsl(180 0% 3.9%)', // --popover-foreground
-    primary: 'hsl(180 0% 9%)', // --primary
-    primaryForeground: 'hsl(60 0% 98%)', // --primary-foreground
-    secondary: 'hsl(0 0% 96.1%)', // --secondary
-    secondaryForeground: 'hsl(180 0% 9%)', // --secondary-foreground
-    muted: 'hsl(0 0% 96.1%)', // --muted
-    mutedForeground: 'hsl(0 0% 45.1%)', // --muted-foreground
-    accent: 'hsl(0 0% 96.1%)', // --accent
-    accentForeground: 'hsl(180 0% 9%)', // --accent-foreground
+    popoverForeground: 'hsl(0 0% 0%)', // --popover-foreground
+    primary: 'hsl(0 0% 0%)', // --primary
+    primaryForeground: 'hsl(0 0% 100%)', // --primary-foreground
+    secondary: 'hsl(0 0% 92.6%)', // --secondary
+    secondaryForeground: 'hsl(0 0% 0%)', // --secondary-foreground
+    muted: 'hsl(0 0% 92.6%)', // --muted
+    mutedForeground: 'hsl(0 0% 40%)', // --muted-foreground
+    accent: 'hsl(0 0% 95.7%)', // --accent
+    accentForeground: 'hsl(0 0% 0%)', // --accent-foreground
     destructive: 'hsl(357.2 100% 45.3%)', // --destructive
-    border: 'hsl(120 0% 89.8%)', // --border
-    input: 'hsl(0 0% 94.9%)', // --input
-    ring: 'hsl(0 0% 63.1%)', // --ring
+    destructiveForeground: 'hsl(60 0% 98%)', // --destructive-foreground
+    border: 'hsl(0 0% 88.6%)', // --border
+    input: 'hsl(0 0% 92.6%)', // --input
+    ring: 'hsl(204 100% 50%)', // --ring
     pane: 'hsl(0 0% 100%)', // --pane
     surface: 'hsl(0 0% 98.8%)', // --surface
     hover: 'hsla(0, 0%, 0%, 0.045)', // --hover
     active: 'hsla(0, 0%, 0%, 0.075)', // --active
-    focusRing: 'hsl(0 0% 63.1%)', // --focus-ring (= var(--ring))
-    chromeBackground: 'hsl(60 0% 98%)', // --chrome-background (= var(--sidebar))
-    foregroundStrong: 'hsl(180 0% 3.9%)', // --foreground-strong (= var(--foreground))
-    foregroundWeak: 'hsl(0 0% 45.1%)', // --foreground-weak (= var(--muted-foreground))
+    focusRing: 'hsl(204 100% 50%)', // --focus-ring (= var(--ring))
+    chromeBackground: 'hsl(0 0% 95.7%)', // --chrome-background (= var(--sidebar))
+    foregroundStrong: 'hsl(0 0% 0%)', // --foreground-strong (= var(--foreground))
+    foregroundWeak: 'hsl(0 0% 40%)', // --foreground-weak (= var(--muted-foreground))
+    sidebar: 'hsl(0 0% 95.7%)', // --sidebar
+    sidebarForeground: 'hsl(0 0% 0%)', // --sidebar-foreground
+    sidebarPrimary: 'hsl(204 100% 50%)', // --sidebar-primary
+    sidebarPrimaryForeground: 'hsl(0 0% 100%)', // --sidebar-primary-foreground
+    sidebarAccent: 'hsl(0 0% 92.6%)', // --sidebar-accent
+    sidebarAccentForeground: 'hsl(0 0% 0%)', // --sidebar-accent-foreground
+    sidebarBorder: 'hsl(0 0% 88.6%)', // --sidebar-border
+    sidebarRing: 'hsl(204 100% 50%)', // --sidebar-ring
+    success: 'hsl(160 100% 29.9%)', // --success (web emerald-600)
+    warning: 'hsl(30.1 100% 44.2%)', // --warning (web amber-600)
     radius: '0.625rem', // --radius
   },
   dark: {
-    background: 'hsl(180 0% 3.9%)', // --background
-    foreground: 'hsl(60 0% 98%)', // --foreground
-    card: 'hsl(180 0% 9%)', // --card
-    cardForeground: 'hsl(60 0% 98%)', // --card-foreground
-    popover: 'hsl(180 0% 9%)', // --popover
-    popoverForeground: 'hsl(60 0% 98%)', // --popover-foreground
-    primary: 'hsl(120 0% 89.8%)', // --primary
-    primaryForeground: 'hsl(180 0% 9%)', // --primary-foreground
-    secondary: 'hsl(0 0% 14.9%)', // --secondary
-    secondaryForeground: 'hsl(60 0% 98%)', // --secondary-foreground
-    muted: 'hsl(0 0% 14.9%)', // --muted
-    mutedForeground: 'hsl(0 0% 63.1%)', // --muted-foreground
-    accent: 'hsl(0 0% 14.9%)', // --accent
-    accentForeground: 'hsl(60 0% 98%)', // --accent-foreground
+    background: 'hsl(0 0% 4.3%)', // --background
+    foreground: 'hsl(0 0% 100%)', // --foreground
+    card: 'hsl(0 0% 7.8%)', // --card
+    cardForeground: 'hsl(0 0% 100%)', // --card-foreground
+    popover: 'hsl(0 0% 7.8%)', // --popover
+    popoverForeground: 'hsl(0 0% 100%)', // --popover-foreground
+    primary: 'hsl(0 0% 100%)', // --primary
+    primaryForeground: 'hsl(0 0% 3.5%)', // --primary-foreground
+    secondary: 'hsl(0 0% 11%)', // --secondary
+    secondaryForeground: 'hsl(0 0% 100%)', // --secondary-foreground
+    muted: 'hsl(0 0% 11%)', // --muted
+    mutedForeground: 'hsl(0 0% 60%)', // --muted-foreground
+    accent: 'hsl(0 0% 7.8%)', // --accent
+    accentForeground: 'hsl(0 0% 100%)', // --accent-foreground
     destructive: 'hsl(358.8 100% 69.6%)', // --destructive
-    border: 'hsl(240 4% 15.9%)', // --border
-    input: 'hsl(0 0% 14.9%)', // --input
-    ring: 'hsl(0 0% 45.1%)', // --ring
+    destructiveForeground: 'hsl(60 0% 98%)', // --destructive-foreground
+    border: 'hsl(0 0% 14.9%)', // --border
+    input: 'hsl(0 0% 11%)', // --input
+    ring: 'hsl(204 100% 50%)', // --ring
     pane: 'hsl(0 0% 4.7%)', // --pane
     surface: 'hsl(0 0% 7.8%)', // --surface
     hover: 'hsla(0, 0%, 100%, 0.06)', // --hover
     active: 'hsla(0, 0%, 100%, 0.1)', // --active
-    focusRing: 'hsl(0 0% 45.1%)', // --focus-ring (= var(--ring))
-    chromeBackground: 'hsl(180 0% 9%)', // --chrome-background (= var(--sidebar))
-    foregroundStrong: 'hsl(60 0% 98%)', // --foreground-strong (= var(--foreground))
-    foregroundWeak: 'hsl(0 0% 63.1%)', // --foreground-weak (= var(--muted-foreground))
+    focusRing: 'hsl(204 100% 50%)', // --focus-ring (= var(--ring))
+    chromeBackground: 'hsl(0 0% 7.8%)', // --chrome-background (= var(--sidebar))
+    foregroundStrong: 'hsl(0 0% 100%)', // --foreground-strong (= var(--foreground))
+    foregroundWeak: 'hsl(0 0% 60%)', // --foreground-weak (= var(--muted-foreground))
+    sidebar: 'hsl(0 0% 7.8%)', // --sidebar
+    sidebarForeground: 'hsl(0 0% 100%)', // --sidebar-foreground
+    sidebarPrimary: 'hsl(204 100% 50%)', // --sidebar-primary
+    sidebarPrimaryForeground: 'hsl(0 0% 100%)', // --sidebar-primary-foreground
+    sidebarAccent: 'hsl(0 0% 11%)', // --sidebar-accent
+    sidebarAccentForeground: 'hsl(0 0% 100%)', // --sidebar-accent-foreground
+    sidebarBorder: 'hsl(0 0% 10.2%)', // --sidebar-border
+    sidebarRing: 'hsl(204 100% 50%)', // --sidebar-ring
+    success: 'hsl(161.2 100% 41.6%)', // --success (web emerald-400)
+    warning: 'hsl(43.6 100% 50%)', // --warning (web amber-400)
     radius: '0.625rem', // --radius
   },
   /**
@@ -152,11 +174,39 @@ export const THEME = {
     blue: 'hsl(210 93% 56.9%)', // --kortix-blue
     yellow: 'hsl(48 100% 40%)', // --kortix-yellow
     orange: 'hsl(37.1 78.7% 45.9%)', // --kortix-orange
-    green: 'hsl(135 100% 28.5%)', // --kortix-green
+    green: 'hsl(135 70.5% 33.8%)', // --kortix-green
     purple: 'hsl(270 51.3% 67.1%)', // --kortix-purple
     red: 'hsl(360 85.3% 62%)', // --kortix-red
   },
 } as const;
+
+/**
+ * Motion tokens — a transcription of apps/web/src/app/globals.css
+ * `--duration-*` / `--ease-*`, pinned by lib/utils/theme.test.ts.
+ *
+ * React Native cannot read CSS variables for animation timing, so these are
+ * plain numbers. Durations are milliseconds. Easings are cubic-bezier control
+ * points `[x1, y1, x2, y2]`; spread them into Reanimated:
+ * `withTiming(v, { duration: MOTION.duration.normal, easing: Easing.bezier(...MOTION.easing.default) })`.
+ */
+export const MOTION = {
+  duration: {
+    fast: 100, // --duration-fast
+    normal: 150, // --duration-normal
+    moderate: 200, // --duration-moderate
+    slow: 300, // --duration-slow
+    slower: 500, // --duration-slower
+  },
+  easing: {
+    default: [0.2, 0, 0, 1], // --ease-default
+    in: [0.4, 0, 1, 1], // --ease-in
+    out: [0, 0, 0.2, 1], // --ease-out
+    inOut: [0.4, 0, 0.2, 1], // --ease-in-out
+  },
+} as const satisfies {
+  duration: Record<string, number>;
+  easing: Record<string, readonly [number, number, number, number]>;
+};
 
 /**
  * React Navigation chrome (headers, tab bars, etc.). Derived from THEME —

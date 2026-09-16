@@ -256,8 +256,8 @@ export function CreditPurchaseModal({
                   <View className="flex-row items-center gap-2">
                     {/* Button fill is `bg-primary`, near-white in dark mode, so a
                         hardcoded white spinner was invisible there. `primaryForeground`
-                        is the token that pairs with it -- near-white in light mode
-                        (hsl(60 0% 98%)), near-black in dark (hsl(180 0% 9%)) -- and it
+                        is the token that pairs with it -- white in light mode
+                        (hsl(0 0% 100%)), near-black in dark (hsl(0 0% 3.5%)) -- and it
                         matches the `text-primary-foreground` label beside it. */}
                     <ActivityIndicator
                       size="small"
