@@ -42,6 +42,46 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
 }
 
 describe('simple gateway pipeline', () => {
+  // The admission hook is a NETWORK call to the API control plane on the
+  // standalone gateway. Every other hook the handler calls classifies its own
+  // failure (resolveRoute -> 502 routing_unavailable, resolveUpstream -> 400,
+  // billing/budget -> 402); `authorize` did not, so a control-plane transport
+  // failure escaped the whole pipeline and was reported by the server's
+  // catch-all as `503 gateway_error "Gateway unavailable"` with empty model
+  // fields — indistinguishable from a gateway crash. Classify it here instead.
+  test('classifies an admission-hook transport failure instead of letting it escape', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const errors: string[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          authorize: async () => {
+            throw new Error('attempt 3 exceeded 5000ms');
+          },
+        },
+        logger: {
+          info() {},
+          warn() {},
+          error(message: string) {
+            errors.push(message);
+          },
+        },
+        fetchImpl: async () => new Response('{}', { status: 200 }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [] }),
+      },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { code: string; error: { code: string } };
+    expect(body.code).toBe('admission_unavailable');
+    expect(body.error.code).toBe('admission_unavailable');
+    expect(errors.join(' ')).toContain('admission');
+  });
+
   test('aborts a provider fetch that does not return response headers before the deadline', async () => {
     const fetchWithTimeout = withUpstreamHeadersTimeout(
       async (_input, init) =>
