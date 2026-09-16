@@ -38,6 +38,7 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -221,18 +222,23 @@ export async function loadProjectSessionInventoryPage(
   // NOT `updated_at` alone: bookkeeping writers (branch GC, stop/resume, title
   // sync) advance it with no activity, and a keyset on it delivered a year-old
   // GC'd session on page 1 while thousands of newer ones sat on unloaded pages.
+  // Outer columns go through `qualifiedColumn`: this template holds a
+  // subquery, and a bare `${projectSessions.metadata}` can render unqualified
+  // and bind to the inner scope (INC-2026-09-15, sql-correlated-subquery-guard).
+  const metadata = qualifiedColumn(projectSessions.metadata);
+  const updatedAt = qualifiedColumn(projectSessions.updatedAt);
   const activityAt = sql`COALESCE(
     GREATEST(
-      CASE WHEN ${projectSessions.metadata}->>'last_activity_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
-           THEN (${projectSessions.metadata}->>'last_activity_at')::timestamptz END,
+      CASE WHEN ${metadata}->>'last_activity_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+           THEN (${metadata}->>'last_activity_at')::timestamptz END,
       (SELECT max(to_timestamp((oc->>'updated_at')::double precision / 1000))
          FROM jsonb_array_elements(
-           CASE WHEN jsonb_typeof(${projectSessions.metadata}->'opencode_sessions') = 'array'
-                THEN ${projectSessions.metadata}->'opencode_sessions' ELSE '[]'::jsonb END
+           CASE WHEN jsonb_typeof(${metadata}->'opencode_sessions') = 'array'
+                THEN ${metadata}->'opencode_sessions' ELSE '[]'::jsonb END
          ) AS oc
         WHERE jsonb_typeof(oc->'updated_at') = 'number')
     ),
-    ${projectSessions.updatedAt}
+    ${updatedAt}
   )`;
   // The exact instant as text. A JS `Date` drops the microseconds, and the
   // keyset below would skip rows in the cursor's millisecond — see
