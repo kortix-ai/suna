@@ -500,6 +500,7 @@ function ConnectorModalBody({
                 connector={connector}
                 displayName={displayName}
                 canWrite={canWrite}
+                onChanged={onChanged}
                 strategyUpdating={strategyUpdating}
                 onAuthorizationStrategyChange={(next) => {
                   setCredOpen(false);

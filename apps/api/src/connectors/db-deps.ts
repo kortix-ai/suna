@@ -1378,6 +1378,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       provider: row.providerType,
       platform: channelPlatform(row.config),
       iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
+      lastError: row.lastError ?? null,
       // A composio connector whose authorization never completed reports
       // `needs_auth` rather than the stored `active`. The gateway already
       // refuses every call on such a connector, so reporting `active` made the

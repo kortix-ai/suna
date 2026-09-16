@@ -1,9 +1,9 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { createConnector } from '@kortix/sdk';
 import { MonitorIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';

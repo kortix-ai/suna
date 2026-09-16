@@ -64,6 +64,18 @@ describe('Discover integrations.sh catalogue', () => {
     expect(calls).toBe(1);
   });
 
+  test('searches by SLUG — the web detail route resolves entries with q=<slug>', async () => {
+    const catalog = createConnectorCatalog({
+      fetch: async () => new Response(JSON.stringify(INDEX)),
+      ttlMs: 60_000,
+    });
+    // "1forge-com" appears in neither name nor domain spelling ("1forge.com")
+    // — only the slug carries it. Without slug in the haystack this answered
+    // zero rows and /connectors/catalog/discover/1forge-com said "not found".
+    const bySlug = await catalog.list({ q: '1forge-com', limit: 10 });
+    expect(bySlug.items.map((item) => item.slug)).toEqual(['1forge-com']);
+  });
+
   test('normalizes every domain surface and only makes runnable variants connectable', async () => {
     const requested: string[] = [];
     const catalog = createConnectorCatalog({

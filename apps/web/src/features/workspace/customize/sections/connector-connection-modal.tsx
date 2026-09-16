@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { CaretDownIcon, PlusIcon, User, UsersThree } from '@phosphor-icons/react';
+import { CaretDownIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 import {
@@ -94,34 +94,27 @@ export function AuthorizationStrategyField({
     return (
       <Field>
         {hideLabel ? null : <FieldLabel>{tI18nComplete.raw('textca6f5e1c98a8')}</FieldLabel>}
-        <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-3">
-          <span
-            className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-sm',
-              isProject ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-            )}
-          >
-            {isProject ? (
-              <UsersThree className="text-kortix-blue size-5" weight="duotone" />
-            ) : (
-              <User className="text-kortix-purple size-5" weight="duotone" />
-            )}
-          </span>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{isProject ? 'Project' : 'User'}</span>
-              <Badge variant="outline" size="xs">
-                {tI18nComplete.raw('text1246fc93bca0')}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground text-xs text-pretty">
-              {isProject
-                ? tI18nComplete.raw('texteb573b3b299a')
-                : tI18nComplete.raw('texte31c7af1f424')}
-            </p>
+        {/* The design-system settings-row shape (title, statement, one quiet
+            border) — the colored duotone tile it used to carry was a one-off
+            style and decorative color, both off the brand allowlist
+            (Jay, 2026-09-14). */}
+        <div className="bg-popover rounded-md border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <p className="text-foreground text-sm font-medium">{isProject ? 'Project' : 'User'}</p>
+            <Badge variant="outline" size="xs">
+              {tI18nComplete.raw('text1246fc93bca0')}
+            </Badge>
           </div>
+          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+            {isProject
+              ? tI18nComplete.raw('texteb573b3b299a')
+              : tI18nComplete.raw('texte31c7af1f424')}
+          </p>
+          {/* The reason it is fixed lives INSIDE the row it explains — as a
+              loose paragraph between rows it read as page prose, at body
+              size, belonging to nothing (Jay, 2026-09-14). */}
+          <p className="text-muted-foreground mt-1.5 text-xs text-pretty">{lockedReason}</p>
         </div>
-        <FieldDescription className="text-pretty">{lockedReason}</FieldDescription>
       </Field>
     );
   }

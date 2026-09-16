@@ -20,7 +20,7 @@ import type { AdminConnector } from '@kortix/sdk';
  * union rather than a second piece of page state so that ONE value drives the
  * strip, the `?scope=` param, and the body.
  */
-export type ConnectorScope = 'discover' | 'all' | 'connected' | 'channels';
+export type ConnectorScope = 'all' | 'connected' | 'channels';
 
 /**
  * A connector the user has to act on: the server flagged it, or it declares a

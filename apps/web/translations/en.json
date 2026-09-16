@@ -18457,7 +18457,16 @@
       "textf09704dad946": "Return to connectors",
       "textf3c16c11f690": "Nothing addable",
       "textf75561ab0be6": "Credential now comes from the secret {value0}",
-      "textf91b7814f64d": "No connector with slug “{value0}” exists in this project."
+      "textf91b7814f64d": "No connector with slug “{value0}” exists in this project.",
+      "text006f3373ba52": "With one shared account",
+      "text14f151094a7c": "Connects with one shared account that every member and their agents use.",
+      "text20dee4420874": "One shared account",
+      "text46657cd49f74": "Installed for the whole project too — every member signs in with their own {value0} account, used in the sessions they run.",
+      "text6dfb578442b2": "The whole project uses a single {value0} account — every member, and agents in their sessions. A project manager connects it once.",
+      "textbcbfbec31cb8": "Each member their own account",
+      "textb1e4036909b6": "Checking the server’s sign-in options…",
+      "text6b05881dfe08": "Couldn’t check the server’s sign-in options.",
+      "text7bc4d9a2803c": "Where to get it:"
     }
   },
   "projectOnboarding": {

@@ -18457,7 +18457,16 @@
       "textf09704dad946": "Volver a los conectores",
       "textf3c16c11f690": "Nada que añadir",
       "textf75561ab0be6": "La credencial ahora proviene del secreto {value0}",
-      "textf91b7814f64d": "No existe ningún conector con el slug «{value0}» en este proyecto."
+      "textf91b7814f64d": "No existe ningún conector con el slug «{value0}» en este proyecto.",
+      "text006f3373ba52": "Con una cuenta compartida",
+      "text14f151094a7c": "Se conecta con una cuenta compartida que usan todos los miembros y sus agentes.",
+      "text20dee4420874": "Una cuenta compartida",
+      "text46657cd49f74": "También se instala para todo el proyecto: cada miembro inicia sesión con su propia cuenta de {value0}, usada en las sesiones que ejecuta.",
+      "text6dfb578442b2": "Todo el proyecto usa una sola cuenta de {value0}: cada miembro y los agentes de sus sesiones. Un gestor del proyecto la conecta una vez.",
+      "textbcbfbec31cb8": "Cada miembro con su propia cuenta",
+      "textb1e4036909b6": "Comprobando las opciones de inicio de sesión del servidor…",
+      "text6b05881dfe08": "No se pudieron comprobar las opciones de inicio de sesión del servidor.",
+      "text7bc4d9a2803c": "Dónde obtenerlo:"
     }
   },
   "projectOnboarding": {

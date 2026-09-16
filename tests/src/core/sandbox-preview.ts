@@ -146,6 +146,33 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker info >/dev/null
 
+# A branch environment sandbox outlives its pull request. When the branch
+# comes back under a NEW number (connector-flow: #7074 reverted, reopened as
+# #7236) the box still carries the old instance — its compose project, its
+# config dir, and a last-good set the old guard restarts — and every instance
+# binds the same host ports, so the old stack wins the port race and every
+# deploy of the new one dies on "Bind for 127.0.0.1:15432 failed: port is
+# already allocated" (observed 2026-09-15/16). Tear down every kortix-pr-*
+# project that is not THIS instance and drop its state; the guard reinstall
+# below replaces the old watcher, so nothing brings the stale stack back.
+for project in $(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | sort -u); do
+  case "$project" in
+    kortix-${instance}) ;;
+    kortix-pr-*)
+      echo "removing stale preview stack $project (this instance is kortix-${instance})" >&2
+      docker compose --project-name "$project" down --remove-orphans --timeout 30 >&2 || true
+      ;;
+  esac
+done
+for stale_dir in "$STATE"/self-host/pr-*; do
+  [ -d "$stale_dir" ] || continue
+  [ "$stale_dir" = ${shellQuote(instanceDir)} ] && continue
+  rm -rf "$stale_dir"
+  # The shared last-good set was proven by the era that just left; restoring
+  # it under this instance would bring the OLD pull request's images up.
+  rm -f "$STATE/last-good.env"
+done
+
 # The self-healing guard, installed before anything below can fail so that a
 # deploy which dies at configure or stack still leaves a watcher behind. See
 # tests/src/core/preview-guard.ts.

@@ -5,6 +5,7 @@ import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
+  oauth2CredentialOffered,
 } from './connector-oauth2-auto';
 
 const FULL: OAuth2ResourceDiscovery = {
@@ -126,5 +127,26 @@ describe('mergeResourceDiscoveryIntoForm', () => {
     );
     expect(edited.tokenUrl).toBe('https://my.override/token');
     expect(edited.scopes).toBe('openid');
+  });
+});
+
+describe('oauth2CredentialOffered', () => {
+  test('offers OAuth only when the server itself requires authorization', () => {
+    expect(oauth2CredentialOffered({ kind: 'unknown' })).toBe(false);
+    expect(oauth2CredentialOffered({ kind: 'no_authorization' })).toBe(false);
+    expect(
+      oauth2CredentialOffered({
+        kind: 'register',
+        label: 'Connect x',
+        registrationEndpoint: 'https://a/register',
+        scopes: [],
+      }),
+    ).toBe(true);
+    expect(
+      oauth2CredentialOffered({ kind: 'client_id_required', label: 'Connect x', scopes: [] }),
+    ).toBe(true);
+    // `manual` is still a 401-ing server demanding OAuth — only its metadata
+    // is missing, so the tab must stay reachable without the escape hatch.
+    expect(oauth2CredentialOffered({ kind: 'manual', reason: 'no metadata' })).toBe(true);
   });
 });

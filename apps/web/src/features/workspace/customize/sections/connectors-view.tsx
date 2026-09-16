@@ -2,6 +2,9 @@
 
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
+import Link from 'next/link';
+
+import { connectorCredentialHelpLinks } from '@/features/workspace/capabilities/connectors/detail/connector-doc-links';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -28,7 +31,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
@@ -68,6 +71,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheetBody,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetFooter,
+  SplitSheetHeader,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -169,6 +180,7 @@ import {
   autoConnectPlan,
   buildClientRegistrationInput,
   mergeResourceDiscoveryIntoForm,
+  oauth2CredentialOffered,
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
@@ -4818,6 +4830,7 @@ export function SetCredentialModal({
   open,
   onOpenChange,
   onSaved,
+  shell = 'modal',
 }: {
   projectId: string;
   connector: AdminConnector | null;
@@ -4826,8 +4839,18 @@ export function SetCredentialModal({
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
+  /**
+   * Which surface hosts the dialog. `modal` floats it (the default, used by
+   * legacy callers); `split` renders `SplitSheetContent` for a caller that
+   * wraps its page in `<SplitSheet>` — the connector page's Connect opens as
+   * an inline column instead of an overlay. One body, one footer, two shells.
+   */
+  shell?: 'modal' | 'split';
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // The typed `UiTranslator` the shared doc-links helper takes — the same
+  // catalog `tI18nHardcoded` reads, scoped one level deeper.
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   /**
    * `null` until the user picks a tab. The effective tab is then derived from
    * discovery, so a server that supports one-click OAuth opens on OAuth and a
@@ -4860,6 +4883,12 @@ export function SetCredentialModal({
           : requestAuth === 'mtls'
             ? '{"certificate":"-----BEGIN CERTIFICATE-----\\n...","private_key":"-----BEGIN PRIVATE KEY-----\\n...","ca":""}'
             : '••••••••';
+  // Where the pasted value COMES from — the app's developer docs (curated)
+  // and the Kortix guide. A bare input assumed the user already had a token
+  // in hand (Jay, 2026-09-15).
+  const credentialHelpLinks = connector
+    ? connectorCredentialHelpLinks(connector, tI18nComplete)
+    : [];
   const staticValid = (() => {
     if (!value) return false;
     if (!objectCredential) return true;
@@ -4884,6 +4913,12 @@ export function SetCredentialModal({
   const [device, setDevice] = useState<OAuth2DeviceAuthorizationStartResult | null>(null);
   const [deviceConnectionId, setDeviceConnectionId] = useState<string | null>(null);
   const [manualSetup, setManualSetup] = useState(false);
+  /**
+   * The user explicitly asked for OAuth 2.0 on a connector whose server never
+   * advertised it. Kept separate from `credentialTypeChoice` so closing the
+   * modal forgets it — the next open starts from what discovery says again.
+   */
+  const [oauth2Requested, setOauth2Requested] = useState(false);
   useEffect(() => {
     if (!device || !deviceConnectionId) return;
     let stopped = false;
@@ -4957,7 +4992,13 @@ export function SetCredentialModal({
     // before they choose. A connector with no server URL 400s here and simply
     // leaves the modal on its static-credential default.
     enabled: open && Boolean(connector),
-    retry: false,
+    // One retry, not zero: the probe walks the server's whole metadata chain
+    // (WWW-Authenticate → resource metadata → AS metadata), so one transient
+    // failure anywhere in it used to silently cost the OAuth tab for the rest
+    // of the open — the "sometimes there is no Connect button" report
+    // (Jay, 2026-09-15). A designed 400 (no server URL) pays one extra
+    // request and still lands on the static default.
+    retry: 1,
     // Same tier as the connector config it sits beside: provider metadata
     // changes on the provider's schedule, not on ours (FRESHNESS
     // .connectorOAuth2Discovery).
@@ -4991,12 +5032,45 @@ export function SetCredentialModal({
   const credentialType: 'static' | 'oauth2' =
     credentialTypeChoice ??
     (plan.kind === 'register' || plan.kind === 'client_id_required' ? 'oauth2' : 'static');
+  /**
+   * Whether OAuth 2.0 is on the table AT ALL. It used to be a permanent
+   * second tab on every connector — an API-key connector opened onto a
+   * selector between its real credential and a grant flow its server does not
+   * speak (the probe just 400s into a warning banner). Now the tab strip
+   * appears only when discovery says the server actually requires OAuth
+   * (`oauth2CredentialOffered`), or when the user asks for it via the escape
+   * hatch under the credential field.
+   */
+  const showOAuth2Tabs =
+    oauth2CredentialOffered(plan) || oauth2Requested || credentialTypeChoice === 'oauth2';
   const showManualOAuth2Fields =
     manualSetup || plan.kind === 'unknown' || plan.kind === 'client_id_required';
   const oauth2Valid =
     application.grant === 'client_credentials'
       ? oauth2CredentialFormValid(oauth2)
       : oauth2ApplicationFormValid(effectiveApplication);
+  /**
+   * The static tab names the thing the server actually wants, read off the
+   * connector's declared auth shape. A generic "Credential" label is the
+   * fallback, not the norm — "API key" vs "OAuth 2.0" is the distinction the
+   * whole dialog exists to make.
+   */
+  const staticTabLabel =
+    requestAuth === 'api_key'
+      ? 'API key'
+      : requestAuth === 'bearer'
+        ? 'Bearer token'
+        : requestAuth === 'basic'
+          ? 'Username & password'
+          : requestAuth === 'oauth1'
+            ? 'OAuth 1.0 keys'
+            : requestAuth === 'hmac'
+              ? 'HMAC keys'
+              : requestAuth === 'aws_sigv4'
+                ? 'AWS keys'
+                : requestAuth === 'mtls'
+                  ? 'mTLS certificate'
+                  : 'Credential';
   /**
    * One click: register Kortix with the authorization server (RFC 7591), then
    * start Authorization Code + PKCE. No client id, no secret, no endpoints.
@@ -5094,279 +5168,352 @@ export function SetCredentialModal({
     onError: (err: Error) =>
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text2c07997249ab')),
   });
-  return (
-    <Modal
-      open={open}
-      onOpenChange={(o) => {
-        if (save.isPending) return;
-        if (!o) {
-          setManualSetup(false);
-          setCredentialTypeChoice(null);
-        }
-        onOpenChange(o);
-      }}
+  const handleShellOpenChange = (o: boolean) => {
+    if (save.isPending) return;
+    if (!o) {
+      setManualSetup(false);
+      setCredentialTypeChoice(null);
+      setOauth2Requested(false);
+    }
+    onOpenChange(o);
+  };
+  const handleDialogSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (
+      (credentialType === 'static' && staticValid) ||
+      (credentialType === 'oauth2' && oauth2Valid)
+    ) {
+      save.mutate();
+    }
+  };
+  /* Named for the outcome, not the mechanism. "Set credential <slug>" plus a
+     two-tab strip left three controls in one journey all talking about
+     credentials with nothing distinguishing them. The title says what
+     finishing this dialog achieves; the tab labels below name the specific
+     thing the server wants. */
+  const dialogTitle = `Connect ${connector ? connector.name?.trim() || connector.slug : 'connector'}`;
+  const dialogDescription =
+    'Kortix stores what you enter encrypted and attaches it to every call. Agents and the sandbox never see it.';
+  const credentialBody = (
+    <Tabs
+      value={credentialType}
+      onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
+      className="gap-4"
     >
-      <ModalContent className="lg:max-w-3xl">
-        <ModalHeader>
-          <ModalTitle>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
-            )}
-            {connector?.slug}
-          </ModalTitle>
-          <ModalDescription>{tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84')}</ModalDescription>
-        </ModalHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (
-              (credentialType === 'static' && staticValid) ||
-              (credentialType === 'oauth2' && oauth2Valid)
-            ) {
-              save.mutate();
-            }
-          }}
-        >
-          <ModalBody>
-            <Tabs
-              value={credentialType}
-              onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
-              className="gap-4"
-            >
-              <TabsList>
-                <TabsTrigger value="static">
-                  {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
-                </TabsTrigger>
-                <TabsTrigger value="oauth2">
-                  {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="static">
-                <Field>
-                  <FieldLabel htmlFor="connector-static-credential">
-                    {objectCredential
-                      ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1')
-                      : 'Value'}
-                  </FieldLabel>
-                  {objectCredential ? (
-                    <Textarea
-                      id="connector-static-credential"
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder={credentialExample}
-                      className="min-h-28 font-mono text-xs"
-                      autoFocus
-                    />
-                  ) : (
-                    <Input
-                      id="connector-static-credential"
-                      type="password"
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder={credentialExample}
-                      className="font-mono"
-                      autoFocus
-                    />
-                  )}
-                  {objectCredential && (
-                    <FieldDescription>
-                      {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
-                      {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
-                    </FieldDescription>
-                  )}
-                </Field>
-              </TabsContent>
-              <TabsContent value="oauth2" className="space-y-4">
-                {discoveryPending ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}
+      {showOAuth2Tabs ? (
+        <TabsList>
+          <TabsTrigger value="static">{staticTabLabel}</TabsTrigger>
+          <TabsTrigger value="oauth2">
+            {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+          </TabsTrigger>
+        </TabsList>
+      ) : null}
+      <TabsContent value="static">
+        <Field>
+          <FieldLabel htmlFor="connector-static-credential">
+            {objectCredential ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1') : 'Value'}
+          </FieldLabel>
+          {objectCredential ? (
+            <Textarea
+              id="connector-static-credential"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={credentialExample}
+              className="min-h-28 font-mono text-xs"
+              autoFocus
+            />
+          ) : (
+            <Input
+              id="connector-static-credential"
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={credentialExample}
+              className="font-mono"
+              autoFocus
+            />
+          )}
+          {objectCredential && (
+            <FieldDescription>
+              {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
+              {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
+            </FieldDescription>
+          )}
+        </Field>
+        {/* Where the value comes from. The app's developer docs are where
+            API keys and tokens are actually minted; the Kortix guide covers
+            the pasting side. At most two links — this is a form, not a
+            reading list. */}
+        {credentialHelpLinks.length > 0 ? (
+          <p className="text-muted-foreground mt-2 text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text7bc4d9a2803c')}{' '}
+            {credentialHelpLinks.map((link, index) => (
+              <span key={link.href}>
+                {index > 0 ? ' · ' : null}
+                {link.external ? (
+                  <a
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-foreground hover:underline"
                   >
-                    {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
-                  </InfoBanner>
-                ) : plan.kind === 'no_authorization' ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
-                  </InfoBanner>
-                ) : plan.kind === 'register' && !manualSetup ? (
-                  <div className="space-y-3">
-                    <InfoBanner
-                      tone="neutral"
-                      title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}
-                    >
-                      {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
-                      {plan.scopes.length
-                        ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
-                            value0: plan.scopes.join(', '),
-                          })
-                        : ''}
-                    </InfoBanner>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="gap-1.5"
-                        disabled={autoConnect.isPending}
-                        onClick={() => autoConnect.mutate()}
-                      >
-                        {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
-                        {plan.label}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline-ghost"
-                        onClick={() => setManualSetup(true)}
-                      >
-                        {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : plan.kind === 'client_id_required' ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
-                  </InfoBanner>
-                ) : plan.kind === 'manual' && !manualSetup ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
-                    action={
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setManualSetup(true)}
-                      >
-                        {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
-                      </Button>
-                    }
-                  >
-                    {plan.reason}
-                  </InfoBanner>
+                    {link.label}
+                  </a>
                 ) : (
-                  <InfoBanner tone="info">
-                    {tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}
-                  </InfoBanner>
+                  <Link href={link.href} className="text-foreground hover:underline">
+                    {link.label}
+                  </Link>
                 )}
-                {discoveryError && (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}
-                  >
-                    {discoveryError}
-                  </InfoBanner>
-                )}
-                {showManualOAuth2Fields && (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor="connector-oauth2-grant">
-                        {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
-                      </FieldLabel>
-                      <Select
-                        value={application.grant}
-                        onValueChange={(grant) => {
-                          setDevice(null);
-                          setApplication({
-                            ...application,
-                            grant: grant as OAuth2ApplicationForm['grant'],
-                          });
-                        }}
-                      >
-                        <SelectTrigger id="connector-oauth2-grant">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="client_credentials">
-                            {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
-                          </SelectItem>
-                          <SelectItem value="authorization_code">
-                            {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
-                          </SelectItem>
-                          <SelectItem value="device_authorization">
-                            {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    {application.grant === 'client_credentials' ? (
-                      <OAuth2CredentialFields
-                        value={oauth2}
-                        onChange={setOauth2}
-                        idPrefix="connector-oauth2"
-                      />
-                    ) : (
-                      <OAuth2ApplicationFields
-                        value={effectiveApplication}
-                        onChange={setApplication}
-                        idPrefix="connector-oauth2-application"
-                      />
-                    )}
-                  </>
-                )}
-                {device && (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
-                      value0: device.user_code,
-                    })}
-                    action={
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          window.open(
-                            device.verification_uri_complete ?? device.verification_uri,
-                            '_blank',
-                            'noopener,noreferrer',
-                          )
-                        }
-                      >
-                        <ExternalLink className="size-4" />
-                        {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
-                      </Button>
-                    }
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
-                    {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
-                    {new Date(device.expires_at).toLocaleTimeString()}.
-                  </InfoBanner>
-                )}
-              </TabsContent>
-            </Tabs>
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {/* Below the field, one quiet line about the OTHER way in. On an MCP
+            connector the one-click OAuth flow is the expected path, so while
+            the strip is absent the line says WHY: still checking, or the
+            probe failed (with the retry that brings the option back —
+            before this, a failed probe left a bare token field and no trace
+            of the missing Connect button; Jay, 2026-09-15). Every other
+            provider keeps only the escape hatch: for an API key, "no OAuth"
+            is the designed answer, not a failure worth narrating. */}
+        {!showOAuth2Tabs ? (
+          connector?.provider === 'mcp' && discoveryPending ? (
+            <p className="text-muted-foreground mt-3 flex items-center gap-1.5 text-xs">
+              <Loading className="size-3.5 shrink-0" />
+              {tI18nHardcoded.raw('i18nComplete.textb1e4036909b6')}
+            </p>
+          ) : connector?.provider === 'mcp' && discoveryError ? (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {tI18nHardcoded.raw('i18nComplete.text6b05881dfe08')}{' '}
+              <Button
+                type="button"
+                variant="text"
+                size="sm"
+                className="h-auto px-0 text-xs"
+                onClick={() => void discoveryQuery.refetch()}
+              >
+                {tI18nHardcoded.raw('i18nComplete.text942087cc2d41')}
+              </Button>
+            </p>
+          ) : (
+            /* The escape hatch for the hidden tab: a server can require
+               OAuth 2.0 without advertising it in any way discovery can
+               see. One quiet text action instead of a permanent tab. */
             <Button
               type="button"
-              variant="outline-ghost"
+              variant="text"
               size="sm"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
+              className="text-muted-foreground mt-3 h-auto px-0 text-xs"
+              onClick={() => {
+                setOauth2Requested(true);
+                setCredentialTypeChoice('oauth2');
+              }}
             >
-              {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+              {tI18nHardcoded.raw('i18nComplete.textdee89ced3d79')}
             </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={
-                save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)
-              }
-              className="gap-1.5"
-            >
-              {save.isPending && <Loading className="size-4 shrink-0" />}
-              {credentialType === 'oauth2' && application.grant === 'authorization_code'
-                ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
-                : credentialType === 'oauth2' && application.grant === 'device_authorization'
-                  ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
-                  : 'Save'}
-            </Button>
-          </ModalFooter>
+          )
+        ) : null}
+      </TabsContent>
+      <TabsContent value="oauth2" className="space-y-4">
+        {discoveryPending ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}>
+            {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
+          </InfoBanner>
+        ) : plan.kind === 'no_authorization' ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}>
+            {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
+          </InfoBanner>
+        ) : plan.kind === 'register' && !manualSetup ? (
+          <div className="space-y-3">
+            <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}>
+              {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
+              {plan.scopes.length
+                ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
+                    value0: plan.scopes.join(', '),
+                  })
+                : ''}
+            </InfoBanner>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                disabled={autoConnect.isPending}
+                onClick={() => autoConnect.mutate()}
+              >
+                {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
+                {plan.label}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline-ghost"
+                onClick={() => setManualSetup(true)}
+              >
+                {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
+              </Button>
+            </div>
+          </div>
+        ) : plan.kind === 'client_id_required' ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}>
+            {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
+          </InfoBanner>
+        ) : plan.kind === 'manual' && !manualSetup ? (
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setManualSetup(true)}
+              >
+                {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
+              </Button>
+            }
+          >
+            {plan.reason}
+          </InfoBanner>
+        ) : (
+          <InfoBanner tone="info">{tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}</InfoBanner>
+        )}
+        {discoveryError && (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}>
+            {discoveryError}
+          </InfoBanner>
+        )}
+        {showManualOAuth2Fields && (
+          <>
+            <Field>
+              <FieldLabel htmlFor="connector-oauth2-grant">
+                {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
+              </FieldLabel>
+              <Select
+                value={application.grant}
+                onValueChange={(grant) => {
+                  setDevice(null);
+                  setApplication({
+                    ...application,
+                    grant: grant as OAuth2ApplicationForm['grant'],
+                  });
+                }}
+              >
+                <SelectTrigger id="connector-oauth2-grant">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client_credentials">
+                    {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
+                  </SelectItem>
+                  <SelectItem value="authorization_code">
+                    {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
+                  </SelectItem>
+                  <SelectItem value="device_authorization">
+                    {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {application.grant === 'client_credentials' ? (
+              <OAuth2CredentialFields
+                value={oauth2}
+                onChange={setOauth2}
+                idPrefix="connector-oauth2"
+              />
+            ) : (
+              <OAuth2ApplicationFields
+                value={effectiveApplication}
+                onChange={setApplication}
+                idPrefix="connector-oauth2-application"
+              />
+            )}
+          </>
+        )}
+        {device && (
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
+              value0: device.user_code,
+            })}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  window.open(
+                    device.verification_uri_complete ?? device.verification_uri,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
+              >
+                <ExternalLink className="size-4" />
+                {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
+              </Button>
+            }
+          >
+            {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
+            {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
+            {new Date(device.expires_at).toLocaleTimeString()}.
+          </InfoBanner>
+        )}
+      </TabsContent>
+    </Tabs>
+  );
+  const footerActions = (
+    <>
+      <Button
+        type="button"
+        variant="outline-ghost"
+        size="sm"
+        onClick={() => handleShellOpenChange(false)}
+        disabled={save.isPending}
+      >
+        {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+      </Button>
+      <Button
+        type="submit"
+        size="sm"
+        disabled={save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)}
+        className="gap-1.5"
+      >
+        {save.isPending && <Loading className="size-4 shrink-0" />}
+        {credentialType === 'oauth2' && application.grant === 'authorization_code'
+          ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
+          : credentialType === 'oauth2' && application.grant === 'device_authorization'
+            ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
+            : tI18nHardcoded.raw('i18nComplete.texta88c299ab989')}
+      </Button>
+    </>
+  );
+
+  if (shell === 'split') {
+    return (
+      <SplitSheetContent>
+        <SplitSheetHeader>
+          <SplitSheetTitle>{dialogTitle}</SplitSheetTitle>
+          <SplitSheetDescription>{dialogDescription}</SplitSheetDescription>
+        </SplitSheetHeader>
+        <form onSubmit={handleDialogSubmit} className="flex min-h-0 flex-1 flex-col">
+          <SplitSheetBody>{credentialBody}</SplitSheetBody>
+          <SplitSheetFooter className="justify-between">{footerActions}</SplitSheetFooter>
+        </form>
+      </SplitSheetContent>
+    );
+  }
+
+  return (
+    <Modal open={open} onOpenChange={handleShellOpenChange}>
+      <ModalContent className="lg:max-w-3xl">
+        <ModalHeader>
+          <ModalTitle>{dialogTitle}</ModalTitle>
+          <ModalDescription>{dialogDescription}</ModalDescription>
+        </ModalHeader>
+        <form onSubmit={handleDialogSubmit}>
+          <ModalBody>{credentialBody}</ModalBody>
+          <ModalFooter className="sm:justify-between">{footerActions}</ModalFooter>
         </form>
       </ModalContent>
     </Modal>
