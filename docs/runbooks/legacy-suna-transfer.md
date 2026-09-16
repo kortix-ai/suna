@@ -1139,3 +1139,19 @@ sustained 30-minute guarantee. A ten-second interface sample measured 23.01 Mbps
 upload and 62.26 Mbps download; it does not establish the connection's ceiling.
 Fifteen archive-layout, destination-pressure, and controller tests passed with
 89 assertions.
+
+Archive slots later increased from 32 to 48. Sixty-five uploader processes that
+had already loaded the old 32-slot validator rejected the new setting. This was
+an operator rollout error. Retry processes loaded the new 64-slot validator. In
+the next 75-second phase window, 22 archives completed and three timed out; no
+provider or storage error appeared in that window. Pipeline admissions remain
+128 for the current dispatcher. The next dispatcher retains the 128 ceiling.
+
+The clean 45-second window at 48 archive slots completed 14 imports, equivalent
+to 1,120/hour. The following 90-second aggregate fell to 840/hour while five
+archive processes exhausted the 15-minute attempt timeout. Reducing the configured
+limit did not stop the 48 transfers already in flight. The stable limit returned
+to 32. The next dispatcher uses a 45-minute archive attempt timeout and retains
+a 128-pipeline ceiling. This prevents a large multi-part archive or network-slot
+wait from causing a premature global backoff. The 1,120/hour observation is a
+burst result; the sustained 30-minute rate before this probe was 720/hour.
