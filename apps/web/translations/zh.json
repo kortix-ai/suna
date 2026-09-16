@@ -1691,7 +1691,7 @@
     "queueMessage": "加入队列",
     "queueShortcut": "Enter 发送 · {modifier}Enter 加入队列",
     "queued": "排队中",
-    "queuedFiles": "{count} 个文件"
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
   },
   "billing": {
     "plan": {

@@ -45,11 +45,9 @@ describe('the waiting row has a fallback when no turn owns it', () => {
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
     const row = between(chat, '{isBusy &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
-    // `queuedSyntheticMessages` replaced `queuedMessages`: queued entries left
-    // the transcript for the list above the composer, and only the first
-    // prompt's row is still drawn as a turn — the same term the stand-in reads.
-    expect(row).toContain(
-      '!(showFirstPromptPreview && firstPromptSource && queuedSyntheticMessages.length === 0 && turns.length === 0)',
+    // First prompts and Enter submissions share this stand-in exclusion.
+    expect(row).toMatch(
+      /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
     );
     expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
     // The stand-in's own gate is unchanged — it is the one that decides
