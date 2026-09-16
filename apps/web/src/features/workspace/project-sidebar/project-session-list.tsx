@@ -69,13 +69,12 @@ import {
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listChangeRequests,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk, useProjectSessions } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -87,7 +86,7 @@ import {
   SquareIcon as Square,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useId, useMemo, useState, type ReactNode } from 'react';
@@ -208,12 +207,25 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
-    refetchInterval: (query) =>
+  // Paged, not the whole inventory. This list is the always-mounted poller: it
+  // re-fetches every 5s while any loaded row is still provisioning, so its cost
+  // per tick is the cost of the whole surface. Unbounded, a 12,617-session
+  // project shipped a multi-megabyte body on every one of those ticks and the
+  // app became unusable. `useProjectSessions` bounds it to the rows the viewer
+  // has actually asked to see — see `@kortix/sdk/react/use-project-sessions`.
+  const {
+    sessions,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useProjectSessions(projectId, {
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: Boolean(activeSessionId),
       }),
     // Focus IS the cross-tab signal this list has: a session started in
@@ -221,7 +233,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // other way to appear here before the 60s open-session poll. The
     // sessions page already refetches on focus for the same reason.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
@@ -279,7 +290,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = useMemo(() => data ?? [], [data]);
   const changeRequestsBySession = useMemo(
     () => groupChangeRequestsBySession(changeRequestData?.change_requests ?? [], sessions),
     [changeRequestData?.change_requests, sessions],
@@ -467,6 +477,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             ))}
           </SessionListSection>
         ))}
+        {hasNextPage && (
+          <div className="px-2 pt-1 pb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
+              disabled={isFetchingNextPage}
+              onClick={() => fetchNextPage()}
+            >
+              {isFetchingNextPage ? 'Loading…' : 'Load more'}
+            </Button>
+          </div>
+        )}
       </FadedScrollArea>
     );
   }

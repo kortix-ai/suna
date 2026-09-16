@@ -35,12 +35,11 @@ import {
 } from '@/stores/session-filter-store';
 import {
   deleteProjectSession,
-  listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { qk, useProjectSessions } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
@@ -192,30 +191,28 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   );
   const creatingSession = useIsCreatingProjectSession(projectId);
 
-  const sessionsQuery = useQuery({
+  const sessionsQuery = useProjectSessions(projectId, {
     // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
     // reader uses. It includes accessible warm and soft-deleted rows, but never
     // sessions the manager cannot open. It MUST carry its own scope segment in
-    // the key (see qk.project.sessions' doc comment). Sharing the default-scope key here
-    // is the exact bug this file existed to fix.
-    queryKey: qk.project.sessions(projectId, 'project'),
-    queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
+    // the key (see qk.project.sessionsPaged' doc comment). Sharing the
+    // default-scope key here is the exact bug this file existed to fix.
+    scope: 'project',
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
     // was invisible here until the window regained focus, while the sidebar
     // and header had already moved on. Three surfaces, three policies, one
     // name: that divergence IS the bug.
-    refetchInterval: (query) =>
+    refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
+        sessions: loaded,
         hasOpenSession: false,
       }),
     // The poll stops once every session settles, so without this a session
     // deleted from another surface would linger here indefinitely.
     refetchOnWindowFocus: true,
-    ...contract('inventory'),
   });
 
   const invalidateSessions = useCallback(() => {
@@ -226,7 +223,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   }, [projectId, queryClient]);
 
-  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
+  const sessions = sessionsQuery.sessions;
 
   // Typing stays on the fast path: the input updates from `search` every
   // keystroke, while the list below re-filters from the deferred copy. On a
@@ -623,6 +620,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         })}
                       </SessionsSection>
                     ))}
+                    {sessionsQuery.hasNextPage && (
+                      <div className="flex justify-center pb-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={sessionsQuery.isFetchingNextPage}
+                          onClick={() => sessionsQuery.fetchNextPage()}
+                        >
+                          {sessionsQuery.isFetchingNextPage ? 'Loading…' : 'Load more sessions'}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </FadedScrollArea>
               </div>

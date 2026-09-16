@@ -3,6 +3,11 @@ import type { projectSessions } from '@kortix/db';
 
 import {
   mergeSessionOwnerIdentities,
+  SESSION_PAGE_DEFAULT_LIMIT,
+  SESSION_PAGE_MAX_LIMIT,
+  cursorForRow,
+  decodeSessionCursor,
+  encodeSessionCursor,
   selectSessionRowsForViewer,
 } from './session-inventory';
 
@@ -429,5 +434,57 @@ describe('runtime status map tolerates a superset', () => {
 
     expect(selected.items).toHaveLength(1);
     expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});
+
+describe('session list cursor', () => {
+  test('round-trips a position through the opaque encoding', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    const encoded = encodeSessionCursor({ updatedAt, sessionId: 'S1' });
+    const decoded = decodeSessionCursor(encoded);
+    expect(decoded?.sessionId).toBe('S1');
+    expect(decoded?.updatedAt.toISOString()).toBe(updatedAt.toISOString());
+  });
+
+  test('is URL-safe — it travels in a query string', () => {
+    const encoded = encodeSessionCursor({
+      updatedAt: new Date('2026-09-16T10:11:12.345Z'),
+      sessionId: 'S1',
+    });
+    expect(encoded).toBe(encodeURIComponent(encoded));
+  });
+
+  test('a session id containing the separator survives the round trip', () => {
+    // The payload is split on the FIRST separator, so only the timestamp half
+    // is bounded by it. A split on the last one would truncate this id.
+    const sessionId = 'weird|id|with|pipes';
+    const decoded = decodeSessionCursor(
+      encodeSessionCursor({ updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId }),
+    );
+    expect(decoded?.sessionId).toBe(sessionId);
+  });
+
+  test('anything that is not a cursor decodes to null, never a throw', () => {
+    // A bad cursor starts the list from the top. It must not fail the request:
+    // the value reaches us from a client and is not trusted input.
+    expect(decodeSessionCursor(null)).toBeNull();
+    expect(decodeSessionCursor(undefined)).toBeNull();
+    expect(decodeSessionCursor('')).toBeNull();
+    expect(decodeSessionCursor('not-base64-at-all!!')).toBeNull();
+    expect(decodeSessionCursor(Buffer.from('nopipe').toString('base64url'))).toBeNull();
+    expect(decodeSessionCursor(Buffer.from('|S1').toString('base64url'))).toBeNull();
+    expect(decodeSessionCursor(Buffer.from('not-a-date|S1').toString('base64url'))).toBeNull();
+    expect(decodeSessionCursor(Buffer.from('2026-09-16T00:00:00Z|').toString('base64url'))).toBeNull();
+  });
+
+  test('cursorForRow names the row it is given', () => {
+    const updatedAt = new Date('2026-09-16T10:11:12.345Z');
+    expect(decodeSessionCursor(cursorForRow({ updatedAt, sessionId: 'S9' }))?.sessionId).toBe('S9');
+  });
+
+  test('the page ceiling is at or above the default', () => {
+    // A default above the ceiling would clamp every unparameterized request.
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeLessThanOrEqual(SESSION_PAGE_MAX_LIMIT);
+    expect(SESSION_PAGE_DEFAULT_LIMIT).toBeGreaterThan(0);
   });
 });

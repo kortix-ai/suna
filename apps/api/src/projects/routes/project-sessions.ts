@@ -36,6 +36,7 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
+import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -238,6 +239,11 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          // The list is a keyset PAGE, not the whole inventory. See
+          // `lib/session-inventory.ts` for why, and `X-Next-Cursor` below for
+          // how a caller walks it.
+          limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
+          cursor: z.string().optional(),
         }),
       },
     responses: {
@@ -250,7 +256,8 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  const query = c.req.valid('query');
+  const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -262,6 +269,8 @@ projectsApp.openapi(
     userId: loaded.userId,
     effectiveRole: loaded.effectiveRole,
     scope,
+    limit: query.limit,
+    cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
     probeManageCapability: () =>
       projectCapabilityAllowed(
@@ -306,9 +315,17 @@ projectsApp.openapi(
   // serve a stale inventory: the response is private and always re-validated,
   // it just does not have to be re-transferred.
   const serialized = JSON.stringify(body);
-  const etag = `W/"${Bun.hash(serialized).toString(36)}-${body.length}"`;
+  // The cursor is part of the response identity: two pages of the same length
+  // whose rows happen to hash alike must not 304 each other into the wrong
+  // continuation. Hash it with the body.
+  const etag = `W/"${Bun.hash(`${inventory.nextCursor ?? ''}:${serialized}`).toString(36)}-${body.length}"`;
   c.header('Cache-Control', 'private, no-cache');
   c.header('ETag', etag);
+  // The page's continuation token. Absent means this is the last page. It rides
+  // a header so the 200 body stays the bare `Session[]` array every existing
+  // client already parses — adding an envelope would have broken all of them.
+  if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
+  c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
   if (c.req.header('if-none-match') === etag) return c.body(null, 304);
   c.header('Content-Type', 'application/json');
   return c.body(serialized, 200);

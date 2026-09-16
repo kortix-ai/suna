@@ -40,10 +40,14 @@ import {
 import { db } from '../../shared/db';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import type { ProjectRole } from '../access';
 import {
+  SESSION_PAGE_DEFAULT_LIMIT,
+  SESSION_PAGE_MAX_LIMIT,
+  cursorForRow,
+  decodeSessionCursor,
   selectSessionRowsForViewer,
   type ProjectSessionListScope,
   type SessionInventoryItem,
@@ -58,8 +62,15 @@ export interface ProjectSessionInventory {
   authorized: boolean;
   /** The rows the viewer may see, already folded for visibility. */
   items: SessionInventoryItem[];
-  /** Every row the project has, pre-fold — for callers that need the raw set. */
+  /**
+   * The rows this page SCANNED, pre-fold, in list order. Not "every row the
+   * project has" any more — the read is a bounded keyset page (see
+   * `session-inventory.ts`), so a project with more sessions than the page
+   * holds never loads them all. A caller that needs the whole set pages.
+   */
   rows: ProjectSessionRow[];
+  /** Feed back as `cursor` for the next page, or null at the end of the list. */
+  nextCursor: string | null;
   canManageProject: boolean;
   grantsBySession: Map<string, SecretGrant[]>;
   ownerIdentities: Map<string, SessionOwnerIdentity>;
@@ -83,29 +94,19 @@ export async function loadProjectSessionInventory(input: {
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
   probeManageCapability: () => Promise<boolean>;
+  /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
+  limit?: number;
+  /** Opaque cursor from a previous page's `nextCursor`. */
+  cursor?: string | null;
 }): Promise<ProjectSessionInventory> {
-  // Step 1 — everything that does not depend on the session rows runs together
-  // with the session read itself.
-  const [rows, runtimeRows, subject, canManageProject] = await Promise.all([
-    db
-      .select()
-      .from(projectSessions)
-      .where(
-        and(
-          eq(projectSessions.projectId, input.projectId),
-          eq(projectSessions.accountId, input.accountId),
-        ),
-      )
-      .orderBy(desc(projectSessions.updatedAt)),
-    db
-      .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
-      .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.projectId, input.projectId),
-          eq(sessionSandboxes.accountId, input.accountId),
-        ),
-      ),
+  const limit = Math.min(
+    Math.max(Math.trunc(input.limit ?? SESSION_PAGE_DEFAULT_LIMIT), 1),
+    SESSION_PAGE_MAX_LIMIT,
+  );
+
+  // Step 1 — everything that depends only on the CALLER runs together with the
+  // first row chunk. Both are needed before a single row can be folded.
+  const [subject, canManageProject] = await Promise.all([
     resolveShareSubject(input.userId),
     // Manager standing must be derived exactly as the lifecycle routes derive
     // it (loadVisibleSession): a session-bound agent credential never inherits
@@ -119,41 +120,151 @@ export async function loadProjectSessionInventory(input: {
     ),
   ]);
 
-  const runtimeStatusBySession = new Map(
-    runtimeRows.map((row) => [row.sessionId, row.status]),
-  );
+  // The manager-only scope is refused before any row is read: an unauthorized
+  // caller must not cost a page scan.
+  if (input.scope === 'project' && !canManageProject) {
+    return {
+      authorized: false,
+      items: [],
+      rows: [],
+      nextCursor: null,
+      canManageProject,
+      grantsBySession: new Map(),
+      ownerIdentities: new Map(),
+      runtimeStatusBySession: new Map(),
+      subject,
+    };
+  }
 
-  // Step 2 — the two reads that need the row set, but not each other. Owner
-  // identities are resolved over ALL rows (a superset of the selected ones):
-  // the result is a Map consumed by lookup, so the extra ids cost one wider
-  // `IN (…)` instead of a second serial round trip after the fold.
-  const [grantsBySession, ownerIdentities] = await Promise.all([
-    loadSessionGrants(
-      rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
-    ),
-    resolveSessionOwnerIdentities(
-      rows
-        .map((row) => row.createdBy)
-        .filter((ownerId): ownerId is string => Boolean(ownerId)),
-      input.accountId,
-    ),
-  ]);
+  // The visibility fold drops rows (soft-deleted, warm-unprompted, another
+  // member's private session), so a chunk of exactly `limit` rows would
+  // under-fill the page. Over-read, then keep pulling chunks until the page is
+  // full or the list ends.
+  const chunkSize = Math.min(Math.max(limit * 3, 60), 500);
 
-  const selected = selectSessionRowsForViewer({
-    rows,
-    scope: input.scope,
-    canManageProject,
-    subject,
-    grantsBySession,
-    runtimeStatusBySession,
-    callerSessionId: input.boundCredentialSessionId,
-    boundCredentialSessionId: input.boundCredentialSessionId,
-  });
+  const items: SessionInventoryItem[] = [];
+  const scannedRows: ProjectSessionRow[] = [];
+  const grantsBySession = new Map<string, SecretGrant[]>();
+  const ownerIdentities = new Map<string, SessionOwnerIdentity>();
+  const runtimeStatusBySession = new Map<string, RuntimeStatus>();
+
+  let cursor = decodeSessionCursor(input.cursor);
+  let nextCursor: string | null = null;
+  let exhausted = false;
+
+  // Bounded so a page can never turn into a full-table walk: a project whose
+  // rows are almost all invisible to this viewer returns a short page with a
+  // cursor instead of scanning to the end of the list on one request.
+  const MAX_CHUNKS = 8;
+
+  for (let pass = 0; pass < MAX_CHUNKS && items.length < limit; pass += 1) {
+    const chunk = await db
+      .select()
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          // Keyset: strictly after the cursor row in `(updated_at DESC,
+          // session_id DESC)`. Written as the expanded OR rather than a row
+          // constructor so the planner keeps using the composite index.
+          cursor
+            ? or(
+                lt(projectSessions.updatedAt, cursor.updatedAt),
+                and(
+                  eq(projectSessions.updatedAt, cursor.updatedAt),
+                  lt(projectSessions.sessionId, cursor.sessionId),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+      .limit(chunkSize);
+
+    if (chunk.length === 0) {
+      exhausted = true;
+      break;
+    }
+
+    const chunkIds = chunk.map((row) => row.sessionId);
+
+    // Step 2 — the three reads that need THIS chunk's rows but not each other.
+    // Scoped to the chunk, so their cost is the page's cost and not the
+    // project's: the pre-paging version read every sandbox row and resolved
+    // every owner in the project on every poll.
+    const [runtimeRows, chunkGrants, chunkOwners] = await Promise.all([
+      db
+        .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.projectId, input.projectId),
+            eq(sessionSandboxes.accountId, input.accountId),
+            inArray(sessionSandboxes.sessionId, chunkIds),
+          ),
+        ),
+      loadSessionGrants(
+        chunk.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
+      ),
+      resolveSessionOwnerIdentities(
+        chunk
+          .map((row) => row.createdBy)
+          .filter((ownerId): ownerId is string => Boolean(ownerId)),
+        input.accountId,
+      ),
+    ]);
+
+    const chunkRuntime = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
+    for (const [key, value] of chunkRuntime) runtimeStatusBySession.set(key, value);
+    for (const [key, value] of chunkGrants) grantsBySession.set(key, value);
+    for (const [key, value] of chunkOwners) ownerIdentities.set(key, value);
+
+    const selected = selectSessionRowsForViewer({
+      rows: chunk,
+      scope: input.scope,
+      canManageProject,
+      subject,
+      grantsBySession: chunkGrants,
+      runtimeStatusBySession: chunkRuntime,
+      callerSessionId: input.boundCredentialSessionId,
+      boundCredentialSessionId: input.boundCredentialSessionId,
+    });
+
+    for (const item of selected.items) {
+      // Stop exactly at the page boundary, and remember the row we stopped on
+      // so the next page resumes from it rather than re-serving it.
+      if (items.length >= limit) break;
+      items.push(item);
+      scannedRows.push(item.row);
+      nextCursor = cursorForRow(item.row);
+    }
+
+    // Did the page fill before we reached the end of this chunk? Then the rows
+    // we skipped are NOT served yet: the scan position stays at the last row we
+    // emitted and the next page picks them up. Only a chunk we folded to its
+    // last row advances the cursor past it — and only then can a short chunk
+    // mean the list is over. Marking `exhausted` on a chunk we stopped inside
+    // would drop its tail permanently.
+    if (items.length < limit) {
+      const lastChunkRow = chunk[chunk.length - 1]!;
+      nextCursor = cursorForRow(lastChunkRow);
+      cursor = { updatedAt: lastChunkRow.updatedAt, sessionId: lastChunkRow.sessionId };
+      if (chunk.length < chunkSize) {
+        exhausted = true;
+        break;
+      }
+    }
+  }
 
   return {
-    authorized: selected.authorized,
-    items: selected.items,
-    rows,
+    authorized: true,
+    items,
+    rows: scannedRows,
+    // A page that reached the end of the list has no next cursor; one that
+    // stopped early (full page, or the chunk budget) does, even if the next
+    // page turns out to be empty.
+    nextCursor: exhausted ? null : nextCursor,
     canManageProject,
     grantsBySession,
     ownerIdentities,

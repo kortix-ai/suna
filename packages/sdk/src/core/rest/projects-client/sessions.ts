@@ -197,18 +197,81 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
+/** Default page size the API applies when `limit` is omitted. Mirrors
+ *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
+export const PROJECT_SESSION_PAGE_DEFAULT_LIMIT = 50;
+/** Largest page the API will serve. A bigger `limit` is clamped, not refused. */
+export const PROJECT_SESSION_PAGE_MAX_LIMIT = 200;
+
+export interface ListProjectSessionsOptions {
+  /** `project` asks for the manager-only lifecycle inventory. Both scopes omit
+   *  sessions the caller cannot open. */
+  scope?: 'visible' | 'project';
+  /** Rows per page, 1..`PROJECT_SESSION_PAGE_MAX_LIMIT`. */
+  limit?: number;
+  /** A previous page's `next_cursor`. Opaque — pass it back unmodified. */
+  cursor?: string | null;
+}
+
+/** One keyset page of a project's sessions. */
+export interface ProjectSessionPage {
+  items: ProjectSession[];
+  /** Pass as `cursor` for the next page. `null` means this was the last page. */
+  next_cursor: string | null;
+}
+
+function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
+  const params = new URLSearchParams();
+  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (options?.cursor) params.set('cursor', options.cursor);
+  return params.size > 0 ? `?${params}` : '';
+}
+
 /**
- * @param options.scope - `project` asks for the manager-only lifecycle
- * inventory. Both scopes omit sessions the caller cannot open.
+ * One page of a project's sessions, newest activity first.
+ *
+ * NOT the whole inventory. `GET /projects/:id/sessions` used to answer with
+ * every row the viewer could see, so a project that had accumulated 12,617
+ * sessions shipped a multi-megabyte body — on a list the sidebar re-polls every
+ * 5 seconds while any one row is still provisioning. It is now a bounded keyset
+ * page; walk it with `next_cursor`.
+ *
+ * To resolve ONE session, call `getProjectSession` — do not page the list
+ * looking for it.
+ */
+export async function listProjectSessionsPage(
+  projectId: string,
+  options?: ListProjectSessionsOptions,
+): Promise<ProjectSessionPage> {
+  const response = await backendApi.get<ProjectSession[]>(
+    `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+  );
+  const items = unwrap(response);
+  return {
+    items,
+    // Absent means the server folded the list to its end. Normalized to null so
+    // a caller can loop on `while (cursor)` without also testing for undefined.
+    next_cursor: response.headers?.get('x-next-cursor') ?? null,
+  };
+}
+
+/**
+ * The first page of a project's sessions as a bare array.
+ *
+ * Kept for every existing caller: the 200 body is still `ProjectSession[]`, so
+ * nothing had to learn an envelope. It returns ONE page — use
+ * `listProjectSessionsPage` when you need to know whether more follow.
  */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: ListProjectSessionsOptions,
 ) {
-  const params = new URLSearchParams();
-  if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
-  const query = params.size > 0 ? `?${params}` : '';
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
+  return unwrap(
+    await backendApi.get<ProjectSession[]>(
+      `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    ),
+  );
 }
 
 /**

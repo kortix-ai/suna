@@ -40,17 +40,12 @@ describe('runtimeErrorPresentation', () => {
 });
 
 describe('session load state', () => {
-  test('uses the authorized project-session list as an initial transcript pin', () => {
-    expect(
-      findInitialSessionPin(
-        [
-          { session_id: 'session-a', opencode_session_id: 'ses_a' },
-          { session_id: 'session-b', opencode_session_id: 'ses_b' },
-        ],
-        'session-b',
-      ),
-    ).toBe('ses_b');
-    expect(findInitialSessionPin(undefined, 'session-b')).toBeNull();
+  test("uses the resolved session's own row as an initial transcript pin", () => {
+    expect(findInitialSessionPin({ opencode_session_id: 'ses_b' })).toBe('ses_b');
+    // Not loaded yet, and a session that has never been pinned, both answer
+    // null — the caller treats null as "still resolving".
+    expect(findInitialSessionPin(undefined)).toBeNull();
+    expect(findInitialSessionPin({ opencode_session_id: null })).toBeNull();
   });
 
   test('mounts cached transcript content before the runtime switch completes', () => {

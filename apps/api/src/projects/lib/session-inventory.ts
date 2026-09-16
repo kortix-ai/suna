@@ -139,3 +139,70 @@ export function selectSessionRowsForViewer(input: {
     }),
   };
 }
+
+/**
+ * ─── Paging ────────────────────────────────────────────────────────────────
+ *
+ * `GET /:projectId/sessions` used to return EVERY session row the viewer could
+ * see, with no bound. On a project that had accumulated 12,617 sessions that is
+ * a multi-megabyte JSON body — and the sidebar re-fetches it every 5s for as
+ * long as any one row sits in `queued`/`branching`/`provisioning`, which over
+ * twelve thousand rows is effectively always. The browser paid for it twice:
+ * once parsing the body, once letting react-query structurally share 12k
+ * objects into a list that then re-sorted and re-grouped them.
+ *
+ * The list is now a keyset page over `(updated_at DESC, session_id DESC)`.
+ * Keyset, not OFFSET: sessions are written constantly, so an offset page would
+ * skip and repeat rows between requests, and `OFFSET 12000` still makes
+ * Postgres walk the first 12,000. The tuple is unique because `session_id` is
+ * the primary key, which is what makes the comparison total and the page
+ * boundary exact.
+ */
+
+/** One row's position in the `(updated_at DESC, session_id DESC)` order. */
+export interface SessionListCursor {
+  updatedAt: Date;
+  sessionId: string;
+}
+
+/**
+ * Opaque, URL-safe cursor. Opaque ON PURPOSE: the encoding is this module's
+ * business, so the ordering key can change without breaking a client that
+ * round-trips the string it was handed. It is not a secret and not signed — it
+ * only names a position, and every row behind it still goes through the same
+ * visibility fold, so a forged cursor can skip a page but never widen access.
+ */
+export function encodeSessionCursor(cursor: SessionListCursor): string {
+  return Buffer.from(`${cursor.updatedAt.toISOString()}|${cursor.sessionId}`, 'utf8').toString(
+    'base64url',
+  );
+}
+
+/** Null for anything that is not a cursor this module wrote — a bad cursor
+ *  starts from the top rather than failing the request. */
+export function decodeSessionCursor(raw: string | null | undefined): SessionListCursor | null {
+  if (!raw) return null;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(raw, 'base64url').toString('utf8');
+  } catch {
+    return null;
+  }
+  const separator = decoded.indexOf('|');
+  if (separator <= 0) return null;
+  const updatedAt = new Date(decoded.slice(0, separator));
+  const sessionId = decoded.slice(separator + 1);
+  if (!sessionId || Number.isNaN(updatedAt.getTime())) return null;
+  return { updatedAt, sessionId };
+}
+
+/** The cursor that resumes AFTER this row. */
+export function cursorForRow(row: Pick<ProjectSessionRow, 'updatedAt' | 'sessionId'>): string {
+  return encodeSessionCursor({ updatedAt: row.updatedAt, sessionId: row.sessionId });
+}
+
+/** Default page size for the session list, and the ceiling a caller may ask
+ *  for. The default is what the sidebar renders before you scroll; the ceiling
+ *  exists so no caller can re-create the unbounded read this replaced. */
+export const SESSION_PAGE_DEFAULT_LIMIT = 50;
+export const SESSION_PAGE_MAX_LIMIT = 200;
