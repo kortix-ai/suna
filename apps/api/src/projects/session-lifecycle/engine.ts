@@ -56,7 +56,7 @@ import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
-import { type DeliveryTarget, deliverWithRetry } from './deliver';
+import { type DeliveryTarget, type SendOutcome, deliverWithRetry } from './deliver';
 import * as lifecycleStore from './store';
 import {
   MAX_RUNTIME_UNREACHABLE_RETRIES,
@@ -75,6 +75,7 @@ import {
   withNextDeliveryAttempt,
   withRemintedWireId,
 } from './store';
+import { DELIVERY_FAILURE_COPY } from './types';
 import type {
   PromptOverridesWire,
   PromptPartWire,
@@ -501,7 +502,7 @@ export async function continueSession(
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
-  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
+  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
     await beforeSend?.();
     const delivery = await postPrompt(
@@ -558,6 +559,10 @@ export async function continueSession(
       // the transcript against this exact command-id XML and records the marker.
       await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
+    // Carry the reachability verdict through to `deliverWithRetry` rather than
+    // flattening it to false — a down path must not spend the dead-letter
+    // budget. See SendOutcome.
+    if (delivery === 'unreachable') return 'unreachable';
     return delivery !== 'failed';
   };
 
@@ -1963,13 +1968,13 @@ export async function executeQueuedContinue(
     if (delivery === 'unreachable') {
       const parked = await parkPromptForUnreachableRuntime(
         row.commandId,
-        `delivery outcome: ${delivery}`,
+        DELIVERY_FAILURE_COPY[delivery],
         { sessionId: row.sessionId },
       );
       if (parked.parked) return 'queued';
       await markCommandFailed(
         row.commandId,
-        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';
@@ -2003,7 +2008,7 @@ export async function executeQueuedContinue(
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
-    await markCommandFailed(row.commandId, `delivery outcome: ${delivery}`, {
+    await markCommandFailed(row.commandId, DELIVERY_FAILURE_COPY[delivery], {
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
@@ -2424,7 +2429,7 @@ async function postPrompt(
     wireMessageId?: string;
     materializationKey?: string;
   },
-): Promise<'accepted' | 'deduplicated' | 'failed'> {
+): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const deliverableParts = prompt?.materializationKey
@@ -2521,6 +2526,12 @@ async function postPrompt(
     await throwIfPromptRefused(res);
     if (res.status !== 404)
       console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+    // 502/503/504 is the PROXY saying it could not reach the box (a dead
+    // ingress, a control plane refusing the forward, an attempt that timed
+    // out) — not the daemon refusing the prompt. Say so, so a spent deadline
+    // parks the message on the runtime-unreachable ladder instead of spending
+    // the dead-letter budget on a path that is simply down. See SendOutcome.
+    if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
     if (err instanceof PromptDeliveryRefused) throw err;
@@ -2528,6 +2539,8 @@ async function postPrompt(
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
     console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
-    return 'failed';
+    // Connection refused/reset/timed out: the box is not reachable. Same
+    // reasoning as the 502/503/504 branch above.
+    return 'unreachable';
   }
 }
