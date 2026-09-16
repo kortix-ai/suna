@@ -1240,3 +1240,61 @@ TCP and HTTP probes to both endpoints succeeded. This establishes a shared
 egress path, not a proven VPN fault. The in-flight Platinum upload limit did
 not eliminate the cross-service connection burst. Do not claim that a
 five-minute 1,000/hour sample is sustained throughput.
+
+At 23:29 UTC on 2026-09-16, the Suna queue held 15,321 verified sessions,
+534 destination reviews, 186 source-capture reviews, 14 prepared sessions,
+14 queued sessions, and three active destination recoveries. Trimaran held
+612 verified sessions and one source-capture review. These are ledger states,
+not a claim that the transfer is complete.
+
+The workstation now loads `ai.kortix.legacy-transfer` and
+`ai.kortix.legacy-transfer-dashboard` as user LaunchAgents from
+`~/Library/LaunchAgents/`. The first starts the existing migration supervisor
+through dotenvx; the second serves the read-only status page on
+`http://127.0.0.1:8790/`. `launchctl print gui/$(id -u)/ai.kortix.legacy-transfer`
+must report `state = running`, and `curl http://127.0.0.1:8790/api/status`
+must report the current ledger counts. Both agents use `KeepAlive`; remove
+them with `launchctl bootout` after the migration closes.
+
+The supervisor's destination-recovery interval is now 30 seconds after each
+pass. With fewer than 100 fresh Suna sessions, the recovery pass selects up
+to 48 latest retryable reviews and runs 12 workers. The Platinum `/files`
+upload limit remains 12 in flight. Recovery never changes the provider of an
+existing session. The runtime-start retry path calls `/restart` only when
+both external and native runtime IDs are absent; every completed session
+still passes owner, sharing, title, native-history, and workspace proof checks.
+
+After a supervisor interruption, compare `migration_queue.state` with
+`sessions.status` before admitting more work. Four dead `apply-draining`
+claims were returned to `apply-review` after their worker PIDs were confirmed
+absent. Another 39 fully verified, stopped sessions still had `prepared` or
+`apply-review` queue states; the owner API, operator share, title, provider,
+and workspace/exception proofs passed for all 39 before their queue states
+were set to `verified`. Nine captured source workspaces remained in
+`capture-review`; each local archive hash, manifest inventory, and source
+preservation receipt matched before those rows were returned to `prepared`.
+The private reconciliation scripts record IDs and results in append-only
+NDJSON files beside `run.sqlite`.
+
+The final Suna source-capture review was inspected through Daytona's direct
+read API at 23:34 UTC. Of 185 blocked sandboxes, 138 were `error` with
+`recoverable=true`; 21 were `error` with `recoverable=false`; 26 remained
+`archiving`. The last Trimaran source sandbox remained `archiving` since
+2026-09-14. An SDK “not found” response did not establish HTTP 404: the
+direct API returned HTTP 200 for that sandbox. Do not grant a missing-box
+waiver from the SDK error alone.
+
+One recoverable Suna sandbox was piloted through provider recovery, stopped,
+then captured with the normal workspace process. The capture verified 51
+files, 53,567,536 file bytes, the archive SHA, and restoration of the source
+to `stopped`. Its destination session
+`bb1a4d55-bce5-40b2-babd-d7554f48e4a3` then reached `verified` on
+Platinum with `workspace_api_verified_files=51`; the normal apply gate also
+checked the owner, operator share, title, and history. The separate
+`ai.kortix.legacy-source-recovery` LaunchAgent now
+runs four concurrent recoveries. It selects the latest eligible reviews,
+claims each source box, checks the provider's `recoverable` flag, recovers it,
+stops it, and returns its queue row to `prepared`. A failed recovery remains
+in review for at least 30 minutes before another attempt. The existing batch
+runner performs capture and destination import after recovery. The dashboard
+reports this worker as `sourceRecovery`.
