@@ -1,7 +1,7 @@
 'use client';
 
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useSyncExternalStore } from 'react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 import {
   listProjectSessionsPage,
@@ -12,6 +12,7 @@ import {
 import {
   findCachedProjectSession,
   flattenProjectSessionPages,
+  mergeProjectSessionHeadPage,
   type ProjectSessionPagesData,
 } from './project-session-pages';
 import { contract } from './query-contracts';
@@ -27,11 +28,11 @@ export interface UseProjectSessionPagesOptions {
   pageSize?: number;
   enabled?: boolean;
   /**
-   * Poll policy, decided from the sessions loaded so far. A poll refetches
-   * every loaded page in order (TanStack infinite-query refetch), so the
-   * cursor chain stays consistent.
+   * Poll policy, decided from the sessions loaded so far. A poll fetches page
+   * 1 only and merges it into the loaded pages.
    */
   refetchInterval?: (sessions: ProjectSession[]) => number | false;
+  /** Refetch page 1 (not every loaded page) when the window regains focus. */
   refetchOnWindowFocus?: boolean;
 }
 
@@ -44,17 +45,29 @@ export interface UseProjectSessionPagesOptions {
  * `isFetchingNextPage` are TanStack's own. Rendering every session of a large
  * project is what this replaces — `listProjectSessions` returns the whole
  * inventory in one response.
+ *
+ * **Polling and focus refetch fetch page 1 only.** A TanStack infinite-query
+ * refetch re-requests every loaded page in order, so a list scrolled 240 pages
+ * deep issued 240 requests per poll. The infinite query never polls; a head
+ * query for page 1 does, and `mergeProjectSessionHeadPage` folds it into the
+ * loaded pages. The head is seeded from the loaded page 1, so mounting it
+ * issues no request. Explicit invalidation (create, rename, delete) still
+ * refetches the loaded pages, as TanStack defines.
  */
 export function useProjectSessionPages(
   projectId: string | undefined,
   options?: UseProjectSessionPagesOptions,
 ) {
+  const queryClient = useQueryClient();
   const scope = options?.scope ?? 'visible';
   const pageSize = options?.pageSize ?? PROJECT_SESSION_PAGE_SIZE;
+  const enabled = Boolean(projectId) && (options?.enabled ?? true);
   const refetchInterval = options?.refetchInterval;
+  const queryKey = qk.project.sessionPages(projectId ?? '', scope, pageSize);
 
-  return useInfiniteQuery({
-    queryKey: qk.project.sessionPages(projectId ?? '', scope, pageSize),
+  const pages = useInfiniteQuery({
+    ...contract('inventory'),
+    queryKey,
     queryFn: ({ pageParam }): Promise<ProjectSessionPage> =>
       listProjectSessionsPage(projectId as string, {
         scope,
@@ -64,16 +77,45 @@ export function useProjectSessionPages(
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor,
     select: flattenProjectSessionPages,
-    enabled: Boolean(projectId) && (options?.enabled ?? true),
-    refetchInterval: refetchInterval
-      ? (query) =>
-          refetchInterval(
-            flattenProjectSessionPages(query.state.data as ProjectSessionPagesData | undefined),
-          )
-      : undefined,
-    refetchOnWindowFocus: options?.refetchOnWindowFocus,
-    ...contract('inventory'),
+    enabled,
+    // A mount (the Sessions page opening beside the sidebar) and a focus must
+    // not re-request every loaded page. The head query below refetches page 1
+    // on both and merges it.
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
+
+  const head = useQuery({
+    ...contract('inventory'),
+    queryKey: [...queryKey, 'head'] as const,
+    queryFn: () => listProjectSessionsPage(projectId as string, { scope, limit: pageSize }),
+    enabled: enabled && pages.isSuccess,
+    initialData: () => queryClient.getQueryData<ProjectSessionPagesData>(queryKey)?.pages[0],
+    initialDataUpdatedAt: () => queryClient.getQueryState(queryKey)?.dataUpdatedAt,
+    refetchInterval: refetchInterval
+      ? () =>
+          refetchInterval(
+            flattenProjectSessionPages(queryClient.getQueryData<ProjectSessionPagesData>(queryKey)),
+          )
+      : false,
+    refetchOnWindowFocus: options?.refetchOnWindowFocus ?? false,
+  });
+
+  const headData = head.data;
+  useEffect(() => {
+    if (!enabled || !headData) return;
+    const current = queryClient.getQueryData<ProjectSessionPagesData>(queryKey);
+    const merged = mergeProjectSessionHeadPage(current, headData);
+    if (merged === 'refetch') {
+      void queryClient.refetchQueries({ queryKey, exact: true });
+    } else if (merged && merged !== current) {
+      queryClient.setQueryData<ProjectSessionPagesData>(queryKey, merged);
+    }
+    // `queryKey` is rebuilt every render; its content is scope + size + id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headData, enabled, queryClient, projectId, scope, pageSize]);
+
+  return pages;
 }
 
 /**

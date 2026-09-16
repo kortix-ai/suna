@@ -142,7 +142,7 @@ caller cannot open.
 `sessions.list()` returns every session in one response. On a project with
 thousands of sessions, read pages instead with `project(id).sessions.page()`.
 It takes the same `scope`, plus `limit` (1–200, default 50) and `cursor`, and
-returns `{ sessions, next_cursor }` ordered newest first by `updated_at`. Pass
+returns `{ sessions, next_cursor }` ordered by most recent activity. Pass
 `next_cursor` back as `cursor` until it is `null`. If no session changes during
 the walk, every session appears exactly once. A session updated mid-walk moves
 to the top of the order: that walk can return it twice or not at all, so

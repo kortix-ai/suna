@@ -10,6 +10,7 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
+import { useState } from 'react';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
@@ -47,6 +48,7 @@ export function SessionsToolbar({
   canSelect: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const closeSearch = () => {
     onSearchChange('');
     onSearchOpenChange(false);
@@ -105,7 +107,7 @@ export function SessionsToolbar({
         // Ordering, Show, both faceted filters, Collapse all. Not a lookalike:
         // one menu, so the two surfaces cannot drift in what they OFFER. What
         // they do not share is state — see the `surface` prop below.
-        <DropdownMenu>
+        <DropdownMenu open={filterMenuOpen} onOpenChange={setFilterMenuOpen}>
           {/* Hint OUTSIDE the trigger. `Hint` spreads its extra props onto the
               Tooltip ROOT, so a `DropdownMenuTrigger asChild` wrapping it hands
               its onClick and ref to a component that discards them — the button
@@ -124,16 +126,19 @@ export function SessionsToolbar({
               </Button>
             </DropdownMenuTrigger>
           </Hint>
-          <SessionFilterMenu
-            projectId={projectId}
-            sessions={sessions}
-            reviewCountBySession={reviewCountBySession}
-            align="end"
-            side="bottom"
-            // Same menu as the sidebar, its OWN state. Inherits the sidebar's
-            // values until something is changed here.
-            surface="page"
-          />
+          {/* Mounted only while open: it counts facets over every loaded session. */}
+          {filterMenuOpen && (
+            <SessionFilterMenu
+              projectId={projectId}
+              sessions={sessions}
+              reviewCountBySession={reviewCountBySession}
+              align="end"
+              side="bottom"
+              // Same menu as the sidebar, its OWN state. Inherits the sidebar's
+              // values until something is changed here.
+              surface="page"
+            />
+          )}
         </DropdownMenu>
       ) : null}
 

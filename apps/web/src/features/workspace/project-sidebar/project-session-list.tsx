@@ -16,7 +16,6 @@ import {
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,13 +48,18 @@ import {
 } from '@/features/workspace/project-sidebar/session-brief-hover-card';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
+  buildSidebarSessionRows,
+  estimateSidebarRowHeight,
+  type SidebarRowGap,
+  type SidebarSessionListRow,
+} from '@/features/workspace/project-sidebar/session-list-rows';
+import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
-import { useLoadMoreSentinel } from '@/hooks/use-load-more-sentinel';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -67,6 +71,7 @@ import {
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
+import { suppressSessionHoverWhileScrolling } from '@/stores/session-hover-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listChangeRequests,
@@ -90,7 +95,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -169,17 +175,77 @@ const SESSION_ROW_HEIGHT_CLASS = 'h-8';
 
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
-const SKELETON_ROW_WIDTHS = ['w-40', 'w-28', 'w-44', 'w-32', 'w-48', 'w-24', 'w-36', 'w-20'];
+const SKELETON_ROW_WIDTHS = ['w-32', 'w-24', 'w-40', 'w-28', 'w-44', 'w-20', 'w-36', 'w-16'];
 
-/** Loading placeholder mirroring the session-row layout: status dot · title · time. */
-function ProjectSessionListSkeleton() {
+/** Skeleton rows under the loaded list while the next page loads. */
+const LOAD_MORE_SKELETON_ROWS = 6;
+
+/** Rows mounted beyond each edge of the viewport. Enough that a fast scroll
+ *  back up lands on rows that are already painted, not on empty space. */
+const VIRTUAL_OVERSCAN_ROWS = 20;
+
+/** Start the next page this many rows before the end of the loaded list
+ *  (~740px at 29.44px a row), so it lands before the user reaches the foot. */
+const LOAD_AHEAD_ROWS = 25;
+
+const ROW_GAP_CLASS: Record<SidebarRowGap, string> = { none: '', px: 'pb-px', '1': 'pb-1' };
+
+/** Section id → `sidebar.filter.section` translation key. */
+const SECTION_TRANSLATION_KEYS = {
+  'needs-you': 'needsYou',
+  running: 'running',
+  recent: 'recent',
+  today: 'today',
+  yesterday: 'yesterday',
+  week: 'week',
+  older: 'older',
+  chat: 'chat',
+  slack: 'slack',
+  telegram: 'telegram',
+  email: 'email',
+  schedule: 'scheduled',
+  webhook: 'webhook',
+  all: 'all',
+} as const;
+
+/** Loading placeholder with the geometry of `ProjectSessionRow`, so rows do not
+ *  shift when sessions land:
+ *
+ *  - the same row box: `h-8 px-2`, and `min-h-12` on the three touch variants;
+ *  - the `SessionStatusMark` ring itself — the same 16px SVG, `r=6.3`, stroke
+ *    1.5 — painted in the skeleton fill (`primary/10`) and pulsing with it;
+ *  - `gap-2` between ring and title, as in the row link;
+ *  - a title bar sized to `text-sm` glyphs.
+ *
+ *  No time column: a session row shows none at rest (its right side holds
+ *  indicators and the hover `⋯` only). */
+function ProjectSessionListSkeleton({
+  rows = SKELETON_ROW_WIDTHS.length,
+}: {
+  /** Rows to draw, 1–8. The initial load draws all eight. */
+  rows?: number;
+}) {
   return (
     <div className="space-y-px" aria-hidden>
-      {SKELETON_ROW_WIDTHS.map((width) => (
-        <div key={width} className="flex h-8 items-center gap-2 px-2">
-          <Skeleton className="size-2 shrink-0 rounded-full py-0" />
-          <Skeleton className={cn('h-3 py-0', width)} />
-          <Skeleton className="ml-auto h-3 w-7 shrink-0 py-0" />
+      {SKELETON_ROW_WIDTHS.slice(0, rows).map((width) => (
+        <div
+          key={width}
+          className={cn(
+            'flex h-8 items-center gap-2 px-2',
+            'max-md:h-auto max-md:min-h-12',
+            '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12',
+            '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12',
+          )}
+        >
+          <svg
+            height="16"
+            width="16"
+            viewBox="0 0 16 16"
+            className="text-primary/10 shrink-0 animate-pulse"
+          >
+            <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+          </svg>
+          <Skeleton className={cn('h-3 rounded-full py-0', width)} />
         </div>
       ))}
     </div>
@@ -210,7 +276,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   // One page at a time: a project can hold thousands of sessions, and the
   // list used to download and mount every one of them. The next page loads as
-  // the foot of the list scrolls into range (`useLoadMoreSentinel`).
+  // the rendered rows near the end of the loaded list (see the virtualizer below).
   const {
     data,
     isLoading,
@@ -232,13 +298,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // other way to appear here before the 60s open-session poll. The
     // sessions page already refetches on focus for the same reason.
     refetchOnWindowFocus: true,
-  });
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useLoadMoreSentinel({
-    rootRef: scrollRef,
-    hasMore: Boolean(hasNextPage) && !isFetchNextPageError,
-    isLoadingMore: isFetchingNextPage,
-    loadMore: fetchNextPage,
   });
 
   // The brief is a session record, not a Review Center inbox. It therefore
@@ -304,10 +363,107 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.
-  const visibleSessions = sessions.filter(
-    (session) =>
-      matchesStatusFilters(session, statusFilters) &&
-      matchesSourceFilters(session, sourceFilters, tI18nComplete),
+  // Memoized: with thousands of loaded sessions, re-filtering, re-sorting and
+  // re-grouping on every render (a hover, a store tick) is what lagged.
+  const visibleSessions = useMemo(
+    () =>
+      sessions.filter(
+        (session) =>
+          matchesStatusFilters(session, statusFilters) &&
+          matchesSourceFilters(session, sourceFilters, tI18nComplete),
+      ),
+    [sessions, statusFilters, sourceFilters, tI18nComplete],
+  );
+  const grouped = useMemo(
+    () =>
+      groupSessions(
+        visibleSessions,
+        {
+          mode: groupMode,
+          order: orderMode,
+          reviewCountBySession: reviewSummary.needsYouBySession,
+          hiddenSections,
+        },
+        tI18nComplete,
+      ),
+    [visibleSessions, groupMode, orderMode, reviewSummary.needsYouBySession, hiddenSections, tI18nComplete],
+  );
+  const listRows = useMemo(
+    () =>
+      buildSidebarSessionRows({
+        sections: grouped.sections,
+        showHeaders: grouped.showHeaders,
+        collapsedSectionIds,
+        activeSessionId,
+        hasNextPage: Boolean(hasNextPage),
+      }),
+    [grouped, collapsedSectionIds, activeSessionId, hasNextPage],
+  );
+
+  const toggleSection = useCallback(
+    (sectionId: string) => toggleSectionCollapsed(projectId, sectionId),
+    [projectId, toggleSectionCollapsed],
+  );
+  const navigateSession = useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, session: ProjectSession, href: string) => {
+      if (switchingToSessionId && session.session_id === activeSessionId) {
+        event.preventDefault();
+        cancelSessionSwitch();
+        router.replace(href, { scroll: false });
+        return;
+      }
+      if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+        beginSessionSwitch(session.session_id);
+      }
+    },
+    [switchingToSessionId, activeSessionId, cancelSessionSwitch, router, beginSessionSwitch],
+  );
+  const { mutate: restartSession } = restartMutation;
+  const { mutate: stopSession } = stopMutation;
+  const restartingSessionId = restartMutation.isPending
+    ? (restartMutation.variables?.sessionId ?? null)
+    : null;
+  const stoppingSessionId = stopMutation.isPending ? (stopMutation.variables?.sessionId ?? null) : null;
+
+  // Everything a row reads besides its own data, as ONE memoized value. Rows
+  // are memoized against it, so scrolling and page arrivals re-render only the
+  // rows entering the viewport, never the ones already on screen.
+  const rowContext = useMemo<SidebarRowContext>(
+    () => ({
+      projectId,
+      reviewCountBySession: reviewSummary.needsYouBySession,
+      activeSessionId,
+      activeOpenCodeSessionId,
+      switchingToSessionId,
+      canShowHoverCard: canShowSessionHoverCard,
+      restartingSessionId,
+      stoppingSessionId,
+      loadMoreFailed: isFetchNextPageError,
+      onRetryLoadMore: () => void fetchNextPage(),
+      onToggleSection: toggleSection,
+      onNavigate: navigateSession,
+      onDelete: (id, label) => setSessionToDelete({ id, label }),
+      onShare: setSessionToShare,
+      onRename: (id, name) => setSessionToRename({ id, name }),
+      onRestart: (id, label) => restartSession({ sessionId: id, label }),
+      onStop: (id, label) => stopSession({ sessionId: id, label }),
+    }),
+    [
+      projectId,
+      reviewSummary.needsYouBySession,
+      activeSessionId,
+      activeOpenCodeSessionId,
+      switchingToSessionId,
+      canShowSessionHoverCard,
+      restartingSessionId,
+      stoppingSessionId,
+      isFetchNextPageError,
+      fetchNextPage,
+      toggleSection,
+      navigateSession,
+      restartSession,
+      stopSession,
+    ],
   );
 
   const viewState = resolveSessionListViewState({
@@ -318,37 +474,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
   });
-
-  // The foot of the list: the scroll sentinel, plus the loading or retry row.
-  // Also rendered under "no matches": the loaded pages may hold no match while
-  // a later page does, so loading continues until one appears or the pages end.
-  const listFoot = hasNextPage ? (
-    <div ref={loadMoreRef} className="px-2 pb-2">
-      {isFetchNextPageError ? (
-        <div className="flex items-center gap-2">
-          <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-            {t('sessionList.loadMoreError')}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => fetchNextPage()}
-          >
-            {t('retry')}
-          </Button>
-        </div>
-      ) : (
-        <div
-          className="text-muted-foreground flex h-8 items-center gap-2 text-xs"
-          role="status"
-        >
-          <Loading className="size-3" variant="spokes" />
-          {t('sessionList.loadingMore')}
-        </div>
-      )}
-    </div>
-  ) : null;
 
   // Everything below the header — skeleton, error, empty, or the grouped list.
   // Kept as one function so the header stays mounted across all four states
@@ -388,38 +513,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       );
     }
 
-    if (viewState === 'no-matches') {
+    if (viewState === 'no-matches' && !hasNextPage) {
       return (
-        <>
-          {!hasNextPage && (
-            <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-              {t('sessionList.noMatches')}
-            </div>
-          )}
-          {listFoot}
-        </>
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {t('sessionList.noMatches')}
+        </div>
       );
     }
-
-    // Below the early returns: grouping is only ever read by the content state,
-    // and computing it above meant every loading/error/empty render paid for a
-    // result it threw away.
-    const grouped = groupSessions(
-      visibleSessions,
-      {
-        mode: groupMode,
-        order: orderMode,
-        reviewCountBySession: reviewSummary.needsYouBySession,
-        hiddenSections,
-      },
-      tI18nComplete,
-    );
 
     // `resolveSessionListViewState` only sees counts before filtering by
     // `hiddenSections` — it has no way to know every section got hidden. Catch
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
-    if (grouped.sections.length === 0) {
+    if (grouped.sections.length === 0 && !hasNextPage) {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
           {t('allSectionsHidden')}
@@ -427,107 +533,17 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       );
     }
 
-    // One session row plus its opencode sub-sessions. `nested` marks a row drawn
-    // under its coordinator: the indent already carries the spawn link, so the
-    // row drops its own spawned-by icon.
-    const renderSessionNode = (session: ProjectSession, nested: boolean) => {
-      const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-      const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-      const isSwitchTarget = switchingToSessionId === session.session_id;
-      const children = directSubsessions(session);
-      return (
-        <div key={session.session_id} className="space-y-px">
-          <ProjectSessionRow
-            nested={nested}
-            session={session}
-            href={href}
-            isActive={!!isActive && !activeOpenCodeSessionId}
-            isSwitching={isSwitchTarget}
-            onNavigate={(event) => {
-              if (switchingToSessionId && session.session_id === activeSessionId) {
-                event.preventDefault();
-                cancelSessionSwitch();
-                router.replace(href, { scroll: false });
-                return;
-              }
-              if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
-                beginSessionSwitch(session.session_id);
-              }
-            }}
-            displayTitle={getSessionDisplayTitle(session)}
-            childCount={children.length}
-            reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
-            changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
-            canShowHoverCard={canShowSessionHoverCard}
-            onDelete={(id, label) => setSessionToDelete({ id, label })}
-            onShare={(s) => setSessionToShare(s)}
-            onRename={(id, name) => setSessionToRename({ id, name })}
-            onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
-            isRestarting={
-              restartMutation.isPending &&
-              restartMutation.variables?.sessionId === session.session_id
-            }
-            onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
-            isStopping={
-              stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-            }
-          />
-          {children.length > 0 && isActive && (
-            <div className="border-border ml-3.5 border-l-2 pl-2">
-              {children.map((child) => {
-                const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-                return (
-                  <ProjectSubsessionRow
-                    key={child.id}
-                    title={child.title || 'Sub-session'}
-                    href={childHref}
-                    isActive={activeChild}
-                    updatedAt={child.updated_at}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      );
-    };
-
     return (
-      <FadedScrollArea
-        ref={scrollRef}
-        fadeColor="from-background"
-        className="h-full min-h-0 space-y-px"
-      >
-        {grouped.sections.map((section) => (
-          <SessionListSection
-            key={section.id}
-            section={section}
-            projectId={projectId}
-            sessions={sessions}
-            reviewCountBySession={reviewSummary.needsYouBySession}
-            showHeader={grouped.showHeaders}
-            open={!collapsedSectionIds.has(section.id)}
-            onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
-          >
-            {/* Two independent groupings compose here: `groupSessions` splits the
-                list into sections, then within each section
-                `groupSessionsByCoordinator` nests spawned sessions under the
-                coordinator that started them. */}
-            {groupSessionsByCoordinator(section.sessions).map((group) => (
-              <div key={group.session.session_id} className="space-y-px">
-                {renderSessionNode(group.session, false)}
-                {group.children.length > 0 && (
-                  <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
-                    {group.children.map((child) => renderSessionNode(child, true))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </SessionListSection>
-        ))}
-        {listFoot}
-      </FadedScrollArea>
+      <SidebarVirtualList
+        rows={listRows}
+        context={rowContext}
+        sessions={sessions}
+        changeRequestsBySession={changeRequestsBySession}
+        hasNextPage={Boolean(hasNextPage)}
+        isFetchingNextPage={isFetchingNextPage}
+        isFetchNextPageError={isFetchNextPageError}
+        fetchNextPage={fetchNextPage}
+      />
     );
   }
 
@@ -571,6 +587,217 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
 }
 
+interface SidebarRowContext {
+  projectId: string;
+  reviewCountBySession: Record<string, number>;
+  activeSessionId: string | null;
+  activeOpenCodeSessionId: string | null;
+  switchingToSessionId: string | null;
+  canShowHoverCard: boolean;
+  restartingSessionId: string | null;
+  stoppingSessionId: string | null;
+  loadMoreFailed: boolean;
+  onRetryLoadMore: () => void;
+  onToggleSection: (sectionId: string) => void;
+  onNavigate: (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    session: ProjectSession,
+    href: string,
+  ) => void;
+  onDelete: (sessionId: string, label: string) => void;
+  onShare: (session: ProjectSession) => void;
+  onRename: (sessionId: string, name: string) => void;
+  onRestart: (sessionId: string, label: string) => void;
+  onStop: (sessionId: string, label: string) => void;
+}
+
+const NO_CHANGE_REQUESTS: ChangeRequest[] = [];
+
+/** The virtualized list, in its own component on purpose: the virtualizer
+ *  re-renders its host on every scroll frame, and hosting it here keeps that
+ *  re-render to this component and the rows entering the viewport — not the
+ *  whole sidebar, its queries, and every mounted row. */
+function SidebarVirtualList({
+  rows,
+  context,
+  sessions,
+  changeRequestsBySession,
+  hasNextPage,
+  isFetchingNextPage,
+  isFetchNextPageError,
+  fetchNextPage,
+}: {
+  rows: SidebarSessionListRow[];
+  context: SidebarRowContext;
+  sessions: ProjectSession[];
+  changeRequestsBySession: Map<string, ChangeRequest[]>;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+  fetchNextPage: () => unknown;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Only the rows in and near the viewport are mounted. Every loaded session
+  // used to be in the DOM — thousands of rows, each with a hover card, menu and
+  // link — which is what made scrolling lag and paint blank.
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => estimateSidebarRowHeight(rows[index]!, LOAD_MORE_SKELETON_ROWS),
+    getItemKey: (index) => rows[index]!.key,
+    overscan: VIRTUAL_OVERSCAN_ROWS,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastRenderedIndex = virtualItems.at(-1)?.index ?? -1;
+
+  // TanStack's infinite-scroll trigger: the rendered window reaching the end
+  // of the loaded rows. It also keeps loading while filters hide every loaded
+  // session — the list is then only its foot row, which is always in range.
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
+    if (lastRenderedIndex < rows.length - 1 - LOAD_AHEAD_ROWS) return;
+    void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, lastRenderedIndex, rows.length, fetchNextPage]);
+
+  return (
+    <FadedScrollArea
+      ref={scrollRef}
+      fadeColor="from-background"
+      className="h-full min-h-0"
+      // Rows slide under a still pointer while scrolling; no card may open then.
+      onScroll={suppressSessionHoverWhileScrolling}
+    >
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        {virtualItems.map((item) => {
+          const row = rows[item.index]!;
+          return (
+            <div
+              key={item.key}
+              data-index={item.index}
+              ref={virtualizer.measureElement}
+              className="absolute top-0 left-0 w-full"
+              style={{ transform: `translateY(${item.start}px)` }}
+            >
+              <SidebarRowItem
+                row={row}
+                context={context}
+                sessions={row.kind === 'header' ? sessions : undefined}
+                changeRequests={
+                  row.kind === 'session'
+                    ? (changeRequestsBySession.get(row.session.session_id) ?? NO_CHANGE_REQUESTS)
+                    : undefined
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+    </FadedScrollArea>
+  );
+}
+
+/** One flat row. Nesting borders and gaps that containers used to draw are
+ *  redrawn per row (see `buildSidebarSessionRows`). Memoized: a row re-renders
+ *  only when its own data or the shared row context changes. */
+const SidebarRowItem = memo(function SidebarRowItem({
+  row,
+  context,
+  sessions,
+  changeRequests,
+}: {
+  row: SidebarSessionListRow;
+  context: SidebarRowContext;
+  sessions: ProjectSession[] | undefined;
+  changeRequests: ChangeRequest[] | undefined;
+}) {
+  if (row.kind === 'foot') {
+    return <SidebarListFoot failed={context.loadMoreFailed} onRetry={context.onRetryLoadMore} />;
+  }
+  if (row.kind === 'header') {
+    return (
+      <div className={ROW_GAP_CLASS[row.gap]}>
+        <SessionSectionHeaderRow
+          section={row.section}
+          projectId={context.projectId}
+          sessions={sessions ?? []}
+          reviewCountBySession={context.reviewCountBySession}
+          open={row.open}
+          onToggle={context.onToggleSection}
+        />
+      </div>
+    );
+  }
+  const session = row.session;
+  const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+  let content =
+    row.kind === 'session' ? (
+      <ProjectSessionRow
+        nested={row.nested}
+        session={session}
+        href={href}
+        isActive={session.session_id === context.activeSessionId && !context.activeOpenCodeSessionId}
+        isSwitching={context.switchingToSessionId === session.session_id}
+        onNavigate={(event) => context.onNavigate(event, session, href)}
+        displayTitle={getSessionDisplayTitle(session)}
+        childCount={row.childCount}
+        reviewCount={context.reviewCountBySession[session.session_id] ?? 0}
+        changeRequests={changeRequests ?? NO_CHANGE_REQUESTS}
+        canShowHoverCard={context.canShowHoverCard}
+        onDelete={context.onDelete}
+        onShare={context.onShare}
+        onRename={context.onRename}
+        onRestart={context.onRestart}
+        isRestarting={context.restartingSessionId === session.session_id}
+        onStop={context.onStop}
+        isStopping={context.stoppingSessionId === session.session_id}
+      />
+    ) : (
+      <div className="border-border ml-3.5 border-l-2 pl-2">
+        <ProjectSubsessionRow
+          title={row.child.title || 'Sub-session'}
+          href={`${href}?oc=${encodeURIComponent(row.child.id)}`}
+          isActive={context.activeOpenCodeSessionId === row.child.id}
+          updatedAt={row.child.updated_at}
+        />
+      </div>
+    );
+  if (row.nested) {
+    content = (
+      <div
+        className={cn('border-border ml-3.5 border-l-2 pl-1', row.gapInNested && ROW_GAP_CLASS[row.gap])}
+      >
+        {content}
+      </div>
+    );
+  }
+  return <div className={cn(!row.gapInNested && ROW_GAP_CLASS[row.gap])}>{content}</div>;
+});
+
+/** The foot row while more pages exist: a skeleton while the next page
+ *  loads, or a retry after it failed. `pb-10` clears the `h-10` bottom fade. */
+function SidebarListFoot({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+  const t = useTranslations('sidebar');
+  return (
+    <div className="pb-10">
+      {failed ? (
+        <div className="flex items-center gap-2 px-2">
+          <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {t('sessionList.loadMoreError')}
+          </p>
+          <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={onRetry}>
+            {t('retry')}
+          </Button>
+        </div>
+      ) : (
+        <div role="status">
+          <span className="sr-only">{t('sessionList.loadingMore')}</span>
+          <ProjectSessionListSkeleton rows={LOAD_MORE_SKELETON_ROWS} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The `Sessions` row above the list. Lives here — not in `project-sidebar.tsx`
  *  — because everything it needs (the session list, the review summary, the
  *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
@@ -590,6 +817,7 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('sidebar');
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div
       className={cn(
@@ -604,13 +832,22 @@ function SessionListHeader({
         <span className="truncate">{t('sessions')}</span>
       </HoverPrefetchLink>
       {sessions.length > 0 && (
-        <DropdownMenu onOpenChange={onMenuOpenChange}>
-          <SessionFilterMenu
-            projectId={projectId}
-            sessions={sessions}
-            reviewCountBySession={reviewCountBySession}
-            align="start"
-          />
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            setMenuOpen(open);
+            onMenuOpenChange(open);
+          }}
+        >
+          {/* Mounted only while open: it counts facets over every loaded session. */}
+          {menuOpen && (
+            <SessionFilterMenu
+              projectId={projectId}
+              sessions={sessions}
+              reviewCountBySession={reviewCountBySession}
+              align="start"
+            />
+          )}
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -628,86 +865,60 @@ function SessionListHeader({
   );
 }
 
-interface SessionListSectionProps {
-  section: SessionSection;
-  projectId: string;
-  sessions: ProjectSession[];
-  reviewCountBySession: Record<string, number>;
-  showHeader: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: ReactNode;
-}
-
-/** Non-sticky by design: FadedScrollArea masks its own edges, and a sticky
- *  header fights that mask.
+/** A section header row. Non-sticky by design: FadedScrollArea masks its own
+ *  edges, and a sticky header fights that mask.
  *
- *  When `showHeader` is false (at most one section is populated — see
- *  `groupSessions`'s `showHeaders`), there is nothing to collapse or open a
- *  menu on, so this renders the plain, always-expanded container it always
- *  has. Otherwise the whole section is a `Disclosure`: `open` reflects the
- *  store's collapsed-section list (collapsed = NOT open), so the header
- *  toggle and the section's `Collapse all` menu action agree. */
-function SessionListSection({
+ *  It toggles the section open and closed. `open` reflects the store's
+ *  collapsed-section list (collapsed = NOT open), so the header toggle and the
+ *  section's `Collapse all` menu action agree. The rows below it are separate
+ *  virtual rows; a closed section simply has none. */
+function SessionSectionHeaderRow({
   section,
   projectId,
   sessions,
   reviewCountBySession,
-  showHeader,
   open,
-  onOpenChange,
-  children,
-}: SessionListSectionProps) {
+  onToggle,
+}: {
+  section: SessionSection;
+  projectId: string;
+  sessions: ProjectSession[];
+  reviewCountBySession: Record<string, number>;
+  open: boolean;
+  onToggle: (sectionId: string) => void;
+}) {
   const t = useTranslations('sidebar.filter.section');
-  const sectionTranslationKeys = {
-    'needs-you': 'needsYou',
-    running: 'running',
-    recent: 'recent',
-    today: 'today',
-    yesterday: 'yesterday',
-    week: 'week',
-    older: 'older',
-    chat: 'chat',
-    slack: 'slack',
-    telegram: 'telegram',
-    email: 'email',
-    schedule: 'scheduled',
-    webhook: 'webhook',
-    all: 'all',
-  } as const;
-  const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];
-  if (!showHeader) {
-    return <div className="space-y-px">{children}</div>;
-  }
-
+  const sectionKey = SECTION_TRANSLATION_KEYS[section.id as keyof typeof SECTION_TRANSLATION_KEYS];
   return (
-    <Disclosure
-      open={open}
-      onOpenChange={onOpenChange}
-      className="group/section space-y-1"
-      transition={{ duration: 0.15, ease: 'easeOut' }}
-    >
-      <DisclosureTrigger>
-        <div
-          className={cn(
-            'group/section-header text-muted-foreground flex items-center gap-1 px-2 text-sm font-medium',
-            SESSION_ROW_HEIGHT_CLASS,
-          )}
-        >
-          <span className="truncate">{sectionKey ? t(sectionKey) : section.label}</span>
-          <CaretRightIcon
-            aria-hidden
-            className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
-          />
-          <SessionSectionMenu
-            projectId={projectId}
-            sessions={sessions}
-            reviewCountBySession={reviewCountBySession}
-          />
-        </div>
-      </DisclosureTrigger>
-      <DisclosureContent contentClassName="space-y-px">{children}</DisclosureContent>
-    </Disclosure>
+    <div className="group/section" data-state={open ? 'open' : 'closed'}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => onToggle(section.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle(section.id);
+          }
+        }}
+        className={cn(
+          'group/section-header text-muted-foreground flex items-center gap-1 px-2 text-sm font-medium select-none',
+          SESSION_ROW_HEIGHT_CLASS,
+        )}
+      >
+        <span className="truncate">{sectionKey ? t(sectionKey) : section.label}</span>
+        <CaretRightIcon
+          aria-hidden
+          className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+        />
+        <SessionSectionMenu
+          projectId={projectId}
+          sessions={sessions}
+          reviewCountBySession={reviewCountBySession}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -762,12 +973,15 @@ function SessionSectionMenu({
           <DotsThreeIcon className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <SessionFilterMenu
-        projectId={projectId}
-        sessions={sessions}
-        reviewCountBySession={reviewCountBySession}
-        align="start"
-      />
+      {/* Mounted only while open: it counts facets over every loaded session. */}
+      {open && (
+        <SessionFilterMenu
+          projectId={projectId}
+          sessions={sessions}
+          reviewCountBySession={reviewCountBySession}
+          align="start"
+        />
+      )}
     </DropdownMenu>
   );
 }

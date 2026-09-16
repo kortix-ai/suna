@@ -2,7 +2,11 @@ import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
 import type { ProjectSession } from '../../core/rest/projects-client';
-import { isProjectSessionPagesData, mapProjectSessionListCache } from '../project-session-pages';
+import {
+  isProjectSessionPagesData,
+  mapProjectSessionListCache,
+  skipInfiniteSessionLists,
+} from '../project-session-pages';
 import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
 
@@ -195,6 +199,10 @@ export function refetchKortixSessionMirrors(
   void queryClient.refetchQueries({
     queryKey: [...qk.project.sessionsScope(projectId), 'list'],
     type: 'active',
+    // Not the infinite session lists: refetching one re-requests EVERY loaded
+    // page. Their page-1 head query (`useProjectSessionPages`) is in this
+    // family, refetches, and merges into page 1.
+    predicate: skipInfiniteSessionLists,
   });
 }
 

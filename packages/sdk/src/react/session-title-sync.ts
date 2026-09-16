@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import { sessionStartKey } from '../core/rest/projects-client';
-import { findCachedProjectSession } from './project-session-pages';
+import { findCachedProjectSession, skipInfiniteSessionLists } from './project-session-pages';
 import { qk } from './query-keys';
 
 type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'> & {
@@ -91,6 +91,8 @@ function refetchSessionTitleQueries(
           queryClient.refetchQueries({
             queryKey: [...qk.project.sessionsScope(projectId), 'list'],
             type: 'active',
+            // Page-1 heads, not every loaded page — see skipInfiniteSessionLists.
+            predicate: skipInfiniteSessionLists,
           }),
         ]),
     queryClient.refetchQueries({

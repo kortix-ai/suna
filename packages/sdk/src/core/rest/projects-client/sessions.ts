@@ -213,7 +213,7 @@ export async function listProjectSessions(
 
 /** One page of `listProjectSessionsPage`. */
 export interface ProjectSessionPage {
-  /** Newest first: `updated_at DESC, session_id DESC`. */
+  /** Most recent activity first — the order `sessionLastActivityAt` sorts by. */
   sessions: ProjectSession[];
   /** Pass as `cursor` for the next page; `null` on the last page. */
   next_cursor: string | null;

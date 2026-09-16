@@ -7,11 +7,15 @@
  * form returns one page and an opaque `next_cursor`.
  *
  * ─── Order ──────────────────────────────────────────────────────────────────
- * `updated_at DESC, session_id DESC`. The clients sort by last activity, not by
- * `updated_at`, but `recordSessionActivity` advances both in one statement, so
- * `updated_at >= last_activity_at` for every row. Once a client has paged past
- * time T it holds every session active after T: activity sections fill in
- * order, and only bookkeeping-touched rows arrive "early".
+ * Last activity DESC, then `session_id DESC` — the same instant the clients
+ * sort and section by (`sessionLastActivityAt`): the newer of
+ * `metadata.last_activity_at` and the OpenCode snapshot's newest `updated_at`,
+ * else `updated_at`. Pages therefore arrive in display order, so an
+ * infinite list only ever grows at its foot.
+ *
+ * `updated_at` alone is NOT that order. Bookkeeping writers advance it with no
+ * activity — branch GC stamps `metadata.branch_gc` on every old stopped
+ * session — so a keyset on it put year-old sessions on page 1.
  *
  * ─── Why a loop, not one LIMIT ──────────────────────────────────────────────
  * Visibility is decided per row in JS (`selectSessionRowsForViewer`: grants,
@@ -25,7 +29,7 @@
  * SCANNED row, and the client's next request resumes there.
  *
  * ─── Why the cursor is text from SQL ────────────────────────────────────────
- * `updated_at` is `timestamptz` with microseconds. Drizzle maps it to a JS
+ * The activity instant is `timestamptz` with microseconds. Drizzle maps it to a JS
  * `Date`, which keeps milliseconds. A cursor built from the `Date` is
  * truncated below its own row, so `(updated_at, session_id) < cursor` skips
  * every later row that shares that millisecond: a silent gap in the list.
@@ -33,7 +37,8 @@
  */
 
 export interface SessionCursor {
-  /** ISO-8601 instant with the column's full (microsecond) precision. */
+  /** The row's last-activity instant, ISO-8601 with microsecond precision.
+   *  (Named for the wire format it has always had; it is the activity key.) */
   updatedAt: string;
   sessionId: string;
 }

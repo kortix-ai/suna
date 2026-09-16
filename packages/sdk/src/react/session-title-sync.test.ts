@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { skipInfiniteSessionLists } from './project-session-pages';
 import { qk } from './query-keys';
 
 const SESSIONS_LIST_KEY = qk.project.sessions('project-1');
@@ -55,6 +56,7 @@ describe('reconcileHydratedSessionTitle', () => {
         // session-state refetch storm. A title ladder must refetch titles.
         queryKey: [...qk.project.sessionsScope('project-1'), 'list'],
         type: 'active',
+        predicate: skipInfiniteSessionLists,
       },
       {
         // EXACT: `qk.project.session(...)` is the parent of `prompts` and
@@ -142,7 +144,11 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
     await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
 
     expect(refetched).toEqual([
-      { queryKey: [...qk.project.sessionsScope('project-1'), 'list'], type: 'active' },
+      {
+        queryKey: [...qk.project.sessionsScope('project-1'), 'list'],
+        type: 'active',
+        predicate: skipInfiniteSessionLists,
+      },
       { queryKey: qk.project.session('project-1', 'session-1'), exact: true, type: 'active' },
     ]);
   });

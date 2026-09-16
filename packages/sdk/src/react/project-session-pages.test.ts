@@ -6,6 +6,7 @@ import {
   findCachedProjectSession,
   flattenProjectSessionPages,
   mapProjectSessionListCache,
+  mergeProjectSessionHeadPage,
   upsertProjectSessionInPages,
 } from './project-session-pages';
 import { patchKortixSessionTitleMirrors } from './use-opencode-events/helpers';
@@ -155,5 +156,72 @@ describe('patchKortixSessionTitleMirrors on paged data', () => {
     expect(qc.getQueryData<InfiniteData<ProjectSessionPage>>(key)!.pages[0]!.sessions[0]!.name).toBe(
       'a',
     );
+  });
+});
+
+describe('mergeProjectSessionHeadPage', () => {
+  const head = (sessions: ProjectSession[], next_cursor: string | null) => ({ sessions, next_cursor });
+
+  test('replaces a single loaded page with the fresh head', () => {
+    const data = pages([row('a'), row('b')]);
+    const merged = mergeProjectSessionHeadPage(data, head([row('new'), row('a')], 'c9'));
+    expect(merged).not.toBe('refetch');
+    const result = merged as ReturnType<typeof pages>;
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]!.sessions.map((s) => s.session_id)).toEqual(['new', 'a']);
+    expect(result.pages[0]!.next_cursor).toBe('c9');
+  });
+
+  test('a head with no next cursor is the whole list: later pages are dropped', () => {
+    const data = pages([row('a')], [row('b')]);
+    const result = mergeProjectSessionHeadPage(data, head([row('a')], null)) as ReturnType<typeof pages>;
+    expect(result.pages.map((p) => p.sessions.map((s) => s.session_id))).toEqual([['a']]);
+    expect(result.pageParams).toEqual([null]);
+  });
+
+  test('keeps deeper pages and carries rows a new session pushed off page 1', () => {
+    // Page 1 held a,b,c; a new session arrived, so the fresh head is new,a,b and
+    // `c` now sits between the fresh boundary and page 2's old cursor.
+    const data = pages([row('a'), row('b'), row('c')], [row('d')]);
+    const result = mergeProjectSessionHeadPage(data, head([row('new'), row('a'), row('b')], 'cb')) as ReturnType<typeof pages>;
+    expect(result.pages[0]!.sessions.map((s) => s.session_id)).toEqual(['new', 'a', 'b', 'c']);
+    expect(result.pages[0]!.next_cursor).toBe('c0');
+    expect(result.pages[1]).toBe(data.pages[1]);
+  });
+
+  test('drops a page-1 row that vanished from the head range (deleted or hidden)', () => {
+    const data = pages([row('a'), row('gone'), row('b')], [row('d')]);
+    const result = mergeProjectSessionHeadPage(data, head([row('a'), row('b')], 'cb')) as ReturnType<typeof pages>;
+    expect(result.pages[0]!.sessions.map((s) => s.session_id)).toEqual(['a', 'b']);
+  });
+
+  test('asks for a full refetch when the head shares no row with page 1', () => {
+    const data = pages([row('a')], [row('b')]);
+    expect(mergeProjectSessionHeadPage(data, head([row('x'), row('y')], 'cy'))).toBe('refetch');
+  });
+
+  test('returns the same data when the head rows are the cached rows', () => {
+    const a = row('a');
+    const b = row('b');
+    const data = pages([a, b], [row('c')]);
+    expect(mergeProjectSessionHeadPage(data, head([a, b], 'cb'))).toBe(data);
+  });
+
+  test('nothing to merge before the first page loads', () => {
+    expect(mergeProjectSessionHeadPage(undefined, head([row('a')], null))).toBeUndefined();
+  });
+});
+
+describe('findCachedProjectSession at scale', () => {
+  test('indexes each cache entry once: repeat lookups do not rescan 12,000 rows', () => {
+    const qc = client();
+    const all = Array.from({ length: 12_000 }, (_, i) => row(`s${i}`));
+    const groups = Array.from({ length: 240 }, (_, p) => all.slice(p * 50, p * 50 + 50));
+    qc.setQueryData(qk.project.sessionPages('P1'), pages(...groups));
+    expect(findCachedProjectSession(qc, 'P1', 's11999')?.session_id).toBe('s11999');
+    const started = performance.now();
+    for (let i = 0; i < 2_000; i += 1) findCachedProjectSession(qc, 'P1', `s${i * 5}`);
+    // 2,000 lookups over 12,000 rows: an unindexed scan is ~12M comparisons.
+    expect(performance.now() - started).toBeLessThan(50);
   });
 });

@@ -1446,7 +1446,14 @@ flow(
       '2026-01-03T10:00:00Z',
       '2026-01-02T10:00:00Z',
     ];
-    const visibleIds = instants.map(() => randomUUID());
+    const timedIds = instants.map(() => randomUUID());
+    // Order is LAST ACTIVITY, the key clients sort by — not `updated_at`.
+    // `snapshotId`: oldest `updated_at`, newest OpenCode snapshot → first.
+    // `gcBumpedId`: newest `updated_at` (branch GC stamps it), oldest prompt
+    // stamp → last. A keyset on `updated_at` puts it on page 1.
+    const snapshotId = randomUUID();
+    const gcBumpedId = randomUUID();
+    const visibleIds = [snapshotId, ...timedIds, gcBumpedId];
     const deletedId = randomUUID();
     const allIds = [...visibleIds, deletedId];
 
@@ -1473,8 +1480,8 @@ flow(
 
     await db.connect();
     try {
-      await ctx.step('seed five listed sessions and one soft-deleted session', async () => {
-        for (const [index, sessionId] of visibleIds.entries()) {
+      await ctx.step('seed seven listed sessions and one soft-deleted session', async () => {
+        for (const [index, sessionId] of timedIds.entries()) {
           await db.query(
             `INSERT INTO kortix.project_sessions
              (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, updated_at)
@@ -1489,6 +1496,29 @@ flow(
                    jsonb_build_object('deletedAt', '2026-01-06T10:00:00Z'))`,
           [deletedId, team.id, project.id, ctx.P.OWNER.userId],
         );
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+           (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, updated_at, metadata)
+           VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', '2026-01-01T09:00:00Z',
+                   jsonb_build_object('opencode_sessions', jsonb_build_array(
+                     jsonb_build_object('id', 'ses_root', 'updated_at', $5::bigint))))`,
+          [snapshotId, team.id, project.id, ctx.P.OWNER.userId, Date.parse('2026-01-05T11:00:00Z')],
+        );
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+           (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, updated_at, metadata)
+           VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, 'project', '2026-01-07T10:00:00Z',
+                   jsonb_build_object('last_activity_at', '2026-01-01T10:00:00.000Z',
+                                      'branch_gc', jsonb_build_object('deleted_at', '2026-01-07T10:00:00.000Z')))`,
+          [gcBumpedId, team.id, project.id, ctx.P.OWNER.userId],
+        );
+        // The visible scope lists a `stopped` session only when its sandbox row
+        // is stopped too (session-inventory.ts). No machine exists behind these.
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, status)
+           SELECT gen_random_uuid(), id, $2, $3, 'platinum', 'stopped' FROM unnest($1::text[]) AS id`,
+          [allIds, team.id, project.id],
+        );
       });
 
       await ctx.step('without limit or cursor the list is still a bare array', async () => {
@@ -1502,13 +1532,13 @@ flow(
         }
       });
 
-      await ctx.step('limit=2 walks every listed session once, newest first, in three pages', async () => {
+      await ctx.step('limit=2 walks every listed session once, by last activity, in four pages', async () => {
         const { ids, pageSizes } = await walk({ limit: '2' });
         if (JSON.stringify(ids) !== JSON.stringify(visibleIds)) {
           throw new Error(`Paged order ${JSON.stringify(ids)} != ${JSON.stringify(visibleIds)}`);
         }
-        if (JSON.stringify(pageSizes) !== JSON.stringify([2, 2, 1])) {
-          throw new Error(`Page sizes ${JSON.stringify(pageSizes)} != [2,2,1]`);
+        if (JSON.stringify(pageSizes) !== JSON.stringify([2, 2, 2, 1])) {
+          throw new Error(`Page sizes ${JSON.stringify(pageSizes)} != [2,2,2,1]`);
         }
       });
 
@@ -1517,8 +1547,8 @@ flow(
         if (JSON.stringify(ids) !== JSON.stringify([deletedId, ...visibleIds])) {
           throw new Error(`Project-scope paged order ${JSON.stringify(ids)}`);
         }
-        if (JSON.stringify(pageSizes) !== JSON.stringify([4, 2])) {
-          throw new Error(`Project-scope page sizes ${JSON.stringify(pageSizes)} != [4,2]`);
+        if (JSON.stringify(pageSizes) !== JSON.stringify([4, 4])) {
+          throw new Error(`Project-scope page sizes ${JSON.stringify(pageSizes)} != [4,4]`);
         }
       });
 
@@ -1536,6 +1566,9 @@ flow(
         response.status([403, 404]);
       });
     } finally {
+      await db
+        .query('DELETE FROM kortix.session_sandboxes WHERE session_id = ANY($1::text[])', [allIds])
+        .catch(() => {});
       await db
         .query('DELETE FROM kortix.project_sessions WHERE session_id = ANY($1::text[])', [allIds])
         .catch(() => {});

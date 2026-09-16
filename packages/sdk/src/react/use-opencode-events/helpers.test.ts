@@ -6,6 +6,7 @@ import {
   shouldSkipStatusFill,
   WIRE_STATUS_FILL_FRESHNESS_MS,
 } from './helpers';
+import { skipInfiniteSessionLists } from '../project-session-pages';
 import { qk } from '../query-keys';
 
 /**
@@ -106,7 +107,12 @@ describe('refetchKortixSessionMirrors', () => {
     // `session.created` and every title-changing `session.updated` used to
     // re-issue `/turn` and `/prompts` with it.
     expect(calls).toEqual([
-      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list'], type: 'active' },
+      {
+        queryKey: [...qk.project.sessionsScope('proj_1'), 'list'],
+        type: 'active',
+        // Infinite session lists are skipped: their page-1 head refetches instead.
+        predicate: skipInfiniteSessionLists,
+      },
     ]);
     const touched = JSON.stringify(calls);
     expect(touched).not.toContain('"turn"');

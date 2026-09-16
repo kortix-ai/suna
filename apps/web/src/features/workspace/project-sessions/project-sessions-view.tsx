@@ -2,7 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -22,7 +21,6 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
-import { useLoadMoreSentinel } from '@/hooks/use-load-more-sentinel';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
@@ -34,7 +32,6 @@ import {
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
-import Loading from '@/components/ui/loading';
 import {
   deleteProjectSession,
   restartProjectSession,
@@ -46,15 +43,8 @@ import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosph
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   buildSessionSearchIndex,
@@ -66,6 +56,12 @@ import {
   toggleSelection,
 } from './project-sessions-helpers';
 import { SessionDetail } from './session-detail';
+import {
+  buildSessionsPageRows,
+  estimateSessionsPageRowHeight,
+  type SessionsPageRow,
+  type SessionsPageRowGap,
+} from './session-page-rows';
 import { SessionRow, type SessionRowActions } from './session-row';
 import { SessionsSelectionBar } from './sessions-selection-bar';
 import { SessionsToolbar } from './sessions-toolbar';
@@ -89,7 +85,6 @@ const DELETE_CONCURRENCY = 4;
 /** Shared fallback so a row with no formatted stamp still gets a stable prop
  *  identity — an inline `{ relative: '', exact: '' }` is a new object per
  *  render and would defeat SessionRow's memo. */
-const NO_TIMESTAMP = { relative: '', exact: '' } as const;
 
 function formatTimestamp(value: string): { relative: string; exact: string } {
   try {
@@ -108,6 +103,36 @@ function formatTimestamp(value: string): { relative: string; exact: string } {
 // Same device as the sidebar's session skeleton.
 const SKELETON_ROW_WIDTHS = ['w-56', 'w-40', 'w-64', 'w-44', 'w-72', 'w-36', 'w-52', 'w-48'];
 
+/** Skeleton rows under the loaded list while the next page loads. */
+const LOAD_MORE_SKELETON_ROWS = 6;
+
+/** Rows mounted beyond each edge of the viewport, so a fast scroll back up
+ *  lands on painted rows. */
+const VIRTUAL_OVERSCAN_ROWS = 12;
+
+/** Start the next page this many rows before the end of the loaded list. */
+const LOAD_AHEAD_ROWS = 15;
+
+/** `pt-4` and `pb-12` of the list, in px at `--spacing: 0.23rem`. The list is
+ *  positioned by the virtualizer, so its padding is the virtualizer's. `pb-12`
+ *  clears the scroll area's `h-10` bottom fade. */
+const LIST_PADDING_START_PX = 14.72;
+const LIST_PADDING_END_PX = 44.16;
+
+const ROW_GAP_CLASS: Record<SessionsPageRowGap, string> = { none: '', '2': 'pb-2', '4': 'pb-4' };
+
+/** Timestamps per session object, formatted when a row first renders. The
+ *  cache entry dies with the object, so a refetched row is formatted afresh. */
+const activityTimestampBySession = new WeakMap<ProjectSession, { relative: string; exact: string }>();
+function activityTimestamp(session: ProjectSession) {
+  let time = activityTimestampBySession.get(session);
+  if (!time) {
+    time = formatTimestamp(sessionLastActivityAt(session));
+    activityTimestampBySession.set(session, time);
+  }
+  return time;
+}
+
 /**
  * Shape-matched to `SessionRow`: the same `bg-popover` bordered row at the same
  * `px-3 py-2`, a `size-8 rounded-sm` status tile, the title, and the fixed `w-10`
@@ -119,10 +144,17 @@ const SKELETON_ROW_WIDTHS = ['w-56', 'w-40', 'w-64', 'w-44', 'w-72', 'w-36', 'w-
  * beats any smaller explicit height — so the previous `size-4` tile rendered as
  * a 16×32 bar and each `h-3.5` line as a 32px slab, none of which matched a row.
  */
-function SessionListSkeleton() {
+function SessionListSkeleton({
+  rows = SKELETON_ROW_WIDTHS.length,
+  className,
+}: {
+  /** Rows to draw, 1–8. The initial load draws all eight. */
+  rows?: number;
+  className?: string;
+}) {
   return (
-    <div className="space-y-2 pt-4" aria-hidden>
-      {SKELETON_ROW_WIDTHS.map((width) => (
+    <div className={cn('space-y-2', className)} aria-hidden>
+      {SKELETON_ROW_WIDTHS.slice(0, rows).map((width) => (
         <div key={width} className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2">
           <Skeleton className="size-8 shrink-0 rounded-sm py-0" />
           <Skeleton className={cn('h-3.5 py-0', width)} />
@@ -134,56 +166,196 @@ function SessionListSkeleton() {
 }
 
 /**
- * One grouped section of the list — the page's counterpart to the sidebar's
- * `SessionListSection`, and it follows the same two rules.
- *
- * `showHeaders` false (at most one section is populated, see `groupSessions`)
- * renders the plain list: one header divides nothing. Otherwise the section is
- * a `Disclosure` whose `open` mirrors the store's collapsed list — collapsed is
- * NOT open — so the header toggle and the menu's `Collapse all` agree.
+ * A section header row — the page's counterpart to the sidebar's
+ * `SessionSectionHeaderRow`. It toggles the section; `open` mirrors the store's
+ * collapsed list, so the header and the menu's `Collapse all` agree. The rows
+ * below it are separate virtual rows; a closed section has none.
  *
  * No per-section `⋯` here, unlike the sidebar: the page's toolbar menu sits a
- * few pixels away and is the same menu, so a copy on every section header would
- * be pure duplication on a surface this wide.
+ * few pixels away and is the same menu.
  */
-function SessionsSection({
+function SessionsSectionHeader({
   section,
-  showHeader,
   open,
-  onOpenChange,
-  children,
+  onToggle,
 }: {
   section: SessionSection;
-  showHeader: boolean;
   open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: ReactNode;
+  onToggle: (sectionId: string) => void;
 }) {
-  if (!showHeader) return <div className="space-y-2">{children}</div>;
-
   return (
-    <Disclosure
-      open={open}
-      onOpenChange={onOpenChange}
-      className="group/section space-y-2"
-      transition={{ duration: 0.15, ease: 'easeOut' }}
-    >
-      <DisclosureTrigger>
-        <div className="group/section-header text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 px-1 text-sm font-medium">
-          <span className="truncate">{section.label}</span>
-          <span className="text-muted-foreground/60 text-xs tabular-nums">
-            {section.sessions.length}
-          </span>
-          <CaretRightIcon
-            aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
-          />
-        </div>
-      </DisclosureTrigger>
-      <DisclosureContent contentClassName="space-y-2">{children}</DisclosureContent>
-    </Disclosure>
+    <div className="group/section" data-state={open ? 'open' : 'closed'}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => onToggle(section.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle(section.id);
+          }
+        }}
+        className="group/section-header text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 px-1 text-sm font-medium select-none"
+      >
+        <span className="truncate">{section.label}</span>
+        <span className="text-muted-foreground/60 text-xs tabular-nums">
+          {section.sessions.length}
+        </span>
+        <CaretRightIcon
+          aria-hidden
+          className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+        />
+      </div>
+    </div>
   );
 }
+
+interface SessionsPageRowContext {
+  projectId: string;
+  expandedSessionId: string | null;
+  selectMode: boolean;
+  selection: ReadonlySet<string>;
+  restartingSessionId: string | null;
+  stoppingSessionId: string | null;
+  actions: SessionRowActions;
+  onToggleOpen: (sessionId: string, open: boolean) => void;
+  onToggleSelect: (sessionId: string) => void;
+  onToggleSection: (sectionId: string) => void;
+  loadMoreFailed: boolean;
+  onRetryLoadMore: () => void;
+}
+
+/** The virtualized list in its own component: the virtualizer re-renders its
+ *  host on every scroll frame, and this keeps that to the list and the rows
+ *  entering the viewport instead of the whole page. */
+function SessionsVirtualList({
+  rows,
+  context,
+  hasNextPage,
+  isFetchingNextPage,
+  isFetchNextPageError,
+  fetchNextPage,
+}: {
+  rows: SessionsPageRow[];
+  context: SessionsPageRowContext;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+  fetchNextPage: () => unknown;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Only rows in and near the viewport are mounted; see the sidebar list.
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => estimateSessionsPageRowHeight(rows[index]!, LOAD_MORE_SKELETON_ROWS),
+    getItemKey: (index) => rows[index]!.key,
+    overscan: VIRTUAL_OVERSCAN_ROWS,
+    paddingStart: LIST_PADDING_START_PX,
+    paddingEnd: LIST_PADDING_END_PX,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastRenderedIndex = virtualItems.at(-1)?.index ?? -1;
+
+  // TanStack's infinite-scroll trigger. With search or filters matching no
+  // loaded session the list is only its foot row, so loading continues until a
+  // match appears or the pages end.
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
+    if (lastRenderedIndex < rows.length - 1 - LOAD_AHEAD_ROWS) return;
+    void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, lastRenderedIndex, rows.length, fetchNextPage]);
+
+  return (
+    <FadedScrollArea ref={scrollRef} fadeColor="from-background">
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }} aria-live="polite">
+        {virtualItems.map((item) => (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            className="absolute top-0 left-0 w-full"
+            style={{ transform: `translateY(${item.start}px)` }}
+          >
+            <SessionsPageRowItem row={rows[item.index]!} context={context} />
+          </div>
+        ))}
+      </div>
+    </FadedScrollArea>
+  );
+}
+
+/** One flat row, memoized against its row and the shared row context. */
+const SessionsPageRowItem = memo(function SessionsPageRowItem({
+  row,
+  context,
+}: {
+  row: SessionsPageRow;
+  context: SessionsPageRowContext;
+}) {
+  const tSidebar = useTranslations('sidebar');
+  if (row.kind === 'header') {
+    return (
+      <div className={ROW_GAP_CLASS[row.gap]}>
+        <SessionsSectionHeader
+          section={row.section}
+          open={row.open}
+          onToggle={context.onToggleSection}
+        />
+      </div>
+    );
+  }
+  if (row.kind === 'foot') {
+    return context.loadMoreFailed ? (
+      <div className="flex items-center gap-2 px-2">
+        <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+          {tSidebar('sessionList.loadMoreError')}
+        </p>
+        <Button variant="outline" size="sm" onClick={context.onRetryLoadMore}>
+          {tSidebar('retry')}
+        </Button>
+      </div>
+    ) : (
+      <div role="status">
+        <span className="sr-only">{tSidebar('sessionList.loadingMore')}</span>
+        <SessionListSkeleton rows={LOAD_MORE_SKELETON_ROWS} />
+      </div>
+    );
+  }
+  const session = row.session;
+  const time = activityTimestamp(session);
+  const isOpen = context.expandedSessionId === session.session_id;
+  return (
+    <div className={ROW_GAP_CLASS[row.gap]}>
+      <SessionRow
+        session={session}
+        time={time}
+        open={isOpen}
+        onToggleOpen={context.onToggleOpen}
+        selectMode={context.selectMode}
+        selected={context.selection.has(session.session_id)}
+        onToggleSelect={context.onToggleSelect}
+        restarting={context.restartingSessionId === session.session_id}
+        stopping={context.stoppingSessionId === session.session_id}
+        actions={context.actions}
+      >
+        {/* Mounted only while expanded. */}
+        {isOpen ? (
+          <SessionDetail
+            projectId={context.projectId}
+            session={session}
+            formatted={{
+              created: formatTimestamp(session.created_at).exact,
+              updated: time.exact,
+              deleted: session.deleted_at ? formatTimestamp(session.deleted_at).exact : null,
+            }}
+          />
+        ) : null}
+      </SessionRow>
+    </div>
+  );
+});
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -202,39 +374,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const tSidebar = useTranslations('sidebar');
-  const sessionsQuery = useProjectSessionPages(projectId, {
-    // 'project' scope: the manager-only lifecycle inventory — a
-    // DIFFERENT server request than the default 'visible' scope every other
-    // reader uses. It includes accessible warm and soft-deleted rows, but never
-    // sessions the manager cannot open. The scope is part of the page key
-    // (see qk.project.sessionPages).
-    //
-    // Paged: the inventory of a large project is thousands of sessions. The
-    // next page loads as the foot of the list scrolls into range.
-    scope: 'project',
-    // The shared policy, not a local copy of the provisioning rule. This view
-    // stopped polling the moment every session settled, so a title written
-    // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
-    // was invisible here until the window regained focus, while the sidebar
-    // and header had already moved on. Three surfaces, three policies, one
-    // name: that divergence IS the bug.
-    refetchInterval: (loaded) =>
-      projectSessionsRefetchInterval({
-        sessions: loaded,
-        hasOpenSession: false,
-      }),
-    // The poll stops once every session settles, so without this a session
-    // deleted from another surface would linger here indefinitely.
-    refetchOnWindowFocus: true,
-  });
+  // The SAME query the project sidebar reads (visible scope, same key), so the
+  // pages it has already loaded show here with no request, and paging either
+  // surface extends both. The sidebar is mounted on this route and owns the
+  // poll; a second interval here would double it. Focus refetches dedupe.
+  const sessionsQuery = useProjectSessionPages(projectId, { refetchOnWindowFocus: true });
   const { hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = sessionsQuery;
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useLoadMoreSentinel({
-    rootRef: scrollRef,
-    hasMore: Boolean(hasNextPage) && !isFetchNextPageError,
-    isLoadingMore: isFetchingNextPage,
-    loadMore: fetchNextPage,
-  });
 
   const invalidateSessions = useCallback(() => {
     // The PREFIX, not the scoped read key: this view reads the 'project'
@@ -252,11 +397,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   // than run one per character.
   const deferredSearch = useDeferredValue(search);
 
-  // Built once per session list, not once per keystroke — see
-  // `buildSessionSearchIndex`.
+  // Built only while a search is active: every loaded page changes `sessions`,
+  // and indexing 12,000 sessions per page load was the list's largest cost.
+  const searching = deferredSearch.trim().length > 0;
   const searchIndex = useMemo(
-    () => buildSessionSearchIndex(sessions, tI18nComplete),
-    [sessions, tI18nComplete],
+    () => (searching ? buildSessionSearchIndex(sessions, tI18nComplete) : undefined),
+    [searching, sessions, tI18nComplete],
   );
 
   // Grouping, ordering, the two multi-select facets, hidden and collapsed
@@ -312,17 +458,21 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     ],
   );
 
-  // Keyed on `sessions` alone, deliberately NOT on the search query: this is
-  // two `date-fns` calls per session, and re-deriving it per keystroke would
-  // also hand every surviving row a brand-new `time` object and re-render the
-  // whole list past the memo on SessionRow.
-  const timestamps = useMemo(() => {
-    const map = new Map<string, { relative: string; exact: string }>();
-    for (const session of sessions) {
-      map.set(session.session_id, formatTimestamp(sessionLastActivityAt(session)));
-    }
-    return map;
-  }, [sessions]);
+  const pageRows = useMemo(
+    () =>
+      buildSessionsPageRows({
+        sections: grouped.sections,
+        showHeaders: grouped.showHeaders,
+        collapsedSectionIds: collapsedSectionSet,
+        hasNextPage: Boolean(hasNextPage),
+      }),
+    [grouped, collapsedSectionSet, hasNextPage],
+  );
+
+  const toggleSection = useCallback(
+    (sectionId: string) => toggleSectionCollapsed(projectId, sectionId, SURFACE),
+    [projectId, toggleSectionCollapsed],
+  );
 
   const selectableSessions = useMemo(
     () => visibleSessions.filter(sessionIsDeletable),
@@ -487,6 +637,45 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     />
   );
 
+  const restartingSessionId = restartMutation.isPending
+    ? (restartMutation.variables?.sessionId ?? null)
+    : null;
+  const stoppingSessionId = stopMutation.isPending ? (stopMutation.variables?.sessionId ?? null) : null;
+
+  // Everything a row reads besides its own session, as one memoized value.
+  // Rows are memoized against it, so scrolling re-renders only rows entering
+  // the viewport.
+  const rowContext = useMemo<SessionsPageRowContext>(
+    () => ({
+      projectId,
+      expandedSessionId: expanded,
+      selectMode,
+      selection: visibleSelection,
+      restartingSessionId,
+      stoppingSessionId,
+      actions: rowActions,
+      onToggleOpen: handleToggleOpen,
+      onToggleSelect: handleToggleSelect,
+      onToggleSection: toggleSection,
+      loadMoreFailed: isFetchNextPageError,
+      onRetryLoadMore: () => void fetchNextPage(),
+    }),
+    [
+      projectId,
+      expanded,
+      selectMode,
+      visibleSelection,
+      restartingSessionId,
+      stoppingSessionId,
+      rowActions,
+      handleToggleOpen,
+      handleToggleSelect,
+      toggleSection,
+      isFetchNextPageError,
+      fetchNextPage,
+    ],
+  );
+
   return (
     <>
       {/* Fixed shell: the header is a non-scrolling band and the list below it
@@ -510,7 +699,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
 
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
           {sessionsQuery.isLoading ? (
-            <SessionListSkeleton />
+            <SessionListSkeleton className="pt-4" />
           ) : sessionsQuery.isError && !sessionsQuery.data ? (
             <ErrorState
               size="sm"
@@ -588,87 +777,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                    it, which makes the percentage definite. */
             <div className="relative min-h-0 flex-1">
               <div className="absolute inset-0">
-                <FadedScrollArea ref={scrollRef} fadeColor="from-background" className="pt-4">
-                  <div className="space-y-4 pb-6" aria-live="polite">
-                    {grouped.sections.map((section) => (
-                      <SessionsSection
-                        key={section.id}
-                        section={section}
-                        showHeader={grouped.showHeaders}
-                        open={!collapsedSectionSet.has(section.id)}
-                        onOpenChange={() => toggleSectionCollapsed(projectId, section.id, SURFACE)}
-                      >
-                        {section.sessions.map((session) => {
-                          const time = timestamps.get(session.session_id) ?? NO_TIMESTAMP;
-                          const isOpen = expanded === session.session_id;
-                          return (
-                            <SessionRow
-                              key={session.session_id}
-                              session={session}
-                              time={time}
-                              open={isOpen}
-                              onToggleOpen={handleToggleOpen}
-                              selectMode={selectMode}
-                              selected={visibleSelection.has(session.session_id)}
-                              onToggleSelect={handleToggleSelect}
-                              restarting={
-                                restartMutation.isPending &&
-                                restartMutation.variables?.sessionId === session.session_id
-                              }
-                              stopping={
-                                stopMutation.isPending &&
-                                stopMutation.variables?.sessionId === session.session_id
-                              }
-                              actions={rowActions}
-                            >
-                              {/* Mounted only while expanded — 27 collapsed detail grids
-                              would otherwise all format timestamps on every render. */}
-                              {isOpen ? (
-                                <SessionDetail
-                                  projectId={projectId}
-                                  session={session}
-                                  formatted={{
-                                    created: formatTimestamp(session.created_at).exact,
-                                    updated: time.exact,
-                                    deleted: session.deleted_at
-                                      ? formatTimestamp(session.deleted_at).exact
-                                      : null,
-                                  }}
-                                />
-                              ) : null}
-                            </SessionRow>
-                          );
-                        })}
-                      </SessionsSection>
-                    ))}
-                    {/* The scroll sentinel and the loading or retry row. With
-                        search or filters active and no match loaded yet, this is
-                        the whole list: loading continues until a match appears
-                        or the pages end. */}
-                    {hasNextPage ? (
-                      <div ref={loadMoreRef}>
-                        {isFetchNextPageError ? (
-                          <div className="flex items-center gap-2 px-2">
-                            <p className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                              {tSidebar('sessionList.loadMoreError')}
-                            </p>
-                            <Button variant="outline" size="sm" onClick={() => fetchNextPage()}>
-                              {tSidebar('retry')}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div
-                            className="text-muted-foreground flex h-8 items-center gap-2 px-2 text-xs"
-                            role="status"
-                          >
-                            <Loading className="size-3" variant="spokes" />
-                            {tSidebar('sessionList.loadingMore')}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                </FadedScrollArea>
+                <SessionsVirtualList
+                  rows={pageRows}
+                  context={rowContext}
+                  hasNextPage={Boolean(hasNextPage)}
+                  isFetchingNextPage={isFetchingNextPage}
+                  isFetchNextPageError={isFetchNextPageError}
+                  fetchNextPage={fetchNextPage}
+                />
               </div>
             </div>
           )}

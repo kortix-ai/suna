@@ -170,7 +170,7 @@ export async function loadProjectSessionInventory(
 export interface ProjectSessionInventoryPage {
   /** False when `scope: 'project'` was asked for without manager standing. */
   authorized: boolean;
-  /** One page of rows the viewer may see, in `updated_at DESC, session_id DESC` order. */
+  /** One page of rows the viewer may see, newest last activity first (then `session_id DESC`). */
   items: SessionInventoryItem[];
   /** Where the next page starts, or null when this page is the last. */
   nextCursor: SessionCursor | null;
@@ -213,10 +213,31 @@ export async function loadProjectSessionInventoryPage(
     };
   }
 
-  // The exact stored instant as text. A JS `Date` drops the microseconds, and
-  // the keyset below would skip rows in the cursor's millisecond — see
+  // The page order is the order every client DISPLAYS: last activity, the
+  // same key as `sessionLastActivityAt` in apps/web (project-session-list-helpers.ts):
+  //   1. the newer of `metadata.last_activity_at` (the prompt stamp) and the
+  //      newest `metadata.opencode_sessions[].updated_at` (epoch ms);
+  //   2. `updated_at` when neither exists.
+  // NOT `updated_at` alone: bookkeeping writers (branch GC, stop/resume, title
+  // sync) advance it with no activity, and a keyset on it delivered a year-old
+  // GC'd session on page 1 while thousands of newer ones sat on unloaded pages.
+  const activityAt = sql`COALESCE(
+    GREATEST(
+      CASE WHEN ${projectSessions.metadata}->>'last_activity_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+           THEN (${projectSessions.metadata}->>'last_activity_at')::timestamptz END,
+      (SELECT max(to_timestamp((oc->>'updated_at')::double precision / 1000))
+         FROM jsonb_array_elements(
+           CASE WHEN jsonb_typeof(${projectSessions.metadata}->'opencode_sessions') = 'array'
+                THEN ${projectSessions.metadata}->'opencode_sessions' ELSE '[]'::jsonb END
+         ) AS oc
+        WHERE jsonb_typeof(oc->'updated_at') = 'number')
+    ),
+    ${projectSessions.updatedAt}
+  )`;
+  // The exact instant as text. A JS `Date` drops the microseconds, and the
+  // keyset below would skip rows in the cursor's millisecond — see
   // session-page.ts.
-  const cursorAt = sql<string>`to_char(${projectSessions.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  const cursorAt = sql<string>`to_char(${activityAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
   const page = await collectSessionPage({
     limit: input.limit,
@@ -230,11 +251,11 @@ export async function loadProjectSessionInventoryPage(
             eq(projectSessions.projectId, input.projectId),
             eq(projectSessions.accountId, input.accountId),
             after
-              ? sql`(${projectSessions.updatedAt}, ${projectSessions.sessionId}) < (${after.updatedAt}::timestamptz, ${after.sessionId})`
+              ? sql`(${activityAt}, ${projectSessions.sessionId}) < (${after.updatedAt}::timestamptz, ${after.sessionId})`
               : undefined,
           ),
         )
-        .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+        .orderBy(sql`${activityAt} DESC`, desc(projectSessions.sessionId))
         .limit(size);
       return batch.map((entry) => ({
         row: entry.row,

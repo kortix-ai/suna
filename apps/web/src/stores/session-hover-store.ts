@@ -23,20 +23,25 @@ import { create } from 'zustand';
 
 /** The first card costs a delay, so a pointer crossing the list on its way
  *  somewhere else does not flash open every row it passes over. */
-export const HOVER_OPEN_DELAY_MS = 200;
+export const HOVER_OPEN_DELAY_MS = 500;
+/** Moving to the next row while a card is open. Short, never zero: at zero,
+ *  sweeping down a long list opened and rendered a card for every row. The
+ *  open card stays up during this delay, so the card still reads as moving. */
+export const HOVER_WARM_OPEN_DELAY_MS = 150;
+/** How long after the last scroll event no card may open. */
+export const HOVER_SCROLL_SUPPRESS_MS = 200;
 /** Long enough for the pointer to cross the `sideOffset` gap into the card. */
 export const HOVER_CLOSE_DELAY_MS = 100;
 /** How long the group stays warm after its last card closes. */
 export const HOVER_WARM_GRACE_MS = 300;
 
 /**
- * Once one card is open the group is warm and the next row is instant, so the
- * card reads as moving to the row under the pointer instead of closing and
- * reopening. This is the rule the design system already states for tooltips:
- * delay before the first, none for the rest while the group is active.
+ * Once one card is open the group is warm and the next row opens after a short
+ * delay while the current card stays up, so the card reads as moving to the row
+ * under the pointer instead of closing and reopening.
  */
 export function hoverOpenDelayMs(warm: boolean): number {
-  return warm ? 0 : HOVER_OPEN_DELAY_MS;
+  return warm ? HOVER_WARM_OPEN_DELAY_MS : HOVER_OPEN_DELAY_MS;
 }
 
 /**
@@ -60,6 +65,8 @@ interface SessionHoverState {
 let openTimer: ReturnType<typeof setTimeout> | null = null;
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let warmTimer: ReturnType<typeof setTimeout> | null = null;
+/** No card opens before this instant (epoch ms); see `suppressSessionHoverWhileScrolling`. */
+let suppressedUntil = 0;
 
 function cancel(timer: ReturnType<typeof setTimeout> | null): null {
   if (timer) clearTimeout(timer);
@@ -79,15 +86,14 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
     // Re-entering the row that is already showing must not restart anything,
     // or crossing the gap back from the card would flicker it.
     if (get().activeSessionId === sessionId) return;
+    // Rows slide under a still pointer while the list scrolls.
+    if (Date.now() < suppressedUntil) return;
 
-    if (hoverOpenDelayMs(get().warm) === 0) {
-      set({ activeSessionId: sessionId, warm: true });
-      return;
-    }
     openTimer = setTimeout(() => {
       openTimer = null;
+      if (Date.now() < suppressedUntil) return;
       set({ activeSessionId: sessionId, warm: true });
-    }, HOVER_OPEN_DELAY_MS);
+    }, hoverOpenDelayMs(get().warm));
   },
 
   closeSession: (sessionId) => {
@@ -110,3 +116,17 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
     set({ activeSessionId: null, warm: false });
   },
 }));
+
+/**
+ * The session list's scroll handler. Scrolling moves rows under a pointer that
+ * has not moved, and each one fires pointer-enter: without this, a scroll
+ * opened (and rendered) a brief card for row after row. Closes the open card,
+ * cancels a pending open, and blocks opens until scrolling has been quiet for
+ * `HOVER_SCROLL_SUPPRESS_MS`. Cheap enough for every scroll event: no state
+ * write unless a card is actually open.
+ */
+export function suppressSessionHoverWhileScrolling(): void {
+  suppressedUntil = Date.now() + HOVER_SCROLL_SUPPRESS_MS;
+  openTimer = cancel(openTimer);
+  if (useSessionHoverStore.getState().activeSessionId) useSessionHoverStore.getState().dismiss();
+}
