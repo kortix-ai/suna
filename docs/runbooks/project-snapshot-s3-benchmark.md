@@ -783,6 +783,52 @@ time, the case the listening-line gate exists for; line → root list answered
 - Nothing in these runs argues against `prefer-s3` as the platform default on
   dev; the decision is a bucket-region and cost question, not a boot-time one.
 
+### Transfer Acceleration on dev (PR #7299 on, PR #7303 off again), 12:53–13:54 UTC
+
+Same project, fixture and settings as the two runs above, one hour later, with
+`transfer_acceleration = true` on the dev bucket and
+`KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true` on the API (both merged in #7299,
+deployed by run 35096948666 at 12:45 UTC; the accelerate host answered 403
+instead of 400 `InvalidRequest` and the presigned descriptor named
+`kortix-dev-project-snapshots.s3-accelerate.amazonaws.com`). 20 rounds per arm
+on each provider. The hypothesis: with the bucket 150–190 ms away from every
+box, an edge termination should remove the TLS-setup + slow-start cost that
+the Ohio run (bucket in the boxes' region) could not show.
+
+| Provider / arm | ok / failed / fallbacks | Acquisition p50 / p95 | `opencode-ready` p50 / p95 | Full boot p50 / p95 | Descriptor / retries |
+|---|---|---|---|---|---|
+| Platinum, Git | 19 / 1 / 0 | 2,501 / 45,973 ms | 4,130 / 47,415 ms | 16,462 / 58,269 ms | — / 0 |
+| Platinum, **S3 accelerated** | 20 / 0 / 0 | **3,312 / 3,681 ms** | 4,855 / 6,343 ms | 16,955 / 21,147 ms | env 6, proxy 14 / **14** |
+| Platinum, S3 plain (above, 30 rounds) | 30 / 0 / 0 | 1,659 / 1,783 ms | 3,173 / 4,168 ms | 14,459 / 17,959 ms | env 30 / 0 |
+| Daytona, Git | 20 / 0 / 0 | 1,568 / 2,139 ms | 3,163 / 3,519 ms | 12,797 / 14,772 ms | — / 0 |
+| Daytona, **S3 accelerated** | 20 / 0 / 0 | **799 / 1,346 ms** | 2,480 / 3,313 ms | 11,301 / 15,115 ms | env 18, proxy 2 / 2 |
+| Daytona, S3 plain (above) | 20 / 0 / 0 | 876 / 2,032 ms | 2,570 / 3,332 ms | 12,407 / 15,500 ms | env 17, proxy 3 / 3 |
+
+The clean accelerated download is faster on both providers: Platinum's six
+single-attempt rounds took 1,241–1,423 ms (plain median 1,584), Daytona's
+eighteen took 320–901 ms (plain median 802), the best matching the in-region
+Ohio numbers. What differs is the boot-time short close (`transfer closed
+after N of 1,576,923 bytes`, N always 1,572,864 or 1,522,848): 14 of 20
+Platinum boots against 0 of 30 plain, 2 of 20 Daytona boots against 3 of 20
+plain. Each short close retries through a fresh proxy descriptor after a
+backoff and costs 1.5–2 s, so Platinum's accelerated median is 1.65 s worse
+than plain while Daytona's is 77 ms better with a 686 ms better p95. The
+storm is a property of the Amsterdam edge path (Platinum's boxes), not of
+acceleration as such; the mechanism is the Bun fetch close-before-end already
+recorded for the Ohio run.
+
+Platinum was degraded during rounds 12–18 (one Git box never reached `/start`
+ready in 420 s, three Git starts of 58–80 s, one 46 s in-guest Git fetch);
+Daytona had one 363 s Git start. Those sit in the Git arms' tails and are
+unrelated to acceleration; the acquisition columns are the comparison.
+
+Decision: the flag is API-wide and Platinum is dev's default provider, so
+#7303 turns the API flag back to `false`; the bucket keeps acceleration
+enabled (nothing uses it while the flag is off). Acceleration becomes a net
+win on both providers once the daemon resumes a short body in place (`Range:
+bytes=N-` on the still-valid URL, #7242 "Next" item 3): every boot then gets
+the faster clean path and a short close costs one extra round trip.
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted
