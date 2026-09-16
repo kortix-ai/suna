@@ -113,11 +113,12 @@ const VIRTUAL_OVERSCAN_ROWS = 12;
 /** Start the next page this many rows before the end of the loaded list. */
 const LOAD_AHEAD_ROWS = 15;
 
-/** `pt-4` and `pb-12` of the list, in px at `--spacing: 0.23rem`. The list is
- *  positioned by the virtualizer, so its padding is the virtualizer's. `pb-12`
- *  clears the scroll area's `h-10` bottom fade. */
+/** `pt-4` and `pb-24` of the list, in px at `--spacing: 0.23rem`. The list is
+ *  positioned by the virtualizer, so its padding is the virtualizer's. `pb-24`
+ *  keeps the last row and the load-more skeleton well clear of the scroll
+ *  area's `h-10` bottom fade. */
 const LIST_PADDING_START_PX = 14.72;
-const LIST_PADDING_END_PX = 44.16;
+const LIST_PADDING_END_PX = 88.32;
 
 const ROW_GAP_CLASS: Record<SessionsPageRowGap, string> = { none: '', '2': 'pb-2', '4': 'pb-4' };
 
