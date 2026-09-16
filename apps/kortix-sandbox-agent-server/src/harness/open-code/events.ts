@@ -1,6 +1,6 @@
-import { logger } from './logger'
-import type { Config } from './config'
-import type { Opencode } from './opencode'
+import { logger } from '../../logger'
+import type { OpenCodeConfig as Config } from './config'
+import type { Opencode } from './lifecycle'
 
 // opencode's QuestionInfo schema, mirrored from the v2 SDK. Anything richer
 // (like permission.asked) is layered on top of the same SSE stream.
@@ -34,7 +34,7 @@ export interface OpencodeTurnError {
   providerID?: string
 }
 
-type OpencodeEventHandlers = {
+export type OpencodeEventHandlers = {
   /** Every parsed OpenCode event, before specialized dispatch. */
   onEvent?: (event: { type?: string; properties?: unknown }) => void
   onQuestionAsked?: (req: QuestionRequest) => void
@@ -63,6 +63,11 @@ type OpencodeEventHandlers = {
   onReconcile?: () => void
 }
 
+export interface OpencodeEventSubscription {
+  stop(): void
+  connected: Promise<void>
+}
+
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
   /**
@@ -83,7 +88,7 @@ const SUBSCRIBE_HEADERS_TIMEOUT_MS = 10_000
 const LISTENING_WAIT_MAX_MS = 5_000
 
 /** Resolve once the current OpenCode may be talked to, or after `maxMs`.
- *  Optional-chained so a partial test double without the supervisor method
+ *  Optional-chained so a partial test double without the lifecycle method
  *  behaves as before (no gate). */
 async function waitForListeningOrTimeout(opencode: Opencode, maxMs: number): Promise<void> {
   const signal = opencode.waitForCurrentListening?.()
@@ -102,14 +107,14 @@ async function waitForListeningOrTimeout(opencode: Opencode, maxMs: number): Pro
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
-// Auto-reconnects on close — when the underlying opencode supervisor restarts,
+// Auto-reconnects on close — when the underlying opencode lifecycle restarts,
 // we'll loop reconnecting until /event is reachable again.
 export function startOpencodeEventLoop(
   opencode: Opencode,
   cfg: Config,
   handlers: OpencodeEventHandlers,
   options: OpencodeEventLoopOptions = {},
-): { stop(): void; connected: Promise<void> } {
+): OpencodeEventSubscription {
   let stopping = false
   let abortController: AbortController | null = null
   // Resolves the FIRST time the SSE subscribes. The initial-prompt path awaits

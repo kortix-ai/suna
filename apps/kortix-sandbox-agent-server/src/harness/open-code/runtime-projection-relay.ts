@@ -1,4 +1,4 @@
-import { logger } from './logger'
+import { logger } from '../../logger'
 import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-projection'
 
 /**

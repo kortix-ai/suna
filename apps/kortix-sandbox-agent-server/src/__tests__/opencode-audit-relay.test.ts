@@ -16,7 +16,7 @@ import {
   createAuditRelay,
   retryAfterMs,
   sanitizeOpenCodeEvent,
-} from '../opencode-audit-relay';
+} from '../harness/open-code/opencode-audit-relay';
 
 describe('OpenCode canonical audit relay', () => {
   test('uses the single session credential', () => {

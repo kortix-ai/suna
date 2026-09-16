@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { buildInitialPromptBody, resolveOpencodeModel } from '../main'
+import { buildInitialPromptBody, resolveOpencodeModel } from '../harness/open-code/boot'
 
 const ORIGINAL_MODEL = process.env.KORTIX_OPENCODE_MODEL
 const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL

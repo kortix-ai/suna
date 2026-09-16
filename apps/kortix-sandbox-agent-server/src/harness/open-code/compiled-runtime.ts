@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import type { Config } from './config'
+import type { OpenCodeConfig as Config } from './config'
 
 export const COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1'
 export const COMPILED_RUNTIME_CONTENT_TYPE =

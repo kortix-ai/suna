@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
+const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'control.ts'), 'utf8')
 
 /** The allowlist body, so a name added to a comment or another Set never counts. */
 function runtimeEnvAllowlist(): string[] {
@@ -60,7 +60,7 @@ describe('the live-env allowlist', () => {
   })
 })
 
-const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
 
 describe('the unplanned-respawn hook waits for readiness', () => {
   test('it fires only after opencode answers again, not when the process spawns', () => {

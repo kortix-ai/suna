@@ -708,3 +708,67 @@ resume adopts the existing workspace (`provider:"git"`, `s3_attempted:false`,
 warm 195 ms) → uncommitted edit survived → resumed session still on its branch
 at the pushed commit → another account's PAT gets 403 for the descriptor (no
 URL leaked) → an owner JWT is not a Git-proxy credential (401).
+
+## Harness service boundary (#7220) versus `main`, real S3, 2026-09-16
+
+Question: does relocating the boot orchestration into `src/harness/open-code/`
+(with `src/config-provider/` kept as a host service the harness boot calls)
+change acquisition or boot time? Two local stacks on the same laptop, same
+shared DB, same fixture (400-file project `65b9e291…` @ `42c42026…`), same
+real bucket in the boxes' region (`us-east-2`, plain endpoint, TA off), same
+Daytona `us` target, 30 rounds per arm, arms alternating, one API at a time.
+Baseline `main` `05c2901f6d` (daemon `09284b7e…`, image
+`kortix-default-3b390bb32487`); branch head `d19b14f6e5` (daemon `3f773dfc…`,
+image `kortix-default-a9f3654c8ff5`). Every round was attributed to its image
+through the API's `[session-sandbox] Booting <session> from <snapshot>` line:
+60/60 per stack on the intended image.
+
+| p50 ms unless noted                | main Git | #7220 Git | main S3 | #7220 S3 |
+| ---------------------------------- | -------: | --------: | ------: | -------: |
+| acquisition (config-provider sum)  |      989 |       848 |     899 |      926 |
+| acquisition p95                    |    1,336 |     1,304 |   1,719 |    1,650 |
+| in-guest `s3_acquire`              |        – |         – |     847 |      859 |
+| `repo-materialized`                |    1,042 |       881 |     953 |      959 |
+| `opencode-ready`                   |    2,193 |     2,199 |   2,215 |    2,248 |
+| `opencode-ready` p95               |    2,998 |     6,423 |   6,446 |    2,754 |
+| full boot (`runtime_ready_ms`)     |    6,110 |     6,097 |   7,272 |    6,662 |
+| full boot p95                      |   10,432 |    10,110 |  11,366 |    8,962 |
+| `create_ack_ms`                    |      822 |       833 |     810 |      815 |
+| rounds ok / S3 retried / fallback  | 30 / – / – | 30 / – / – | 30 / 2 / 1 | 30 / 3 / 0 |
+
+Reading:
+
+- **Boot-neutral.** The in-guest `opencode-ready` mark, the number that the
+  daemon code decides, is equal within 6 ms (Git) and 33 ms (S3) at the
+  median. `create_ack` (API side) is equal within 11 ms.
+- **The 141 ms Git acquisition gap is box geography, not code.** The branch
+  run drew 24/30 New York boxes; the baseline 16/30 (plus 7 Chicago). New
+  York rounds on the baseline itself were 842 ms p50 — the same as the
+  branch. S3 acquisition (`s3_acquire`, one object fetch from `us-east-2`) is
+  equal: 847 vs 859 ms.
+- **The S3 full-boot gap (7,272 vs 6,662 p50; p95 11.4 vs 9.0 s) is the
+  OpenCode bind-window stall**, not #7220: both daemons carry the same
+  pre-#7242 boot path, and an S3 checkout lands before OpenCode attaches its
+  handler more often than a Git one; a lost root-list request costs 5 s
+  (`opencode-ready` p95 6,446 on main S3, 6,423 on branch Git — the lottery
+  fell on different arms). #7242 closes that window; measure again on top of
+  it if a tighter bound is needed.
+- **S3 on `main` (no presign) still pays the descriptor round trip**, so S3
+  acquisition here is ~0.9 s on both stacks rather than the ~0.3 s #7242
+  measured with the presigned descriptor — expected for this baseline. #7242
+  merged into `main` (`b91434509c`) while this run was in progress and is
+  merged into the branch right after it; both stacks here measured the
+  pre-#7242 boot path, which is the fair comparison for the refactor.
+- One Git fallback on the baseline (round 17) was the known Bun short close
+  (`transfer closed after 1,572,864 of 1,576,450 bytes`, three attempts); the
+  same defect retried and recovered in 2 baseline and 3 branch rounds.
+
+Re-run: `apps/api/scripts/project-snapshot-bench.ts run … --arms
+"<label>-git=<api>|git,<label>-s3=<api>|prefer-s3" --probe-hosts … --daemon-log`
+against one worktree stack at a time, each pointed at the same real bucket
+(`KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3`, `…_S3_BUCKET`, `…_S3_REGION`,
+`AWS_PROFILE=<credential_process profile>`). Two traps: a startup pre-build is
+NOT written to `kortix.project_snapshot_builds` (its only signal is the API log
+line `startup pre-build (daytona): default image <name> built`), and while an
+image builds the API boots the previous ready image — attribute every round
+from the `Booting … from` line before trusting a run.

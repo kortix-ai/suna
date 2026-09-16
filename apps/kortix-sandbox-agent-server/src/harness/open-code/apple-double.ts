@@ -1,7 +1,7 @@
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { logger } from './logger';
+import { logger } from '../../logger';
 
 /**
  * Remove macOS AppleDouble sidecars from an OpenCode config dir.

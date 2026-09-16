@@ -42,7 +42,7 @@
 import { Database } from 'bun:sqlite'
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { logger } from './logger'
+import { logger } from '../../logger'
 
 export const OFFLOAD_PLACEHOLDER_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='

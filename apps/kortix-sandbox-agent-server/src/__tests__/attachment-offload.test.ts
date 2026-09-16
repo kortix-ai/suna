@@ -18,8 +18,8 @@ import {
   runAttachmentOffloadPass,
   selectCandidates,
   sidecarPathFor,
-} from '../attachment-offload'
-import { stripInlineAttachmentBytes } from '../inline-attachments'
+} from '../harness/open-code/attachment-offload'
+import { stripInlineAttachmentBytes } from '../harness/open-code/inline-attachments'
 
 let root: string
 let dbPath: string

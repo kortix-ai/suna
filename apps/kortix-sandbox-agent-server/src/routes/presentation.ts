@@ -1,6 +1,6 @@
+import { resolveHarness } from '../harness/harness'
 import { Hono } from 'hono'
 import path from 'node:path'
-import os from 'node:os'
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -51,7 +51,7 @@ const FORMAT_SCRIPT: Record<PresentationFormat, string> = {
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 
 // The presentation skill's `scripts/` dir, relative to an opencode config dir.
-const SCRIPTS_REL = 'skills/GENERAL-KNOWLEDGE-WORKER/presentations/scripts'
+const SCRIPTS_REL = 'GENERAL-KNOWLEDGE-WORKER/presentations/scripts'
 
 const CONVERT_TIMEOUT_MS = 240_000
 
@@ -167,19 +167,10 @@ function defaultRunConvert(
   })
 }
 
-/** Find the presentation skill's scripts dir. Prefers the project's resolved
- *  opencode config dir, then the conventional in-repo + installed locations. */
+/** Find presentation scripts in the selected harness's skill locations. */
 async function defaultResolveScriptsDir(cfg: Config): Promise<string | null> {
-  const candidates: string[] = []
-  try {
-    const { resolveOpencodeConfigDir } = await import('../config')
-    const configDir = await resolveOpencodeConfigDir(cfg)
-    candidates.push(path.join(configDir, SCRIPTS_REL))
-  } catch {
-    /* fall back to the static candidates below */
-  }
-  candidates.push(path.join(cfg.workspace || '/workspace', '.kortix/opencode', SCRIPTS_REL))
-  candidates.push(path.join(os.homedir(), '.opencode', SCRIPTS_REL))
+  const candidates = (await resolveHarness(cfg).resolveSkillDirectories(cfg))
+    .map((directory) => path.join(directory, SCRIPTS_REL))
   for (const dir of candidates) {
     if (existsSync(path.join(dir, FORMAT_SCRIPT.pdf))) return dir
   }

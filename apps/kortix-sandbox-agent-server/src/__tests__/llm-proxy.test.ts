@@ -16,7 +16,7 @@ import {
   stopConnectorProxy,
   CONNECTOR_PROXY_PLACEHOLDER_KEY,
 } from '../llm-proxy'
-import { buildOpencodeConfigContent, refreshGatewayCatalogFile } from '../opencode'
+import { buildOpencodeConfigContent, refreshGatewayCatalogFile } from '../harness/open-code/lifecycle'
 
 // A mock upstream that echoes back the Authorization header + path it received,
 // so we can prove the proxy injects the live token (not the placeholder).

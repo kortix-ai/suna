@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OpencodeDb, isSupportedOpencodeVersion } from '../opencode-db'
+import { OpencodeDb, isSupportedOpencodeVersion } from '../harness/open-code/opencode-db'
 
 let root: string
 let dbPath: string

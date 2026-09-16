@@ -1,3 +1,4 @@
+import type { HarnessLifecycleService, HarnessState } from '../harness'
 import { spawn, type ChildProcess } from 'node:child_process'
 
 /**
@@ -37,23 +38,23 @@ export type VerifiedReloadResult =
   | { outcome: 'kept-old'; reason: string }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
+import { OPENCODE_HOME } from './paths'
 import { access, constants, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
-import { AGENT_ENV_SH } from './agent-env-file'
-import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
-import type { Config } from './config'
-import { buildGitIdentityEnv } from './git'
-import { egressShimEnv } from './egress-shim'
-import { logger } from './logger'
+import { AGENT_ENV_SH } from '../../agent-env-file'
+import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '../../llm-proxy'
+import type { OpenCodeConfig as Config } from './config'
+import { buildGitIdentityEnv } from '../../git'
+import { egressShimEnv } from '../../egress-shim'
+import { logger } from '../../logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
-import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import { mergeProjectEnv, type ProjectEnvStore } from '../../project-env'
 import { OPENCODE_CURRENT_LINK, OPENCODE_SYSTEM_LINK } from './opencode-binary'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
-} from './secret-capabilities'
+} from '../../secret-capabilities'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -96,7 +97,6 @@ const READY_LIVENESS_MS = 5_000
 const READY_LIVENESS_DOWNGRADE_THRESHOLD = 3
 const READY_LIVENESS_RECHECK_MS = 2_000
 
-export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
 const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
@@ -1611,10 +1611,10 @@ async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
-export type OpencodeState = 'starting' | 'ok' | 'down'
+export type OpencodeState = HarnessState
 
 export interface LivenessDecisionInput {
-  /** The supervisor's current opencode state. */
+  /** The lifecycle's current opencode state. */
   state: OpencodeState
   /** Did THIS liveness probe get a healthy answer from opencode? */
   ready: boolean
@@ -1653,10 +1653,7 @@ export function nextLivenessState(input: LivenessDecisionInput): LivenessDecisio
   return { state: 'starting', consecutiveFailures: 0, downgraded: false }
 }
 
-export type Opencode = {
-  start(): Promise<void>
-  stop(signal?: NodeJS.Signals): Promise<void>
-  restart(): Promise<void>
+export type Opencode = HarnessLifecycleService & {
   reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
   /**
    * The workspace (repo checkout, config-dir deps, injected skills) landed
@@ -1698,7 +1695,6 @@ export type Opencode = {
    */
   getActivePort(): number
   getBinaryPath(): string | null
-  getState(): OpencodeState
   markReady(): void
   /**
    * Resolves once the active supervised process can be talked to: it printed
@@ -1710,7 +1706,7 @@ export type Opencode = {
   waitForCurrentListening(): Promise<void>
 }
 
-export interface OpencodeSupervisorOptions {
+export interface OpencodeLifecycleOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
   /** Test override for LISTENING_LINE_FALLBACK_MS. */
@@ -1745,7 +1741,7 @@ export interface OpencodeSupervisorOptions {
    * you get when an agent runs `kill <opencode pid>` from its own shell, and
    * equally what an OOM or a crash produces.
    *
-   * The supervisor cannot fix that itself: it knows nothing about sessions.
+   * The lifecycle cannot fix that itself: it knows nothing about sessions.
    * It reports the fact and main.ts finalizes the orphaned turn, the same way
    * boot already does when it adopts a root whose last turn never completed.
    */
@@ -1761,11 +1757,11 @@ export interface OpencodeSupervisorOptions {
   onUnplannedRespawn?: () => void | Promise<boolean | void>
 }
 
-export function createOpencodeSupervisor(
+export function createOpencodeLifecycle(
   cfg: Config,
   opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
-  options: OpencodeSupervisorOptions = {},
+  options: OpencodeLifecycleOptions = {},
 ): Opencode {
   let currentCfg = cfg
   let currentOpencodeConfigDir = opencodeConfigDir
@@ -2210,7 +2206,7 @@ export function createOpencodeSupervisor(
     | { ok: false; reason: string }
   > {
     if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet' }
-    if (stopping) return { ok: false, reason: 'supervisor is shutting down' }
+    if (stopping) return { ok: false, reason: 'lifecycle is shutting down' }
 
     const candidatePort = livePort() === currentCfg.opencodeInternalPort
       ? currentCfg.opencodeStandbyPort
@@ -2801,7 +2797,7 @@ export async function waitForOpencodeReady(
     if (opencode.getState() === 'ok') return true
     if (directory) {
       // Send nothing before the process announced its handler (or the
-      // supervisor's fallback probe proved it): see OPENCODE_LISTENING_LINE.
+      // lifecycle's fallback probe proved it): see OPENCODE_LISTENING_LINE.
       // A probe dropped in the bind→handler window would cost its 500 ms.
       if (!mayProbe) {
         mayProbe = await raceListening(opencode, BOOT_READY_POLL_MS)
@@ -2823,7 +2819,7 @@ export async function waitForOpencodeReady(
 }
 
 /** True once the current OpenCode may be talked to, false after `maxMs`.
- *  Optional-chained so a partial test double without the supervisor method
+ *  Optional-chained so a partial test double without the lifecycle method
  *  behaves as before (no gate). */
 async function raceListening(opencode: Opencode, maxMs: number): Promise<boolean> {
   const signal = opencode.waitForCurrentListening?.()
