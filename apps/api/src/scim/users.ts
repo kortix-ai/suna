@@ -522,16 +522,29 @@ scimRouter.openapi(
       for (const op of body.Operations as Array<Record<string, unknown>>) {
         const opName = typeof op.op === 'string' ? op.op.toLowerCase() : null;
         if (opName !== 'replace' && opName !== 'add') continue;
-        const path = typeof op.path === 'string' ? op.path : 'active';
-        changes.set(path, op.value);
+        if (typeof op.path === 'string' && op.path) {
+          setUserChange(changes, op.path, op.value);
+        } else if (op.value && typeof op.value === 'object' && !Array.isArray(op.value)) {
+          for (const [key, value] of Object.entries(op.value)) setUserChange(changes, key, value);
+        }
       }
     } else {
-      for (const k of Object.keys(body)) changes.set(k, body[k]);
+      for (const [key, value] of Object.entries(body)) setUserChange(changes, key, value);
     }
 
     return applyUserWrite(c, accountId, userId, changes);
   },
 );
+
+function setUserChange(changes: Map<string, unknown>, path: string, value: unknown) {
+  const attribute = path.toLowerCase();
+  if (attribute === 'active') {
+    const normalized = typeof value === 'string' ? value.toLowerCase() : value;
+    changes.set('active', normalized === 'false' ? false : normalized === 'true' ? true : value);
+  } else {
+    changes.set(attribute === 'externalid' ? 'externalId' : path, value);
+  }
+}
 
 /**
  * Shared write path for PATCH and PUT. Resolves the SCIM id to a live member OR
@@ -671,7 +684,8 @@ scimRouter.openapi(
     } catch {
       return scimError(c, 400, 'Body must be JSON');
     }
-    const changes = new Map<string, unknown>(Object.entries(body));
+    const changes = new Map<string, unknown>();
+    for (const [key, value] of Object.entries(body)) setUserChange(changes, key, value);
     return applyUserWrite(c, accountId, userId, changes);
   },
 );
