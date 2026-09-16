@@ -38,7 +38,7 @@ export type VerifiedReloadResult =
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { access, constants, readFile, realpath, stat } from 'node:fs/promises'
+import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -1560,9 +1560,8 @@ export interface OpencodeBinaryDetectionOptions {
 export async function isStubOpencodeLauncher(launcherPath: string): Promise<boolean> {
   try {
     const target = await realpath(launcherPath)
-    const info = await stat(target)
-    if (info.size > 64 * 1024) return false
-    const text = await readFile(target, 'utf8')
+    const text = await readTextIfSmall(target)
+    if (text === null) return false
     if (/postinstall script was not run/i.test(text)) return true
     // pnpm's cmd-shim: follow one hop to the package's own launcher.
     const shimTarget =
@@ -1570,11 +1569,38 @@ export async function isStubOpencodeLauncher(launcherPath: string): Promise<bool
       text.match(/"?([^"\s]+opencode-ai\/bin\/opencode(?:\.exe)?)"?/)?.[1]
     if (!shimTarget) return false
     const resolved = shimTarget.replace(/^\$basedir/, dirname(target))
-    const binInfo = await stat(resolved).catch(() => null)
-    if (!binInfo || binInfo.size > 64 * 1024) return false
-    return /postinstall script was not run/i.test(await readFile(resolved, 'utf8'))
+    const binText = await readTextIfSmall(resolved)
+    if (binText === null) return false
+    return /postinstall script was not run/i.test(binText)
   } catch {
     return false
+  }
+}
+
+/** The size ceiling that separates a text launcher stub from a real binary. */
+const STUB_LAUNCHER_MAX_BYTES = 64 * 1024
+
+/**
+ * Read a file only if it is small enough to be a launcher stub, or `null`.
+ *
+ * The size check and the read run against ONE open handle. Doing it as
+ * `stat(path)` then `readFile(path)` is a check-then-act race (CodeQL
+ * js/file-system-race): the path can be replaced between the two calls, so the
+ * bytes read are not the bytes measured — which on this path decides whether a
+ * working opencode launcher gets thrown away. `fstat` on the handle cannot be
+ * fooled that way.
+ */
+async function readTextIfSmall(path: string): Promise<string | null> {
+  const handle = await open(path, 'r').catch(() => null)
+  if (!handle) return null
+  try {
+    const info = await handle.stat()
+    if (info.size > STUB_LAUNCHER_MAX_BYTES) return null
+    return await handle.readFile('utf8')
+  } catch {
+    return null
+  } finally {
+    await handle.close().catch(() => {})
   }
 }
 
