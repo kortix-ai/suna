@@ -400,8 +400,9 @@ Stock `buttonTextVariants` maps every `size` to `''`, so a `size="lg"` button
 — and `variant="large"` never applied, because `cn(textVariants,
 TextClassContext, className)` lets the context's `text-sm font-medium` win.
 Jay's rule: no explicit height, size, or text classes on a `Button`. Decision:
-`size.lg` in `buttonTextVariants` is `'text-base font-semibold'` (16px,
-`global.css` remaps `font-semibold` to `Roobert-SemiBold`). This is the third
+`size.lg` in `buttonTextVariants` is `'text-base font-medium'` (16px,
+`global.css` remaps `font-medium` to `Roobert-Medium`; semibold until
+2026-09-16, when Jay asked for medium-only button labels). This is the third
 documented deviation. Re-apply it after any `add --all --overwrite`.
 Consumers of `size="lg"`: `app/auth/index.tsx`, `components/settings/PlanPage.tsx`,
 `components/auth/EmailAuthDrawer.tsx` (zero importers).

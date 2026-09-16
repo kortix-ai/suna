@@ -57,7 +57,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
       set({ preference, resolvedTheme, isLoaded: true });
       // Apply to NativeWind so every `dark:` class / useColorScheme() consumer
-      // follows the persisted preference (idempotent with _layout's restore).
+      // follows the persisted preference. This is the app's only theme restore
+      // (called once from the root layout).
       nativewindColorScheme.set(preference);
     } catch (error) {
       log.error('🌓 Theme store: Failed to load preference:', error);

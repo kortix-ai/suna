@@ -28,13 +28,12 @@ import {
   Skia,
   StrokeCap,
   TileMode,
-  useClock,
   useRSXformBuffer,
   type SkImage,
   type SkRSXform,
   type SkRect,
 } from '@shopify/react-native-skia';
-import { useSharedValue } from 'react-native-reanimated';
+import { useFrameCallback, useSharedValue } from 'react-native-reanimated';
 
 import { KORTIX_SYMBOL_PATH, SYMBOL_ASPECT, SYMBOL_HEIGHT, clamp01, flowAngle } from '@/lib/effects/mark-math';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -271,11 +270,13 @@ function CurrentsField({
   height,
   markCenterY,
   palette,
+  paused,
 }: {
   width: number;
   height: number;
   markCenterY: number;
   palette: Palette;
+  paused: boolean;
 }) {
   const image = React.useMemo(() => makeSpriteSheet(palette), [palette]);
   const edgePoints = React.useMemo(
@@ -288,7 +289,18 @@ function CurrentsField({
   );
   const sprites = React.useMemo(() => buildSprites(seeded), [seeded]);
 
-  const clock = useClock();
+  // Elapsed animation time. Accumulates frame deltas instead of using time since
+  // the first frame, so pausing freezes the field and resuming continues it
+  // without replaying the reveal. While paused no frame callback runs, the
+  // buffer inputs stop changing, and Skia stops redrawing.
+  const clock = useSharedValue(0);
+  const frameCallback = useFrameCallback((info) => {
+    'worklet';
+    clock.value += info.timeSincePreviousFrame ?? 0;
+  }, !paused);
+  React.useEffect(() => {
+    frameCallback.setActive(!paused);
+  }, [paused, frameCallback]);
   const particles = useSharedValue<Particle[]>(seeded);
 
   // Re-seed on resize; the buffer modifier picks it up on its next tick.
@@ -401,13 +413,20 @@ export type KortixCurrentsProps = {
   markCenterY?: number;
   /** Canvas + particle palette. Pass the resolved color scheme. Defaults to dark. */
   tone?: CurrentsTone;
+  /** Freezes the field on its current frame, e.g. while the screen is not focused. */
+  paused?: boolean;
 };
 
 /**
  * Full-frame flow field with the Kortix mark hidden inside it. Fills its
  * parent — give it a sized container.
  */
-export function KortixCurrents({ style, markCenterY = 0.5, tone = 'dark' }: KortixCurrentsProps) {
+export function KortixCurrents({
+  style,
+  markCenterY = 0.5,
+  tone = 'dark',
+  paused = false,
+}: KortixCurrentsProps) {
   const palette = PALETTES[tone];
   const [{ width, height }, setSize] = React.useState({ width: 0, height: 0 });
   const [reduceMotion, setReduceMotion] = React.useState(false);
@@ -439,7 +458,13 @@ export function KortixCurrents({ style, markCenterY = 0.5, tone = 'dark' }: Kort
         reduceMotion ? (
           <StaticField width={width} height={height} markCenterY={markCenterY} palette={palette} />
         ) : (
-          <CurrentsField width={width} height={height} markCenterY={markCenterY} palette={palette} />
+          <CurrentsField
+            width={width}
+            height={height}
+            markCenterY={markCenterY}
+            palette={palette}
+            paused={paused}
+          />
         )
       ) : null}
     </View>

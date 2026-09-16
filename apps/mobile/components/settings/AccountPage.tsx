@@ -4,8 +4,9 @@
  * Two entry points render this same component:
  * - the Account tab (`presentation="tab"`): the page title is scroll content,
  *   and the page clears the tab bar;
- * - the project sidebar's avatar (`presentation="stack"`, route
- *   `/account-settings`): a Go back header pushed over the project.
+ * - the project sidebar's avatar (`presentation="project"`, route
+ *   `/projects/[id]/account`): a header with the hamburger that opens the
+ *   project drawer. No Go back.
  *
  * Top to bottom: profile photo (tap to change) and name, the signed-in email
  * with the plan badge, Edit profile, Preferences, Workspace, Help, Advanced.
@@ -67,11 +68,16 @@ import { useAccountState } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
 
 export interface AccountPageProps {
-  /** `tab`: the Account tab root. `stack`: pushed from a project, with Go back. */
-  presentation: 'tab' | 'stack';
+  /**
+   * `tab`: the Account tab root. `project`: a route in the project stack, with
+   * the hamburger header.
+   */
+  presentation: 'tab' | 'project';
+  /** `project` only: open the project drawer (the header hamburger). */
+  onOpenMenu?: () => void;
 }
 
-export function AccountPage({ presentation }: AccountPageProps) {
+export function AccountPage({ presentation, onOpenMenu }: AccountPageProps) {
   const isTab = presentation === 'tab';
   const { user, signOut, isSigningOut } = useAuthContext();
   const { t, currentLanguage, availableLanguages } = useLanguage();
@@ -165,8 +171,11 @@ export function AccountPage({ presentation }: AccountPageProps) {
 
   return (
     <View className="flex-1 bg-background">
-      {isTab ? null : <SettingsHeader title={title} />}
+      {isTab ? null : (
+        <SettingsHeader title={title} gutter="project" onOpenMenu={onOpenMenu} />
+      )}
       <SettingsPage
+        gutter={isTab ? 'page' : 'project'}
         paddingBottom={isTab ? tabBarClearance : undefined}
         contentInsetAdjustmentBehavior={isTab ? TAB_SCROLL_INSET_ADJUSTMENT : undefined}
         header={

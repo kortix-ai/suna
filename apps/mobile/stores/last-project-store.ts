@@ -16,6 +16,8 @@ interface LastProjectState {
   /** user id → project id */
   byUser: Record<string, string>;
   remember: (userId: string, projectId: string) => void;
+  /** Sign-out: forget every remembered project. */
+  reset: () => void;
 }
 
 export const useLastProjectStore = create<LastProjectState>()(
@@ -28,6 +30,7 @@ export const useLastProjectStore = create<LastProjectState>()(
             ? state
             : { byUser: { ...state.byUser, [userId]: projectId } }
         ),
+      reset: () => set({ byUser: {} }),
     }),
     {
       name: 'kortix.lastProject',

@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { ViewStyle } from 'react-native';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { allowBrowserNavigation } from '@/lib/utils/html-embed';
 
 interface BrowserPageProps {
   page: PageTab;
@@ -266,6 +267,8 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                 ? { Authorization: `Bearer ${authToken}` }
                 : undefined,
             }}
+            originWhitelist={['*']}
+            onShouldStartLoadWithRequest={allowBrowserNavigation}
             onNavigationStateChange={handleNavigationChange}
             onLoadStart={() => setIsLoading(true)}
             onLoadEnd={() => setIsLoading(false)}

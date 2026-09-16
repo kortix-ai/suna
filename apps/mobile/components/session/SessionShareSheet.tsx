@@ -13,7 +13,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { View, ActivityIndicator, Alert } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 // Use react-native-gesture-handler's Pressable (not RN's own) for correct
@@ -35,6 +35,7 @@ import {
 } from '@/lib/projects/projects-client';
 import { projectKeys, useProjectAccess } from '@/lib/projects/hooks';
 import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { useToast } from '@/components/kortix/toast-provider';
 
 type ShareMode = 'project' | 'private' | 'members';
 
@@ -77,6 +78,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
     const insets = useSafeAreaInsets();
     const theme = useThemeColors();
     const queryClient = useQueryClient();
+    const toast = useToast();
 
     const [mode, setMode] = useState<ShareMode>('private');
     const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -165,7 +167,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
       },
       onError: (err: Error) => {
         haptics.warning();
-        Alert.alert('Sharing failed', err.message || 'Could not update session sharing.');
+        toast.error(err.message || 'Could not update session sharing.');
       },
     });
 
@@ -176,12 +178,12 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
       const sessionId = sessionIdRef.current ?? session?.session_id;
       if (!sessionId) {
         haptics.warning();
-        Alert.alert('Sharing failed', 'No session selected. Close and try again.');
+        toast.error('No session selected. Close and try again.');
         return;
       }
       haptics.tap();
       save.mutate();
-    }, [save, incomplete, session?.session_id]);
+    }, [save, incomplete, session?.session_id, toast]);
 
     const toggleMember = useCallback((userId: string) => {
       haptics.selection();

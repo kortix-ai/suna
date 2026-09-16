@@ -3,9 +3,14 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { composerModelOptions } from '@/lib/session/composer-model';
+import {
+  nextProjectSessionsPollWindow,
+  projectSessionsPollInterval,
+  type ProjectSessionsPollWindow,
+} from './poll-policy';
 import {
   archiveProject,
   buildSandboxTemplate,
@@ -502,17 +507,28 @@ export function usePipedreamApps(projectId: string | null, q: string) {
   });
 }
 
-export function useProjectSessions(projectId: string | null) {
+/** Background-poll options for list hooks. */
+export interface PollOptions {
+  /** Run the interval poll. `false` pauses it, e.g. while the screen is not focused. Default `true`. */
+  poll?: boolean;
+}
+
+export function useProjectSessions(projectId: string | null, { poll = true }: PollOptions = {}) {
+  const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
   return useQuery({
     queryKey: projectKeys.projectSessions(projectId),
     queryFn: () => listProjectSessions(projectId!),
     enabled: !!projectId,
     staleTime: 10_000,
-    // Poll so freshly-provisioning session sandboxes flip to running in the list.
+    // Poll so freshly-provisioning session sandboxes flip to running in the
+    // list, for at most 4 min per set of pending rows (poll-policy).
     refetchInterval: (query) => {
-      const data = query.state.data;
-      const pending = data?.some((s) => ['queued', 'branching', 'provisioning'].includes(s.status));
-      return pending ? 3_000 : false;
+      const rows = query.state.data;
+      const now = Date.now();
+      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
+      pollWindowRef.current = pollWindow;
+      if (!poll || !pollWindow) return false;
+      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
     },
   });
 }
@@ -774,13 +790,17 @@ function invalidateChangeWorld(queryClient: ReturnType<typeof useQueryClient>, p
 }
 
 /** CR list, filtered by status. Polls so merged/closed transitions clear live. */
-export function useChangeRequests(projectId: string | null, status: ChangeRequestStatus | 'all') {
+export function useChangeRequests(
+  projectId: string | null,
+  status: ChangeRequestStatus | 'all',
+  { poll = true }: PollOptions = {}
+) {
   return useQuery({
     queryKey: projectKeys.changeRequests(projectId, status),
     queryFn: () => listChangeRequests(projectId!, status),
     enabled: !!projectId,
     staleTime: 8_000,
-    refetchInterval: 8_000,
+    refetchInterval: poll ? 8_000 : false,
   });
 }
 

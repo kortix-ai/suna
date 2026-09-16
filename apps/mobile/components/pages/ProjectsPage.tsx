@@ -6,7 +6,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
-  ScrollView,
+  FlatList,
   RefreshControl,
   TextInput,
   Pressable,
@@ -39,6 +39,149 @@ function ago(t?: string | number) {
   const d = h / 24 | 0;
   return d < 30 ? d + 'd ago' : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+// ── Row ──────────────────────────────────────────────────────────────────────
+
+interface ProjectRowColors {
+  fg: string;
+  subtle: string;
+  faint: string;
+  cardBg: string;
+  border: string;
+  iconBadgeBg: string;
+  icon: string;
+}
+
+const ProjectRow = React.memo(function ProjectRow({
+  project,
+  colors,
+  onPress,
+}: {
+  project: KortixProject;
+  colors: ProjectRowColors;
+  onPress: (project: KortixProject) => void;
+}) {
+  const hasPath = !!project.path && project.path !== '/';
+  const sessions = project.sessionCount ?? 0;
+  return (
+    <Pressable
+      onPress={() => onPress(project)}
+      style={({ pressed }) => ({
+        backgroundColor: colors.cardBg,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: 14,
+        paddingHorizontal: 14,
+        marginBottom: 10,
+        opacity: pressed ? 0.7 : 1,
+        transform: [{ scale: pressed ? 0.995 : 1 }],
+      })}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        {/* Icon badge */}
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            backgroundColor: colors.iconBadgeBg,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 12,
+          }}
+        >
+          <FolderGit2 size={18} color={colors.icon} />
+        </View>
+
+        {/* Content */}
+        <View style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
+          {/* Title + chevron row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text
+              numberOfLines={1}
+              style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: colors.fg }}
+            >
+              {project.name}
+            </Text>
+            <ChevronRight size={16} color={colors.faint} style={{ marginLeft: 8 }} />
+          </View>
+
+          {/* Path */}
+          {hasPath && (
+            <Text
+              numberOfLines={1}
+              style={{
+                fontSize: 12,
+                fontFamily: 'Menlo',
+                color: colors.faint,
+                marginTop: 2,
+              }}
+            >
+              {project.path}
+            </Text>
+          )}
+
+          {/* Description */}
+          {!!project.description && (
+            <Text
+              numberOfLines={2}
+              style={{
+                fontSize: 13,
+                fontFamily: 'Roobert',
+                color: colors.subtle,
+                lineHeight: 18,
+                marginTop: hasPath ? 6 : 4,
+              }}
+            >
+              {project.description}
+            </Text>
+          )}
+
+          {/* Meta row */}
+          {(sessions > 0 || !!project.created_at) && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginTop: project.description ? 10 : 6,
+              }}
+            >
+              {sessions > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <MessageSquare size={11} color={colors.faint} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: colors.subtle }}>
+                    {sessions} {sessions === 1 ? 'session' : 'sessions'}
+                  </Text>
+                </View>
+              )}
+              {sessions > 0 && !!project.created_at && (
+                <View
+                  style={{
+                    width: 3,
+                    height: 3,
+                    borderRadius: 2,
+                    backgroundColor: colors.faint,
+                    marginHorizontal: 8,
+                    opacity: 0.6,
+                  }}
+                />
+              )}
+              {!!project.created_at && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Clock size={11} color={colors.faint} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: colors.subtle }}>
+                    {ago(project.created_at)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+});
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,6 +236,27 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
     useTabStore.getState().navigateToPage(pageId);
   }, []);
 
+  const rowColors = useMemo<ProjectRowColors>(
+    () => ({
+      fg,
+      subtle,
+      faint,
+      cardBg,
+      border,
+      iconBadgeBg: theme.primaryLight,
+      icon: theme.primary,
+    }),
+    [fg, subtle, faint, cardBg, border, theme.primaryLight, theme.primary]
+  );
+
+  const keyExtractor = useCallback((project: KortixProject) => project.id, []);
+  const renderItem = useCallback(
+    ({ item }: { item: KortixProject }) => (
+      <ProjectRow project={item} colors={rowColors} onPress={handleProjectPress} />
+    ),
+    [rowColors, handleProjectPress]
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <PageHeader
@@ -137,154 +301,32 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
       </View>
 
       {/* List */}
-      <ScrollView
+      <FlatList
         style={{ flex: 1 }}
+        data={filtered}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} tintColor={subtle} />}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-      >
-        {isLoading && filtered.length === 0 && (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={subtle} />
-          </View>
-        )}
-
-        {!isLoading && filtered.length === 0 && (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <FolderGit2 size={40} color={withAlpha(fg, isDark ? 0.08 : 0.06)} style={{ marginBottom: 12 }} />
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
-              {searchQuery ? 'No projects found' : 'No projects yet'}
-            </Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
-              {searchQuery ? 'Try a different search term' : 'Projects will appear here when created by the agent'}
-            </Text>
-          </View>
-        )}
-
-        {filtered.map((project) => {
-          const hasPath = !!project.path && project.path !== '/';
-          const sessions = project.sessionCount ?? 0;
-          return (
-            <Pressable
-              key={project.id}
-              onPress={() => handleProjectPress(project)}
-              style={({ pressed }) => ({
-                backgroundColor: cardBg,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: border,
-                paddingVertical: 14,
-                paddingHorizontal: 14,
-                marginBottom: 10,
-                opacity: pressed ? 0.7 : 1,
-                transform: [{ scale: pressed ? 0.995 : 1 }],
-              })}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                {/* Icon badge */}
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    backgroundColor: theme.primaryLight,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: 12,
-                  }}
-                >
-                  <FolderGit2 size={18} color={theme.primary} />
-                </View>
-
-                {/* Content */}
-                <View style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
-                  {/* Title + chevron row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text
-                      numberOfLines={1}
-                      style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}
-                    >
-                      {project.name}
-                    </Text>
-                    <ChevronRight size={16} color={faint} style={{ marginLeft: 8 }} />
-                  </View>
-
-                  {/* Path */}
-                  {hasPath && (
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontSize: 12,
-                        fontFamily: 'Menlo',
-                        color: faint,
-                        marginTop: 2,
-                      }}
-                    >
-                      {project.path}
-                    </Text>
-                  )}
-
-                  {/* Description */}
-                  {!!project.description && (
-                    <Text
-                      numberOfLines={2}
-                      style={{
-                        fontSize: 13,
-                        fontFamily: 'Roobert',
-                        color: subtle,
-                        lineHeight: 18,
-                        marginTop: hasPath ? 6 : 4,
-                      }}
-                    >
-                      {project.description}
-                    </Text>
-                  )}
-
-                  {/* Meta row */}
-                  {(sessions > 0 || !!project.created_at) && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginTop: project.description ? 10 : 6,
-                      }}
-                    >
-                      {sessions > 0 && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                          <MessageSquare size={11} color={faint} />
-                          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: subtle }}>
-                            {sessions} {sessions === 1 ? 'session' : 'sessions'}
-                          </Text>
-                        </View>
-                      )}
-                      {sessions > 0 && !!project.created_at && (
-                        <View
-                          style={{
-                            width: 3,
-                            height: 3,
-                            borderRadius: 2,
-                            backgroundColor: faint,
-                            marginHorizontal: 8,
-                            opacity: 0.6,
-                          }}
-                        />
-                      )}
-                      {!!project.created_at && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                          <Clock size={11} color={faint} />
-                          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: subtle }}>
-                            {ago(project.created_at)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={subtle} />
+            </View>
+          ) : (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <FolderGit2 size={40} color={withAlpha(fg, isDark ? 0.08 : 0.06)} style={{ marginBottom: 12 }} />
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
+                {searchQuery ? 'No projects found' : 'No projects yet'}
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
+                {searchQuery ? 'Try a different search term' : 'Projects will appear here when created by the agent'}
+              </Text>
+            </View>
+          )
+        }
+      />
       </PageContent>
     </View>
   );

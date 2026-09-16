@@ -575,7 +575,7 @@ export function FilesNavPage({
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [downloadingDir, setDownloadingDir] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const versionSheetRef = React.useRef<BottomSheetModal>(null);
 
   const branchesQuery = useProjectBranches(projectId);

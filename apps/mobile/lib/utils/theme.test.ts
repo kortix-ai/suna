@@ -227,6 +227,7 @@ describe('THEME derives from global.css', () => {
       hover: 'hover',
       active: 'active',
       focusRing: 'focus-ring',
+      chromeBackground: 'chrome-background',
       foregroundStrong: 'foreground-strong',
       foregroundWeak: 'foreground-weak',
     };
@@ -263,6 +264,7 @@ describe('THEME derives from global.css', () => {
       hover: 'hover',
       active: 'active',
       focusRing: 'focus-ring',
+      chromeBackground: 'chrome-background',
       foregroundStrong: 'foreground-strong',
       foregroundWeak: 'foreground-weak',
     };

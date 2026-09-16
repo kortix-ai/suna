@@ -204,30 +204,37 @@ interface SessionChatInputProps {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function SessionChatInput({
+// Stable defaults so optional array props keep one identity across renders.
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_MODELS: FlatModel[] = [];
+const EMPTY_VARIANTS: string[] = [];
+const EMPTY_SESSIONS: Session[] = [];
+const EMPTY_COMMANDS: Command[] = [];
+
+function SessionChatInputImpl({
   onSend,
   onStop,
   isBusy = false,
   disabled = false,
   placeholder = 'Ask anything',
   agent,
-  agents = [],
+  agents = EMPTY_AGENTS,
   model,
-  models = [],
+  models = EMPTY_MODELS,
   modelKey,
   variant,
-  variants = [],
+  variants = EMPTY_VARIANTS,
   onAgentChange,
   onModelChange,
   onVariantCycle,
   onVariantSet,
-  sessions = [],
+  sessions = EMPTY_SESSIONS,
   currentSessionId,
   sandboxUrl,
   onEnqueue,
   inputSlot,
   onDraftChange,
-  commands = [],
+  commands = EMPTY_COMMANDS,
   onCommand,
   onboardingMode = false,
   initialText = '',
@@ -861,6 +868,13 @@ export function SessionChatInput({
     </>
   );
 }
+
+/**
+ * Memoized: the session thread re-renders on every streamed delta, and the
+ * composer (three bottom-sheet modals) must skip those renders. Callers pass
+ * stable callbacks and memoized array props.
+ */
+export const SessionChatInput = React.memo(SessionChatInputImpl);
 
 function AutoContinueButton({
   isDark,

@@ -7,7 +7,7 @@
  * already separates from the page. Every control is a design-system `Button`:
  * secondary `rounded-full` for add and model, and a round send button that
  * fills with `primary` once there is text or a file to send. Text is 16pt
- * Roobert Regular (design.md §2 Inputs).
+ * Roobert Regular (design.md §3 Inputs).
  */
 import * as React from 'react';
 import { Image, ScrollView, TextInput, View } from 'react-native';

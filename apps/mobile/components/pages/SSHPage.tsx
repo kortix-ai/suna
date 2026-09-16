@@ -47,19 +47,41 @@ interface SSHMeta {
   updatedAt: number;
 }
 
+// Stored meta keeps an explicit field list: the setup result also carries
+// `private_key`, which must never reach AsyncStorage.
+function toSSHMeta(source: SSHConnectionInfo, updatedAt: number): SSHMeta {
+  return {
+    ssh_command: source.ssh_command,
+    reconnect_command: source.reconnect_command,
+    ssh_config_entry: source.ssh_config_entry,
+    ssh_config_command: source.ssh_config_command,
+    host: source.host,
+    port: source.port,
+    username: source.username,
+    provider: source.provider,
+    key_name: source.key_name,
+    host_alias: source.host_alias,
+    updatedAt,
+  };
+}
+
 async function loadSSHMeta(): Promise<SSHMeta | null> {
   try {
     const raw = await AsyncStorage.getItem(SSH_META_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as SSHMeta & Record<string, unknown>;
+    const meta = toSSHMeta(stored, stored.updatedAt);
+    // Older builds stored the whole setup result, including `private_key`.
+    // Rewrite those entries down to the allowed fields.
+    if (Object.keys(stored).some((key) => !(key in meta))) {
+      await AsyncStorage.setItem(SSH_META_KEY, JSON.stringify(meta));
+    }
+    return meta;
   } catch { return null; }
 }
 
 async function saveSSHMeta(result: SSHSetupResult): Promise<void> {
-  const meta: SSHMeta = {
-    ...result,
-    updatedAt: Date.now(),
-  };
-  await AsyncStorage.setItem(SSH_META_KEY, JSON.stringify(meta));
+  await AsyncStorage.setItem(SSH_META_KEY, JSON.stringify(toSSHMeta(result, Date.now())));
 }
 
 interface SSHPageProps {

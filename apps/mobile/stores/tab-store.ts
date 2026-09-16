@@ -124,11 +124,13 @@ interface TabState {
    * or after a restart, always shows project home.
    */
   setScope: (key: string) => void;
+  /** Sign-out: drop every scope, tab, history entry, and tab state. */
+  reset: () => void;
 }
 
 export const useTabStore = create<TabState>()(
   persist(
-    (set, get) => ({
+    (set, get, api) => ({
       activeSessionId: null,
       activePageId: null,
       openTabIds: [],
@@ -418,6 +420,10 @@ export const useTabStore = create<TabState>()(
           const { [tabId]: _removed, ...rest } = state.tabStateById;
           return { tabStateById: rest };
         });
+      },
+
+      reset: () => {
+        set(api.getInitialState());
       },
     }),
     {

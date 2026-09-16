@@ -106,6 +106,7 @@ export const THEME = {
     hover: 'hsla(0, 0%, 0%, 0.045)', // --hover
     active: 'hsla(0, 0%, 0%, 0.075)', // --active
     focusRing: 'hsl(0 0% 63.1%)', // --focus-ring (= var(--ring))
+    chromeBackground: 'hsl(60 0% 98%)', // --chrome-background (= var(--sidebar))
     foregroundStrong: 'hsl(180 0% 3.9%)', // --foreground-strong (= var(--foreground))
     foregroundWeak: 'hsl(0 0% 45.1%)', // --foreground-weak (= var(--muted-foreground))
     radius: '0.625rem', // --radius
@@ -134,6 +135,7 @@ export const THEME = {
     hover: 'hsla(0, 0%, 100%, 0.06)', // --hover
     active: 'hsla(0, 0%, 100%, 0.1)', // --active
     focusRing: 'hsl(0 0% 45.1%)', // --focus-ring (= var(--ring))
+    chromeBackground: 'hsl(180 0% 9%)', // --chrome-background (= var(--sidebar))
     foregroundStrong: 'hsl(60 0% 98%)', // --foreground-strong (= var(--foreground))
     foregroundWeak: 'hsl(0 0% 63.1%)', // --foreground-weak (= var(--muted-foreground))
     radius: '0.625rem', // --radius

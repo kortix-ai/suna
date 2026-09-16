@@ -1,13 +1,12 @@
 /**
  * PageHeader — unified top header for every page in the mobile app.
  *
- * Flat bar on the page's own background: lucide hamburger on the left (flips
- * to X when the drawer is open), muted-foreground title, and a "···" more
+ * Flat bar on the page's own background: the static hamburger (MenuButton,
+ * transparent) on the left, muted-foreground title, and a "···" more
  * button on the right (opens the dock's More sheet; flips to X when open).
  *
- * Inside a PageBackProvider (a project page, see ProjectRoutes) the left
- * button is Go back instead of the hamburger: the page is a child of project
- * home, and back returns there.
+ * Project pages show the hamburger too: the project drawer opens from every
+ * project page (see ProjectRoutes). There is no Go back variant.
  *
  * Pages that need additional action buttons (Files, Running Services, etc.)
  * render them through the `rightActions` slot. To replace the default
@@ -18,21 +17,11 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { ChevronLeft } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
-import { PlatformButton } from '@/components/kortix/platform-button';
-import { haptics } from '@/lib/haptics';
+import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
-
-const PageBackContext = React.createContext<(() => void) | null>(null);
-
-/**
- * Gives every PageHeader below it a Go back button that runs `value`.
- * The project view route provides it with "return to project home".
- */
-export const PageBackProvider = PageBackContext.Provider;
 
 export interface PageHeaderProps {
   /** The title shown in the center. String, or a custom React node (e.g. an
@@ -45,7 +34,8 @@ export interface PageHeaderProps {
   /** Right "···" more-button handler. Omit or combine with `hideRightDrawerToggle`. */
   onOpenRightDrawer?: () => void;
 
-  /** Drawer state — hamburger rotates to X when true. */
+  /** Ignored: the hamburger is a static icon (Jay, 2026-09-16). Kept so the
+   *  pages that spread `pageChrome` still type-check. */
   isDrawerOpen?: boolean;
   /** Right-drawer state — the "···" icon rotates to X when true. */
   isRightDrawerOpen?: boolean;
@@ -71,7 +61,6 @@ export function PageHeader({
   title,
   onOpenDrawer,
   onOpenRightDrawer,
-  isDrawerOpen,
   isRightDrawerOpen,
   rightActions,
   hideRightDrawerToggle,
@@ -86,7 +75,6 @@ export function PageHeader({
   // hex-free source of truth for exactly this "className can't reach it"
   // case (see lib/theme-colors.ts's header comment for the same pattern).
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const onBack = React.useContext(PageBackContext);
 
   const titleNode =
     typeof title === 'string' ? (
@@ -108,39 +96,13 @@ export function PageHeader({
       className={`px-4 bg-background ${className ?? ''}`}
     >
       <View className="flex-row items-center">
-        {/* Left — Go back on a project page (same button as SettingsHeader),
-            otherwise the hamburger (flips to X when drawer is open). Same
-            rounded secondary icon button as the floating menu button on
-            project home. */}
-        {onBack ? (
+        {/* Left — hamburger (flips to X when drawer is open). Same rounded
+            secondary icon button as the floating menu button on project
+            home. */}
+        {onOpenDrawer && (
           <View className="mr-3">
-            <PlatformButton
-              systemImage="chevron.left"
-              icon={ChevronLeft}
-              fallbackVariant="secondary"
-              accessibilityLabel="Go back"
-              onPress={() => {
-                haptics.tap();
-                onBack();
-              }}
-            />
+            <MenuButton onPress={onOpenDrawer} />
           </View>
-        ) : onOpenDrawer && (
-          <Button
-            variant="secondary"
-            size="icon"
-            onPress={onOpenDrawer}
-            accessibilityLabel="Open menu"
-            className="mr-3"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <AnimatedToggleIcon
-              open={!!isDrawerOpen}
-              color={iconColor}
-              icon="menu-lucide"
-              size={ICON_SIZE}
-            />
-          </Button>
         )}
 
         {/* Title — flexes to fill remaining space */}

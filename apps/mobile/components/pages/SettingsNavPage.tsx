@@ -15,7 +15,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, Linking } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -47,10 +47,6 @@ import { useMutation } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface PageTabLike {
   id: string;
@@ -292,7 +288,6 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
 
   const toggle = () => {
     haptics.tap();
-    LayoutAnimation.configureNext(LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
     setExpanded((v) => !v);
   };
 

@@ -3,12 +3,13 @@
  *
  * 1. After login, calls useSandbox() to ensure user has a sandbox
  * 2. Detects provisioning state and exposes it for the progress screen
- * 3. Mounts the SSE event stream once sandbox is ready
+ * 3. Mounts the SSE event stream on the sandbox of the open session only
  * 4. Passes sandboxUrl down to all children via context
- * 5. Supports switching to a different sandbox via switchSandbox()
+ * 5. Supports switching to a session's sandbox via switchSandbox() and
+ *    leaving it via clearSandbox()
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSandbox, platformKeys } from '@/lib/platform/hooks';
 import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
@@ -35,6 +36,8 @@ interface SandboxContextValue {
   /** Call this when provisioning completes to refetch sandbox data */
   onProvisioningComplete: () => void;
   switchSandbox: (sandbox: SandboxInfo) => void;
+  /** Drop the switched-in sandbox: the live stream disconnects. */
+  clearSandbox: () => void;
 }
 
 const SandboxContext = createContext<SandboxContextValue>({
@@ -50,6 +53,7 @@ const SandboxContext = createContext<SandboxContextValue>({
   provisioningProvider: undefined,
   onProvisioningComplete: () => {},
   switchSandbox: () => {},
+  clearSandbox: () => {},
 });
 
 export function useSandboxContext() {
@@ -74,6 +78,9 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     setOverride({ sandboxUrl: url, sandboxId: sandbox.external_id, sandboxUuid: sandbox.sandbox_id, sandboxName: sandbox.name });
   }, []);
 
+  // Setting null on an already-null override is a no-op render bail-out.
+  const clearSandbox = useCallback(() => setOverride(null), []);
+
   // Detect provisioning state from useSandbox result
   const isProvisioning = !!(data?.sandbox && data.sandbox.status === 'provisioning');
   const provisioningSandboxId = isProvisioning ? data?.sandbox?.sandbox_id : undefined;
@@ -97,8 +104,10 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
   }, [queryClient]);
 
-  // Mount SSE event stream globally (no-ops when sandboxUrl is undefined)
-  useOpenCodeEventStream(sandboxUrl);
+  // The live SSE stream follows the switched-in sandbox of an open session only.
+  // The default sandbox above can belong to any project, so the stream never
+  // connects to it (no-ops while undefined).
+  useOpenCodeEventStream(override?.sandboxUrl);
 
   // Reset sync store on logout and clear override
   useEffect(() => {
@@ -120,24 +129,40 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sandboxUrl, isProvisioning, provisioningSandboxId, error, shouldFetch]);
 
-  return (
-    <SandboxContext.Provider
-      value={{
-        sandboxUrl,
-        sandboxId,
-        sandboxUuid,
-        sandboxName,
-        isLoading: shouldFetch ? isLoading : false,
-        error: shouldFetch ? (error as Error | null) : null,
-        isProvisioning,
-        provisioningSandboxId,
-        provisioningExternalId,
-        provisioningProvider,
-        onProvisioningComplete,
-        switchSandbox,
-      }}
-    >
-      {children}
-    </SandboxContext.Provider>
+  const contextLoading = shouldFetch ? isLoading : false;
+  const contextError = shouldFetch ? (error as Error | null) : null;
+  const value = useMemo<SandboxContextValue>(
+    () => ({
+      sandboxUrl,
+      sandboxId,
+      sandboxUuid,
+      sandboxName,
+      isLoading: contextLoading,
+      error: contextError,
+      isProvisioning,
+      provisioningSandboxId,
+      provisioningExternalId,
+      provisioningProvider,
+      onProvisioningComplete,
+      switchSandbox,
+      clearSandbox,
+    }),
+    [
+      sandboxUrl,
+      sandboxId,
+      sandboxUuid,
+      sandboxName,
+      contextLoading,
+      contextError,
+      isProvisioning,
+      provisioningSandboxId,
+      provisioningExternalId,
+      provisioningProvider,
+      onProvisioningComplete,
+      switchSandbox,
+      clearSandbox,
+    ]
   );
+
+  return <SandboxContext.Provider value={value}>{children}</SandboxContext.Provider>;
 }

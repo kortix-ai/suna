@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   GitPullRequest,
@@ -643,7 +644,9 @@ export function ChangesPage({
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
   const createSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const crs = useChangeRequests(projectId, status);
+  // A screen pushed over the project stops the 8 s poll.
+  const isFocused = useIsFocused();
+  const crs = useChangeRequests(projectId, status, { poll: isFocused });
   const branches = useProjectBranches(projectId, tab === 'versions');
   const mergeMut = useMergeChangeRequest(projectId);
   const closeMut = useCloseChangeRequest(projectId);

@@ -32,12 +32,10 @@ import {
 } from 'react-native-keyboard-controller';
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu } from 'lucide-react-native';
 
-import { Icon } from '@/components/ui/icon';
-import { Button } from '@/components/ui/button';
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
+import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectGreeting } from '@/components/session/ProjectGreeting';
 import { useAttachmentPicker } from '@/components/session/useAttachmentPicker';
@@ -112,19 +110,7 @@ export function ProjectHome({
   return (
     <View className="flex-1 bg-background">
       {/* Floating menu button — opens the left drawer. */}
-      <View
-        className="absolute left-4 z-10"
-        style={{ top: insets.top + 8 }}
-        pointerEvents="box-none">
-        <Button
-          variant="secondary"
-          size="icon"
-          onPress={onOpenDrawer}
-          accessibilityLabel="Open menu"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon as={Menu} size={20} className="text-foreground" />
-        </Button>
-      </View>
+      <FloatingMenuButton onPress={onOpenDrawer} />
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">
@@ -137,7 +123,7 @@ export function ProjectHome({
             <ProjectGreeting projectName={projectName} />
           </View>
 
-          <Reanimated.View className="px-3" style={[{ paddingBottom: restingGap }, composerStyle]}>
+          <Reanimated.View className="px-4" style={[{ paddingBottom: restingGap }, composerStyle]}>
             <Composer
               value={draft}
               onChangeText={setDraft}

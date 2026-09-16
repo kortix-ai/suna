@@ -4,7 +4,7 @@
  * with { name }. Clearing the input reverts to the automatic title.
  */
 import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
-import { View, ActivityIndicator, Alert, Keyboard } from 'react-native';
+import { View, ActivityIndicator, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
@@ -18,6 +18,7 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
 import { projectKeys } from '@/lib/projects/hooks';
 import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { useToast } from '@/components/kortix/toast-provider';
 
 const MAX_NAME_LENGTH = 120;
 
@@ -34,6 +35,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
     const insets = useSafeAreaInsets();
     const queryClient = useQueryClient();
     const theme = useThemeColors();
+    const toast = useToast();
 
     const currentName = session?.custom_name ?? '';
     const [value, setValue] = useState(currentName);
@@ -60,7 +62,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
       },
       onError: (err: Error) => {
         haptics.warning();
-        Alert.alert('Rename failed', err.message || 'Could not rename the session.');
+        toast.error(err.message || 'Could not rename the session.');
       },
     });
 

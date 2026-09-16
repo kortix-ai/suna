@@ -2,7 +2,8 @@ import '@/global.css';
 
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME, THEME } from '@/lib/utils/theme';
-import { initializeI18n } from '@/lib/utils/i18n';
+// Initialises i18n synchronously (English, bundled) before the first render.
+import '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
 import {
   AuthProvider,
@@ -15,7 +16,12 @@ import {
 } from '@/contexts';
 import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import { PortalHost } from '@rn-primitives/portal';
@@ -26,24 +32,22 @@ import {
   SandboxUpgradeGateListener,
 } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
-import { SplashScreen, useRouter, useSegments } from 'expo-router';
-import { AppStack, fadeTransition, usePushTransition } from '@/components/navigation/stack-transitions';
+import { SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { Platform, LogBox, AppState, AppStateStatus, View } from 'react-native';
+import { Platform, LogBox, AppState, View } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
-import * as Updates from 'expo-updates';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useThemeStore } from '@/stores/theme-store';
-import { DEFAULT_THEME_PREFERENCE, parseThemePreference } from '@/stores/theme-preference';
+import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
+import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { installHapticsGate } from '@/lib/haptics';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
@@ -74,7 +78,16 @@ configureKortix({
   },
 });
 
-const THEME_PREFERENCE_KEY = '@theme_preference';
+// React Query has no DOM in React Native: without these listeners every query
+// counts as focused and online forever. Focus follows the app being in the
+// foreground; online follows the reachability probe the offline banner shows.
+focusManager.setEventListener((handleFocus) => {
+  const subscription = AppState.addEventListener('change', (state) => {
+    handleFocus(state === 'active');
+  });
+  return () => subscription.remove();
+});
+onlineManager.setEventListener((setOnline) => subscribeOnlineStatus(setOnline));
 
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
@@ -88,9 +101,7 @@ SplashScreen.preventAutoHideAsync();
 export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
-  const pushTransition = usePushTransition();
-  const { colorScheme, setColorScheme } = useColorScheme();
-  const [i18nInitialized, setI18nInitialized] = useState(false);
+  const { colorScheme } = useColorScheme();
   const router = useRouter();
 
   const [queryClient] = useState(
@@ -114,53 +125,8 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
   useEffect(() => {
-    let settled = false;
-    const markReady = () => {
-      if (settled) return;
-      settled = true;
-      setI18nInitialized(true);
-    };
-    // Never let i18n bootstrap block the whole app. It uses locally-bundled
-    // translation resources, so even if the (network-touching) locale lookup
-    // hangs or rejects — e.g. the device is offline — we still boot. The hard
-    // cap guarantees the splash never sticks on a blank screen.
-    initializeI18n()
-      .then(() => log.log('✅ i18n initialized in RootLayout'))
-      .catch((err) => log.error('❌ i18n init failed; booting with defaults:', err))
-      .finally(markReady);
-    const cap = setTimeout(markReady, 4000);
-    return () => clearTimeout(cap);
-  }, []);
-
-  const themeLoadedRef = useRef(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadSavedTheme = async () => {
-      if (themeLoadedRef.current) return;
-
-      try {
-        const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-        if (!isMounted) return;
-
-        themeLoadedRef.current = true;
-        // No saved choice → light mode (DEFAULT_THEME_PREFERENCE).
-        setColorScheme(parseThemePreference(saved));
-      } catch {
-        if (!isMounted) return;
-        setColorScheme(DEFAULT_THEME_PREFERENCE);
-      }
-    };
-
-    loadSavedTheme();
-    // Hydrate the theme store from the same key so its consumers (e.g. the
-    // account menu's theme pills) show the persisted preference, not the default.
+    // Restore the persisted theme once; the store applies it to NativeWind.
     void useThemeStore.getState().initialize();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -179,128 +145,6 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
-
-  // ==========================================
-  // OTA UPDATE SYSTEM - Instant Updates
-  // ==========================================
-  // Uses expo-updates hook for reactive update detection + manual checks
-  //
-  // How it works:
-  // 1. Native code checks for updates on launch (checkAutomatically: "ON_LOAD")
-  // 2. useUpdates() hook detects when update is downloaded
-  // 3. We immediately reload to apply the update
-  // 4. Also checks on foreground for updates published while app was open
-  // ==========================================
-
-  // Track if we've already applied an update this session (prevent reload loops)
-  const hasAppliedUpdate = useRef(false);
-  const isCheckingUpdate = useRef(false);
-
-  // Use the expo-updates hook to reactively detect when updates are ready
-  const {
-    isUpdatePending,
-    isUpdateAvailable,
-    isDownloading,
-    downloadedUpdate,
-    checkError,
-    downloadError,
-  } = Updates.useUpdates();
-
-  // Log update state for debugging
-  useEffect(() => {
-    if (__DEV__ || !Updates.isEnabled) return;
-
-    log.log('📱 OTA State:', {
-      isUpdateAvailable,
-      isUpdatePending,
-      isDownloading,
-      hasDownloadedUpdate: !!downloadedUpdate,
-      checkError: checkError?.message,
-      downloadError: downloadError?.message,
-    });
-  }, [
-    isUpdateAvailable,
-    isUpdatePending,
-    isDownloading,
-    downloadedUpdate,
-    checkError,
-    downloadError,
-  ]);
-
-  // Immediately reload when an update is downloaded and pending
-  useEffect(() => {
-    if (__DEV__ || !Updates.isEnabled) return;
-
-    if (isUpdatePending && !hasAppliedUpdate.current) {
-      hasAppliedUpdate.current = true;
-      log.log('🚀 OTA: Update pending! Reloading app immediately...');
-
-      // Small delay to ensure any ongoing operations complete
-      setTimeout(async () => {
-        try {
-          await Updates.reloadAsync();
-        } catch (error) {
-          log.error('❌ OTA: Failed to reload:', error);
-          hasAppliedUpdate.current = false;
-        }
-      }, 100);
-    }
-  }, [isUpdatePending]);
-
-  // If update is available but not downloading, fetch it
-  useEffect(() => {
-    if (__DEV__ || !Updates.isEnabled) return;
-
-    if (isUpdateAvailable && !isDownloading && !isUpdatePending && !hasAppliedUpdate.current) {
-      log.log('✅ OTA: Update available, fetching...');
-      Updates.fetchUpdateAsync().catch((error) => {
-        log.error('❌ OTA: Failed to fetch update:', error);
-      });
-    }
-  }, [isUpdateAvailable, isDownloading, isUpdatePending]);
-
-  // Manual check function for foreground and fallback
-  const checkAndApplyUpdates = useCallback(async (source: string) => {
-    if (__DEV__ || !Updates.isEnabled) return;
-    if (isCheckingUpdate.current || hasAppliedUpdate.current) return;
-
-    isCheckingUpdate.current = true;
-    log.log(`🔄 OTA: Manual check [${source}]`);
-
-    try {
-      const update = await Updates.checkForUpdateAsync();
-
-      if (update.isAvailable) {
-        log.log('✅ OTA: Update found, downloading...');
-        const fetchResult = await Updates.fetchUpdateAsync();
-
-        if (fetchResult.isNew && !hasAppliedUpdate.current) {
-          hasAppliedUpdate.current = true;
-          log.log('🚀 OTA: Reloading with new update...');
-          await Updates.reloadAsync();
-        }
-      }
-    } catch (error) {
-      log.error('❌ OTA: Check failed:', error);
-    } finally {
-      isCheckingUpdate.current = false;
-    }
-  }, []);
-
-  // Check for updates when app comes to foreground
-  useEffect(() => {
-    if (__DEV__ || !Updates.isEnabled) return;
-
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        // Delay to let app settle after foregrounding
-        setTimeout(() => checkAndApplyUpdates('foreground'), 500);
-      }
-    };
-
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
-  }, [checkAndApplyUpdates]);
 
   // Keep the status bar visible with icons that contrast with the theme.
   // - iOS resets the bar appearance on suspend/resume, and the declarative
@@ -331,9 +175,6 @@ export default function RootLayout() {
       sub.remove();
     };
   }, [colorScheme]);
-  // ==========================================
-  // END OTA UPDATE SYSTEM
-  // ==========================================
 
   useEffect(() => {
     let isHandlingDeepLink = false;
@@ -600,10 +441,6 @@ export default function RootLayout() {
     return null;
   }
 
-  if (!i18nInitialized) {
-    return null;
-  }
-
   const activeColorScheme = colorScheme ?? 'light';
 
   return (
@@ -626,66 +463,61 @@ export default function RootLayout() {
                                 />
                                 <View className="flex-1">
                                   <AuthProtection>
-                                    {/* Push/pop transition for every stack: AppStack +
-                                        usePushTransition (components/navigation/stack-transitions).
-                                        iOS native push; Android layered card, mirrored on back.
-                                        `fadeTransition` is reserved for root swaps — screens with
-                                        no spatial relationship to each other (auth ⇄ tabs). */}
-                                    <AppStack
+                                    {/* Every stack is the native Stack with the platform default
+                                        push/pop on iOS and Android. `index` only redirects, so it
+                                        does not animate. */}
+                                    <Stack
                                       screenOptions={{
                                         headerShown: false,
                                         gestureEnabled: true,
-                                        ...pushTransition,
                                       }}>
-                                      <AppStack.Screen name="index" options={{ animation: 'none' }} />
-                                      <AppStack.Screen
+                                      <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                      <Stack.Screen
                                         name="(tabs)"
-                                        options={{ ...fadeTransition, gestureEnabled: false }}
+                                        options={{ gestureEnabled: false }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="auth"
-                                        options={{ ...fadeTransition, gestureEnabled: false }}
+                                        options={{ gestureEnabled: false }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="projects/[id]"
                                         // Back never leaves a project: no swipe-back.
                                         // Only the project menu's All projects opens the
-                                        // list (ProjectLeftDrawer). Pages inside the
-                                        // project swipe back on their own stack.
+                                        // list (ProjectLeftDrawer). The project stack has
+                                        // no swipe-back either: its left edge opens the
+                                        // project drawer on every project page.
                                         options={{ gestureEnabled: false }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="(settings)"
                                         options={{
                                           presentation: 'card',
                                           fullScreenGestureEnabled: true,
                                         }}
                                       />
-                                      <AppStack.Screen
-                                        name="account-settings"
-                                        options={{ fullScreenGestureEnabled: true }}
-                                      />
-                                      <AppStack.Screen name="plans" />
-                                      <AppStack.Screen name="billing" />
-                                      <AppStack.Screen
+                                      <Stack.Screen name="plans" />
+                                      <Stack.Screen name="billing" />
+                                      <Stack.Screen
                                         name="accounts/index"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="accounts/[id]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="accounts/[id]/groups/[groupId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <AppStack.Screen
+                                      <Stack.Screen
                                         name="accounts/[id]/members/[userId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                    </AppStack>
+                                    </Stack>
                                   </AuthProtection>
                                 </View>
+                                <OtaUpdateManager />
                                 <SandboxUpgradeGateListener />
                                 <GlobalUpgradeSheet />
                                 <PortalHost />

@@ -231,7 +231,7 @@ export function ProjectDock({
       <Reanimated.View
         pointerEvents={keyboardUp ? 'none' : 'box-none'}
         style={[dockStyle, { paddingBottom: insets.bottom + 8 }]}
-        className="absolute inset-x-0 bottom-0 flex-row items-end gap-2 px-3">
+        className="absolute inset-x-0 bottom-0 flex-row items-end gap-2 px-4">
         {/* The pill, which morphs into the menu card. Grows upward from the
             pill because the row is bottom-aligned — the morph's origin.
             px-3 matches SessionChatInput's own px-3 wrapper so the dock and the

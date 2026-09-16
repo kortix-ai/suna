@@ -84,74 +84,93 @@ function buildPrefix(level: string, component?: string): string {
 }
 
 /**
- * Format log arguments for structured output
+ * Per-argument character cap. Release builds keep less: logcat and os_log are
+ * readable over adb and in bug reports.
  */
-function formatArgs(args: unknown[]): unknown[] {
-  // If first arg is a string, keep it as is
-  // Otherwise, format objects nicely
-  return args.map(arg => {
+export const DEV_ARG_MAX_CHARS = 2_000;
+export const RELEASE_ARG_MAX_CHARS = 500;
+
+function truncate(text: string, maxChars: number): string {
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+}
+
+/**
+ * Format log arguments for structured output. Errors become `name: message`
+ * (JSON.stringify turns an Error into `{}`), objects are serialised, and every
+ * string result is capped at `maxChars`. Cyclic objects fall back to `String()`.
+ */
+export function formatArgs(args: unknown[], maxChars: number): unknown[] {
+  return args.map((arg) => {
+    if (arg instanceof Error) return truncate(`${arg.name}: ${arg.message}`, maxChars);
+    if (typeof arg === 'string') return truncate(arg, maxChars);
     if (typeof arg === 'object' && arg !== null) {
+      let text: string;
       try {
-        return JSON.stringify(arg, null, 0);
+        text = JSON.stringify(arg, null, 0) ?? String(arg);
       } catch {
-        return String(arg);
+        text = String(arg);
       }
+      return truncate(text, maxChars);
     }
     return arg;
   });
+}
+
+function format(args: unknown[]): unknown[] {
+  return formatArgs(args, __DEV__ ? DEV_ARG_MAX_CHARS : RELEASE_ARG_MAX_CHARS);
 }
 
 export const log = {
   /** Standard log (level: info) */
   log: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.log(buildPrefix('info'), ...formatArgs(args));
+    console.log(buildPrefix('info'), ...format(args));
   },
 
   /** Info level */
   info: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.info(buildPrefix('info'), ...formatArgs(args));
+    console.info(buildPrefix('info'), ...format(args));
   },
 
   /** Debug level */
   debug: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.debug(buildPrefix('debug'), ...formatArgs(args));
+    console.debug(buildPrefix('debug'), ...format(args));
   },
 
   /** Warning level */
   warn: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.warn(buildPrefix('warn'), ...formatArgs(args));
+    console.warn(buildPrefix('warn'), ...format(args));
   },
 
   /** Error level */
   error: (...args: unknown[]) => {
-    console.error(buildPrefix('error'), ...formatArgs(args));
+    console.error(buildPrefix('error'), ...format(args));
   },
 
   /** RevenueCat-specific logs (level: info) */
   rc: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.log(buildPrefix('info', 'RC'), ...formatArgs(args));
+    console.log(buildPrefix('info', 'RC'), ...format(args));
   },
 
   /** RevenueCat debug */
   rcDebug: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.debug(buildPrefix('debug', 'RC'), ...formatArgs(args));
+    console.debug(buildPrefix('debug', 'RC'), ...format(args));
   },
 
   /** RevenueCat warning */
   rcWarn: (...args: unknown[]) => {
     if (!__DEV__) return;
-    console.warn(buildPrefix('warn', 'RC'), ...formatArgs(args));
+    console.warn(buildPrefix('warn', 'RC'), ...format(args));
   },
 
   /** RevenueCat error */
   rcError: (...args: unknown[]) => {
-    console.error(buildPrefix('error', 'RC'), ...formatArgs(args));
+    console.error(buildPrefix('error', 'RC'), ...format(args));
   },
 };
 

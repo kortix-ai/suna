@@ -13,16 +13,17 @@
  * three-pane drawer JSX) is replaced.
  *
  * It is the layout of app/projects/[id]/: a nested stack of project home
- * (index) and the open page, thread, or connecting session (view). Back from
- * any project page returns to project home; back from project home does
- * nothing. Only the menu's All projects opens the Projects list (see
+ * (index) and at most one covering route: the open page, thread, or
+ * connecting session (view), Sessions, Files, or Account. Every project page
+ * shows the hamburger, and the drawer opens on every project route. Android
+ * back from a covering route returns to project home; back from project home
+ * does nothing. Only the menu's All projects opens the Projects list (see
  * ProjectRoutes).
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { View, Alert, BackHandler, Platform } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 import { useQueryClient } from '@tanstack/react-query';
@@ -38,18 +39,42 @@ import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
-import { ChevronLeft } from 'lucide-react-native';
-import { useFocusEffect, useNavigation } from 'expo-router/react-navigation';
+import {
+  StackActions,
+  useFocusEffect,
+  useNavigation,
+  type NavigationProp,
+  type ParamListBase,
+} from 'expo-router/react-navigation';
 import { useAuthContext } from '@/contexts';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
-import { AppStack, usePushTransition } from '@/components/navigation/stack-transitions';
-import { PlatformButton } from '@/components/kortix/platform-button';
 import {
+  PROJECT_ACCOUNT_ROUTE,
+  PROJECT_FILES_ROUTE,
+  PROJECT_HOME_ROUTE,
+  PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
   ProjectRouteProvider,
   type ProjectRouteValue,
 } from '@/components/session/ProjectRoutes';
+import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import {
+  androidBackMove,
+  drawerRouteMove,
+  drawerSessionRowMove,
+  returnHomeMove,
+  shownProjectSessionId,
+  type ProjectDrawerRoute,
+} from '@/lib/session/project-stack';
+import {
+  leaveSandboxOnFocus,
+  pendingOpenedThread,
+  showsSessionContent as showsSessionContentFor,
+  threadSandboxReady,
+  type OpenedThread,
+} from '@/lib/session/session-sandbox';
+import { mintWireMessageId } from '@/lib/session/wire-message-id';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
 import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
 import { SessionShareSheet } from '@/components/session/SessionShareSheet';
@@ -99,40 +124,114 @@ import type { SandboxProviderName } from '@/lib/platform/client';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 
 // ── Tool pages (reused verbatim from the legacy page ternary) ──
-import { PlaceholderPage } from '@/components/session/PlaceholderPage';
-import { UpdatesPage } from '@/components/pages/UpdatesPage';
-import { SSHPage } from '@/components/pages/SSHPage';
-import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
-import { BrowserPage } from '@/components/pages/BrowserPage';
-import { FilesPage } from '@/components/pages/FilesPage';
 import type { FilesPageRef } from '@/components/pages/FilesPage';
-import { ConnectionsTabPage } from '@/components/pages/ConnectionsTabPage';
-import { ScheduledTasksTabPage } from '@/components/pages/ScheduledTasksPage';
-import { ApiKeysTabPage } from '@/components/pages/ApiKeysPage';
-import { ChannelsTabPage } from '@/components/pages/ChannelsPage';
-import { TunnelTabPage } from '@/components/pages/TunnelPage';
-import { WorkspacePage, type WorkspacePageRef } from '@/components/pages/WorkspacePage';
-import { AgentBrowserPage } from '@/components/pages/AgentBrowserPage';
-import { SecretsPage } from '@/components/pages/SecretsPage';
-import { AgentsPage } from '@/components/pages/AgentsPage';
-import { SkillsPage } from '@/components/pages/SkillsPage';
-import { CommandsPage } from '@/components/pages/CommandsPage';
-import { ConnectorsPage } from '@/components/pages/ConnectorsPage';
-import { SecretsNavPage } from '@/components/pages/SecretsNavPage';
-import { ChannelsNavPage } from '@/components/pages/ChannelsNavPage';
-import { SchedulesPage } from '@/components/pages/SchedulesPage';
-import { WebhooksPage } from '@/components/pages/WebhooksPage';
-import { ChangesPage } from '@/components/pages/ChangesPage';
-import { FilesNavPage } from '@/components/pages/FilesNavPage';
-import { SandboxPage } from '@/components/pages/SandboxPage';
-import { DevPage } from '@/components/pages/DevPage';
-import { SettingsNavPage } from '@/components/pages/SettingsNavPage';
-import { MembersNavPage } from '@/components/pages/MembersNavPage';
-import { MemoryPage } from '@/components/pages/MemoryPage';
-import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
-import { TerminalPage } from '@/components/pages/TerminalPage';
-import { ProjectsPage } from '@/components/pages/ProjectsPage';
-import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
+import type { WorkspacePageRef } from '@/components/pages/WorkspacePage';
+
+// A tool page renders only while it is the open page, so its module is required
+// on first render, not when the app starts. Metro's `require` is synchronous:
+// no Suspense boundary and no fallback flash. Modules are cached after the
+// first call, so each later access is a lookup.
+const Pages = {
+  get PlaceholderPage(): typeof import('@/components/session/PlaceholderPage').PlaceholderPage {
+    return require('@/components/session/PlaceholderPage').PlaceholderPage;
+  },
+  get UpdatesPage(): typeof import('@/components/pages/UpdatesPage').UpdatesPage {
+    return require('@/components/pages/UpdatesPage').UpdatesPage;
+  },
+  get SSHPage(): typeof import('@/components/pages/SSHPage').SSHPage {
+    return require('@/components/pages/SSHPage').SSHPage;
+  },
+  get RunningServicesPage(): typeof import('@/components/pages/RunningServicesPage').RunningServicesPage {
+    return require('@/components/pages/RunningServicesPage').RunningServicesPage;
+  },
+  get BrowserPage(): typeof import('@/components/pages/BrowserPage').BrowserPage {
+    return require('@/components/pages/BrowserPage').BrowserPage;
+  },
+  get FilesPage(): typeof import('@/components/pages/FilesPage').FilesPage {
+    return require('@/components/pages/FilesPage').FilesPage;
+  },
+  get ConnectionsTabPage(): typeof import('@/components/pages/ConnectionsTabPage').ConnectionsTabPage {
+    return require('@/components/pages/ConnectionsTabPage').ConnectionsTabPage;
+  },
+  get ScheduledTasksTabPage(): typeof import('@/components/pages/ScheduledTasksPage').ScheduledTasksTabPage {
+    return require('@/components/pages/ScheduledTasksPage').ScheduledTasksTabPage;
+  },
+  get ApiKeysTabPage(): typeof import('@/components/pages/ApiKeysPage').ApiKeysTabPage {
+    return require('@/components/pages/ApiKeysPage').ApiKeysTabPage;
+  },
+  get ChannelsTabPage(): typeof import('@/components/pages/ChannelsPage').ChannelsTabPage {
+    return require('@/components/pages/ChannelsPage').ChannelsTabPage;
+  },
+  get TunnelTabPage(): typeof import('@/components/pages/TunnelPage').TunnelTabPage {
+    return require('@/components/pages/TunnelPage').TunnelTabPage;
+  },
+  get WorkspacePage(): typeof import('@/components/pages/WorkspacePage').WorkspacePage {
+    return require('@/components/pages/WorkspacePage').WorkspacePage;
+  },
+  get AgentBrowserPage(): typeof import('@/components/pages/AgentBrowserPage').AgentBrowserPage {
+    return require('@/components/pages/AgentBrowserPage').AgentBrowserPage;
+  },
+  get SecretsPage(): typeof import('@/components/pages/SecretsPage').SecretsPage {
+    return require('@/components/pages/SecretsPage').SecretsPage;
+  },
+  get AgentsPage(): typeof import('@/components/pages/AgentsPage').AgentsPage {
+    return require('@/components/pages/AgentsPage').AgentsPage;
+  },
+  get SkillsPage(): typeof import('@/components/pages/SkillsPage').SkillsPage {
+    return require('@/components/pages/SkillsPage').SkillsPage;
+  },
+  get CommandsPage(): typeof import('@/components/pages/CommandsPage').CommandsPage {
+    return require('@/components/pages/CommandsPage').CommandsPage;
+  },
+  get ConnectorsPage(): typeof import('@/components/pages/ConnectorsPage').ConnectorsPage {
+    return require('@/components/pages/ConnectorsPage').ConnectorsPage;
+  },
+  get SecretsNavPage(): typeof import('@/components/pages/SecretsNavPage').SecretsNavPage {
+    return require('@/components/pages/SecretsNavPage').SecretsNavPage;
+  },
+  get ChannelsNavPage(): typeof import('@/components/pages/ChannelsNavPage').ChannelsNavPage {
+    return require('@/components/pages/ChannelsNavPage').ChannelsNavPage;
+  },
+  get SchedulesPage(): typeof import('@/components/pages/SchedulesPage').SchedulesPage {
+    return require('@/components/pages/SchedulesPage').SchedulesPage;
+  },
+  get WebhooksPage(): typeof import('@/components/pages/WebhooksPage').WebhooksPage {
+    return require('@/components/pages/WebhooksPage').WebhooksPage;
+  },
+  get ChangesPage(): typeof import('@/components/pages/ChangesPage').ChangesPage {
+    return require('@/components/pages/ChangesPage').ChangesPage;
+  },
+  get FilesNavPage(): typeof import('@/components/pages/FilesNavPage').FilesNavPage {
+    return require('@/components/pages/FilesNavPage').FilesNavPage;
+  },
+  get SandboxPage(): typeof import('@/components/pages/SandboxPage').SandboxPage {
+    return require('@/components/pages/SandboxPage').SandboxPage;
+  },
+  get DevPage(): typeof import('@/components/pages/DevPage').DevPage {
+    return require('@/components/pages/DevPage').DevPage;
+  },
+  get SettingsNavPage(): typeof import('@/components/pages/SettingsNavPage').SettingsNavPage {
+    return require('@/components/pages/SettingsNavPage').SettingsNavPage;
+  },
+  get MembersNavPage(): typeof import('@/components/pages/MembersNavPage').MembersNavPage {
+    return require('@/components/pages/MembersNavPage').MembersNavPage;
+  },
+  get MemoryPage(): typeof import('@/components/pages/MemoryPage').MemoryPage {
+    return require('@/components/pages/MemoryPage').MemoryPage;
+  },
+  get LlmProvidersPage(): typeof import('@/components/pages/LlmProvidersPage').LlmProvidersPage {
+    return require('@/components/pages/LlmProvidersPage').LlmProvidersPage;
+  },
+  get TerminalPage(): typeof import('@/components/pages/TerminalPage').TerminalPage {
+    return require('@/components/pages/TerminalPage').TerminalPage;
+  },
+  get ProjectsPage(): typeof import('@/components/pages/ProjectsPage').ProjectsPage {
+    return require('@/components/pages/ProjectsPage').ProjectsPage;
+  },
+  get ProjectDetailPage(): typeof import('@/components/pages/ProjectDetailPage').ProjectDetailPage {
+    return require('@/components/pages/ProjectDetailPage').ProjectDetailPage;
+  },
+};
 
 // ─── Module-local helpers (copied verbatim from ProjectScreenLegacy) ─────────
 
@@ -215,7 +314,12 @@ async function sendOpencodePrompt(
       }
     );
     if (!res.ok) {
-      log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
+      // The response body is read for development logs only.
+      if (__DEV__) {
+        log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
+      } else {
+        log.error('[connect] initial prompt failed:', res.status);
+      }
       return false;
     }
     return true;
@@ -254,7 +358,6 @@ async function deliverPendingPrompt(
 
 export function ProjectScreen() {
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
-  const insets = useSafeAreaInsets();
 
   // Tabs are remembered PER PROJECT: switch the tab store onto this project's
   // scope before the first paint (see ProjectScreenLegacy).
@@ -275,7 +378,9 @@ export function ProjectScreen() {
     if (userId && projectId) useLastProjectStore.getState().remember(userId, projectId);
   }, [userId, projectId]);
 
-  const { sandboxUrl, switchSandbox } = useSandboxContext();
+  const { sandboxUrl, switchSandbox, clearSandbox } = useSandboxContext();
+  // Polls pause while a root screen (Account, settings) covers the project.
+  const isFocused = useIsFocused();
 
   // Sheets (web-parity bottom sheets, reused verbatim).
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
@@ -304,8 +409,7 @@ export function ProjectScreen() {
 
   // Data
   // Repo-first project sessions (web model): GET /projects/:id/sessions.
-  const { data: projectSessions = [] } = useProjectSessions(projectId);
-  const [activeProjectSessionId, setActiveProjectSessionId] = useState<string | null>(null);
+  const { data: projectSessions = [] } = useProjectSessions(projectId, { poll: isFocused });
   // A project session that's provisioning — the middle pane shows a connecting
   // state and the project-sessions poll opens it once its sandbox is ready.
   const [connectingProjectSessionId, setConnectingProjectSessionId] = useState<string | null>(null);
@@ -334,8 +438,8 @@ export function ProjectScreen() {
   const compactSession = useCompactSession();
   const queryClient = useQueryClient();
   // Open change-request count — the "Changes" badge in the More sheet.
-  const openCrCount =
-    useChangeRequests(projectId ?? null, 'open').data?.change_requests.length ?? 0;
+  const openChangeRequests = useChangeRequests(projectId ?? null, 'open', { poll: isFocused });
+  const openCrCount = openChangeRequests.data?.change_requests.length ?? 0;
 
   // Split sessions into active (TabsOverview grid).
   const activeSessions = useMemo(
@@ -363,7 +467,6 @@ export function ProjectScreen() {
       // open it via the connecting state — the effect resolves the OpenCode pin
       // (ensure-opencode) once the sandbox is up. No global-sandbox POST /session.
       const session = await createProjectSession.mutateAsync({});
-      setActiveProjectSessionId(session.session_id);
       navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
@@ -400,6 +503,10 @@ export function ProjectScreen() {
 
   // Composer prompts awaiting their session's OpenCode root, keyed by session id.
   const pendingPromptsRef = useRef<Record<string, PendingPrompt>>({});
+  // The thread the connect flow opened and the exact sandbox URL it switched
+  // in. A ref: the thread (zustand) can commit before the sandbox (React
+  // state), and that render must already see the expected URL.
+  const openedThreadRef = useRef<OpenedThread | null>(null);
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
@@ -408,6 +515,11 @@ export function ProjectScreen() {
       if (!ps.sandbox_url || !ps.opencode_session_id) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
+      // The same value switchSandbox derives from `external_id`.
+      openedThreadRef.current = {
+        sessionId: ps.opencode_session_id,
+        sandboxUrl: getSandboxUrl(externalId),
+      };
       switchSandbox({
         sandbox_id: ps.sandbox_id || ps.session_id,
         external_id: externalId,
@@ -421,7 +533,6 @@ export function ProjectScreen() {
       setConnectingProjectSessionId(null);
       setConnectError(null);
       erroredSessionRef.current = null;
-      setActiveProjectSessionId(ps.session_id);
       navigateToSession(ps.opencode_session_id);
       // Deliver the composer's first prompt now that the OpenCode root exists.
       const pending = pendingPromptsRef.current[ps.session_id];
@@ -551,7 +662,6 @@ export function ProjectScreen() {
   const handleOpenProjectSession = useCallback(
     (ps: ProjectSession) => {
       haptics.tap();
-      setActiveProjectSessionId(ps.session_id);
       navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
@@ -563,7 +673,6 @@ export function ProjectScreen() {
   // Open a session by raw id (e.g. Fix-with-agent returns a new session).
   const handleOpenSessionById = useCallback(
     (sessionId: string) => {
-      setActiveProjectSessionId(sessionId);
       navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
@@ -580,7 +689,6 @@ export function ProjectScreen() {
       try {
         haptics.tap();
         const session = await createProjectSession.mutateAsync({ initial_prompt: prompt });
-        setActiveProjectSessionId(session.session_id);
         navigateToSession(null);
         setConnectError(null);
         erroredSessionRef.current = null;
@@ -659,7 +767,14 @@ export function ProjectScreen() {
     // the prompt showing up in the thread IS the confirmation, no alert.
     useSyncStore.getState().addOptimisticMessage(targetSessionId, {
       info: {
-        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        // Wire-format id: the thread sorts messages by id as a string, so the
+        // optimistic message must sort after the real ones already present.
+        id: mintWireMessageId({
+          nowMs: Date.now(),
+          knownMessageIds: (useSyncStore.getState().messages[targetSessionId] ?? []).map(
+            (m) => m.info.id
+          ),
+        }),
         role: 'user',
         sessionID: targetSessionId,
         time: { created: Date.now() },
@@ -859,19 +974,55 @@ export function ProjectScreen() {
     void ensureAndOpen(connectingProjectSessionId);
   }, [connectingProjectSessionId, ensureAndOpen]);
 
+  // No thread, page, or overview is on screen: the thread closed (deleted,
+  // archived, closed from the overview), another session is connecting, or
+  // this project just opened on project home (setScope). Leave the previous
+  // session's sandbox, so the live stream never stays on it while the next
+  // session connects or after its connect fails. A page opened from a thread
+  // keeps the sandbox, as the page reads it (lib/session/session-sandbox).
+  const showsSessionContent = showsSessionContentFor({
+    activeSessionId,
+    activePageId,
+    showTabsOverview,
+  });
+  useEffect(() => {
+    if (!showsSessionContent) clearSandbox();
+  }, [showsSessionContent, clearSandbox]);
+
+  // Back from a root screen (Settings → Instances switches a sandbox in) to
+  // project home: leave that sandbox. The tab store is read at focus time, and
+  // a session open in progress (ensuringRef) switches its own sandbox in.
+  useFocusEffect(
+    useCallback(() => {
+      const tabs = useTabStore.getState();
+      if (
+        leaveSandboxOnFocus({
+          activeSessionId: tabs.activeSessionId,
+          activePageId: tabs.activePageId,
+          showTabsOverview: tabs.showTabsOverview,
+          connectInProgress: ensuringRef.current !== null,
+        })
+      ) {
+        clearSandbox();
+      }
+    }, [clearSandbox])
+  );
+
   // Back from a tool page, a thread, or a connecting session → project home.
   // The view route pops once the store is on project home (ProjectRoutes), and
-  // it calls this when a swipe or system back removes it. Stops a running
-  // connect loop, so a session that boots later does not reopen the view.
+  // it calls this when Android back, New session, or a drawer route removes
+  // it. Stops a running connect loop, so a session that boots later does not
+  // reopen the view.
   const goHome = useCallback(() => {
     ensuringRef.current = null;
-    setActiveProjectSessionId(null);
+    openedThreadRef.current = null;
     setConnectingProjectSessionId(null);
     setConnectError(null);
+    clearSandbox();
     const tabs = useTabStore.getState();
     if (tabs.showTabsOverview) tabs.setShowTabsOverview(false);
     if (tabs.activeSessionId || tabs.activePageId) tabs.navigateToSession(null);
-  }, []);
+  }, [clearSandbox]);
   const handleBack = goHome;
   const handlePageBack = goHome;
 
@@ -897,7 +1048,6 @@ export function ProjectScreen() {
           ...(model ? { opencode_model: model } : {}),
         });
         if (hasFiles) pendingPromptsRef.current[session.session_id] = { text, files };
-        setActiveProjectSessionId(session.session_id);
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
         navigateToSession(null);
@@ -915,78 +1065,183 @@ export function ProjectScreen() {
     [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError]
   );
 
-  // Left drawer open state. The drawer itself is added in a later task; this
-  // state is here to satisfy ProjectHome's onOpenDrawer callback.
+  // Left drawer open state (ProjectLeftDrawer).
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Stable handlers, so a memoized SessionPage skips parent re-renders.
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openMoreSheet = useCallback(() => moreRef.current?.open(), []);
 
-  // Project route stack (ProjectRoutes). `viewOpen`: a page, thread, or
-  // connecting session is pushed over project home.
-  const [viewOpen, setViewOpen] = useState(false);
+  // Project route stack (ProjectRoutes).
   const [homeKey, setHomeKey] = useState(0);
   const handleViewCovered = useCallback(() => setHomeKey((key) => key + 1), []);
-  const pushTransition = usePushTransition();
+  // The top (focused) route of the project stack and its navigation object,
+  // captured from the stack's focus events (screenListeners below). This
+  // layout's own `useNavigation()` is the root stack and cannot see the
+  // project stack; the listener's `navigation` is the project stack screen's
+  // (useNavigationBuilder: `descriptors[route.key].navigation`). Refs, not
+  // state: nothing renders from them, the drawer and back handler read them
+  // when they run. Null until the stack's first focus event (home).
+  const topRouteRef = useRef<string | null>(null);
+  const topNavigationRef = useRef<NavigationProp<ParamListBase> | null>(null);
   // This layout's own screen in the root stack (/projects/[id]).
   const navigation = useNavigation();
+  const router = useRouter();
+
+  // Back to project home from any project route: reset the store, then pop a
+  // covering route. popTo keeps home's params and, when home is not in the
+  // stack (a deep link straight to a covering route), replaces the top with it.
+  // The view's `beforeRemove` also resets the store; running goHome twice is
+  // harmless.
+  const returnHome = useCallback(() => {
+    goHome();
+    const top = topNavigationRef.current;
+    if (!top || returnHomeMove(topRouteRef.current) === 'none') return;
+    top.dispatch(StackActions.popTo(PROJECT_HOME_ROUTE, undefined, { merge: true }));
+  }, [goHome]);
+
+  // The drawer's Sessions, Files, and avatar (Account): push over home, or
+  // replace the covering route so the stack stays one screen deep
+  // (lib/session/project-stack). Leaving the view resets the store first, so
+  // the new route never mounts while the store still shows a session (a
+  // covering route replaces itself with the view when the store is off home).
+  // A session row needs no stack move here: home pushes the view, an open
+  // view swaps its content, and a covering route replaces itself with the view
+  // (useCoveringRoute).
+  const navigateProjectRoute = useCallback(
+    (route: ProjectDrawerRoute) => {
+      const move = drawerRouteMove(topRouteRef.current, route);
+      if (move === 'none') return;
+      const params = { id: projectId };
+      const top = topNavigationRef.current;
+      if (!top) {
+        // No focus event yet: the stack is on project home.
+        router.push(`/projects/${projectId}/${route}`);
+        return;
+      }
+      if (move === 'push') {
+        top.dispatch(StackActions.push(route, params));
+        return;
+      }
+      if (topRouteRef.current === PROJECT_VIEW_ROUTE) goHome();
+      top.dispatch(StackActions.replace(route, params));
+    },
+    [goHome, router, projectId]
+  );
+
   // Back never leaves the project. iOS: the root stack registers
-  // /projects/[id] with swipe-back off (app/_layout.tsx); pages swipe back on
-  // the project stack. Android back: closes the drawer, then pops the open
-  // page or thread; on project home it is never allowed to pop to a screen
-  // below, and with nothing below the system handles it (app to background).
+  // /projects/[id] with swipe-back off (app/_layout.tsx), and the project
+  // stack has swipe-back off too: the left edge opens the drawer on every
+  // project route. Android back: closes the drawer; on a covering route (the
+  // view, Sessions, Files, or Account) returns to project home; on project
+  // home it is never allowed to pop to a screen below, and with nothing below
+  // the system handles it (app to background).
   // Only the menu's All projects opens the Projects list.
   const drawerOpenRef = useRef(drawerOpen);
   drawerOpenRef.current = drawerOpen;
-  const viewOpenRef = useRef(viewOpen);
-  viewOpenRef.current = viewOpen;
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== 'android') return undefined;
       const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (drawerOpenRef.current) {
-          setDrawerOpen(false);
-          return true;
+        switch (androidBackMove(topRouteRef.current, drawerOpenRef.current)) {
+          case 'close-drawer':
+            setDrawerOpen(false);
+            return true;
+          case 'pop-home':
+            returnHome();
+            return true;
+          case 'home':
+            // `navigation` is the root stack: never pop below the project.
+            return navigation.canGoBack();
         }
-        if (viewOpenRef.current) return false; // the project stack pops the view
-        return navigation.canGoBack();
       });
       return () => subscription.remove();
-    }, [navigation])
+    }, [navigation, returnHome])
   );
 
   // ── Presentation glue ──
 
-  // The self-contained left drawer. It MUST mount through renderDrawerContent so
-  // its subtree (CommandPalette) stays alive while the drawer is visually
-  // closed — its rows call onClose() before opening that overlay.
+  // The project session on screen (a thread, or a connecting session), by its
+  // project session id. The drawer highlights its row.
+  const shownSessionId = shownProjectSessionId({
+    showTabsOverview,
+    activePageId,
+    threadSessionId: activeSessionId ? (activeProjectSession?.session_id ?? null) : null,
+    connectingSessionId: connectingProjectSessionId,
+  });
+  const shownSessionIdRef = useRef(shownSessionId);
+  shownSessionIdRef.current = shownSessionId;
+
+  // A drawer session row (the drawer has already closed itself). The row of
+  // the session on screen does nothing more: reopening it would unmount the
+  // thread, show Connecting, and rerun the connect loop.
+  const openSessionFromDrawer = useCallback(
+    (ps: ProjectSession) => {
+      if (drawerSessionRowMove(ps.session_id, shownSessionIdRef.current) === 'close') {
+        haptics.tap();
+        return;
+      }
+      handleOpenProjectSession(ps);
+    },
+    [handleOpenProjectSession]
+  );
+
+  // The left drawer. It mounts through renderDrawerContent, so it stays mounted while visually closed.
   const renderDrawer = useCallback(
     () => (
       <ProjectLeftDrawer
         projectId={projectId}
-        activeProjectSessionId={activeProjectSessionId}
-        sessionSandboxUrl={sessionSandboxUrl}
+        activeProjectSessionId={shownSessionId}
         // New session opens project home: its composer starts the session.
-        onNewSession={goHome}
-        onOpenProjectSession={handleOpenProjectSession}
-        onClose={() => setDrawerOpen(false)}
+        onNewSession={returnHome}
+        onOpenProjectSession={openSessionFromDrawer}
+        onNavigateRoute={navigateProjectRoute}
+        onClose={closeDrawer}
       />
     ),
-    [projectId, activeProjectSessionId, sessionSandboxUrl, goHome, handleOpenProjectSession]
+    [projectId, shownSessionId, returnHome, openSessionFromDrawer, navigateProjectRoute, closeDrawer]
   );
 
-  // Tool pages keep PageHeader. The view route gives it Go back to project
-  // home in place of the hamburger; its "···" button opens the dock's menu as
-  // a sheet (no floating dock on deep pages).
-  const pageChrome = {
-    onOpenDrawer: () => setDrawerOpen(true),
-    onOpenRightDrawer: () => moreRef.current?.open(),
-    isDrawerOpen: drawerOpen,
-    isRightDrawerOpen: false,
-  };
+  // Tool pages keep PageHeader: its hamburger opens the drawer, and its "···"
+  // button opens the dock's menu as a sheet (no floating dock on deep pages).
+  const pageChrome = useMemo(
+    () => ({
+      onOpenDrawer: openDrawer,
+      onOpenRightDrawer: openMoreSheet,
+      isDrawerOpen: drawerOpen,
+      isRightDrawerOpen: false,
+    }),
+    [openDrawer, openMoreSheet, drawerOpen]
+  );
 
   // ── Route content ──
 
   const isHome =
     !scopeReady ||
     (!showTabsOverview && !activePageId && !activeSessionId && !connectingProjectSessionId);
+
+  // The thread renders only once the context holds its sandbox. Until then it
+  // shows the connecting view, so SessionPage never starts its sync and
+  // queries against the previous or the default sandbox. The gate holds only
+  // until the switch first commits: after that the record drops, so a later
+  // override (Settings → Instances from the thread) keeps the thread mounted.
+  const renderedOpenedThread = openedThreadRef.current;
+  const threadReady = threadSandboxReady({
+    activeSessionId,
+    sandboxUrl,
+    openedThread: renderedOpenedThread,
+  });
+  const keptOpenedThread = pendingOpenedThread({
+    activeSessionId,
+    sandboxUrl,
+    openedThread: renderedOpenedThread,
+  });
+  useEffect(() => {
+    // A connect that recorded a newer thread after this render keeps its record.
+    if (openedThreadRef.current === renderedOpenedThread) {
+      openedThreadRef.current = keptOpenedThread;
+    }
+  }, [renderedOpenedThread, keptOpenedThread]);
 
   // The floating dock. On project home it names the project; on a thread it
   // names the chat and adds the long-press actions and the change-request button.
@@ -1029,10 +1284,11 @@ export function ProjectScreen() {
             onDismiss={() => setShowTabsOverview(false)}
           />
         ) : activePageId ? (
-          /* Tool page — the SAME page component the legacy screen renders. Back
-             returns to the thread it was opened from (goBack). */
+          /* Tool page — the SAME page component the legacy screen renders. Its
+             PageHeader hamburger opens the drawer. A page that takes `onBack`
+             gets goHome: the store returns home and the view route pops. */
           activePageId === 'page:files' && PAGE_TABS[activePageId] ? (
-            <FilesPage
+            <Pages.FilesPage
               ref={filesPageRef}
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
@@ -1044,111 +1300,111 @@ export function ProjectScreen() {
               }}
             />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
-            <MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:llm-providers' && PAGE_TABS[activePageId] ? (
-            <LlmProvidersPage
+            <Pages.LlmProvidersPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:secrets' && PAGE_TABS[activePageId] ? (
-            <SecretsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.SecretsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:agents' && PAGE_TABS[activePageId] ? (
-            <AgentsPage
+            <Pages.AgentsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onConfigure={handleConfigureSession}
               {...pageChrome}
             />
           ) : activePageId === 'page:skills' && PAGE_TABS[activePageId] ? (
-            <SkillsPage
+            <Pages.SkillsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onConfigure={handleConfigureSession}
               {...pageChrome}
             />
           ) : activePageId === 'page:commands' && PAGE_TABS[activePageId] ? (
-            <CommandsPage
+            <Pages.CommandsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onConfigure={handleConfigureSession}
               {...pageChrome}
             />
           ) : activePageId === 'page:connectors' && PAGE_TABS[activePageId] ? (
-            <ConnectorsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.ConnectorsPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] ? (
-            <SecretsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.SecretsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:channels-nav' && PAGE_TABS[activePageId] ? (
-            <ChannelsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.ChannelsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] ? (
-            <SchedulesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.SchedulesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:webhooks' && PAGE_TABS[activePageId] ? (
-            <WebhooksPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.WebhooksPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] ? (
-            <ChangesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.ChangesPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] ? (
-            <FilesNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.FilesNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:sandbox' && PAGE_TABS[activePageId] ? (
-            <SandboxPage
+            <Pages.SandboxPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               {...pageChrome}
               onOpenSession={handleOpenSessionById}
             />
           ) : activePageId === 'page:dev' && PAGE_TABS[activePageId] ? (
-            <DevPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.DevPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:members' && PAGE_TABS[activePageId] ? (
-            <MembersNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.MembersNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:settings' && PAGE_TABS[activePageId] ? (
-            <SettingsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
+            <Pages.SettingsNavPage page={PAGE_TABS[activePageId]} projectId={projectId} {...pageChrome} />
           ) : activePageId === 'page:terminal' && PAGE_TABS[activePageId] ? (
-            <TerminalPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.TerminalPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:updates' && PAGE_TABS[activePageId] ? (
-            <UpdatesPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.UpdatesPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:ssh' && PAGE_TABS[activePageId] ? (
-            <SSHPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.SSHPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:running-services' && PAGE_TABS[activePageId] ? (
-            <RunningServicesPage
+            <Pages.RunningServicesPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] ? (
-            <BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.BrowserPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:agent-browser' && PAGE_TABS[activePageId] ? (
-            <AgentBrowserPage
+            <Pages.AgentBrowserPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:connections' && PAGE_TABS[activePageId] ? (
-            <ConnectionsTabPage
+            <Pages.ConnectionsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:triggers' && PAGE_TABS[activePageId] ? (
-            <ScheduledTasksTabPage
+            <Pages.ScheduledTasksTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:api' && PAGE_TABS[activePageId] ? (
-            <ApiKeysTabPage
+            <Pages.ApiKeysTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:channels' && PAGE_TABS[activePageId] ? (
-            <ChannelsTabPage
+            <Pages.ChannelsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
             />
           ) : activePageId === 'page:tunnel' && PAGE_TABS[activePageId] ? (
-            <TunnelTabPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.TunnelTabPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId === 'page:workspace' && PAGE_TABS[activePageId] ? (
-            <WorkspacePage
+            <Pages.WorkspacePage
               ref={workspacePageRef}
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
@@ -1160,9 +1416,9 @@ export function ProjectScreen() {
               onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
             />
           ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] ? (
-            <ProjectsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.ProjectsPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : activePageId?.startsWith('page:project:') ? (
-            <ProjectDetailPage
+            <Pages.ProjectDetailPage
               projectId={activePageId.replace('page:project:', '')}
               onBack={() => {
                 useTabStore.getState().navigateToPage('page:projects');
@@ -1170,9 +1426,9 @@ export function ProjectScreen() {
               {...pageChrome}
             />
           ) : activePageId && PAGE_TABS[activePageId] ? (
-            <PlaceholderPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
+            <Pages.PlaceholderPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
           ) : null
-        ) : activeSessionId ? (
+        ) : activeSessionId && threadReady ? (
           /* Thread — the existing SessionPage, reused verbatim. Its own header
              back returns to project home; the right-action button surfaces the
              "···" tools menu. */
@@ -1180,31 +1436,18 @@ export function ProjectScreen() {
             sessionId={activeSessionId}
             projectName={loadedProjectName}
             onBack={handleBack}
-            onOpenDrawer={() => setDrawerOpen(true)}
+            onOpenDrawer={openDrawer}
             chrome="floating"
             isDrawerOpen={drawerOpen}
             isRightDrawerOpen={false}
           />
-        ) : connectingProjectSessionId ? (
-          /* Connecting — a project session is provisioning (or errored).
-             Same chrome as the thread: no top bar, just the floating Go back
-             button to project home. */
+        ) : activeSessionId || connectingProjectSessionId ? (
+          /* Connecting — a project session is provisioning (or errored), or
+             an opened thread waits for its sandbox to switch in. Same chrome
+             as the thread: no top bar, just the floating menu button that
+             opens the project drawer. */
           <View style={{ flex: 1 }} className="bg-background">
-            <View
-              className="absolute left-4 z-10"
-              style={{ top: insets.top + 8 }}
-              pointerEvents="box-none">
-              <PlatformButton
-                systemImage="chevron.left"
-                icon={ChevronLeft}
-                fallbackVariant="secondary"
-                accessibilityLabel="Go back"
-                onPress={() => {
-                  haptics.tap();
-                  goHome();
-                }}
-              />
-            </View>
+            <FloatingMenuButton onPress={openDrawer} />
             <SessionConnecting
               statusLabel={connectingStatusLabel}
               error={connectError}
@@ -1215,7 +1458,9 @@ export function ProjectScreen() {
         ) : null}
 
           {/* Floating dock over a thread, above the composer. */}
-          {activeSessionId && !activePageId && !showTabsOverview ? renderDock(true) : null}
+          {activeSessionId && threadReady && !activePageId && !showTabsOverview
+            ? renderDock(true)
+            : null}
         </View>
   );
 
@@ -1227,7 +1472,7 @@ export function ProjectScreen() {
         projectName={loadedProjectName}
         sending={isDashboardSending}
         onSubmitNewSession={handleDashboardSend}
-        onOpenDrawer={() => setDrawerOpen(true)}
+        onOpenDrawer={openDrawer}
       />
       {renderDock(false)}
     </View>
@@ -1239,8 +1484,12 @@ export function ProjectScreen() {
     isHome,
     homeKey,
     goHome,
-    onViewOpenChange: setViewOpen,
     onViewCovered: handleViewCovered,
+    projectId,
+    // Stable: a useCallback whose only dependency is a zustand store action.
+    openProjectSession: handleOpenProjectSession,
+    openDrawer,
+    isDrawerOpen: drawerOpen,
   };
 
   // ── Render ──
@@ -1250,11 +1499,11 @@ export function ProjectScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <Drawer
         open={drawerOpen}
-        onOpen={() => setDrawerOpen(true)}
-        onClose={() => setDrawerOpen(false)}
+        onOpen={openDrawer}
+        onClose={closeDrawer}
         drawerType="slide"
         drawerStyle={{
-          width: '80%',
+          width: '100%',
           backgroundColor: 'transparent',
           shadowColor: 'transparent',
           shadowOpacity: 0,
@@ -1263,23 +1512,35 @@ export function ProjectScreen() {
           elevation: 0,
         }}
         overlayStyle={{ backgroundColor: 'transparent' }}
-        // While the view is open the left edge is the swipe-back edge.
-        swipeEnabled={!viewOpen}
+        // The left edge opens the drawer on every project route: the project
+        // stack has no swipe-back, so one edge gesture has one meaning. Off
+        // while a root screen (Billing, a settings page) covers the project.
+        swipeEnabled={isFocused}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
-          {/* Same push/pop and swipe-back as every stack (stack-transitions). */}
-          <AppStack
+          {/* Native Stack: platform default push/pop. No iOS swipe-back: the
+              left edge belongs to the drawer on every project route. */}
+          <Stack
             screenOptions={{
               headerShown: false,
-              gestureEnabled: true,
-              fullScreenGestureEnabled: true,
-              ...pushTransition,
-            }}>
-            <AppStack.Screen name="index" />
-            <AppStack.Screen name={PROJECT_VIEW_ROUTE} />
-          </AppStack>
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+            // The focused route is the top of the stack.
+            screenListeners={({ route, navigation: routeNavigation }) => ({
+              focus: () => {
+                topRouteRef.current = route.name;
+                topNavigationRef.current = routeNavigation;
+              },
+            })}>
+            <Stack.Screen name={PROJECT_HOME_ROUTE} />
+            <Stack.Screen name={PROJECT_VIEW_ROUTE} />
+            <Stack.Screen name={PROJECT_SESSIONS_ROUTE} />
+            <Stack.Screen name={PROJECT_FILES_ROUTE} />
+            <Stack.Screen name={PROJECT_ACCOUNT_ROUTE} />
+          </Stack>
         </ProjectRouteProvider>
       </Drawer>
 

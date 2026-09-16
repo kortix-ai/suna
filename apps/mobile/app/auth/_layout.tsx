@@ -1,5 +1,4 @@
-import { useRouter, Redirect } from 'expo-router';
-import { AppStack, usePushTransition } from '@/components/navigation/stack-transitions';
+import { useRouter, Redirect, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
@@ -17,7 +16,6 @@ import { THEME } from '@/lib/utils/theme';
 export default function AuthLayout() {
   const { colorScheme } = useColorScheme();
   const { isAuthenticated, isLoading } = useAuthContext();
-  const pushTransition = usePushTransition();
 
   // While auth is loading, show nothing to prevent flash
   if (isLoading) {
@@ -43,19 +41,17 @@ export default function AuthLayout() {
   }
 
   return (
-    <AppStack
+    <Stack
       screenOptions={{
         headerShown: false,
         contentStyle: {
           backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
         },
-        // Same push/pop as every stack (components/navigation/stack-transitions).
-        ...pushTransition,
       }}
     >
-      <AppStack.Screen name="index" />
-      <AppStack.Screen name="email" />
-    </AppStack>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="email" />
+    </Stack>
   );
 }
 

@@ -34,30 +34,52 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MenuButton } from '@/components/kortix/menu-button';
 import { PlatformButton } from '@/components/kortix/platform-button';
 import { haptics } from '@/lib/haptics';
 import { cn } from '@/lib/utils/index';
 import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 
 /**
+ * Side padding of a settings-style screen. `page` is the app default (20pt);
+ * `project` is the 16pt edge (`px-4`) of every page inside a project
+ * (Jay, 2026-09-16), the same as the project home composer and dock.
+ */
+export type Gutter = 'page' | 'project';
+const GUTTER_CLASS: Record<Gutter, string> = {
+  page: 'px-5',
+  project: 'px-4',
+};
+
+/**
  * Screen header: Go back (native SwiftUI button on iOS, secondary pill on
  * Android), the title, and an optional trailing action. Tab roots pass
- * `showBack={false}`.
+ * `showBack={false}`. A project page passes `onOpenMenu`: the hamburger that
+ * opens the project drawer replaces Go back.
  */
 export function SettingsHeader({
   title,
   showBack = true,
+  onOpenMenu,
   right,
   align = 'start',
   transparent = false,
+  largeTitle = false,
+  gutter = 'page',
 }: {
   title: string;
   showBack?: boolean;
+  /**
+   * Show the hamburger (the same secondary icon button as `PageHeader`) in
+   * place of Go back. It opens the project drawer.
+   */
+  onOpenMenu?: () => void;
   /** Trailing action, e.g. a `PlatformButton` "New". */
   right?: React.ReactNode;
   /**
@@ -68,6 +90,14 @@ export function SettingsHeader({
   align?: 'start' | 'center';
   /** No background: the header sits on a `SettingsPage` hero (Billing). */
   transparent?: boolean;
+  /**
+   * Large page title: the control row holds only the leading button and
+   * `right`, and the title renders below it as `Text variant="h3"` (the
+   * Account tab's page title), above the page content (Sessions page).
+   */
+  largeTitle?: boolean;
+  /** Side padding: `page` 20pt (`px-5`), `project` 12pt (`px-3`) on project pages. */
+  gutter?: Gutter;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -81,21 +111,43 @@ export function SettingsHeader({
     else router.replace('/'); // the last project (app/index.tsx), never the list
   };
 
+  const leading = onOpenMenu ? (
+    <MenuButton onPress={onOpenMenu} />
+  ) : showBack ? (
+    <PlatformButton
+      systemImage="chevron.left"
+      icon={ChevronLeft}
+      fallbackVariant="secondary"
+      accessibilityLabel="Go back"
+      onPress={handleBack}
+    />
+  ) : centered ? (
+    <View className="size-10" />
+  ) : null;
+
+  if (largeTitle) {
+    return (
+      <View className={cn(!transparent && 'bg-background')}>
+        <View
+          className={cn('flex-row items-center justify-between gap-3 pb-3', GUTTER_CLASS[gutter])}
+          style={{ paddingTop: topPadding, minHeight: 56 }}>
+          {leading}
+          {right ?? null}
+        </View>
+        <View className={cn('h-10 justify-center pb-1', GUTTER_CLASS[gutter])}>
+          <Text variant="h3" accessibilityRole="header" numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View
-      className={cn('flex-row items-center gap-3 px-5 pb-3', !transparent && 'bg-background')}
+      className={cn('flex-row items-center gap-3 pb-3', GUTTER_CLASS[gutter], !transparent && 'bg-background')}
       style={{ paddingTop: topPadding, minHeight: 56 }}>
-      {showBack ? (
-        <PlatformButton
-          systemImage="chevron.left"
-          icon={ChevronLeft}
-          fallbackVariant="secondary"
-          accessibilityLabel="Go back"
-          onPress={handleBack}
-        />
-      ) : centered ? (
-        <View className="size-10" />
-      ) : null}
+      {leading}
       <Text
         className={cn(
           'flex-1 text-xl leading-6 font-roobert-medium text-foreground tracking-tight',
@@ -109,7 +161,7 @@ export function SettingsHeader({
   );
 }
 
-/** Scrollable screen body: 20pt side margins, 18pt between groups. */
+/** Scrollable screen body: 20pt side margins (12pt with `gutter="project"`), 18pt between groups. */
 export function SettingsPage({
   children,
   header,
@@ -117,8 +169,11 @@ export function SettingsPage({
   paddingBottom,
   contentInsetAdjustmentBehavior,
   refreshControl,
+  gutter = 'page',
 }: {
   children: React.ReactNode;
+  /** Side padding: `page` 20pt (`px-5`), `project` 12pt (`px-3`) on project pages. */
+  gutter?: Gutter;
   /** Content above the first group (e.g. the profile avatar). */
   header?: React.ReactNode;
   /**
@@ -147,7 +202,8 @@ export function SettingsPage({
       {hero}
       <View
         className={cn(
-          'px-5 pb-2 pt-1',
+          'pb-2 pt-1',
+          GUTTER_CLASS[gutter],
           hero && '-mt-6 flex-1 rounded-t-3xl bg-background pt-6'
         )}
         style={{ gap: 18 }}>
@@ -259,7 +315,7 @@ export function SettingsRow({
   // scaling, which would pull them away from the card edges.
   return (
     <Pressable onPress={onPress} disabled={!onPress} className="active:bg-accent">
-      <View className="flex-row items-center px-4 py-3.5">
+      <View className="flex-row items-center px-4 py-3">
         {/* Leading slot is at least 20pt wide so icon rows share one label line.
             A row without leading content drops the slot and its gap entirely. */}
         {leadingContent ? (

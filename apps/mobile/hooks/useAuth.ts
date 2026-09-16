@@ -1,14 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/api/supabase';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, SUPABASE_AUTH_STORAGE_KEY } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
+import { shouldUseRevenueCat } from '@/lib/billing/provider';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
+import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
+import { keysToClear } from '@/lib/auth/sign-out-keys';
+import { applyProfileLocale } from '@/lib/utils/i18n';
+import { withDeadline } from '@/lib/utils/with-deadline';
+import { useTabStore } from '@/stores/tab-store';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useLastProjectStore } from '@/stores/last-project-store';
+import { useSelectedProjectStore } from '@/stores/selected-project-store';
+import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 
 let useTracking: any = null;
 try {
@@ -28,8 +39,55 @@ import type {
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
 
+/**
+ * Sign-out: reset the in-memory stores that hold the previous user's data.
+ * Clearing storage alone is not enough: a store keeps its state in memory and
+ * writes it back on its next update, so the next user to sign in without a
+ * relaunch would see the previous user's tabs and queue. Device preferences
+ * (theme, sounds, notifications) are not reset.
+ */
+function resetUserStores() {
+  useTabStore.getState().reset();
+  useMessageQueueStore.getState().reset();
+  useCurrentAccountStore.getState().reset();
+  useLastProjectStore.getState().reset();
+  useSelectedProjectStore.getState().reset();
+  // Also deletes the screenshot files.
+  useTabScreenshotStore.getState().clear();
+}
+
 // Complete any pending auth sessions (required for web)
 WebBrowser.maybeCompleteAuthSession();
+
+/**
+ * Upper bound on the initial session restore. `getSession()` waits on a token
+ * refresh that auth-js retries for up to 30 s; past this deadline the persisted
+ * session decides the first screen and `onAuthStateChange` corrects it.
+ */
+const AUTH_RESTORE_DEADLINE_MS = 8_000;
+const AUTH_RESTORE_TIMED_OUT = Symbol('auth-restore-timed-out');
+
+/**
+ * RevenueCat's module constructs a native event emitter on import, so it is
+ * required only when billing uses it.
+ */
+function initializeRevenueCat(
+  ...args: Parameters<typeof import('@/lib/billing/revenuecat').initializeRevenueCat>
+) {
+  const revenueCat: typeof import('@/lib/billing/revenuecat') = require('@/lib/billing/revenuecat');
+  return revenueCat.initializeRevenueCat(...args);
+}
+
+/** The raw session supabase-js persisted, or null when absent or unreadable. */
+async function readStoredSessionRaw(): Promise<string | null> {
+  if (!SUPABASE_AUTH_STORAGE_KEY) return null;
+  try {
+    return await AsyncStorage.getItem(SUPABASE_AUTH_STORAGE_KEY);
+  } catch (error) {
+    log.warn('⚠️ Could not read the persisted session:', error);
+    return null;
+  }
+}
 
 function redactAuthUrl(url: string): string {
   try {
@@ -150,42 +208,83 @@ export function useAuth() {
   const initializedCanTrackRef = useRef<boolean | null>(null);
   const oauthSessionActiveRef = useRef<boolean>(false);
   const mobileOAuthAdmissionPendingRef = useRef<boolean>(false);
+  // True once a real auth answer (restore or auth event) has set the state, so
+  // the stalled-restore fallback never overwrites it.
+  const authResolvedRef = useRef<boolean>(false);
+  // Bumped by every auth state write. A write that awaited a storage read
+  // drops its result when a newer write happened meanwhile.
+  const authSeqRef = useRef<number>(0);
 
   // Initialize session once on mount
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth
-      .getSession()
-      .then(async ({ data: { session } }: { data: { session: Session | null } }) => {
-        if (!mounted) return;
+    const applyRestoredSession = async (restored: Session | null) => {
+      const seq = ++authSeqRef.current;
+      // A null restore after a retryable refresh failure keeps the stored session.
+      const session =
+        restored ?? sessionForNullAuthResult('RESTORE', await readStoredSessionRaw());
+      if (!mounted || seq !== authSeqRef.current) return;
+      authResolvedRef.current = true;
 
-        // Update logger with user ID
-        setLoggerUserId(session?.user?.id || null);
+      // Update logger with user ID
+      setLoggerUserId(session?.user?.id || null);
 
-        setAuthState({
-          user: session?.user ?? null,
-          session,
-          isLoading: false,
-          isAuthenticated: !!session,
-        });
+      setAuthState({
+        user: session?.user ?? null,
+        session,
+        isLoading: false,
+        isAuthenticated: !!session,
+      });
+      void applyProfileLocale(session?.user);
 
-        if (session?.user && shouldUseRevenueCat()) {
-          // Only initialize if user changed or canTrack changed from false to true
-          const shouldInitialize =
-            initializedUserIdRef.current !== session.user.id ||
-            (canTrack && initializedCanTrackRef.current !== canTrack);
+      if (session?.user && shouldUseRevenueCat()) {
+        // Only initialize if user changed or canTrack changed from false to true
+        const shouldInitialize =
+          initializedUserIdRef.current !== session.user.id ||
+          (canTrack && initializedCanTrackRef.current !== canTrack);
 
-          if (shouldInitialize) {
-            try {
-              await initializeRevenueCat(session.user.id, session.user.email, canTrack);
-              initializedUserIdRef.current = session.user.id;
-              initializedCanTrackRef.current = canTrack;
-            } catch (error) {
-              log.warn('⚠️ Failed to initialize RevenueCat:', error);
-            }
+        if (shouldInitialize) {
+          try {
+            await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+            initializedUserIdRef.current = session.user.id;
+            initializedCanTrackRef.current = canTrack;
+          } catch (error) {
+            log.warn('⚠️ Failed to initialize RevenueCat:', error);
           }
         }
+      }
+    };
+
+    // The restore stalled or failed: decide from the session on disk. A stored
+    // session opens the app while the refresh continues; none means signed out.
+    const applyPersistedSession = async () => {
+      const session = parsePersistedSession(await readStoredSessionRaw());
+      if (!mounted || authResolvedRef.current) return;
+      setLoggerUserId(session?.user?.id || null);
+      setAuthState({
+        user: session?.user ?? null,
+        session,
+        isLoading: false,
+        isAuthenticated: !!session,
+      });
+      void applyProfileLocale(session?.user);
+    };
+
+    const restore: Promise<{ data: { session: Session | null } }> = supabase.auth.getSession();
+    withDeadline(restore, AUTH_RESTORE_DEADLINE_MS, AUTH_RESTORE_TIMED_OUT)
+      .then((result) => {
+        if (result !== AUTH_RESTORE_TIMED_OUT) return applyRestoredSession(result.data.session);
+        log.warn('⚠️ Session restore exceeded the deadline; using the persisted session');
+        // A late restore still wins over the fallback.
+        restore
+          .then(({ data: { session } }) => applyRestoredSession(session))
+          .catch(() => {});
+        return applyPersistedSession();
+      })
+      .catch((error: unknown) => {
+        log.warn('⚠️ Session restore failed; using the persisted session:', error);
+        return applyPersistedSession();
       });
 
     return () => {
@@ -199,13 +298,15 @@ export function useAuth() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
-        // Update logger with user ID
-        setLoggerUserId(session?.user?.id || null);
-
         // Only log significant auth events, not every state change
         if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
           log.log('🔄 Auth state changed:', _event);
         }
+
+        // Bumped before any await: a restore that is still reading storage must
+        // not write its (possibly signed-in) result after this event, including
+        // while the OAuth admission check below runs.
+        const seq = ++authSeqRef.current;
 
         // Login-only gate for direct mobile OAuth sign-up only. Password and magic
         // link sign-in, plus session hydration, must not consult the new-user window
@@ -222,12 +323,24 @@ export function useAuth() {
           }
         }
 
+        if (!session && _event !== 'SIGNED_OUT') {
+          // INITIAL_SESSION is null after a retryable refresh failure while the
+          // refresh token is still stored: the user stays signed in.
+          session = sessionForNullAuthResult(_event, await readStoredSessionRaw());
+          if (seq !== authSeqRef.current) return;
+        }
+
+        // Update logger with user ID
+        setLoggerUserId(session?.user?.id || null);
+
+        authResolvedRef.current = true;
         setAuthState({
           user: session?.user ?? null,
           session,
           isLoading: false,
           isAuthenticated: !!session,
         });
+        void applyProfileLocale(session?.user);
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
           // Only initialize if user changed or canTrack changed from false to true
@@ -869,9 +982,10 @@ export function useAuth() {
    *
    * 1. Attempts global sign out (server + local)
    * 2. Falls back to local-only if global fails
-   * 3. Manually clears all Supabase keys from AsyncStorage as failsafe
+   * 3. Clears every AsyncStorage key except device preferences (theme,
+   *    language, onboarding cache — see lib/auth/sign-out-keys), including the
+   *    Supabase session keys as a failsafe
    * 4. Forces React state update
-   * 5. Preserves user preferences (theme, language, onboarding cache)
    *
    * Note: Onboarding status is stored in user_metadata (backend), so it persists
    * across devices and logins. AsyncStorage cache is kept for faster checks.
@@ -885,53 +999,25 @@ export function useAuth() {
       return { success: false, error: { message: 'Sign out already in progress' } };
     }
 
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-
-    /**
-     * Helper to clear all Supabase-related keys from AsyncStorage
-     * This is a nuclear option that ensures complete sign out
-     */
-    const clearSupabaseStorage = async () => {
+    const clearUserStorage = async () => {
       try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const supabaseKeys = allKeys.filter(
-          (key: string) =>
-            key.includes('supabase') || key.includes('sb-') || key.includes('-auth-token')
-        );
-
-        if (supabaseKeys.length > 0) {
-          log.log(`🗑️  Removing ${supabaseKeys.length} Supabase keys from storage`);
-          await AsyncStorage.multiRemove(supabaseKeys);
+        const keys = keysToClear(await AsyncStorage.getAllKeys());
+        if (keys.length > 0) {
+          log.log(`🧹 Clearing ${keys.length} storage keys`);
+          await AsyncStorage.multiRemove(keys);
         }
+        log.log('✅ Storage cleared (device preferences kept)');
       } catch (error) {
-        log.warn('⚠️  Failed to clear Supabase storage:', error);
+        log.warn('⚠️  Failed to clear storage:', error);
       }
     };
 
-    const clearAppData = async () => {
-      try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const appDataKeys = allKeys.filter(
-          (key: string) =>
-            key.startsWith('@') &&
-            !key.includes('language') &&
-            !key.includes('theme') &&
-            !key.includes('onboarding_completed')
-        );
-
-        log.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
-
-        if (appDataKeys.length > 0) {
-          await AsyncStorage.multiRemove(appDataKeys);
-        }
-
-        log.log('✅ All app data cleared (except preferences and onboarding status)');
-      } catch (error) {
-        log.warn('⚠️  Failed to clear app data:', error);
-      }
-    };
-
+    // Runs after storage is cleared.
     const forceSignOutState = () => {
+      // Drop any in-flight stored-session read so it cannot restore the state.
+      authSeqRef.current += 1;
+      authResolvedRef.current = true;
+      resetUserStores();
       setLoggerUserId(null); // Clear logger user ID
       setAuthState({
         user: null,
@@ -968,9 +1054,7 @@ export function useAuth() {
         }
       }
 
-      await clearSupabaseStorage();
-
-      await clearAppData();
+      await clearUserStorage();
 
       log.log('🗑️  Clearing React Query cache...');
       queryClient.clear();
@@ -984,8 +1068,7 @@ export function useAuth() {
     } catch (error: any) {
       log.error('❌ Sign out exception:', error);
 
-      await clearSupabaseStorage().catch(() => {});
-      await clearAppData().catch(() => {});
+      await clearUserStorage();
       queryClient.clear();
       forceSignOutState();
 
@@ -997,18 +1080,36 @@ export function useAuth() {
 
   const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
 
-  return {
-    ...authState,
-    error,
-    oauthRejection,
-    clearOauthRejection,
-    isSigningOut,
-    signIn,
-    signUp,
-    signInWithOAuth,
-    signInWithMagicLink,
-    resetPassword,
-    updatePassword,
-    signOut,
-  };
+  // Stable identity: AuthProvider passes this object as the context value, and
+  // a fresh object every render re-renders every consumer.
+  return useMemo(
+    () => ({
+      ...authState,
+      error,
+      oauthRejection,
+      clearOauthRejection,
+      isSigningOut,
+      signIn,
+      signUp,
+      signInWithOAuth,
+      signInWithMagicLink,
+      resetPassword,
+      updatePassword,
+      signOut,
+    }),
+    [
+      authState,
+      error,
+      oauthRejection,
+      clearOauthRejection,
+      isSigningOut,
+      signIn,
+      signUp,
+      signInWithOAuth,
+      signInWithMagicLink,
+      resetPassword,
+      updatePassword,
+      signOut,
+    ]
+  );
 }

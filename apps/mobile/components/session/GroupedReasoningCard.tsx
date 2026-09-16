@@ -22,11 +22,9 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  LayoutAnimation,
   Platform,
   Pressable,
   Text as RNText,
-  UIManager,
   View,
 } from 'react-native';
 import Animated, {
@@ -38,10 +36,6 @@ import Animated, {
   Easing,
   FadeIn,
 } from 'react-native-reanimated';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface GroupedReasoningCardProps {
   parts: ReasoningPart[];
@@ -57,11 +51,14 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remaining}s`;
 }
 
-export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReasoningCardProps) {
+function GroupedReasoningCardImpl({ parts, isStreaming = false }: GroupedReasoningCardProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [open, setOpen] = useState(false);
   const [streamSeconds, setStreamSeconds] = useState(0);
+  // Only a card that mounts while its turn streams fades in. Cards restored
+  // from history appear without an animation.
+  const [fadeInOnMount] = useState(isStreaming);
 
   // Determine if the last part is still streaming
   const lastPart = parts[parts.length - 1];
@@ -175,13 +172,14 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
   const mutedStrongColor = isDark ? withAlpha(THEME.dark.foreground, 0.7) : withAlpha(THEME.light.foreground, 0.7);
   const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1);
 
+  // Expands instantly; the revealed content fades in on its own view, so the
+  // tap never animates unrelated layout changes in the same commit.
   const handleToggle = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setOpen(!open);
   };
 
   return (
-    <Animated.View entering={FadeIn.duration(150)} className="w-full" style={{ marginBottom: 6 }}>
+    <Animated.View entering={fadeInOnMount ? FadeIn.duration(150) : undefined} className="w-full" style={{ marginBottom: 6 }}>
       {/* Minimal trigger row — matches web's design */}
       <Pressable
         onPress={handleToggle}
@@ -283,3 +281,21 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
     </Animated.View>
   );
 }
+
+function sameParts(a: ReasoningPart[], b: ReasoningPart[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * The parent rebuilds the `parts` array for each render of a turn, so the
+ * memo compares the part objects element by element.
+ */
+export const GroupedReasoningCard = React.memo(
+  GroupedReasoningCardImpl,
+  (prev, next) => prev.isStreaming === next.isStreaming && sameParts(prev.parts, next.parts),
+);

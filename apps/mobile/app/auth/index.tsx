@@ -18,6 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from 'expo-router/react-navigation';
 
 import { KortixCurrents } from '@/components/animations/kortix-currents';
 import { AppleIcon, GoogleIcon } from '@/components/icons/auth-icons';
@@ -44,6 +45,9 @@ export default function AuthScreen() {
   const onPrimary = colors.primaryForeground;
   const { isAuthenticated } = useAuthContext();
   const { pending: oauthPending, error: oauthError, signInWith } = useOAuthSignIn();
+  // The auth stack keeps this screen mounted under the email screen; the hero
+  // animation stops while it is covered.
+  const isFocused = useIsFocused();
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
@@ -59,7 +63,7 @@ export default function AuthScreen() {
         <View style={{ height: HERO_H, width: '100%' }}>
           {/* The hero runs 80% of the screen, so a centred mark lands near the
               middle. Bias it up into the field's clear upper half. */}
-          <KortixCurrents markCenterY={0.4} tone={scheme} />
+          <KortixCurrents markCenterY={0.4} tone={scheme} paused={!isFocused} />
           {/* Fade the field into the base. Fade to the same color at zero
               alpha, not 'transparent' (black at zero alpha), or the light
               gradient passes through gray. */}

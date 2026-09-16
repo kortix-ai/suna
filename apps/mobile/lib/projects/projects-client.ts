@@ -120,6 +120,7 @@ export {
   updateProjectSession,
   deleteProjectSession,
   setProjectSessionSharing,
+  stopProjectSession,
 } from '@kortix/sdk';
 
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';

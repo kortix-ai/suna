@@ -29,6 +29,7 @@ import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { allowBrowserNavigation } from '@/lib/utils/html-embed';
 
 const BROWSER_VIEWER_PORT = 9224;
 const BROWSER_STREAM_PORT = 9223;
@@ -247,6 +248,8 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             uri: viewerUrl,
             headers: { Authorization: `Bearer ${authToken}` },
           }}
+          originWhitelist={['*']}
+          onShouldStartLoadWithRequest={allowBrowserNavigation}
           onLoadStart={() => setIsLoading(true)}
           onLoadEnd={() => setIsLoading(false)}
           onError={() => { setIsLoading(false); setHasError(true); }}

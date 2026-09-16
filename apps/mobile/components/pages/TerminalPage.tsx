@@ -39,6 +39,7 @@ import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1351,8 +1352,13 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             contentInsetAdjustmentBehavior="never"
             textInteractionEnabled={false}
             allowsInlineMediaPlayback
-            mixedContentMode="always"
-            allowUniversalAccessFromFileURLs
+            // The page is inline HTML (no file:// content). Mixed content is
+            // needed only for a ws:// socket to a non-TLS sandbox (local dev).
+            mixedContentMode={sandboxUrl?.startsWith('https://') ? 'never' : 'always'}
+            // Terminal output is escaped text: no navigation leaves the inline page.
+            onShouldStartLoadWithRequest={(request) =>
+              decidePreviewNavigation(request.url, { isTopFrame: request.isTopFrame }) === 'allow'
+            }
             onError={(syntheticEvent: WebViewErrorEvent) => {
               log.error('[TerminalPage] WebView error:', syntheticEvent.nativeEvent.description);
               setError('WebView failed to load');

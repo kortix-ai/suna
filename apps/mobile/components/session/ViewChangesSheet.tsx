@@ -7,7 +7,7 @@
  * - Unified / side-by-side view toggle
  * - Expandable file cards that fill available space
  */
-import React, { forwardRef, useMemo, useState, useCallback, useEffect } from 'react';
+import React, { forwardRef, useMemo, useState, useCallback, useEffect, useRef, useImperativeHandle } from 'react';
 import {
   View,
   Text,
@@ -770,14 +770,19 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
     const [apiDiffs, setApiDiffs] = useState<FileDiffData[] | null>(null);
     const [apiLoading, setApiLoading] = useState(false);
 
-    // Read messages for this session from sync store (fallback)
-    const messages = useSyncStore((s: any) => sessionId ? s.messages[sessionId] : undefined);
+    // Presentation state — the sheet stays mounted while closed (pan-down-to-close
+    // needs it pre-mounted), so every subscription and derived computation below
+    // must be gated on this, or it re-runs on every streamed message delta.
+    const [isOpen, setIsOpen] = useState(false);
+
+    // Read messages for this session from sync store (fallback) — only while open.
+    const messages = useSyncStore((s: any) => (isOpen && sessionId ? s.messages[sessionId] : undefined));
 
     // Fallback: extract diffs from messages
     const messageDiffs = useMemo(() => {
-      if (!sessionId || !messages || !Array.isArray(messages)) return [];
+      if (!isOpen || !sessionId || !messages || !Array.isArray(messages)) return [];
       return extractDiffsFromMessages(messages as any);
-    }, [sessionId, messages]);
+    }, [isOpen, sessionId, messages]);
 
     // Fetch diffs from API when sheet becomes visible
     const fetchApiDiffs = useCallback(async () => {
@@ -810,30 +815,75 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
     // Use API diffs if available, else fall back to message extraction
     const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
 
+    // Real gorhom instance. The `ref` this component forwards is a thin
+    // present()-intercepting wrapper around this (see useImperativeHandle
+    // below) so `isOpen` flips before the sheet's first visible frame,
+    // instead of waiting for the open animation to finish (onChange) or
+    // even start (onAnimate) — both fire too late for already-in-memory
+    // data like messageDiffs to be ready when the sheet appears.
+    const sheetRef = useRef<BottomSheetModal>(null);
 
     const handleClose = useCallback(() => {
-      (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
-    }, [ref]);
+      sheetRef.current?.dismiss();
+    }, []);
 
-    // Fetch API diffs when sheet opens
+    // Fetch API diffs when sheet opens; keep isOpen's closed-state reset here too
+    // (onDismiss below covers the pan-down-to-close gesture, this covers onChange).
     const handleSheetChange = useCallback((index: number) => {
       if (index >= 0) {
+        setIsOpen(true);
         fetchApiDiffs();
       } else {
+        setIsOpen(false);
         // Reset when closed so next open refetches
         setApiDiffs(null);
       }
     }, [fetchApiDiffs]);
 
+    const handleDismiss = useCallback(() => {
+      setIsOpen(false);
+    }, []);
+
+    // Belt-and-suspenders: onAnimate fires at the start of the open transition
+    // (before onChange, which only fires once the animation completes), so it
+    // catches any open path that reaches the sheet without going through the
+    // present() wrapper below (e.g. a gesture-driven snap).
+    const handleAnimate = useCallback((_fromIndex: number, toIndex: number) => {
+      if (toIndex >= 0) setIsOpen(true);
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      (): BottomSheetModal => ({
+        present: (...args: Parameters<BottomSheetModal['present']>) => {
+          // Flip open synchronously, before the sheet even mounts its
+          // content — this is what actually gets messageDiffs computed and
+          // visible on the sheet's first visible frame.
+          setIsOpen(true);
+          sheetRef.current?.present(...args);
+        },
+        dismiss: (...args: Parameters<BottomSheetModal['dismiss']>) => sheetRef.current?.dismiss(...args),
+        snapToIndex: (...args: Parameters<BottomSheetModal['snapToIndex']>) => sheetRef.current?.snapToIndex(...args),
+        snapToPosition: (...args: Parameters<BottomSheetModal['snapToPosition']>) => sheetRef.current?.snapToPosition(...args),
+        expand: (...args: Parameters<BottomSheetModal['expand']>) => sheetRef.current?.expand(...args),
+        collapse: (...args: Parameters<BottomSheetModal['collapse']>) => sheetRef.current?.collapse(...args),
+        close: (...args: Parameters<BottomSheetModal['close']>) => sheetRef.current?.close(...args),
+        forceClose: (...args: Parameters<BottomSheetModal['forceClose']>) => sheetRef.current?.forceClose(...args),
+      }),
+      [],
+    );
+
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={sheetRef}
         index={0}
         snapPoints={['92%']}
         enableDynamicSizing={false}
         enableOverDrag={false}
         enablePanDownToClose
         onChange={handleSheetChange}
+        onDismiss={handleDismiss}
+        onAnimate={handleAnimate}
         handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         backgroundStyle={{
           backgroundColor: sheetBg,

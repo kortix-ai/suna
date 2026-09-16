@@ -1,18 +1,20 @@
 /**
- * SelectableMarkdownText Component
+ * SelectableMarkdownText
  *
- * A wrapper around MarkdownTextInput that provides selectable markdown text
- * with proper styling using @expensify/react-native-live-markdown.
- * 
- * HEIGHT CALCULATION APPROACH:
- * Uses visual line count (including text wrapping) to calculate height instantly.
- * No onContentSizeChange = no layout shift during load.
- * 
- * Key: A single long paragraph might wrap to 5+ visual lines on screen,
- * so we estimate wrapping based on character width and screen width.
+ * Renders chat markdown with react-native-markdown-display. On Android the text
+ * is natively selectable; on iOS a double tap opens a sheet with the raw text.
+ *
+ * Streaming: the text is split into top-level blocks (`splitMarkdownBlocks`),
+ * and each block renders in its own memoized component keyed by its position.
+ * When a message grows, only the last block's string changes, so completed
+ * blocks are neither re-parsed nor remounted.
+ *
+ * Untrusted content: message markdown comes from the agent. Links open only for
+ * http(s) and mailto, and images are never fetched; they render as a
+ * placeholder that opens the source in the browser on tap.
  */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
@@ -20,19 +22,16 @@ import {
   Text as RNText,
   Pressable,
   LogBox,
-  Keyboard,
   Platform,
   Dimensions,
   Linking,
-  TextInput,
-  ScrollView,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
-import Markdown from 'react-native-markdown-display';
+import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Copy, X } from 'lucide-react-native';
+import { Copy, Image as ImageIcon } from 'lucide-react-native';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -44,6 +43,12 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
 import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
+import { isMarkdownSeparatorBlock, splitMarkdownBlocks } from '@/lib/markdown/split-blocks';
+import { isSafeExternalLink } from '@/lib/markdown/safe-link';
+import { describeMarkdownImage } from '@/lib/markdown/markdown-image';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -55,94 +60,59 @@ LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into 
 const MARKDOWN_LINE_HEIGHT = 23; // matches user bubble (text-sm leading-relaxed)
 const MARKDOWN_FONT_SIZE = 14;
 
-// Debug mode to see height calculations
-let DEBUG_HEIGHTS = false;
-
-// Config: Disable special block rendering (tables, code blocks, separators)
-// When true, everything renders as plain markdown without splitting
-let DISABLE_BLOCK_SPLITTING = true;
-
-export function setBlockSplitting(enabled: boolean) {
-  DISABLE_BLOCK_SPLITTING = !enabled;
-  log.log(`[MD] Block splitting ${enabled ? 'enabled' : 'disabled'}`);
-}
-
-// Runtime tunable values  
-// CHAR_WIDTH_FACTOR: Lower = more chars per line = fewer visual lines = shorter (less over-estimation)
-let CHAR_WIDTH_FACTOR = 0.42;      // Was 0.48, reduced to prevent over-estimation on long text
-let HEADING_CHAR_FACTOR = 0.46;    // Was 0.52
-let EMPTY_LINE_FACTOR = 0.5;
-let BOLD_WIDTH_FACTOR = 1.10;      // Was 1.15, reduced slightly
-
-let BASE_PHANTOM = 8;
-let LINE_PHANTOM_PX = 0.5;
-let MAX_LINE_PHANTOM = 8;
-
-export function enableMarkdownDebug(enabled: boolean = true) {
-  DEBUG_HEIGHTS = enabled;
-  log.log(`[SelectableMarkdown] Debug ${enabled ? 'enabled' : 'disabled'}`);
-}
-
-export function setCharWidthFactor(factor: number) {
-  CHAR_WIDTH_FACTOR = factor;
-  log.log(`[MD] Char width factor: ${factor}`);
-}
-
-export function setHeadingCharFactor(factor: number) {
-  HEADING_CHAR_FACTOR = factor;
-  log.log(`[MD] Heading char factor: ${factor}`);
-}
-
-export function setEmptyLineFactor(factor: number) {
-  EMPTY_LINE_FACTOR = factor;
-  log.log(`[MD] Empty line factor: ${factor}`);
-}
-
-export function setBasePhantom(px: number) {
-  BASE_PHANTOM = px;
-  log.log(`[MD] Base phantom: ${px}px`);
-}
-
-export function setLinePhantom(px: number) {
-  LINE_PHANTOM_PX = px;
-  log.log(`[MD] Line phantom: ${px}px per line`);
-}
-
-export function setMaxLinePhantom(px: number) {
-  MAX_LINE_PHANTOM = px;
-  log.log(`[MD] Max line phantom: ${px}px`);
-}
-
-export function setBoldWidthFactor(factor: number) {
-  BOLD_WIDTH_FACTOR = factor;
-  log.log(`[MD] Bold width factor: ${(factor * 100).toFixed(0)}%`);
-}
-
-export function getFactors() {
-  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR, basePhantom: BASE_PHANTOM, linePhantom: LINE_PHANTOM_PX, maxLinePhantom: MAX_LINE_PHANTOM, bold: BOLD_WIDTH_FACTOR };
-}
-
-if (__DEV__) {
-  (globalThis as any).enableMarkdownDebug = enableMarkdownDebug;
-  (globalThis as any).setCharWidthFactor = setCharWidthFactor;
-  (globalThis as any).setHeadingCharFactor = setHeadingCharFactor;
-  (globalThis as any).setEmptyLineFactor = setEmptyLineFactor;
-  (globalThis as any).setBasePhantom = setBasePhantom;
-  (globalThis as any).setLinePhantom = setLinePhantom;
-  (globalThis as any).setMaxLinePhantom = setMaxLinePhantom;
-  (globalThis as any).setBoldWidthFactor = setBoldWidthFactor;
-  (globalThis as any).getFactors = getFactors;
-  log.log('[MD] Tune: setBasePhantom(16) / setLinePhantom(0.5) / setMaxLinePhantom(20)');
-}
-
-
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
-  /** Additional style for the text input */
+  /** Accepted for compatibility; the markdown renderer does not apply it. */
   style?: TextStyle;
   /** Whether to use dark mode (if not provided, will use color scheme hook) */
   isDark?: boolean;
+}
+
+/**
+ * Opens a link from message markdown when its scheme is http(s) or mailto.
+ * Any other scheme is ignored, and a failed open never becomes an unhandled
+ * rejection.
+ */
+function openExternalLink(href: unknown) {
+  if (!isSafeExternalLink(href)) return;
+  Linking.openURL(href.trim()).catch(() => {});
+}
+
+/**
+ * `onLinkPress` for library rules the app does not override (`blocklink`, a
+ * link around an image). Returning false stops the library from opening the
+ * URL itself.
+ */
+function handleLibraryLinkPress(url: string): boolean {
+  openExternalLink(url);
+  return false;
+}
+
+/**
+ * Stand-in for a markdown image. Remote images are not loaded: a URL can leak
+ * data to its host on render, and a huge image can exhaust memory on decode.
+ * An http(s) source opens in the browser on tap; data: and other sources only
+ * show the label.
+ */
+function MarkdownImagePlaceholder({ src, alt }: { src: unknown; alt: unknown }) {
+  const { label, href } = describeMarkdownImage(src, alt);
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      className="my-1 max-w-full self-start"
+      disabled={!href}
+      onPress={href ? () => openExternalLink(href) : undefined}
+      role={href ? 'link' : 'img'}
+      accessibilityLabel={`Image: ${label}`}
+    >
+      <Icon as={ImageIcon} size={16} />
+      <Text numberOfLines={1} className="shrink">
+        {label}
+      </Text>
+    </Button>
+  );
 }
 
 /**
@@ -190,20 +160,20 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
       {children}
     </RNText>
   ),
-  // Links - selectable and pressable
+  // Links - selectable and pressable; only http(s) and mailto open
   link: (node: any, children: any, parent: any, styles: any) => (
     <RNText
       key={node.key}
       style={[styles.link, { color: THEME.accent.blue }]}
       selectable={true}
-      onPress={() => {
-        if (node.attributes?.href) {
-          Linking.openURL(node.attributes.href);
-        }
-      }}
+      onPress={() => openExternalLink(node.attributes?.href)}
     >
       {children}
     </RNText>
+  ),
+  // Images - never fetched; a placeholder instead
+  image: (node: any) => (
+    <MarkdownImagePlaceholder key={node.key} src={node.attributes?.src} alt={node.attributes?.alt} />
   ),
   // Inline code
   code_inline: (node: any, children: any, parent: any, styles: any) => (
@@ -299,7 +269,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
         if (n.type === 'link') {
           return (
             <RNText key={i} style={{ color: THEME.accent.blue }}
-              onPress={() => n.attributes?.href && Linking.openURL(n.attributes.href)}
+              onPress={() => openExternalLink(n.attributes?.href)}
             >
               {extractText(n)}
             </RNText>
@@ -539,35 +509,29 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
 });
 
-/**
- * Cross-platform markdown renderer using react-native-markdown-display
- * with selectable text support
- */
-function CrossPlatformMarkdownText({
-  text,
-  isDark,
-  style,
-}: {
-  text: string;
-  isDark: boolean;
-  style?: TextStyle;
-}) {
-  const rules = useMemo(() => createAndroidMarkdownRules(isDark), [isDark]);
-  const markdownStyles = useMemo(() => createAndroidMarkdownStyles(isDark), [isDark]);
+// react-native-markdown-display rebuilds its renderer (StyleSheet.create over
+// every style key) whenever one of these props changes identity, and its
+// defaults are new objects on every render. Module-level values keep one
+// renderer per theme and one markdown-it instance.
+const MARKDOWN_IT = MarkdownIt({ typographer: true });
+const LIGHT_MARKDOWN_RULES = createAndroidMarkdownRules(false);
+const DARK_MARKDOWN_RULES = createAndroidMarkdownRules(true);
+const LIGHT_MARKDOWN_STYLES = createAndroidMarkdownStyles(false);
+const DARK_MARKDOWN_STYLES = createAndroidMarkdownStyles(true);
+const TOP_LEVEL_MAX_EXCEEDED_ITEM = null;
+// The `image` rule never loads images. Without allowed handlers and a default
+// handler, the library's own image rule would render nothing as well.
+const ALLOWED_IMAGE_HANDLERS: string[] = [];
+const DEFAULT_IMAGE_HANDLER = null;
 
-  return (
-    <Markdown
-      style={markdownStyles}
-      rules={rules}
-      mergeStyle={true}
-    >
-      {text}
-    </Markdown>
-  );
-}
-
-// Keep old name as alias for backwards compatibility
-const AndroidMarkdownText = CrossPlatformMarkdownText;
+// The library's typings omit props its component accepts.
+type MarkdownRendererProps = MarkdownProps & {
+  children: string;
+  topLevelMaxExceededItem?: React.ReactNode;
+  allowedImageHandlers?: string[];
+  defaultImageHandler?: string | null;
+};
+const MarkdownRenderer = Markdown as unknown as React.ComponentType<MarkdownRendererProps>;
 
 /**
  * iOS Text Selection Modal
@@ -727,185 +691,6 @@ const drawerStyles = StyleSheet.create({
 });
 
 /**
- * Check if text contains markdown tables
- */
-function hasMarkdownTable(text: string): boolean {
-  return /\|.*\|[\r\n]+\|[\s:|-]+\|/.test(text);
-}
-
-/**
- * Check if text contains code blocks
- */
-function hasCodeBlocks(text: string): boolean {
-  return /```[\s\S]*?```/.test(text);
-}
-
-
-/**
- * Render a code block with copy button
- */
-function CodeBlock({
-  code,
-  language,
-  isDark,
-}: {
-  code: string;
-  language?: string;
-  isDark: boolean;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await Clipboard.setStringAsync(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      log.error('Failed to copy code:', err);
-    }
-  };
-
-  return (
-    <View style={[styles.codeBlock, isDark ? styles.codeBlockDark : styles.codeBlockLight]}>
-      <View style={[styles.codeBlockHeader, { borderBottomColor: isDark ? THEME.dark.border : THEME.light.border }]}>
-        <RNText style={[styles.codeBlockLanguage, isDark ? styles.darkText : styles.lightText]}>
-          {language || 'Code Block'}
-        </RNText>
-        <Pressable
-          onPress={handleCopy}
-          style={[styles.copyButton, isDark ? styles.copyButtonDark : styles.copyButtonLight]}>
-          <RNText style={[styles.copyButtonText, isDark ? styles.darkText : styles.lightText]}>
-            {copied ? 'Copied!' : 'Copy'}
-          </RNText>
-        </Pressable>
-      </View>
-      <RNText
-        style={[styles.codeBlockText, isDark ? styles.darkText : styles.lightText]}
-        selectable>
-        {code}
-      </RNText>
-    </View>
-  );
-}
-
-/**
- * Render a simple markdown table
- */
-function SimpleTable({ text, isDark }: { text: string; isDark: boolean }) {
-  const lines = text.split('\n');
-
-  return (
-    <View style={[styles.table, isDark ? styles.tableDark : styles.tableLight]}>
-      {lines.map((line, idx) => {
-        if (!line.includes('|')) return null;
-
-        const cells = line.split('|').filter((cell) => cell.trim());
-        const isSeparator = /^[\s:|-]+$/.test(cells[0]);
-
-        if (isSeparator) return null;
-
-        const isHeader = idx === 0;
-
-        return (
-          <View
-            key={idx}
-            style={[styles.tableRow, isDark ? styles.tableRowDark : styles.tableRowLight]}>
-            {cells.map((cell, cellIdx) => (
-              <View
-                key={cellIdx}
-                style={[
-                  styles.tableCell,
-                  isDark ? styles.tableCellDark : styles.tableCellLight,
-                  isHeader && styles.tableHeaderCell,
-                  isHeader && (isDark ? styles.tableHeaderCellDark : styles.tableHeaderCellLight),
-                ]}>
-                <RNText
-                  style={[
-                    styles.tableCellText,
-                    isDark ? styles.darkText : styles.lightText,
-                    isHeader && styles.tableHeaderText,
-                  ]}
-                  selectable>
-                  {cell.trim()}
-                </RNText>
-              </View>
-            ))}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-/**
- * Check if text contains a horizontal rule separator
- */
-function hasSeparator(text: string): boolean {
-  return /^(-{3,}|\*{3,}|_{3,})$/m.test(text);
-}
-
-/**
- * Check if a line is a separator
- */
-function isSeparatorLine(line: string): boolean {
-  return /^(-{3,}|\*{3,}|_{3,})$/.test(line.trim());
-}
-
-/**
- * Split text into blocks - only by separators
- * Don't split by links - let the markdown renderer handle them naturally
- * IMPORTANT: Trim blocks to remove leading/trailing newlines that cause extra height
- */
-function splitIntoBlocks(
-  text: string
-): Array<{ type: 'separator' | 'text'; content: string }> {
-  const lines = text.split('\n');
-  const blocks: Array<{ type: 'separator' | 'text'; content: string }> = [];
-
-  let currentBlock: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Check if this is a separator line
-    if (isSeparatorLine(line)) {
-      // Flush current block - TRIM to remove extra newlines
-      if (currentBlock.length > 0) {
-        const content = currentBlock.join('\n').trim();
-        if (content) {
-          blocks.push({
-            type: 'text',
-            content,
-          });
-        }
-        currentBlock = [];
-      }
-      // Add separator as its own block
-      blocks.push({
-        type: 'separator',
-        content: line,
-      });
-      continue;
-    }
-
-    currentBlock.push(line);
-  }
-
-  // Flush remaining block - TRIM to remove extra newlines
-  if (currentBlock.length > 0) {
-    const content = currentBlock.join('\n').trim();
-    if (content) {
-      blocks.push({
-        type: 'text',
-        content,
-      });
-    }
-  }
-
-  return blocks;
-}
-
-/**
  * Simple horizontal separator
  */
 function Separator({ isDark }: { isDark: boolean }) {
@@ -921,618 +706,107 @@ function Separator({ isDark }: { isDark: boolean }) {
 }
 
 /**
- * Count content characteristics for debugging
+ * One top-level markdown block. Memoized on its string, so a block that did not
+ * change while a message streams skips parsing and keeps its native views.
  */
-function analyzeContent(text: string): { lines: number; headings: number } {
-  const lines = text.split('\n').length;
-  const headingMatches = text.match(/^#{1,6}\s/gm);
-  const headings = headingMatches ? headingMatches.length : 0;
-  return { lines, headings };
-}
-
-
-/**
- * CALCULATED HEIGHT - NO MEASUREMENT, NO SHIFTING
- * 
- * Calculate the ACTUAL height needed based on visual line count.
- * Set container height directly = actually removes phantom space.
- * 
- * The target height IS the realHeight (visual lines × line height).
- */
-
-/**
- * Calculate real height based on visual lines (including text wrapping)
- * 
- * Key insight from user feedback:
- * - Char width was too large (0.5) causing over-estimation
- * - More accurate: ~0.38 for regular, ~0.42 for headings (bolder)
- * - Empty lines are very short
- * - List items (-) and checkmarks (✅) need special handling
- */
-// Common emoji regex - catches most Unicode emojis
-const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{231A}-\u{231B}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]/gu;
-
-function calculateRealHeight(text: string, screenWidth: number): number {
-  const horizontalPadding = 32; // ThreadPage uses paddingHorizontal: 16 each side
-  const availableWidth = screenWidth - horizontalPadding;
-
-  // Use runtime-tunable factors
-  const charWidth = MARKDOWN_FONT_SIZE * CHAR_WIDTH_FACTOR;
-  const headingCharWidth = 26 * HEADING_CHAR_FACTOR;
-  const charsPerLine = Math.floor(availableWidth / charWidth);
-  const headingCharsPerLine = Math.floor(availableWidth / headingCharWidth);
-
-  const lines = text.split('\n');
-  let totalHeight = 0;
-  let totalVisualLines = 0; // Track total visual lines for phantom calculation
-  let debugInfo: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    // Empty line
-    if (trimmed.length === 0) {
-      const h = MARKDOWN_LINE_HEIGHT * EMPTY_LINE_FACTOR;
-      totalHeight += h;
-      totalVisualLines += 0.5; // Empty lines add less phantom
-      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: empty → ${h.toFixed(0)}px`);
-      continue;
-    }
-
-    // Heading
-    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
-    if (headingMatch) {
-      const headingText = headingMatch[2]
-        .replace(/\*\*([^*]+)\*\*/g, '$1')
-        .replace(/\*([^*]+)\*/g, '$1')
-        .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width
-      const wrappedLines = Math.max(1, Math.ceil(headingText.length / headingCharsPerLine));
-      const h = wrappedLines * 36;
-      totalHeight += h;
-      totalVisualLines += wrappedLines;
-      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: h${headingMatch[1].length} ${headingText.length}ch → ${wrappedLines}vl × 36 = ${h}px`);
-      continue;
-    }
-
-    // Horizontal rule (---)
-    if (/^[-*_]{3,}$/.test(trimmed)) {
-      totalHeight += 12;
-      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: hr → 12px`);
-      continue;
-    }
-
-    // Regular line - calculate effective width accounting for bold
-    // Bold text is wider, so we expand it to simulate extra width
-    let effectiveLength = 0;
-
-    // First, handle bold: **text** → text takes ~15% more width
-    const boldRegex = /\*\*([^*]+)\*\*/g;
-    let lastIndex = 0;
-    let match;
-    let processedLine = line;
-
-    while ((match = boldRegex.exec(line)) !== null) {
-      // Regular text before bold
-      effectiveLength += match.index - lastIndex;
-      // Bold text is wider
-      effectiveLength += match[1].length * BOLD_WIDTH_FACTOR;
-      lastIndex = match.index + match[0].length;
-    }
-    // Remaining text after last bold
-    effectiveLength += line.length - lastIndex;
-
-    // Now strip other markdown for cleaner calculation
-    const cleanLine = processedLine
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/^[-*+]\s+/, '')  // List marker
-      .replace(/^\d+\.\s+/, '') // Numbered list
-      .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width (they're wider)
-
-    // Use the larger of clean length or effective length (bold-adjusted)
-    const charCount = Math.max(cleanLine.length, Math.round(effectiveLength));
-    const wrappedLines = Math.max(1, Math.ceil(charCount / charsPerLine));
-    const h = wrappedLines * MARKDOWN_LINE_HEIGHT;
-    totalHeight += h;
-    totalVisualLines += wrappedLines;
-    if (DEBUG_HEIGHTS) {
-      const boldNote = effectiveLength > cleanLine.length ? ` (${Math.round(effectiveLength)}eff)` : '';
-      debugInfo.push(`L${i}: ${cleanLine.length}ch${boldNote}/${charsPerLine}cpl → ${wrappedLines}vl × ${MARKDOWN_LINE_HEIGHT} = ${h}px`);
-    }
-  }
-
-  // Add phantom space: fixed base + tiny per-line with cap
-  // Cap prevents runaway on very long text (100+ lines)
-  const linePhantom = Math.min(totalVisualLines * LINE_PHANTOM_PX, MAX_LINE_PHANTOM);
-  const phantomSpace = Math.round(BASE_PHANTOM + linePhantom);
-  const finalHeight = totalHeight + phantomSpace;
-
-  if (DEBUG_HEIGHTS && debugInfo.length <= 10) {
-    const capNote = linePhantom >= MAX_LINE_PHANTOM ? ' [CAPPED]' : '';
-    log.log(`[MD] Breakdown (w=${availableWidth}, cpl=${charsPerLine}):\n  ${debugInfo.join('\n  ')}\n  TOTAL: ${totalHeight} + ${phantomSpace}px phantom (${BASE_PHANTOM}base + ${linePhantom.toFixed(1)}px line${capNote}) = ${finalHeight}px`);
-  }
-
-  return finalHeight;
-}
-
-/**
- * PURE CALCULATION - NO MEASUREMENT, NO STATE, NO ADJUSTMENT
- * 
- * Calculate height ONCE from text content and use it immediately.
- * NO onContentSizeChange (causes loops), NO useState (causes re-renders).
- * Just pure math → render → done.
- */
-function MeasuredMarkdownInput({
-  text,
-  isDark,
-  style,
-}: {
-  text: string;
-  isDark: boolean;
-  style?: TextStyle;
-}) {
-  const trimmedText = text.trimEnd();
-
-  // Calculate height ONCE - pure function, no state
-  const calculatedHeight = useMemo(() => {
-    const screenWidth = Dimensions.get('window').width;
-    const height = calculateRealHeight(trimmedText, screenWidth);
-
-    if (DEBUG_HEIGHTS) {
-      const preview = trimmedText.substring(0, 40).replace(/\n/g, '↵');
-      const { lines, headings } = analyzeContent(trimmedText);
-      log.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
-    }
-
-    return Math.max(MARKDOWN_LINE_HEIGHT, height);
-  }, [trimmedText]);
-
+const MarkdownBlock = memo(function MarkdownBlock({ text, isDark }: { text: string; isDark: boolean }) {
+  if (isMarkdownSeparatorBlock(text)) return <Separator isDark={isDark} />;
   return (
-    <View
-      style={{
-        height: calculatedHeight,
-        overflow: 'hidden',
-        ...(DEBUG_HEIGHTS ? { borderWidth: 1, borderColor: 'blue' } : {}),
-      }}
-      pointerEvents="box-none"
+    <MarkdownRenderer
+      style={isDark ? DARK_MARKDOWN_STYLES : LIGHT_MARKDOWN_STYLES}
+      rules={isDark ? DARK_MARKDOWN_RULES : LIGHT_MARKDOWN_RULES}
+      mergeStyle={true}
+      markdownit={MARKDOWN_IT}
+      onLinkPress={handleLibraryLinkPress}
+      topLevelMaxExceededItem={TOP_LEVEL_MAX_EXCEEDED_ITEM}
+      allowedImageHandlers={ALLOWED_IMAGE_HANDLERS}
+      defaultImageHandler={DEFAULT_IMAGE_HANDLER}
     >
-      <MarkdownTextInput
-        value={trimmedText}
-        onChangeText={() => { }}
-        parser={markdownParser}
-        markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-        style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
-        editable={false}
-        multiline
-        scrollEnabled={false}
-        caretHidden={true}
-        showSoftInputOnFocus={false}
-        selectTextOnFocus={false}
-        contextMenuHidden={Platform.OS === 'android'}
-        onFocus={() => Keyboard.dismiss()}
-      />
+      {text}
+    </MarkdownRenderer>
+  );
+});
+
+function MarkdownBlocks({ text, isDark }: { text: string; isDark: boolean }) {
+  const blocks = useMemo(() => splitMarkdownBlocks(text), [text]);
+  return (
+    <View>
+      {blocks.map((block, index) => (
+        // Position is the identity: streaming only appends, so block N stays block N.
+        <MarkdownBlock key={index} text={block} isDark={isDark} />
+      ))}
     </View>
   );
 }
 
+const DOUBLE_TAP_DELAY_MS = 300;
+
+function noop() {}
+
 /**
- * Render markdown - uses react-native-markdown-display for both platforms
- * On iOS: double-tap opens text selection modal
- * On Android: text is directly selectable
- * 
- * Note: MeasuredMarkdownInput (expensify library) is kept but not used by default.
- * It can be enabled for iOS if needed for specific use cases.
+ * iOS: a double tap opens the selection sheet. The sheet mounts on the first
+ * double tap, not with every text part, and stays mounted after dismiss.
+ * `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
+ * text, so it must have no press animation at all.
  */
-function MarkdownWithLinkHandling({
-  text,
-  isDark,
-  style,
-  needsSpacing,
-}: {
-  text: string;
-  isDark: boolean;
-  style?: TextStyle;
-  needsSpacing?: boolean;
-}) {
+function IOSSelectableMarkdown({ text, isDark }: { text: string; isDark: boolean }) {
   const bottomSheetRef = useRef<BottomSheetModal>(null);
-  const lastTapRef = useRef<number>(0);
-  const blocks = useMemo(() => splitIntoBlocks(text), [text]);
-  const hasAnySeparators = blocks.some((b) => b.type === 'separator');
+  const lastTapRef = useRef(0);
+  const presentOnMountRef = useRef(false);
+  const [sheetMounted, setSheetMounted] = useState(false);
 
-  // iOS: Double tap opens selection modal
+  useEffect(() => {
+    if (sheetMounted && presentOnMountRef.current) {
+      presentOnMountRef.current = false;
+      bottomSheetRef.current?.present();
+    }
+  }, [sheetMounted]);
+
   const handlePress = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      const now = Date.now();
-      const DOUBLE_TAP_DELAY = 300;
-      
-      if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
-        // Double tap detected
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        bottomSheetRef.current?.present();
-        lastTapRef.current = 0; // Reset
-      } else {
-        lastTapRef.current = now;
-      }
+    const now = Date.now();
+    if (now - lastTapRef.current >= DOUBLE_TAP_DELAY_MS) {
+      lastTapRef.current = now;
+      return;
     }
-  }, []);
-
-  const handleDismiss = useCallback(() => {
-    // Modal dismissed
-  }, []);
-
-  const renderContent = () => {
-    if (!hasAnySeparators) {
-      return (
-        <View style={needsSpacing ? styles.partSpacing : undefined}>
-          <CrossPlatformMarkdownText text={text} isDark={isDark} style={style} />
-        </View>
-      );
+    lastTapRef.current = 0;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (sheetMounted) {
+      bottomSheetRef.current?.present();
+    } else {
+      presentOnMountRef.current = true;
+      setSheetMounted(true);
     }
+  }, [sheetMounted]);
 
-    return (
-      <View style={needsSpacing ? styles.partSpacing : undefined}>
-        {blocks.map((block, idx) => {
-          if (!block.content.trim() && block.type !== 'separator') return null;
-
-          if (block.type === 'separator') {
-            return <Separator key={`sep-${idx}`} isDark={isDark} />;
-          } else {
-            return (
-              <View key={`txt-${idx}`}>
-                <CrossPlatformMarkdownText text={block.content} isDark={isDark} style={style} />
-              </View>
-            );
-          }
-        })}
-      </View>
-    );
-  };
-
-  // On iOS: wrap in a Pressable for double-tap detection (no visual feedback).
-  // `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
-  // text, so it must have no press animation at all. Pressable has no default
-  // opacity ramp, which is what the old `activeOpacity={1}` bought.
-  // On Android: just render content directly (text is natively selectable)
-  if (Platform.OS === 'ios') {
-    return (
-      <>
-        <Pressable onPress={handlePress}>
-          {renderContent()}
-        </Pressable>
-        <TextSelectionModal
-          sheetRef={bottomSheetRef}
-          text={text}
-          isDark={isDark}
-          onDismiss={handleDismiss}
-        />
-      </>
-    );
-  }
-
-  return renderContent();
+  return (
+    <>
+      <Pressable onPress={handlePress}>
+        <MarkdownBlocks text={text} isDark={isDark} />
+      </Pressable>
+      {sheetMounted ? (
+        <TextSelectionModal sheetRef={bottomSheetRef} text={text} isDark={isDark} onDismiss={noop} />
+      ) : null}
+    </>
+  );
 }
 
 /**
  * SelectableMarkdownText
  *
- * Renders markdown text with live formatting and full text selection support.
- * Code blocks and tables are rendered separately, everything else uses MarkdownTextInput.
+ * Renders markdown with selectable text: natively on Android, through a
+ * double-tap selection sheet on iOS.
  */
-export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
-  children,
-  style,
-  isDark: isDarkProp,
-}) => {
-  const { colorScheme } = useColorScheme();
-  const isDark = isDarkProp ?? colorScheme === 'dark';
+export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
+  function SelectableMarkdownText({ children, isDark: isDarkProp }: SelectableMarkdownTextProps) {
+    const { colorScheme } = useColorScheme();
+    const isDark = isDarkProp ?? colorScheme === 'dark';
 
-  // Ensure children is a string and trim trailing whitespace to prevent extra spacing on iOS
-  const text = typeof children === 'string'
-    ? children.trimEnd()
-    : String(children || '').trimEnd();
+    // Trailing whitespace would add empty space below the last block.
+    const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
 
-  // Split content by code blocks and tables
-  const contentParts = useMemo(() => {
-    // If block splitting is disabled, render everything as plain markdown
-    if (DISABLE_BLOCK_SPLITTING) {
-      return [{ type: 'markdown', content: text }];
+    if (Platform.OS === 'ios') {
+      return <IOSSelectableMarkdown text={text} isDark={isDark} />;
     }
-    
-    if (!hasMarkdownTable(text) && !hasCodeBlocks(text)) {
-      return [{ type: 'markdown', content: text }];
-    }
-
-    const parts: Array<{
-      type: 'markdown' | 'table' | 'code';
-      content: string;
-      language?: string;
-    }> = [];
-
-    // First split by code blocks
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    let lastIndex = 0;
-    let match;
-
-    while ((match = codeBlockRegex.exec(text)) !== null) {
-      // Add text before code block (trim to remove leading/trailing newlines)
-      if (match.index > lastIndex) {
-        const beforeText = text.substring(lastIndex, match.index).trim();
-        if (beforeText) {
-          parts.push({ type: 'markdown', content: beforeText });
-        }
-      }
-
-      // Add code block
-      parts.push({
-        type: 'code',
-        content: match[2].trim(),
-        language: match[1] || undefined,
-      });
-
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Add remaining text (trim to remove leading/trailing newlines)
-    if (lastIndex < text.length) {
-      const afterText = text.substring(lastIndex).trim();
-      if (afterText) {
-        parts.push({ type: 'markdown', content: afterText });
-      }
-    }
-
-    // If no code blocks, use original text
-    if (parts.length === 0) {
-      parts.push({ type: 'markdown', content: text });
-    }
-
-    // Now split markdown parts by tables
-    const finalParts: Array<{
-      type: 'markdown' | 'table' | 'code';
-      content: string;
-      language?: string;
-    }> = [];
-
-    for (const part of parts) {
-      if (part.type !== 'markdown' || !hasMarkdownTable(part.content)) {
-        finalParts.push(part);
-        continue;
-      }
-
-      // Split by tables
-      const lines = part.content.split('\n');
-      let currentMarkdown: string[] = [];
-      let currentTable: string[] = [];
-      let inTable = false;
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const nextLine = lines[i + 1];
-        const isTableStart = line.includes('|') && nextLine && /\|[\s:|-]+\|/.test(nextLine);
-
-        if (isTableStart && !inTable) {
-          if (currentMarkdown.length > 0) {
-            const markdownContent = currentMarkdown.join('\n').trim();
-            if (markdownContent) {
-              finalParts.push({ type: 'markdown', content: markdownContent });
-            }
-            currentMarkdown = [];
-          }
-          inTable = true;
-          currentTable.push(line);
-        } else if (inTable && line.includes('|')) {
-          currentTable.push(line);
-        } else if (inTable) {
-          finalParts.push({ type: 'table', content: currentTable.join('\n') });
-          currentTable = [];
-          inTable = false;
-          currentMarkdown.push(line);
-        } else {
-          currentMarkdown.push(line);
-        }
-      }
-
-      if (currentTable.length > 0) {
-        finalParts.push({ type: 'table', content: currentTable.join('\n') });
-      }
-      if (currentMarkdown.length > 0) {
-        const markdownContent = currentMarkdown.join('\n').trim();
-        if (markdownContent) {
-          finalParts.push({ type: 'markdown', content: markdownContent });
-        }
-      }
-    }
-
-    return finalParts;
-  }, [text]);
-
-  // Render all parts
-  if (
-    contentParts.length > 1 ||
-    (contentParts.length === 1 && contentParts[0].type !== 'markdown')
-  ) {
-    return (
-      <View style={styles.partsContainer}>
-        {contentParts.map((part, idx) => {
-          // Check if we need spacing (skip if current or previous part is just whitespace)
-          const needsSpacing = idx > 0 && part.content.trim().length > 0;
-
-          if (part.type === 'table') {
-            return <SimpleTable key={idx} text={part.content} isDark={isDark} />;
-          }
-
-          if (part.type === 'code') {
-            return (
-              <CodeBlock
-                key={idx}
-                code={part.content}
-                language={'language' in part ? part.language : undefined}
-                isDark={isDark}
-              />
-            );
-          }
-
-          if (!part.content.trim()) return null;
-
-          return (
-            <MarkdownWithLinkHandling
-              key={idx}
-              text={part.content}
-              isDark={isDark}
-              style={style}
-              needsSpacing={needsSpacing}
-            />
-          );
-        })}
-      </View>
-    );
-  }
-
-  // Pure markdown
-  return <MarkdownWithLinkHandling text={text} isDark={isDark} style={style} />;
-};
-
-const styles = StyleSheet.create({
-  partsContainer: {
-    // No extra spacing - handled by partSpacing on children
+    return <MarkdownBlocks text={text} isDark={isDark} />;
   },
-  partSpacing: {
-    marginTop: 8, // Fixed 8px spacing between all parts
-  },
-  base: {
-    fontSize: MARKDOWN_FONT_SIZE,
-    lineHeight: MARKDOWN_LINE_HEIGHT,
-    fontFamily: 'Roobert-Regular',
-    padding: 0,
-    margin: 0,
-    paddingLeft: 0,
-    paddingRight: 0,
-    paddingTop: 0,
-    paddingBottom: 0,
-    marginLeft: 0,
-    marginRight: 0,
-    marginTop: 0,
-    marginBottom: 0,
-    textAlignVertical: 'top',
-  } as any, // Cast to any because getters aren't in StyleSheet types
-  lightText: {
-    color: THEME.light.foreground,
-  },
-  darkText: {
-    color: THEME.dark.foreground,
-  },
-  table: {
-    borderWidth: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
-    marginVertical: 8,
-  },
-  // Light and dark tables are deliberately asymmetric, as they were before:
-  // the light table sits flush on the page (`background`), the dark table is a
-  // raised surface (`card`) so it reads against the near-black page.
-  tableLight: {
-    borderColor: THEME.light.border,
-    backgroundColor: THEME.light.background,
-  },
-  tableDark: {
-    borderColor: THEME.dark.border,
-    backgroundColor: THEME.dark.card,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-  },
-  tableRowLight: {
-    borderBottomColor: THEME.light.border,
-  },
-  tableRowDark: {
-    borderBottomColor: THEME.dark.border,
-  },
-  tableCell: {
-    flex: 1,
-    padding: 12,
-    borderRightWidth: 1,
-  },
-  tableCellLight: {
-    borderRightColor: THEME.light.border,
-  },
-  tableCellDark: {
-    borderRightColor: THEME.dark.border,
-  },
-  tableHeaderCell: {
-    paddingVertical: 10,
-  },
-  // Header fill is one step off the table fill in each theme, so a header row
-  // stays distinguishable from the body: lighter->`muted` in light mode,
-  // `card`->`muted` (i.e. lighter) in dark mode.
-  tableHeaderCellLight: {
-    backgroundColor: THEME.light.muted,
-  },
-  tableHeaderCellDark: {
-    backgroundColor: THEME.dark.muted,
-  },
-  tableCellText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  tableHeaderText: {
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  codeBlock: {
-    borderRadius: 24,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginVertical: 8,
-  },
-  // Same `card` surface the markdown `fence`/`code_block` styles use, so both
-  // code-block renderers agree on one token.
-  codeBlockLight: {
-    borderColor: THEME.light.border,
-    backgroundColor: THEME.light.card,
-  },
-  codeBlockDark: {
-    borderColor: THEME.dark.border,
-    backgroundColor: THEME.dark.card,
-  },
-  codeBlockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  codeBlockLanguage: {
-    fontSize: 12,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    opacity: 0.5,
-    letterSpacing: 0.8,
-  },
-  copyButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  // `--hover` is exactly this: a black overlay in light mode, a white overlay
-  // in dark mode, at the app's own hover alpha step.
-  copyButtonLight: {
-    backgroundColor: THEME.light.hover,
-  },
-  copyButtonDark: {
-    backgroundColor: THEME.dark.hover,
-  },
-  copyButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  codeBlockText: {
-    fontFamily: 'Menlo, Monaco, Courier New, monospace',
-    fontSize: 14,
-    lineHeight: 20,
-    padding: 16,
-  },
-});
+);

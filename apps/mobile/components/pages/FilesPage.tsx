@@ -10,8 +10,11 @@ import {
   View,
   Pressable,
   ScrollView,
+  FlatList,
+  type ListRenderItem,
   Alert,
   RefreshControl,
+  type LayoutChangeEvent,
   Keyboard,
   ActivityIndicator,
   TextInput,
@@ -119,6 +122,13 @@ function getBreadcrumbSegments(path: string) {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+// Flattened rows for the virtualized browser: a section header, one file
+// (list view), or up to two files side by side (grid view).
+type FileListRow =
+  | { kind: 'header'; key: string; section: 'folders' | 'files'; spaced: boolean }
+  | { kind: 'file'; key: string; file: SandboxFile }
+  | { kind: 'pair'; key: string; files: SandboxFile[] };
+
 export interface FilesPageRef {
   showHidden: boolean;
   viewMode: 'list' | 'grid';
@@ -202,9 +212,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(savedTabState?.selectedFile ?? null);
 
   const [scrollOffsets, setScrollOffsets] = useState<Record<string, number>>(savedTabState?.scrollOffsets ?? {});
-  const listScrollRef = useRef<ScrollView>(null);
-  const gridScrollRef = useRef<ScrollView>(null);
+  const listScrollRef = useRef<FlatList<FileListRow>>(null);
+  const gridScrollRef = useRef<FlatList<FileListRow>>(null);
   const restoredScrollKeysRef = useRef<Record<string, true>>({});
+  // A saved offset waiting for the FlatList to lay out enough rows. FlatList
+  // renders rows in batches and Android clamps scrollToOffset to the current
+  // content height, so the restore retries on every content size change.
+  const pendingRestoreRef = useRef<{ key: string; offset: number } | null>(null);
+  const listViewportHeightRef = useRef(0);
 
   // Create folder / rename bottom sheets
   const createFolderSheetRef = useRef<BottomSheetModal>(null);
@@ -281,20 +296,56 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     scrollOffsets,
   ]);
 
+  const finishScrollRestore = useCallback(() => {
+    const pending = pendingRestoreRef.current;
+    if (!pending) return;
+    restoredScrollKeysRef.current[pending.key] = true;
+    pendingRestoreRef.current = null;
+  }, []);
+
+  // Scrolls to the pending offset. It is done once the content is tall enough
+  // to hold the offset below a full viewport; otherwise the next content size
+  // change (the next rendered batch) tries again.
+  const applyScrollRestore = useCallback(
+    (contentHeight?: number) => {
+      const pending = pendingRestoreRef.current;
+      if (!pending || pending.key !== scrollKey) return;
+      const list = viewMode === 'grid' ? gridScrollRef.current : listScrollRef.current;
+      if (!list) return;
+      list.scrollToOffset({ offset: pending.offset, animated: false });
+      const viewportHeight = listViewportHeightRef.current;
+      if (
+        contentHeight !== undefined &&
+        viewportHeight > 0 &&
+        contentHeight >= pending.offset + viewportHeight
+      ) {
+        finishScrollRestore();
+      }
+    },
+    [scrollKey, viewMode, finishScrollRestore],
+  );
+
   useEffect(() => {
     const savedOffset = scrollOffsets[scrollKey] ?? 0;
-    if (savedOffset <= 0) return;
-    if (restoredScrollKeysRef.current[scrollKey]) return;
-    const timer = setTimeout(() => {
-      if (viewMode === 'grid') {
-        gridScrollRef.current?.scrollTo({ x: 0, y: savedOffset, animated: false });
-      } else {
-        listScrollRef.current?.scrollTo({ x: 0, y: savedOffset, animated: false });
-      }
-      restoredScrollKeysRef.current[scrollKey] = true;
-    }, 40);
+    if (savedOffset <= 0 || restoredScrollKeysRef.current[scrollKey]) {
+      pendingRestoreRef.current = null;
+      return;
+    }
+    if (pendingRestoreRef.current?.key === scrollKey) return;
+    pendingRestoreRef.current = { key: scrollKey, offset: savedOffset };
+    // First attempt for a list that is already laid out.
+    const timer = setTimeout(() => applyScrollRestore(), 40);
     return () => clearTimeout(timer);
-  }, [scrollOffsets, scrollKey, viewMode]);
+  }, [scrollOffsets, scrollKey, applyScrollRestore]);
+
+  const handleListContentSizeChange = useCallback(
+    (_width: number, height: number) => applyScrollRestore(height),
+    [applyScrollRestore],
+  );
+
+  const handleListLayout = useCallback((e: LayoutChangeEvent) => {
+    listViewportHeightRef.current = e.nativeEvent.layout.height;
+  }, []);
 
   // Separate folders and files, sorted, with dotfile filtering
   const { folders, regularFiles } = useMemo(() => {
@@ -446,12 +497,113 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const handleFilesScroll = useCallback(
     (offsetY: number) => {
       const y = Math.max(0, Math.floor(offsetY || 0));
+      const pending = pendingRestoreRef.current;
+      if (pending && pending.key === scrollKey) {
+        // Scroll events from the restore itself (including clamped ones) are
+        // not saved. Landing on the saved offset completes the restore.
+        if (Math.abs(y - pending.offset) <= 1) finishScrollRestore();
+        return;
+      }
       setScrollOffsets((prev) => {
         if (Math.abs((prev[scrollKey] ?? 0) - y) < 24) return prev;
         return { ...prev, [scrollKey]: y };
       });
     },
-    [scrollKey],
+    [scrollKey, finishScrollRestore],
+  );
+
+  // Virtualized rows for the active view mode. Folders come before files, each
+  // under its section header; grid view pairs files two per row.
+  const fileRows = useMemo<FileListRow[]>(() => {
+    const rows: FileListRow[] = [];
+    const addSection = (section: 'folders' | 'files', items: SandboxFile[]) => {
+      if (items.length === 0) return;
+      rows.push({
+        kind: 'header',
+        key: `header:${section}`,
+        section,
+        spaced: section === 'files' && folders.length > 0,
+      });
+      if (viewMode === 'grid') {
+        for (let i = 0; i < items.length; i += 2) {
+          rows.push({ kind: 'pair', key: items[i].path, files: items.slice(i, i + 2) });
+        }
+      } else {
+        for (const item of items) rows.push({ kind: 'file', key: item.path, file: item });
+      }
+    };
+    addSection('folders', folders);
+    addSection('files', regularFiles);
+    return rows;
+  }, [folders, regularFiles, viewMode]);
+
+  const fileRowKey = useCallback((row: FileListRow) => row.key, []);
+
+  const sectionLabelColor = isDark
+    ? withAlpha(THEME.dark.foreground, 0.4)
+    : withAlpha(THEME.light.foreground, 0.4);
+
+  const renderListRow = useCallback<ListRenderItem<FileListRow>>(
+    ({ item }) => {
+      if (item.kind === 'header') {
+        return (
+          <Text
+            className={`font-roobert-medium mb-2 uppercase tracking-wider px-1${item.spaced ? ' mt-2' : ''}`}
+            style={{ fontSize: 12, color: sectionLabelColor }}
+          >
+            {item.section === 'folders' ? 'Folders' : 'Files'}
+          </Text>
+        );
+      }
+      if (item.kind !== 'file') return null;
+      return (
+        <FileItem
+          file={item.file}
+          onPress={handleFilePress}
+          onLongPress={handleFileLongPress}
+        />
+      );
+    },
+    [sectionLabelColor, handleFilePress, handleFileLongPress],
+  );
+
+  const renderGridRow = useCallback<ListRenderItem<FileListRow>>(
+    ({ item }) => {
+      if (item.kind === 'header') {
+        return (
+          <View className={item.section === 'folders' ? 'px-4 pt-4' : 'px-4 pt-2'}>
+            <Text
+              className="font-roobert-medium mb-3 uppercase tracking-wider"
+              style={{ fontSize: 12, color: sectionLabelColor }}
+            >
+              {item.section === 'folders' ? 'Folders' : 'Files'}
+            </Text>
+          </View>
+        );
+      }
+      if (item.kind !== 'pair') return null;
+      return (
+        <View className="px-4">
+          <View className="flex-row" style={{ marginHorizontal: -4 }}>
+            {item.files.map((file) => (
+              <View
+                key={file.path}
+                style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}
+              >
+                <FileRowCard
+                  file={file}
+                  isDark={isDark}
+                  fgColor={fgColor}
+                  onPress={handleFilePress}
+                  onLongPress={handleFileLongPress}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
+      );
+    },
+    [sectionLabelColor, isDark, fgColor, handleFilePress, handleFileLongPress],
   );
 
   const handleOpenPath = useCallback((path: string) => {
@@ -856,7 +1008,6 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           </View>
         ) : !files || files.length === 0 ? (
           <ScrollView
-            ref={listScrollRef}
             className="flex-1"
             contentContainerStyle={{
               flexGrow: 1,
@@ -867,6 +1018,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             }}
             scrollEventThrottle={100}
             onScroll={(e) => handleFilesScroll(e.nativeEvent.contentOffset.y)}
+            onScrollBeginDrag={finishScrollRestore}
             refreshControl={
               <RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />
             }
@@ -982,146 +1134,45 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           </ScrollView>
         ) : viewMode === 'grid' ? (
           /* ── Grid View ── */
-          <ScrollView
+          <FlatList
             ref={gridScrollRef}
+            data={fileRows}
+            renderItem={renderGridRow}
+            keyExtractor={fileRowKey}
             className="flex-1"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 20 }}
             scrollEventThrottle={100}
             onScroll={(e) => handleFilesScroll(e.nativeEvent.contentOffset.y)}
+            onScrollBeginDrag={finishScrollRestore}
+            onContentSizeChange={handleListContentSizeChange}
+            onLayout={handleListLayout}
             refreshControl={
               <RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />
             }
-          >
-            {/* Folders */}
-            {folders.length > 0 && (
-              <View className="px-4 pt-4">
-                <Text
-                  className="font-roobert-medium mb-3 uppercase tracking-wider"
-                  style={{
-                    fontSize: 12,
-                    color: isDark
-                      ? withAlpha(THEME.dark.foreground, 0.4)
-                      : withAlpha(THEME.light.foreground, 0.4),
-                  }}
-                >
-                  Folders
-                </Text>
-                <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                  {folders.map((file) => (
-                    <View
-                      key={file.path}
-                      style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}
-                    >
-                      <FileRowCard
-                        file={file}
-                        isDark={isDark}
-                        fgColor={fgColor}
-                        onPress={() => handleFilePress(file)}
-                        onLongPress={() => handleFileLongPress(file)}
-                      />
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* Files */}
-            {regularFiles.length > 0 && (
-              <View className="px-4 pt-2">
-                <Text
-                  className="font-roobert-medium mb-3 uppercase tracking-wider"
-                  style={{
-                    fontSize: 12,
-                    color: isDark
-                      ? withAlpha(THEME.dark.foreground, 0.4)
-                      : withAlpha(THEME.light.foreground, 0.4),
-                  }}
-                >
-                  Files
-                </Text>
-                <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
-                  {regularFiles.map((file) => (
-                    <View
-                      key={file.path}
-                      style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}
-                    >
-                      <FileRowCard
-                        file={file}
-                        isDark={isDark}
-                        fgColor={fgColor}
-                        onPress={() => handleFilePress(file)}
-                        onLongPress={() => handleFileLongPress(file)}
-                      />
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-          </ScrollView>
+          />
         ) : (
           /* ── List View ── */
-          <ScrollView
+          <FlatList
             ref={listScrollRef}
+            data={fileRows}
+            renderItem={renderListRow}
+            keyExtractor={fileRowKey}
             className="flex-1 px-4 pt-3"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20 }}
+            // A folders-only listing keeps the section's bottom margin (mb-2).
+            contentContainerStyle={{
+              paddingBottom: folders.length > 0 && regularFiles.length === 0 ? 28 : 20,
+            }}
             scrollEventThrottle={100}
             onScroll={(e) => handleFilesScroll(e.nativeEvent.contentOffset.y)}
+            onScrollBeginDrag={finishScrollRestore}
+            onContentSizeChange={handleListContentSizeChange}
+            onLayout={handleListLayout}
             refreshControl={
               <RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />
             }
-          >
-            {/* Folders section */}
-            {folders.length > 0 && (
-              <View className="mb-2">
-                <Text
-                  className="font-roobert-medium mb-2 uppercase tracking-wider px-1"
-                  style={{
-                    fontSize: 12,
-                    color: isDark
-                      ? withAlpha(THEME.dark.foreground, 0.4)
-                      : withAlpha(THEME.light.foreground, 0.4),
-                  }}
-                >
-                  Folders
-                </Text>
-                {folders.map((file) => (
-                  <FileItem
-                    key={file.path}
-                    file={file}
-                    onPress={handleFilePress}
-                    onLongPress={handleFileLongPress}
-                  />
-                ))}
-              </View>
-            )}
-
-            {/* Files section */}
-            {regularFiles.length > 0 && (
-              <View>
-                <Text
-                  className="font-roobert-medium mb-2 uppercase tracking-wider px-1"
-                  style={{
-                    fontSize: 12,
-                    color: isDark
-                      ? withAlpha(THEME.dark.foreground, 0.4)
-                      : withAlpha(THEME.light.foreground, 0.4),
-                  }}
-                >
-                  Files
-                </Text>
-                {regularFiles.map((file) => (
-                  <FileItem
-                    key={file.path}
-                    file={file}
-                    onPress={handleFilePress}
-                    onLongPress={handleFileLongPress}
-                  />
-                ))}
-              </View>
-            )}
-          </ScrollView>
+          />
         )}
       </View>
 
@@ -1556,7 +1607,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
 // so folders and files share identical card chrome. Icon uses the same
 // monochrome mapping as the web file tree and the FileItem list view.
 
-function FileRowCard({
+const FileRowCard = React.memo(function FileRowCard({
   file,
   isDark,
   fgColor,
@@ -1566,16 +1617,16 @@ function FileRowCard({
   file: SandboxFile;
   isDark: boolean;
   fgColor: string;
-  onPress: () => void;
-  onLongPress: () => void;
+  onPress: (file: SandboxFile) => void;
+  onLongPress: (file: SandboxFile) => void;
 }) {
   const IconComponent = getFileIconComponent(file);
   const iconColor = getMutedIconColor(isDark);
 
   return (
     <Pressable
-      onPress={() => { haptics.tap(); onPress(); }}
-      onLongPress={() => { haptics.medium(); onLongPress(); }}
+      onPress={() => { haptics.tap(); onPress(file); }}
+      onLongPress={() => { haptics.medium(); onLongPress(file); }}
       className="flex-row items-center rounded-xl border active:opacity-70"
       style={{
         borderColor: isDark
@@ -1602,4 +1653,4 @@ function FileRowCard({
       </Text>
     </Pressable>
   );
-}
+});

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { ToastComponent, Toast, ToastType } from './toast';
 
@@ -22,15 +22,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setActiveToast({ id: `${idRef.current}`, message, type });
   }, []);
 
-  const toast = {
-    error: (message: string) => show(message, 'error'),
-    success: (message: string) => show(message, 'success'),
-    info: (message: string) => show(message, 'info'),
-    warning: (message: string) => show(message, 'warning'),
-  };
+  const value = useMemo<ToastContextType>(
+    () => ({
+      toast: {
+        error: (message: string) => show(message, 'error'),
+        success: (message: string) => show(message, 'success'),
+        info: (message: string) => show(message, 'info'),
+        warning: (message: string) => show(message, 'warning'),
+      },
+    }),
+    [show]
+  );
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={value}>
       {children}
       {activeToast ? (
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>

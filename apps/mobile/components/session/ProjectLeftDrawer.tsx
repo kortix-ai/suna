@@ -1,215 +1,138 @@
 /**
- * ProjectLeftDrawer — the self-contained left drawer for the project screen.
+ * ProjectLeftDrawer — the project sidebar. It opens full width from every
+ * project page (the hamburger, or an edge swipe on any project route).
  *
- * Lifted verbatim out of ProjectScreenLegacy.tsx (Task 6). It owns its own data
- * (project-sessions, kortix projects, OpenCode sessions, accounts) and mounts its
- * own overlay (CommandPalette), so the screen that renders
- * it can stay small. The three private helpers (AnimatedCollapsible, AnimatedChevron,
- * ProjectSessionListItem) and SessionStatusDot are intentional duplicates of the
- * legacy copies; the duplication is resolved when Task 12 deletes the legacy file.
+ * Top to bottom:
+ * - Header row: Kortix logomark, not tappable. No close button: an edge
+ *   swipe closes the drawer.
+ * - Nav pills: Sessions (→ /projects/[id]/sessions), Files
+ *   (→ /projects/[id]/files), All projects (→ Projects list).
+ * - The project's 20 most recent sessions (status mark · title, newest
+ *   activity first; the session on screen is highlighted), then Previous chats. This list scrolls. The Sessions
+ *   pill opens the full list.
+ * - Pinned bottom bar over a fade of the drawer surface: New session (large
+ *   primary pill) · the user's profile photo (→ the Account page at
+ *   /projects/[id]/account).
  *
- * The JSX below is legacy: raw Ionicons + `isDark ? THEME.dark.x : THEME.light.x`
- * color lookups replace the old inline hex literals (RNR migration, Task 27).
+ * Every action closes the drawer first. The Projects list opens only with
+ * `router.replace('/projects')`: the project replaced the list when it
+ * opened, so the list is not under it. Sessions, Files, and Account go
+ * through `onNavigateRoute` (ProjectScreen): a push over project home, or a
+ * replace of the screen that covers home, so the project stack stays one
+ * screen deep (lib/session/project-stack). New session returns to project
+ * home and pops a covering screen. A navigation guard ignores a second tap
+ * while the drawer closes, so a double tap never navigates twice.
+ *
+ * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { View, ScrollView, ActivityIndicator, Animated } from 'react-native';
-import { Text } from '@/components/ui/text';
-import { Button } from '@/components/ui/button';
-import { THEME } from '@/lib/utils/theme';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
-import { ChevronsUpDown } from 'lucide-react-native';
-import Svg, { Circle } from 'react-native-svg';
-import { chalkColors } from '@kortix/shared';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Folder, LayoutGrid, MessagesSquare, Plus, type LucideIcon } from 'lucide-react-native';
+import { useDrawerProgress } from 'react-native-drawer-layout';
+import { useAnimatedReaction } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
-import { useAuthContext } from '@/contexts';
-import { useSessions } from '@/lib/platform/hooks';
-import { useProjectSessions } from '@/lib/projects/hooks';
-import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
-import { useKortixProjects, type KortixProject } from '@/lib/kortix';
-import { useTabStore } from '@/stores/tab-store';
-import { CommandPalette } from '@/components/session/CommandPalette';
-import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
+import { SessionStatusMark } from '@/components/session/SessionStatusMark';
+import { ProfilePicture } from '@/components/settings/ProfilePicture';
+import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
+import { useProjectSessions } from '@/lib/projects/hooks';
+import type { ProjectSession } from '@/lib/projects/projects-client';
+import {
+  PROJECT_ACCOUNT_ROUTE,
+  PROJECT_FILES_ROUTE,
+  PROJECT_SESSIONS_ROUTE,
+  type ProjectDrawerRoute,
+} from '@/lib/session/project-stack';
+import {
+  recentSessions,
+  sessionDisplayStatus,
+  sessionDisplayTitle,
+  sessionStatusLabel,
+} from '@/lib/session/session-list';
+import { cn } from '@/lib/utils/index';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
-// ─── Animated collapsible wrapper ────────────────────────────────────────────
+/** `Button size="lg"` height: the New session pill and the avatar match it. */
+const BAR_CONTROL_HEIGHT = 44;
+/** Gap between the bottom bar's controls and the safe-area edge. */
+const BAR_BOTTOM_GAP = 16;
+/** How far the bottom bar's fade reaches above its controls. */
+const BAR_FADE_ABOVE = 36;
+/** Space between the last scroll row and the bottom bar's controls. */
+const LIST_END_GAP = 16;
+/** Sessions listed in the drawer. The Sessions pill opens the full list. */
+const DRAWER_RECENT_SESSIONS = 20;
+/** Drawer progress at or below this counts as closed (fully off screen). */
+const DRAWER_CLOSED_PROGRESS = 0.01;
 
-function AnimatedCollapsible({
-  expanded,
-  children,
-}: {
-  expanded: boolean;
-  children: React.ReactNode;
-}) {
-  const [contentHeight, setContentHeight] = useState(0);
-  const anim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.timing(anim, {
-      toValue: expanded ? 1 : 0,
-      duration: 250,
-      useNativeDriver: false,
-    }).start();
-  }, [expanded, anim]);
-
-  const animatedHeight =
-    contentHeight > 0
-      ? anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, contentHeight],
-        })
-      : undefined;
-
-  const opacity = anim.interpolate({
-    inputRange: [0, 0.3, 1],
-    outputRange: [0, 0, 1],
-  });
-
-  return (
-    <View>
-      {/* Hidden measurer — always present, unconstrained by animated height */}
-      <View
-        style={{ position: 'absolute', opacity: 0, zIndex: -1, left: 0, right: 0 }}
-        pointerEvents="none"
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          if (h > 0 && h !== contentHeight) setContentHeight(h);
-        }}>
-        {children}
-      </View>
-      {/* Animated container */}
-      <Animated.View style={{ height: animatedHeight, opacity, overflow: 'hidden' }}>
-        {children}
-      </Animated.View>
-    </View>
-  );
-}
-
-// ─── Animated chevron ───────────────────────────────────────────────────────
-
-function AnimatedChevron({
-  expanded,
-  color,
-  size = 16,
-}: {
-  expanded: boolean;
-  color: string;
-  size?: number;
-}) {
-  const rotation = useRef(new Animated.Value(expanded ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.timing(rotation, {
-      toValue: expanded ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [expanded, rotation]);
-
-  const rotate = rotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-90deg', '0deg'],
-  });
-
-  return (
-    <Animated.View style={{ transform: [{ rotate }] }}>
-      <Ionicons name="chevron-down" size={size} color={color} />
-    </Animated.View>
-  );
-}
-
-// ─── Session status dot (dependency of ProjectSessionListItem) ───────────────
-
-function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const isProvisioning = status === 'queued' || status === 'branching' || status === 'provisioning';
-  const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!isProvisioning) {
-      spin.setValue(0);
-      return;
-    }
-    const animation = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      })
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [isProvisioning, spin]);
-
-  const rotate = spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const color = isProvisioning
-    ? THEME.accent.yellow
-    : status === 'running'
-      ? THEME.accent.green
-      : status === 'stopped'
-        ? isDark
-          ? THEME.dark.mutedForeground
-          : THEME.light.mutedForeground
-        : status === 'completed'
-          ? THEME.accent.green
-          : THEME.accent.red;
-
-  return (
-    <View className="h-4 w-4 shrink-0 items-center justify-center">
-      <Animated.View style={isProvisioning ? { transform: [{ rotate }] } : undefined}>
-        <Svg height={16} width={16} viewBox="0 0 16 16">
-          <Circle
-            cx={8}
-            cy={8}
-            r={6.3}
-            stroke={color}
-            fill="none"
-            strokeWidth={1.5}
-            strokeDasharray="3 3.4"
-          />
-          {(isProvisioning || status === 'failed') && <Circle cx={8} cy={8} r={4} fill={color} />}
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
-
-// ─── Session list item ───────────────────────────────────────────────────────
+// ─── Session row ─────────────────────────────────────────────────────────────
 
 function ProjectSessionListItem({
   item,
-  isActive,
+  active,
   onPress,
 }: {
   item: ProjectSession;
-  isActive: boolean;
+  /** The session on screen: `bg-accent` at rest and the `selected` state. */
+  active: boolean;
   onPress: (s: ProjectSession) => void;
 }) {
-  const title = item.name || item.branch_name || 'New session';
+  const title = sessionDisplayTitle(item);
+  const status = sessionDisplayStatus(item);
 
   return (
-    <Button
-      variant="ghost"
+    <Pressable
       onPress={() => onPress(item)}
-      className={`h-auto w-auto flex-row items-center justify-start mb-1 rounded-2xl px-3 py-2.5 active:opacity-70 ${isActive ? 'bg-muted' : ''}`}>
-      <View className="flex-row items-center gap-2">
-        <SessionStatusDot status={item.status} />
-        <Text
-          className={`flex-1 text-sm ${isActive ? 'font-semibold text-foreground' : 'text-foreground'}`}
-          numberOfLines={1}>
-          {title}
-        </Text>
-      </View>
-    </Button>
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${sessionStatusLabel(status)}`}
+      accessibilityState={{ selected: active }}
+      className={cn(
+        'flex-row items-center gap-3 rounded-xl active:bg-accent',
+        'px-3 py-2',
+        active && 'bg-accent'
+      )}>
+      <SessionStatusMark status={status} />
+      <Text className="flex-1" numberOfLines={1}>
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ─── Nav pill ────────────────────────────────────────────────────────────────
+
+function NavPill({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="flex-row items-center gap-3 rounded-full px-4 py-3 active:bg-accent">
+      <Icon as={icon} size={18} strokeWidth={2.2} className="shrink-0 text-foreground" />
+      <Text className="font-medium" numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -217,25 +140,26 @@ function ProjectSessionListItem({
 
 export interface ProjectLeftDrawerProps {
   projectId: string;
-  /** The Kortix project-session row id currently open, for the active-row highlight. */
-  activeProjectSessionId: string | null;
-  /** Sandbox url of the open session, or undefined on project home. Gates the
-   *  projects tree and the command palette's sandbox-scoped search, exactly as
-   *  the legacy screen did. */
-  sessionSandboxUrl?: string;
-  /** New session (row and command palette): open project home, whose composer starts the session. */
+  /**
+   * The project session on screen (an open thread or a connecting session).
+   * Its row is highlighted; tapping it only closes the drawer (ProjectScreen).
+   */
+  activeProjectSessionId?: string | null;
+  /** New session: open project home, whose composer starts the session. */
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
-  /** Close the drawer. Every row calls this before navigating. */
+  /** Sessions, Files, or Account: push over home, or replace the covering screen. */
+  onNavigateRoute: (route: ProjectDrawerRoute) => void;
+  /** Close the drawer. Every action calls this before it navigates. */
   onClose: () => void;
 }
 
 export function ProjectLeftDrawer({
   projectId,
-  activeProjectSessionId,
-  sessionSandboxUrl,
+  activeProjectSessionId = null,
   onNewSession,
   onOpenProjectSession,
+  onNavigateRoute,
   onClose,
 }: ProjectLeftDrawerProps): React.ReactElement {
   const router = useRouter();
@@ -243,298 +167,189 @@ export function ProjectLeftDrawer({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  // ── Data the drawer owns ──
-  const { data: projectSessions = [], isLoading: projectSessionsLoading } =
-    useProjectSessions(projectId);
-  const { data: kortixProjects } = useKortixProjects(sessionSandboxUrl);
-  const sortedProjects = useMemo(() => {
-    if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
-    return [...kortixProjects].sort(
-      (a: KortixProject, b: KortixProject) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [kortixProjects]);
-  // The OpenCode session list the command palette receives — a different list
-  // from the Kortix project-session rows the drawer lists above.
-  const { data: sessions = [] } = useSessions(sessionSandboxUrl);
+  // The drawer stays mounted while a root screen (Billing, a settings page)
+  // covers the project.
+  // Poll for provisioning rows only while the project screen is focused.
+  const isFocused = useIsFocused();
+  const { data: projectSessions = [], isLoading: projectSessionsLoading } = useProjectSessions(
+    projectId,
+    { poll: isFocused }
+  );
+  const recent = useMemo(
+    () => recentSessions(projectSessions, DRAWER_RECENT_SESSIONS),
+    [projectSessions]
+  );
+  // The Account page's photo and name, so both surfaces show the same person.
+  const profile = useProfileEditor();
 
-  // ── Collapsible section state ──
-  const [sessionsExpanded, setSessionsExpanded] = useState(true);
-  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  // The bar's controls sit 16pt above the safe-area edge (home indicator).
+  const barBottom = insets.bottom + BAR_BOTTOM_GAP;
+  // The fade starts BAR_FADE_ABOVE over the controls and reaches the screen edge.
+  const fadeHeight = barBottom + BAR_CONTROL_HEIGHT + BAR_FADE_ABOVE;
+  // The list scrolls under the fade; its last row must rest above the controls.
+  const listBottomPadding = barBottom + BAR_CONTROL_HEIGHT + LIST_END_GAP;
 
-  // ── Overlays this drawer mounts ──
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // ── Navigation guard ──
+  // A second tap on a pill before the drawer has closed would navigate a
+  // second time. The first navigating tap sets the guard; it resets when the
+  // drawer's visibility flips (fully closed, or visible again). The drawer
+  // content stays mounted while closed, so the reset is driven by the
+  // drawer's own progress value, not by mount or a timer.
+  const navigatingRef = useRef(false);
+  const progress = useDrawerProgress();
+  const resetNavigating = useCallback(() => {
+    navigatingRef.current = false;
+  }, []);
+  useAnimatedReaction(
+    () => progress.value > DRAWER_CLOSED_PROGRESS,
+    (visible, wasVisible) => {
+      if (visible !== wasVisible) scheduleOnRN(resetNavigating);
+    },
+    [resetNavigating]
+  );
 
-  // ── User / account ──
-  const hasUpdate = false;
-  const { user } = useAuthContext();
-  const userEmail = user?.email || '';
-  const userDisplayName = userEmail.split('@')[0] || 'User';
-  const userChalk = useMemo(() => chalkColors(userDisplayName), [userDisplayName]);
-  const planLabel = 'Self-Hosted';
+  /** Close the drawer and navigate once. Later taps are ignored until reset. */
+  const navigateOnce = useCallback(
+    (navigate: () => void) => {
+      if (navigatingRef.current) return;
+      navigatingRef.current = true;
+      haptics.tap();
+      onClose();
+      navigate();
+    },
+    [onClose]
+  );
 
   // ── Handlers ──
+
+  const goToProjects = useCallback(
+    () => navigateOnce(() => router.replace('/projects')),
+    [navigateOnce, router]
+  );
+
+  const goToSessions = useCallback(
+    () => navigateOnce(() => onNavigateRoute(PROJECT_SESSIONS_ROUTE)),
+    [navigateOnce, onNavigateRoute]
+  );
+
+  const goToFiles = useCallback(
+    () => navigateOnce(() => onNavigateRoute(PROJECT_FILES_ROUTE)),
+    [navigateOnce, onNavigateRoute]
+  );
+
   const handleOpenProjectSession = useCallback(
-    (s: ProjectSession) => {
+    (session: ProjectSession) => {
       onClose();
-      onOpenProjectSession(s);
+      onOpenProjectSession(session);
     },
     [onClose, onOpenProjectSession]
   );
 
   const handleNewSession = useCallback(() => {
+    haptics.tap();
     onClose();
     onNewSession();
   }, [onClose, onNewSession]);
 
-  const goToProjects = useCallback(() => {
-    haptics.tap();
-    onClose();
-    // The only way to the Projects list. A project replaces the list when it
-    // opens, so the list is not under it: replace the project with the list.
-    router.replace('/projects');
-  }, [onClose, router]);
-
-  const handleProjectPress = useCallback(
-    (project: KortixProject) => {
-      const pageId = `page:project:${project.id}`;
-      useTabStore.getState().setTabState(pageId, { projectName: project.name });
-      useTabStore.getState().navigateToPage(pageId);
-      onClose();
-    },
-    [onClose]
+  // The same Account page as the Account tab, inside the project stack, so
+  // its hamburger opens this drawer.
+  const goToAccount = useCallback(
+    () => navigateOnce(() => onNavigateRoute(PROJECT_ACCOUNT_ROUTE)),
+    [navigateOnce, onNavigateRoute]
   );
 
-  // The user row opens the Account page — the same page as the Account tab,
-  // pushed over the project so Go back returns here.
-  const handleUserMenuOpen = useCallback(() => {
-    haptics.tap();
-    onClose();
-    router.push('/account-settings');
-  }, [onClose, router]);
-
+  // LegacyChatsSection takes raw colours for its Ionicons.
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
+  // The drawer surface (bg-chrome-background), transparent → opaque, so rows
+  // fade out under the bottom bar instead of stopping at a hard edge.
+  const chrome = isDark ? THEME.dark.chromeBackground : THEME.light.chromeBackground;
+  const fadeColors = [withAlpha(chrome, 0), withAlpha(chrome, 0.85), withAlpha(chrome, 1)] as const;
+
   return (
-    <>
-      <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-        {/* Kortix wordmark — tap to go back to the projects list */}
-        <View className="flex-row items-center justify-between px-5 pb-4 pt-3">
-          <Button
-            variant="ghost"
-            onPress={goToProjects}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}
-            className="h-auto w-auto p-0 active:bg-transparent active:opacity-70">
-            <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
-          </Button>
-        </View>
-
-        {/* Top-level actions: New session / Search / Projects */}
-        <View className="mb-2 px-2">
-          <Button
-            variant="ghost"
-            onPress={() => {
-              haptics.tap();
-              handleNewSession();
-            }}
-            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
-            <Ionicons name="create-outline" size={18} color={iconColor} />
-            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">New session</Text>
-          </Button>
-          <Button
-            variant="ghost"
-            onPress={() => {
-              haptics.tap();
-              onClose();
-              setPaletteOpen(true);
-            }}
-            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
-            <Ionicons name="search-outline" size={18} color={iconColor} />
-            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">Search</Text>
-          </Button>
-          <Button
-            variant="ghost"
-            onPress={goToProjects}
-            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
-            <Ionicons name="albums-outline" size={18} color={iconColor} />
-            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">All projects</Text>
-          </Button>
-        </View>
-
-        {/* Projects header (collapsible) — above Sessions, matches web sidebar */}
-        {sortedProjects.length > 0 && (
-          <>
-            <View className="flex-row items-center justify-between px-5 py-2.5">
-              <Button
-                variant="ghost"
-                onPress={goToProjects}
-                className="h-auto w-auto flex-1 flex-row items-center justify-start p-0 active:bg-transparent active:opacity-70">
-                <Ionicons name="folder-outline" size={18} color={iconColor} />
-                <Text className="ml-3 text-sm font-medium text-foreground">Projects</Text>
-              </Button>
-              <Button
-                variant="ghost"
-                onPress={() => {
-                  haptics.selection();
-                  setProjectsExpanded((v) => !v);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                className="h-auto w-auto flex-row items-center p-0 active:bg-transparent active:opacity-70">
-                <View className="mr-1 rounded-full bg-muted px-2 py-0.5">
-                  <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
-                </View>
-                <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
-              </Button>
-            </View>
-
-            <AnimatedCollapsible expanded={projectsExpanded}>
-              <View className="px-2 pb-2">
-                {sortedProjects.map((project: KortixProject) => (
-                  <Button
-                    key={project.id}
-                    variant="ghost"
-                    onPress={() => {
-                      haptics.tap();
-                      handleProjectPress(project);
-                    }}
-                    className="h-auto w-auto flex-row items-center justify-start mb-0.5 rounded-lg px-4 py-2 active:opacity-70">
-                    <Ionicons
-                      name="folder-outline"
-                      size={14}
-                      color={mutedColor}
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
-                      {project.name}
-                    </Text>
-                    {(project.sessionCount ?? 0) > 0 && (
-                      <Text className="ml-2 text-xs text-muted-foreground/50">
-                        {project.sessionCount}
-                      </Text>
-                    )}
-                  </Button>
-                ))}
-              </View>
-            </AnimatedCollapsible>
-          </>
-        )}
-
-        {/* Sessions header (collapsible) */}
-        <Button
-          variant="ghost"
-          onPress={() => {
-            haptics.selection();
-            setSessionsExpanded((v) => !v);
-          }}
-          className="h-auto w-auto flex-row items-center justify-between rounded-none px-5 py-2.5 active:opacity-70">
-          <View className="flex-row items-center">
-            <Ionicons name="list-outline" size={18} color={iconColor} />
-            <Text className="ml-3 text-sm font-medium text-foreground">Sessions</Text>
-          </View>
-          <AnimatedChevron expanded={sessionsExpanded} color={mutedColor} size={16} />
-        </Button>
-
-        {/* Session list — the project's repo-first sessions */}
-        <View style={{ flex: 1, minHeight: 0 }}>
-          {projectSessionsLoading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="small" color={mutedColor} />
-            </View>
-          ) : (
-            <ScrollView
-              className="flex-1"
-              contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}>
-              <AnimatedCollapsible expanded={sessionsExpanded}>
-                {projectSessions.length === 0 ? (
-                  <View className="items-center py-8">
-                    <Text className="text-sm text-muted-foreground">No sessions yet</Text>
-                  </View>
-                ) : (
-                  projectSessions.map((ps) => (
-                    <ProjectSessionListItem
-                      key={ps.session_id}
-                      item={ps}
-                      isActive={ps.session_id === activeProjectSessionId}
-                      onPress={handleOpenProjectSession}
-                    />
-                  ))
-                )}
-              </AnimatedCollapsible>
-            </ScrollView>
-          )}
-        </View>
-
-        {/* Pinned footer — user menu must stay tappable above the session list */}
-        <View style={{ flexShrink: 0 }}>
-          {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
-          <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-
-          {/* Bottom: user info — card style matching desktop */}
-          <View className="px-3 pt-2" style={{ paddingBottom: insets.bottom + 8 }}>
-            <Button
-              variant="ghost"
-              onPress={() => {
-                haptics.tap();
-                handleUserMenuOpen();
-              }}
-              className="h-auto w-auto flex-row items-center justify-start rounded-xl border border-border active:opacity-85"
-              style={{
-                height: 48,
-                paddingHorizontal: 8,
-                gap: 8,
-                backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
-              }}>
-              <View className="relative">
-                <View
-                  className="h-8 w-8 items-center justify-center rounded-lg border border-border"
-                  style={{
-                    backgroundColor: userChalk.background,
-                    borderColor: userChalk.border,
-                  }}>
-                  <Text
-                    className="text-xs font-semibold uppercase"
-                    style={{ color: userChalk.foreground }}>
-                    {userDisplayName.charAt(0)}
-                  </Text>
-                </View>
-                {hasUpdate && (
-                  <View className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-background bg-destructive" />
-                )}
-              </View>
-              <View className="flex-1" style={{ gap: 2 }}>
-                <Text
-                  className="font-medium text-foreground"
-                  style={{ fontSize: 13, lineHeight: 16 }}
-                  numberOfLines={1}>
-                  {userDisplayName}
-                </Text>
-                <Text
-                  className="text-muted-foreground"
-                  style={{ fontSize: 11, lineHeight: 14 }}
-                  numberOfLines={1}>
-                  {userEmail || planLabel}
-                </Text>
-              </View>
-              <ChevronsUpDown size={14} color={mutedColor} />
-            </Button>
-          </View>
+    // One straight left line at 20pt: the logo header is px-5; every row
+    // (nav, sessions, Previous chats) is px-3 inside a px-2 column.
+    <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
+      <View className="flex-row items-center px-5 py-2">
+        <View
+          className="h-11 justify-center"
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel="Kortix">
+          <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
         </View>
       </View>
 
-      <CommandPalette
-        visible={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        sessions={sessions}
-        onNewSession={onNewSession}
-        onSessionSelect={(id) => useTabStore.getState().navigateToSession(id || null)}
-        onPageSelect={(pageId) => useTabStore.getState().navigateToPage(pageId)}
-        onSettings={() => {
-          onClose();
-          router.push('/account-settings');
-        }}
-        sandboxUrl={sessionSandboxUrl}
-      />
-    </>
+      <View className="px-2 -mx-1 pb-2">
+        <NavPill icon={MessagesSquare} label="Sessions" onPress={goToSessions} />
+        <NavPill icon={Folder} label="Files" onPress={goToFiles} />
+        <NavPill icon={LayoutGrid} label="All projects" onPress={goToProjects} />
+      </View>
+
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}>
+        <View className="px-2 -mx-1">
+          {projectSessionsLoading ? (
+            <View className="items-center py-8">
+              <KortixLoader size="small" />
+            </View>
+          ) : recent.length === 0 ? (
+            <Text variant="muted" className="px-3 py-2">
+              No sessions yet
+            </Text>
+          ) : (
+            recent.map((ps) => (
+              <ProjectSessionListItem
+                key={ps.session_id}
+                item={ps}
+                active={ps.session_id === activeProjectSessionId}
+                onPress={handleOpenProjectSession}
+              />
+            ))
+          )}
+        </View>
+        <View className="mt-2 px-2">
+          <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+        </View>
+      </ScrollView>
+
+      {/* Pinned bottom bar: New session · avatar, over a fade of the drawer
+          surface. Touches on the transparent top of the fade reach the rows. */}
+      <View
+        pointerEvents="box-none"
+        className="absolute inset-x-0 bottom-0"
+        style={{ height: fadeHeight }}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={fadeColors}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View
+          pointerEvents="box-none"
+          className="absolute inset-x-0 flex-row items-center justify-between px-5"
+          style={{ bottom: barBottom }}>
+          <Button size="lg" className="rounded-full" onPress={handleNewSession}>
+            <Icon as={Plus} size={20} strokeWidth={2.2} />
+            <Text>New session</Text>
+          </Button>
+          <Pressable
+            onPress={goToAccount}
+            accessibilityRole="button"
+            accessibilityLabel="Account"
+            hitSlop={2}
+            className="rounded-full active:opacity-70">
+            <ProfilePicture
+              imageUrl={profile.avatarUrl}
+              size={BAR_CONTROL_HEIGHT / 4}
+              fallbackText={profile.displayName}
+            />
+          </Pressable>
+        </View>
+      </View>
+    </View>
   );
 }

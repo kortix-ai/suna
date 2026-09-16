@@ -31,7 +31,14 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCodeWriteFile } from '@/lib/files/hooks';
+import {
+  useOpenCodeFileContent,
+  useOpenCodeFileBlob,
+  blobToDataURL,
+  useOpenCodeWriteFile,
+  downloadOpenCodeFileToCache,
+} from '@/lib/files/hooks';
+import { previewDecision } from '@/lib/files/preview-limits';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -86,8 +93,16 @@ export function FileViewer({
                        previewType === FilePreviewType.XLSX ||
                        previewType === FilePreviewType.DOCX ||
                        previewType === FilePreviewType.BINARY;
-  const shouldFetchText = file && !isBinaryFile;
-  const shouldFetchBlob = file && isBinaryFile;
+  // Size from the directory listing, when it reports one. Files over the
+  // preview limits are not fetched; Download streams them to disk instead.
+  const listingDecision = file ? previewDecision({ size: file.size, previewType }) : 'preview';
+  // Only image, PDF, and DOCX renderers read the blob. Spreadsheets and
+  // archives show a download prompt, so their bytes are not loaded into JS.
+  const rendersBlob = previewType === FilePreviewType.IMAGE ||
+                      previewType === FilePreviewType.PDF ||
+                      previewType === FilePreviewType.DOCX;
+  const shouldFetchText = file && !isBinaryFile && listingDecision !== 'too-large';
+  const shouldFetchBlob = file && rendersBlob && listingDecision !== 'too-large';
   
   // Can show raw view for non-binary files
   const canShowRaw =
@@ -113,10 +128,15 @@ export function FileViewer({
     shouldFetchBlob ? file?.path : undefined
   );
 
-  // Convert blob to data URL for binary files (images, PDFs, etc.)
+  // The listing may not report a size; the fetched blob always does.
+  const blobTooLarge =
+    !!imageBlob && previewDecision({ size: imageBlob.size, previewType }) === 'too-large';
+
+  // Convert blob to data URL for binary files (images, PDFs, etc.). A blob over
+  // the limit is never converted: the data URL is a second, larger copy in JS.
   useEffect(() => {
     let cancelled = false;
-    if (imageBlob && file?.path) {
+    if (imageBlob && file?.path && !blobTooLarge) {
       blobToDataURL(imageBlob, file.path).then((url) => {
         if (!cancelled) setBlobUrl(url);
       });
@@ -126,7 +146,7 @@ export function FileViewer({
     return () => {
       cancelled = true;
     };
-  }, [imageBlob, file?.path]);
+  }, [imageBlob, file?.path, blobTooLarge]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -144,7 +164,7 @@ export function FileViewer({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // For binary files (images, PDFs, etc.) write to file and share
-      if (imageBlob && isBinaryFile) {
+      if (imageBlob && isBinaryFile && !blobTooLarge) {
         // Convert blob to base64
         const reader = new FileReader();
         const base64Data = await new Promise<string>((resolve, reject) => {
@@ -190,6 +210,18 @@ export function FileViewer({
           });
         }
         return;
+      }
+
+      // Nothing loaded (over the preview limit, not previewable, or still
+      // loading): stream the file to disk natively and share it.
+      if (sandboxUrl) {
+        const fileUri = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        }
       }
     } catch (error) {
       log.error('Download failed:', error);
@@ -467,6 +499,7 @@ export function FileViewer({
               blobUrl={blobUrl}
               filePath={file.path}
               sandboxUrl={sandboxUrl}
+              size={imageBlob?.size ?? file.size}
             />
           )}
         </View>

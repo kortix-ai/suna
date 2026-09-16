@@ -9,6 +9,7 @@
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import {
+  AppState,
   View,
   FlatList,
   ScrollView,
@@ -28,8 +29,9 @@ import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ChevronLeft, Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
-import { PlatformButton } from '@/components/kortix/platform-button';
+import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { MenuButton } from '@/components/kortix/menu-button';
+import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
@@ -38,7 +40,23 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
 import { groupMessagesIntoTurns } from '@kortix/sdk';
-import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
+import type { Turn, QuestionRequest, MessageWithParts } from '@/lib/opencode/types';
+import {
+  findLastUserMessageId,
+  isNearEnd,
+  reuseStableTurns,
+  shouldFollowNewTurn,
+  shouldRearmStick,
+  shouldReleaseStick,
+  shouldReleaseStickOnTouch,
+  shouldUpdateSpacer,
+} from '@/lib/session/stable-turns';
+import { mintWireMessageId } from '@/lib/session/wire-message-id';
+import {
+  hasRunningQuestionTool as findRunningQuestionTool,
+  nextQuestionPollDelay,
+  shouldPollQuestions as shouldPollQuestionsFor,
+} from '@/lib/session/question-poll';
 import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
@@ -47,10 +65,14 @@ import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeAgents,
-  useOpenCodeModels,
+  useOpenCodeProviders,
   useOpenCodeConfig,
   useOpenCodeCommands,
+  flattenModels,
+  filterToLatestModels,
+  type Agent,
   type Command,
+  type FlatModel,
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { getAuthToken } from '@/api/config';
@@ -64,6 +86,7 @@ import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
+import type { Session } from '@/lib/platform/types';
 import { ProjectGreeting } from '@/components/session/ProjectGreeting';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
@@ -95,7 +118,45 @@ interface SessionPageProps {
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
+// Module-level empty values: a `?? []` default creates a new array on every
+// render and defeats every memo downstream.
+function frozenEmpty<T>(): T[] {
+  return Object.freeze([]) as unknown as T[];
+}
+const EMPTY_MESSAGES = frozenEmpty<MessageWithParts>();
+const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
+const EMPTY_TURNS = frozenEmpty<Turn>();
+const EMPTY_SESSIONS = frozenEmpty<Session>();
+const EMPTY_AGENTS = frozenEmpty<Agent>();
+const EMPTY_COMMANDS = frozenEmpty<Command>();
+const EMPTY_MODELS = frozenEmpty<FlatModel>();
+const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
+
+/** Returns the previous array while its elements are reference-equal to `next`. */
+function useShallowStableArray<T>(next: T[]): T[] {
+  const ref = useRef(next);
+  const prev = ref.current;
+  if (prev !== next && (prev.length !== next.length || prev.some((item, i) => item !== next[i]))) {
+    ref.current = next;
+  }
+  return ref.current;
+}
+
+// FlatList window. The render unit is a whole turn, so the window is kept
+// small. The first `INITIAL_TURNS_TO_RENDER` cells stay mounted for the life
+// of the list (VirtualizedList keeps its initial region), so that count stays
+// low; opening a thread jumps to the end instead of rendering every turn.
+const INITIAL_TURNS_TO_RENDER = 4;
+// How long scroll events after a programmatic scroll call are attributed to it.
+const PROGRAMMATIC_SCROLL_MS = 300;
+const ANIMATED_SCROLL_MS = 1000;
+
+function readSavedScrollOffset(sessionId: string): number {
+  const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
+  return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
+}
+
+function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -111,26 +172,19 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   const listTopInset = effectiveChrome === 'floating' ? insets.top + 60 : 16;
   const { sandboxUrl } = useSandboxContext();
   const flatListRef = useRef<FlatList>(null);
-  const setTabState = useTabStore((s) => s.setTabState);
-  const savedSessionState = useTabStore((s) => s.tabStateById[sessionId] as { scrollOffset?: number } | undefined);
-  const savedScrollOffset = typeof savedSessionState?.scrollOffset === 'number'
-    ? savedSessionState.scrollOffset
-    : 0;
+  // Saved scroll offset: read once per session, not subscribed. Subscribing
+  // re-rendered the whole thread on every persisted offset write.
+  const savedScrollOffset = useMemo(() => readSavedScrollOffset(sessionId), [sessionId]);
   const lastSavedOffsetRef = useRef(savedScrollOffset);
-  const didRestoreScrollRef = useRef(false);
+  const currentOffsetRef = useRef(savedScrollOffset);
+  const restoredSessionIdRef = useRef<string | null>(null);
 
-  // Auto-scroll tracking
-  const isFollowingRef = useRef(true);       // true = scroll with AI output
-  const isAutoScrollingRef = useRef(false);  // suppress follow-disable during programmatic scrolls
-  const listHeightRef = useRef(0);           // visible list viewport height
-  const contentHeightRef = useRef(0);        // total scrollable content height
-  const AT_BOTTOM_THRESHOLD = 80;            // px from bottom considered "at bottom"
 
 
 
   // Session metadata
   const { data: session } = useSession(sandboxUrl, sessionId);
-  const { data: allSessions = [] } = useSessions(sandboxUrl);
+  const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
 
   // Hydrate messages from REST on mount; SSE keeps store updated after
   useSessionSync(sandboxUrl, sessionId);
@@ -138,8 +192,8 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   // Read messages from sync store
   const messages = useSyncStore((s) => s.messages[sessionId]);
   const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? [];
-  const safeMessages = useMemo(() => messages ?? [], [messages]);
+  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? EMPTY_QUESTIONS;
+  const safeMessages = messages ?? EMPTY_MESSAGES;
 
   const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
   const isCompacting = useCompactionStore((s) => Boolean(s.compactingBySession[sessionId]));
@@ -151,31 +205,51 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   // server processes the reply.
   const suppressedQuestionIds = useRef(new Set<string>());
 
-  const hasRunningQuestionTool = useMemo(() => {
-    if (!safeMessages || safeMessages.length === 0) return false;
-    return safeMessages.some((m) => {
-      if (m.info.role !== 'assistant') return false;
-      return m.parts.some((p) => {
-        if (p.type !== 'tool') return false;
-        const tool = p as ToolPart;
-        return tool.tool === 'question' && (tool.state.status === 'running' || tool.state.status === 'pending');
-      });
-    });
-  }, [safeMessages]);
+  // Scans only the newest assistant message: a running question tool always
+  // belongs to the newest turn.
+  const hasRunningQuestionTool = useMemo(() => findRunningQuestionTool(safeMessages), [safeMessages]);
 
-  // Poll for pending questions when:
-  // - A question tool part is running/pending in messages, OR session is busy
-  // - AND no pending questions in the store
-  const shouldPollQuestions = (hasRunningQuestionTool || isBusy) && pendingQuestions.length === 0 && !!sandboxUrl;
+  // Poll GET /question only while a question tool part runs and the store has
+  // no pending question (the `question.asked` event was missed). The stream
+  // layer hydrates /question after reconnects, so a busy session alone is not
+  // a trigger.
+  const shouldPollQuestions = shouldPollQuestionsFor({
+    hasRunningQuestionTool,
+    pendingCount: pendingQuestions.length,
+    hasSandboxUrl: !!sandboxUrl,
+  });
+
+  // A status change (idle → busy, busy → idle) restarts the poll with a fresh
+  // failure count, so a 401/403 stop or a long backoff is re-evaluated.
+  const sessionStatusType = sessionStatus?.type;
 
   useEffect(() => {
     if (!shouldPollQuestions || !sandboxUrl) return;
     let cancelled = false;
     let inFlight = false;
+    let consecutiveFailures = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    // `null` stops the poll until the status changes or the app returns to
+    // the foreground.
+    const schedule = (delayMs: number | null) => {
+      clearTimer();
+      if (cancelled || delayMs === null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void hydrateQuestions();
+      }, delayMs);
+    };
 
     const hydrateQuestions = async () => {
       if (inFlight || cancelled) return;
       inFlight = true;
+      let status: number | null = null;
       try {
         const token = await getAuthToken();
         const res = await fetch(`${sandboxUrl}/question`, {
@@ -184,8 +258,14 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-        if (!res.ok || cancelled) return;
+        status = res.status;
+        if (cancelled) return;
+        if (!res.ok) {
+          consecutiveFailures += 1;
+          return;
+        }
         const questions = await res.json();
+        consecutiveFailures = 0;
         if (!Array.isArray(questions) || cancelled) return;
         const store = useSyncStore.getState();
         const existingIds = new Set((store.questions[sessionId] || []).map((q) => q.id));
@@ -195,19 +275,30 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
             log.log('🔄 [SessionPage] Self-healed pending question:', q.id);
           }
         }
-      } catch {} finally {
+      } catch {
+        consecutiveFailures += 1;
+      } finally {
         inFlight = false;
+        schedule(nextQuestionPollDelay(status, consecutiveFailures));
       }
     };
 
-    hydrateQuestions();
-    const timer = setInterval(hydrateQuestions, 1500);
+    // Back in the foreground: poll now instead of waiting out a backoff.
+    const appStateSubscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || cancelled) return;
+      consecutiveFailures = 0;
+      clearTimer();
+      void hydrateQuestions();
+    });
+
+    void hydrateQuestions();
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimer();
+      appStateSubscription.remove();
     };
-  }, [shouldPollQuestions, sandboxUrl, sessionId]);
+  }, [shouldPollQuestions, sandboxUrl, sessionId, sessionStatusType]);
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const queueHydrated = useMessageQueueStore((s) => s.hydrated);
@@ -263,6 +354,9 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   // Mirrors the frontend's drainNextWhenSettled pattern.
 
   const drainScheduledRef = useRef(false);
+  // Set by a user send; the next new turn scrolls into view animated. Turns
+  // that appear from hydration jump without an animation.
+  const userSentRef = useRef(false);
   const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
 
 
@@ -274,8 +368,9 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
-      // Re-enable auto-scroll follow when user sends a new message
-      isFollowingRef.current = true;
+      // The turn this send creates scrolls into view with an animation; the
+      // thread then sticks to its end again.
+      userSentRef.current = true;
 
       // Process session mentions — append XML refs (same as frontend)
       let finalText = text;
@@ -288,7 +383,12 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
       }
 
       // Optimistic user message
-      const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // Wire-format id: the thread sorts messages by id as a string, so the
+      // optimistic message must sort after the real ones already present.
+      const messageId = mintWireMessageId({
+        nowMs: Date.now(),
+        knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+      });
       const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       useSyncStore.getState().addOptimisticMessage(sessionId, {
@@ -324,12 +424,14 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
         if (!res.ok) {
           const errorText = await res.text().catch(() => '');
           log.error('[SessionPage] Prompt failed:', res.status, errorText);
+          userSentRef.current = false;
           useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
         } else {
           log.log('[SessionPage] Prompt sent (async)');
         }
       } catch (err: any) {
         log.error('[SessionPage] Prompt error:', err?.message || err);
+        userSentRef.current = false;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
@@ -426,13 +528,48 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   );
 
   // Agent/model/variant config
-  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
-  const { data: visibleModels = [], allModels = [], defaults } = useOpenCodeModels(sandboxUrl);
+  const { data: agents = EMPTY_AGENTS } = useOpenCodeAgents(sandboxUrl);
+  // Models are derived here from the providers query (the same query
+  // useOpenCodeModels reads) so the arrays keep their identity between
+  // renders and the memoized composer can skip stream renders.
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
+  const allModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
+  const visibleModels = useMemo(() => filterToLatestModels(allModels), [allModels]);
+  const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
-  const { data: commands = [] } = useOpenCodeCommands(sandboxUrl);
+  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
 
   // Resolution uses ALL models (fallback chain); selector shows only visible
   const resolved = useResolvedConfig(agents, allModels, config, defaults);
+
+  // useResolvedConfig returns new arrays, objects, and setters on every
+  // render. Stabilize what the composer receives: arrays by content, setters
+  // through a ref that always calls the latest resolved config.
+  const resolvedRef = useRef(resolved);
+  resolvedRef.current = resolved;
+  const resolvedAgents = useShallowStableArray(resolved.agents);
+  const resolvedVariants = useShallowStableArray(resolved.variants);
+  const resolvedModel = resolved.model;
+  const resolvedProviderID = resolved.modelKey?.providerID;
+  const resolvedModelID = resolved.modelKey?.modelID;
+  const resolvedModelKey = useMemo(
+    () =>
+      resolvedProviderID && resolvedModelID
+        ? { providerID: resolvedProviderID, modelID: resolvedModelID }
+        : null,
+    [resolvedProviderID, resolvedModelID],
+  );
+  const handleAgentChange = useCallback((name: string) => resolvedRef.current.setAgent(name), []);
+  const handleModelChange = useCallback(
+    (providerID: string, modelID: string) =>
+      resolvedRef.current.setModel(providerID, modelID, { explicit: true }),
+    [],
+  );
+  const handleVariantCycle = useCallback(() => resolvedRef.current.cycleVariant(), []);
+  const handleVariantSet = useCallback((v: string | null) => resolvedRef.current.setVariant(v), []);
+  const handleTextChange = useCallback((t: string) => {
+    inputTextRef.current = t;
+  }, []);
 
   // Agent names for mention highlighting in user bubbles
   const agentNames = useMemo(() => agents.map((a) => a.name), [agents]);
@@ -453,8 +590,20 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
     setMentionFileViewerVisible(true);
   }, []);
 
-  // Group messages into turns
-  const turns = useMemo(() => groupMessagesIntoTurns(safeMessages), [safeMessages]);
+  // Group messages into turns. Turns whose messages did not change keep their
+  // previous object, so memoized SessionTurn rows skip stream renders.
+  const prevTurnsRef = useRef<Turn[]>(EMPTY_TURNS);
+  const turns = useMemo(
+    () => reuseStableTurns(prevTurnsRef.current, groupMessagesIntoTurns(safeMessages)),
+    [safeMessages],
+  );
+  useEffect(() => {
+    prevTurnsRef.current = turns;
+  }, [turns]);
+  const lastUserMessageId = useMemo(() => findLastUserMessageId(safeMessages), [safeMessages]);
+  // The last turn as displayed. Turns are sorted for display, and store order
+  // can differ, so the spacer and pending questions follow this id.
+  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
   const isFreshSession = turns.length === 0;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
@@ -467,94 +616,285 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
     }).start();
   }, [showFreshHero, heroOpacity]);
 
-  // When a new turn appears, scroll so the latest user bubble is at the top
+  // ── Programmatic scrolls ───────────────────────────────────────────────
+  // Scroll events caused by the list's own scroll calls must not release the
+  // stick or be persisted as the user's reading position.
+  const programmaticScrollUntilRef = useRef(0);
+  const markProgrammaticScroll = useCallback((durationMs: number) => {
+    programmaticScrollUntilRef.current = Math.max(programmaticScrollUntilRef.current, Date.now() + durationMs);
+  }, []);
+  const isProgrammaticScroll = useCallback(() => Date.now() < programmaticScrollUntilRef.current, []);
+
+  // ── Stick to end ───────────────────────────────────────────────────────
+  // While set, every content-size change (and viewport resize) scrolls the
+  // thread to its end without animation, idle or busy. Turn heights arrive
+  // over many layout passes, so this is what makes an opened thread settle at
+  // the true end.
+  // Set: a thread opens with no saved offset to restore; a turn the user sent
+  //      finished its send scroll; a user scroll settles near the end.
+  // Cleared only by user intent: a drag, a send (re-armed after its animated
+  //      scroll), or a non-programmatic scroll that moves up away from the end
+  //      (iOS status-bar tap). A restored saved offset never sets it.
+  const stickToEndRef = useRef(false);
+  // True while the stick was released only by a touch on the idle thread (no
+  // drag since). A new turn not sent by the user then still scrolls into view.
+  const releasedByTouchRef = useRef(false);
+  // Whether the last settled user scroll rested near the end.
+  const settledNearEndRef = useRef(false);
+  const sendScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True from a user send until its stick re-arms (or user intent cancels it).
+  // Leaving the thread in that window counts as leaving at the end.
+  const sendScrollPendingRef = useRef(false);
+
+  const clearSendScrollTimer = useCallback(() => {
+    if (sendScrollTimerRef.current) clearTimeout(sendScrollTimerRef.current);
+    sendScrollTimerRef.current = null;
+  }, []);
+  useEffect(() => clearSendScrollTimer, [clearSendScrollTimer]);
+
+  const scrollToEndNow = useCallback(() => {
+    markProgrammaticScroll(PROGRAMMATIC_SCROLL_MS);
+    flatListRef.current?.scrollToEnd({ animated: false });
+  }, [markProgrammaticScroll]);
+
+  const stickToEnd = useCallback(() => {
+    stickToEndRef.current = true;
+    releasedByTouchRef.current = false;
+    scrollToEndNow();
+  }, [scrollToEndNow]);
+
+  // When turns appear:
+  // - a turn the user just sent scrolls its bubble to the top, animated, then
+  //   re-arms the stick;
+  // - the first turns of an opened session stick to the end, unless a saved
+  //   offset is restored instead (restoration wins);
+  // - any other new turn (another client, a trigger, a menu action) sticks to
+  //   the end when the thread was effectively at its end.
+  // Later turns follow the end through the stick itself.
   const prevTurnCount = useRef(turns.length);
+  const openedSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (turns.length > prevTurnCount.current) {
-      // New turn added — scroll it to the top of the viewport. In floating
-      // chrome the viewport starts at the screen top, so offset by the list's
-      // top inset to keep the bubble clear of the status bar + menu button.
+    const grew = turns.length > prevTurnCount.current;
+    prevTurnCount.current = turns.length;
+    if (turns.length === 0) return;
+    const firstOpen = openedSessionIdRef.current !== sessionId;
+    openedSessionIdRef.current = sessionId;
+
+    if (grew && userSentRef.current) {
+      userSentRef.current = false;
+      stickToEndRef.current = false;
+      sendScrollPendingRef.current = true;
+      clearSendScrollTimer();
+      // In floating chrome the viewport starts at the screen top, so offset by
+      // the list's top inset to keep the bubble clear of the status bar + menu
+      // button.
       const targetIndex = turns.length - 1;
       const viewOffset = effectiveChrome === 'floating' ? listTopInset : 0;
-      setTimeout(() => {
+      sendScrollTimerRef.current = setTimeout(() => {
         try {
-          flatListRef.current?.scrollToIndex({
-            index: targetIndex,
-            viewPosition: 0,
-            viewOffset,
-            animated: true,
-          });
-        } catch {
-          flatListRef.current?.scrollToEnd({ animated: true });
+          markProgrammaticScroll(ANIMATED_SCROLL_MS);
+          try {
+            flatListRef.current?.scrollToIndex({
+              index: targetIndex,
+              viewPosition: 0,
+              viewOffset,
+              animated: true,
+            });
+          } catch {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }
+        } finally {
+          // Re-arm once the animated send scroll is over, even if it threw.
+          sendScrollTimerRef.current = setTimeout(() => {
+            sendScrollTimerRef.current = null;
+            sendScrollPendingRef.current = false;
+            stickToEndRef.current = true;
+          }, ANIMATED_SCROLL_MS);
         }
       }, 150);
+      return;
     }
-    prevTurnCount.current = turns.length;
-  }, [turns.length, effectiveChrome, listTopInset]);
 
-  // Restore scroll position when reopening this tab/session.
+    if (firstOpen) {
+      stickToEndRef.current = false;
+      releasedByTouchRef.current = false;
+      settledNearEndRef.current = false;
+      if (savedScrollOffset > 0) return;
+      stickToEnd();
+      return;
+    }
+
+    if (
+      !stickToEndRef.current &&
+      shouldFollowNewTurn({
+        grew,
+        releasedByTouch: releasedByTouchRef.current,
+        settledNearEnd: settledNearEndRef.current,
+      })
+    ) {
+      stickToEnd();
+    }
+  }, [turns.length, sessionId, savedScrollOffset, effectiveChrome, listTopInset, stickToEnd, clearSendScrollTimer, markProgrammaticScroll]);
+
+  // The new turn's cell is not measured yet. The target is always the last
+  // turn, so stick to the end instead of guessing an offset.
+  const handleScrollToIndexFailed = useCallback(() => {
+    clearSendScrollTimer();
+    sendScrollPendingRef.current = false;
+    stickToEnd();
+  }, [clearSendScrollTimer, stickToEnd]);
+
+  // Restore scroll position when reopening this tab/session. A restored
+  // position does not stick to the end.
   useEffect(() => {
-    if (didRestoreScrollRef.current) return;
+    if (restoredSessionIdRef.current === sessionId) return;
     if (savedScrollOffset <= 0) {
-      didRestoreScrollRef.current = true;
+      restoredSessionIdRef.current = sessionId;
       return;
     }
     if (turns.length === 0) return;
     const timer = setTimeout(() => {
-      flatListRef.current?.scrollToOffset({
-        offset: savedScrollOffset,
-        animated: false,
-      });
-      didRestoreScrollRef.current = true;
+      stickToEndRef.current = false;
+      sendScrollPendingRef.current = false;
+      clearSendScrollTimer();
+      try {
+        markProgrammaticScroll(PROGRAMMATIC_SCROLL_MS);
+        flatListRef.current?.scrollToOffset({
+          offset: savedScrollOffset,
+          animated: false,
+        });
+      } finally {
+        restoredSessionIdRef.current = sessionId;
+      }
     }, 60);
     return () => clearTimeout(timer);
-  }, [savedScrollOffset, turns.length]);
+  }, [sessionId, savedScrollOffset, turns.length, clearSendScrollTimer, markProgrammaticScroll]);
+
+  // Persist the scroll offset when a user scroll settles and when leaving the
+  // session. A thread left while stuck to its end, or during a send's scroll,
+  // saves 0 (no position), so it reopens at its end, not at an old offset.
+  const persistScrollOffset = useCallback(
+    (targetSessionId: string, offset: number) => {
+      const stuck = stickToEndRef.current || sendScrollPendingRef.current;
+      if (!stuck && isProgrammaticScroll()) return;
+      const value = stuck ? 0 : offset;
+      if (value === lastSavedOffsetRef.current) return;
+      if (value !== 0 && Math.abs(value - lastSavedOffsetRef.current) < 24) return;
+      lastSavedOffsetRef.current = value;
+      useTabStore.getState().setTabState(targetSessionId, { scrollOffset: value });
+    },
+    [isProgrammaticScroll],
+  );
+
+  useEffect(() => {
+    lastSavedOffsetRef.current = savedScrollOffset;
+    currentOffsetRef.current = savedScrollOffset;
+    return () => {
+      persistScrollOffset(sessionId, currentOffsetRef.current);
+    };
+  }, [sessionId, savedScrollOffset, persistScrollOffset]);
+
+  // A user scroll that comes to rest near the end sticks to it again. At finger
+  // lift the event carries the drag velocity; with momentum following, the
+  // decision waits for onMomentumScrollEnd.
+  const settleScroll = useCallback(
+    (
+      event: NativeSyntheticEvent<NativeScrollEvent>,
+      velocityY: number | undefined,
+      targetOffsetY: number | undefined,
+    ) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const offset = Math.max(0, contentOffset.y || 0);
+      currentOffsetRef.current = offset;
+      const programmatic = isProgrammaticScroll();
+      if (!programmatic) {
+        settledNearEndRef.current = isNearEnd(offset, contentSize.height, layoutMeasurement.height);
+      }
+      if (
+        shouldRearmStick({
+          offset,
+          contentHeight: contentSize.height,
+          viewportHeight: layoutMeasurement.height,
+          programmatic,
+          velocityY,
+          targetOffsetY,
+        })
+      ) {
+        stickToEndRef.current = true;
+      }
+      persistScrollOffset(sessionId, offset);
+    },
+    [sessionId, persistScrollOffset, isProgrammaticScroll],
+  );
+
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // iOS only: where the scroll comes to rest after finger lift.
+      const target = event.nativeEvent.targetContentOffset;
+      settleScroll(
+        event,
+        event.nativeEvent.velocity?.y ?? 0,
+        target ? Math.max(0, target.y || 0) : undefined,
+      );
+    },
+    [settleScroll],
+  );
+
+  const handleMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => settleScroll(event, undefined, undefined),
+    [settleScroll],
+  );
+
+  // A user drag releases the stick and ends any programmatic window.
+  const handleScrollBeginDrag = useCallback(() => {
+    stickToEndRef.current = false;
+    releasedByTouchRef.current = false;
+    sendScrollPendingRef.current = false;
+    clearSendScrollTimer();
+    programmaticScrollUntilRef.current = 0;
+  }, [clearSendScrollTimer]);
+
+  // A touch on an idle thread releases the stick, so a card the user expands
+  // opens in place. While busy, touches keep following the stream.
+  const handleListTouchStart = useCallback(() => {
+    if (stickToEndRef.current && shouldReleaseStickOnTouch({ isBusy })) {
+      stickToEndRef.current = false;
+      releasedByTouchRef.current = true;
+    }
+  }, [isBusy]);
 
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offset = Math.max(0, event.nativeEvent.contentOffset.y || 0);
-
-      // Determine if user is near the bottom
-      const distanceFromBottom = contentHeightRef.current - offset - listHeightRef.current;
-      const atBottom = distanceFromBottom <= AT_BOTTOM_THRESHOLD;
-
-      if (isAutoScrollingRef.current) {
-        // This scroll event was triggered programmatically — don't touch follow state
-      } else if (atBottom) {
-        // User scrolled back to the bottom — resume following
-        isFollowingRef.current = true;
-      } else {
-        // User scrolled up manually — stop following
-        isFollowingRef.current = false;
-      }
-
-      if (Math.abs(offset - lastSavedOffsetRef.current) < 24) return;
-      lastSavedOffsetRef.current = offset;
-      setTabState(sessionId, { scrollOffset: offset });
-    },
-    [sessionId, setTabState],
-  );
-
-  // Auto-scroll to bottom while AI is typing, if user hasn't scrolled up
-  const handleContentSizeChange = useCallback(
-    (_w: number, h: number) => {
-      contentHeightRef.current = h;
-      if (isBusy && isFollowingRef.current) {
-        isAutoScrollingRef.current = true;
-        flatListRef.current?.scrollToEnd({ animated: false });
-        // Reset flag after scroll event propagates
-        setTimeout(() => { isAutoScrollingRef.current = false; }, 80);
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const offset = Math.max(0, contentOffset.y || 0);
+      const prevOffset = currentOffsetRef.current;
+      currentOffsetRef.current = offset;
+      if (
+        stickToEndRef.current &&
+        shouldReleaseStick({
+          prevOffset,
+          offset,
+          contentHeight: contentSize.height,
+          viewportHeight: layoutMeasurement.height,
+          programmatic: isProgrammaticScroll(),
+        })
+      ) {
+        stickToEndRef.current = false;
+        releasedByTouchRef.current = false;
+        settledNearEndRef.current = false;
       }
     },
-    [isBusy],
+    [isProgrammaticScroll],
   );
 
-  const handleListLayout = useCallback(
-    (event: { nativeEvent: { layout: { height: number } } }) => {
-      listHeightRef.current = event.nativeEvent.layout.height;
-    },
-    [],
-  );
+  const handleContentSizeChange = useCallback(() => {
+    if (stickToEndRef.current) scrollToEndNow();
+  }, [scrollToEndNow]);
+
+  // The viewport shrinks when the keyboard opens; keep the end in view.
+  const handleListLayout = useCallback(() => {
+    if (stickToEndRef.current) scrollToEndNow();
+  }, [scrollToEndNow]);
 
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
@@ -597,6 +937,9 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   const handleCommand = useCallback(
     async (cmd: Command, args?: string) => {
       if (!sandboxUrl) return;
+      // A command creates its turn through the stream, not optimistically, so
+      // it has no send scroll: show the result by sticking to the end.
+      stickToEnd();
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       try {
         const token = await getAuthToken();
@@ -604,9 +947,10 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
           command: cmd.name,
           arguments: args || '',
         };
-        if (resolved.agent?.name) payload.agent = resolved.agent.name;
-        if (resolved.modelKey) payload.model = `${resolved.modelKey.providerID}/${resolved.modelKey.modelID}`;
-        if (resolved.variant) payload.variant = resolved.variant;
+        const current = resolvedRef.current;
+        if (current.agent?.name) payload.agent = current.agent.name;
+        if (current.modelKey) payload.model = `${current.modelKey.providerID}/${current.modelKey.modelID}`;
+        if (current.variant) payload.variant = current.variant;
 
         const res = await fetch(`${sandboxUrl}/session/${sessionId}/command`, {
           method: 'POST',
@@ -626,39 +970,87 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
-    [sandboxUrl, sessionId, resolved.agent, resolved.modelKey, resolved.variant],
+    [sandboxUrl, sessionId, stickToEnd],
   );
 
-  // Track last turn height for footer sizing
-  const turnHeights = useRef<Record<string, number>>({});
+  // Track last turn height for footer sizing. The spacer fills the viewport
+  // below a short last turn: `max(0, spacerCap - lastTurnHeight)`.
+  // Header chrome subtracts header (~60+insets), input (~90+insets), and footer
+  // bar (~50). 'floating' chrome has no header but adds the ~48pt+8pt tab dock
+  // below the composer (+64), and its container no longer overlaps upward by
+  // 24 (no -24 sheet margin), so the reserved chrome grows by 88 total.
+  const spacerCap = windowHeight - insets.top - insets.bottom - (effectiveChrome === 'floating' ? 283 : 195);
   const [lastTurnHeight, setLastTurnHeight] = useState(80);
+  const lastTurnHeightRef = useRef(80);
 
+  // Streaming grows the last turn on every wrapped line. Set state only when
+  // the resulting spacer height changes; once the turn is taller than the
+  // viewport the spacer stays at 0 and no render is needed.
+  const handleLastTurnLayout = useCallback(
+    (e: { nativeEvent: { layout: { height: number } } }) => {
+      const h = e.nativeEvent.layout.height;
+      const prev = lastTurnHeightRef.current;
+      lastTurnHeightRef.current = h;
+      if (shouldUpdateSpacer(prev, h, spacerCap)) setLastTurnHeight(h);
+    },
+    [spacerCap],
+  );
+
+  // A cap change (window resize) invalidates the skipped updates above.
+  useEffect(() => {
+    setLastTurnHeight(lastTurnHeightRef.current);
+  }, [spacerCap]);
+
+  // Only the last turn receives status and busy; other turns get stable values,
+  // so their memoized rows skip stream renders. `isLast` (working state)
+  // follows the last user message in store order, as the SDK does; the spacer
+  // follows the displayed order. Every turn gets `pendingQuestions` (one
+  // stable store array) so a pending question tool part is hidden in
+  // whichever turn holds it.
   const renderTurn = useCallback(
-    ({ item, index }: { item: Turn; index: number }) => (
-      <View
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          turnHeights.current[item.userMessage.info.id] = h;
-          // Update footer when the last turn's height changes
-          if (index === turns.length - 1) {
-            setLastTurnHeight(h);
-          }
-        }}
-      >
-        <SessionTurn
-          turn={item}
-          allMessages={safeMessages}
-          sessionStatus={sessionStatus}
-          isBusy={isBusy}
-          pendingQuestions={pendingQuestions}
-          agentNames={agentNames}
-          onFileMention={handleFileMention}
-          onSessionMention={handleSessionMention}
-          commands={commands}
+    ({ item }: { item: Turn }) => {
+      const id = item.userMessage.info.id;
+      const isLast = id === lastUserMessageId;
+      const isLastDisplayed = id === lastTurnId;
+      return (
+        <View onLayout={isLastDisplayed ? handleLastTurnLayout : undefined}>
+          <SessionTurn
+            turn={item}
+            isLast={isLast}
+            sessionStatus={isLast ? sessionStatus : undefined}
+            isBusy={isLast ? isBusy : false}
+            pendingQuestions={pendingQuestions}
+            agentNames={agentNames}
+            onFileMention={handleFileMention}
+            onSessionMention={handleSessionMention}
+            commands={commands}
+          />
+        </View>
+      );
+    },
+    [lastUserMessageId, lastTurnId, handleLastTurnLayout, sessionStatus, isBusy, pendingQuestions, agentNames, handleFileMention, handleSessionMention, commands],
+  );
+
+  const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
+
+  const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
+  const handleClearQueue = useCallback(() => queueClearSession(sessionId), [queueClearSession, sessionId]);
+  const inputSlot = useMemo(
+    () =>
+      queuedMessages.length > 0 ? (
+        <QueuePanel
+          messages={queuedMessages}
+          expanded={queueExpanded}
+          onToggle={handleToggleQueue}
+          onRemove={queueRemove}
+          onMoveUp={queueMoveUp}
+          onMoveDown={queueMoveDown}
+          onClear={handleClearQueue}
+          onSendNow={handleQueueSendNow}
+          isDark={isDark}
         />
-      </View>
-    ),
-    [safeMessages, sessionStatus, isBusy, turns.length, pendingQuestions, agentNames, handleFileMention, handleSessionMention, commands],
+      ) : undefined,
+    [queuedMessages, queueExpanded, handleToggleQueue, queueRemove, queueMoveUp, queueMoveDown, handleClearQueue, handleQueueSendNow, isDark],
   );
 
   const title = session?.title || 'New Session';
@@ -716,16 +1108,9 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
         >
           <View className="flex-row items-center">
             {!onboardingMode && (
-              <Button
-                variant="secondary"
-                size="icon"
-                onPress={onOpenDrawer}
-                accessibilityLabel="Open menu"
-                className="mr-3"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon="menu-lucide" size={20} />
-              </Button>
+              <View className="mr-3">
+                <MenuButton onPress={onOpenDrawer} />
+              </View>
             )}
             <View className="flex-1 flex-row items-center">
               {/* Status dot before the title (matches web session-list):
@@ -805,23 +1190,9 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
           </View>
         </View>
       ) : (
-        /* Floating Go back button — the only chrome above the content. A
-           thread is a child of project home, and back returns there. */
-        <View
-          className="absolute left-4 z-10"
-          style={{ top: insets.top + 8 }}
-          pointerEvents="box-none">
-          <PlatformButton
-            systemImage="chevron.left"
-            icon={ChevronLeft}
-            fallbackVariant="secondary"
-            accessibilityLabel="Go back"
-            onPress={() => {
-              haptics.tap();
-              onBack();
-            }}
-          />
-        </View>
+        /* Floating menu button — opens the project drawer (every project page
+           shows it, Jay 2026-09-16). */
+        <FloatingMenuButton onPress={onOpenDrawer} />
       )}
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
@@ -831,11 +1202,19 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
           ref={flatListRef}
           data={turns}
           renderItem={renderTurn}
-          keyExtractor={(item, index) => `${item.userMessage.info.id}:${index}`}
+          keyExtractor={keyExtractor}
+          initialNumToRender={INITIAL_TURNS_TO_RENDER}
+          maxToRenderPerBatch={5}
+          windowSize={11}
+          updateCellsBatchingPeriod={32}
           contentContainerStyle={{ paddingTop: listTopInset }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
+          onScrollEndDrag={handleScrollEndDrag}
+          onTouchStart={handleListTouchStart}
           onContentSizeChange={handleContentSizeChange}
           onLayout={handleListLayout}
           // WhatsApp-style: drag the message list down to dismiss the keyboard.
@@ -881,27 +1260,13 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
               <View
                 style={{
                   // Fill remaining viewport so the last turn's user bubble
-                  // sits at the top. Subtract: header (~60+insets), input (~90+insets),
-                  // footer bar (~50), and the actual measured last turn height.
-                  // 'floating' chrome has no header but adds the ~48pt+8pt tab
-                  // dock below the composer (+64), and its container no longer
-                  // overlaps upward by 24 (no -24 sheet margin), so the
-                  // reserved chrome grows by 88 total.
-                  height: Math.max(0, windowHeight - insets.top - insets.bottom - (effectiveChrome === 'floating' ? 283 : 195) - lastTurnHeight),
+                  // sits at the top (see spacerCap).
+                  height: Math.max(0, spacerCap - lastTurnHeight),
                 }}
               />
             </View>
           }
-          onScrollToIndexFailed={(info) => {
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({
-                index: info.index,
-                viewPosition: 0,
-                viewOffset: effectiveChrome === 'floating' ? listTopInset : 0,
-                animated: true,
-              });
-            }, 200);
-          }}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
         />
 
         <FreshSessionHero
@@ -953,39 +1318,25 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
             isBusy={isBusy}
             onboardingMode={onboardingMode}
             initialText={savedInputText}
-            onTextChange={(t) => { inputTextRef.current = t; }}
+            onTextChange={handleTextChange}
             agent={resolved.agent}
-            agents={resolved.agents}
-            model={resolved.model}
+            agents={resolvedAgents}
+            model={resolvedModel}
             models={visibleModels}
-            modelKey={resolved.modelKey}
+            modelKey={resolvedModelKey}
             variant={resolved.variant}
-            variants={resolved.variants}
-            onAgentChange={resolved.setAgent}
-            onModelChange={(pid, mid) => resolved.setModel(pid, mid, { explicit: true })}
-            onVariantCycle={resolved.cycleVariant}
-            onVariantSet={resolved.setVariant}
+            variants={resolvedVariants}
+            onAgentChange={handleAgentChange}
+            onModelChange={handleModelChange}
+            onVariantCycle={handleVariantCycle}
+            onVariantSet={handleVariantSet}
             sessions={allSessions}
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}
-            inputSlot={
-              queuedMessages.length > 0 ? (
-                <QueuePanel
-                  messages={queuedMessages}
-                  expanded={queueExpanded}
-                  onToggle={() => setQueueExpanded((v) => !v)}
-                  onRemove={queueRemove}
-                  onMoveUp={queueMoveUp}
-                  onMoveDown={queueMoveDown}
-                  onClear={() => queueClearSession(sessionId)}
-                  onSendNow={handleQueueSendNow}
-                  isDark={isDark}
-                />
-              ) : undefined
-            }
+            inputSlot={inputSlot}
           />
         )}
       </View>
@@ -1004,6 +1355,12 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
     </KeyboardAvoidingView>
   );
 }
+
+/**
+ * Memoized so a parent render with unchanged props does not re-render the
+ * thread. Callers pass stable callbacks.
+ */
+export const SessionPage = React.memo(SessionPageImpl);
 
 /**
  * FreshSessionHero — the project greeting centred in the message area of a
@@ -1083,7 +1440,7 @@ function QueuePanel({
   const bgColor = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
   const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
   // Original literals (`#888`/`#999`) had their light/dark branches swapped
-  // relative to their own lightness — same finding as CommandPalette/task 26.
+  // relative to their own lightness.
   const mutedText = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
   const fgText = isDark ? THEME.dark.foreground : THEME.light.foreground;
 

@@ -3,9 +3,10 @@
  * Components for previewing different file types
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Image, ScrollView, Dimensions, Platform } from 'react-native';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { View, Image, ScrollView, Dimensions, Platform, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -17,6 +18,19 @@ import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import {
+  HTML_SANITIZER_SCRIPT,
+  decidePreviewNavigation,
+  escapeForInlineScript,
+  type PreviewNavigationOptions,
+} from '@/lib/utils/html-embed';
+import {
+  CSV_MAX_COLUMNS,
+  JSON_PRETTY_PRINT_MAX_CHARS,
+  TEXT_TRUNCATE_DISPLAY_BYTES,
+  previewDecision,
+  truncateForPreview,
+} from '@/lib/files/preview-limits';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -164,6 +178,38 @@ interface FilePreviewProps {
   blobUrl?: string;
   filePath?: string;
   sandboxUrl?: string;
+  /** File size in bytes, when known. Files over the preview limits are not rendered. */
+  size?: number;
+}
+
+/**
+ * onShouldStartLoadWithRequest handler for preview WebViews. Inline loads stay
+ * in the WebView, web and mail links open outside the app, and every other
+ * navigation is blocked.
+ */
+function usePreviewNavigationGuard({
+  allowedOrigin,
+  allowFileUrls,
+  externalRequiresClick,
+}: Omit<PreviewNavigationOptions, 'isTopFrame' | 'navigationType'> = {}) {
+  return useCallback(
+    (request: ShouldStartLoadRequest) => {
+      const action = decidePreviewNavigation(request.url, {
+        allowedOrigin,
+        allowFileUrls,
+        externalRequiresClick,
+        isTopFrame: request.isTopFrame,
+        navigationType: request.navigationType,
+      });
+      if (action === 'open-external') {
+        Linking.openURL(request.url).catch((error) => {
+          log.warn('[FilePreview] Failed to open link:', error);
+        });
+      }
+      return action === 'allow';
+    },
+    [allowedOrigin, allowFileUrls, externalRequiresClick],
+  );
 }
 
 /**
@@ -271,8 +317,12 @@ function JsonPreview({ content }: { content: string }) {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  // Format JSON for better readability
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
+
+  // Format JSON for better readability. Large documents are shown as-is:
+  // parse + stringify runs synchronously on the JS thread.
   const formattedJson = useMemo(() => {
+    if (content.length >= JSON_PRETTY_PRINT_MAX_CHARS) return content;
     try {
       const parsed = JSON.parse(content);
       return JSON.stringify(parsed, null, 2);
@@ -292,6 +342,7 @@ function JsonPreview({ content }: { content: string }) {
         source={{ html }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled
         scrollEnabled
         showsVerticalScrollIndicator
@@ -341,12 +392,6 @@ function generateHighlightedCodeHtml(
   const theme = isDark ? 'github-dark' : 'github';
   const lineNumColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.2);
   const lineNumBorder = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
-  // Escape HTML entities in code
-  const escaped = code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 
   return `<!DOCTYPE html>
 <html>
@@ -410,8 +455,8 @@ function generateHighlightedCodeHtml(
   <div class="code-area" id="code-area"></div>
 </div>
 <script>
-  var codeStr = ${JSON.stringify(code)};
-  var lang = ${JSON.stringify(language)};
+  var codeStr = ${escapeForInlineScript(JSON.stringify(code))};
+  var lang = ${escapeForInlineScript(JSON.stringify(language))};
   var highlighted;
   try {
     var result = hljs.highlight(codeStr, { language: lang, ignoreIllegals: true });
@@ -453,6 +498,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const language = getLanguageFromFilename(fileName);
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
 
   const html = useMemo(
     () => generateHighlightedCodeHtml(content, language, isDark),
@@ -466,6 +512,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
         source={{ html }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled
         scrollEnabled
         showsVerticalScrollIndicator
@@ -519,6 +566,15 @@ function HtmlPreview({
 
   // If we have sandbox URL and file path, use Daytona iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
+  // Pages of the previewed site stay in the WebView. Another site opens outside
+  // the app only for a user click, so a script redirect or an iframe in the
+  // page cannot launch the browser. Tradeoff: only iOS reports clicks
+  // (navigationType 'click'). Android sends no click or frame information, so
+  // on Android a tap on an external link in an HTML preview does nothing.
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard({
+    allowedOrigin: htmlPreviewUrl,
+    externalRequiresClick: true,
+  });
 
   if (htmlPreviewUrl) {
     return (
@@ -527,6 +583,7 @@ function HtmlPreview({
           source={{ uri: htmlPreviewUrl }}
           style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
           originWhitelist={['*']}
+          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           startInLoadingState={true}
@@ -587,7 +644,7 @@ function CsvPreview({ content }: { content: string }) {
 
   // Parse CSV content
   const rows = content.split('\n').filter(row => row.trim());
-  const headers = rows[0]?.split(',').map(h => h.trim()) || [];
+  const headers = rows[0]?.split(',').slice(0, CSV_MAX_COLUMNS).map(h => h.trim()) || [];
   const dataRows = rows.slice(1);
 
   return (
@@ -626,7 +683,7 @@ function CsvPreview({ content }: { content: string }) {
 
         {/* Data Rows */}
         {dataRows.slice(0, 100).map((row, rowIndex) => {
-          const cells = row.split(',').map(c => c.trim());
+          const cells = row.split(',').slice(0, CSV_MAX_COLUMNS).map(c => c.trim());
           return (
             <View
               key={rowIndex}
@@ -737,7 +794,8 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
           bytes[i] = binaryData.charCodeAt(i);
         }
         
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        // isEvalSupported: false stops font data from compiling to JS (CVE-2024-4367).
+        const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
         document.getElementById('loading').style.display = 'none';
         
         const container = document.getElementById('container');
@@ -787,12 +845,17 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   const [hasError, setHasError] = useState(false);
   const [pdfFileUri, setPdfFileUri] = useState<string | null>(null);
   const [pdfHtml, setPdfHtml] = useState<string | null>(null);
+  // The cleanup closure must read the latest temp file, not the value captured
+  // when the effect ran.
+  const pdfFileUriRef = useRef<string | null>(null);
   
   const isAndroid = Platform.OS === 'android';
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard({ allowFileUrls: !isAndroid });
 
   // Process the PDF data based on platform
   useEffect(() => {
     if (!blobUrl) return;
+    let cancelled = false;
 
     const processPdf = async () => {
       try {
@@ -821,6 +884,11 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
             encoding: FileSystem.EncodingType.Base64,
           });
+          if (cancelled) {
+            FileSystem.deleteAsync(tempFilePath, { idempotent: true }).catch(() => {});
+            return;
+          }
+          pdfFileUriRef.current = tempFilePath;
           setPdfFileUri(tempFilePath);
           setIsLoading(false);
         }
@@ -833,10 +901,13 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
     processPdf();
 
-    // Cleanup temp file on unmount (iOS only)
+    // Delete the temp file when the PDF changes or the preview unmounts (iOS only)
     return () => {
-      if (pdfFileUri) {
-        FileSystem.deleteAsync(pdfFileUri, { idempotent: true }).catch(() => {});
+      cancelled = true;
+      const tempFile = pdfFileUriRef.current;
+      pdfFileUriRef.current = null;
+      if (tempFile) {
+        FileSystem.deleteAsync(tempFile, { idempotent: true }).catch(() => {});
       }
     };
   }, [blobUrl, fileName, isAndroid, isDark]);
@@ -890,6 +961,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           source={{ html: pdfHtml }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
           originWhitelist={['*']}
+          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           mixedContentMode="compatibility"
@@ -919,11 +991,10 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         source={{ uri: pdfFileUri! }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         allowFileAccess={true}
-        allowFileAccessFromFileURLs={true}
-        allowUniversalAccessFromFileURLs={true}
         startInLoadingState={true}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
@@ -1105,6 +1176,8 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
   <div id="error">Failed to load document</div>
   <div id="container"></div>
   <script>
+    ${HTML_SANITIZER_SCRIPT}
+
     async function renderDocx() {
       try {
         const base64 = '${base64Data}';
@@ -1128,8 +1201,15 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
           }
         );
 
+        // Parse into an inert document, sanitize, then move the nodes into the
+        // page. Nothing from the file runs or loads before sanitizing.
+        const parsed = new DOMParser().parseFromString(result.value, 'text/html');
+        sanitizeUntrustedHtml(parsed.body);
+        const container = document.getElementById('container');
+        while (parsed.body.firstChild) {
+          container.appendChild(document.adoptNode(parsed.body.firstChild));
+        }
         document.getElementById('loading').style.display = 'none';
-        document.getElementById('container').innerHTML = result.value;
       } catch (err) {
         console.error('DOCX render error:', err);
         document.getElementById('loading').style.display = 'none';
@@ -1168,6 +1248,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
+  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
 
   useEffect(() => {
     if (!blobUrl) return;
@@ -1247,6 +1328,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
         source={{ html: docxHtml }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         mixedContentMode="compatibility"
@@ -1271,12 +1353,22 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
 /**
  * Fallback Preview Component
  */
-function FallbackPreview({ fileName, previewType }: { fileName: string; previewType: FilePreviewType }) {
+function FallbackPreview({
+  fileName,
+  previewType,
+  tooLarge = false,
+}: {
+  fileName: string;
+  previewType: FilePreviewType;
+  tooLarge?: boolean;
+}) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   let message = 'Preview not available';
-  if (previewType === FilePreviewType.XLSX) {
+  if (tooLarge) {
+    message = 'This file is too large to preview. Download it instead.';
+  } else if (previewType === FilePreviewType.XLSX) {
     message = 'Spreadsheet preview requires download';
   }
 
@@ -1300,36 +1392,37 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
 }
 
 /**
- * Main File Preview Component
+ * Notice above a text preview that shows only the start of the file.
  */
-export function FilePreview({
+function TruncationNotice() {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return (
+    <View
+      className="px-4 py-2"
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
+    >
+      <Text variant="muted" className="text-center">
+        Showing the first {Math.round(TEXT_TRUNCATE_DISPLAY_BYTES / 1024)} KB. Download the file to see all of it.
+      </Text>
+    </View>
+  );
+}
+
+function TextContentPreview({
   content,
   fileName,
   previewType,
-  blobUrl,
   filePath,
-  sandboxUrl
-}: FilePreviewProps) {
-  // For images, we need the blob URL
-  if (previewType === FilePreviewType.IMAGE) {
-    return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For PDFs, we need the blob URL
-  if (previewType === FilePreviewType.PDF) {
-    return <PdfPreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For DOCX, we need the blob URL
-  if (previewType === FilePreviewType.DOCX) {
-    return <DocxPreview blobUrl={blobUrl} fileName={fileName} />;
-  }
-
-  // For other types, we need text content
-  if (!content || typeof content !== 'string') {
-    return <FallbackPreview fileName={fileName} previewType={previewType} />;
-  }
-
+  sandboxUrl,
+}: {
+  content: string;
+  fileName: string;
+  previewType: FilePreviewType;
+  filePath?: string;
+  sandboxUrl?: string;
+}) {
   switch (previewType) {
     case FilePreviewType.MARKDOWN:
       return <MarkdownPreview content={content} />;
@@ -1358,4 +1451,86 @@ export function FilePreview({
       // Any unrecognized file with text content — render as plain text
       return <TextPreview content={content} />;
   }
+}
+
+/**
+ * Main File Preview Component
+ */
+export function FilePreview({
+  content,
+  fileName,
+  previewType,
+  blobUrl,
+  filePath,
+  sandboxUrl,
+  size,
+}: FilePreviewProps) {
+  // Size gate for text content. Memoized so a parent re-render does not hand
+  // the renderers a new truncated string (which would rebuild WebView HTML).
+  const textPreview = useMemo(() => {
+    if (typeof content !== 'string' || !content) return null;
+    const decision = previewDecision({ size: content.length, previewType });
+    if (decision !== 'truncate') return { decision, text: content };
+    return { decision, text: truncateForPreview(content).text };
+  }, [content, previewType]);
+
+  const sizeDecision = previewDecision({ size, previewType });
+
+  // An HTML file with a sandbox URL loads the page by URL, not through JS, so
+  // the size limits do not apply to it.
+  const loadsFromSandbox =
+    previewType === FilePreviewType.HTML && !!constructHtmlPreviewUrl(sandboxUrl, filePath);
+  if (loadsFromSandbox && (textPreview || sizeDecision === 'too-large')) {
+    return <HtmlPreview content={textPreview?.text ?? ''} filePath={filePath} sandboxUrl={sandboxUrl} />;
+  }
+
+  // Files known to exceed the limits are never rendered; Download stays available.
+  if (sizeDecision === 'too-large') {
+    return <FallbackPreview fileName={fileName} previewType={previewType} tooLarge />;
+  }
+
+  // For images, we need the blob URL
+  if (previewType === FilePreviewType.IMAGE) {
+    return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For PDFs, we need the blob URL
+  if (previewType === FilePreviewType.PDF) {
+    return <PdfPreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For DOCX, we need the blob URL
+  if (previewType === FilePreviewType.DOCX) {
+    return <DocxPreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
+  // For other types, we need text content
+  if (!textPreview) {
+    return <FallbackPreview fileName={fileName} previewType={previewType} />;
+  }
+
+  if (textPreview.decision === 'too-large') {
+    return <FallbackPreview fileName={fileName} previewType={previewType} tooLarge />;
+  }
+
+  const preview = (
+    <TextContentPreview
+      content={textPreview.text}
+      fileName={fileName}
+      previewType={previewType}
+      filePath={filePath}
+      sandboxUrl={sandboxUrl}
+    />
+  );
+
+  if (textPreview.decision === 'truncate') {
+    return (
+      <View className="flex-1">
+        <TruncationNotice />
+        {preview}
+      </View>
+    );
+  }
+
+  return preview;
 }

@@ -22,6 +22,8 @@ export interface SearchListHeaderProps {
   rightAction?: React.ReactNode;
   /** Optional text-input props (returnKeyType, autoFocus, etc.). */
   inputProps?: Omit<TextInputProps, 'value' | 'onChangeText' | 'placeholder' | 'placeholderTextColor' | 'style'>;
+  /** Side padding: `project` 16pt (`px-4`, default — list pages live in a project), `page` 20pt (`px-5`). */
+  gutter?: 'page' | 'project';
 }
 
 export function SearchListHeader({
@@ -31,11 +33,12 @@ export function SearchListHeader({
   onAdd,
   rightAction,
   inputProps,
+  gutter = 'project',
 }: SearchListHeaderProps) {
   // No top padding on the row below — PageHeader (12) + PageContent (4)
   // already provide the uniform 16pt gap below the title row.
   return (
-    <View className="flex-row items-center gap-2.5 px-5 pb-2">
+    <View className={`flex-row items-center gap-2.5 pb-2 ${gutter === 'page' ? 'px-5' : 'px-4'}`}>
       {/* Filled, borderless pill; the Input inside inherits the app-wide input
           text (16pt Roobert Regular) and only drops its own surface. */}
       <View className="h-10 flex-1 flex-row items-center rounded-full bg-secondary px-4">
@@ -51,7 +54,11 @@ export function SearchListHeader({
           className="ml-2 h-full flex-1 rounded-none bg-transparent px-0"
         />
         {value.length > 0 && (
-          <Pressable onPress={() => onChangeText('')} hitSlop={10}>
+          <Pressable
+            onPress={() => onChangeText('')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search">
             <Icon as={X} size={16} className="text-muted-foreground" />
           </Pressable>
         )}

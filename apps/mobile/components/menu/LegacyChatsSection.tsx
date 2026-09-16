@@ -56,10 +56,10 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
 
   return (
     <View>
-      <View className="flex-row items-center px-3">
+      <View className="flex-row items-center">
         <Pressable
           onPress={() => { haptics.selection(); setExpanded((v) => !v); }}
-          className="flex-row items-center flex-1 px-2 py-2.5 rounded-lg active:opacity-60"
+          className="flex-1 flex-row items-center rounded-lg px-3 py-2 active:opacity-60"
         >
           <Ionicons name="time-outline" size={18} color={iconColor} />
           <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Previous Chats</Text>
@@ -92,7 +92,7 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
       </View>
 
       {(isMigrating || migrateAll.isPending) && migrateStatus && migrateStatus.total > 0 && (
-        <View className="px-6 pb-1.5">
+        <View className="px-3 pb-1.5">
           <Text className="text-muted-foreground mb-1" style={{ fontSize: 10 }}>
             Converting {migrateStatus.completed}/{migrateStatus.total}
             {migrateStatus.failed > 0 && (
@@ -109,7 +109,7 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
       )}
 
       {migrateDone && migrateStatus && (
-        <View className="px-6 pb-1.5">
+        <View className="px-3 pb-1.5">
           <Text className="text-kortix-green" style={{ fontSize: 10 }}>
             Converted {migrateStatus.completed} chats
             {migrateStatus.failed > 0 && (
@@ -120,11 +120,11 @@ export function LegacyChatsSection({ iconColor, mutedColor }: LegacyChatsSection
       )}
 
       {expanded && legacyData && (
-        <View className="px-2 pb-2">
+        <View className="pb-2">
           {legacyData.threads.map((thread) => (
             <View
               key={thread.thread_id}
-              className="flex-row items-center rounded-lg px-4 py-2 mb-0.5"
+              className="mb-0.5 flex-row items-center rounded-lg px-3 py-2"
             >
               <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
                 {thread.name || 'Untitled'}

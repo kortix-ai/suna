@@ -131,9 +131,9 @@ layout-only classes (`mt-*`, `flex-1`, `self-*`) and `rounded-full` for a pill
 (e.g. the auth screen's provider buttons).
 
 **Label size follows `size`.** `buttonTextVariants` in
-`components/ui/button.tsx` maps `size="lg"` to `text-base font-semibold`
-(16px Roobert SemiBold). `default`, `sm`, and `icon` keep stock `text-sm
-font-medium`. A `<Text variant="large">` inside a Button does nothing: `Text`
+`components/ui/button.tsx` maps `size="lg"` to `text-base font-medium`
+(16px Roobert Medium). `default`, `sm`, and `icon` keep stock `text-sm
+font-medium`. Button labels are always medium, never semibold (Jay, 2026-09-16). A `<Text variant="large">` inside a Button does nothing: `Text`
 merges `cn(textVariants, TextClassContext, className)`, so the button context
 overrides the variant's size and weight. If a screen needs a different label,
 change `buttonTextVariants` (and check every consumer), don't patch around it.
@@ -309,7 +309,8 @@ that drops props silently breaks the screens that still pass them.
    it, and React Native cannot synthesize the family),
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
-   `text-base font-semibold`, so no screen sets label or box size by class),
+   `text-base font-medium`, so no screen sets label or box size by class;
+   no added variants),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the
    content; `DialogContent` renders its X close button only with

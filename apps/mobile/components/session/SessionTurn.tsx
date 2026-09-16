@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { View, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image } from 'react-native';
+import { View, Animated, StyleSheet, Platform, ScrollView, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -23,6 +23,7 @@ import ReAnimated, {
   withTiming,
   Easing,
   interpolate,
+  FadeIn,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -56,12 +57,18 @@ import * as Haptics from 'expo-haptics';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
+import {
+  IMAGE_AUTO_LOAD_LIMIT_BYTES,
+  createProbeCache,
+  decideImageLoad,
+  formatMegabytes,
+  parseContentLength,
+} from '@/lib/session/image-load';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore } from '@/stores/tab-store';
 import type {
   Turn,
-  MessageWithParts,
   SessionStatus,
   TextPart,
   ToolPart,
@@ -76,7 +83,6 @@ import {
   isTextPart,
   isToolPart,
   isReasoningPart,
-  isLastUserMessage,
   getWorkingState,
   getTurnError,
   getTurnStatus,
@@ -92,17 +98,131 @@ import {
   splitUserParts,
 } from '@kortix/sdk';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 // ─── Image extension detection ──────────────────────────────────────────────
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?|heic|heif)$/i;
 
 function isImagePath(filePath: string): boolean {
   return IMAGE_EXT_RE.test(filePath);
+}
+
+// ─── Sandbox image loading ───────────────────────────────────────────────────
+// The native image loader downloads, caches, and downsamples the file, so no
+// image bytes reach the JS heap. A HEAD request reads `content-length` first;
+// files above IMAGE_AUTO_LOAD_LIMIT_BYTES wait for a tap.
+
+type SandboxImagePhase = 'probing' | 'load' | 'tap-to-load' | 'error';
+
+// The sandbox daemon serves HEAD through its GET handler and reads the whole
+// file, so each URL is probed once per app session, not on every cell remount.
+const imageProbeCache = createProbeCache(200);
+
+function useSandboxImage(filePath: string, enabled: boolean) {
+  const { sandboxUrl } = useSandboxContext();
+  const rawUrl = sandboxUrl && filePath
+    ? `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`
+    : null;
+  const [phase, setPhase] = useState<SandboxImagePhase>('probing');
+  const [token, setToken] = useState<string | null>(null);
+  const [sizeBytes, setSizeBytes] = useState<number | null>(null);
+  // Bumped on retry so the Image remounts and requests the file again.
+  const [attempt, setAttempt] = useState(0);
+  const retriedRef = useRef(false);
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || !rawUrl) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    retriedRef.current = false;
+    setPhase('probing');
+    (async () => {
+      const authToken = await getAuthToken().catch(() => null);
+      if (cancelled) return;
+      let contentLength: number | null = null;
+      if (imageProbeCache.has(rawUrl)) {
+        contentLength = imageProbeCache.get(rawUrl) ?? null;
+      } else {
+        try {
+          const res = await fetch(rawUrl, {
+            method: 'HEAD',
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+            signal: controller.signal,
+          });
+          if (res.ok) {
+            contentLength = parseContentLength(res.headers.get('content-length'));
+            imageProbeCache.set(rawUrl, contentLength);
+          }
+        } catch {
+          // Unknown length: let the native loader try; onError handles failures.
+        }
+      }
+      if (cancelled) return;
+      setToken(authToken);
+      setSizeBytes(contentLength);
+      setPhase(decideImageLoad({ contentLength, limitBytes: IMAGE_AUTO_LOAD_LIMIT_BYTES }));
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [enabled, rawUrl]);
+
+  const loadAnyway = useCallback(() => setPhase('load'), []);
+
+  // First failure: retry once with a fresh token (the cached one may have
+  // expired). Second failure: show the error fallback.
+  const handleError = useCallback(() => {
+    if (retriedRef.current) {
+      setPhase('error');
+      return;
+    }
+    retriedRef.current = true;
+    getAuthToken()
+      .catch(() => null)
+      .then((fresh) => {
+        if (!aliveRef.current) return;
+        setToken(fresh);
+        setAttempt((n) => n + 1);
+      });
+  }, []);
+
+  const source = useMemo(
+    () =>
+      rawUrl
+        ? { uri: rawUrl, headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        : undefined,
+    [rawUrl, token],
+  );
+
+  return { phase, source, sizeBytes, attempt, loadAnyway, handleError };
+}
+
+function TapToLoadImage({
+  sizeBytes,
+  height,
+  isDark,
+  onLoad,
+}: {
+  sizeBytes: number | null;
+  height: number;
+  isDark: boolean;
+  onLoad: () => void;
+}) {
+  return (
+    <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02) }}>
+      <Button variant="secondary" size="sm" onPress={onLoad}>
+        <Text>{sizeBytes !== null ? `Tap to load (${formatMegabytes(sizeBytes)})` : 'Tap to load'}</Text>
+      </Button>
+    </View>
+  );
 }
 
 // ─── SandboxImage — loads an image from the sandbox with auth ────────────────
@@ -116,46 +236,13 @@ function SandboxImage({
   isDark: boolean;
   height?: number;
 }) {
-  const { sandboxUrl } = useSandboxContext();
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const { phase, source, sizeBytes, attempt, loadAnyway, handleError } = useSandboxImage(filePath, true);
+  const placeholderBg = isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02);
 
-  useEffect(() => {
-    if (!sandboxUrl || !filePath) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getAuthToken();
-        const headers: Record<string, string> = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch(
-          `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`,
-          { headers },
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (!cancelled && typeof reader.result === 'string') {
-            setImageUri(reader.result);
-            setLoading(false);
-          }
-        };
-        reader.onerror = () => {
-          if (!cancelled) { setError(true); setLoading(false); }
-        };
-        reader.readAsDataURL(blob);
-      } catch {
-        if (!cancelled) { setError(true); setLoading(false); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [sandboxUrl, filePath]);
-
-  if (loading) {
+  // No sandbox yet: keep the loading placeholder until the URL resolves.
+  if (phase === 'probing' || !source) {
     return (
-      <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02) }}>
+      <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: placeholderBg }}>
         <ReAnimated.View>
           <Loader2 size={20} color={muted(isDark)} />
         </ReAnimated.View>
@@ -163,7 +250,11 @@ function SandboxImage({
     );
   }
 
-  if (error || !imageUri) {
+  if (phase === 'tap-to-load') {
+    return <TapToLoadImage sizeBytes={sizeBytes} height={height} isDark={isDark} onLoad={loadAnyway} />;
+  }
+
+  if (phase === 'error') {
     return (
       <View style={{ height: 60, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 12, color: muted(isDark) }}>
@@ -175,9 +266,12 @@ function SandboxImage({
 
   return (
     <Image
-      source={{ uri: imageUri }}
-      style={{ width: '100%', height, borderBottomLeftRadius: 13, borderBottomRightRadius: 13 }}
+      key={attempt}
+      source={source}
+      onError={handleError}
+      style={{ width: '100%', height, borderBottomLeftRadius: 13, borderBottomRightRadius: 13, backgroundColor: placeholderBg }}
       resizeMode="cover"
+      resizeMethod="resize"
     />
   );
 }
@@ -1280,15 +1374,7 @@ function WebSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
               <Button
                 variant="ghost"
                 className="h-auto w-auto gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
-                onPress={() => {
-                  LayoutAnimation.configureNext({
-                    duration: 200,
-                    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                    update: { type: LayoutAnimation.Types.easeInEaseOut },
-                    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-                  });
-                  setExpandedQuery(isExpanded ? null : qi);
-                }}
+                onPress={() => setExpandedQuery(isExpanded ? null : qi)}
                 style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}
               >
                 <Search size={12} color={muted(isDark)} style={{ marginRight: 8 }} />
@@ -2170,12 +2256,20 @@ function toolHasExpandableContent(tool: ToolPart): boolean {
 
 const LOCALHOST_RE = /https?:\/\/localhost:(\d+)(\/[^\s)]*)?/;
 
-function ShowToolCard({
+// Tool rows animate (shimmer + spinner) only while their turn is working. A
+// part left `pending`/`running` in stored history renders static.
+function isToolAnimating(tool: ToolPart, working: boolean): boolean {
+  return working && (tool.state.status === 'pending' || tool.state.status === 'running');
+}
+
+const ShowToolCard = React.memo(function ShowToolCard({
   tool,
   isDark,
+  working,
 }: {
   tool: ToolPart;
   isDark: boolean;
+  working: boolean;
 }) {
   const input = getToolInput(tool);
   const { sandboxId, sandboxUrl: ctxSandboxUrl } = useSandboxContext();
@@ -2186,7 +2280,7 @@ function ShowToolCard({
   const url = (input.url as string) || '';
   const path = (input.path as string) || '';
   const content = (input.content as string) || '';
-  const isRunning = tool.state.status === 'pending' || tool.state.status === 'running';
+  const isRunning = isToolAnimating(tool, working);
   const isError = tool.state.status === 'error';
 
   // Determine if we have a localhost URL to open in browser
@@ -2257,14 +2351,9 @@ function ShowToolCard({
     }
   }, [canOpen, sandboxId, hasLocalhostUrl, localhostMatch, url, path]);
 
+  // Expands instantly; only the revealed content fades in (see `entering`).
   const handleToggle = useCallback(() => {
     if (!hasExpandableContent) return;
-    LayoutAnimation.configureNext({
-      duration: 200,
-      create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      update: { type: LayoutAnimation.Types.easeInEaseOut },
-      delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-    });
     setExpanded((prev) => !prev);
   }, [hasExpandableContent]);
 
@@ -2405,14 +2494,15 @@ function ShowToolCard({
           </Button>
 
           {expanded && (
-            <View
+            <ReAnimated.View
+              entering={FadeIn.duration(150)}
               style={{
                 borderTopWidth: 1,
                 borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04),
               }}
             >
               <ShowExpandedContent tool={tool} isDark={isDark} />
-            </View>
+            </ReAnimated.View>
           )}
         </>
       )}
@@ -2429,21 +2519,23 @@ function ShowToolCard({
       )}
     </View>
   );
-}
+});
 
 // ─── ToolCard — expandable tool call card ────────────────────────────────────
 
-function ToolCard({
+const ToolCard = React.memo(function ToolCard({
   tool,
   isDark,
+  working,
 }: {
   tool: ToolPart;
   isDark: boolean;
+  working: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const input = getToolInput(tool);
   const info = getToolInfo(tool.tool, input);
-  const isRunning = tool.state.status === 'pending' || tool.state.status === 'running';
+  const isRunning = isToolAnimating(tool, working);
   const isError = tool.state.status === 'error';
 
   // Question tool: compute "N answered" subtitle
@@ -2520,12 +2612,7 @@ function ToolCard({
       return;
     }
     if (!hasExpandable && !isRunning) return;
-    LayoutAnimation.configureNext({
-      duration: 200,
-      create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      update: { type: LayoutAnimation.Types.easeInEaseOut },
-      delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-    });
+    // Expands instantly; only the revealed content fades in (see `entering`).
     setExpanded((prev) => !prev);
   }, [hasExpandable, isRunning, projectNavTarget]);
 
@@ -2628,7 +2715,8 @@ function ToolCard({
       {/* Expanded content — tool-specific. The collapsed trigger is inline, so
           the detail gets its own light container when opened. */}
       {expanded && (
-        <View
+        <ReAnimated.View
+          entering={FadeIn.duration(150)}
           style={{
             marginTop: 4,
             borderRadius: 10,
@@ -2639,11 +2727,11 @@ function ToolCard({
           }}
         >
           {getExpandedContent(tool, isDark)}
-        </View>
+        </ReAnimated.View>
       )}
     </View>
   );
-}
+});
 
 // ─── Spinning Loader ─────────────────────────────────────────────────────────
 
@@ -2831,7 +2919,9 @@ function HighlightMentions({
 
 interface SessionTurnProps {
   turn: Turn;
-  allMessages: MessageWithParts[];
+  /** True for the turn of the last user message in the session. */
+  isLast: boolean;
+  /** Only the last turn receives these; other turns get stable defaults. */
   sessionStatus?: SessionStatus;
   isBusy: boolean;
   pendingQuestions?: QuestionRequest[];
@@ -2841,12 +2931,69 @@ interface SessionTurnProps {
   commands?: Command[];
 }
 
-export function SessionTurn({
+const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
+
+type RenderItem =
+  | { type: 'part'; part: Part; key: string }
+  | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string };
+
+// Group consecutive reasoning parts into a single GroupedReasoningCard.
+// Ported from web 38e2d41 to reduce clutter on turns with many reasoning blocks.
+function buildRenderItems(visibleParts: ReadonlyArray<{ part: Part }>): RenderItem[] {
+  const items: RenderItem[] = [];
+  let pendingReasoning: ReasoningPart[] = [];
+
+  const flushReasoning = () => {
+    if (pendingReasoning.length > 0) {
+      items.push({
+        type: 'reasoning-group',
+        parts: pendingReasoning,
+        key: `reasoning-group-${(pendingReasoning[0] as any).id ?? items.length}`,
+      });
+      pendingReasoning = [];
+    }
+  };
+
+  for (const { part } of visibleParts) {
+    if (isReasoningPart(part) && (part as ReasoningPart).text?.trim()) {
+      pendingReasoning.push(part as ReasoningPart);
+    } else {
+      flushReasoning();
+      items.push({ type: 'part', part, key: part.id });
+    }
+  }
+  flushReasoning();
+  return items;
+}
+
+// Text part: markdown plus localhost preview cards. Memoized on the text so a
+// delta on another part of the turn does not rescan this text.
+const TextPartBlock = React.memo(function TextPartBlock({ text, isDark }: { text: string; isDark: boolean }) {
+  const detectedUrls = useMemo(() => detectLocalhostUrls(text), [text]);
+  return (
+    <View className="mb-2">
+      <SelectableMarkdownText isDark={isDark}>
+        {text}
+      </SelectableMarkdownText>
+      {detectedUrls.map((detected) => (
+        <SandboxPreviewCard
+          key={`preview-${detected.port}`}
+          port={detected.port}
+          path={detected.path}
+          title={`localhost:${detected.port}${detected.path}`}
+          description="Tap to open in browser"
+        />
+      ))}
+    </View>
+  );
+});
+
+function SessionTurnImpl({
   turn,
-  allMessages,
+  isLast,
   sessionStatus,
   isBusy,
-  pendingQuestions = [],
+  pendingQuestions = EMPTY_QUESTIONS,
   agentNames,
   onFileMention,
   onSessionMention,
@@ -2857,15 +3004,15 @@ export function SessionTurn({
 
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
 
-  const isLast = useMemo(
-    () => isLastUserMessage(turn.userMessage.info.id, allMessages),
-    [turn.userMessage.info.id, allMessages],
-  );
-
   const working = useMemo(
     () => getWorkingState(sessionStatus, isLast) || (isLast && isBusy),
     [sessionStatus, isLast, isBusy],
   );
+
+  // True once this turn has been working during the current mount. Turns that
+  // were already complete when the thread opened show TurnActions without a fade.
+  const sawWorkingRef = useRef(false);
+  if (working) sawWorkingRef.current = true;
 
   // Split user message into attachments + text, stripping <file> XML tags
   const { userText, userFiles } = useMemo(() => {
@@ -2950,6 +3097,8 @@ export function SessionTurn({
       return false;
     });
   }, [allParts, pendingQuestions]);
+
+  const renderItems = useMemo(() => buildRenderItems(visibleParts), [visibleParts]);
 
   // Get the final response text (last text part) for copy/actions
   const response = useMemo(() => {
@@ -3171,81 +3320,33 @@ export function SessionTurn({
       {/* Assistant response — interleaved text + tool calls */}
       {(turn.assistantMessages.length > 0 || working) && (
         <View className="px-4">
-          {(() => {
-            // Group consecutive reasoning parts into a single GroupedReasoningCard.
-            // Ported from web 38e2d41 to reduce clutter on turns with many reasoning blocks.
-            type RenderItem =
-              | { type: 'part'; part: Part; key: string }
-              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string };
-
-            const items: RenderItem[] = [];
-            let pendingReasoning: ReasoningPart[] = [];
-
-            const flushReasoning = () => {
-              if (pendingReasoning.length > 0) {
-                items.push({
-                  type: 'reasoning-group',
-                  parts: pendingReasoning,
-                  key: `reasoning-group-${(pendingReasoning[0] as any).id ?? items.length}`,
-                });
-                pendingReasoning = [];
-              }
-            };
-
-            for (const { part } of visibleParts) {
-              if (isReasoningPart(part) && (part as ReasoningPart).text?.trim()) {
-                pendingReasoning.push(part as ReasoningPart);
-              } else {
-                flushReasoning();
-                items.push({ type: 'part', part, key: part.id });
-              }
+          {renderItems.map((item) => {
+            if (item.type === 'reasoning-group') {
+              return (
+                <GroupedReasoningCard
+                  key={item.key}
+                  parts={item.parts}
+                  isStreaming={working}
+                />
+              );
             }
-            flushReasoning();
 
-            return items.map((item) => {
-              if (item.type === 'reasoning-group') {
-                return (
-                  <GroupedReasoningCard
-                    key={item.key}
-                    parts={item.parts}
-                    isStreaming={working}
-                  />
-                );
-              }
+            const { part } = item;
 
-              const { part } = item;
-
-              if (isToolPart(part)) {
-                const tp = part as ToolPart;
-                if (tp.tool === 'show' || tp.tool === 'show-user') {
-                  return <ShowToolCard key={tp.id} tool={tp} isDark={isDark} />;
-                }
-                return <ToolCard key={tp.id} tool={tp} isDark={isDark} />;
+            if (isToolPart(part)) {
+              const tp = part as ToolPart;
+              if (tp.tool === 'show' || tp.tool === 'show-user') {
+                return <ShowToolCard key={tp.id} tool={tp} isDark={isDark} working={working} />;
               }
-              if (isTextPart(part)) {
-                const tp = part as TextPart;
-                if (!tp.text?.trim()) return null;
-                const detectedUrls = detectLocalhostUrls(tp.text);
-                return (
-                  <View key={tp.id} className="mb-2">
-                    <SelectableMarkdownText isDark={isDark}>
-                      {tp.text}
-                    </SelectableMarkdownText>
-                    {detectedUrls.map((detected) => (
-                      <SandboxPreviewCard
-                        key={`preview-${detected.port}`}
-                        port={detected.port}
-                        path={detected.path}
-                        title={`localhost:${detected.port}${detected.path}`}
-                        description="Tap to open in browser"
-                      />
-                    ))}
-                  </View>
-                );
-              }
-              return null;
-            });
-          })()}
+              return <ToolCard key={tp.id} tool={tp} isDark={isDark} working={working} />;
+            }
+            if (isTextPart(part)) {
+              const tp = part as TextPart;
+              if (!tp.text?.trim()) return null;
+              return <TextPartBlock key={tp.id} text={tp.text} isDark={isDark} />;
+            }
+            return null;
+          })}
 
           {/* Retry banner (shown when retrying, before the working dot) */}
           {working && retryInfo && retryMessage && (
@@ -3306,6 +3407,7 @@ export function SessionTurn({
                 costInfo={costInfo}
                 isDark={isDark}
                 tightToResponse={!turnError}
+                animateIn={sawWorkingRef.current}
               />
             </View>
           )}
@@ -3315,6 +3417,8 @@ export function SessionTurn({
   );
 }
 
+export const SessionTurn = React.memo(SessionTurnImpl);
+
 // ---------------------------------------------------------------------------
 // UserFileCard — renders a file attachment in user message bubble
 // ---------------------------------------------------------------------------
@@ -3323,31 +3427,7 @@ const IMAGE_MIME_RE = /^image\//;
 
 function UserFileCard({ file, isDark }: { file: { path: string; mime: string; filename: string }; isDark: boolean }) {
   const isImage = IMAGE_MIME_RE.test(file.mime);
-  const { sandboxUrl: ctxSandboxUrl } = useSandboxContext();
-
-  // For images, try to load from sandbox
-  const [imageUri, setImageUri] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isImage || !ctxSandboxUrl || !file.path) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${ctxSandboxUrl}/file/raw?path=${encodeURIComponent(file.path)}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok || cancelled) return;
-        const blob = await res.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (!cancelled && typeof reader.result === 'string') setImageUri(reader.result);
-        };
-        reader.readAsDataURL(blob);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [isImage, ctxSandboxUrl, file.path]);
+  const { phase, source, sizeBytes, attempt, loadAnyway, handleError } = useSandboxImage(file.path, isImage && !!file.path);
 
   return (
     <View
@@ -3360,13 +3440,19 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
         marginBottom: 6,
       }}
     >
-      {/* Image preview */}
-      {isImage && imageUri && (
+      {/* Image preview — hidden while probing and after a failed load */}
+      {isImage && source && phase === 'load' && (
         <Image
-          source={{ uri: imageUri }}
+          key={attempt}
+          source={source}
+          onError={handleError}
           style={{ width: '100%', height: 160, borderTopLeftRadius: 9, borderTopRightRadius: 9 }}
           resizeMode="cover"
+          resizeMethod="resize"
         />
+      )}
+      {isImage && phase === 'tap-to-load' && (
+        <TapToLoadImage sizeBytes={sizeBytes} height={160} isDark={isDark} onLoad={loadAnyway} />
       )}
       {/* File info row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, gap: 8 }}>
@@ -3444,24 +3530,28 @@ function TurnActions({
   costInfo,
   isDark,
   tightToResponse = true,
+  animateIn = true,
 }: {
   response: string;
   duration?: number;
   costInfo?: { cost: number; tokens: { input: number; output: number } } | undefined;
   isDark: boolean;
   tightToResponse?: boolean;
+  /** False for turns already complete at mount: render at full opacity. */
+  animateIn?: boolean;
 }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(animateIn ? 0 : 1)).current;
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (!animateIn) return;
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       delay: 150,
       useNativeDriver: true,
     }).start();
-  }, [fadeAnim]);
+  }, [fadeAnim, animateIn]);
 
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(response);

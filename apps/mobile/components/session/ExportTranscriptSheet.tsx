@@ -2,7 +2,7 @@
  * ExportTranscriptSheet — bottom sheet for exporting session transcript as Markdown.
  * Ported from web's ExportTranscriptDialog.
  */
-import React, { forwardRef, useMemo, useState, useCallback } from 'react';
+import React, { forwardRef, useMemo, useState, useCallback, useRef, useImperativeHandle } from 'react';
 import { View, Platform, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -47,8 +47,22 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
     const [copied, setCopied] = useState(false);
     const [sharing, setSharing] = useState(false);
 
-    // Session info
-    const { data: session } = useSession(sandboxUrl, sessionId || '');
+    // Presentation state — this sheet stays mounted while closed (pan-down-to-close
+    // needs it pre-mounted), so every subscription and derived computation below
+    // must be gated on this, or it re-runs on every streamed message delta.
+    const [isOpen, setIsOpen] = useState(false);
+
+    // Real gorhom instance. The `ref` this component forwards is a thin
+    // present()-intercepting wrapper around this (see useImperativeHandle
+    // below) so `isOpen` flips before the sheet's first visible frame,
+    // instead of waiting for the open animation to finish (onChange) or
+    // even start (onAnimate) — both fire too late for already-in-memory
+    // data like transcript/wordCount to be ready when the sheet appears.
+    const sheetRef = useRef<BottomSheetModal>(null);
+
+    // Session info — disabled while closed (useSession has no `enabled` param;
+    // an empty id is the form it already treats as disabled).
+    const { data: session } = useSession(sandboxUrl, isOpen ? sessionId || '' : '');
 
     const loadTranscript = useCallback(async () => {
       if (!session || !sessionId || !sandboxUrl) return '';
@@ -68,12 +82,14 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
       );
     }, [options, sandboxUrl, session, sessionId]);
 
-    // Messages from sync store
-    const messages = useSyncStore((state) => (sessionId ? state.messages[sessionId] : undefined));
+    // Messages from sync store — only subscribed while open, so a closed sheet
+    // never re-renders on stream deltas.
+    const messages = useSyncStore((state) => (isOpen && sessionId ? state.messages[sessionId] : undefined));
 
-    // Build transcript
+    // Build transcript (preview + word count while open; handleCopy/handleShare
+    // reload a fresh, complete transcript via loadTranscript() regardless).
     const transcript = useMemo(() => {
-      if (!session || !messages || !Array.isArray(messages) || messages.length === 0) return '';
+      if (!isOpen || !session || !messages || !Array.isArray(messages) || messages.length === 0) return '';
       return formatTranscript(
         {
           id: session.id,
@@ -83,7 +99,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
         messages,
         options
       );
-    }, [session, messages, options]);
+    }, [isOpen, session, messages, options]);
 
     const filename = useMemo(() => {
       if (!session) return 'session.md';
@@ -129,18 +145,54 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           UTI: 'net.daringfireball.markdown',
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
+        sheetRef.current?.dismiss();
       } catch {
         // User cancelled share or error
       } finally {
         setSharing(false);
       }
-    }, [filename, loadTranscript, ref]);
+    }, [filename, loadTranscript]);
 
     const toggleOption = useCallback((key: keyof TranscriptOptions) => {
       setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
     }, []);
 
+    const handleSheetChange = useCallback((index: number) => {
+      setIsOpen(index >= 0);
+    }, []);
+
+    const handleDismiss = useCallback(() => {
+      setIsOpen(false);
+    }, []);
+
+    // Belt-and-suspenders: onAnimate fires at the start of the open transition
+    // (before onChange, which only fires once the animation completes), so it
+    // catches any open path that reaches the sheet without going through the
+    // present() wrapper below (e.g. a gesture-driven snap).
+    const handleAnimate = useCallback((_fromIndex: number, toIndex: number) => {
+      if (toIndex >= 0) setIsOpen(true);
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      (): BottomSheetModal => ({
+        present: (...args: Parameters<BottomSheetModal['present']>) => {
+          // Flip open synchronously, before the sheet even mounts its
+          // content — this is what actually gets transcript/wordCount
+          // computed and visible on the sheet's first visible frame.
+          setIsOpen(true);
+          sheetRef.current?.present(...args);
+        },
+        dismiss: (...args: Parameters<BottomSheetModal['dismiss']>) => sheetRef.current?.dismiss(...args),
+        snapToIndex: (...args: Parameters<BottomSheetModal['snapToIndex']>) => sheetRef.current?.snapToIndex(...args),
+        snapToPosition: (...args: Parameters<BottomSheetModal['snapToPosition']>) => sheetRef.current?.snapToPosition(...args),
+        expand: (...args: Parameters<BottomSheetModal['expand']>) => sheetRef.current?.expand(...args),
+        collapse: (...args: Parameters<BottomSheetModal['collapse']>) => sheetRef.current?.collapse(...args),
+        close: (...args: Parameters<BottomSheetModal['close']>) => sheetRef.current?.close(...args),
+        forceClose: (...args: Parameters<BottomSheetModal['forceClose']>) => sheetRef.current?.forceClose(...args),
+      }),
+      [],
+    );
 
     const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
     const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
@@ -149,9 +201,12 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={sheetRef}
         enableDynamicSizing
         enablePanDownToClose
+        onChange={handleSheetChange}
+        onDismiss={handleDismiss}
+        onAnimate={handleAnimate}
         handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         backgroundStyle={{
           backgroundColor: sheetBg,

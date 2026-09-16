@@ -107,9 +107,11 @@
           ]
         }
       ],
-      "permissions": [
+      "allowBackup": false,
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "com.google.android.gms.permission.AD_ID"
       ]
     },

@@ -173,9 +173,9 @@ interface FileItemProps {
 }
 
 /**
- * File Item Component
+ * File Item Component. Memoized: file lists re-render every row otherwise.
  */
-export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
+export const FileItem = React.memo(function FileItem({ file, onPress, onLongPress }: FileItemProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const scale = useSharedValue(1);
@@ -253,5 +253,4 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
       />
     </AnimatedPressable>
   );
-}
-
+});
