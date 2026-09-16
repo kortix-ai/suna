@@ -40,6 +40,10 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '../runtime-versions';
+import {
+  SANDBOX_SHELL_TOOL_APT_LIST,
+  SANDBOX_SHELL_TOOL_LINK_COMMAND,
+} from './shell-tools';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -313,12 +317,16 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'ENV DEBIAN_FRONTEND=noninteractive',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\',
+    '        ca-certificates curl git gzip libatomic1 sudo tmux iproute2 iputils-arping util-linux \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
     '        texlive-latex-extra texlive-latex-recommended \\',
-    '    && rm -rf /var/lib/apt/lists/*',
+    // The shell tool floor (rg, fd, bat, jq, fzf, …) — shared with the fast
+    // and meta images. See shell-tools.ts for the base-portability rule.
+    `        ${SANDBOX_SHELL_TOOL_APT_LIST} \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && ${SANDBOX_SHELL_TOOL_LINK_COMMAND}`,
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
     // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.

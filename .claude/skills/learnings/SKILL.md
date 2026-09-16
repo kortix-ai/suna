@@ -30,6 +30,69 @@ each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
 edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
 twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
 pins the daemon marker and the 501 mapping.
+### Refresh provider credentials before blaming sandbox authentication (2026-09-16)
+
+**When:** a resumed terminal receives an upstream authentication refusal. Daytona
+returns either a login redirect or its own JSON `401`; neither proves the daemon
+rejected signed user context. Invalidate the preview-link cache and refresh once
+for reads. Do not replay writes or retry a real daemon authentication rejection.
+Discard cached ingress after a failed WebSocket handshake as well.
+*Incident:* v0.13.18 production verification and both staging browser runs failed
+after resume while fresh Daytona credentials reached the daemon. *Enforcers:*
+`provider-auth.test.ts`, `e2e-preview-proxy.test.ts`, `ws-proxy-ingress-recovery.test.ts`.
+
+### Keep subscription usage separate from API token prices (2026-09-15)
+
+**When:** serving model rates or aggregating session/turn cost. Give ChatGPT/Codex
+subscription routes explicit zero rates. Exclude their historical runtime costs
+before applying token estimates or markup. Preserve tokens and paid API costs.
+*Incident:* a reported ChatGPT session displayed `$7.91` from inherited OpenAI
+API prices. *Enforcers:* SDK turn-cost tests, catalog tests, REST flow `GW-5`,
+and browser journey 26 cover subscription-only and mixed sessions.
+
+### Let Docker readiness decide whether a sandbox can run the preview (2026-09-15)
+
+**When:** preparing a Daytona warm image, attempt kernel module loads but do not
+abort on a denied `modprobe`. Require the bounded `docker info` gate to pass.
+*Incident:* PR #7267's fallback stopped on `iptable_nat: Operation not permitted`;
+the same base image started Docker and pulled Supabase images with this check.
+Platinum's earlier `503 body-budget-exhausted` came from its public proxy, not
+Kortix. Inspect response bodies before attributing preview failures to the app.
+*Enforcer:* `daytona-ci.test.ts` requires advisory module loads and Docker readiness.
+
+### Give the preview frontend enough heap for the full browser gate (2026-09-15)
+
+**When:** configuring a full self-host preview. Persist its frontend memory limit
+through `KORTIX_FRONTEND_MEMORY_LIMIT`; do not edit generated Compose limits.
+*Incident:* PR #7267's frontend restarted five times with `Reached heap limit`
+under its 512 MiB container limit while the 16 GiB host had over 12 GiB available.
+Browser navigation failures masked the terminal test behind infrastructure noise.
+*Enforcer:* `preview-stack.test.ts` requires a 2048 MiB preview frontend limit;
+also inspect the deployed container limit and restart count after the full gate.
+
+
+
+### Diagnose terminal close 1006 from the server refusal before calling it a wake (2026-09-15)
+
+**When:** investigating a browser terminal that fails while CLI attach works.
+Match the PTY path and timestamp to `[preview-ws] REFUSED`; a browser error alone
+cannot distinguish authentication from readiness. The reported 16:12 EDT session
+had 27 `401 unauthorized` refusals from 20:11–20:16 UTC, not readiness 503s.
+Its valid HS256 token worked over HTTP but the old WebSocket gate rejected it.
+Release 0.13.17 fixed that gate at 20:54 UTC; a real HS256 browser attach now works.
+*Enforcers:* `unit-preview-auth-principal.test.ts`, `unit-jwt-alg-fallback.test.ts`;
+terminal retries use the HTTP probe in `pty-connection.ts` rather than guessing.
+
+
+### Terminal wake must work before a PTY exists (2026-09-15)
+
+**When:** changing terminal attach or recovery. Test a stopped sandbox with no
+cached PTY list or remembered PTY ID. `GET /kortix/pty` never wakes a sandbox;
+the visible panel must initiate a mutation before read polling can succeed.
+Keep automatic polls inside one fixed deadline; only user Retry resets it.
+*Incident:* production terminal counted reconnects indefinitely while CLI attach
+worked. PR #7267 initially fixed socket recovery but missed cold terminal creation.
+*Enforcer:* `13-sdk-only-session.spec.ts` cold terminal wake and shell-output test.
 
 ### A raw `sql` subquery must QUALIFY every outer column — Drizzle unqualifies them in a single-table select (2026-09-15)
 
@@ -118,6 +181,15 @@ current template identity to be ready; fallback images carry an older daemon.
 runtime timeouts; `SNAP-2` deleted the shared image while sessions were booting.
 *Enforcers:* `client-ci-passthrough.test.ts`, `preview-stack.test.ts`, runner sandbox
 setup, and `SNAP-2` global scheduling. Vercel analytics also mounts only on Vercel.
+
+### Assert settled dialog geometry before capturing a responsive screenshot (2026-09-14)
+
+**When:** changing the viewport while a modal or select is opening or closing.
+Wait for the target geometry and for dismissed dialogs to leave the DOM.
+Disable animations for the screenshot itself. In PR #7234, a capture during
+resize showed a 208px dialog; its settled mobile width was 390px. This nearly
+triggered an unnecessary layout change. *Enforcer:* browser journey 28 asserts
+mobile dialog width, awaits dialog removal, and disables capture animations.
 
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
@@ -5227,3 +5299,72 @@ the helper fall back to a repository dotenv file for a deployed target.
 **Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
 the role insert and cleanup delete. The preview journey must observe the grant
 through `/v1/user-roles` and render the admin overview.
+### Preserve permanent prompt refusals and persist Stop before acknowledging it (2026-09-15)
+
+**Incident.** LibreMax session `5889a055-6bad-42f2-8511-50c573946408`
+retained a binding to a disabled Gmail connector. The proxy returned `409`,
+but delivery discarded the body and retried until `delivery outcome: pending`.
+The UI displayed Thinking although the model received no prompt. Stop marked
+claimed rows only in their payload, so reload still read `delivering`.
+
+**Rule.** Validate connector requirements before enqueueing. Preserve permanent
+refusals at delivery and never retry them as readiness failures. Persist the
+public hold for claimed rows before acknowledging Stop. Check that hold before
+each delivery attempt. Inspect stored bindings when the resolved scope omits
+a disabled connector; a resolved scope is not a list of all stored bindings.
+
+**Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
+HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
+refusal sends once and Stop prevents a second POST after a transient failure.
+Production recovery removed the stale binding through the session scope API.
+The original hello received an assistant reply, and `GET /prompts` returned `[]`.
+
+### Connector bindings do not declare mandatory prompt dependencies (2026-09-15)
+
+**Incident.** The LibreMax incident above persisted after the agent's Gmail
+requirement was removed. Prompt preflight promoted every stored binding into a
+mandatory dependency. A disabled optional connector blocked unrelated messages.
+
+**Rule.** Only explicit session `require_connectors` and running-agent
+`connectors_required` gate prompts. Bindings select connections. Check optional
+connector availability when that connector is called. Preserve connector-call
+authorization and explicit requirement gates.
+
+**Enforcement.** `prompt-connector-preflight.test.ts` rejects implicit binding
+requirements. `SESS-29` stores a disabled bound connector, admits a prompt through
+HTTP, verifies the inbox row, then explicitly requires the same connector and
+asserts a 409 refusal.
+### Bind retained message retries to their originating runtime
+
+**Incident (2026-09-15, PR #7267):** production retried three native conversation
+IDs against sandbox `61e4c0bd-bacd-4fc1-80e2-df289cf6772a`. Database records mapped
+each conversation to a different sandbox. Cached controllers resolved the global
+active client after navigation. Message reads returned repeated `404` responses.
+
+**Rule:** bind each transcript controller to its originating runtime URL or
+explicit client. Retaining or looking up a controller must not clear that binding.
+Preserve HTTP status on synchronization errors. Stop automatic retries and busy
+polling after `404` or `410`; preserve transcript data and allow explicit recovery.
+
+**Enforcement:** registry tests use a real HTTP server to assert A/B/A request
+paths across a runtime switch. Controller tests assert no retries for 60 seconds
+after `404` and `410`, then successful explicit recovery. The SDK browser journey
+switches between two real sandboxes while the first message read retries.
+
+### Check Docker guest capacity when isolated Supabase startup fails
+
+**Incident (2026-09-16, PR #7295):** a new worktree exhausted Docker's disk
+while downloading Supabase images. Ten stacks then exhausted the VM's 8 GB
+memory. PostgreSQL reported `No space left on device`; Docker recorded OOM
+kills. Host disk capacity did not describe the guest's available capacity.
+
+**Rule:** inspect Docker disk usage and VM OOM logs before retrying startup.
+Remove only verified unused, downloadable image caches. Preserve database
+volumes. Stop the current task's optional Studio and metadata containers before
+starting another stack. Obtain authorization before stopping other tasks.
+
+**Enforcement:** Docker rejects removal of an image used by a container without
+force. Use ordinary `docker image rm`, never forced removal or volume pruning.
+The local runner requires working Supabase and real HTTP assertions before it
+reports success; `SEC-30` passed after this recovery.

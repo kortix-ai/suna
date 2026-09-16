@@ -109,7 +109,6 @@ const stubFetch = Object.assign(
 ) as typeof fetch;
 
 const {
-  PlatinumAdapter,
   platinumProvider,
   PLATINUM_MAX_BUILD_SIZE_MB,
   PLATINUM_MIN_BUILD_SIZE_MB,
@@ -189,60 +188,23 @@ describe('platinumBuildSizeMb (lazy PLATINUM_BUILD_SIZE_MB env knob)', () => {
 });
 
 describe('Platinum snapshot build sizing', () => {
-  test('buildSnapshot awaits exact-id materialization after readiness', async () => {
-    const adapter = new PlatinumAdapter(async (externalId) => {
-      lifecycleEvents.push(`materialize:${externalId}`);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      lifecycleEvents.push(`materialized:${externalId}`);
-    });
-
-    const result = await adapter.buildSnapshot({
-      snapshotName: 'kortix-materialized-template',
+  test('buildSnapshot returns the exact registered template id after readiness', async () => {
+    const result = await platinumProvider.buildSnapshot({
+      snapshotName: 'kortix-exact-id-template',
       image: 'ubuntu:24.04',
       spec: { diskGb: 10 },
-      slug: 'materialized',
+      slug: 'exact-id',
     });
 
     expect(result.externalTemplateId).toBe(registeredTemplateId);
-    expect(lifecycleEvents).toEqual([
-      `ready:${registeredTemplateId}`,
-      `materialize:${registeredTemplateId}`,
-      `materialized:${registeredTemplateId}`,
-    ]);
+    expect(lifecycleEvents).toEqual([`ready:${registeredTemplateId}`]);
   });
 
-  test('swapAgent awaits exact-id materialization after readiness', async () => {
-    const adapter = new PlatinumAdapter(async (externalId) => {
-      lifecycleEvents.push(`materialize:${externalId}`);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      lifecycleEvents.push(`materialized:${externalId}`);
-    });
-
-    const result = await adapter.swapAgent('kortix-patched-template', 'kortix-source-template');
+  test('swapAgent returns the exact patched template id after readiness', async () => {
+    const result = await platinumProvider.swapAgent('kortix-patched-template', 'kortix-source-template');
 
     expect(result.externalTemplateId).toBe('tpl-patch-1');
-    expect(lifecycleEvents).toEqual([
-      'ready:tpl-patch-1',
-      'materialize:tpl-patch-1',
-      'materialized:tpl-patch-1',
-    ]);
-  });
-
-  test.each(['build', 'agent swap'] as const)('%s remains successful when materialization rejects', async (flow) => {
-    const adapter = new PlatinumAdapter(async () => {
-      throw new Error('materialization unavailable');
-    });
-
-    const result = flow === 'build'
-      ? await adapter.buildSnapshot({
-        snapshotName: 'kortix-materialize-fail-open',
-        image: 'ubuntu:24.04',
-        spec: { diskGb: 10 },
-        slug: 'materialize-fail-open',
-      })
-      : await adapter.swapAgent('kortix-patch-fail-open', 'kortix-source-template');
-
-    expect(result.externalTemplateId).toBe(registeredTemplateId);
+    expect(lifecycleEvents).toEqual(['ready:tpl-patch-1']);
   });
 
   test('a disk under the cap is sent verbatim as the build ceiling', async () => {

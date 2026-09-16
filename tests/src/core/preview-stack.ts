@@ -282,6 +282,8 @@ export function applyPreviewEnvironment(
     API_IMAGE: input.apiImage,
     GATEWAY_IMAGE: input.gatewayImage,
     FRONTEND_IMAGE: input.frontendImage,
+    // The full browser suite exhausted V8's heap under the 512 MiB self-host default.
+    KORTIX_FRONTEND_MEMORY_LIMIT: '2048m',
     KORTIX_VERSION: `pr-${input.sha}`,
     KORTIX_COMMIT: input.sha,
     INTERNAL_KORTIX_ENV: 'preview',

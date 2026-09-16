@@ -159,13 +159,45 @@ interface FakeApi {
   url: string
   requests: Array<{ path: string; auth: string | null }>
   descriptorStatus: number
-  /** How the BOOT object is served. */
-  archiveMode: 'ok' | 'forbidden' | 'stall' | 'cut' | 'corrupt' | 'slow'
+  /** How the BOOT object is served (`forbidden-once`: 403 on the first request, then ok). */
+  archiveMode: 'ok' | 'forbidden' | 'forbidden-once' | 'stall' | 'cut' | 'corrupt' | 'slow'
   /** How the HYDRATION object is served (`forbidden-once`: 403 on the first request, then ok). */
   blobsMode: 'ok' | 'missing' | 'forbidden' | 'forbidden-once'
   archive: Snapshot
   firstHalfSent: Promise<void>
   stop: () => void
+}
+
+/**
+ * The descriptor the fake proxy serves for `sha` — also what a test feeds the
+ * daemon through KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR (the API presigns the same
+ * body at session create). `ttlMs` sets both objects' expiry.
+ */
+function descriptorFor(state: FakeApi, sha: string, ttlMs = 60_000): ProjectSnapshotDescriptor {
+  return {
+    format: PROJECT_SNAPSHOT_FORMAT,
+    commit_sha: sha,
+    ref: 'main',
+    repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID },
+    tree: {
+      url: `${state.url}/tree/${state.archive.sha256}.tree.tar.gz?X-Amz-Signature=test-signature`,
+      sha256: state.archive.sha256,
+      bytes: state.archive.bytes.byteLength,
+      entries: state.archive.entries,
+      expires_at: new Date(Date.now() + ttlMs).toISOString(),
+    },
+    blobs: {
+      url: `${state.url}/blobs/${state.archive.blobs.sha256}.blobs.pack?X-Amz-Signature=test-signature`,
+      sha256: state.archive.blobs.sha256,
+      bytes: state.archive.blobs.bytes.byteLength,
+      expires_at: new Date(Date.now() + ttlMs).toISOString(),
+    },
+  }
+}
+
+/** Base64 JSON, exactly as `encodeProjectSnapshotDescriptorForEnv` in the API writes it. */
+function envDescriptor(descriptor: ProjectSnapshotDescriptor): string {
+  return Buffer.from(JSON.stringify(descriptor)).toString('base64')
 }
 
 function startFakeApi(archive: Snapshot, opts: { deadlineStallMs?: number } = {}): FakeApi {
@@ -195,27 +227,8 @@ function startFakeApi(archive: Snapshot, opts: { deadlineStallMs?: number } = {}
         res.end(JSON.stringify({ error: 'not_prepared' }))
         return
       }
-      const descriptor: ProjectSnapshotDescriptor = {
-        format: PROJECT_SNAPSHOT_FORMAT,
-        commit_sha: url.searchParams.get('sha') ?? '',
-        ref: 'main',
-        repository: { owner: 'kortix', name: 'demo', external_id: EXTERNAL_ID },
-        tree: {
-          url: `${state.url}/tree/${state.archive.sha256}.tree.tar.gz?X-Amz-Signature=test-signature`,
-          sha256: state.archive.sha256,
-          bytes: state.archive.bytes.byteLength,
-          entries: state.archive.entries,
-          expires_at: new Date(Date.now() + 60_000).toISOString(),
-        },
-        blobs: {
-          url: `${state.url}/blobs/${state.archive.blobs.sha256}.blobs.pack?X-Amz-Signature=test-signature`,
-          sha256: state.archive.blobs.sha256,
-          bytes: state.archive.blobs.bytes.byteLength,
-          expires_at: new Date(Date.now() + 60_000).toISOString(),
-        },
-      }
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(descriptor))
+      res.end(JSON.stringify(descriptorFor(state, url.searchParams.get('sha') ?? '')))
       return
     }
     if (url.pathname.startsWith('/blobs/')) {
@@ -242,6 +255,9 @@ function startFakeApi(archive: Snapshot, opts: { deadlineStallMs?: number } = {}
       const body = state.archive.bytes
       const half = Math.floor(body.length / 2)
       switch (state.archiveMode) {
+        case 'forbidden-once':
+          state.archiveMode = 'ok'
+        // fall through
         case 'forbidden':
           res.writeHead(403, { 'content-type': 'application/xml' })
           res.end('<Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>')
@@ -477,6 +493,65 @@ describe('materializeProject — prefer-s3', () => {
     expect(hydration.attempts).toBe(2)
     expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(2)
     expect(missingObjects(target)).toBe(0)
+  })
+
+  test('a descriptor presigned in the env skips the proxy: one direct GET from the store, then hydration', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha, {
+      KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha)),
+    })
+    let summary: { s3_descriptor: 'env' | 'proxy' | null } | undefined
+    const result = await materializeProject(cfg, { onSummary: (s) => (summary = s) })
+    expect(result.provider).toBe('s3')
+    expect(result.s3?.descriptorSource).toBe('env')
+    expect(summary?.s3_descriptor).toBe('env')
+    // The proxy was never asked; the store was asked exactly once for the boot object.
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(0)
+    expect(api.requests.filter((r) => r.path.startsWith('/tree/')).length).toBe(1)
+    const hydration = await result.hydration!
+    expect(hydration.status).toBe('ok')
+    await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+    expect(missingObjects(target)).toBe(0)
+  })
+
+  test('an env descriptor with no lifetime left is ignored: the proxy is asked, once', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha, {
+      // 10 s left is under the 30 s margin: not worth starting a transfer on.
+      KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha, 10_000)),
+    })
+    const result = await materializeProject(cfg)
+    expect(result.provider).toBe('s3')
+    expect(result.s3?.descriptorSource).toBe('proxy')
+    expect(result.s3?.attempts).toBe(1)
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(1)
+    await result.hydration
+  })
+
+  test('an env descriptor the store refuses (403) is replaced by a fresh proxy descriptor, not a Git fallback', async () => {
+    const target = join(root, 'ws')
+    api.archiveMode = 'forbidden-once'
+    const cfg = makeConfig(api, target, archive.sha, {
+      KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha)),
+    })
+    const result = await materializeProject(cfg)
+    expect(result.provider).toBe('s3')
+    expect(result.fallback).toBeUndefined()
+    expect(result.s3?.attempts).toBe(2)
+    expect(result.s3?.descriptorSource).toBe('proxy')
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(1)
+    await result.hydration
+    expect(missingObjects(target)).toBe(0)
+  })
+
+  test('a malformed env descriptor costs one round trip, not the boot', async () => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: 'definitely-not-base64-json' })
+    const result = await materializeProject(cfg)
+    expect(result.provider).toBe('s3')
+    expect(result.s3?.descriptorSource).toBe('proxy')
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(1)
+    await result.hydration
   })
 
   test('falls back to the in-process extractor when no tar binary is usable', async () => {

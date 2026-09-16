@@ -97,6 +97,11 @@ OpenCode query caches and transcript controllers are scoped to the sandbox
 runtime, so equal OpenCode ids from different sandboxes do not share cache
 entries.
 
+Pending message retries keep their originating sandbox URL when you switch
+sessions. A `404` or `410` message response stops automatic retries without
+clearing the transcript. An explicit reconciliation can retry the read and
+restore normal synchronization after a successful response.
+
 ## Send a prompt
 
 ```ts

@@ -655,3 +655,87 @@ describe('stripAnsi', () => {
     expect(performance.now() - start).toBeLessThan(1000);
   });
 });
+
+describe('ChatGPT subscription usage', () => {
+  const paidLookup: ModelPricingLookup = () => ({
+    inputPer1M: 5,
+    outputPer1M: 20,
+  });
+  const tokens = {
+    input: 118_017,
+    output: 123,
+    reasoning: 40,
+    cache: { read: 12, write: 3 },
+  };
+  for (const [providerID, modelID] of [
+    ['kortix', 'codex/gpt-5.6-sol'],
+    ['codex', 'gpt-5.6-sol'],
+    ['openai-codex', 'gpt-5.6-sol'],
+  ]) {
+    test(`${providerID}/${modelID}: ignores historical prices and keeps token usage`, () => {
+      const message = {
+        ...assistantInfo({ providerID, modelID }),
+        parts: [stepFinishPart({ cost: 7.91, tokens })],
+      };
+      expect(getSessionCost([message], paidLookup)).toBe(0);
+      expect(getSessionCost([message])).toBe(0);
+      const turn = getTurnCost(
+        message.parts.map((part) => ({ part, message })),
+        paidLookup,
+      );
+      expect(turn).toEqual({
+        cost: 0,
+        tokens: {
+          input: 118_017,
+          output: 123,
+          reasoning: 40,
+          cacheRead: 12,
+          cacheWrite: 3,
+        },
+      });
+      expect(formatCost(turn!.cost)).toBe('$0.00');
+    });
+
+    test(`${providerID}/${modelID}: never estimates API charges for subscription tokens`, () => {
+      const message = {
+        ...assistantInfo({ providerID, modelID, tokens }),
+        parts: [stepFinishPart({ tokens })],
+      };
+      expect(getSessionCost([message], paidLookup)).toBe(0);
+      const fallback = {
+        ...message,
+        parts: [
+          { type: 'reasoning', id: 'r', text: 'thinking' },
+          { type: 'text', id: 't', text: 'done' },
+        ],
+      };
+      expect(getSessionCost([fallback], paidLookup)).toBe(0);
+      const turn = getTurnCost(
+        fallback.parts.map((part) => ({ part, message: fallback })),
+        paidLookup,
+      );
+      expect(turn?.cost).toBe(0);
+      expect(turn?.tokens.input).toBe(118_017);
+    });
+  }
+
+  test('mixed sessions retain API charges, including API models named codex', () => {
+    const subscription = {
+      ...assistantInfo({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }),
+      parts: [stepFinishPart({ cost: 7.91 })],
+    };
+    for (const [providerID, modelID] of [
+      ['kortix', 'openai/gpt-5.6-sol'],
+      ['openai', 'gpt-5-codex'],
+      ['kortix', 'gpt-5.6-sol'],
+    ]) {
+      const paid = {
+        ...assistantInfo({ providerID, modelID }),
+        parts: [stepFinishPart({ cost: 2 })],
+      };
+      expect(getSessionCost([subscription, paid], paidLookup)).toBeCloseTo(
+        2 * COST_MARKUP,
+      );
+    }
+  });
+});

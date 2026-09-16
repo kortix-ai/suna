@@ -49,6 +49,11 @@ const parentSha = need('parent-sha').toLowerCase()
 // arm silently degrades to a proxied delta fetch — not the production route.
 const parentCommitBase64 = arg('parent-commit-base64') ?? (arg('parent-commit-file') ? (await readFile(arg('parent-commit-file') as string, 'utf8')).trim() : undefined)
 const pin = arg('pin')
+// Like session create: fetch the descriptor once per round with the token and
+// hand it to the daemon presigned, so its first attempt is one direct GET.
+// `--no-env-descriptor` makes every round ask the proxy instead (the pre-#7221
+// follow-up behaviour), for an A/B on the same objects.
+const envDescriptorEnabled = !process.argv.includes('--no-env-descriptor')
 const rounds = Number(arg('rounds', '10'))
 const warmups = Number(arg('warmups', '1'))
 const arms = (arg('arms', 'git,prefer-s3') as string).split(',').map((s) => s.trim()).filter(Boolean)
@@ -107,6 +112,7 @@ interface RoundResult {
   timings?: Record<string, number>
   s3_attempts?: number
   s3_extractor?: string | null
+  s3_descriptor?: string | null
   hydration?: { status: string; ms: number; bytes: number } | null
   sha_matches?: boolean | null
   marks?: Record<string, number>
@@ -114,11 +120,23 @@ interface RoundResult {
   error?: string
 }
 
+async function fetchDescriptorForEnv(): Promise<string | undefined> {
+  const res = await fetch(`${repoUrl}/project-snapshot?sha=${sha}`, {
+    headers: { accept: 'application/json', authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    console.error(`[bench] descriptor HTTP ${res.status}; this round asks the proxy`)
+    return undefined
+  }
+  return Buffer.from(await res.text()).toString('base64')
+}
+
 async function round(arm: string, n: number, scaffold: string): Promise<RoundResult> {
   const ws = join(root, `r${String(n).padStart(3, '0')}-${arm}`)
   await rm(ws, { recursive: true, force: true })
   await mkdir(ws, { recursive: true })
   const session = randomUUID()
+  const descriptor = arm !== 'git' && envDescriptorEnabled ? await fetchDescriptorForEnv() : undefined
   const env: Record<string, string> = {
     KORTIX_WORKSPACE: ws,
     KORTIX_PROJECT_TARGET: ws,
@@ -137,6 +155,7 @@ async function round(arm: string, n: number, scaffold: string): Promise<RoundRes
     KORTIX_PROJECT_SNAPSHOT_MODE: arm,
     KORTIX_BENCH_SCAFFOLD_GIT: scaffold,
     ...(arm !== 'git' && pin ? { KORTIX_PROJECT_SNAPSHOT_PIN: pin } : {}),
+    ...(descriptor ? { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: descriptor } : {}),
   }
   const t0 = performance.now()
   const r = await run(['bun', 'run', 'scripts/materialize-once.ts'], { cwd: pkgDir, env })
@@ -189,6 +208,7 @@ async function round(arm: string, n: number, scaffold: string): Promise<RoundRes
     timings: summary.timings ?? {},
     s3_attempts: summary.s3_attempts ?? 0,
     s3_extractor: summary.s3_extractor ?? null,
+    s3_descriptor: summary.s3_descriptor ?? null,
     hydration: parsed.hydration,
     sha_matches: summary.sha_matches ?? null,
     marks: parsed.marks,
@@ -216,9 +236,11 @@ function report(results: RoundResult[]): void {
     const hyd = ok.filter((r) => r.hydration?.status === 'ok').length
     const hydMs = pct(ok.map((r) => r.hydration?.ms ?? NaN), 0.5)
     const extractors = [...new Set(ok.map((r) => r.s3_extractor).filter(Boolean))].join(',') || '-'
+    const descriptors = ok.filter((r) => r.s3_descriptor).map((r) => r.s3_descriptor)
+    const descriptorText = descriptors.length ? ` descriptor: env ${descriptors.filter((d) => d === 'env').length}/${descriptors.length}` : ''
     const fallbacks = ok.filter((r) => r.fallback).length
     console.log(
-      `${arm.padEnd(12)} ${String(rs.length).padStart(2)}  ${String(ok.length).padStart(3)}  ${String(fallbacks).padStart(9)}  ${String(pct(acq, 0.5)).padStart(6)} / ${String(pct(acq, 0.95)).padEnd(6)}   ${stageText.padEnd(42)}  ${arm === 'git' ? '-' : `${hyd}/${ok.length} (p50 ${hydMs} ms)`}  ${extractors}`,
+      `${arm.padEnd(12)} ${String(rs.length).padStart(2)}  ${String(ok.length).padStart(3)}  ${String(fallbacks).padStart(9)}  ${String(pct(acq, 0.5)).padStart(6)} / ${String(pct(acq, 0.95)).padEnd(6)}   ${stageText.padEnd(42)}  ${arm === 'git' ? '-' : `${hyd}/${ok.length} (p50 ${hydMs} ms)`}  ${extractors}${descriptorText}`,
     )
   }
   const paths = new Map<string, number>()
@@ -259,7 +281,7 @@ for (let n = 1; n <= rounds; n += 1) {
     const t = r.timings ?? {}
     console.log(
       r.ok
-        ? `round ${n} ${arm}: ${r.provider}${r.fallback ? ' (fallback)' : ''} acquire=${r.wall_acquire_ms}ms ${Object.entries(t).map(([k, v]) => `${k}=${v}`).join(' ')}${r.hydration ? ` hydration=${r.hydration.status}/${r.hydration.ms}ms` : ''}${r.git_path ? ` route="${r.git_path}"` : ''}`
+        ? `round ${n} ${arm}: ${r.provider}${r.fallback ? ' (fallback)' : ''} acquire=${r.wall_acquire_ms}ms ${Object.entries(t).map(([k, v]) => `${k}=${v}`).join(' ')}${r.hydration ? ` hydration=${r.hydration.status}/${r.hydration.ms}ms` : ''}${r.s3_descriptor ? ` descriptor=${r.s3_descriptor}` : ''}${r.git_path ? ` route="${r.git_path}"` : ''}`
         : `round ${n} ${arm}: FAIL ${r.error}`,
     )
   }

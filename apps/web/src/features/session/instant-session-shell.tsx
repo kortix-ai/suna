@@ -15,7 +15,8 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
+import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
+import { cleanPromptText, type QueueRow } from '@/features/session/queue-projection';
 import {
   promptFileParts,
   buildOptimisticPromptTextWithUploads,
@@ -25,7 +26,6 @@ import {
   firstPromptAttachments,
   type SentAttachment,
 } from '@/features/session/sent-attachment-previews';
-import { projectQueuedBehindFirst, type ShellExtraSend } from '@/features/session/queue-projection';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
@@ -152,7 +152,14 @@ export function InstantSessionShell({
   // first prompt, and anything typed while the box booted stayed invisible
   // until the real chat mounted (measured: four prompts popping in at once,
   // ~15 s later).
-  const [extraSends, setExtraSends] = useState<ShellExtraSend[]>([]);
+  const [extraSends, setExtraSends] = useState<
+    Array<{
+      id: string;
+      text: string;
+      attachments?: ReadonlyArray<SentAttachment>;
+      uploadStatus?: AttachmentUploadStatus;
+    }>
+  >([]);
   const stashedSubmission = useMemo(() => {
     if (!hydrated) return null;
     // `readStartStash` covers the canonical SDK stash (written under the route
@@ -199,10 +206,36 @@ export function InstantSessionShell({
           : undefined,
     };
   }, [promptInbox.prompts]);
-  // The queue behind the first prompt: see `projectQueuedBehindFirst`.
-  const queuedBehindFirst = useMemo(
-    () => projectQueuedBehindFirst(promptInbox.prompts, extraSends),
-    [promptInbox.prompts, extraSends],
+  // The queue behind the first prompt: every durable row after the first,
+  // plus the sends this shell has made that no row lists yet (matched by
+  // text, which is all the list view carries).
+  const queuedBehindFirst = useMemo(() => {
+    const rows = promptInbox.prompts.filter((p) => p.text.trim().length > 0);
+    const behind = rows.slice(1).map((p) => ({ id: p.prompt_id, text: p.text }));
+    const listed = new Set(rows.map((p) => p.text.trim()));
+    for (const extra of extraSends) {
+      if (!listed.has(extra.text.trim())) behind.push(extra);
+    }
+    return behind;
+  }, [promptInbox.prompts, extraSends]);
+  // Listed above the composer, exactly where `SessionChat` lists its queue, so
+  // the crossfade into the real chat moves nothing. Read-only: there is no
+  // runtime to remove from or retry against while the box boots.
+  const shellQueueRows = useMemo<QueueRow[]>(
+    () =>
+      queuedBehindFirst.map((entry) => {
+        const cleaned = cleanPromptText(entry.text);
+        return {
+          id: entry.id,
+          clientMessageId: entry.id,
+          text: cleaned.text,
+          attachmentCount: cleaned.fileCount,
+          state: 'queued',
+          removable: false,
+          takeBackEligible: false,
+        };
+      }),
+    [queuedBehindFirst],
   );
   // The producer's own copy of the first prompt, drawn from the first frame —
   // the row read above can miss it entirely when a warm box delivers between
@@ -420,6 +453,10 @@ export function InstantSessionShell({
       // typed mid-turn gets, rather than racing the boot.
       sessionWorking={!!submitted}
       stopDisabled={!!submitted}
+      // What was typed while the box boots — see `shellQueueRows`.
+      inputSlot={
+        submitted ? <QueuedPromptList rows={shellQueueRows} heldCount={0} /> : undefined
+      }
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.
@@ -507,10 +544,6 @@ export function InstantSessionShell({
                     deferPreview
                     sessionId={sessionId}
                   />
-                  {/* What was typed while the box boots, as the dimmed queued
-                    bubbles they already are on the server — same component
-                    SessionChat draws, so the crossfade changes nothing. */}
-                  <QueuedPromptBubbles className="mt-3" queued={queuedBehindFirst} />
                 </div>
               )}
             </div>

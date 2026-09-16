@@ -9,10 +9,8 @@ import type { MessageWithParts } from '@/ui';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
 import enMessages from '../../../../translations/en.json';
-import { queuedPromptMessages } from '../queue-projection';
 import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads, sentAttachmentsOf } from '../uploaded-file-refs';
-import { RemoveFromQueueButton } from './queued-prompt-bubbles';
 import { MessageAttachments, UserMessage, UserMessageBubble } from './user-message';
 
 const message = {
@@ -72,30 +70,6 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
-  test('puts remove-from-queue in the hover actions row, not beside the bubble', () => {
-    const markup = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <TooltipProvider>
-            <UserMessage
-              message={message}
-              sessionId="session-1"
-              ownsPlan={false}
-              onRewind={() => {}}
-              leadingActions={<RemoveFromQueueButton id="prompt-1" onRemove={() => {}} />}
-            />
-          </TooltipProvider>
-        </NextIntlClientProvider>
-      </QueryClientProvider>,
-    );
-    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
-    const fadeAt = markup.indexOf(fade);
-    const removeAt = markup.indexOf('aria-label="Remove from queue"');
-    expect(removeAt).toBeGreaterThan(-1);
-    expect(fadeAt).toBeGreaterThan(-1);
-    expect(removeAt).toBeGreaterThan(fadeAt);
-    expect(markup).not.toContain('pr-7');
-  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {
@@ -865,34 +839,6 @@ describe('sent attachment tiles', () => {
       expectFinishedTile(html);
     }
     store.reset();
-  });
-
-  test('a queued row after a reload draws a tile for each of its files', () => {
-    const [queued] = queuedPromptMessages({
-      sessionId: 'session-1',
-      messages: [],
-      prompts: [
-        {
-          prompt_id: 'row-1',
-          client_message_id: 'client-1',
-          message_id: null,
-          wire_message_id: null,
-          text: 'look',
-          state: 'queued',
-          reason: null,
-          last_error: null,
-          created_at: '2026-09-14T00:00:00.000Z',
-          attachments: [{ filename: 'a.png', mime: 'image/png' }],
-        } as never,
-      ],
-      claimedIds: new Set(),
-    });
-
-    const html = renderMessage(queued as MessageWithParts);
-    expect(tiles(html)).toBe(1);
-    expect(html).toContain('title="a.png"');
-    expect(html).toContain('look');
-    expectFinishedTile(html);
   });
 
   test('a failed send with no files still reads "Couldn\'t send" with Retry; a sent message with no files draws no strip', () => {

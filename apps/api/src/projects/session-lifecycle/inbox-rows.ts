@@ -323,6 +323,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     const running = await db
       .update(sessionLifecycleCommands)
       .set({
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"held": true}'::jsonb`,
         payload: sql`${sessionLifecycleCommands.payload} || '{"stopPausedOnDelivery": true, "remintOnDelivery": true}'::jsonb`,
         updatedAt: new Date(),
       })
@@ -366,7 +367,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     .where(
       and(
         inboxScope(sessionId),
-        eq(sessionLifecycleCommands.status, 'queued'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
         sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
       ),
     )

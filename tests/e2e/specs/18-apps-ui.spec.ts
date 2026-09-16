@@ -181,6 +181,11 @@ test.describe('18 — Kortix Apps UI', () => {
       const seededUrl = new URL(seeded.url);
       if (env.target === 'local') {
         expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
+      } else if (env.target === 'custom') {
+        const originSuffix = new URL(env.baseUrl).hostname.split('.').slice(1).join('.');
+        expect(seededUrl.hostname).toMatch(
+          new RegExp(`^preview-.+\\.apps\\.${escapeRe(originSuffix)}$`),
+        );
       } else {
         const environmentPrefix = process.env.KE2E_TARGET === 'preview' ? 'preview' : env.target;
         const appsDomain = process.env.E2E_APPS_BASE_DOMAIN || 'apps.kortix.com';

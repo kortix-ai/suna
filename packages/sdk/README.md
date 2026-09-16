@@ -306,6 +306,10 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
+Message retries keep the originating sandbox URL after navigation. A `404` or
+`410` message read stops automatic retries and preserves the cached transcript.
+An explicit reconciliation can recover the controller when the session returns.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
@@ -743,6 +747,31 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+### Personal provider connections
+
+Connect a ChatGPT subscription or provider API key once, then enable it in each project. Personal connections belong to the signed-in user. Management requires a Supabase user JWT; account PATs and sandbox tokens cannot manage global credentials.
+
+```ts
+const providers = kortix.providerConnections;
+await providers.saveApiKey('openai', apiKey);
+await providers.setProject(projectId, 'openai', true);
+// Reuse the same encrypted connection in another project.
+await providers.setProject(otherProjectId, 'openai', true);
+// Disconnect everywhere, including all project bindings.
+await providers.remove('openai');
+```
+
+Each provider supports up to ten named personal connections. Add another connection with `saveApiKey('openai', apiKey, { create: true, label: 'Work' })` or `startOAuth('codex', { create: true, label: 'Work' })`. Reconnecting the same provider account updates its saved connection.
+
+Select one connection with `setProject(projectId, 'codex', true, { connection_id })`, or explicitly enable your private pool with `setProject(projectId, 'codex', true, { pool: true })`. A pool contains only your connections. Each session selects one member and retains it across requests and API replicas. Removing that member permits a new selection. Requests without a session select a member per request. Provider limits and authentication errors propagate without retrying another pool member.
+
+`remove(provider, connectionId)` disconnects one connection. Other pool members remain available. `remove(provider)` disconnects all of that provider's connections and project bindings.
+
+For ChatGPT, call `startOAuth('codex')`, show `verification_url` and `user_code`, then call `pollOAuth('codex', flow_id)` at `interval_ms` until success, failure, or expiry. Enable the connection with `setProject(projectId, 'codex', true)` after success.
+
+The gateway selects the connection belonging to its authenticated user. A session uses the launching user recorded in its token. Other participants in that session retain this session identity. Project bindings authorize this use explicitly. Project credentials remain the fallback when no personal binding exists. Native-runtime projects do not support personal provider bindings.
+
+Manage saved accounts in **Preferences → My providers**. Under **Project → Models → Providers**, each row shows its connection status and a **Connect** or **Manage** action. The dialog defaults new connections to **Use my account** when supported. Choose **Share with this project** explicitly for shared credentials. Changes apply only after submission; cancelling preserves the current connection. Metadata endpoints never return credential values. Disconnect removes all project bindings; it does not revoke the upstream provider account itself.
 
 
 ### Agent repository access
@@ -769,3 +798,10 @@ await kortix.projects.setModelAccess(projectId, {
 `kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
 
 `useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+
+### ChatGPT subscription usage
+
+`getSessionCost` and `getTurnCost` report zero LLM cost for ChatGPT/Codex
+subscription messages. This also corrects historical runtime costs. Token
+counts remain available. Mixed sessions retain paid API costs; OpenAI API
+models remain billable. Subscription coverage does not include sandbox compute.

@@ -91,6 +91,7 @@ function summarize(
     s3_stage: s3.error?.stage ?? s3.skipped?.stage ?? null,
     s3_reason: s3.error?.reason ?? s3.skipped?.reason ?? null,
     s3_extractor: result.s3?.extractor ?? null,
+    s3_descriptor: result.s3?.descriptorSource ?? null,
     fallback: result.fallback !== undefined,
     total_ms: Date.now() - started,
     timings: result.timings,

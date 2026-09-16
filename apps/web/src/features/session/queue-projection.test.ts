@@ -1,6 +1,8 @@
-import type { SessionPrompt } from '@kortix/sdk';
+import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { projectQueueRows } from './queue-projection';
+import type { QueuedDraft } from '@/stores/queued-draft-store';
+import type { AttachedFile } from './composer/types';
+import { cleanPromptText, composeTakeBack, projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -18,285 +20,221 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   };
 }
 
+function draft(clientMessageId: string, over: Partial<QueuedDraft> = {}): QueuedDraft {
+  return {
+    clientMessageId,
+    text: `typed ${clientMessageId}`,
+    files: [],
+    createdAtMs: 1_000,
+    posted: true,
+    ...over,
+  };
+}
+
+const remoteFile: AttachedFile = {
+  kind: 'remote',
+  url: 'https://files.test/a.png',
+  filename: 'a.png',
+  mime: 'image/png',
+  isImage: true,
+};
+
 describe('projectQueueRows', () => {
-  test('a delivering row is RENDERED, and locked — not dropped from the strip', () => {
-    // A prompt typed mid-turn is forwarded within seconds and reads
-    // `delivering` for the whole of the turn in front of it. It is not painted
-    // into the transcript either (`willWaitInInbox`), so leaving it out of the
-    // strip is the user's message vanishing from the screen entirely until
-    // OpenCode persists and syncs it.
-    //
-    // It stays in `inFlightIds` because it is on the wire: not editable, not
-    // removable, not reorderable.
-    const projection = projectQueueRows({
+  test('the order the server listed them in is the order rendered', () => {
+    // The inbox delivers oldest first. A list that re-sorts lies about what
+    // runs next.
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ prompt_id: 'first' }), prompt({ prompt_id: 'second' })],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['first', 'second']);
+  });
+
+  test('each state carries the controls the server will honour', () => {
+    const { rows } = projectQueueRows({
       prompts: [
-        prompt({ prompt_id: 'a' }),
-        prompt({ prompt_id: 'b', state: 'delivering' }),
-        prompt({ prompt_id: 'c', state: 'failed', last_error: 'delivery outcome: failed' }),
+        prompt({ prompt_id: 'queued' }),
+        prompt({ prompt_id: 'waiting', state: 'waiting', reason: 'turn_active' }),
+        prompt({ prompt_id: 'delivering', state: 'delivering' }),
+        prompt({ prompt_id: 'failed', state: 'failed', last_error: 'delivery outcome: failed' }),
+        prompt({ prompt_id: 'optimistic:q_9', client_message_id: 'q_9' }),
       ],
     });
-
-    expect(projection.queued.map((r) => r.id)).toEqual(['a', 'b']);
-    expect(projection.inFlightIds).toEqual(['b']);
-    expect(projection.failed).toEqual([
-      { id: 'c', text: 'say hi', lastError: 'delivery outcome: failed' },
+    expect(
+      rows.map((r) => [r.id, r.state, r.removable, r.takeBackEligible, r.lastError ?? null]),
+    ).toEqual([
+      ['queued', 'queued', true, true, null],
+      // `waiting` is WHY a row has not gone out, not a lane of its own.
+      ['waiting', 'queued', true, true, null],
+      // Its turn is starting: the server refuses a DELETE with 409.
+      ['delivering', 'delivering', false, false, null],
+      ['failed', 'failed', true, false, 'delivery outcome: failed'],
+      // No server id yet: nothing to remove or take back.
+      ['optimistic:q_9', 'sending', false, false, null],
     ]);
   });
 
-  test('a row whose message is ALREADY IN THE TRANSCRIPT leaves the strip', () => {
-    // The other half of rendering `delivering` rows. "Not painted into the
-    // transcript" holds for the OPTIMISTIC bubble — `willWaitInInbox` decides
-    // that — but not for the server message: an idle send paints the bubble
-    // immediately, and a mid-turn one arrives over SSE once OpenCode persists
-    // it. From that moment the same text is on screen twice, once as the
-    // answer being streamed and once as a pending queue row.
-    //
-    // The transcript is the authority: a message that is in it is not queued.
-    const projection = projectQueueRows({
+  test('a row already on screen in the transcript is not a queued entry — by any of its ids', () => {
+    const { rows } = projectQueueRows({
       prompts: [
-        prompt({ prompt_id: 'painted', message_id: 'msg_painted', state: 'delivering' }),
-        prompt({ prompt_id: 'unpainted', message_id: 'msg_unpainted', state: 'delivering' }),
+        prompt({ prompt_id: 'by-message', message_id: 'msg_m' }),
+        prompt({ prompt_id: 'by-wire', message_id: 'msg_reminted', wire_message_id: 'msg_w' }),
+        prompt({ prompt_id: 'by-client', client_message_id: 'q_stable', message_id: 'msg_x' }),
+        prompt({ prompt_id: 'unpainted', message_id: 'msg_u' }),
       ],
-      transcriptMessageIds: new Set(['msg_painted']),
+      transcriptMessageIds: new Set(['msg_m', 'msg_w', 'q_stable']),
     });
-
-    expect(projection.queued.map((r) => r.id)).toEqual(['unpainted']);
-    expect(projection.inFlightIds).toEqual(['unpainted']);
-  });
-
-  test('a row whose WIRE id is in the transcript leaves the strip, even after the server re-minted it', () => {
-    // The drain re-mints a mid-turn prompt above the live turn's ids and the
-    // row's `message_id` moves to the new id BEFORE the runtime echoes it —
-    // the echo is what lets the store alias the new id back to the bubble.
-    // For that window (~0.4 s, every mid-turn send) the bubble this tab
-    // painted is on screen under the ORIGINAL wire id and the row, matched
-    // on `message_id` only, was drawn beside it: a second dimmed copy that
-    // then vanished.
-    const projection = projectQueueRows({
-      prompts: [
-        prompt({
-          prompt_id: 'reminted',
-          message_id: 'msg_reminted',
-          wire_message_id: 'msg_original',
-          state: 'delivering',
-        }),
-      ],
-      transcriptMessageIds: new Set(['msg_original']),
-    });
-    expect(projection.queued).toEqual([]);
-  });
-
-  test('a row whose CLIENT id is in the transcript leaves the strip — the id that survives re-mint AND reload', () => {
-    // `client_message_id` is the ONE id the host never re-mints and the reload
-    // preserves: `message_id` and `wire_message_id` are both OpenCode wire ids
-    // that the drain can re-mint out from under a stuck row, and across a hard
-    // refresh the store's in-memory `message_id`->bubble alias is gone. When a
-    // divergence leaves the transcript showing the answer under an id the row
-    // no longer reports, the client id is the stable anchor that still hides
-    // the row so the badge does not survive the refresh.
-    const projection = projectQueueRows({
-      prompts: [
-        prompt({
-          prompt_id: 'diverged',
-          client_message_id: 'q_stable',
-          message_id: 'msg_reminted_again',
-          wire_message_id: 'msg_first_remint',
-          state: 'delivering',
-        }),
-      ],
-      transcriptMessageIds: new Set(['q_stable']),
-    });
-    expect(projection.queued).toEqual([]);
-  });
-
-  test('a HELD row in the transcript is NOT a queue row — the bubble carries its controls, but the hold is still reported', () => {
-    // A stop-paused prompt IS in the transcript, unanswered and parked. Its
-    // remove and "send now" live in the bubble's own meta row now
-    // (`QueuedPromptControls`), so drawing it here too would be the same
-    // message twice. `held` still surfaces so the pending bubble can offer
-    // "send now".
-    const projection = projectQueueRows({
-      prompts: [prompt({ state: 'waiting', reason: 'held', message_id: 'msg_a' })],
-      transcriptMessageIds: new Set(['msg_a']),
-    });
-
-    expect(projection.queued).toHaveLength(0);
-    expect(projection.held).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual(['unpainted']);
   });
 
   test('a row with no wire id yet is never matched against the transcript', () => {
-    // An automation-shaped or not-yet-minted row carries an empty `message_id`,
-    // and an empty string must not match an empty transcript entry.
-    const projection = projectQueueRows({
+    const { rows } = projectQueueRows({
       prompts: [prompt({ message_id: '' })],
       transcriptMessageIds: new Set(['']),
     });
-
-    expect(projection.queued).toHaveLength(1);
+    expect(rows).toHaveLength(1);
   });
 
-  test('a `waiting` row is still a queued row — waiting is WHY, not a lane', () => {
+  test("the session's first prompt stays with the transcript, never the list", () => {
+    // `startSessionWithPrompt` mints `start_…`. That prompt IS the turn about
+    // to run, and `OptimisticTurn` draws it in the transcript.
+    // The API's `create.pending_prompt` mints `pending:<session>` for the same job.
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'first', client_message_id: 'start_abc' }),
+        prompt({ prompt_id: 'server-first', client_message_id: 'pending:ses_1' }),
+        prompt(),
+      ],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['cmd-1']);
+  });
+
+  test('heldCount counts every held row — including one the transcript is showing', () => {
+    // Resume has to be reachable whenever the server holds anything, wherever
+    // the held message happens to be drawn.
     const projection = projectQueueRows({
-      prompts: [prompt({ state: 'waiting', reason: 'older_prompt_pending' })],
+      prompts: [
+        prompt({ prompt_id: 'a', state: 'waiting', reason: 'held', message_id: 'msg_a' }),
+        prompt({ prompt_id: 'b', state: 'waiting', reason: 'held', message_id: 'msg_b' }),
+        prompt({ prompt_id: 'c', state: 'failed', reason: 'held', message_id: 'msg_c' }),
+      ],
+      transcriptMessageIds: new Set(['msg_a']),
     });
-
-    expect(projection.queued).toHaveLength(1);
-    expect(projection.held).toBe(false);
+    expect(projection.heldCount).toBe(2);
+    expect(projection.rows.map((r) => r.id)).toEqual(['b', 'c']);
   });
 
-  test('a HELD row reports the hold, so the strip can say the queue is stopped', () => {
-    const projection = projectQueueRows({
-      prompts: [prompt({ state: 'waiting', reason: 'held' })],
+  test('an empty inbox projects nothing', () => {
+    expect(projectQueueRows({ prompts: [] })).toEqual({ rows: [], heldCount: 0 });
+  });
+
+  test("the list shows a row's words, not the transport blocks the send appended", () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({
+          text:
+            '<reply_context>earlier answer</reply_context>\n\nfix the parser\n\n' +
+            '<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png"></file>',
+        }),
+      ],
     });
-
-    expect(projection.held).toBe(true);
+    expect(rows[0]?.text).toBe('fix the parser');
+    expect(rows[0]?.attachmentCount).toBe(1);
   });
 
-  test('the order the server listed them in is the order rendered', () => {
-    // The inbox delivers oldest row first, so the strip must not re-sort: a
-    // list that disagrees with delivery order is a list that lies about what
-    // runs next.
-    const projection = projectQueueRows({
-      prompts: [prompt({ prompt_id: 'first' }), prompt({ prompt_id: 'second' })],
+  test("this tab's draft supplies the text as typed and its file count", () => {
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ client_message_id: 'q_1', text: 'server preview' })],
+      drafts: [draft('q_1', { text: 'as typed', files: [remoteFile, remoteFile] })],
     });
-
-    expect(projection.queued.map((r) => r.id)).toEqual(['first', 'second']);
+    expect(rows[0]).toMatchObject({ text: 'as typed', attachmentCount: 2, takeBackEligible: true });
   });
 
-  test('an empty inbox projects an empty strip, not a held one', () => {
-    expect(projectQueueRows({ prompts: [] })).toEqual({
-      queued: [],
-      failed: [],
-      inFlightIds: [],
-      held: false,
+  test('a row with files and no draft cannot be taken back — its files would be lost', () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'files', attachments: [{ filename: 'a.pdf', mime: 'application/pdf' }] }),
+        prompt({ prompt_id: 'text' }),
+      ],
+    });
+    expect(rows.map((r) => [r.id, r.takeBackEligible])).toEqual([
+      ['files', false],
+      ['text', true],
+    ]);
+  });
+
+  test('a draft still uploading has a row before the inbox does, after the server rows', () => {
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ prompt_id: 'server', client_message_id: 'q_server' })],
+      drafts: [
+        draft('q_uploading', { posted: false, text: 'with a big file', files: [remoteFile] }),
+        // Posted and no longer listed: delivered. It must not come back.
+        draft('q_delivered'),
+      ],
+    });
+    expect(rows.map((r) => [r.id, r.state, r.attachmentCount])).toEqual([
+      ['server', 'queued', 0],
+      ['draft:q_uploading', 'sending', 1],
+    ]);
+  });
+
+  test('a draft whose POST is in flight renders once, as its optimistic row', () => {
+    const { rows } = projectQueueRows({
+      prompts: [prompt({ prompt_id: 'optimistic:q_1', client_message_id: 'q_1' })],
+      drafts: [draft('q_1', { posted: false })],
+    });
+    expect(rows.map((r) => r.id)).toEqual(['optimistic:q_1']);
+  });
+});
+
+describe('cleanPromptText', () => {
+  test('strips every block the send path appends', () => {
+    const text =
+      'look at @notes\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n' +
+      '<session_ref id="ses_1" title="Intro" />\n\n<file_ref path="notes.md" name="notes.md" />\n\n<agent_ref name="coder" />';
+    expect(cleanPromptText(text)).toEqual({ text: 'look at @notes', fileCount: 0 });
+  });
+});
+
+describe('composeTakeBack', () => {
+  const removed = (
+    clientMessageId: string,
+    parts: RemovedSessionPrompt['parts'],
+  ): RemovedSessionPrompt => ({
+    prompt_id: `p-${clientMessageId}`,
+    client_message_id: clientMessageId,
+    message_id: `msg-${clientMessageId}`,
+    parts,
+    overrides: null,
+  });
+
+  test('one entry per line, in queue order, drafts exactly as typed with their files', () => {
+    const result = composeTakeBack({
+      removed: [
+        removed('q_1', [{ type: 'text', text: 'server copy of one' }]),
+        removed('q_2', [{ type: 'text', text: 'two, from another tab' }]),
+      ],
+      drafts: [draft('q_1', { text: 'one, as typed', files: [remoteFile] })],
+    });
+    expect(result).toEqual({
+      text: 'one, as typed\ntwo, from another tab',
+      files: [remoteFile],
+      requeue: [],
     });
   });
 
-  test('there is no local lane left to render', () => {
-    // REWRITTEN with the browser queue's deletion. `projectQueueRows` used to
-    // merge a second, tab-local list and tag every row with its origin, so a
-    // remove/retry/send-now could address the store that held it. One list
-    // means one holder: every row id is a server `prompt_id`.
-    const projection = projectQueueRows({ prompts: [prompt({ prompt_id: 'server-1' })] });
-
-    expect(Object.keys(projection).sort()).toEqual(['failed', 'held', 'inFlightIds', 'queued']);
-    expect(projection.queued[0]).toEqual({ id: 'server-1', text: 'say hi' });
-  });
-});
-
-// A warm box mounts the transcript within seconds, and until the runtime
-// echoes the prompt the queued row is the ONLY thing on screen for it. Drawn
-// text-only it read as a send of no files (2026-09-04, browser-measured).
-test('a queued row carries attachment names without restarting upload progress', () => {
-  const { queued } = projectQueueRows({
-    prompts: [
+  test('a prompt with no draft that carries files goes back to the queue, never into the composer half-empty', () => {
+    const withUpload = removed('q_3', [
       {
-        prompt_id: 'p1',
-        client_message_id: 'c1',
-        message_id: 'msg_1',
-        state: 'queued',
-        reason: null,
-        text: 'YO BRO',
-        attempts: 0,
-        last_error: null,
-        created_at: '2026-09-04T15:06:47.900Z',
-        available_at: '2026-09-04T15:06:47.900Z',
-        attachments: [
-          { filename: 'a.jpg', mime: 'image/jpeg' },
-          { filename: 'b.pdf', mime: 'application/pdf' },
-        ],
+        type: 'text',
+        text: 'see file\n\n<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png"></file>',
       },
-    ],
+    ]);
+    const withFilePart = removed('q_4', [
+      { type: 'text', text: 'see url' },
+      { type: 'file', mime: 'image/png', url: 'https://files.test/b.png' },
+    ]);
+    const result = composeTakeBack({ removed: [withUpload, withFilePart], drafts: [] });
+    expect(result.text).toBe('');
+    expect(result.requeue).toEqual([withUpload, withFilePart]);
   });
-  expect(queued[0]?.attachments).toEqual([
-    { filename: 'a.jpg', mime: 'image/jpeg' },
-    { filename: 'b.pdf', mime: 'application/pdf' },
-  ]);
-  expect(queued[0]?.uploadStatus).toBeUndefined();
-});
-
-test('a failed row names the failure on its attachments', () => {
-  const { failed } = projectQueueRows({
-    prompts: [
-      {
-        prompt_id: 'p2',
-        client_message_id: 'c2',
-        message_id: 'msg_2',
-        state: 'failed',
-        reason: null,
-        text: 'x',
-        attempts: 3,
-        last_error: 'photo.jpg — upload failed (503)',
-        created_at: '2026-09-04T15:06:47.900Z',
-        available_at: '2026-09-04T15:06:47.900Z',
-        attachments: [{ filename: 'photo.jpg', mime: 'image/jpeg' }],
-      },
-    ],
-  });
-  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed', message: 'photo.jpg — upload failed (503)' });
-});
-
-test('a text-only row carries no attachment fields at all', () => {
-  const { queued } = projectQueueRows({
-    prompts: [
-      {
-        prompt_id: 'p3',
-        client_message_id: 'c3',
-        message_id: 'msg_3',
-        state: 'queued',
-        reason: null,
-        text: 'plain',
-        attempts: 0,
-        last_error: null,
-        created_at: '2026-09-04T15:06:47.900Z',
-        available_at: '2026-09-04T15:06:47.900Z',
-        attachments: [],
-      },
-    ],
-  });
-  expect('attachments' in (queued[0] ?? {})).toBe(false);
-  expect('uploadStatus' in (queued[0] ?? {})).toBe(false);
-});
-
-// The API writes `last_error` on rows it keeps `queued` and retries, and never
-// clears it on success. Read as a failure, every transient retry said "upload
-// failed" (review finding, 2026-09-05).
-test('a failed row with no last_error is failed with no invented message', () => {
-  const { failed } = projectQueueRows({
-    prompts: [
-      {
-        prompt_id: 'failed-quiet',
-        client_message_id: 'client-quiet',
-        message_id: null,
-        wire_message_id: null,
-        text: 'with a file',
-        state: 'failed',
-        reason: null,
-        last_error: null,
-        attachments: [{ filename: 'a.png', mime: 'image/png' }],
-      } as never,
-    ],
-  });
-  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed' });
-});
-
-test('a queued row with a stale last_error does not invent upload progress or failure', () => {
-  const { queued } = projectQueueRows({
-    prompts: [
-      {
-        prompt_id: 'p4',
-        client_message_id: 'c4',
-        message_id: 'msg_4',
-        state: 'queued',
-        reason: null,
-        text: 'retrying',
-        attempts: 1,
-        last_error: 'delivery outcome: unreachable',
-        created_at: '2026-09-04T15:06:47.900Z',
-        available_at: '2026-09-04T15:06:47.900Z',
-        attachments: [{ filename: 'a.jpg', mime: 'image/jpeg' }],
-      },
-    ],
-  });
-  expect(queued[0]?.uploadStatus).toBeUndefined();
 });

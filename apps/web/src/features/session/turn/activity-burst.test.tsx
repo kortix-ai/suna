@@ -123,6 +123,22 @@ describe('ActivityGroupStep', () => {
     expect(markup).not.toContain('beta.ts');
   });
 
+  test('two connector calls are ONE row that says connector, never app', () => {
+    // An App is a hosted Kortix web app. A connector call is not one.
+    const markup = render(false, [
+      tool('1', 'kortix-connectors_call', {
+        status: 'completed',
+        input: { connector: 'gmail', action: 'list_threads' },
+      }),
+      tool('2', 'kortix-connectors_call', {
+        status: 'completed',
+        input: { connector: 'gmail', action: 'get_thread' },
+      }),
+    ]);
+    expect(markup).toContain('Made 2 connector calls');
+    expect(markup).not.toMatch(/\bapps?\b/i);
+  });
+
   test('open, the group renders its members — the second level', () => {
     // `Disclosure` renders only children[0] and children[1], and the step's
     // rail already takes slot 0. If trigger + content were passed as siblings

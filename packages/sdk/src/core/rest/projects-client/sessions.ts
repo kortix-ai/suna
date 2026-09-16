@@ -929,6 +929,8 @@ export async function listSessionPrompts(
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      // A background poll: a failed tick must not toast every second.
+      { showErrors: false },
     ),
   );
 }
@@ -969,6 +971,8 @@ export async function deleteSessionPrompt(
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
   return body.removed;
@@ -992,6 +996,8 @@ export async function retrySessionPrompt(
     await backendApi.post<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }
@@ -1013,11 +1019,13 @@ export async function holdSessionPrompts(
   projectId: string,
   sessionId: string,
   held: boolean,
-): Promise<{ prompts: SessionPrompt[] }> {
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.post<{ prompts: SessionPrompt[] }>(
+    await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }

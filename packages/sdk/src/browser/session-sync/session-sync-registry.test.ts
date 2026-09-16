@@ -3,6 +3,7 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../../core/http/opencode-errors';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
+import { configureKortix, platformConfig } from '../../core/http/config';
 import {
   loadSessionRuntimeStatus,
   ACTIVE_SESSION_PREFETCH_SOURCE,
@@ -159,6 +160,55 @@ describe('readSessionMessagePage', () => {
 });
 
 describe('prefetchSessionSyncOnce', () => {
+  test('keeps message reads on their original runtime after the active session changes', async () => {
+    const previousConfig = platformConfig();
+    const requests: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch(request) {
+        requests.push(new URL(request.url).pathname);
+        return Response.json([]);
+      },
+    });
+    const base = `http://127.0.0.1:${server.port}`;
+    configureKortix({ backendUrl: base, getToken: async () => 'test-token' }, { global: true });
+    try {
+      setCurrentRuntime(`${base}/runtime-a`, 'runtime-a');
+      const original = getSessionSyncController('session-a');
+      const release = retainSessionSyncController('session-a');
+      await original.reconcile('initial');
+      release();
+      setCurrentRuntime(`${base}/runtime-b`, 'runtime-b');
+      await getSessionSyncController('session-b').reconcile('initial');
+      // Looking up a retained controller must not erase its bound client.
+      await getSessionSyncController('session-a', undefined, 'runtime-a').reconcile('manual');
+      expect(requests).toEqual([
+        '/runtime-a/session/session-a/message',
+        '/runtime-b/session/session-b/message',
+        '/runtime-a/session/session-a/message',
+      ]);
+    } finally {
+      resetSessionSyncControllers();
+      setCurrentRuntime(null);
+      configureKortix(previousConfig, { global: true });
+      server.stop(true);
+    }
+  });
+
+  test('retaining a prefetched controller preserves its explicit runtime client', async () => {
+    let reads = 0;
+    const client = { session: { messages: async () => { reads += 1; return { data: [] }; } } };
+    await prefetchSessionSyncOnce('session-a', 'runtime-a', client);
+    const release = retainSessionSyncController('session-a', 'runtime-a');
+    try {
+      await getSessionSyncController('session-a', undefined, 'runtime-a').reconcile('manual');
+      expect(reads).toBe(2);
+    } finally {
+      release();
+    }
+  });
+
   test('keeps controllers distinct when two sandboxes contain the same OpenCode id', () => {
     const sharedId = 'session-from-snapshot';
     const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
@@ -407,6 +457,15 @@ describe('loadSessionRuntimeStatus refuses to launder failures into idle', () =>
  * no error. `readSessionMessagePage` must CLASSIFY the result instead.
  */
 describe('readSessionMessagePage — error classification', () => {
+  test('preserves a missing conversation status for the retry policy', async () => {
+    const client = { session: { messages: async () => ({
+      error: { message: 'Conversation not found' },
+      response: new Response(null, { status: 404 }),
+    }) } };
+    await expect(readSessionMessagePage(client, 'missing-session', { limit: 50 }))
+      .rejects.toMatchObject({ status: 404 });
+  });
+
   function failingClient(payload: {
     data?: unknown;
     error?: unknown;

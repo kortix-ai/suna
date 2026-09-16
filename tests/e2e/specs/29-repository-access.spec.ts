@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { createApiJsonClient } from '../helpers/http';
 import { createManifestProject, type ManifestProject } from '../helpers/manifest-project';
 import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
@@ -30,10 +30,7 @@ test('29 — repository access toggle saves both policies and replaces the legac
     await selectAccountForUi(page, accountId);
     await page.goto(route);
     await dismissOnboarding(page);
-    const welcome = page.getByRole('complementary', { name: /Welcome from Marko/i });
-    if (await welcome.isVisible().catch(() => false)) {
-      await welcome.getByRole('button', { name: /dismiss|close/i }).click();
-    }
+    await dismissWelcomeCard(page);
     const toggle = page.getByRole('switch', { name: 'Project repository access', exact: true });
     await expect(toggle).not.toBeChecked();
     await expect(page.getByRole('combobox', { name: 'File access' })).toHaveCount(0);
@@ -45,6 +42,8 @@ test('29 — repository access toggle saves both policies and replaces the legac
     });
     for (const enabled of [true, false]) {
       await toggle.click();
+      // The welcome card can render at any point and covers this corner.
+      await dismissWelcomeCard(page);
       await page.getByRole('button', { name: /^Save/ }).click();
       await expect.poll(() => writes.at(-1)?.body.repository_access).toBe(enabled);
       expect(writes.at(-1)?.status).toBe(200);

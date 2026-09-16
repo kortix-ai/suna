@@ -452,6 +452,7 @@ export async function buildSessionSandboxEnvVars(input: {
   /** S3 config provider mode + prepared-archive pin — see session-runtime-env.ts. */
   projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
   projectSnapshotPin?: string | null;
+  projectSnapshotDescriptor?: string | null;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -665,7 +666,6 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       repositoryAccess: input.repositoryAccess,
-      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
@@ -677,6 +677,7 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeConfigDir: input.opencodeConfigDir,
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
+      projectSnapshotDescriptor: input.projectSnapshotDescriptor,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1734,9 +1735,7 @@ export async function createProjectSession(input: {
       // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
-      // just means the daemon's fetch fallback. Deliberately NOT tied to
-      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
-      // deploy-dev pins to an explicit `false`.
+      // just means the daemon's fetch fallback.
       // The worker path never clones: the scaffold/delta hint is pure waste
       // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
@@ -1823,13 +1822,14 @@ export async function createProjectSession(input: {
           })
         : fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
-          // S3 config provider: pin a PREPARED archive for the exact base tip,
-          // or record the miss and queue the build for the next session. One
-          // indexed read; never a bucket call on the create path.
+          // S3 config provider: pin a PREPARED archive for the exact base tip
+          // and presign its download descriptor right here (local signing, no
+          // bucket call on the create path), or record the miss and queue the
+          // build for the next session. One indexed read.
           const projectSnapshotMode = resolveProjectSnapshotMode(project.metadata);
           const projectSnapshot =
             projectSnapshotMode === 'git'
-              ? { pin: null, cache: 'unconfigured' as const }
+              ? { pin: null, descriptor: null, cache: 'unconfigured' as const }
               : await resolveProjectSnapshotPinForSession({
                   projectId,
                   ref: baseRef,
@@ -1841,14 +1841,19 @@ export async function createProjectSession(input: {
                     sessionId,
                     error: err instanceof Error ? err.message : String(err),
                   });
-                  return { pin: null, cache: 'miss' as const };
+                  return { pin: null, descriptor: null, cache: 'miss' as const };
                 });
           if (projectSnapshotMode !== 'git') {
             tl.mark(`project-snapshot-${projectSnapshot.cache}`);
           }
-          return { fastBootGitHint, projectSnapshotMode, projectSnapshotPin: projectSnapshot.pin };
+          return {
+            fastBootGitHint,
+            projectSnapshotMode,
+            projectSnapshotPin: projectSnapshot.pin,
+            projectSnapshotDescriptor: projectSnapshot.descriptor,
+          };
         })
-        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin }) =>
+        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin, projectSnapshotDescriptor }) =>
           buildSessionSandboxEnvVars({
             accountId,
             projectId,
@@ -1863,6 +1868,7 @@ export async function createProjectSession(input: {
             freshSession: true,
             projectSnapshotMode,
             projectSnapshotPin,
+            projectSnapshotDescriptor,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,

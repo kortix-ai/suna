@@ -183,6 +183,26 @@ export interface StartSessionCommand {
  * (Essentia, 2026-08-26: `state:failed, attempts:1,
  * last_error:"delivery outcome: failed"`).
  */
+/**
+ * What the user reads under their own undelivered bubble, rendered as
+ * `Not sent — <this>` by `queued-prompt-bubbles.tsx`.
+ *
+ * `last_error` is CUSTOMER-FACING, not a log line. It used to be the literal
+ * `delivery outcome: pending`, which told a paying customer on 2026-09-15
+ * nothing at all — they mailed support asking what it meant. Say what happened
+ * to their message, in words they can act on.
+ */
+export const DELIVERY_FAILURE_COPY: Record<
+  Exclude<SessionDeliveryOutcome, 'delivered'>,
+  string
+> = {
+  pending: 'the session was not ready in time',
+  unreachable: "the session's machine could not be reached",
+  'not-landed': 'the session accepted it but never recorded it',
+  'no-session': 'that session no longer exists',
+  failed: 'the session refused it',
+};
+
 export type SessionDeliveryOutcome =
   | 'delivered'
   | 'pending'

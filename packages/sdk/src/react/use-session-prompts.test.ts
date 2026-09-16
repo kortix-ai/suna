@@ -16,8 +16,14 @@ import {
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
   readSessionPromptsInbox,
+  releaseHeldPrompts,
+  releaseRemovedPromptTombstone,
+  removeFailureKeepsRow,
+  REMOVED_PROMPT_TOMBSTONE_MS,
   sessionPromptsPollMs,
   startSessionWithPrompt,
+  tombstoneRemovedPrompt,
+  withoutRemovedPrompts,
 } from './use-session-prompts';
 
 /**
@@ -425,6 +431,102 @@ describe('readSessionPromptsInbox', () => {
       expect(stub.urls).toEqual(['http://api.test/v1/projects/proj-1/sessions/sess-1/prompts']);
     } finally {
       stub.restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
+  });
+});
+
+const row = (over: Partial<SessionPrompt> & { prompt_id: string }): SessionPrompt => ({
+  client_message_id: `c-${over.prompt_id}`,
+  message_id: `msg-${over.prompt_id}`,
+  state: 'queued',
+  reason: null,
+  text: 'hi',
+  attempts: 0,
+  last_error: null,
+  created_at: '2026-09-16T00:00:00.000Z',
+  available_at: '2026-09-16T00:00:00.000Z',
+  ...over,
+});
+
+/**
+ * Resume has to answer on the CLICK.
+ *
+ * The queue list's "Queue paused · Resume" line is drawn from `reason: 'held'`
+ * rows. `hold(false)` used to change nothing locally: the line stayed up until
+ * a follow-up GET landed, and `applyInboxObservation` can legitimately discard
+ * that GET — so Resume read as a button that did nothing.
+ */
+describe('releaseHeldPrompts', () => {
+  test('clears the hold reason and nothing else', () => {
+    const held = row({ prompt_id: 'a', state: 'waiting', reason: 'held' });
+    expect(releaseHeldPrompts([held])).toEqual([{ ...held, reason: null }]);
+  });
+
+  test('leaves rows the hold does not own untouched', () => {
+    const waiting = row({ prompt_id: 'a', state: 'waiting', reason: 'turn_active' });
+    const failed = row({ prompt_id: 'b', state: 'failed', last_error: 'boom' });
+    expect(releaseHeldPrompts([waiting, failed])).toEqual([waiting, failed]);
+  });
+});
+
+/**
+ * A removal must stay removed.
+ *
+ * `DELETE .../prompts/:id` returns no server stamp, so a GET issued BEFORE the
+ * delete can land AFTER it with a strictly newer `observed_at` and list the row
+ * again — correctly, by the ordering rule. Only a client tombstone orders a
+ * removal against the 1s poll. With take-back (Up) that is not cosmetic: the
+ * row's text is already back in the composer, and a resurrected row would send
+ * the same message twice.
+ */
+describe('removed-prompt tombstones', () => {
+  test('a tombstoned row is filtered out of every later list for that session', () => {
+    tombstoneRemovedPrompt('sess-t1', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' }), row({ prompt_id: 'b' })];
+    expect(withoutRemovedPrompts('sess-t1', rows, 1_500).map((r) => r.prompt_id)).toEqual(['b']);
+  });
+
+  test('the tombstone is scoped to its own session', () => {
+    tombstoneRemovedPrompt('sess-t2', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-other', rows, 1_500)).toEqual(rows);
+  });
+
+  test('the tombstone expires — it orders one race, it is not a blocklist', () => {
+    tombstoneRemovedPrompt('sess-t3', 'a', 1_000);
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-t3', rows, 1_000 + REMOVED_PROMPT_TOMBSTONE_MS + 1)).toEqual(
+      rows,
+    );
+  });
+
+  test('a released tombstone lets the row back in', () => {
+    tombstoneRemovedPrompt('sess-t4', 'a', 1_000);
+    releaseRemovedPromptTombstone('sess-t4', 'a');
+    const rows = [row({ prompt_id: 'a' })];
+    expect(withoutRemovedPrompts('sess-t4', rows, 1_500)).toEqual(rows);
+  });
+
+  test('only a 404 means the row is gone; every other failure left it in place', () => {
+    // 409: a step is already answering it — it is still listed, as delivering.
+    // A network failure never reached the server at all.
+    expect(removeFailureKeepsRow({ status: 404 })).toBe(false);
+    expect(removeFailureKeepsRow({ status: 409 })).toBe(true);
+    expect(removeFailureKeepsRow(new Error('network'))).toBe(true);
+  });
+
+  test('readSessionPromptsInbox never lists a tombstoned row', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      Response.json({ prompts: [row({ prompt_id: 'gone' }), row({ prompt_id: 'kept' })] })) as unknown as typeof fetch;
+    tombstoneRemovedPrompt('sess-t5', 'gone');
+    try {
+      const rows = await readSessionPromptsInbox('proj-1', 'sess-t5', []);
+      expect(rows.map((r) => r.prompt_id)).toEqual(['kept']);
+    } finally {
+      globalThis.fetch = original;
       configureKortix({ backendUrl: '', getToken: async () => null });
     }
   });

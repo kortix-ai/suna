@@ -1,44 +1,11 @@
 /**
- * Refusing a PROMPT whose connectors cannot serve it — before the sandbox sees it.
- *
- * The pre-flight that already exists runs at session CREATE and at warm-claim
- * (projects/lib/sessions.ts, routes/project-sessions.ts). A mid-session prompt passed through
- * ungated, so the founder's session answered "Still no active connectors. The
- * Gmail connector is gone from the connector catalog." — the agent improvising an
- * apology, mid-turn, about something the platform knew before the first byte.
- *
- * That is the whole failure the pre-flight exists to prevent, and it was only
- * ever prevented at create. Nothing about the reason is create-specific: a
- * connection can be revoked, a connector deactivated, or a scope re-pointed at any
- * moment, and every one of those lands on the next prompt.
- *
- * WHAT COUNTS AS REQUIRED — the union of three sources, because no one of them
- * is complete:
- *
- *   1. The session's own `requiredConnectors`. What the caller declared for THIS
- *      session, including an alias with no connection yet — the only source that
- *      can express "this session needs Gmail" before a Gmail account exists to
- *      point at. A binding row cannot: `connection_id` is NOT NULL.
- *   2. The RUNNING agent's manifest `connectors_required`. Re-read per prompt so
- *      a manifest change takes effect without restarting the session — and read
- *      for the agent this prompt actually runs, not the one the session booted
- *      with, matching how the secret grant already resolves (see secret-grant.ts).
- *   3. The session's existing binding rows. A warm-claimed session gets none, and
- *      `PUT /scope` replaces them wholesale, so this source alone would miss the
- *      common case — but it catches an alias that WAS connected at create and has
- *      since been revoked, which the other two do not.
- *
- * FAIL CLOSED ON THE VERDICT, NEVER ON THE LOOKUP. Only a positive "this alias
- * has no usable connection" may refuse the prompt. A git blip or a DB error means we
- * could not establish the answer, which is a 503 the client retries — never a 409
- * telling somebody to connect an account that is, in fact, already connected.
+ * Gate prompts on explicit session and running-agent connector requirements.
+ * A binding selects a connection; it does not make that connector mandatory.
+ * Optional connection failures belong to the connector call, not every prompt.
+ * Lookup failures remain retryable 503s, distinct from confirmed 409 refusals.
  */
 
-import {
-  projectSessionConnectorBindings,
-  projectSessions,
-  projects,
-} from '@kortix/db';
+import { projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
@@ -89,14 +56,9 @@ export type PromptConnectorVerdict =
 export function unionRequiredAliases(input: {
   sessionRequired: readonly string[] | null | undefined;
   manifestRequired: readonly string[];
-  boundAliases: readonly string[];
 }): string[] {
   const seen = new Set<string>();
-  for (const raw of [
-    ...(input.sessionRequired ?? []),
-    ...input.manifestRequired,
-    ...input.boundAliases,
-  ]) {
+  for (const raw of [...(input.sessionRequired ?? []), ...input.manifestRequired]) {
     const alias = canonicalConnectorAlias(String(raw ?? '').trim());
     if (alias) seen.add(alias);
   }
@@ -112,7 +74,7 @@ export async function missingPromptConnectorConnections(input: {
 }): Promise<PromptConnectorVerdict> {
   let aliases: string[];
   try {
-    const [[session], boundRows, [project]] = await Promise.all([
+    const [[session], [project]] = await Promise.all([
       db
         .select({ requiredConnectors: projectSessions.requiredConnectors })
         .from(projectSessions)
@@ -125,16 +87,6 @@ export async function missingPromptConnectorConnections(input: {
         )
         .limit(1),
       db
-        .select({ alias: projectSessionConnectorBindings.connectorAlias })
-        .from(projectSessionConnectorBindings)
-        .where(
-          and(
-            eq(projectSessionConnectorBindings.sessionId, input.sessionId),
-            eq(projectSessionConnectorBindings.projectId, input.projectId),
-            eq(projectSessionConnectorBindings.accountId, input.accountId),
-          ),
-        ),
-      db
         .select({
           repoUrl: projects.repoUrl,
           defaultBranch: projects.defaultBranch,
@@ -145,8 +97,7 @@ export async function missingPromptConnectorConnections(input: {
         .limit(1),
     ]);
 
-    // A project with no default branch has no manifest to read — the other two
-    // sources still stand on their own.
+    // A project without a default branch still has explicit session requirements.
     let manifestRequired: string[] = [];
     if (project?.defaultBranch) {
       // NOT forceRefresh. The warm-claim path uses it because it runs once per
@@ -176,7 +127,6 @@ export async function missingPromptConnectorConnections(input: {
     aliases = unionRequiredAliases({
       sessionRequired: session?.requiredConnectors,
       manifestRequired,
-      boundAliases: boundRows.map((row) => row.alias),
     });
   } catch (err) {
     throw new PromptConnectorPreflightUnresolved(err);
