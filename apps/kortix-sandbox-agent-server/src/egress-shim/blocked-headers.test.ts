@@ -177,8 +177,13 @@ describe('the daemon still builds standalone', () => {
     expect(builder).toContain('COPY packages/api-contract /repo/packages/api-contract')
     expect(builder).toContain('WORKDIR /repo/apps/kortix-sandbox-agent-server')
     // …and the runtime stage must copy the binary from where it now lands.
-    expect(dockerfile).toContain(
-      'COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent',
+    // Matched on source+destination rather than the literal line: the COPY also
+    // carries `--chmod`, because setting the mode in a later RUN copies the
+    // binary into a second layer (290 MB of duplication, measured 2026-09-16).
+    // The assertion is about WHERE the binary comes from, not which flags ride
+    // along.
+    expect(dockerfile).toMatch(
+      /COPY --from=builder [^\n]*\/repo\/apps\/kortix-sandbox-agent-server\/dist\/kortix-agent\s+\/usr\/local\/bin\/kortix-agent/,
     )
   })
 })

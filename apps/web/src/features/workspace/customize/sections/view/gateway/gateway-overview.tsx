@@ -21,7 +21,7 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
-import { listProjectSessions } from '@kortix/sdk';
+import { listProjectSessions, PROJECT_SESSION_NAME_LOOKUP_LIMIT } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import {
@@ -96,7 +96,7 @@ export function GatewayOverview({
   // either.
   const { data: projectSessions } = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: !!projectId,
     ...contract('inventory'),
   });

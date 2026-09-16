@@ -1237,6 +1237,8 @@
     "selectAllConversations": "Select all conversations",
     "deselectAllConversations": "Deselect all conversations",
     "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "loadMoreSessions": "Load more sessions",
     "remaining": "remaining",
     "newSession": "New session",
     "collapse": "Collapse sidebar",

@@ -1237,6 +1237,8 @@
     "selectAllConversations": "すべての会話を選択",
     "deselectAllConversations": "すべての会話を解除",
     "loadMore": "もっと読み込む",
+    "loadingMore": "読み込み中…",
+    "loadMoreSessions": "セッションをさらに読み込む",
     "remaining": "残り",
     "newSession": "新しいセッション",
     "collapse": "サイドバーを折りたたむ",
