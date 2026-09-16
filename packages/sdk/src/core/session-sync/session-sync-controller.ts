@@ -1,6 +1,7 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
 import { isAbortError } from '../http/abort-error';
+import { ApiError } from '../http/api/errors';
 
 /**
  * Messages per bounded read — the newest-first window a session opens with,
@@ -227,7 +228,7 @@ export function createHttpSessionSyncPageLoader(
       if (response.status === 503) {
         throw new SandboxNotReadyError(`session ${response.status}`);
       }
-      throw new Error(`Session synchronization failed: ${response.status}`);
+      throw new ApiError(`Session synchronization failed: ${response.status}`, { status: response.status });
     }
     return {
       messages: (await response.json()) as SessionSyncMessage[],
@@ -324,6 +325,7 @@ export class SessionSyncController {
   private lastTailReadAt: number;
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
   private retryAttempt = 0;
+  private tailUnavailable = false;
   private tailRetryTimer: unknown;
   private snapshot: SessionSyncSnapshot = {
     freshness: 'idle',
@@ -513,6 +515,7 @@ export class SessionSyncController {
       // about the session. A failed read is not a fact about anything.
       this.options.markLoaded();
       this.retryAttempt = 0;
+      this.tailUnavailable = false;
     } catch (error) {
       if (this.destroyed) return;
       // A superseded/cancelled read is not a failure and never hydrates — it
@@ -524,6 +527,12 @@ export class SessionSyncController {
       // empty-`fresh` — `markLoaded` above ran only on success, so a failed
       // read never records the session as an empty transcript.
       this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
+      if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
+        this.tailUnavailable = true;
+        this.cancelTimer(this.tailRetryTimer);
+        this.tailRetryTimer = undefined;
+        return;
+      }
       this.scheduleTailRetry(reason);
     }
   }
@@ -690,7 +699,7 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.tailUnavailable) return;
     const nowMs = this.scheduler.now();
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A

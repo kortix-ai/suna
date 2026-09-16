@@ -99,6 +99,8 @@ describe('ephemeral self-host preview stack', () => {
     };
     const patEnv = applyPreviewEnvironment(base, stack, pat);
     expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    expect(patEnv.runtimeEnv).toContain('KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false');
+    expect(patEnv.testEnv).toContain('E2E_APPS_BASE_DOMAIN=apps.example.test');
     expect(patEnv.runtimeEnv).toContain('MANAGED_GIT_GITHUB_TOKEN=t');
     // An owner on its own still is not managed git.
     expect(() => applyPreviewEnvironment(base, stack, { MANAGED_GIT_GITHUB_OWNER: 'o' })).toThrow(
@@ -196,6 +198,7 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');

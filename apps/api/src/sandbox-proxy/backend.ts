@@ -150,31 +150,42 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * when no row exists. Fresh on every call (status must not be cached); the
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
+/**
+ * The one query behind `loadSandbox`, exported so its rendered SQL is pinned by
+ * a test (`backend-load-sandbox-sql.test.ts`).
+ *
+ * The session's agent comes from a typed LEFT JOIN — never a raw `sql`
+ * subquery. INC-2026-09-15: the subquery that used to live here rendered its
+ * correlation unqualified (`where "session_id" = "session_id"`, true for every
+ * row), so every proxied request got the agent of the first tuple of
+ * `project_sessions` — another customer's `chief-of-staff` — and agent-less
+ * prompts re-pointed session tokens at it. `project_sessions.session_id` is the
+ * primary key, so the join never multiplies rows.
+ */
+export function sandboxRecordQuery(condition: SQL) {
+  return db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      externalId: sessionSandboxes.externalId,
+      sessionId: sessionSandboxes.sessionId,
+      agentName: projectSessions.agentName,
+      projectId: sessionSandboxes.projectId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      status: sessionSandboxes.status,
+      baseUrl: sessionSandboxes.baseUrl,
+      config: sessionSandboxes.config,
+    })
+    .from(sessionSandboxes)
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+    .where(condition)
+    .orderBy(...preferredSandboxOrder())
+    .limit(1);
+}
+
 export async function loadSandbox(externalId: string): Promise<SandboxRecord | null> {
-  const columns = {
-    sandboxId: sessionSandboxes.sandboxId,
-    externalId: sessionSandboxes.externalId,
-    sessionId: sessionSandboxes.sessionId,
-    agentName: sql<string | null>`(
-      select ${projectSessions.agentName}
-      from ${projectSessions}
-      where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
-      limit 1
-    )`,
-    projectId: sessionSandboxes.projectId,
-    accountId: sessionSandboxes.accountId,
-    provider: sessionSandboxes.provider,
-    status: sessionSandboxes.status,
-    baseUrl: sessionSandboxes.baseUrl,
-    config: sessionSandboxes.config,
-  };
   const selectOne = async (condition: SQL) => {
-    const [match] = await db
-      .select(columns)
-      .from(sessionSandboxes)
-      .where(condition)
-      .orderBy(...preferredSandboxOrder())
-      .limit(1);
+    const [match] = await sandboxRecordQuery(condition);
     return match ?? null;
   };
 

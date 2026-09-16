@@ -445,6 +445,7 @@ export const SessionLayout = memo(function SessionLayout({
         <div className={cn('absolute inset-0', !showTerminal && 'hidden')}>
           <SessionTerminalPanel
             sessionId={sessionId}
+            projectId={projectId}
             projectSessionId={projectSessionId ?? undefined}
             hidden={!showTerminal}
           />

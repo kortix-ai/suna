@@ -1121,16 +1121,64 @@
                     }
                   ]
                 },
+                "repository_access": {
+                  "type": "boolean",
+                  "description": "Allow new sessions to access the project repository. Defaults to true."
+                },
                 "workspace": {
                   "type": "string",
                   "enum": [
                     "runtime",
                     "read",
                     "branch"
-                  ]
+                  ],
+                  "deprecated": true
                 }
               },
-              "additionalProperties": false
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "const": "branch"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "workspace"
+                    ],
+                    "properties": {
+                      "workspace": {
+                        "enum": [
+                          "runtime",
+                          "read"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "repository_access": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           },
           "project": {

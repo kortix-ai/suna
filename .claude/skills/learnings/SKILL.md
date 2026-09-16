@@ -21,6 +21,125 @@ linked, not inlined.
 
 ## Register
 
+### Let Docker readiness decide whether a sandbox can run the preview (2026-09-15)
+
+**When:** preparing a Daytona warm image, attempt kernel module loads but do not
+abort on a denied `modprobe`. Require the bounded `docker info` gate to pass.
+*Incident:* PR #7267's fallback stopped on `iptable_nat: Operation not permitted`;
+the same base image started Docker and pulled Supabase images with this check.
+Platinum's earlier `503 body-budget-exhausted` came from its public proxy, not
+Kortix. Inspect response bodies before attributing preview failures to the app.
+*Enforcer:* `daytona-ci.test.ts` requires advisory module loads and Docker readiness.
+
+### Give the preview frontend enough heap for the full browser gate (2026-09-15)
+
+**When:** configuring a full self-host preview. Persist its frontend memory limit
+through `KORTIX_FRONTEND_MEMORY_LIMIT`; do not edit generated Compose limits.
+*Incident:* PR #7267's frontend restarted five times with `Reached heap limit`
+under its 512 MiB container limit while the 16 GiB host had over 12 GiB available.
+Browser navigation failures masked the terminal test behind infrastructure noise.
+*Enforcer:* `preview-stack.test.ts` requires a 2048 MiB preview frontend limit;
+also inspect the deployed container limit and restart count after the full gate.
+
+
+
+### Diagnose terminal close 1006 from the server refusal before calling it a wake (2026-09-15)
+
+**When:** investigating a browser terminal that fails while CLI attach works.
+Match the PTY path and timestamp to `[preview-ws] REFUSED`; a browser error alone
+cannot distinguish authentication from readiness. The reported 16:12 EDT session
+had 27 `401 unauthorized` refusals from 20:11–20:16 UTC, not readiness 503s.
+Its valid HS256 token worked over HTTP but the old WebSocket gate rejected it.
+Release 0.13.17 fixed that gate at 20:54 UTC; a real HS256 browser attach now works.
+*Enforcers:* `unit-preview-auth-principal.test.ts`, `unit-jwt-alg-fallback.test.ts`;
+terminal retries use the HTTP probe in `pty-connection.ts` rather than guessing.
+
+
+### Terminal wake must work before a PTY exists (2026-09-15)
+
+**When:** changing terminal attach or recovery. Test a stopped sandbox with no
+cached PTY list or remembered PTY ID. `GET /kortix/pty` never wakes a sandbox;
+the visible panel must initiate a mutation before read polling can succeed.
+Keep automatic polls inside one fixed deadline; only user Retry resets it.
+*Incident:* production terminal counted reconnects indefinitely while CLI attach
+worked. PR #7267 initially fixed socket recovery but missed cold terminal creation.
+*Enforcer:* `13-sdk-only-session.spec.ts` cold terminal wake and shell-output test.
+
+### A raw `sql` subquery must QUALIFY every outer column — Drizzle unqualifies them in a single-table select (2026-09-15)
+
+**When:** writing `` sql`(select … from ${inner} where … = ${outer.col})` `` as a
+column of `db.select({...}).from(outer)`, or anywhere the template may later be
+placed there. Drizzle renders column references in a single-table selection
+WITHOUT their table, so `${outer.col}` becomes `"col"`, Postgres binds it to the
+INNER table, and the correlation is a tautology that returns the first row of the
+inner table for every outer row. Use a typed `leftJoin`, or wrap every outer column
+in `qualifiedColumn()` (`apps/api/src/shared/sql-qualified-column.ts`). *Incident:*
+prod v0.13.16 and earlier, from ~2026-09-07: `loadSandbox`
+(`sandbox-proxy/backend.ts`) read the session agent this way, so every proxied
+request got another customer's agent (`chief-of-staff`, the first
+`project_sessions` tuple). Agent-less prompts re-pointed session tokens at it —
+344 tokens in unrelated projects lost CLI and connector access; the admin project
+list showed global session counts per project. *Automation:*
+`sql-correlated-subquery-guard.test.ts` fails on any raw subquery that references
+a `@kortix/db` table column it does not select from; `backend-load-sandbox-sql.test.ts`
+pins the rendered join; `isLaunchableAgentName` + the proxy/re-mint guards refuse
+any agent name the session's own manifest does not declare.
+
+### Renaming or replacing the default agent is TWO writes — the manifest AND `project.metadata.default_agent`, which wins (2026-09-15)
+
+**When:** a CR renames, removes, or replaces the agent named by `default_agent`
+in `kortix.yaml`. `resolveGovernedAgentGrant` (`apps/api/src/projects/agents.ts`)
+resolves the `default` sentinel from `opts.projectDefaultAgent` (the DB mirror)
+BEFORE `loaded.defaultAgent` (the manifest). A CR merge does not refresh the DB
+mirror, so the old name keeps winning and every default-agent launch (web
+composer, triggers without `agent`, Slack) fails `AGENT_NOT_DECLARED`. After the
+merge, run `kortix agents default <new>` (writes both), then assert
+`kortix projects info --json` → `metadata.default_agent`. *Near-miss:* prod
+customer project, `kortix` → `galileo-admin` rename, ~7 min window, caught before
+any member launched. *Automation:* none — candidate: CR-merge manifest sync
+updates `metadata.default_agent` when the merged manifest no longer declares it.
+
+### Await archive parser completion before extraction (2026-09-14)
+
+**When:** downloading an archive through parallel file and validation streams.
+A file sink finishing does not mean the decompressor has checked every header.
+Await the parser verdict before creating the extraction directory or launching tar.
+*Near-miss:* PR #7240 Linux package gate created a stage for a traversal archive;
+the guard and extraction raced. *Enforcer:* real traversal archive regression in
+`config-provider.test.ts`; it requires no stage and no extracted files on rejection.
+
+### Establish browser readiness before measuring navigation or capturing fonts (2026-09-14)
+
+**When:** measuring document reloads or taking UI screenshots. Await the initial
+load before recording its baseline. Select destination links by their exact href;
+await font readiness before screenshot capture within the journey deadline.
+*Incident:* PR #7240 local Chromium counted a late boot load as a menu reload,
+clicked before the agent card appeared, and timed out during a 46-second cold font load.
+*Enforcers:* browser journeys 24 and 27 retain navigation, layout, and screenshot assertions.
+
+### Drop decoded response headers and capture transcripts before manual stop (2026-09-14)
+
+**When:** forwarding a fetch response or stopping a session. Remove
+`content-encoding` and `content-length` after fetch decompresses the upstream body.
+Await transcript capture before provider stop; turn-end capture can still be in flight.
+*Incident:* PR #7240 live preview: RUN-9 failed with ZstdDecompressionError;
+SESS-24 returned an unavailable transcript immediately after manual stop.
+*Enforcers:* compressed upstream proxy test, stop ordering tests, RUN-9 and SESS-24.
+Live checks also wait for the written artifact, not the first assistant part;
+platform names and OpenCode titles are validated independently (GOLD-1, SESS-10).
+
+### Preserve deployment prefixes and prepare shared images before timed preview flows (2026-09-14)
+
+**When:** running the full suite on a self-hosted preview. Preserve the gateway's
+`/_gateway` mount when binding test credentials. Enable every tested page in the
+preview profile. Finish the cold default-image build before runtime flow timers;
+run forced shared-image rebuilds only after concurrent flows finish. Require the
+current template identity to be ready; fallback images carry an older daemon.
+*Incident:* PR #7240 preview run 34902478412: four gateway failures and seven
+runtime timeouts; `SNAP-2` deleted the shared image while sessions were booting.
+*Enforcers:* `client-ci-passthrough.test.ts`, `preview-stack.test.ts`, runner sandbox
+setup, and `SNAP-2` global scheduling. Vercel analytics also mounts only on Vercel.
+
 ### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
 
 **When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
@@ -5176,3 +5295,35 @@ configuration within one revision. Cross-revision compatibility is not covered.
 **Rule:** preserve the preview gateway mount in anonymous requests and authenticated client clones. API flows continue to supply their own `/v1` path.
 
 **Enforcer:** `tests/unit/client-ci-passthrough.test.ts` asserts both mounted health and authenticated inference URLs. The regression failed before the client fix; both client suites then passed all 22 tests.
+
+### Pass the deployed database URL to browser database helpers
+
+**Incident (2026-09-15, PR #7240):** the preview admin journey inserted its
+synthetic `super_admin` grant without passing `KE2E_DATABASE_URL`. The UI then
+queried the preview API, which did not see the grant, and rendered `Admin access
+required` on every retry.
+
+**Rule:** browser journeys that write deployment state must pass
+`KE2E_DATABASE_URL || E2E_DATABASE_URL` to each database helper call. Do not let
+the helper fall back to a repository dotenv file for a deployed target.
+
+**Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
+the role insert and cleanup delete. The preview journey must observe the grant
+through `/v1/user-roles` and render the admin overview.
+
+### Bind retained message retries to their originating runtime
+
+**Incident (2026-09-15, PR #7267):** production retried three native conversation
+IDs against sandbox `61e4c0bd-bacd-4fc1-80e2-df289cf6772a`. Database records mapped
+each conversation to a different sandbox. Cached controllers resolved the global
+active client after navigation. Message reads returned repeated `404` responses.
+
+**Rule:** bind each transcript controller to its originating runtime URL or
+explicit client. Retaining or looking up a controller must not clear that binding.
+Preserve HTTP status on synchronization errors. Stop automatic retries and busy
+polling after `404` or `410`; preserve transcript data and allow explicit recovery.
+
+**Enforcement:** registry tests use a real HTTP server to assert A/B/A request
+paths across a runtime switch. Controller tests assert no retries for 60 seconds
+after `404` and `410`, then successful explicit recovery. The SDK browser journey
+switches between two real sandboxes while the first message read retries.

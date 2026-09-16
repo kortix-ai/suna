@@ -493,7 +493,11 @@ trap 'code=$?; finish "$code"' EXIT
 exec > >(tee -a /workspace/daytona-warm.log) 2>&1
 cd /workspace/suna
 rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock
-for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done
+for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
+  if ! modprobe "$module"; then
+    echo "[daytona-ci] module_unavailable=$module; docker readiness will decide" >&2
+  fi
+done
 dockerd --host=unix:///var/run/docker.sock >/workspace/daytona-dockerd.log 2>&1 &
 timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 docker info >/dev/null

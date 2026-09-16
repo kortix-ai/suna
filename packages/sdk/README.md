@@ -206,6 +206,10 @@ OpenCode query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
 OpenCode id during adoption.
 
+Message retries keep the originating sandbox URL after navigation. A `404` or
+`410` message read stops automatic retries and preserves the cached transcript.
+An explicit reconciliation can recover the controller when the session returns.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
@@ -643,6 +647,15 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
+
+
+### Agent repository access
+
+Agent configuration accepts `repository_access?: boolean` (default `true`).
+Set `false` to run new sessions without the project repository or repository API access.
+Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
+`AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
+A legacy `read` write requires an explicit `repository_access` choice; it does not enable read-only repository access.
 
 
 ### Project provider and model access

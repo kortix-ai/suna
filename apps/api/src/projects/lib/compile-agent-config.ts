@@ -11,7 +11,7 @@
  * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
  * OpenCode agent `.md` is valid input as-is, frontmatter included. The
  * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_cli/workspace/enabled); the agent's NAME is the join
+ * secrets/skills/kortix_cli/repository_access/enabled); the agent's NAME is the join
  * between the two (map key ↔ `.md` filename).
  *
  * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
@@ -20,7 +20,7 @@
  * OpenCode behavioral field straight through, and overlays governance on top:
  * `enabled: false` forces the runtime's `disable` on (governance always wins
  * on that one field); `skills` folds onto `permission.skill`. Every other
- * governance field (connectors/secrets/kortix_cli/workspace) has no runtime
+ * governance field (connectors/secrets/kortix_cli/repository_access) has no runtime
  * representation and is never copied.
  *
  * `resolveCompiledAgentConfigForSession` is the I/O half: reads the project's
@@ -295,7 +295,7 @@ export function compileSelectedAgentConfig(
  * governance always wins over whatever the `.md` itself says; there is no
  * other precedence to document since behavior lives ONLY in the `.md`), and
  * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
- * secrets/kortix_cli/workspace) are never copied: no runtime representation.
+ * secrets/kortix_cli/repository_access) are never copied: no runtime representation.
  */
 function compileAgentBlock(
   name: string,

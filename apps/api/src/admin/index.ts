@@ -11,6 +11,7 @@
  * service). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
@@ -118,13 +119,13 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
+      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${qualifiedColumn(accounts.accountId)})`;
 
     const conds: any[] = [];
     // Exact-id lookup — the sheet's live row, immune to the list's filters.
@@ -134,7 +135,7 @@ adminApp.openapi(
         or(
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+                      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }
@@ -461,13 +462,13 @@ adminApp.openapi(
     const { eq, desc, sql } = await import('drizzle-orm');
 
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const rows = await db
       .select({
@@ -557,13 +558,13 @@ adminApp.openapi(
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
-      WHERE am.account_id = ${accounts.accountId}
-      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+      WHERE am.account_id = ${qualifiedColumn(accounts.accountId)}
+      ORDER BY (am.user_id = ${qualifiedColumn(accounts.accountId)}) DESC,
                CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
     // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
     // as a single value and matches nothing.
     const activeStatuses = sql.join(
@@ -572,10 +573,10 @@ adminApp.openapi(
     );
     const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${projects.projectId}
+      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
         AND ps.status::text IN (${activeStatuses}))`;
     const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
     const conds: any[] = [];
     if (search) {
@@ -584,7 +585,7 @@ adminApp.openapi(
           ilike(projects.name, `%${search}%`),
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
+                      WHERE am.account_id = ${qualifiedColumn(projects.accountId)} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }

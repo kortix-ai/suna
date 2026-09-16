@@ -9796,7 +9796,7 @@
       "text0dcb80086189": "Il canale live. Menziona il bot in un thread e quel thread diventa una sessione; risposta e file prodotti tornano nello stesso thread. Teams è incluso, ma disattivato finché non lo abiliti nella tua distribuzione.",
       "text0dd131944c00": "Esattamente una sessione",
       "text0def42d1eccc": "Cliente in Stripe",
-      "text0df337fc286c": "App connessa",
+      "text0df337fc286c": "Ha configurato i connettori",
       "text0df3614110d5": "Ho creato un’applicazione aziendale",
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Solo {value0}",
@@ -10725,7 +10725,7 @@
       "text29300070ca98": "19 giorni",
       "text29306928fdc1": "cron a 6 campi, qualsiasi fuso orario IANA",
       "text293b5ec8aac7": "La tua favicon e il nome del prodotto nella scheda del browser, con varianti per la modalità scura",
-      "text2945df36c2f9": "Dettagli dell'app",
+      "text2945df36c2f9": "Ha esaminato un'azione del connettore",
       "text29490fc13cfc": "Impossibile raggiungere l’agente",
       "text29521c5c7df3": "non può unire — project.cr.merge è negato per impostazione predefinita",
       "text2952938846ef": "Disconnetti le credenziali del connettore salvate prima di usare un segreto di progetto.",
@@ -10833,7 +10833,7 @@
       "text2c1c62f284fb": "Nome del prodotto salvato",
       "text2c1cff23cb89": "Impossibile caricare",
       "text2c1ef1ad75b5": "Scritta in un registro di audit",
-      "text2c496ac4ee78": "Azioni dell'app",
+      "text2c496ac4ee78": "Ha cercato azioni dei connettori",
       "text2c4de2851235": "Traccia di audit completa",
       "text2c6041fda32c": "Rimosso dalla coda",
       "text2c6e8e7b3b77": "Mostra la chiave {value0}",
@@ -13491,7 +13491,7 @@
       "text77fe4eba38d8": "Tutti i repository",
       "text77ff6343ff46": "Chiunque il cui ruolo nel progetto includa l'autorizzazione project.trigger.update (amministratore del progetto per impostazione predefinita) oltre ai proprietari e agli amministratori dell'account. L'agente del trigger può sempre farlo.",
       "text7804f7a79a9e": "Terminato",
-      "text7812d84e3512": "Ha usato un'app",
+      "text7812d84e3512": "Ha usato un connettore",
       "text781fbdd4840f": "- Ogni voce: contesto, decisione, data",
       "text782a07562e97": "Open source e self-hostable",
       "text783487161e9f": "\"Dammi le quattro varianti\"",
@@ -16019,7 +16019,7 @@
       "textc009fe87348b": "Impossibile caricare l’anteprima del PDF.",
       "textc011d6097bfb": "Licenza",
       "textc01240eae6d5": "Non è una build ridotta con le funzionalità migliori riservate al piano a pagamento. Le istanze self-hosted eseguono le stesse immagini del cloud gestito, prodotte dalla stessa pipeline e sulla stessa linea di rilascio.",
-      "textc023d120dd17": "App connesse",
+      "textc023d120dd17": "Ha elencato i connettori",
       "textc02977b07ec9": "Testa la connessione",
       "textc02ba0f7bece": "463,900",
       "textc0472b8d5a10": "PingOne esegue una sincronizzazione completa iniziale quando la regola diventa Active, quindi invia le modifiche incrementali man mano che la directory cambia.",
@@ -17995,6 +17995,9 @@
       "textf771f4d32eee": "p95",
       "textf785c3ce1d58": "ms",
       "textf786f0ee4793": "Riconnetti ora",
+      "text8a8b956178c8": "Riconnessione…",
+      "text3915f5ca49b3": "Il workspace è in sospensione",
+      "textc64d601209b6": "Riattiva",
       "textf7870941f5a8": "Inviti al progetto in sospeso elencati",
       "textf7873b149941": "Non ti è consentito visualizzare i parametri di questa chiamata, quindi non può essere approvata qui. Chiedi a un project manager di esaminarla.",
       "textf78817ccb153": "Pianifica, scrivi e assegna un posizionamento a un contenuto.",
@@ -19224,6 +19227,11 @@
         "prompt": "Scrivi il documento che una nuova persona legge durante la prima settimana: come lavoriamo, dove si trovano le cose, a chi chiedere e come si riconosce un buon lavoro. Ricava tutto ciò che puoi dalla memoria del progetto ed elenca alla fine ciò che hai dovuto dedurre, invece di fermarti per chiedermelo."
       }
     }
+  },
+  "repositoryAccess": {
+    "label": "Accesso al repository del progetto",
+    "enabled": "Le nuove sessioni ricevono il repository del progetto. Restano validi i permessi Git. Le sessioni esistenti mantengono la propria impostazione di accesso.",
+    "disabled": "Le nuove sessioni vengono eseguite senza il repository del progetto. Possono creare file e usare gli strumenti autorizzati. Le sessioni esistenti mantengono la propria impostazione di accesso."
   },
   "modelAccess": {
     "manageProvider": "Impostazioni di {name}",

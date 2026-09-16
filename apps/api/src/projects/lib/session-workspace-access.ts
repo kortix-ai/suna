@@ -4,8 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { db } from '../../shared/db';
 import {
-  workspaceModeAllowsFullRepository,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 
 const REPOSITORY_ACTIONS = new Set<string>([
@@ -21,7 +20,7 @@ export function isRepositoryProjectAction(action: string): boolean {
 }
 
 export function workspaceMetadataAllowsRepositoryAccess(metadata: unknown): boolean {
-  return workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(metadata));
+  return repositoryAccessFromSessionMetadata(metadata);
 }
 
 export async function sessionWorkspaceAllowsRepositoryAccess(input: {

@@ -182,7 +182,8 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             const outHeaders = new Headers()
             upstreamRes.headers.forEach((v, k) => {
               const lk = k.toLowerCase()
-              if (lk === 'transfer-encoding' || lk === 'connection') return
+              // fetch decompresses the body. Do not make the caller decode it again.
+              if (['transfer-encoding', 'connection', 'content-encoding', 'content-length'].includes(lk)) return
               outHeaders.set(k, v)
             })
             return new Response(upstreamRes.body, {
