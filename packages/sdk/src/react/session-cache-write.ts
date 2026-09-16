@@ -66,10 +66,14 @@ export function applyToCachedSessionShape(cached: unknown, update: ProjectSessio
 
   if (isSessionRow(cached)) {
     // A single row is a one-element list as far as the updater is concerned.
-    // An updater that drops it (a delete) leaves the entry untouched rather
-    // than caching `undefined`, which react-query reads as "never fetched".
-    const [updated] = update([cached]);
-    return updated ?? cached;
+    // Matched back BY ID, not by position: an updater that prepends (a session
+    // being seeded) would otherwise replace this entry with the new session's
+    // row, so `session(projectId, sessionId)` would start answering with a
+    // DIFFERENT session. An updater that drops the row (a delete) leaves the
+    // entry untouched rather than caching `undefined`, which react-query reads
+    // as "never fetched".
+    const updated = update([cached]);
+    return updated.find((row) => row.session_id === cached.session_id) ?? cached;
   }
 
   return cached;
@@ -91,5 +95,65 @@ export function updateCachedProjectSessions(
   queryClient.setQueriesData(
     { queryKey: qk.project.sessionsScope(projectId) },
     (cached: unknown) => applyToCachedSessionShape(cached, update),
+  );
+}
+
+/**
+ * Insert a session at the top of the cached lists, or replace it where it is
+ * already cached.
+ *
+ * Separate from `updateCachedProjectSessions` because an INSERT is not a map:
+ * running a prepending updater over a paged cache would add the row to every
+ * loaded page. The list is ordered by most recent activity, so a just-created
+ * session belongs at the top of the FIRST page and nowhere else.
+ */
+export function upsertIntoCachedSessionShape(cached: unknown, session: ProjectSession): unknown {
+  const upsert = (items: ProjectSession[]): ProjectSession[] => {
+    const index = items.findIndex((row) => row.session_id === session.session_id);
+    if (index === -1) return [session, ...items];
+    const next = items.slice();
+    next[index] = session;
+    return next;
+  };
+
+  if (Array.isArray(cached)) return upsert(cached as ProjectSession[]);
+
+  if (isPagedSessionCache(cached)) {
+    const index = cached.pages.findIndex((page) =>
+      page.items.some((row) => row.session_id === session.session_id),
+    );
+    // Already loaded on some page: replace it there, in place. Only a session
+    // the cache has never seen is prepended, and only to page one.
+    const target = index === -1 ? 0 : index;
+    return {
+      ...cached,
+      pages: cached.pages.map((page, i) =>
+        i === target ? { ...page, items: upsert(page.items) } : page,
+      ),
+    };
+  }
+
+  // The single-row entry only ever holds ONE session. It is replaced when it is
+  // this session, and left alone otherwise — a different session's row is not a
+  // list to insert into.
+  if (isSessionRow(cached)) {
+    return cached.session_id === session.session_id ? session : cached;
+  }
+
+  return cached;
+}
+
+/**
+ * Insert a session into every cached list for this project, or replace it
+ * wherever it is already cached. The optimistic counterpart of a create.
+ */
+export function upsertCachedProjectSession(
+  queryClient: QueryClient,
+  projectId: string,
+  session: ProjectSession,
+): void {
+  queryClient.setQueriesData(
+    { queryKey: qk.project.sessionsScope(projectId) },
+    (cached: unknown) => upsertIntoCachedSessionShape(cached, session),
   );
 }

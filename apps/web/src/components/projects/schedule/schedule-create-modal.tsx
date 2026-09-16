@@ -43,7 +43,12 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
-import { createProjectTrigger, listProjectSessions, upsertProjectSecret } from '@kortix/sdk';
+import {
+  createProjectTrigger,
+  listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+  upsertProjectSecret,
+} from '@kortix/sdk';
 import {
   type ModelKey,
   contract,
@@ -166,7 +171,7 @@ export function ScheduleCreateModal({
   const models = useMemo(() => flattenModels(providers), [providers]);
   const sessions = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && mode === 'pinned',
     ...contract('inventory'),
   });
