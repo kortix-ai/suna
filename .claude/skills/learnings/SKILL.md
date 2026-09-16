@@ -21,6 +21,93 @@ linked, not inlined.
 
 ## Register
 
+### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
+
+**When:** writing or reviewing any admission/quota gate that reserves a
+resource before doing work — a memory budget, a connection semaphore, a rate
+limiter. Three defects, one incident, each sufficient alone:
+
+1. **`Number(req.headers.get('content-length'))` is `0` when the header is
+   absent, and `0` fails a `> 0` test.** Platinum's `budgetBytesFor` then fell
+   through to its fallback — `MAX_REQUEST_BODY_BYTES`, 128 MiB — so every body
+   with no declared length reserved the entire transport cap. Against a 1.25 GiB
+   pool that is TEN concurrent requests for the whole fleet.
+2. **Admission was strict FIFO** (`if (!waiters.length && inUse + want <= BUDGET)`),
+   so once one waiter existed a 32-byte request queued behind it regardless of
+   size. The mis-charge did not slow large uploads; it stopped everything.
+3. **A timed-out waiter spliced itself out and rejected without calling
+   `drain()`**, so the queue stayed stranded after the wait expired.
+
+GET and HEAD skip the budget by construction, which is exactly the shape prod
+showed and the fastest way to recognise this class: **same sandbox, same
+second, `GET /global/health` 200 in 0.84 s and `POST /file/mkdir` with a
+32-byte body 503 after 50.7 s — and the same route with NO body 400 in 0.83 s.**
+The only variable is whether a request body exists. That one probe rules out
+auth, connectors, token minting and agent resolution in three curls.
+
+*Incident:* prod 2026-09-15 18:00Z onward. Every POST to a Platinum sandbox
+failed while GETs served normally, so no prompt could reach the daemon: 9-13
+sessions/hour, ~48 queued prompts/hour dead-lettered, a paying customer
+mailing support "not getting any responses back". Defect (1) shipped in
+platinum#1007 at 20:42Z; defect (3) survived the first fix and caused a second
+episode at 08:00-09:59Z the next morning (37 undelivered, 12 dead-lettered)
+until platinum#5e8d99bc.
+
+*Enforcers:* platinum `bodyBudget.test.ts` — an undeclared body pre-charges a
+slice not the cap, `settle` returns the over-reservation and drains the waiters
+it unblocks, and 64 concurrent undeclared proxy bodies are admitted with 0
+refusals. Kortix-side, `deliver.test.ts` pins that a ready-stage runtime whose
+POSTs keep failing classifies `unreachable`, not `pending`.
+
+### A queued prompt must never spend the dead-letter budget on a path that is simply down (2026-09-16)
+
+**When:** classifying a failed delivery. `postPrompt` collapsed "nobody
+answered for the box" into the same `failed` as "the daemon answered and
+refused", so a spent deadline always reported `pending` — which
+`executeQueuedContinue` retries on `markCommandFailed`'s `attempts < 5` with a
+2 s ladder. Five attempts is about five minutes, after which the user's typed
+message is ABANDONED and their bubble reads `Not sent - delivery outcome
+pending`. The `unreachable` ladder already existed for exactly this case:
+attempts refunded, 30 s / 120 s / 480 s backoff, a fresh idempotency key, and
+instant re-arm when a wake confirms the runtime is back.
+
+**Rules.** (1) A retry class is a claim about the FAILURE, not about the call
+that returned it — 502/503/504 and a thrown fetch are the path being down, not
+the prompt being wrong. (2) `last_error` is customer-facing copy, not a log
+line: `delivery outcome: pending` told a paying customer nothing and they
+mailed support to ask what it meant. (3) The freshest verdict decides — a path
+that comes back and then refuses on its own terms is `pending` again.
+
+*Enforcer:* `deliver.test.ts` (4 cases), `DELIVERY_FAILURE_COPY` in
+`session-lifecycle/types.ts`.
+
+### A list endpoint with no bound is a latent outage, and a POLLED one is a scheduled one (2026-09-16)
+
+**When:** adding or reviewing any endpoint that returns "all the X for this Y",
+and any client that polls one. `GET /v1/projects/:projectId/sessions` returned
+every session row the viewer could see. It was correct at 60 rows and fine for a
+year. At 12,617 sessions it was ~11.1 MB of JSON, re-fetched **every 5 seconds**
+— because the sidebar's poll gate (`shouldPollProjectSessions`) asks whether ANY
+row is still `queued`/`branching`/`provisioning`, and over twelve thousand rows
+one always is. Unbounded list × unbounded poll predicate = the product becomes
+unusable with no code change and no alert. **Rules.** (1) A collection endpoint
+ships with a default `limit` and a hard ceiling from the first commit; "callers
+only have a few" is an assumption about data you have not verified, and the
+learning register exists because those assumptions expire. (2) Page by KEYSET on
+a unique tuple, never `OFFSET` — rows are written constantly, so an offset page
+skips and repeats between requests. (3) A poll interval derived from "does any
+row have state X" must be derived from a BOUNDED set, or it never backs off.
+(4) Bounding a list changes what every `.find()` on it can still see: seven
+surfaces here resolved the CURRENT session by scanning that list, and a session
+older than page one silently answered `null` — which read as "you may not share
+or stop this". When you bound a list, grep every consumer for `.find(` and move
+id lookups to the read-by-id route. *Incident:* prod, customer project, reported
+as "ITS GIGA LAGGING"; no alert fired — every request was a 200.
+*Enforcer:* `SESSION_PAGE_MAX_LIMIT` (route rejects `limit > 200` with 400) and
+the cursor/paging tests in `apps/api/src/projects/lib/session-inventory.test.ts`.
+
+||||||| fd612fe8b7
+
 ### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
 
 **When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep

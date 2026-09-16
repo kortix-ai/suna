@@ -53,6 +53,7 @@ import {
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
   listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   updateProjectTrigger,
 } from '@kortix/sdk';
 import {
@@ -894,7 +895,7 @@ function MemoryPanel({
 
   const sessions = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: canWrite && mode === 'pinned',
     ...contract('inventory'),
   });

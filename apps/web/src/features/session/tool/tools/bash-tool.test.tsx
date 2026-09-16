@@ -78,7 +78,16 @@ function triggerTitle(html: string): string {
 function cardText(html: string): string {
   const body = html.indexOf('class="overflow-hidden text-xs"');
   if (body < 0) throw new Error('the row rendered no disclosure body');
-  return html.slice(body).replace(/<[^>]*>/g, '');
+  // Strip to a FIXED POINT. One pass is incomplete (CodeQL
+  // js/incomplete-multi-character-sanitization): removing an inner tag splices
+  // the surrounding text back together, so `<scr<span>ipt>` survives a single
+  // replace as `<script>`.
+  let text = html.slice(body);
+  for (;;) {
+    const stripped = text.replace(/<[^>]*>/g, '');
+    if (stripped === text) return stripped;
+    text = stripped;
+  }
 }
 
 // `hasStructuredContent` fires on a Python traceback.
