@@ -509,6 +509,34 @@ describe('session list cursor', () => {
     expect(decodeSessionCursor([v, iv, tag, `${ct}AA`].join('.'), SCOPE)).toBeNull();
   });
 
+  test('a truncated GCM tag is refused, not merely unlikely to verify', () => {
+    // `setAuthTag` accepts 4, 8 and 12..15-byte tags — all legal GCM lengths.
+    // The tag comes from the client, so without an explicit length check a
+    // forged cursor with a 4-byte tag needs ~2^32 attempts rather than 2^128.
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    const full = Buffer.from(tag, 'base64url');
+    expect(full.length).toBe(16);
+    for (const shortLen of [4, 8, 12, 15]) {
+      const truncated = full.subarray(0, shortLen).toString('base64url');
+      expect(decodeSessionCursor([v, iv, truncated, ct].join('.'), SCOPE)).toBeNull();
+    }
+  });
+
+  test('a nonce of the wrong length is refused', () => {
+    const real = encodeSessionCursor(
+      { updatedAt: new Date('2026-09-16T00:00:00.000Z'), sessionId: 'S1' },
+      SCOPE,
+    );
+    const [v, iv, tag, ct] = real.split('.');
+    expect(Buffer.from(iv, 'base64url').length).toBe(12);
+    const shortIv = Buffer.from(iv, 'base64url').subarray(0, 8).toString('base64url');
+    expect(decodeSessionCursor([v, shortIv, tag, ct].join('.'), SCOPE)).toBeNull();
+  });
+
   test('cursorForRow names the row it is given', () => {
     const updatedAt = new Date('2026-09-16T10:11:12.345Z');
     expect(

@@ -315,6 +315,66 @@ resize showed a 208px dialog; its settled mobile width was 390px. This nearly
 triggered an unnecessary layout change. *Enforcer:* browser journey 28 asserts
 mobile dialog width, awaits dialog removal, and disables capture animations.
 
+### Run browser SQL against the deployed target's test database (2026-09-15)
+
+**When:** a Playwright journey seeds or reads the database. Prefer `KE2E_DATABASE_URL` and `E2E_DATABASE_URL` over `DATABASE_URL` from local dotenv files. *Near-miss:* the v0.13.15 preview admin grant used a different database; the UI's role probe returned `200` without admin access. *Enforcer:* `tests/e2e/helpers/database.ts` selects the target database, and the admin journey reads `/v1/user-roles` after its grant.
+
+### Detect preview App domains through the custom target origin (2026-09-15)
+
+**When:** asserting App URLs in a preview Playwright journey. `loadEnv()` classifies sandbox HTTPS origins as `custom`, not `preview`; derive the App-domain suffix from that origin. *Near-miss:* the v0.13.15 preview browser gate expected `custom-…apps.kortix.com` for a valid `preview-…apps.eu-west.sbx.platinum.dev` URL. *Enforcer:* the Apps browser journey passed against the retained preview origin with the custom-target assertion.
+
+### Require the durable transcript before stopping a session in a mirror test (2026-09-15)
+
+**When:** testing stopped-session transcript read-back. A live transcript can contain a streaming marker before the turn-end mirror is captured; wait for `shape=sync` to report a complete mirror first. *Near-miss:* v0.13.15 preview `SESS-24` stopped session A after a live marker but before a mirror existed, then received `available:false` as the route specifies. *Enforcer:* `SESS-24` checks a complete mirror before stop and the same marker afterward.
+
+### Exclude unavailable Vercel instrumentation from self-host admin console errors (2026-09-15)
+
+**When:** asserting the admin console's own network and console errors on a self-host origin. Filter the two `/_vercel/.../script.js` 404s and their strict-MIME console messages together. *Near-miss:* v0.13.15 preview admin retry rendered Overview but failed on instrumentation served as `text/plain`. *Enforcer:* `09-admin-console.spec.ts` excludes only those exact script paths and MIME error.
+
+### Identify the project submenu by a row unique to that menu (2026-09-15)
+
+**When:** locating the open project picker in Playwright. Filter the menu by its `Account settings` row; accessible names for the trigger and nested menus can vary under Radix. *Near-miss:* the v0.13.15 local gate intermittently failed `20-workspace-switching` after clicking “Switch Project” because its named menu selector found no visible element. *Enforcer:* both `20-workspace-switching.spec.ts` and `24-no-hard-navigation.spec.ts` use the unique row.
+
+### Refuse an empty successful Git object lookup in the parallel package gate (2026-09-15)
+
+**When:** comparing a Git SHA captured by Bun `execFileSync` under parallel tests. A successful `git rev-parse` must print an object ID; retry an empty capture before using it as the expected SHA. *Near-miss:* two v0.13.15 local full runs compared a valid bundle SHA against `""` after `rev-parse HEAD` returned empty under load. *Enforcer:* the `git()` helper in `fast-boot-bundle.test.ts` retries and then fails explicitly.
+
+### Report the failed assistant turn before checking its expected file (2026-09-15)
+
+**When:** a real-agent flow waits for OpenCode messages and then reads a written file. If the assistant message contains `info.error`, raise its message before a file read. *Near-miss:* v0.13.15 preview `GOLD-1` reported only a file 404 after the turn had already failed with `ZstdDecompressionError`. *Enforcer:* `waitForAssistantOutput` in `tests/src/flows/run-session-backlog.flow.ts` surfaces the assistant error.
+
+### Request identity encoding on the sandbox model proxy's upstream hop (2026-09-15)
+
+**When:** forwarding model requests through Bun's localhost credential proxy. Set upstream `accept-encoding` to `identity`, since Bun fetch decodes the response before the proxy relays it. *Near-miss:* v0.13.15 preview `GOLD-1` failed its agent turn with `ZstdDecompressionError` at `127.0.0.1:4319`; the proxy forwarded `gzip, deflate, br, zstd` upstream. *Enforcer:* `llm-proxy.test.ts` checks the upstream header; `GOLD-1` must write the file on preview.
+
+### Budget a real cold image build before declaring session readiness broken (2026-09-15)
+
+**When:** setting deployed session flow deadlines. Include the provider's measured cold image-build duration and subsequent runtime steps. *Near-miss:* the v0.13.15 preview built four Daytona images in 400–439 seconds, while `SESS-25`, `RUN-9`, `SESS-24`, and `SESS-10` stopped after 240–310 seconds. *Enforcer:* the two session flow helpers allow 540 seconds for readiness, and those flows declare a larger total budget.
+
+### Make preview serve every public page required by its browser gate (2026-09-15)
+
+**When:** configuring a full preview stack. Keep marketing enabled if `target-full` probes `/pricing`; check the preview origin before interpreting a missing heading as a frontend defect. *Near-miss:* the v0.13.15 preview gate followed `/pricing` to `/auth` because `KORTIX_PUBLIC_DISABLE_LANDING_PAGE` was `true`. *Enforcer:* `tests/src/core/preview-stack.ts` sets the flag to `false`, and the target browser journey asserts pricing content.
+
+### Assert preview App domains against the preview namespace (2026-09-15)
+
+**When:** testing project App URLs on a preview origin. Use the preview App namespace instead of the production `apps.kortix.com` pattern. *Near-miss:* the v0.13.15 preview gate rejected a working `preview-…apps.eu-west.sbx.platinum.dev` URL. *Enforcer:* `tests/e2e/specs/18-apps-ui.spec.ts` uses a preview-specific host assertion.
+
+### Treat a same-origin auth redirect as a rejected sensitive-path probe (2026-09-15)
+
+**When:** probing encoded filesystem paths through an auth-gated frontend. Accept a `307` only if it points to relative `/auth` with the exact normalized path in `redirect`. Check the response body for secrets independently. *Near-miss:* the v0.13.15 preview gate failed `SEC-J` on an encoded `/etc/passwd` path that returned this redirect. *Enforcer:* `SEC-J` checks the redirect shape and secret body in `tests/src/flows/security-backlog.flow.ts`.
+
+### A webhook security gate must distinguish rejection from absent configuration (2026-09-15)
+
+**When:** testing forged requests against an optional webhook integration. Require no 2xx, and allow a service-unavailable response only when its body names the exact missing configuration. *Near-miss:* the v0.13.15 preview gate failed `SEC-F` because unsigned Slack ingress returned `503` with `OAuth mode not configured` on a preview without Slack OAuth. *Enforcer:* `SEC-F` checks the exact 503 response in `tests/src/flows/security-backlog.flow.ts`.
+
+### Count browser document loads only after the initial page reaches `load` (2026-09-15)
+
+**When:** counting loads in a Playwright journey after `page.goto` waits only for `domcontentloaded`. Wait for `page.waitForLoadState('load')` before recording the baseline. The initial page's late `load` otherwise counts as a navigation caused by the next click. *Near-miss:* the v0.13.15 local release gate reported a false hard reload while every per-click sentinel survived. *Enforcer:* `tests/e2e/specs/24-no-hard-navigation.spec.ts` waits at both count boundaries.
+
+### Match an actual PEM block before calling a 404 page a private-key leak (2026-09-15)
+
+**When:** checking web error pages for secret content. A bare `BEGIN PRIVATE KEY` phrase can occur in bundled parser code on a 404 page. Require PEM delimiters and encoded key material. *Near-miss:* the v0.13.15 preview gate marked `/.env` exposed although it returned 404; the 1.4 MB frontend error page contained only the phrase. *Enforcer:* `SEC-J` in `tests/src/flows/security-backlog.flow.ts` matches a complete key block.
+
 ### Stop proxy maintenance timers and isolate background writers in package tests (2026-09-14)
 
 **When:** stopping the sandbox proxy or running package tests. Cancel boot and
