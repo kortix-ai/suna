@@ -1130,3 +1130,12 @@ window. Admissions increased from eight to 64 and then 96; archive slots are 24.
 The requested 1,000 verified imports/hour was not yet established at that check.
 Archive-layout tests report two passed, zero failed, four assertions; uploader
 build succeeds.
+
+Capacity follow-up: pipeline admissions reached 128 and archive network slots
+reached 32. A later two-minute sample completed 35 verified imports (1,050/hour);
+the five-minute sample completed 71 (852/hour). The trailing 30-minute window
+still included the archive stall. These are observed window rates, not a
+sustained 30-minute guarantee. A ten-second interface sample measured 23.01 Mbps
+upload and 62.26 Mbps download; it does not establish the connection's ceiling.
+Fifteen archive-layout, destination-pressure, and controller tests passed with
+89 assertions.
