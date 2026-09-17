@@ -6,9 +6,11 @@ import {
   PROVIDER_PAGE_SIZE,
   ProviderConnectView,
   providerKeyFieldId,
+  supportsPooledProviderKey,
   type ProviderConnectRow,
   type ProviderConnectViewProps,
 } from './provider-connect';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 /**
  * `ProviderConnectView` is the pure, props-only half of `provider-connect.tsx`
@@ -279,9 +281,7 @@ describe('ProviderConnectView — the key field', () => {
     expect(out).not.toContain('That key was rejected.');
   });
 
-  test('providerKeyFieldId is the one id the row and the detail both use', () => {
-    // `ProviderDetail`'s Connect closes the detail and focuses the row's field
-    // by this id. If the row stopped using it the focus would silently no-op.
+  test('providerKeyFieldId associates the credential input with its label', () => {
     expect(providerKeyFieldId('anthropic', 'ANTHROPIC_API_KEY')).toBe(
       'provider-connect-anthropic-ANTHROPIC_API_KEY',
     );
@@ -323,19 +323,12 @@ describe('ProviderConnectView — access and copy', () => {
   });
 });
 
-describe('ProviderConnectView — the long-tail detail path', () => {
-  /**
-   * `ProviderDetail` (the browse-before-you-connect model list) was re-homed
-   * here out of the deleted `catalog-tab.tsx`. It is reachable only through a
-   * two-condition gate — `onOpenDetail && row.modelCount > 0`, then
-   * `detailProviderId` set — so without these tests the whole capability could
-   * be deleted and every other test would still pass.
-   */
+describe('ProviderConnectView — shared model navigation', () => {
   const GROQ = row({ id: 'groq', label: 'Groq', modelCount: 12 });
 
-  test('a row with models offers the detail affordance', () => {
+  test('a row with models offers the model-list link', () => {
     const out = renderToStaticMarkup(
-      <ProviderConnectView {...props({ rows: [GROQ], onOpenDetail: () => {} })} />,
+      <ProviderConnectView {...props({ rows: [GROQ], onOpenModels: () => {} })} />,
     );
     expect(out).toContain('12 models');
   });
@@ -343,33 +336,18 @@ describe('ProviderConnectView — the long-tail detail path', () => {
   test('no affordance when the row declares no models', () => {
     const out = renderToStaticMarkup(
       <ProviderConnectView
-        {...props({ rows: [row({ id: 'groq', label: 'Groq' })], onOpenDetail: () => {} })}
+        {...props({ rows: [row({ id: 'groq', label: 'Groq' })], onOpenModels: () => {} })}
       />,
     );
     expect(out).not.toContain('0 model');
   });
 
-  test('no affordance when the host supplies no onOpenDetail', () => {
+  test('no affordance when the host supplies no onOpenModels', () => {
     const out = renderToStaticMarkup(<ProviderConnectView {...props({ rows: [GROQ] })} />);
     expect(out).not.toContain('12 models');
   });
 
-  test('the detail REPLACES the whole list, and is never a dialog', () => {
-    const out = renderToStaticMarkup(
-      <ProviderConnectView
-        {...props({
-          rows: [GROQ, ANTHROPIC],
-          onOpenDetail: () => {},
-          detailProviderId: 'groq',
-          detailSlot: <div>provider-detail-marker</div>,
-        })}
-      />,
-    );
-    expect(out).toContain('provider-detail-marker');
-    expect(out).not.toContain('data-provider-search');
-    expect(out).not.toContain('data-provider-row=');
-    expect(out).not.toContain('role="dialog"');
-  });
+
 });
 
 /**
@@ -498,5 +476,40 @@ describe('ProviderConnectView — the subscription slot', () => {
     expect(rowStart).toBeGreaterThan(-1);
     expect(slot).toBeGreaterThan(rowStart);
     expect(out).not.toContain('role="dialog"');
+  });
+});
+
+describe('ProviderConnectView — pooled provider keys', () => {
+  test('offers pooled keys only where the gateway can route a single API key', () => {
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('anthropic'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('openai'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('google'))).toBe(true);
+    expect(supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get('qvac'))).toBe(false);
+  });
+
+  test('shows the key manager in place of the single-key field when enabled', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({
+        rows: [ANTHROPIC],
+        pooledSecretsEnabled: true,
+        pooledSlots: { anthropic: <button>Add another Anthropic key</button> },
+      })} />,
+    );
+    expect(out).toContain('Add another Anthropic key');
+    expect(out).toContain('select it per session');
+    expect(out).not.toContain('Paste your Anthropic API key');
+    expect(out).not.toContain('it saves when you click away');
+  });
+
+  test('keeps an existing project key visible during the pooled transition', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({
+        rows: [{ ...ANTHROPIC, connected: true }],
+        pooledSecretsEnabled: true,
+        pooledSlots: { anthropic: <button>Add another Anthropic key</button> },
+      })} />,
+    );
+    expect(out).toContain('Existing project key');
+    expect(out).toContain('Saved — paste a new key to replace it');
   });
 });

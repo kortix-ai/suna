@@ -21,8 +21,16 @@ describe('migration target mode', () => {
     );
   });
 
+  test('allows preview-up only inside the preview database network', () => {
+    expect(migrationCheckOrder('preview-up', 'postgresql://user:pass@supabase-db:5432/app', '1')).toBe(false);
+    expect(() => migrationCheckOrder('preview-up', 'postgresql://user:pass@supabase-db:5432/app')).toThrow();
+    expect(() => migrationCheckOrder('preview-up', 'postgresql://user:pass@db.example.com/app', '1')).toThrow();
+    expect(() => migrationCheckOrder('preview-up', 'postgresql://user:pass@127.0.0.1:5432/app', '1')).toThrow();
+  });
+
   test('bootstraps platform prerequisites for fresh local and self-host databases', () => {
     expect(migrationBootstrapsPrerequisites('local-up')).toBe(true);
+    expect(migrationBootstrapsPrerequisites('preview-up')).toBe(true);
     expect(migrationBootstrapsPrerequisites('bootstrap')).toBe(true);
     expect(migrationBootstrapsPrerequisites('up')).toBe(false);
     expect(migrationBootstrapsPrerequisites('status')).toBe(false);

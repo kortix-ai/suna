@@ -1,4 +1,85 @@
 {
+  "pooledSecrets": {
+    "providerDisabled": "Dieser Anbieter ist für diese Sitzung deaktiviert.",
+    "unavailableKeys": "{count, plural, one {# ausgewählter Schlüssel ist nicht verfügbar.} other {# ausgewählte Schlüssel sind nicht verfügbar.}} Entferne diese Schlüssel oder stelle den Zugriff wieder her.",
+    "removeUnavailable": "Nicht verfügbare Schlüssel entfernen",
+    "selectionLimit": "Maximal 10 Schlüssel pro Anbieter",
+    "manageKeys": "Anbieterschlüssel verwalten",
+    "readOnlyPool": "Nur der Sitzungsinhaber oder ein Projektmanager kann diesen Pool ändern.",
+    "legacyChatGptLogin": "Bestehende Projektanmeldung",
+    "legacyChatGptDescription": "Diese ältere Verbindung wird im Projekt geteilt. Neue ChatGPT-Konten oben bleiben privat, bis Sie sie freigeben.",
+    "chatGptAccounts": "ChatGPT-Konten",
+    "accountCount": "{count, plural, one {# Konto} other {# Konten}}",
+    "addAccount": "Konto hinzufügen",
+    "deleteAccount": "Konto löschen",
+    "connectAccount": "Konto verbinden",
+    "oauthWaiting": "Warte auf Autorisierung…",
+    "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
+    "oauthPrivateDescription": "Ihre ChatGPT-Anmeldung ist privat, bis Sie einem anderen Mitglied Zugriff gewähren. Wählen Sie Konten in den Sitzungseinstellungen aus.",
+    "accountLabelPlaceholder": "z. B. Mein ChatGPT-Konto",
+    "chooseProvider": "Anbieter auswählen.",
+    "saved": "Geheimnis gespeichert",
+    "saveError": "Geheimnis konnte nicht gespeichert werden",
+    "deleted": "Geheimnis gelöscht",
+    "deleteError": "Geheimnis konnte nicht gelöscht werden",
+    "accessError": "Zugriff konnte nicht geändert werden",
+    "sharedTitle": "Freigegebene Anbietergeheimnisse",
+    "sharedDescription": "Fügen Sie mehrere Anbieterschlüssel und ChatGPT-Konten hinzu. Teilen Sie jede Verbindung mit Mitgliedern und wählen Sie sie pro Sitzung aus.",
+    "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
+    "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
+    "providerKeysFor": "API-Schlüssel für {provider}",
+    "addKey": "Schlüssel hinzufügen",
+    "loadError": "Anbietergeheimnisse konnten nicht geladen werden.",
+    "key": "Schlüssel",
+    "provider": "Anbieter",
+    "access": "Zugriff",
+    "actions": "Aktionen",
+    "coolingDown": "Abklingzeit aktiv",
+    "member": "Mitglied",
+    "members": "Mitglieder",
+    "actionsFor": "Aktionen für {label}",
+    "manageAccess": "Zugriff verwalten",
+    "rotateKey": "Schlüssel erneuern",
+    "deleteKey": "Schlüssel löschen",
+    "empty": "Noch keine freigegebenen Anbieterschlüssel.",
+    "rotateLabel": "{label} erneuern",
+    "addProviderKey": "Anbieterschlüssel hinzufügen",
+    "valueNeverShown": "Nur Mitglieder mit Zugriff können diesen Schlüssel auswählen. Der Wert wird nicht erneut angezeigt.",
+    "label": "Label",
+    "primaryKey": "Primärschlüssel",
+    "apiKey": "API-Schlüssel",
+    "cancel": "Abbrechen",
+    "saving": "Speichern…",
+    "saveKey": "Schlüssel speichern",
+    "accessTo": "Zugriff auf {label}",
+    "grantedMembers": "Berechtigte Mitglieder können diesen Schlüssel in ihren Sitzungen in diesem Konto verwenden.",
+    "oauthGrantedMembers": "Berechtigte Mitglieder können dieses ChatGPT-Konto in ihren Sitzungen nutzen.",
+    "done": "Fertig",
+    "deleteConfirmTitle": "Diesen Schlüssel für alle löschen?",
+    "deleteAccountConfirmTitle": "Dieses ChatGPT-Konto für alle löschen?",
+    "deleteConfirmDescription": "{label} wird aus allen Sitzungspools entfernt. Andere Schlüssel bleiben verfügbar.",
+    "deleteAccountConfirmDescription": "{label} wird aus allen Sitzungspools entfernt. Andere Konten bleiben verfügbar.",
+    "keysUpdated": "Anbieterschlüssel aktualisiert",
+    "keysUpdateError": "Anbieterschlüssel konnten nicht aktualisiert werden",
+    "loadingKeys": "Schlüssel werden geladen…",
+    "keysLoadError": "Schlüssel konnten nicht geladen werden.",
+    "addSharedKey": "Fügen Sie unter Modelle einen Anbieterschlüssel hinzu, um einen Pool zu erstellen.",
+    "selectedForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
+    "projectDefault": "Projektstandard wird verwendet",
+    "personalChatGptDefault": "Standard-ChatGPT-Verbindung verwenden",
+    "resetPersonalChatGptDefault": "Auf eigenes Standardkonto zurücksetzen",
+    "saveSelection": "Schlüsselauswahl speichern",
+    "resetDefault": "Auf Projektstandard zurücksetzen",
+    "selectedKeys": "{count} Schlüssel ausgewählt",
+    "providerKeys": "Anbieterschlüssel",
+    "chooseSharedKeys": "Wählen Sie die freigegebenen Schlüssel aus, die diese Sitzung verwenden darf.",
+    "sessionKeyPool": "Sitzungsschlüsselpool",
+    "projectDefaultShort": "Projektstandard",
+    "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
+    "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
+    "selectedOneForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
+    "selectedOne": "{count} Schlüssel ausgewählt"
+  },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },
@@ -46,17 +127,17 @@
     "tryFree": "Loslegen"
   },
   "newWorkspace": {
-    "title": "Arbeitsbereich erstellen",
-    "description": "In einem Arbeitsbereich befinden sich deine Agenten, Dateien und Sitzungen.",
-    "templateSeed": "Dieser Arbeitsbereich wird mit der ausgewählten Vorlage eingerichtet.",
+    "title": "Projekt erstellen",
+    "description": "In einem Projekt befinden sich deine Agenten, Dateien und Sitzungen.",
+    "templateSeed": "Dieser Projekt wird mit der ausgewählten Vorlage eingerichtet.",
     "account": {
       "label": "Konto",
       "createIn": "Erstellen in {account}",
       "choose": "Konto auswählen"
     },
     "name": {
-      "label": "Name des Arbeitsbereichs",
-      "placeholder": "Name des Arbeitsbereichs"
+      "label": "Name des Projekts",
+      "placeholder": "Name des Projekts"
     },
     "validation": {
       "nameRequired": "Ein Name ist erforderlich",
@@ -64,12 +145,12 @@
       "nameTooLong": "Der Name darf höchstens {max} Zeichen lang sein"
     },
     "permissions": {
-      "noCreatableAccount": "Du benötigst Eigentümer- oder Administratorzugriff auf ein Konto, um einen Arbeitsbereich zu erstellen.",
+      "noCreatableAccount": "Du benötigst Eigentümer- oder Administratorzugriff auf ein Konto, um einen Projekt zu erstellen.",
       "unknownAccountPrefix": "Wir können nicht feststellen, welches Konto dir gehört, und treffen daher keine Annahme. Sende eine E-Mail an",
       "unknownAccountSuffix": "und wir beheben das Problem."
     },
     "actions": {
-      "create": "Arbeitsbereich erstellen",
+      "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
       "logOut": "Abmelden",
       "signingOut": "Abmeldung läuft"
@@ -77,19 +158,16 @@
     "repository": {
       "label": "Repository",
       "defaultBranch": "Standard-Branch",
-      "noGitHubAccount": "Mit dem Konto dieses Arbeitsbereichs ist noch kein GitHub-Konto verbunden.",
+      "noGitHubAccount": "Mit dem Konto dieses Projekts ist noch kein GitHub-Konto verbunden.",
       "connectGitHub": "GitHub-Konto verbinden",
       "connectGitHubSuffix": "um diese Option zu verwenden.",
-      "loadingGitHubAccounts": "GitHub-Konten werden geladen…",
-      "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden: {error}",
-      "githubAccount": "GitHub-Konto",
-      "selectGitHubAccount": "GitHub-Konto auswählen",
+      "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden. Versuchen Sie es erneut.",
       "createsPath": "Erstellt <path>{path}</path>",
-      "loadRepositoriesError": "Repositories konnten nicht geladen werden: {error}",
+      "loadRepositoriesError": "Repositories konnten nicht geladen werden. Versuchen Sie es erneut.",
       "sources": {
         "managed": {
           "label": "Von Kortix verwaltet",
-          "description": "Kortix erstellt und verwaltet ein privates Repository für diesen Arbeitsbereich."
+          "description": "Kortix erstellt und verwaltet ein privates Repository für diesen Projekt."
         },
         "githubCreate": {
           "label": "In GitHub erstellen",
@@ -99,7 +177,17 @@
           "label": "Aus GitHub importieren",
           "description": "Wähle ein vorhandenes Repository aus deinem GitHub-Konto aus."
         }
-      }
+      },
+      "repositoryLabel": "Repository",
+      "createInOwner": "Ein Repository in {owner} erstellen",
+      "importFromOwner": "Ein Repository aus {owner} importieren",
+      "selectOption": "Repository-Option auswählen",
+      "loadingOptions": "Repository-Optionen werden geladen …",
+      "managedUnavailable": "Von Kortix verwaltete Repositories sind auf dieser Instanz nicht verfügbar. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "installationUnreachable": "Diese GitHub-Verbindung funktioniert nicht mehr. Stellen Sie sie wieder her, um Repositories aufzulisten.",
+      "reconnect": "In den Git-Einstellungen neu verbinden",
+      "managedImportLabel": "Ein vorhandenes verwaltetes Repository importieren",
+      "managedImportHint": "Nur für Self-Host-Betreiber. Listet Repositories auf, die der verwaltete Git-Inhaber bereits besitzt."
     }
   },
   "projectHome": {
@@ -313,14 +401,14 @@
       "close": "Schließen",
       "docs": "Dokumentation",
       "groups": {
-        "workspace": "Arbeitsbereich",
+        "workspace": "Projekt",
         "personal": "Persönlich",
         "account": "Konto"
       },
       "items": {
         "workspace": {
           "label": "Allgemein",
-          "description": "Name und Symbol für diesen Arbeitsbereich."
+          "description": "Name und Symbol für diesen Projekt."
         },
         "sandbox": {
           "label": "Sandbox-Vorlagen",
@@ -332,7 +420,7 @@
         },
         "upgrades": {
           "label": "Upgrades",
-          "description": "Änderungen, die ein Agent an diesem Arbeitsbereich vornimmt. Jeder Lauf öffnet eine Änderungsanfrage zur Prüfung. Nichts wird automatisch zusammengeführt."
+          "description": "Änderungen, die ein Agent an diesem Projekt vornimmt. Jeder Lauf öffnet eine Änderungsanfrage zur Prüfung. Nichts wird automatisch zusammengeführt."
         },
         "profile": {
           "label": "Profil",
@@ -391,7 +479,7 @@
         "switchToLastTab": "Wechseln Sie zur letzten Registerkarte",
         "newSession": "Neue Sitzung",
         "commandPalette": "Befehlspalette",
-        "switchWorkspace": "Arbeitsbereich wechseln",
+        "switchWorkspace": "Projekt wechseln",
         "settings": "Einstellungen",
         "toggleLeftSidebar": "Linke Seitenleiste umschalten",
         "toggleRightSidebar": "Rechte Seitenleiste umschalten",
@@ -498,7 +586,7 @@
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
       "wallpaper": "Hintergrund",
-      "wallpaperDescription": "Der Hintergrund Ihres Arbeitsbereichs.",
+      "wallpaperDescription": "Der Hintergrund Ihres Projekts.",
       "defaultWallpaper": "Standard",
       "themes": {
         "light": "Hell",
@@ -621,18 +709,18 @@
       "baseBranchDescription": "Neue Sitzungen und Änderungsanfragen beginnen auf diesem Branch.",
       "saving": "Speichern…",
       "manifestFile": "Manifestdatei",
-      "manifestDescription": "Die Datei im Repository, die Kortix sagt, wie dieser Arbeitsbereich ausgeführt wird.",
+      "manifestDescription": "Die Datei im Repository, die Kortix sagt, wie dieser Projekt ausgeführt wird.",
       "learnMore": "Mehr erfahren",
-      "localTitle": "Lokal an diesem Arbeitsbereich arbeiten",
-      "localDescription": "Kopiere diesen Arbeitsbereich auf deinen Computer und bearbeite ihn in deinem Editor.",
+      "localTitle": "Lokal an diesem Projekt arbeiten",
+      "localDescription": "Kopiere diesen Projekt auf deinen Computer und bearbeite ihn in deinem Editor.",
       "installTitle": "Kortix-Befehlszeile installieren",
       "installHint": "Einmalige Einrichtung unter macOS oder Linux. Überspringe diesen Schritt, falls sie bereits installiert ist.",
       "installCommand": "Installationsbefehl",
-      "cloneTitle": "Arbeitsbereich auf deinen Computer kopieren",
-      "cloneHint": "Lädt den Code in einen neuen Ordner und verknüpft ihn mit diesem Arbeitsbereich.",
+      "cloneTitle": "Projekt auf deinen Computer kopieren",
+      "cloneHint": "Lädt den Code in einen neuen Ordner und verknüpft ihn mit diesem Projekt.",
       "cloneCommand": "Klonbefehl",
       "setupTitle": "Einrichtung im neuen Ordner abschließen",
-      "setupHint": "Schreibt die lokale Konfiguration und lädt die Secrets dieses Arbeitsbereichs, damit der Code ausgeführt werden kann.",
+      "setupHint": "Schreibt die lokale Konfiguration und lädt die Secrets dieses Projekts, damit der Code ausgeführt werden kann.",
       "setupCommand": "Einrichtungsbefehl",
       "secretsCommand": "Secrets-Befehl",
       "ownClientTitle": "Eigenen Git-Client verwenden",
@@ -643,7 +731,7 @@
       "peopleManagedDescription": "Lade jemanden mit seinem GitHub-Benutzernamen ein. GitHub sendet eine Einladung zur Annahme.",
       "peopleExternalDescription": "Personen, die dieses Repository lesen und schreiben dürfen.",
       "externalGithubDescription": "Kortix hat dieses Repository nicht erstellt und kann daher keine Mitwirkenden hinzufügen. Verwalte den Zugriff in den Repository-Einstellungen auf GitHub.",
-      "externalProviderDescription": "Das Repository dieses Arbeitsbereichs wird auf {provider} gehostet. Dieser Anbieter unterstützt keine Einladungen durch Kortix. Verwalte den Zugriff beim Anbieter.",
+      "externalProviderDescription": "Das Repository dieses Projekts wird auf {provider} gehostet. Dieser Anbieter unterstützt keine Einladungen durch Kortix. Verwalte den Zugriff beim Anbieter.",
       "manageOnGithub": "Auf GitHub verwalten",
       "alreadyHasAccess": "@{username} hat bereits Zugriff auf dieses Repository",
       "inviteSent": "Einladung an @{username} gesendet — die Person nimmt sie auf GitHub an",
@@ -654,35 +742,35 @@
       "canView": "Kann anzeigen",
       "invite": "Einladen",
       "title": "Git-Repository",
-      "loadFailed": "Repository dieses Arbeitsbereichs konnte nicht geladen werden",
+      "loadFailed": "Repository dieses Projekts konnte nicht geladen werden",
       "retry": "Erneut versuchen"
     },
     "workspace": {
-      "updateFailed": "Arbeitsbereich konnte nicht aktualisiert werden",
-      "iconUpdateFailed": "Symbol des Arbeitsbereichs konnte nicht aktualisiert werden",
+      "updateFailed": "Projekt konnte nicht aktualisiert werden",
+      "iconUpdateFailed": "Symbol des Projekts konnte nicht aktualisiert werden",
       "icon": "Symbol",
-      "iconDescription": "Wird neben dem Namen des Arbeitsbereichs angezeigt.",
-      "name": "Name des Arbeitsbereichs",
-      "nameDescription": "Wird im Arbeitsbereichswechsler und überall angezeigt, wo dieser Arbeitsbereich aufgeführt ist.",
+      "iconDescription": "Wird neben dem Namen des Projekts angezeigt.",
+      "name": "Name des Projekts",
+      "nameDescription": "Wird im Projektswechsler und überall angezeigt, wo dieser Projekt aufgeführt ist.",
       "saving": "Speichern…",
-      "archived": "Arbeitsbereich archiviert",
-      "archiveFailed": "Arbeitsbereich konnte nicht archiviert werden",
-      "loadFailed": "Arbeitsbereich konnte nicht geladen werden",
+      "archived": "Projekt archiviert",
+      "archiveFailed": "Projekt konnte nicht archiviert werden",
+      "loadFailed": "Projekt konnte nicht geladen werden",
       "retry": "Erneut versuchen",
       "dangerZone": "Gefahrenzone",
-      "deleteWorkspace": "Arbeitsbereich löschen",
-      "deleteDescription": "Entfernt diesen Arbeitsbereich und alle Inhalte für alle Mitglieder. Dies kann nicht rückgängig gemacht werden.",
-      "deleteTitle": "Arbeitsbereich löschen?",
+      "deleteWorkspace": "Projekt löschen",
+      "deleteDescription": "Entfernt diesen Projekt und alle Inhalte für alle Mitglieder. Dies kann nicht rückgängig gemacht werden.",
+      "deleteTitle": "Projekt löschen?",
       "deleteDialog": "Dadurch wird {name} für alle Personen mit Zugriff gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "consequencesTitle": "Du verlierst sofort:",
       "consequences": {
-        "sessions": "Jede Sitzung in diesem Arbeitsbereich mit Dateien, Verlauf und Ergebnissen",
+        "sessions": "Jede Sitzung in diesem Projekt mit Dateien, Verlauf und Ergebnissen",
         "automation": "Alle geplanten Ausführungen und Trigger — sie werden sofort beendet",
-        "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Arbeitsbereichs",
-        "access": "Den Zugriff für das gesamte Team — niemand kann diesen Arbeitsbereich erneut öffnen"
+        "integrations": "Jede verbundene Integration, jedes Secret und jeden API-Schlüssel dieses Projekts",
+        "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Das verbundene Git-Repository wird nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Arbeitsbereich behalten"
+      "keepWorkspace": "Projekt behalten"
     },
     "sandbox": {
       "states": {
@@ -803,7 +891,7 @@
       "categories": {
         "quota": {
           "label": "Snapshot-Limit erreicht",
-          "help": "Dieser Arbeitsbereich hat so viele vorbereitete Maschinen gespeichert, wie der Plan erlaubt. Löschen Sie eine nicht mehr benötigte Sandbox-Vorlage oder erhöhen Sie das Limit. Starten Sie danach die Erstellung erneut."
+          "help": "Dieser Projekt hat so viele vorbereitete Maschinen gespeichert, wie der Plan erlaubt. Löschen Sie eine nicht mehr benötigte Sandbox-Vorlage oder erhöhen Sie das Limit. Starten Sie danach die Erstellung erneut."
         },
         "dockerfile": {
           "label": "Dockerfile-Erstellung fehlgeschlagen",
@@ -989,6 +1077,10 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
+        "pooled_provider_secrets": {
+          "name": "Gemeinsam genutzte Anbieter-Schlüssel",
+          "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
+        },
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
           "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
@@ -997,9 +1089,9 @@
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",
-      "readOnly": "Schreibgeschützt — zum Ausführen eines Upgrades benötigen Sie Schreibzugriff auf diesen Arbeitsbereich.",
+      "readOnly": "Schreibgeschützt — zum Ausführen eines Upgrades benötigen Sie Schreibzugriff auf diesen Projekt.",
       "none": "Keine Upgrades verfügbar",
-      "upToDateDescription": "Dieser Arbeitsbereich ist bereits aktuell.",
+      "upToDateDescription": "Dieser Projekt ist bereits aktuell.",
       "upToDate": "Aktuell",
       "run": "Ausführen",
       "oneOff": "Einmaliges Upgrade",
@@ -1098,7 +1190,7 @@
       "namePlaceholder": "Zum Beispiel Laptop-CLI",
       "nameHint": "Wähle einen Namen, der den Einsatzort dieses Schlüssels beschreibt.",
       "scope": "Geltungsbereich",
-      "wholeWorkspace": "Gesamter Arbeitsbereich",
+      "wholeWorkspace": "Gesamter Projekt",
       "oneProject": "Ein Projekt",
       "scopeHint": "Ein projektgebundener Schlüssel kann nur auf das ausgewählte Projekt zugreifen.",
       "expires": "Ablauf",
@@ -1205,7 +1297,7 @@
     "searchResults": "Suchergebnisse",
     "recent": "Kürzlich",
     "personalAccount": "Persönliches Konto",
-    "workspaces": "Arbeitsbereiche",
+    "workspaces": "Projekte",
     "servers": "Server",
     "searchServers": "Server suchen...",
     "addServer": "Server hinzufügen",
@@ -1282,19 +1374,20 @@
       }
     },
     "workspace": {
-      "switch": "Arbeitsbereich wechseln",
-      "switchMenu": "Arbeitsbereich wechseln",
-      "create": "Arbeitsbereich erstellen…",
+      "switch": "Projekt wechseln",
+      "switchMenu": "Projekt wechseln",
+      "create": "Projekt erstellen…",
       "createAccount": "Konto erstellen…",
       "settings": "Einstellungen",
       "downloadApp": "App herunterladen",
       "logOut": "Abmelden",
-      "find": "Arbeitsbereich suchen…",
+      "find": "Projekt suchen…",
       "accountSettings": "Kontoeinstellungen",
-      "noMatches": "Keine passenden Arbeitsbereiche",
-      "empty": "Noch keine Arbeitsbereiche",
+      "noMatches": "Keine passenden Projekte",
+      "empty": "Noch keine Projekte",
       "account": "Konto",
-      "loadError": "Arbeitsbereiche konnten nicht geladen werden"
+      "loadError": "Projekte konnten nicht geladen werden",
+      "createIn": "Projekt in {account} erstellen"
     },
     "manifestUpgrade": {
       "title": "Auf v2 aktualisieren",
@@ -1348,7 +1441,9 @@
         "mine": "Meine Chats",
         "shared": "Geteilt"
       }
-    }
+    },
+    "loadingMore": "Wird geladen …",
+    "loadMoreSessions": "Weitere Sitzungen laden"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1370,7 +1465,10 @@
         "Moin moin! Was bauen wir heute?",
         "Morgen! Bereit durchzustarten?"
       ],
-      "afternoon": ["Guten Tag! Wie kann ich helfen?", "Na, wie läuft's? Was gibt's zu tun?"],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
       "evening": [
         "Guten Abend! Nachtschicht?",
         "Abend! Woran arbeiten wir heute?",
@@ -1528,7 +1626,9 @@
       "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
-      "connectModel": "Modell verbinden"
+      "connectModel": "Modell verbinden",
+      "imagesUnsupported": "{model} kann keine Bilder lesen",
+      "imagesUnsupportedHint": "entferne sie oder wähle ein anderes Modell"
     },
     "providerRecovery": {
       "savedPrompt": "Gespeicherter Prompt",
@@ -1672,14 +1772,18 @@
     "failedToStartSession": "Sitzung konnte nicht gestartet werden",
     "hintSkills": "Gib / für Skills, Befehle und Dateien ein",
     "hintMentions": "Gib @ ein, um Dateien und Agenten zu erwähnen",
-    "hintWorkspaceFile": "Frage nach einer beliebigen Datei in deinem Arbeitsbereich",
+    "hintWorkspaceFile": "Frage nach einer beliebigen Datei in deinem Projekt",
     "hintCommandPalette": "Drücke {modifier}K, um die Befehlspalette zu öffnen",
     "hintSwitchAgents": "Drücke Tab, um den Agenten zu wechseln",
     "hintAttachFiles": "Ziehe Dateien hierher, um sie anzuhängen",
     "hintChanged": "Frage, was sich in deinem Projekt geändert hat",
     "hintNewLine": "Drücke Shift+Enter für eine neue Zeile",
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
-    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird"
+    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
+    "queued": "In Warteschlange",
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
   },
   "billing": {
     "plan": {
@@ -9328,7 +9432,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Keine Fragen",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Auffüllen",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Plan verwalten",
+    "composerAttachments": {
+      "couldNotAttach": "Dateien konnten nicht angehängt werden",
+      "couldNotRetry": "Anhang konnte nicht erneut hochgeladen werden",
+      "couldNotSend": "Nicht gesendet",
+      "failedBlocksSend": "Wiederholen oder entfernen Sie den fehlgeschlagenen Anhang.",
+      "uploadFailed": "Upload fehlgeschlagen. Prüfen Sie Ihre Verbindung.",
+      "retryNamed": "Upload von {name} erneut versuchen",
+      "didNotUpload": "{name} wurde nicht hochgeladen.",
+      "billingRequired": "Ihr Tarif oder Guthaben erlaubt derzeit keine Uploads.",
+      "budgetExceeded": "Zu viele nicht gesendete Uploads. Nicht verwendete Uploads laufen innerhalb von 24 Stunden ab.",
+      "tooLarge": "Diese Datei ist größer als 50 MiB.",
+      "expired": "Dieser Upload ist abgelaufen. Entfernen Sie ihn und hängen Sie die Datei erneut an.",
+      "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Anhang-Upload gestartet",
+      "text40078a553439": "Anhang-Block hochgeladen",
+      "text4c7f8000aabd": "Anhang-Upload abgeschlossen",
+      "text91420d2587c2": "Anhang-Upload entfernt",
+      "text3aab5b3be2b9": "Laufzeit-Anhangsbeschreibung aufgelöst",
       "text0005b85debac": "Soundpaket, das für Session-Events gespielt wird.",
       "text000c02c11c7a": "Wiederverwendbare Anweisungen, die deine Agenten bei Bedarf laden.",
       "text0017bda47853": "URL kopiert",
@@ -9792,7 +9915,7 @@
       "text0dcb80086189": "Der Live-Kanal. Erwähnen Sie den Bot in einem Thread, und dieser Thread wird zur Sitzung; Antwort und erzeugte Dateien kommen in denselben Thread zurück. Teams ist enthalten, aber deaktiviert, bis Ihre Bereitstellung es aktiviert.",
       "text0dd131944c00": "Genau eine Sitzung",
       "text0def42d1eccc": "Kunde in Stripe",
-      "text0df337fc286c": "Eine App verbunden",
+      "text0df337fc286c": "Connectoren eingerichtet",
       "text0df3614110d5": "Ich habe eine Enterprise-Anwendung erstellt",
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Nur {value0}",
@@ -10721,7 +10844,7 @@
       "text29300070ca98": "19 Tage",
       "text29306928fdc1": "6-Feld-Cron, jede IANA-Zeitzone",
       "text293b5ec8aac7": "Dein Favicon und Produktname im Browser-Tab, mit Dark-Mode-Varianten",
-      "text2945df36c2f9": "App-Details",
+      "text2945df36c2f9": "Connector-Aktion geprüft",
       "text29490fc13cfc": "Agent konnte nicht erreicht werden",
       "text29521c5c7df3": "darf nicht zusammenführen – project.cr.merge ist standardmäßig verweigert",
       "text2952938846ef": "Trenne die gespeicherten Connector-Zugangsdaten, bevor du ein Projekt-Secret verwendest.",
@@ -10829,7 +10952,7 @@
       "text2c1c62f284fb": "Produktname gespeichert",
       "text2c1cff23cb89": "Laden fehlgeschlagen",
       "text2c1ef1ad75b5": "In einem Prüfprotokoll festgehalten",
-      "text2c496ac4ee78": "App-Aktionen",
+      "text2c496ac4ee78": "Connector-Aktionen gesucht",
       "text2c4de2851235": "Vollständiger Audit-Trail",
       "text2c6041fda32c": "Aus der Warteschlange entfernt",
       "text2c6e8e7b3b77": "{value0}-Taste anzeigen",
@@ -12380,7 +12503,6 @@
       "text588032878324": "Jetzt senden",
       "text5885ace14d89": "Sitzung abrufen",
       "text5887e718dea1": "gepflückt",
-      "text58a34c9573cf": "GitHub-App installieren",
       "text58a4ba90dc79": "Hol dir die Woche zurück, die von Koordination verschlungen wurde.",
       "text58aede554b21": "Verbinden Sie ein Tool einmal für das gesamte Unternehmen. Agenten erreichen es über ein einzelnes, bereichsbeschränktes Token, das Kortix serverseitig vermittelt – so gelangt das echte Zugangsdaten niemals auf das Gerät, das das Modell steuert.",
       "text58bf3410b028": "Wert festlegen",
@@ -13487,7 +13609,7 @@
       "text77fe4eba38d8": "Alle Repositories",
       "text77ff6343ff46": "Jeder, dessen Projektrolle die Berechtigung project.trigger.update umfasst – standardmäßig Projektadministrator – sowie Kontoinhaber und Administratoren. Der eigene Agent des Auslösers kann dies immer tun.",
       "text7804f7a79a9e": "Abgeschlossen",
-      "text7812d84e3512": "App verwendet",
+      "text7812d84e3512": "Connector verwendet",
       "text781fbdd4840f": "- Jeder Eintrag: Kontext, Entscheidung, Datum",
       "text782a07562e97": "Open Source und selbst hostbar",
       "text783487161e9f": "„Gib mir die vier Varianten“",
@@ -14708,7 +14830,7 @@
       "text9acf3e31d12e": "Keine Inhalte.",
       "text9ad125fe331f": "Sortieren nach {value0}",
       "text9ad1905ba13a": "Rolle eines Kontomitglieds geändert",
-      "text9ad6baffd025": "Arbeitsbereich wechseln",
+      "text9ad6baffd025": "Projekt wechseln",
       "text9ada0e627aed": "Wenn ein Agent seinen eigenen Prompt umschreibt, erscheint das genauso wie eine Codeänderung: ein Commit auf einem Branch in einem Änderungsantrag, den jemand liest.",
       "text9adff6870471": "Link kopieren",
       "text9ae2faa5b263": "Verbinde den ersten Connector in einer Minute.",
@@ -15288,7 +15410,7 @@
       "textab8fcb695b84": "Erstellen Sie eine Bereitstellungsverbindung „SCIM Outbound“ und verweisen Sie sie auf die beiden oben angezeigten Werte.",
       "textab93638292af": "Discover konnte nicht geladen werden",
       "textab936b802fa6": "SCIM-Version",
-      "textab95d456c6bb": "Arbeitsbereichsmitglieder",
+      "textab95d456c6bb": "Projektmitglieder",
       "textab986ad2d8e6": "Im Repo deklariert",
       "textab9a61284668": "Feedback kommt an sechs Stellen an und wird an keiner gelesen. Der Agent liest alle sechs, bündelt tatsächlich gleiche Anfragen und schreibt die Spezifikation mit jedem zitierten Original. Du entscheidest, was gebaut wird.",
       "textaba314822529": "SCIM-Token widerrufen",
@@ -16015,7 +16137,7 @@
       "textc009fe87348b": "PDF-Vorschau konnte nicht geladen werden.",
       "textc011d6097bfb": "Lizenz",
       "textc01240eae6d5": "Dies ist kein reduzierter Build, bei dem die guten Teile der kostenpflichtigen Stufe vorbehalten bleiben. Selbstgehostete Instanzen führen dieselben Images wie die verwaltete Cloud aus, erstellt mit derselben Pipeline und auf demselben Release-Zug.",
-      "textc023d120dd17": "Verbundene Apps",
+      "textc023d120dd17": "Connectoren aufgelistet",
       "textc02977b07ec9": "Verbindung testen",
       "textc02ba0f7bece": "463.900",
       "textc0472b8d5a10": "PingOne führt beim Aktivieren der Regel zunächst eine vollständige Synchronisierung durch und überträgt danach Änderungen inkrementell.",
@@ -17616,7 +17738,7 @@
       "textec5ba0abb717": "Zugriff",
       "textec5c2f7304b1": "Kontext gekürzt",
       "textec69732f4600": "Das Manifest weist ein Verhaltensfeld im Governance-Block zurück und verweist im Fehler auf die .md-Datei des Agenten.",
-      "textec70b4a614bf": "Arbeitsbereich wechseln",
+      "textec70b4a614bf": "Projekt wechseln",
       "textec73f9f19e7c": "Einmal schreiben. Jede Sitzung kennt es.",
       "textec7a4e3094f9": "Autorisierungsinhaber geändert, aber die Synchronisierung ist fehlgeschlagen: {value0}. Verwende „Sync“, um es erneut zu versuchen.",
       "textec81d7aae411": "Die Maschine klont das Repository und erstellt einen nach der Sitzung benannten Branch. Jede Bearbeitung und jeder Commit dieser Sitzung lebt auf diesem Branch und nirgendwo sonst.",
@@ -17991,6 +18113,9 @@
       "textf771f4d32eee": "p95",
       "textf785c3ce1d58": "ms",
       "textf786f0ee4793": "Jetzt erneut verbinden",
+      "text8a8b956178c8": "Verbindung wird wiederhergestellt…",
+      "text3915f5ca49b3": "Der Arbeitsbereich ist im Ruhezustand",
+      "textc64d601209b6": "Aufwecken",
       "textf7870941f5a8": "Ausstehende Projekteinaldungen aufgelistet",
       "textf7873b149941": "Du darfst die Parameter dieses Aufrufs nicht sehen, daher kann er hier nicht genehmigt werden. Bitte einen Projektmanager um Prüfung.",
       "textf78817ccb153": "Content planen, schreiben und ranken.",
@@ -18357,71 +18482,25 @@
       "textff5bd8333c4e": "Du und alle, die dieses Projekt verwalten können",
       "text36d8691ae566": "Alle mit dem Link, sowie dein Team",
       "text4fb2abecc0a6": "Alle mit dem Passwort, sowie dein Team",
-      "text00014a68c034": "Katalogquelle nicht gefunden",
-      "text0668b6bceb30": "Zum Projekt hinzugefügt",
-      "text08e6480e9b78": "{value0} hinzugefügt",
-      "text0c6c035d5429": "MCP-Dokumentation",
-      "text1d35d664a8ba": "Connector nicht gefunden",
-      "text221bee24f060": "Quelle der Anmeldedaten",
-      "text24fa20ced6cc": "Eigenes Konto verbinden",
-      "text26ef6803567d": "{value0}-API-Dokumentation",
-      "text2814edeb3957": "Erfordert nach dem Hinzufügen eine Anmeldung oder Anmeldedaten",
-      "text2ba8a1bcfc5c": "Bindung konnte nicht aktualisiert werden",
-      "text2e300bb1c797": "Bei {value0} anmelden",
-      "text2fa7425980f8": "{value0}× hinzugefügt",
-      "text33a484a069ac": "{value0} hinzugefügt — melden Sie sich an, um die Verbindung abzuschließen.",
-      "text370e8d05e760": "Kein {value0}-Katalog-Connector passt zu „{value1}“.",
-      "text37479e6422d0": "Connector konnte nicht hinzugefügt werden",
-      "text3a4b4df869c7": "Nur ich",
-      "text4b29172693be": "{value0} nicht mehr verwenden?",
-      "text4ca06a005d29": "In diesem Projekt",
-      "text51eb40d78f0a": "Einrichtung abschließen",
-      "text572ca3ee73f4": "Keine Anmeldung nötig",
-      "text618c9623e0f3": "Der Connector behält keine eigenen Anmeldedaten; Aufrufe schlagen fehl, bis Sie welche hinzufügen oder ein anderes Secret binden. Das Secret selbst bleibt unberührt.",
-      "text641cf33675f8": "{value0} hinzufügen",
-      "text650179ec8cbe": "das gebundene Secret",
-      "text66e83f905e7a": "{value0}-Dokumentation",
-      "text691991176e63": "{value0} gespeichert — melden Sie sich an, um die Verbindung abzuschließen.",
-      "text698c933c2a68": "„{value0}“ ist kein unterstützter Connector-Katalog.",
-      "text6aadac2f2b7a": "Zurück",
-      "text6f520bd876d2": "Offizielle Connector-URL",
-      "text71ec1c2e842f": "Anmeldedaten hinzufügen",
-      "text7b2768da1390": "Wird für das ganze Projekt installiert: eine gemeinsame Verbindung, die jedes Mitglied und dessen Agents nutzen.",
-      "text83b1bc0429f4": "Installieren für",
-      "text8626b5d27992": "Connector konnte nicht geladen werden",
-      "text86f0b18d6d8a": "Verwendet das Projekt-Secret {value0}. Rotieren oder bearbeiten Sie es auf der Secrets-Seite — dieser Connector folgt ihm.",
-      "text87f2fa0e1edc": "Dieser Eintrag veröffentlicht nur Dokumentation — keine Oberfläche, mit der sich Kortix verbinden kann.",
-      "text9720ba5a9ede": "Die Connector-Liste des Projekts konnte nicht gelesen werden.",
-      "text97d8aa23aecf": "Kortix-Dokumentation",
-      "text9bbde51bfbd3": "Jedes Mitglied fügt unten unter „Konten“ eigene Anmeldedaten hinzu.",
-      "text9cd2dee87dd6": "Gespeichert als",
-      "text9ffc843f501a": "Manuell einrichten",
-      "texta88c299ab989": "Anmeldedaten speichern",
-      "textae5bd6d7ed0b": "Tool-Synchronisierung",
-      "textafcbf5878dc9": "Nur für mich",
-      "textb16446d4331a": "Offizielle Website",
-      "textb5a229ac8bec": "Website",
-      "textbdeb87e037ba": "Connector öffnen",
-      "textc19b3005db37": "Verbindungsoptionen konnten nicht geladen werden",
-      "textc4b8a965e9ef": "Nutzen Sie oben „Verbinden“. Kortix speichert die Daten verschlüsselt und hängt sie an jeden Aufruf an.",
-      "textc769b970c58f": "Projekt-Secret binden",
-      "textcb9545359d92": "Ihre eigene Verbindung, nur in von Ihnen gestarteten Sessions genutzt. Nichts wird geteilt — jedes Teammitglied, das {value0} möchte, verbindet hier sein eigenes Konto.",
-      "textd157dd6a3627": "Die Kataloganfrage ist fehlgeschlagen.",
-      "textd319702d1c2f": "Für das ganze Projekt",
-      "textd7957d7041c3": "Eine gemeinsame Verbindung. Jedes Mitglied dieses Projekts — und Agents in dessen Sessions — nutzt dasselbe {value0}-Konto. Ein Projektmanager verbindet es einmal.",
-      "textda22b1af2010": "Wählen Sie ein Tool und legen Sie fest, was passiert, wenn ein Agent es verwendet.",
-      "textda9e74dcdde6": "Secret nicht mehr verwenden",
-      "textdca68375fa4f": "Bindung lösen",
-      "textdee89ced3d79": "Stattdessen OAuth 2.0 verwenden",
-      "textdf197888764d": "Das ganze Projekt",
-      "texte0e9f2833427": "So wird verbunden",
-      "texte72d6e4b58ed": "Die letzte Synchronisierung ist fehlgeschlagen.",
-      "textee1ee9e008b4": "Ein Connector kann mehrfach hinzugefügt werden — jede Verbindung erhält einen eigenen Namen.",
-      "texteec42a6f22ad": "Secret-Bindung gelöst — der Connector hat keine Anmeldedaten, bis Sie welche hinzufügen",
-      "textf09704dad946": "Zurück zu den Connectoren",
-      "textf3c16c11f690": "Nichts hinzuzufügen",
-      "textf75561ab0be6": "Anmeldedaten kommen jetzt aus dem Secret {value0}",
-      "textf91b7814f64d": "Kein Connector mit dem Slug „{value0}“ existiert in diesem Projekt."
+      "text03a01dd53ffa": "↑ drücken, um Nachrichten in der Warteschlange zu bearbeiten",
+      "text1eb132d9d4da": "Warteschlange pausiert",
+      "textf8e64a37950a": "Nachrichten in der Warteschlange",
+      "textcd5f943d5863": "Nicht gesendet",
+      "text42888e8dc93e": "Eine Verbindung für die gesamte Instanz. Kortix erstellt und pusht jedes Projekt-Repository darüber, in jedem Konto.",
+      "textf40d94365439": "Die GitHub-Identität dieser Instanz stammt aus Umgebungsvariablen auf dem Server. Sie kann hier nicht geändert werden.",
+      "textbd6cc9a4cf4b": "Festgelegt durch",
+      "text39481fc24bd5": "Von Kortix verwaltete Repositories dieser Instanz werden unter {value0} erstellt.",
+      "text89a9816ffa6f": "Von Kortix verwaltete Repositories sind auf dieser Instanz verfügbar.",
+      "textb79bb0e54e4f": "Von Kortix verwaltete Repositories sind auf dieser Instanz nicht verfügbar. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "textf7be8a17b0e7": "GitHub-Konto hinzufügen",
+      "text659d5668b62b": "Verknüpfen Sie ein persönliches GitHub-Konto oder eine Organisation mit diesem Kortix-Konto.",
+      "textdc520b664af2": "GitHub listet jedes persönliche Konto und jede Organisation auf, die Sie verwalten. Wählen Sie eines aus, legen Sie fest, welche Repositories die Kortix-App erreichen darf, und dieser Inhaber wird mit diesem Kortix-Konto verknüpft.",
+      "text8d3f36f31348": "Kortix-App installieren",
+      "text183bc0d276cc": "Auf dieser Instanz gibt es keine GitHub-App zum Installieren. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "text7f59f014cd7b": "Beim gewünschten Inhaber bereits installiert?",
+      "text9180f7df8906": "Eine bereits von Ihnen verwaltete Installation verknüpfen",
+      "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft.",
+      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…"
     }
   },
   "projectOnboarding": {
@@ -18436,8 +18515,8 @@
     },
     "kickoff": {
       "tools": "Ich habe auch diese Tools angeschlossen: {count}. Benutzen Sie sie, wenn sie helfen.",
-      "noDomain": "Ich habe meinen Arbeitsbereich fertig eingerichtet.{toolsClause} Stellen Sie sich vor, erklären Sie, was Sie tun können, und fragen Sie zuerst, wobei ich Hilfe benötige.",
-      "withDomain": "Ich habe die Einrichtung meines Arbeitsbereichs für {domain} abgeschlossen. Informieren Sie sich über das Unternehmen und teilen Sie mir mit, was Sie herausgefunden haben.{toolsClause} Fragen Sie dann zuerst, wobei ich Hilfe benötige."
+      "noDomain": "Ich habe meinen Projekt fertig eingerichtet.{toolsClause} Stellen Sie sich vor, erklären Sie, was Sie tun können, und fragen Sie zuerst, wobei ich Hilfe benötige.",
+      "withDomain": "Ich habe die Einrichtung meines Projekts für {domain} abgeschlossen. Informieren Sie sich über das Unternehmen und teilen Sie mir mit, was Sie herausgefunden haben.{toolsClause} Fragen Sie dann zuerst, wobei ich Hilfe benötige."
     },
     "company": {
       "title": "Erzählen Sie uns von Ihrem Unternehmen",
@@ -19285,5 +19364,29 @@
         "prompt": "Schreibe das Dokument, das eine neue Person in ihrer ersten Woche liest – wie wir arbeiten, wo sich Dinge befinden, wen sie fragen kann und woran man gute Arbeit erkennt. Nutze, was du aus dem Projektgedächtnis entnehmen kannst, und liste am Ende alles auf, worüber du Annahmen treffen musstest, statt mich zwischendurch zu fragen."
       }
     }
+  },
+  "repositoryAccess": {
+    "label": "Zugriff auf das Projekt-Repository",
+    "enabled": "Neue Sitzungen erhalten das Projekt-Repository. Git-Berechtigungen gelten weiterhin. Bestehende Sitzungen behalten ihre Zugriffseinstellung.",
+    "disabled": "Neue Sitzungen laufen ohne Projekt-Repository. Sie können weiterhin Dateien erstellen und freigegebene Werkzeuge nutzen. Bestehende Sitzungen behalten ihre Zugriffseinstellung."
+  },
+  "modelAccess": {
+    "manageProvider": "Einstellungen für {name}",
+    "enableProviderAction": "Anbieter aktivieren",
+    "disableProviderAction": "Anbieter deaktivieren",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "enableProvider": "{name} aktivieren",
+    "defaultProviderHint": "Wählen Sie vor dem Deaktivieren einen Projektstandard eines anderen Anbieters.",
+    "credentialsHint": "Inferenz deaktivieren, ohne Zugangsdaten zu entfernen.",
+    "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
+    "managedTitle": "Von Kortix verwaltete Modelle",
+    "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
+    "hidden": "In Auswahl ausgeblendet",
+    "disableModel": "Modell deaktivieren",
+    "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
+    "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
+    "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
   }
 }

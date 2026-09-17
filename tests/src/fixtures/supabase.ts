@@ -43,6 +43,32 @@ export interface AdminUser {
   email: string;
 }
 
+export async function ssoFixtureToken(
+  env: Env,
+  user: { userId?: string; email?: string },
+  providerId: string,
+  groups: string[],
+): Promise<string> {
+  if (!user.userId || !user.email || !env.supabaseServiceRoleKey) {
+    throw new Error('SSO fixture requires a synthetic user and Supabase admin credentials');
+  }
+  const password = `Ke2e-${crypto.randomUUID()}-Aa1!`;
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${user.userId}`, {
+    method: 'PUT',
+    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
+      anonKey: env.supabaseAnonKey,
+      json: true,
+    }),
+    body: JSON.stringify({
+      password,
+      app_metadata: { sso_provider_id: providerId },
+      user_metadata: { custom_claims: { memberOf: groups } },
+    }),
+  });
+  if (!res.ok) throw new Error(`SSO fixture metadata update failed: ${res.status}`);
+  return passwordGrant(env, user.email, password);
+}
+
 export async function adminCreateUser(env: Env, email: string, password: string): Promise<AdminUser> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) {
     throw new Error("Supabase service-role + anon keys required to create test users");

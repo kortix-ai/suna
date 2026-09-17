@@ -12,6 +12,7 @@ import {
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
 
+import { confirmCommitted, errorCode, isAmbiguousCreateFailure } from './new-session-failure';
 import {
   subscribeToExternalWarmTakes,
   warmTakenRegistry,
@@ -66,6 +67,7 @@ export interface WarmSendCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
   connector_bindings?: SessionConnectorBindingsInput;
+  provider_secret_pools?: Record<string, string[]>;
   inherit_unbound?: boolean;
   require_connectors?: string[];
 }
@@ -105,6 +107,7 @@ export function warmSessionFitsSend(
 ): boolean {
   if (!create) return true;
   if (create.connector_bindings !== undefined) return false;
+  if (create.provider_secret_pools !== undefined) return false;
   if (create.inherit_unbound !== undefined) return false;
   if (create.require_connectors !== undefined) return false;
   if (create.agent_name !== undefined && create.agent_name !== warm.agentName) return false;
@@ -540,6 +543,10 @@ export async function primeTakenWarmSession(
   },
   /** Injected in tests; the SDK's claim otherwise. */
   claim: typeof claimWarmProjectSession = claimWarmProjectSession,
+  /** Injected in tests; the SDK's session read otherwise. */
+  read: typeof getProjectSession = getProjectSession,
+  /** Injected in tests; a real timer otherwise. */
+  sleep?: (ms: number) => Promise<void>,
 ): Promise<boolean> {
   try {
     await claim(projectId, {
@@ -549,7 +556,18 @@ export async function primeTakenWarmSession(
       pending_prompt: input.pending_prompt,
     });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (!isAmbiguousCreateFailure(errorCode(error))) return false;
+    // A timed-out claim can still commit. The claim's CAS drops the `warm`
+    // marker in the same transaction that inserts the prompt row, so a session
+    // without the marker already holds this prompt. Answering false here sent
+    // the same prompt through a second create — two sessions, two turns.
+    return confirmCommitted(
+      async () => {
+        const row = await read(projectId, warm.sessionId, { showErrors: false });
+        return !(row?.metadata as { warm?: unknown } | null | undefined)?.warm;
+      },
+      sleep ? { sleep } : {},
+    );
   }
 }

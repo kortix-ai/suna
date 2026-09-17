@@ -36,11 +36,34 @@ export function isUploadRequest(request: { method: string; path: string }): bool
   return request.method.toUpperCase() === 'POST' && /^\/file\/upload(?:$|[/?#])/.test(request.path);
 }
 
+/**
+ * One import attempt. The daemon answers `POST /file/import` only after the
+ * download, fsync and rename, bounded by its own 120 s `IMPORT_TIMEOUT_MS`
+ * (kortix-sandbox-agent-server `routes/files.ts`). This is longer, so the daemon
+ * always answers or aborts before the proxy gives up. The API calls this route
+ * itself during delivery; no browser waits on it behind the load balancer.
+ */
+export const PROXY_IMPORT_ATTEMPT_TIMEOUT_MS = 130_000;
+
+/**
+ * Only the daemon (:8000) serves `/file/import`. The same path on any other port
+ * is the user's own server: it keeps the generic attempt timeout, the retry
+ * budget and 5xx retries. `port` is the EFFECTIVE upstream port (Platinum
+ * reroutes 4096 → 8000); without it the request is not an import.
+ */
+export function isFileImportRequest(request: { method: string; path: string; port?: number }): boolean {
+  return (
+    request.port === 8000 &&
+    request.method.toUpperCase() === 'POST' &&
+    /^\/file\/import(?:$|[/?#])/.test(request.path)
+  );
+}
+
 // Per-attempt upstream fetch timeout, shrunk to whatever budget remains so the
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
 export function proxyAttemptTimeoutMs(
   budgetRemainingMs: number,
-  request?: { method: string; path: string },
+  request?: { method: string; path: string; port?: number },
 ): number {
   // Upload handlers cannot return response headers until the multipart body has
   // been received and written. Treating that whole interval as a connection
@@ -55,6 +78,7 @@ export function proxyAttemptTimeoutMs(
   // whatever budget is left, repeatedly, until the budget runs out — turning
   // an ordinary 20-40s turn into a manufactured 502 well before either the
   // outer budget or the ALB's idle timeout actually required one.
+  if (request && isFileImportRequest(request)) return PROXY_IMPORT_ATTEMPT_TIMEOUT_MS;
   if (request && (isUploadRequest(request) || isLongTurnCompletionRequest(request))) {
     return Math.max(1_000, budgetRemainingMs - 500);
   }

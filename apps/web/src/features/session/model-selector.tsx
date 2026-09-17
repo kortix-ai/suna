@@ -153,8 +153,10 @@ function ModelRow({
       */
       className={cn(
         'group py-1',
-        'hover:bg-hover data-[selected=true]:bg-hover',
-        isSelected && 'bg-active data-[selected=true]:bg-active',
+        // Same `data-nav` scope as `CommandItem`'s own selected classes, so
+        // tailwind-merge replaces them instead of stacking a second selector.
+        'hover:bg-hover [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-hover',
+        isSelected && 'bg-active [&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-active',
       )}
       /* The raw id no longer has a line of its own. It is still the only way to
          tell two same-named models apart, so it stays reachable on hover

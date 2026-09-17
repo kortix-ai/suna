@@ -20,6 +20,7 @@ export {
   accounts,
   accountMembers,
   accountMemberships,
+  accountScimUsers,
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -38,9 +39,13 @@ export {
   projects,
   projectGitConnections,
   projectGitCredentials,
+  projectSnapshotArchives,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  accountSecretResources,
+  accountSecretGrants,
+  sessionProviderSecretPools,
   projectSessionSecretHandles,
   projectSecretHandleStatusEnum,
   projectSecretConsumerEnum,
@@ -222,6 +227,8 @@ export {
   connectorProjectSettings,
   connectorCalls,
   connectorAttachments,
+  promptAttachments,
+  promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,
   connectorActionsRelations,
@@ -290,3 +297,5 @@ export type {
   GatewayBudget,
   NewGatewayBudget,
 } from './types';
+
+export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

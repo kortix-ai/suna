@@ -15,7 +15,6 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   platinumJson,
-  platinumJsonResponse,
   isPlatinumConfigured,
 } from '../../shared/platinum';
 import {
@@ -48,7 +47,6 @@ import {
   retryAfterMsFromError,
 } from './platinum-poll-classify';
 import { config } from '../../config';
-import { materializePlatinumTemplate } from './platinum-materialize';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -58,12 +56,6 @@ const UPLOAD_ATTEMPTS = 3;
 const UPLOAD_MIN_TIMEOUT_MS = 10 * 60_000;
 const UPLOAD_TIMEOUT_MS_PER_GIB = 60_000;
 
-async function materializeReadyTemplate(externalId: string) {
-  return materializePlatinumTemplate(externalId, {
-    enabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
-    request: (path, init) => platinumJsonResponse(path, init),
-  });
-}
 // Platinum's POST /v1/templates/from-build hard-caps size_mb at this value (see
 // platinum apps/api/src/api/templates.ts ORG_MAX_SIZE_MB + the from-build zod).
 // The build ext4 is a FLOOR Platinum grows-to-fit, so clamping the build ceiling
@@ -583,14 +575,7 @@ export class UploadUrlRejectedError extends Error {
 export class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
 
-  constructor(
-    private readonly materializeTemplate: (
-      externalId: string,
-    ) => Promise<unknown> = materializeReadyTemplate,
-    private readonly isPreparationEnabled: () => boolean = () =>
-      config.KORTIX_FAST_COLD_BOOT_ENABLED,
-    private readonly client: PlatinumClient = productionPlatinumClient,
-  ) {}
+  constructor(private readonly client: PlatinumClient = productionPlatinumClient) {}
 
   isConfigured(): boolean {
     return this.client.isConfigured();
@@ -691,12 +676,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
       await waitForActive(input.snapshotName, tap, externalId, this.client);
-      await this.materializeTemplate(externalId).catch((error) => {
-        console.warn(
-          `[snapshots] platinum materialize ${externalId}: fail-open guard caught ` +
-          `${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
       // runner) — no name-list re-derivation downstream.
       return { externalTemplateId: externalId };
@@ -750,12 +729,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // the name list.
       const externalId = requireExternalTemplateId(patched?.id, `from-patch for ${newSnapshotName}`);
       await waitForActive(newSnapshotName, undefined, externalId, this.client);
-      await this.materializeTemplate(externalId).catch((error) => {
-        console.warn(
-          `[snapshots] platinum materialize ${externalId}: fail-open guard caught ` +
-          `${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
       // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
       return { externalTemplateId: externalId };
     } finally {
@@ -800,14 +773,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       this.client,
     );
     return early ?? (bestIndex === null ? null : names[bestIndex]!);
-  }
-
-  async prepareSnapshot(snapshotName: string): Promise<void> {
-    if (!this.isPreparationEnabled() || !this.client.isConfigured()) return;
-    const template = await findTemplateByName(snapshotName, this.client);
-    if (!template || normalizeExistingProviderState(template.state) !== 'active') return;
-    const externalId = requireExternalTemplateId(template.id, `template lookup for ${snapshotName}`);
-    await this.materializeTemplate(externalId);
   }
 
   /**

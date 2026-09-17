@@ -31,12 +31,35 @@ flow(
       "GET /v1/git/:project/compiled-checkout",
       "GET /v1/git/:project/compiled-runtime",
       "GET /v1/git/:project/compiled-pi-runtime",
+      "GET /v1/git/:project/project-snapshot",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step("project snapshot descriptor without git auth → 401/403, never a URL", async () => {
+      // Same boundary as a clone: the descriptor hands out a presigned
+      // download URL, so an anonymous caller must be refused before storage
+      // configuration or readiness is consulted.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/project-snapshot", {
+          params: { project: p.id },
+          query: { sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+      if (r.text().includes("X-Amz-")) throw new Error("refused descriptor leaked a presigned URL");
+    });
+    await ctx.step("project snapshot descriptor with a malformed sha → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/project-snapshot", {
+          params: { project: p.id },
+          query: { sha: "not-a-sha" },
+        });
+      r.status(400);
+    });
     await ctx.step("info/refs without git auth header → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -237,10 +260,37 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/installation");
       r.status([200, 400, 409, 503]);
     });
-    await ctx.step("OWNER lists account git connections", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/installations");
-      r.status([200, 400, 409, 503]);
-    });
+    await ctx.step(
+      "OWNER lists account git connections: real installations only, no synthetic instance-backend entry",
+      async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/installations");
+        r.status([200, 400, 409, 503]);
+        if (r.statusCode !== 200) return;
+        const body = r.json<any>();
+        if (!Array.isArray(body.installations)) {
+          throw new Error(`expected installations[], got: ${JSON.stringify(body)}`);
+        }
+        // The instance git backend used to ride here as `installation_id:
+        // "pat"`, which made one instance-global credential read as this
+        // account's own connection (2026-09-16). Every id is a real GitHub
+        // installation id now.
+        for (const installation of body.installations) {
+          if (!/^[0-9]+$/.test(String(installation.installation_id))) {
+            throw new Error(
+              `non-numeric installation_id in the account connection list: ${installation.installation_id}`,
+            );
+          }
+        }
+        // The install link is derived from GET /app, or null when the
+        // instance has no App at all — never a URL for a slug nobody verified.
+        if (
+          body.install_url !== null &&
+          !(typeof body.install_url === "string" && body.install_url.startsWith("https://github.com/apps/"))
+        ) {
+          throw new Error(`expected install_url to be null or a github.com/apps URL, got: ${body.install_url}`);
+        }
+      },
+    );
   },
 );
 
@@ -403,11 +453,14 @@ flow(
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
+      'POST /v1/projects/:projectId/change-requests',
+      'POST /v1/projects/:projectId/change-requests/:crId/merge',
+      'GET /v1/projects/:projectId/change-requests/:crId',
     ],
   },
   async (ctx) => {
     const { randomUUID } = await import('node:crypto');
-    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const { execFile } = await import('node:child_process');
@@ -536,6 +589,85 @@ flow(
         const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared']);
         if (refs.trim()) throw new Error('shared branch still exists after owner deletion');
       });
+      await ctx.step('owner session opens its own CR without session_id and self merges with wildcard grant', async () => {
+        await writeFile(join(root, 'self-merge-proof.txt'), 'session self merge proof\n');
+        await git(owner.secret, ['add', 'self-merge-proof.txt']);
+        await git(owner.secret, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'Add self merge proof']);
+        await git(owner.secret, ['push', 'origin', `HEAD:refs/heads/${owner.sessionId}`]);
+
+        const request = async (path: string, body: Record<string, unknown>) => {
+          const response = await fetch(`${ctx.env.apiUrl}${path}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${owner.secret}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          return { status: response.status, body: await response.json() as Record<string, any> };
+        };
+        const crPath = `/projects/${project.id}/change-requests`;
+        const mismatch = await request(crPath, {
+          title: 'Must reject mismatched origin', head_ref: owner.sessionId, session_id: memberSession.sessionId,
+        });
+        if (mismatch.status !== 400 || mismatch.body.code !== 'CR_SESSION_ID_MISMATCH') {
+          throw new Error(`mismatched session_id: ${mismatch.status} ${JSON.stringify(mismatch.body)}`);
+        }
+        const opened = await request(crPath, { title: 'Self merge proof', head_ref: owner.sessionId });
+        if (opened.status !== 201 || opened.body.origin_session_id !== owner.sessionId) {
+          throw new Error(`session origin binding: ${opened.status} ${JSON.stringify(opened.body)}`);
+        }
+        const crId = String(opened.body.cr_id);
+        const merged = await request(`${crPath}/${crId}/merge`, { message: 'Merge verified self merge proof' });
+        if (merged.status !== 200 || merged.body.change_request?.status !== 'merged' || !merged.body.merge?.merge_commit_sha) {
+          throw new Error(`self merge: ${merged.status} ${JSON.stringify(merged.body)}`);
+        }
+        const read = await fetch(`${ctx.env.apiUrl}${crPath}/${crId}`, {
+          headers: { Authorization: `Bearer ${owner.secret}` },
+        });
+        const readBody = await read.json() as Record<string, any>;
+        if (read.status !== 200 || readBody.change_request?.status !== 'merged') {
+          throw new Error(`merged CR read-back: ${read.status} ${JSON.stringify(readBody)}`);
+        }
+        const baseRef = await git(owner.secret, ['ls-remote', 'origin', 'refs/heads/main']);
+        if (!baseRef.includes(String(merged.body.merge.base_sha_after))) {
+          throw new Error('base branch does not contain the merged SHA');
+        }
+      });
+      await ctx.step('ungoverned session cannot self merge despite its human merge role', async () => {
+        await writeFile(join(root, 'ungranted-merge-proof.txt'), 'ungoverned session proof\n');
+        await git(owner.secret, ['add', 'ungranted-merge-proof.txt']);
+        await git(owner.secret, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'Add ungoverned proof']);
+        await git(owner.secret, ['push', 'origin', `HEAD:refs/heads/${owner.sessionId}`]);
+
+        const created = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+          name: 'GH-17 ungoverned session fixture',
+        });
+        created.status(201);
+        const { token_id: tokenId, secret_key: secret } = created.json<{ token_id: string; secret_key: string }>();
+        await db.query(`UPDATE kortix.account_tokens
+          SET project_id = $2, session_id = $3, agent_grant = NULL, account_id = $4, user_id = $5
+          WHERE token_id = $1`, [tokenId, project.id, owner.sessionId, team.id, ctx.P.OWNER.userId]);
+
+        const crPath = `/projects/${project.id}/change-requests`;
+        const send = async (path: string, body: Record<string, unknown>) => {
+          const response = await fetch(`${ctx.env.apiUrl}${path}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          return { status: response.status, body: await response.json() as Record<string, any> };
+        };
+        const opened = await send(crPath, { title: 'Ungoverned self merge denied', head_ref: owner.sessionId });
+        if (opened.status !== 201 || opened.body.origin_session_id !== owner.sessionId) {
+          throw new Error(`ungoverned CR open: ${opened.status} ${JSON.stringify(opened.body)}`);
+        }
+        const denied = await send(`${crPath}/${opened.body.cr_id}/merge`, {});
+        if (denied.status !== 403 || denied.body.code !== 'CR_SELF_MERGE_REFUSED') {
+          throw new Error(`ungoverned self merge: ${denied.status} ${JSON.stringify(denied.body)}`);
+        }
+        const baseRef = await git(owner.secret, ['ls-remote', 'origin', 'refs/heads/main']);
+        if (baseRef.includes((await git(owner.secret, ['rev-parse', 'HEAD'])).trim())) {
+          throw new Error('denied self merge changed the base branch');
+        }
+      });
     } finally {
       for (const sessionId of sessions) {
         await db.query('DELETE FROM kortix.account_tokens WHERE session_id = $1', [sessionId]);
@@ -546,5 +678,106 @@ flow(
       await db.end();
       await rm(root, { recursive: true, force: true });
     }
+  },
+);
+
+// ── Instance git backend ("Kortix managed") — its own namespace ──────────────
+//
+// One deployment-wide thing. It used to be injected into GET
+// /projects/github/installations as a synthetic installation with the id
+// `pat`, which made an instance-global credential look like one account's
+// GitHub connection — the same conflation that let a platform admin replace
+// production's App from a customer's settings page on 2026-09-16.
+
+flow(
+  "GH-18",
+  {
+    domain: "git",
+    routes: [
+      "GET /v1/projects/git/backend",
+      "GET /v1/projects/git/backend/repositories",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("ANON → 401 on GET /git/backend", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/git/backend");
+      r.status(401);
+    });
+
+    await ctx.step(
+      "OWNER reads the instance backend: {configured, kind, owner} and never a credential",
+      async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend");
+        r.status(200);
+        const body = r.json<any>();
+        if (typeof body.configured !== "boolean") {
+          throw new Error(`expected boolean configured, got: ${JSON.stringify(body)}`);
+        }
+        if (![null, "app", "pat"].includes(body.kind)) {
+          throw new Error(`expected kind ∈ {app, pat, null}, got: ${body.kind}`);
+        }
+        if (body.configured !== (body.kind !== null)) {
+          throw new Error(`configured=${body.configured} disagrees with kind=${body.kind}`);
+        }
+        if (body.configured && typeof body.owner !== "string") {
+          throw new Error(`a configured backend must name its owner, got: ${JSON.stringify(body)}`);
+        }
+        // The owner login is public (every managed repo_url carries it). The
+        // token, private key and installation id are not, and this route is
+        // readable by every authenticated user.
+        for (const key of ["token", "pat", "private_key", "privateKey", "installation_id", "installationId"]) {
+          if (key in body) throw new Error(`GET /git/backend leaks ${key}`);
+        }
+      },
+    );
+
+    await ctx.step("ANON → 401 on GET /git/backend/repositories", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/git/backend/repositories");
+      r.status(401);
+    });
+
+    await ctx.step(
+      "OWNER on GET /git/backend/repositories: 403 unless a self-host operator, never a customer-wide listing by role",
+      async () => {
+        // `isSelfHostOperator`, NOT `isPlatformAdmin`: on cloud the backend
+        // owner is the shared `managed-kortix` org holding every customer's
+        // repository. The local and cloud profiles run with an empty operator
+        // allowlist, so the account OWNER is refused. A self-host target that
+        // lists this user as its operator answers with the owner's
+        // repositories (200) or, with no backend configured, 409.
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend/repositories");
+        r.status([403, 200, 409]);
+        const body = r.json<any>();
+        if (r.statusCode === 403 && typeof body.error !== "string") {
+          throw new Error(`403 must carry an error string, got: ${JSON.stringify(body)}`);
+        }
+        if (r.statusCode === 200 && !(typeof body.owner === "string" && Array.isArray(body.repositories))) {
+          throw new Error(`expected {owner, repositories[]}, got: ${JSON.stringify(body)}`);
+        }
+        if (r.statusCode === 409 && typeof body.error !== "string") {
+          throw new Error(`409 must carry an error string, got: ${JSON.stringify(body)}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      "OWNER POST /link-repository {source: managed} → 403 unless an operator; with installation_id too → 400",
+      async () => {
+        const both = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {
+          repo_full_name: "managed-kortix/does-not-matter",
+          source: "managed",
+          installation_id: "12345",
+        });
+        both.status(400);
+        const managed = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {
+          repo_full_name: "managed-kortix/does-not-matter",
+          source: "managed",
+        });
+        // 403 for a non-operator (local + cloud). A self-host operator reaches
+        // the backend and gets 409 (token-less backend) or 400 (GitHub says
+        // the repository does not exist) — but never a project.
+        managed.status([403, 409, 400]);
+      },
+    );
   },
 );

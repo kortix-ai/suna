@@ -21,10 +21,28 @@ const DAEMON_PORT = 8000;
  */
 export const RUNTIME_PROMPT_CHUNK_BYTES = 64 * 1024;
 
+export class RuntimeRouteUnsupportedError extends Error {
+  readonly method: string;
+  readonly route: string;
+  readonly status: number;
+  readonly contentType: string;
+
+  constructor(input: { method: string; route: string; status: number; contentType: string }) {
+    super(
+      `runtime route unsupported: ${input.method} ${input.route} returned ${input.status} ${input.contentType}`,
+    );
+    this.name = 'RuntimeRouteUnsupportedError';
+    this.method = input.method;
+    this.route = input.route;
+    this.status = input.status;
+    this.contentType = input.contentType;
+  }
+}
+
 type Forward = typeof forwardToSandbox;
 
 async function forwarded(
-  input: RuntimePromptFileWriteInput,
+  input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
   forward: Forward,
   method: string,
   route: string,
@@ -50,6 +68,119 @@ async function forwarded(
   );
 }
 
+function isJsonContentType(contentType: string): boolean {
+  const mediaType = contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  return mediaType === 'application/json' || mediaType.endsWith('+json');
+}
+
+/**
+ * Read a daemon JSON response. A stale daemon can fall through to OpenCode's
+ * SPA and answer `200 text/html`; that is named, not parsed as a JSON error.
+ */
+async function readRuntimeJson<T>(input: {
+  response: Response;
+  method: string;
+  route: string;
+  operation: string;
+}): Promise<T> {
+  if (!input.response.ok) {
+    throw new Error(`runtime ${input.operation} failed (${input.response.status})`);
+  }
+  const contentType = input.response.headers.get('content-type') ?? 'missing content-type';
+  if (!isJsonContentType(contentType)) {
+    throw new RuntimeRouteUnsupportedError({
+      method: input.method,
+      route: input.route,
+      status: input.response.status,
+      contentType,
+    });
+  }
+  try {
+    return (await input.response.json()) as T;
+  } catch {
+    throw new RuntimeRouteUnsupportedError({
+      method: input.method,
+      route: input.route,
+      status: input.response.status,
+      contentType,
+    });
+  }
+}
+
+/**
+ * Whether this daemon advertises `/file/import`. A health response without a
+ * `capabilities` field (a main-built daemon) means "no import": delivery then
+ * uses the existing append/upload path, never a stale classification.
+ */
+async function runtimeSupportsImport(
+  input: Pick<RuntimePromptFileWriteInput, 'externalId' | 'sessionId' | 'userId'>,
+  forward: Forward,
+): Promise<boolean> {
+  const health = await forwarded(
+    input,
+    forward,
+    'GET',
+    '/kortix/health',
+    new Headers(),
+    new ArrayBuffer(0),
+  );
+  const body = await readRuntimeJson<{ capabilities?: unknown }>({
+    response: health,
+    method: 'GET',
+    route: '/kortix/health',
+    operation: 'health',
+  });
+  return Array.isArray(body.capabilities) && body.capabilities.includes('file.import');
+}
+
+export interface RuntimePromptAttachmentImportInput {
+  externalId: string;
+  sessionId: string;
+  userId: string;
+  commandId: string;
+  attachmentId: string;
+  partIndex: number;
+}
+
+/** Import through a capable daemon. Return null when the daemon does not advertise import. */
+export async function importRuntimePromptAttachment(
+  input: RuntimePromptAttachmentImportInput,
+  forward: Forward = forwardToSandbox,
+): Promise<{ path: string; size: number; sha256: string } | null> {
+  if (!(await runtimeSupportsImport(input, forward))) return null;
+  const encoded = new TextEncoder().encode(
+    JSON.stringify({
+      command_id: input.commandId,
+      attachment_id: input.attachmentId,
+      part_index: input.partIndex,
+    }),
+  );
+  const route = '/file/import';
+  const response = await forwarded(
+    input,
+    forward,
+    'POST',
+    route,
+    new Headers({ 'Content-Type': 'application/json' }),
+    encoded.buffer as ArrayBuffer,
+  );
+  const result = await readRuntimeJson<{ path?: unknown; size?: unknown; sha256?: unknown }>({
+    response,
+    method: 'POST',
+    route,
+    operation: 'import',
+  });
+  if (
+    typeof result.path !== 'string' ||
+    !Number.isSafeInteger(result.size) ||
+    (result.size as number) <= 0 ||
+    typeof result.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(result.sha256)
+  ) {
+    throw new Error('runtime import returned invalid verification metadata');
+  }
+  return { path: result.path, size: result.size as number, sha256: result.sha256 };
+}
 
 async function uploadWhole(
   input: RuntimePromptFileWriteInput,
@@ -71,10 +202,12 @@ async function uploadWhole(
     new Headers(request.headers),
     await request.arrayBuffer(),
   );
-  if (!upload.ok) {
-    throw new Error(`runtime upload failed (${upload.status})`);
-  }
-  const rows = (await upload.json()) as Array<{ path?: string; size?: number }>;
+  const rows = await readRuntimeJson<Array<{ path?: string; size?: number }>>({
+    response: upload,
+    method: 'POST',
+    route: '/file/upload',
+    operation: 'upload',
+  });
   const temporaryPath = rows[0]?.path;
   if (!temporaryPath) throw new Error('runtime upload returned no file path');
   return temporaryPath;
@@ -119,10 +252,12 @@ async function appendInChunks(
       new Headers(request.headers),
       await request.arrayBuffer(),
     );
-    if (!response.ok) {
-      throw new Error(`runtime append failed (${response.status})`);
-    }
-    const row = (await response.json()) as { path?: string; size?: number };
+    const row = await readRuntimeJson<{ path?: string; size?: number }>({
+      response,
+      method: 'POST',
+      route: '/file/append',
+      operation: 'append',
+    });
     if (!row?.path) throw new Error('runtime append returned no file path');
     landedPath = row.path;
     landedSize = typeof row.size === 'number' ? row.size : landedSize;
@@ -153,7 +288,9 @@ export async function writeRuntimePromptFile(
       // A chunk that failed mid-way leaves a truncated temp file in the
       // workspace — junk the agent can trip over. Only the chunked path can
       // leave one (a whole-file upload either lands or writes nothing). Best
-      // effort, never masks the real error.
+      // effort, never masks the real error. An HTML or 404 append answer is
+      // the only stale-daemon signal; it fails this attempt and the engine's
+      // ordinary retry owns what happens next.
       const deleteBody = new TextEncoder().encode(
         JSON.stringify({ path: path.posix.join(directory, temporaryName) }),
       );
@@ -182,7 +319,14 @@ export async function writeRuntimePromptFile(
     new Headers({ 'Content-Type': 'application/json' }),
     renameBody.buffer as ArrayBuffer,
   );
-  if (!rename.ok) {
+  try {
+    await readRuntimeJson<unknown>({
+      response: rename,
+      method: 'POST',
+      route: '/file/rename',
+      operation: 'rename',
+    });
+  } catch (error) {
     const deleteBody = new TextEncoder().encode(JSON.stringify({ path: temporaryPath }));
     await forwarded(
       input,
@@ -192,7 +336,7 @@ export async function writeRuntimePromptFile(
       new Headers({ 'Content-Type': 'application/json' }),
       deleteBody.buffer as ArrayBuffer,
     ).catch(() => undefined);
-    throw new Error(`runtime rename failed (${rename.status})`);
+    throw error;
   }
   // The bytes we sent ARE the size: the chunked path proves the landed total
   // against this before returning, and the whole-file path writes it in one

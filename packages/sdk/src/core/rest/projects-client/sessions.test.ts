@@ -26,6 +26,7 @@ import {
   getSessionTranscript,
   getSessionTurn,
   listProjectSessions,
+  listProjectSessionsPage,
   listSessionPrompts,
   listSessionPublicShares,
   reloadProjectSessionConfig,
@@ -41,7 +42,10 @@ import {
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
-let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
+let nextResponse: { status: number; body: unknown; headers?: Record<string, string> } = {
+  status: 200,
+  body: {},
+};
 
 beforeEach(() => {
   calls = [];
@@ -54,7 +58,7 @@ beforeEach(() => {
     });
     return new Response(JSON.stringify(nextResponse.body), {
       status: nextResponse.status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(nextResponse.headers ?? {}) },
     });
   }) as unknown as typeof fetch;
 });
@@ -101,6 +105,59 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   const [session] = await listProjectSessions('P1');
   expect(session.can_manage_sharing).toBe(false);
   expect(session.can_manage_lifecycle).toBe(true);
+});
+
+// ─── Paging ────────────────────────────────────────────────────────────────
+// The list is a bounded keyset PAGE. It used to return every session row the
+// viewer could see: a 12,617-session project shipped a multi-megabyte body on a
+// list the sidebar re-polls every 5s. See `listProjectSessionsPage`.
+
+test('listProjectSessions forwards limit and cursor as query parameters', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { limit: 25, cursor: 'CURSOR1' });
+  const url = new URL(last().url);
+  expect(url.pathname).toBe('/projects/P1/sessions');
+  expect(url.searchParams.get('limit')).toBe('25');
+  expect(url.searchParams.get('cursor')).toBe('CURSOR1');
+});
+
+test('listProjectSessions sends no paging parameters when none are asked for', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1');
+  expect(last().url).not.toContain('limit=');
+  expect(last().url).not.toContain('cursor=');
+});
+
+test('listProjectSessionsPage reads the continuation token from X-Next-Cursor', async () => {
+  nextResponse = {
+    status: 200,
+    body: [{ session_id: 'S1' }],
+    headers: { 'x-next-cursor': 'NEXT1' },
+  };
+  const page = await listProjectSessionsPage('P1', { limit: 1 });
+  expect(page.items).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
+  expect(page.next_cursor).toBe('NEXT1');
+});
+
+test('listProjectSessionsPage reports the last page as next_cursor null', async () => {
+  // No header means the server folded the list to its end. A client that
+  // treated "missing" as "unknown" and kept asking would loop forever.
+  nextResponse = { status: 200, body: [{ session_id: 'S1' }] };
+  const page = await listProjectSessionsPage('P1');
+  expect(page.next_cursor).toBeNull();
+});
+
+test('listProjectSessions returns the page body unchanged for existing callers', async () => {
+  // Back-compat: the 200 body stays the bare array. Paging rides a header
+  // precisely so no existing consumer has to learn an envelope.
+  nextResponse = {
+    status: 200,
+    body: [{ session_id: 'S1' }],
+    headers: { 'x-next-cursor': 'NEXT1' },
+  };
+  const result = await listProjectSessions('P1');
+  expect(Array.isArray(result)).toBe(true);
+  expect(result).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
 });
 
 test('listProjectSessions throws when the response is unsuccessful', async () => {
@@ -871,6 +928,22 @@ test('createSessionPrompt POSTs the submission name, the wire id, the parts and 
   });
 });
 
+test('createSessionPrompt preserves explicit queue placement on the wire', async () => {
+  for (const placement of ['transcript', 'composer'] as const) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-placement', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `placement-${placement}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'follow up' }],
+      placement,
+    });
+    expect(last().body).toMatchObject({ placement });
+  }
+});
+
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
   // A caller that minted its id somewhere the live transcript was unreadable
   // (the one-time localStorage migration) says so, and the server re-mints
@@ -1002,6 +1075,36 @@ test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the qu
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ held: true });
   expect(result).toEqual({ prompts: [] });
+});
+
+test('queue row calls never route failures to the host global error handler', async () => {
+  // Every caller of these four already says what went wrong in its own words:
+  // the queue list's remove, retry and resume each toast a specific message,
+  // and the poll is a background read. With `showErrors` left at its TRUE
+  // default the transport ALSO toasted the server's raw prose first, so one
+  // failed remove painted two toasts ("Not found" + "That prompt is no longer
+  // in the queue") — and a failed 1s poll toasted on every tick.
+  // `createSessionPrompt` is deliberately NOT in this list: its 402 has to reach
+  // the host handler, which is what opens the upgrade dialog.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+
+  nextResponse = { status: 500, body: { error: 'boom' } };
+  await listSessionPrompts('P1', 'S1').catch(() => {});
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+  await deleteSessionPrompt('P1', 'S1', 'cmd-1').catch(() => {});
+  nextResponse = { status: 409, body: { error: 'Prompt is already being answered' } };
+  await retrySessionPrompt('P1', 'S1', 'cmd-1').catch(() => {});
+  nextResponse = { status: 503, body: { error: 'unavailable' } };
+  await holdSessionPrompts('P1', 'S1', false).catch(() => {});
+
+  expect(errors).toEqual([]);
+
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 });
 
 test('a prompt call throws on a non-2xx instead of returning a half-answer', async () => {

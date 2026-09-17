@@ -18,7 +18,7 @@ import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
-  workspaceModeFromSessionMetadata,
+  repositoryAccessFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
 import {
   buildSessionSandboxEnvVars,
@@ -64,6 +64,12 @@ export async function deleteSession(input: {
       ),
     )
     .limit(1);
+
+  // Release the session's prompt attachments before the tombstone, so a failed
+  // release fails a delete that can still be retried. The cleanup sweep then
+  // removes each unreferenced object before its metadata.
+  const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
+  await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
 
   const deletedAt = new Date();
   const [row] = await db
@@ -249,7 +255,7 @@ export async function restartSession(input: {
       agentName: session.agentName ?? 'default',
       allowProjectImage: projectImageAllowedForSession(
         session.agentName,
-        workspaceModeFromSessionMetadata(session.metadata),
+        repositoryAccessFromSessionMetadata(session.metadata),
       ),
       sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
@@ -273,7 +279,7 @@ export async function restartSession(input: {
           // meta agent config, so the daemon clones the project over the meta
           // workspace and wipes /workspace/AGENTS.md.
           platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
-          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
           restoreSessionBranch: true,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),

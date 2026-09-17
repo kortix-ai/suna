@@ -99,6 +99,8 @@ describe('ephemeral self-host preview stack', () => {
     };
     const patEnv = applyPreviewEnvironment(base, stack, pat);
     expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    expect(patEnv.runtimeEnv).toContain('KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false');
+    expect(patEnv.testEnv).toContain('E2E_APPS_BASE_DOMAIN=apps.example.test');
     expect(patEnv.runtimeEnv).toContain('MANAGED_GIT_GITHUB_TOKEN=t');
     // An owner on its own still is not managed git.
     expect(() => applyPreviewEnvironment(base, stack, { MANAGED_GIT_GITHUB_OWNER: 'o' })).toThrow(
@@ -114,6 +116,8 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"');
+    expect(overlay).toContain('kortix-migrate:\n    command: ["bun", "/app/packages/db/scripts/migrate.ts", "preview-up"]');
+    expect(overlay).toContain('KORTIX_PREVIEW_MIGRATION: "1"');
     expect(overlay).not.toContain('volumes/db/data');
   });
 
@@ -147,6 +151,7 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
+      'PLATINUM_API_KEY',
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
@@ -195,6 +200,9 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
+    expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
+    expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
@@ -210,6 +218,46 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+  });
+
+  it('offers Platinum only when its key is present, and never forwards an AWS identity', () => {
+    const base = 'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
+    const input = {
+      origin: 'https://preview.example',
+      sha: SHA,
+      apiImage: `kortix/kortix-api:pr-${SHA}`,
+      gatewayImage: `kortix/kortix-gateway:pr-${SHA}`,
+      frontendImage: `kortix/kortix-frontend:pr-${SHA}`,
+    };
+    const secrets = {
+      DAYTONA_API_KEY: 'daytona',
+      KORTIX_GITHUB_APP_ID: '12345',
+      KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
+      KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
+      MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
+      MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
+    };
+
+    // Without a Platinum key: exactly the old posture.
+    const plain = applyPreviewEnvironment(base, input, secrets);
+    expect(plain.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona\n');
+    expect(plain.runtimeEnv).not.toContain('PLATINUM_API_KEY');
+
+    // With it: Platinum offered SECOND so Daytona stays the default for unpinned sessions.
+    const wired = applyPreviewEnvironment(
+      base,
+      { ...input, platinumApiUrl: 'https://api.platinum.dev' },
+      { ...secrets, PLATINUM_API_KEY: 'pt_live_example' },
+    );
+    expect(wired.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona,platinum\n');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_URL=https://api.platinum.dev');
+    expect(wired.runtimeEnv).toContain('PLATINUM_API_KEY=pt_live_example');
+
+    // The preview pipeline holds no cloud identity (infra/scripts/test-ecs-preview-runtime.py):
+    // AWS credentials are outside the allowlist, so the project-snapshot bucket is never named.
+    expect(() => validatePreviewRuntimeSecrets({ AWS_ACCESS_KEY_ID: 'ASIAEXAMPLE' })).toThrow('AWS_ACCESS_KEY_ID');
+    expect(wired.runtimeEnv).not.toContain('AWS_');
+    expect(wired.runtimeEnv).not.toContain('KORTIX_PROJECT_SNAPSHOT_S3_BUCKET');
   });
 
   it('fails before boot when managed GitHub cannot run every target flow', () => {

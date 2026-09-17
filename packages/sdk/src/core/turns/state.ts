@@ -340,12 +340,23 @@ function estimateTokenCost(tokens: TokenUsageLike | undefined, rates: ModelCostR
   return cost;
 }
 
+// Subscription usage is covered by ChatGPT, including historical runtime costs.
+// A paid OpenAI API model with "codex" in its name is still billable.
+function isSubscriptionUsage(providerID?: string, modelID?: string): boolean {
+  return (
+    providerID === 'codex' ||
+    providerID === 'openai-codex' ||
+    (providerID === 'kortix' && !!modelID?.startsWith('codex/'))
+  );
+}
+
 function stepFinishRawCost(
   sfp: StepFinishPartLike,
   providerID: string | undefined,
   modelID: string | undefined,
   lookup?: ModelPricingLookup,
 ): number {
+  if (isSubscriptionUsage(providerID, modelID)) return 0;
   const reported = sfp.cost || 0;
   if (reported > 0) return reported;
   if (!lookup || !providerID || !modelID) return 0;
@@ -397,11 +408,16 @@ export function getTurnCost(
   }
 
   if (!found) {
+    const seen = new Set<string>();
     for (const { message } of parts) {
       if (message.info.role !== 'assistant') continue;
       const assistant = message.info as AssistantInfoLike;
+      if (seen.has(assistant.id)) continue;
+      seen.add(assistant.id);
       const stepCost = assistantTokensCost(assistant, lookup);
-      if (stepCost <= 0) continue;
+      const subscriptionTokens =
+        assistant.tokens && isSubscriptionUsage(assistant.providerID, assistant.modelID);
+      if (stepCost <= 0 && !subscriptionTokens) continue;
       found = true;
       totalCost += stepCost;
       const t = assistant.tokens;
@@ -423,6 +439,7 @@ export function getTurnCost(
 }
 
 function assistantTokensCost(assistant: AssistantInfoLike, lookup?: ModelPricingLookup): number {
+  if (isSubscriptionUsage(assistant.providerID, assistant.modelID)) return 0;
   if (!lookup || !assistant.providerID || !assistant.modelID || !assistant.tokens) return 0;
   const rates = lookup(assistant.providerID, assistant.modelID);
   if (!rates) return 0;

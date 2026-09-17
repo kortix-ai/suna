@@ -159,6 +159,12 @@ describe("buildCompiledRuntimeArtifact", () => {
 
     const first = await buildCompiledRuntimeArtifact(project, "main", sha);
     const invalidSource = "#!/usr/bin/env node\nprocess.exit(0);\n";
+    // The artifact lands inside the mkdtempSync cache root created above, never
+    // loose in the shared os temp dir. Assert it rather than assume it: it is a
+    // real invariant of buildCompiledRuntimeArtifact, and an unguarded write
+    // into tmpdir would be a symlink-swap foothold
+    // (CodeQL js/insecure-temporary-file).
+    expect(first.path.startsWith(`${cache}/`)).toBe(true);
     writeFileSync(first.path, invalidSource);
     const metadataPath = join(
       cache,

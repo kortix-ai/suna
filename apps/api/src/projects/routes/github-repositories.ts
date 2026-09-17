@@ -1,13 +1,10 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
-import { isSelfHostOperator } from '../../shared/platform-roles';
-import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
   createInstallationToken,
   getRepo,
   listInstallationRepositories,
-  listOwnerRepositories,
   listRepositoryBranches,
 } from '../github';
 import { resolveProjectAccount } from '../lib/access';
@@ -16,7 +13,11 @@ import {
   createGitHubInstallationInstallUrl,
   getAccountGitHubInstallation,
 } from '../lib/git';
-import { PAT_MANAGED_GIT_INSTALLATION_ID, normalizeString, serializeGitHubRepo } from '../lib/serializers';
+import {
+  githubInstallationUnreachableBody,
+  isGitHubInstallationUnreachable,
+} from '../lib/github-installation-errors';
+import { normalizeString, serializeGitHubRepo } from '../lib/serializers';
 import { createRoute, z } from '@hono/zod-openapi';
 
 const RepositoryBranchesResponseSchema = z.object({
@@ -32,6 +33,11 @@ const RepositoryBranchesResponseSchema = z.object({
 }).openapi('RepositoryBranchesResponse');
 
 // GET /v1/projects/github/repositories?account_id=...
+//
+// Repositories an ACCOUNT connection can see. The instance backend ("Kortix
+// managed") is a different concept and lives under its own namespace,
+// GET /v1/projects/git/backend/repositories — it never appears here, because
+// on cloud its owner holds every customer's project repository.
 
 projectsApp.openapi(
   createRoute({
@@ -61,45 +67,9 @@ projectsApp.openapi(
       ? Math.min(100, Math.max(1, requestedLimit))
       : 100;
 
-    // The managed-git PAT ("Use a token" self-host setup) surfaces as a
-    // synthetic installation (see serializeGitHubInstallations) since it has
-    // no real GitHub App installation to list repos from — list via the PAT
-    // itself instead of an installation token.
-    if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
-      // `isSelfHostOperator`, not `isPlatformAdmin` — this lists the WHOLE
-      // managed org, which on cloud holds every customer's project repo.
-      if (!(await isSelfHostOperator(scope.userId))) {
-        return c.json(
-          { error: 'Managed GitHub repository import is only available to a self-host operator' },
-          403,
-        );
-      }
-      const owner = managedGithubOwner();
-      const token = managedGithubToken();
-      if (!owner || !token) {
-        return c.json({ error: 'The managed GitHub token is no longer configured on this server' }, 409);
-      }
-      try {
-        const repos = await listOwnerRepositories({
-          owner,
-          ownerType: managedGithubOwnerType(),
-          auth: { token },
-          search,
-          limit,
-        });
-        return c.json({
-          account_id: scope.accountId,
-          installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
-          owner_login: owner,
-          repositories: repos.map(serializeGitHubRepo),
-        });
-      } catch (error) {
-        return c.json({
-          error: (error as Error).message || 'Failed to list GitHub repositories',
-        }, 502);
-      }
-    }
-
+    // A read-only browse: with no id it shows the oldest connection's repos.
+    // The write paths (create-repo, link-repository) use
+    // `requireAccountGitHubInstallation` instead and refuse to guess.
     const installation = await getAccountGitHubInstallation(scope.accountId, installationId);
     if (!installation) {
       return c.json({
@@ -124,6 +94,15 @@ projectsApp.openapi(
         repositories: repos.map(serializeGitHubRepo),
       });
     } catch (error) {
+      if (isGitHubInstallationUnreachable(error)) {
+        return c.json(
+          githubInstallationUnreachableBody(
+            installation.installationId,
+            await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+          ),
+          409,
+        );
+      }
       return c.json({
         error: (error as Error).message || 'Failed to list GitHub repositories',
       }, 502);
@@ -192,6 +171,15 @@ projectsApp.openapi(
         branches,
       }, 200);
     } catch (error) {
+      if (isGitHubInstallationUnreachable(error)) {
+        return c.json(
+          githubInstallationUnreachableBody(
+            installation.installationId,
+            await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+          ),
+          409,
+        );
+      }
       return c.json({
         error: (error as Error).message || 'Failed to list GitHub repository branches',
       }, 502);

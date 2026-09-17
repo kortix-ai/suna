@@ -21,13 +21,14 @@ describe('parseFileReferences', () => {
     ]);
   });
 
-  test('reads a pending id off an in-flight ref', () => {
+  test('reads the attachment identity off a sent ref', () => {
     const { files } = parseFileReferences(
-      '<file path="" mime="image/png" filename="image.png" pending="upl_1">\nx\n</file>',
+      '<file path="" mime="image/png" filename="image.png" attachment="upload-1">\nx\n</file>',
     );
 
-    expect(files[0].pending).toBe('upl_1');
-    expect(files[0].path).toBe('');
+    expect(files).toEqual([
+      { path: '', mime: 'image/png', filename: 'image.png', attachment: 'upload-1' },
+    ]);
   });
 
   test('a tag with no path and no filename is left in the text', () => {

@@ -46,6 +46,18 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+## Disable providers or models
+
+Open **Customize → Models → Providers**. Open the **⋯** menu in the **Kortix** row and choose **Disable provider** to use only your own providers. Kortix appears in the same list as other providers, with its model count and credit-billing description. Every provider uses the same menu. Only disabled providers show a status badge. Choose **Enable provider** from the menu to restore access.
+
+Open the **Models** tab to enable or disable individual models. A disabled provider blocks all of its models, including models added later. Re-enabling the provider preserves individual model choices. Credentials stay saved throughout.
+
+The project default and its provider cannot be disabled. Select a different enabled default first. Project managers can change access; readers can inspect it.
+
+These controls apply to new requests through the Kortix gateway, including saved session selections and fallback candidates. A request already sent to an upstream finishes normally. Disabled targets return `provider_disabled` or `model_disabled`; choose an enabled model to continue. Native OpenCode mode does not use this gateway policy.
+
+Existing picker-only visibility preferences remain separate. Resetting the model list does not remove explicit access restrictions.
+
 ## Thinking effort
 
 The composer's thinking control sets the session's model **variant** in both
@@ -118,9 +130,58 @@ Enablement governs what is offered, not what is served: a request that names a
 disabled model outright (for example through the raw API) still runs. The
 project's default model cannot be turned off — set a different default first.
 
-## Shared, not private, keys
+## Provider keys and member access
 
-A connected provider key applies to the whole project. There is no private,
-per-user key — setting a personal override for a provider key fails with a
-`llm_credentials_project_wide` error. Update the shared key on the
-[secrets](/docs/project/secrets) page instead.
+With **Pooled provider secrets** off, a connected provider key applies to the
+whole project. Personal overrides for these project secrets return
+`llm_credentials_project_wide`.
+
+Enable **Pooled provider secrets** and **LLM Gateway** in Settings → Experimental
+to use account secret resources. Open **Customize → Models → Providers** and
+choose **Add key** beside a provider. Give each key a distinct label. The value
+is write-only; later screens show its label and access list.
+
+Open a key's **⋯ → Manage access** to choose account members who may use it.
+Access applies across projects in that account. Account membership, project
+permissions, the agent's secret permissions, and session selection still apply.
+A member grant permits use without revealing the key. Rotating a key preserves
+its access and session selections. Deleting it removes access for everyone.
+
+### Choose keys for a session
+
+Open the composer's **Session overrides → Provider keys**. Choose a provider,
+then select up to ten keys. For an existing session, choose **Save key selection**.
+For a new session, the selection is sent with the first prompt.
+
+- Without an explicit selection, the existing project key remains available.
+- Selecting no keys disables that provider for the session. It does not restore
+  the project key.
+- **Reset to project default** removes the explicit selection.
+- Revoked or inactive keys appear as unavailable. Remove them from the
+  selection, select another key, or reset the selection.
+- Deleting the last selected key leaves an empty pool. The session settings
+  still show that provider so you can reset it.
+- A failed read shows **Try again**. It never appears as an inherited selection.
+
+On a rate limit before output starts, the gateway tries another selected key.
+It never replays a partial answer across keys. If every key is rate-limited,
+retry after the earliest cooldown, capped at 60 seconds. An explicit pool does
+not silently borrow another member's key or the legacy project credential.
+
+### ChatGPT accounts
+
+Choose **Add account** under **ChatGPT Plus/Pro**. Each authorization creates a
+separate named account. It starts private to the member who connected it.
+Use **Manage access** to share it with other account members.
+
+A session can select multiple granted ChatGPT accounts. Without a selection,
+the member's newest personal connection is the default. The legacy project
+login remains available when that member has no personal connection. A shared
+gateway key cannot borrow its creator's private ChatGPT connection.
+
+Google Gemini API keys use Google's OpenAI-compatible endpoint with the gateway
+on. Native OpenCode mode continues to use project secrets.
+
+Models hidden by older picker preferences show **Hidden from picker**. Direct requests remain allowed. Open that model’s menu and choose **Disable model** to block inference too.
+
+Provider model-count links open the **Models** tab. All provider groups appear together in the same list used to enable or disable models and set defaults. Search narrows the list. Connect a provider before managing its models.

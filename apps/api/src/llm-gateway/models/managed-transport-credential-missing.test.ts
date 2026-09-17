@@ -1,5 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
 
+// Existing fixtures have no project inference restrictions.
+mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }) }));
+
 const configuredModels = [
   {
     id: 'glm-5.3-flash',
@@ -82,6 +85,7 @@ mock.module('../credentials/codex', () => ({
   CODEX_USER_AGENT: 'test-agent',
   CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => null,
+  resolveCodexAccountCredential: async () => null,
 }));
 
 const { RUNTIME_MANAGED_MODELS } = await import('./managed-models');

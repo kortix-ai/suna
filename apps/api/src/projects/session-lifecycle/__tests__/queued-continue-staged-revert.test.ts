@@ -55,10 +55,11 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
+            if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             return [];
@@ -133,6 +134,7 @@ mock.module('../store', () => ({
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
+  markInboxDeliveryStarted: async () => {},
   markCommandFailed: async (commandId: string, message: string, opts: unknown) => {
     failedCalls.push({ commandId, message, opts });
   },

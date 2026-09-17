@@ -1,3 +1,4 @@
+import { modelAccessAllows, readModelAccess } from '../../llm-gateway/model-access';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -1223,6 +1224,9 @@ projectsApp.openapi(
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
       policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
+    if (effectivePrimary && !modelAccessAllows(readModelAccess(loaded.row.metadata), effectivePrimary)) {
+      return c.json({ error: 'Enable the default model and its provider before selecting it.', code: 'model_disabled' }, 409);
+    }
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json(
         {

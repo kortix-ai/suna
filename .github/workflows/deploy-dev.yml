@@ -47,11 +47,6 @@ on:
           - changed   # only surfaces stale vs what dev currently runs (fast — the default)
           - all       # force-rebuild + redeploy every surface
           - frontend  # frontend only
-      enable_fast_cold_boot:
-        description: Enable staged fast cold boot (requires surface=all)
-        type: boolean
-        required: true
-        default: false
       allow_deletes:
         description: Permit reviewed Terraform deletes during a manual rollback
         type: boolean
@@ -94,11 +89,6 @@ jobs:
       apps_router: ${{ steps.outputs.outputs.apps_router }}
       terraform: ${{ steps.outputs.outputs.terraform }}
     steps:
-      - name: Validate fast cold boot activation
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && inputs.surface != 'all' }}
-        run: |
-          echo "::error::Activation requires surface=all so the API and sandbox runtime deploy together."
-          exit 1
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -553,8 +543,27 @@ jobs:
       # is also the complete rollback. Keep the fast-boot flag false for the
       # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
       # surface=all dispatch can enable it after the rollout gates pass.
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
+      # in infra/terraform/environments/dev (module.project_snapshots; the task
+      # role's grant comes with it). Naming the bucket turns on the PRODUCER
+      # only (the leader worker prepares snapshots); no session consumes one
+      # until KORTIX_PROJECT_SNAPSHOT_MODE or a project's
+      # metadata.project_snapshot_mode says prefer-s3 / require-s3. Removing
+      # the two keys (or an unapplied Terraform) leaves the API on the Git
+      # path: the config validates the bucket as optional and the worker idles.
+      # docs/runbooks/project-snapshot-s3.md#aws
+      #
+      # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE presigns sandbox downloads for
+      # <bucket>.s3-accelerate.amazonaws.com. It needs transfer_acceleration =
+      # true on the bucket module in infra/terraform/environments/dev (applied
+      # by this workflow's Terraform job before the ECS roll); S3 may take up to
+      # 20 minutes to activate the endpoint after the apply, during which a
+      # prefer-s3 canary boot retries and falls back to Git. Git-mode sessions
+      # (the platform default) never read this key. Set it to "false" to return
+      # to the regional endpoint without touching the bucket.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"true"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

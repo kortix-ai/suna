@@ -59,6 +59,7 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
       accountId: account.accountId,
       projectId: account.projectId ?? undefined,
       sessionId: account.sessionId ?? undefined,
+      agentGrant: account.agentGrant ?? null,
     };
   }
   return null;

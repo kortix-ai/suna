@@ -313,25 +313,71 @@ describe('narrateStep - create family counts every media type in a mixed group',
   });
 });
 
-describe('narrateStep - apps distinguishes discovery from connection', () => {
+describe('narrateStep - connectors distinguishes discovery from connection', () => {
   it('never says "Connected to" for read-only discovery/description tools', () => {
     for (const t of [
       'kortix_connector_discover',
       'kortix_connector_describe',
       'kortix_connectors',
+      'kortix-connectors_connectors',
+      'kortix-connectors_discover',
+      'kortix-connectors_describe',
       'connector_get',
       'connector_list',
     ]) {
-      expect(narrateStep('apps', [part(t)])).not.toContain('Connected to');
+      expect(narrateStep('connectors', [part(t)])).toBe('Checked your connectors');
     }
   });
 
   it('still says "Connected" for connector_setup', () => {
-    expect(narrateStep('apps', [part('connector_setup')])).toContain('Connected');
+    expect(narrateStep('connectors', [part('connector_setup')])).toContain('Connected');
   });
 
   it('distinguishes running a connected tool from connecting to it', () => {
-    expect(narrateStep('apps', [part('kortix_connector_call')])).not.toContain('Connected to');
+    expect(narrateStep('connectors', [part('kortix_connector_call')])).toBe('Used a connector');
+  });
+
+  // The runtime registers the call tool as `kortix-connectors_call` (plural).
+  // Only the legacy singular name was mapped, so every real call fell through
+  // to 'read' and was narrated as "Checked" — the agent had acted, not looked.
+  it('narrates the registered kortix-connectors_call as a call, not a check', () => {
+    expect(narrateStep('connectors', [part('kortix-connectors_call')])).toBe('Used a connector');
+    expect(
+      narrateStep('connectors', [part('kortix-connectors_call'), part('kortix-connectors_call')]),
+    ).toBe('Made 2 connector calls');
+  });
+
+  // "App" is a Kortix product — a hosted web app. A connector call narrated
+  // as "an app" reads as that product.
+  it('never calls a connector an app', () => {
+    const tools = [
+      'connector_setup',
+      'connector_list',
+      'kortix-connectors_connectors',
+      'kortix-connectors_discover',
+      'kortix-connectors_describe',
+      'kortix-connectors_call',
+    ];
+    const sentences = [
+      ...tools.map((t) => narrateStep('connectors', [part(t)])),
+      ...tools.map((t) => narrateStep('connectors', [part(t), part(t)])),
+      narrateStep('connectors', [part('connector_list'), part('kortix-connectors_call')]),
+      narrateFailedStep('connectors', [part('kortix-connectors_call')]),
+    ];
+    for (const sentence of sentences) expect(sentence).not.toMatch(/\bapps?\b/i);
+  });
+
+  it('every registered connector tool resolves to the connectors family', () => {
+    for (const t of [
+      'kortix-connectors_connectors',
+      'kortix-connectors_discover',
+      'kortix-connectors_describe',
+      'kortix-connectors_call',
+      'connector_setup',
+      'connector_list',
+    ]) {
+      expect(familyForTool(t)).toBe('connectors');
+    }
   });
 });
 
@@ -724,7 +770,7 @@ describe('narrateFailedStep (W7)', () => {
     'delegate',
     'sessions',
     'memory',
-    'apps',
+    'connectors',
     'automations',
     'projects',
     'skills',

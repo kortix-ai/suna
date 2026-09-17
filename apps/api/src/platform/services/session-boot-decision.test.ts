@@ -21,7 +21,6 @@ setTestEnv('DAYTONA_API_KEY', 'dt_test');
 
 const {
   decideSessionBoot,
-  fastColdBootEnabled,
   sessionBootByTemplateIdEnabled,
 } = await import('./session-sandbox');
 
@@ -219,28 +218,4 @@ describe('FIX-A kill-switch — KORTIX_SESSION_BOOT_BY_TEMPLATE_ID', () => {
     process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID = v;
     expect(sessionBootByTemplateIdEnabled()).toBe(true);
   });
-});
-
-describe('fast cold boot kill-switch', () => {
-  const saved = process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
-  afterEach(() => {
-    if (saved === undefined) delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
-    else process.env.KORTIX_FAST_COLD_BOOT_ENABLED = saved;
-  });
-
-  test('defaults OFF', () => {
-    delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
-    expect(fastColdBootEnabled()).toBe(false);
-  });
-
-  test.each(['1', 'on', 'true', 'yes', 'TRUE'])('%p enables the experiment', (value) => {
-    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
-    expect(fastColdBootEnabled()).toBe(true);
-  });
-
-  test.each(['0', 'off', 'false', 'no', 'unexpected'])('%p disables the experiment', (value) => {
-    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
-    expect(fastColdBootEnabled()).toBe(false);
-  });
-
 });

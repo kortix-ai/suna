@@ -120,6 +120,10 @@ import {
   stopAuditReconciliationWorker,
 } from './shared/audit-reconciliation-worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+import {
+  startProjectSnapshotWorker,
+  stopProjectSnapshotWorker,
+} from './git-proxy/project-snapshot-worker';
 import { inspectDatabaseError } from './shared/database-errors';
 import {
   isDaytonaRateLimitError,
@@ -147,6 +151,7 @@ import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { skillsApp } from './skills';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
+import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './projects/session-lifecycle/worker';
 import {
   startTunnelService,
   stopTunnelService,
@@ -1490,16 +1495,21 @@ async function startReplicaServices() {
   await import('./platform/services/runtime-settings')
     .then((m) => m.refreshRuntimeSettings())
     .catch(() => {});
-  // Warm the managed-GitHub-App config cache too — so a self-host instance
-  // whose operator just ran the in-app GitHub App setup flow (rather than
-  // `.env`) gets its DB-stored creds from request #1, not after a 30s TTL.
-  await import('./platform/services/managed-github-app')
-    .then((m) => m.refreshManagedGithubAppConfig())
+  // Warm the instance GitHub identity + git backend caches too — so a
+  // self-host instance whose operator just ran the in-app setup flow (rather
+  // than `.env`) serves its stored configuration from request #1, not after a
+  // 30s TTL.
+  await import('./platform/services/github-app-identity')
+    .then((m) => m.refreshAppIdentity())
+    .catch(() => {});
+  await import('./platform/services/managed-git-backend')
+    .then((m) => m.refreshGitBackend())
     .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
+  startSessionLifecycleWorker();
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1533,6 +1543,9 @@ async function startSingletonWorkers() {
   startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
+  // Prebuilt project snapshot archives (S3 config provider). Idle unless
+  // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
+  startProjectSnapshotWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1552,6 +1565,7 @@ async function stopSingletonWorkers() {
   stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
+  await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }
@@ -1618,6 +1632,7 @@ async function shutdown(signal: string) {
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();
+  stopSessionLifecycleWorker();
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).

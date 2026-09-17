@@ -5,6 +5,8 @@
  */
 
 import { readFileSync } from 'fs';
+import { open } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { TunnelClient, TunnelClientError } from './tunnel-client';
 
 const S6_ENV_DIR = process.env.S6_ENV_DIR || '/run/s6/container_environment';
@@ -14,6 +16,7 @@ const ALL_COMMANDS = [
   'status',
   'fs_read',
   'fs_write',
+  'fs_upload',
   'fs_list',
   'shell',
   'cua_ensure',
@@ -144,11 +147,38 @@ async function fsWrite(args: Record<string, unknown>) {
   const result = await call('fs.write', {
     path: args.path,
     content: args.content,
+    sha256: args.sha256,
     encoding: (args.encoding as string) || 'utf-8',
   });
   if (result === null) return;
   const data = result as Record<string, unknown>;
-  out({ success: true, path: data.path, size: data.size });
+  out({ success: true, path: data.path, size: data.size, sha256: data.sha256 });
+}
+
+/** Read bytes locally: opaque payloads never pass through model output. */
+async function fsUpload(args: Record<string, unknown>) {
+  if (typeof args.source !== 'string' || !args.source) return fail('source is required');
+  if (typeof args.path !== 'string' || !args.path) return fail('path is required');
+  const handle = await open(args.source, 'r');
+  let bytes: Buffer;
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) return fail('source must be a regular file');
+    // The relay and agent cap frames at 5 MiB. Leave room for base64 and RPC metadata.
+    if (stats.size > 3 * 1024 * 1024) return fail('source exceeds the 3 MiB upload limit');
+    bytes = await handle.readFile();
+    if (bytes.length > 3 * 1024 * 1024) return fail('source exceeds the 3 MiB upload limit');
+  } finally {
+    await handle.close();
+  }
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const result = await call('fs.write', { path: args.path, content: bytes.toString('base64'), encoding: 'base64', sha256 });
+  if (result === null) { process.exitCode = 1; return; }
+  const data = result as Record<string, unknown>;
+  if (data.sha256 !== sha256 || data.size !== bytes.length) {
+    return fail('Destination verification failed. Update the connected agent if its response has no sha256. The file may have been written.');
+  }
+  out({ success: true, path: data.path, size: data.size, sha256 });
 }
 
 async function fsList(args: Record<string, unknown>) {
@@ -237,6 +267,9 @@ try {
       break;
     case 'fs_write':
       await fsWrite(args);
+      break;
+    case 'fs_upload':
+      await fsUpload(args);
       break;
     case 'fs_list':
       await fsList(args);

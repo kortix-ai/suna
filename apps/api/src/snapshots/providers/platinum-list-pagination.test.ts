@@ -29,7 +29,7 @@ const testClient = {
   },
 };
 
-const platinumProvider = new PlatinumAdapter(undefined, undefined, testClient);
+const platinumProvider = new PlatinumAdapter(testClient);
 const findTemplateByName = (name: string) =>
   findTemplateByNameWithDefaults(name, testClient);
 

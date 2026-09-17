@@ -1,4 +1,8 @@
-import type { AttachedFile } from '@/features/session/session-chat-input';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
+import { rememberFirstPromptAttachments } from '@/features/session/sent-attachment-previews';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import { sentAttachmentsOf } from '@/features/session/uploaded-file-refs';
 import { create } from 'zustand';
 
 interface PendingFilesState {
@@ -83,8 +87,16 @@ export const useCarriedDraft = (sessionId: string): CarriedDraft | null =>
 
 interface FirstPromptPreviewState {
   /** Kortix session id → the first prompt's text, for RENDER only. */
-  previewBySession: Record<string, { text: string; files: AttachedFile[] }>;
-  setFirstPromptPreview: (sessionId: string, text: string, files: AttachedFile[]) => void;
+  previewBySession: Record<
+    string,
+    { text: string; files: AttachedFile[]; uploadStatus?: AttachmentUploadStatus }
+  >;
+  setFirstPromptPreview: (
+    sessionId: string,
+    text: string,
+    files: AttachedFile[],
+    uploadStatus?: AttachmentUploadStatus,
+  ) => void;
   clearFirstPromptPreview: (sessionId: string) => void;
 }
 
@@ -101,11 +113,22 @@ interface FirstPromptPreviewState {
  * in-memory copy the producer leaves for the shell to draw meanwhile — the
  * same text, keyed by the Kortix session id, gone with the tab (a reload has
  * the row or the transcript to read from).
+ *
+ * A first prompt whose POST waits on its uploads is not durable yet. When that
+ * POST cannot be made, its producer leaves the failed status here, with Retry.
  */
 export const useFirstPromptPreviewStore = create<FirstPromptPreviewState>((set) => ({
   previewBySession: {},
-  setFirstPromptPreview: (sessionId, text, files) =>
-    set((s) => ({ previewBySession: { ...s.previewBySession, [sessionId]: { text, files } } })),
+  setFirstPromptPreview: (sessionId, text, files, uploadStatus) => {
+    // Outlives this preview: the first turn and the shell keep the sent pictures after the clear.
+    rememberFirstPromptAttachments(sessionId, sentAttachmentsOf(files));
+    set((s) => ({
+      previewBySession: {
+        ...s.previewBySession,
+        [sessionId]: { text, files, ...(uploadStatus ? { uploadStatus } : {}) },
+      },
+    }));
+  },
   clearFirstPromptPreview: (sessionId) =>
     set((s) => {
       if (!(sessionId in s.previewBySession)) return s;
@@ -113,6 +136,90 @@ export const useFirstPromptPreviewStore = create<FirstPromptPreviewState>((set) 
       return { previewBySession: rest };
     }),
 }));
+
+/** One follow-up send, in the arguments `SessionChat.handleSend` takes, kept to send again. */
+export interface HeldSend {
+  text: string;
+  files?: AttachedFile[];
+  mentions?: TrackedMention[];
+  attachments: AttachmentSubmission;
+  overrides: {
+    agent?: string | null;
+    model?: { providerID: string; modelID: string } | null;
+    variant?: string | null;
+    /** The same inbox key on Retry, so the wire id and the bubble stay the same. */
+    clientMessageId: string;
+  };
+}
+
+export interface HeldSendFailure {
+  message: string;
+  send: HeldSend;
+}
+
+interface HeldSendFailureState {
+  /** Kortix session id → message id → the painted send whose upload failed. */
+  failuresBySession: Record<string, Record<string, HeldSendFailure>>;
+  setHeldSendFailure: (sessionId: string, messageId: string, failure: HeldSendFailure) => void;
+  clearHeldSendFailure: (sessionId: string, messageId: string) => void;
+}
+
+/**
+ * Follow-up sends whose uploads failed after the bubble was painted.
+ *
+ * The bubble lives in the global sync store and is inbox-backed, so it outlives
+ * `SessionChat`. Its failure must outlive it too: a remount (session switch and
+ * return) otherwise draws a message that was never POSTed as sent, with no
+ * Retry. The entry holds data, not a closure, so Retry runs through the
+ * `SessionChat` on screen.
+ */
+export const useHeldSendFailureStore = create<HeldSendFailureState>((set) => ({
+  failuresBySession: {},
+  setHeldSendFailure: (sessionId, messageId, failure) =>
+    set((s) => ({
+      failuresBySession: {
+        ...s.failuresBySession,
+        [sessionId]: { ...s.failuresBySession[sessionId], [messageId]: failure },
+      },
+    })),
+  clearHeldSendFailure: (sessionId, messageId) =>
+    set((s) => {
+      const failures = s.failuresBySession[sessionId];
+      if (!failures || !(messageId in failures)) return s;
+      const { [messageId]: _removed, ...rest } = failures;
+      const { [sessionId]: _session, ...others } = s.failuresBySession;
+      return {
+        failuresBySession: Object.keys(rest).length > 0 ? { ...others, [sessionId]: rest } : others,
+      };
+    }),
+}));
+
+/**
+ * Retry of a kept send, run when the user clicks Retry. It restarts the failed
+ * uploads (same `attachment_id`; finished uploads are not sent again), then
+ * calls `resend`. An upload that cannot restart keeps the send failed with
+ * that reason. A message with no kept failure sends nothing, so a second click
+ * cannot send twice.
+ */
+export function retryHeldSend(
+  sessionId: string,
+  messageId: string,
+  resend: (send: HeldSend) => Promise<unknown>,
+  describe: (error: unknown) => string,
+): void {
+  const store = useHeldSendFailureStore.getState();
+  const failure = store.failuresBySession[sessionId]?.[messageId];
+  if (!failure) return;
+  store.clearHeldSendFailure(sessionId, messageId);
+  try {
+    failure.send.attachments.retry();
+  } catch (error) {
+    store.setHeldSendFailure(sessionId, messageId, { message: describe(error), send: failure.send });
+    return;
+  }
+  // A failed POST is surfaced by the send path itself.
+  void resend(failure.send).catch(() => {});
+}
 
 // `usePendingQueueStore` used to live here: a single global list of messages
 // typed in the instant shell, consumed once by whichever `SessionChat` mounted

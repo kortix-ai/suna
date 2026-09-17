@@ -18,3 +18,8 @@ output "log_group" {
 output "dns_records" {
   value = try(one(module.dns[*].record_hostnames), null)
 }
+
+output "project_snapshot_bucket" {
+  description = "Value for KORTIX_PROJECT_SNAPSHOT_S3_BUCKET in this environment's non-secret task env overrides."
+  value       = module.project_snapshots.bucket_name
+}

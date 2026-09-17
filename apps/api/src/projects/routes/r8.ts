@@ -1,3 +1,9 @@
+import { promptConnectorRefusalBody } from '../lib/prompt-connector-refusal';
+import {
+  missingPromptConnectorConnections,
+  PromptConnectorPreflightUnresolved,
+} from '../lib/prompt-connector-preflight';
+import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
@@ -33,7 +39,7 @@ import {
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { resolveChangeRequestBase } from '../change-request-policy';
+import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -54,6 +60,7 @@ import {
   stopSession,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/engine';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   flattenPromptText,
@@ -417,12 +424,13 @@ projectsApp.openapi(
 // Admission — "may this prompt be delivered NOW?" — is not decided here. It is
 // decided at drain time by `admitInboxPrompt`, on the ORDER of this session's
 // own rows, because that answer changes between the POST and the delivery. A
-// live turn does not hold a prompt back: OpenCode queues it by arrival.
+// live turn holds later prompts until its terminal event releases the next row.
 
 const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
+  placement: z.enum(['transcript', 'composer']).optional(),
   prompt_id: z.string(),
   client_message_id: z.string(),
   message_id: z.string(),
@@ -431,6 +439,7 @@ const SessionPromptSchema = z.object({
   state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
   reason: z.string().nullable(),
   text: z.string(),
+  full_text: z.string().optional(),
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
@@ -443,6 +452,7 @@ const SessionPromptSchema = z.object({
  *  text PREVIEW and no parts at all, which is a display shape, not a restore
  *  shape. */
 const RemovedSessionPromptSchema = z.object({
+  placement: z.enum(['transcript', 'composer']).optional(),
   prompt_id: z.string(),
   client_message_id: z.string(),
   removed_message_ids: z.array(z.string()).optional(),
@@ -456,6 +466,7 @@ function serializeRemovedPrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const parts = Array.isArray(payload.parts) ? payload.parts : [];
   return {
+    placement: payload.placement === 'transcript' ? 'transcript' as const : 'composer' as const,
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
     // The ORIGINAL wire id, never the re-minted one: an undo re-creates the
@@ -492,7 +503,7 @@ projectsApp.openapi(
     responses: {
       200: json(z.any(), 'Already queued (same client_message_id)'),
       202: json(z.any(), 'Prompt queued'),
-      ...errors(400, 402, 404, 409),
+      ...errors(400, 402, 403, 404, 409, 503),
     },
   }),
   async (c: any) => {
@@ -540,6 +551,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const clientMessageId = normalizeString(body.client_message_id);
     const messageId = normalizeString(body.message_id);
+    if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
+      return c.json({ error: 'placement must be transcript or composer' }, 400);
+    }
     const rawParts = Array.isArray(body.parts) ? body.parts : [];
     if (!clientMessageId || clientMessageId.length > 128) {
       return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
@@ -574,6 +588,26 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
+    // Refuse before enqueueing: callers must see the actionable connector
+    // contract rather than a queue that looks like an active model turn.
+    try {
+      const refusal = promptConnectorRefusalBody(
+        await missingPromptConnectorConnections({
+          accountId: loaded.row.accountId,
+          projectId,
+          sessionId,
+          sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+          requestedAgent: overrides.agent,
+        }),
+      );
+      if (refusal) return c.json(refusal, 409);
+    } catch (error) {
+      if (error instanceof PromptConnectorPreflightUnresolved) {
+        return c.json({ error: error.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' }, 503);
+      }
+      throw error;
+    }
+
     // Same gate as start/wake: a prompt spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
     if (!billing.ok) {
@@ -606,6 +640,7 @@ projectsApp.openapi(
       idempotencyKey,
       clientMessageId,
       wireMessageId: messageId,
+      ...(body.placement ? { placement: body.placement } : {}),
       // OPT-IN, and only one producer sets it: the localStorage migration,
       // whose id is minted at page load — against a transcript this tab has
       // not read yet — for a message the user typed before their last reload.
@@ -769,6 +804,7 @@ projectsApp.openapi(
     // restores a 2000-char preview with no attachments and no model override —
     // a silent, unannounced loss on a button labelled "Undo".
     if (outcome.outcome === 'deleted') {
+      await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
       return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
     }
     if (outcome.outcome === 'delivering') {
@@ -778,12 +814,14 @@ projectsApp.openapi(
       // invisible to the model). Only "a step is answering it" still refuses.
       const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
       if (cancelled.outcome === 'cancelled') {
+        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
         return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
       }
       if (cancelled.outcome === 'not_forwarded') {
         // The row fell back into the queue while the cancel watched it.
         const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
         if (retried.outcome === 'deleted') {
+          await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
           return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
         }
       }
@@ -911,6 +949,7 @@ projectsApp.openapi(
     }
 
     await holdInboxPrompts(sessionId, body.held);
+    if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
     // After the write, before the read-back — either instant orders this
     // snapshot correctly against the hold it just applied (JAY-728).
     const observedAt = new Date().toISOString();
@@ -1034,7 +1073,18 @@ projectsApp.openapi(
     if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
     // The session must be resolved BEFORE the base, because a session's own
     // base is what the change request targets.
-    let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+    const actorIsSession = isProjectSessionPrincipal(c);
+    const originDecision = resolveChangeRequestOrigin({
+      actorIsSession,
+      actingSessionId: actorIsSession
+        ? ((c.get('sessionId') as string | null | undefined) ?? null)
+        : null,
+      requestedSessionId: normalizeString(body.session_id ?? body.sessionId),
+    });
+    if (!originDecision.ok) {
+      return c.json({ error: originDecision.error, code: originDecision.code }, 400);
+    }
+    let originSessionId = originDecision.originSessionId;
     let sessionBaseRef: string | null = null;
     if (originSessionId) {
       const [sessionRow] = await db
@@ -1047,15 +1097,21 @@ projectsApp.openapi(
           ),
         )
         .limit(1);
-      if (!sessionRow) originSessionId = null;
-      else sessionBaseRef = normalizeString(sessionRow.baseRef);
+      if (!sessionRow) {
+        if (actorIsSession) {
+          return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
+        }
+        originSessionId = null;
+      } else {
+        sessionBaseRef = normalizeString(sessionRow.baseRef);
+      }
     }
 
     const baseDecision = resolveChangeRequestBase({
       requested: normalizeString(body.base_ref ?? body.baseRef),
       sessionBase: sessionBaseRef,
       projectDefault: loaded.row.defaultBranch,
-      actorIsSession: isProjectSessionPrincipal(c),
+      actorIsSession,
     });
     if (!baseDecision.ok) {
       return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);

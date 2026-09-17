@@ -245,6 +245,29 @@ variable "ses_send_configuration_set_names" {
   default     = ["kortix-transactional"]
 }
 
+variable "project_snapshots_enabled" {
+  description = "Grant the TASK role access to project_snapshot_bucket_arn. A literal bool so the grant's count is known at plan time even when the bucket is created in the same apply."
+  type        = bool
+  default     = false
+}
+
+variable "project_snapshot_bucket_arn" {
+  description = <<-EOT
+    ARN of the environment's project-snapshot bucket (modules/project-snapshots-bucket).
+    Grants the TASK role s3:PutObject + s3:GetObject on its objects: the API's
+    leader worker publishes snapshots and presigns short-lived GETs for
+    sandboxes, plus s3:ListBucket on the bucket so a missing key is a 404. No Delete. Used only when project_snapshots_enabled.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "project_snapshot_kms_key_arn" {
+  description = "Customer-managed KMS key the snapshot bucket encrypts with, when it does; the task role is granted GenerateDataKey/Decrypt on it. Empty = SSE-S3, no KMS grant."
+  type        = string
+  default     = ""
+}
+
 variable "ses_send_region" {
   description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
   type        = string

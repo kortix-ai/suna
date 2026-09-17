@@ -192,3 +192,46 @@ export function buildLinkRepositoryPayload(
     ...iconPayload(state),
   };
 }
+
+/**
+ * Apply a repository choice from the `/new` list — source and GitHub owner in
+ * one update.
+ *
+ * Delegates the clearing rules to `withRepositorySource` so a switch cannot
+ * leak a repository or a branch across sources, then sets the installation the
+ * chosen owner is reached through.
+ */
+export function withRepositoryChoice(
+  state: NewWorkspaceFormState,
+  choice: { kind: RepositorySource; installationId: string | null },
+): NewWorkspaceFormState {
+  return { ...withRepositorySource(state, choice.kind), installationId: choice.installationId };
+}
+
+/**
+ * True when the `managed` source is importing an existing managed repository
+ * rather than provisioning a new one.
+ *
+ * `repoFullName` is null for every ordinary managed create — `/new` only ever
+ * sets it under `managed` through the operator-only managed-import picker — so
+ * its presence IS the distinction, and no fourth `RepositorySource` value is
+ * needed for a case that shares the source's meaning.
+ */
+export function isManagedImport(state: NewWorkspaceFormState): boolean {
+  return state.source === 'managed' && Boolean(state.repoFullName);
+}
+
+/**
+ * The request body for importing a repository the managed-git owner already
+ * holds: `link-repository`, through the managed credentials rather than a
+ * per-account GitHub App installation.
+ */
+export function buildManagedImportPayload(
+  state: NewWorkspaceFormState,
+  accountId: string | undefined,
+): LinkRepositoryInput {
+  // `source: 'managed'` is the explicit selector; a managed choice carries no
+  // installation id (`withRepositoryChoice` clears it), so the two can never
+  // both reach the route.
+  return { ...buildLinkRepositoryPayload(state, accountId), source: 'managed' };
+}

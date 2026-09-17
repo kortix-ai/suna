@@ -770,6 +770,37 @@ export const MANAGED_MODELS: ManagedModel[] = [
     },
   },
   {
+    // GPT-6 Astra uses OpenAI's standard OpenRouter endpoint. Verified against
+    // https://developers.openai.com/api/docs/models/gpt-6-astra and OpenRouter
+    // on 2026-09-15. Its pricingRef includes the low-to-max effort ladder and
+    // temperature:false; prompts above 272k tokens use the higher price tier.
+    id: 'gpt-6-astra',
+    name: 'GPT-6 Astra',
+    upstreamModelId: 'openai/gpt-6-astra',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/openai/gpt-6-astra',
+    pricing: {
+      inputPerMillion: 10,
+      cachedInputPerMillion: 1,
+      cacheWritePerMillion: 12.5,
+      outputPerMillion: 50,
+      contextOver200k: {
+        contextThreshold: 272_000,
+        inputPerMillion: 20,
+        cachedInputPerMillion: 2,
+        cacheWritePerMillion: 25,
+        outputPerMillion: 75,
+      },
+    },
+    tier: 'flagship',
+    vision: true,
+    limit: { context: 1_050_000, output: 128_000 },
+    openrouterProvider: {
+      order: ['openai'],
+      allow_fallbacks: true,
+    },
+  },
+  {
     // Z.ai's GLM 5.3 Flash (released 2026-08-26) via OpenRouter. 12 endpoints
     // serve the slug (measured 2026-08-27) and they are NOT interchangeable:
     //  - `z-ai` (first-party) and `novita`: $0.075/$0.25, cache read $0.015,
@@ -912,7 +943,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
-  codex: 'ChatGPT',
+  codex: 'ChatGPT subscription',
   google: 'Google',
   xai: 'xAI',
   moonshotai: 'Moonshot',

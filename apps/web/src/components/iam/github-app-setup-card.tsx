@@ -27,11 +27,23 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 // this file's sibling `sso-card.tsx` uses the same two-column `<dl>` for the
 // same job.
 //
-// On the hosted Kortix deployment (source 'env') the App is configured by the
-// operator via env vars — this card still renders there, but its footer says
-// so and offers no controls; the separate cloud `GitHubConnectionCard`
-// (per-account App installs) is what a hosted customer actually uses, gated on
-// `source === 'env'` at the call site in accounts/[id]/page.tsx.
+// WHERE THIS RENDERS: `/admin/git`, and nowhere else.
+//
+// It writes ONE instance-global row (`kortix.platform_settings.
+// managed_github_app`). It used to render inside the account-scoped Git tab,
+// and on 2026-09-16 a platform admin ran its manifest flow while looking at one
+// customer's account settings. The callback overwrote that row and every GitHub
+// connection on production broke for ~6 min. The card is platform surface now;
+// the account Git tab keeps `GitHubConnectionCard` (per-account App installs)
+// plus a read-only `ManagedGitNotice`. Do not mount this component anywhere
+// else — `/admin` is already platform-admin gated by `admin-shell.tsx`, which
+// is why this file carries no permission branch of its own.
+//
+// MUTABILITY: when the server owns the identity through env vars the status
+// reports `mutable: false`, and this card renders facts only — no manifest, no
+// paste, no PAT, no Reconfigure, no Disconnect. The API answers 409
+// `instance_identity_is_env_managed` to every mutation in that state, so the
+// same message is handled defensively on the error path too.
 
 import {
   ArrowSquareOutIcon as ExternalLink,
@@ -66,17 +78,38 @@ import {
   startGitHubAppManifest,
 } from '@kortix/sdk';
 
-export const GITHUB_APP_STATUS_KEY = ['github-app-status'];
+const GITHUB_APP_STATUS_KEY = ['github-app-status'];
 
-/** Shared so the accounts page can gate the cloud `GitHubConnectionCard` on
- *  the same status this card renders from — one query, one source of truth. */
-export function useGitHubAppStatus(enabled = true) {
+/**
+ * `GET /platform/github-app/status` is platform-admin only, and this card is
+ * its only caller. It is deliberately NOT exported: an account-scoped surface
+ * that called it would 403 for every account admin, which is how the card
+ * ended up with a "hide the error when it is a 403" branch in the first place.
+ * An account surface reads `getManagedGitBackend()` instead (`ManagedGitNotice`).
+ */
+function useGitHubAppStatus() {
   return useQuery({
     queryKey: GITHUB_APP_STATUS_KEY,
     queryFn: () => getGitHubAppStatus(),
     staleTime: 10_000,
-    enabled,
   });
+}
+
+/**
+ * The API refuses every managed-git mutation with 409 + `error:
+ * 'instance_identity_is_env_managed'` while the server environment owns the
+ * identity. The card already hides those controls when `status.mutable` is
+ * false; this is the defensive half, for a status read that was stale when the
+ * user clicked.
+ */
+function isEnvManagedConflict(error: unknown): boolean {
+  const err = error as
+    | { status?: number; data?: { error?: string } | null; response?: { status?: number } }
+    | null
+    | undefined;
+  if (!err) return false;
+  const status = err.status ?? err.response?.status;
+  return status === 409 && err.data?.error === 'instance_identity_is_env_managed';
 }
 
 /**
@@ -154,11 +187,7 @@ function methodLabel(source: GitHubAppStatus['source']): string {
   }
 }
 
-interface GitHubAppSetupCardProps {
-  canManage: boolean;
-}
-
-export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
+export function GitHubAppSetupCard() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const setupMethods = useLocalizedUiCatalog(SETUP_METHODS);
   const queryClient = useQueryClient();
@@ -181,7 +210,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const [patToken, setPatToken] = useState('');
   const [patOwner, setPatOwner] = useState('');
 
-  const statusQuery = useGitHubAppStatus(canManage);
+  const statusQuery = useGitHubAppStatus();
 
   // GitHub's install flow ends with the backend 302-ing back here with
   // `?github=connected` once the app is created + installed. Surface it once,
@@ -198,6 +227,18 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
   }, [githubReturnFlag]);
+
+  /** One error path for all four mutations: a 409 from the env-managed guard
+   *  is a state the card can correct itself (refetch, and the controls go
+   *  away), not a message to echo. */
+  function onMutationError(err: Error, fallback: string) {
+    if (isEnvManagedConflict(err)) {
+      errorToast(tI18nComplete.raw('textf40d94365439'));
+      queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
+      return;
+    }
+    errorToast(err.message || fallback);
+  }
 
   const startMutation = useMutation({
     mutationFn: () => startGitHubAppManifest({ org: org.trim() || undefined }),
@@ -217,7 +258,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       console.debug('[github-app] submitting manifest to GitHub:', manifest);
       submitManifestForm(github_create_url, state, manifest);
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text1db8b5fa8eb7')),
+    onError: (err: Error) => onMutationError(err, tI18nComplete.raw('text1db8b5fa8eb7')),
   });
 
   function onSetupSuccess(message: string) {
@@ -243,7 +284,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       setAppClientSecret('');
       onSetupSuccess('GitHub App connected');
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text66caa493b364')),
+    onError: (err: Error) => onMutationError(err, tI18nComplete.raw('text66caa493b364')),
   });
 
   const patMutation = useMutation({
@@ -253,7 +294,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       setPatOwner('');
       onSetupSuccess('GitHub token connected');
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6b4d673c26ae')),
+    onError: (err: Error) => onMutationError(err, tI18nComplete.raw('text6b4d673c26ae')),
   });
 
   const disconnectMutation = useMutation({
@@ -264,10 +305,8 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       setReconfiguring(false);
       queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6e9715f4f2a9')),
+    onError: (err: Error) => onMutationError(err, tI18nComplete.raw('text6e9715f4f2a9')),
   });
-
-  if (!canManage) return null;
 
   if (statusQuery.isLoading) {
     return (
@@ -281,24 +320,12 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     );
   }
 
-  // Account GitHub App connections render independently on the Git tab. Hide
-  // this server-level operator panel from account admins who are not platform
-  // admins. Other errors remain visible and retryable.
+  // No "hide it when it is a 403" branch any more. This card renders only
+  // inside `/admin`, which `admin-shell.tsx` already gates on the same
+  // platform-admin role the status endpoint requires — a 403 here is a real
+  // failure and is shown as one.
   if (statusQuery.isError || !statusQuery.data) {
-    // Robust auth-failure detection: the SDK's ApiError carries `.status`, but
-    // depending on the failure path the code can sit on `.response.status` or
-    // only in the message — a non-admin must NEVER see the scary generic error.
-    const err = statusQuery.error as {
-      status?: number;
-      response?: { status?: number };
-      message?: string;
-    } | null;
-    const status = err?.status ?? err?.response?.status;
-    const forbidden =
-      status === 403 ||
-      status === 401 ||
-      /\b(403|401|forbidden|unauthorized|admin access)\b/i.test(err?.message ?? '');
-    if (forbidden) return null;
+    const err = statusQuery.error as { message?: string } | null;
     return (
       <div className="space-y-4">
         <CardHeading />
@@ -319,7 +346,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   }
 
   const status: GitHubAppStatus = statusQuery.data;
-  const showSetup = !status.configured || reconfiguring;
+  // `mutable === false` means the server environment owns the identity. Every
+  // control below writes the instance-global row that env would shadow anyway,
+  // and the API answers 409 to all of them, so none of them render.
+  const envManaged = !status.mutable;
+  const showSetup = !envManaged && (!status.configured || reconfiguring);
   const anyPending = startMutation.isPending || appMutation.isPending || patMutation.isPending;
 
   return (
@@ -336,7 +367,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                 {tI18nComplete.raw('text0303e1824670')}
               </Badge>
             )}
-            {status.configured && status.source === 'env' ? (
+            {envManaged ? (
               <Badge variant="muted" size="sm">
                 {tI18nComplete.raw('text9e471951a1b4')}
               </Badge>
@@ -746,10 +777,26 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
           </dl>
 
           <div className="border-border border-t px-4 py-3">
-            {status.source === 'env' ? (
-              <p className="text-muted-foreground text-xs leading-relaxed">
-                {tI18nComplete.raw('textfe2edea70871')}
-              </p>
+            {envManaged ? (
+              // Facts, not controls. Naming the variables is the actionable
+              // part: it says exactly what an operator edits on the server.
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  {tI18nComplete.raw('textfe2edea70871')}
+                </p>
+                {status.env_owned_by.length > 0 ? (
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-muted-foreground text-xs">
+                      {tI18nComplete.raw('textbd6cc9a4cf4b')}
+                    </span>
+                    {status.env_owned_by.map((variable) => (
+                      <span key={variable} className="text-foreground font-mono text-xs">
+                        {variable}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button

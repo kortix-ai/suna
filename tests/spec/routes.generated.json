@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 637,
+  "count": 657,
   "routes": [
     {
       "method": "GET",
@@ -37,6 +37,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-rate-limit"
     },
     {
       "method": "POST",
@@ -529,6 +533,30 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
       "method": "GET",
@@ -1108,6 +1136,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/git/:project/project-snapshot"
+    },
+    {
+      "method": "GET",
       "path": "/v1/health"
     },
     {
@@ -1437,6 +1469,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/chunks/:index"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/attachments/:attachmentId/complete"
     },
     {
       "method": "GET",
@@ -1839,6 +1887,14 @@
       "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-access"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-access"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/model-defaults"
     },
@@ -1913,6 +1969,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
       "method": "GET",
@@ -2080,6 +2140,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
     },
     {
@@ -2201,6 +2273,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/create-repo"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend/repositories"
     },
     {
       "method": "DELETE",

@@ -448,7 +448,10 @@ export class Client {
       process.env.KE2E_GATEWAY_RETRIES ?? 3,
     ),
   ) {
-    this.origin = new URL(apiUrl).origin;
+    const base = new URL(apiUrl);
+    // Route templates already include /v1. Keep any reverse-proxy mount before it.
+    const mount = base.pathname.replace(/\/+$/, '').replace(/\/v1$/, '');
+    this.origin = base.origin + mount;
   }
 
   /** Clone bound to a principal/identity. */

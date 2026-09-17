@@ -82,7 +82,10 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
-import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
+import { AccountSecretResourcesPanel } from '@/features/workspace/customize/sections/view/account-secret-resources-panel';
+import {
+  ProviderAccessMenu,
+} from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
   useLiveLlmProviderCatalog,
@@ -97,9 +100,8 @@ import {
 } from '@/features/workspace/customize/sections/llm-provider/utils';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
-import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { deleteProjectProviderOAuth, deleteProjectSecret, getProjectDetail, upsertProjectSecret } from '@kortix/sdk';
+import { qk, refreshProjectProviderState, useAccountSecretResources, useFeatureFlag, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
@@ -110,11 +112,11 @@ import {
   PlugsIcon as Unplug,
   WarningCircleIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
- * (ChatGPT), Google Gemini". They are the top THREE ROWS, not the only rows —
+ * (ChatGPT), Google Gemini". They lead the BYOK rows after Kortix, not the only rows —
  * every other provider follows them in catalog order. Deliberately NOT
  * `POPULAR_PROVIDER_IDS` (`provider-branding.tsx:10-17`), which is a
  * different, six-member list that also carries `github-copilot`, `openrouter`
@@ -122,11 +124,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
  */
 export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
 
-/**
- * The DOM id of one credential input. Defined once because two places must
- * agree on it: the row that renders the field, and `ProviderDetail`'s Connect
- * button, which closes the detail and focuses that field.
- */
+/** Stable DOM id shared by a credential input and its label. */
 export function providerKeyFieldId(providerId: string, envVar: string): string {
   return `provider-connect-${providerId}-${envVar}`;
 }
@@ -207,14 +205,11 @@ export interface ProviderConnectViewProps {
   onRemoveKey?: (providerId: string) => void;
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
-  /**
-   * "Browse before you connect". When set, `detailSlot` REPLACES the list —
-   * the one capability the deleted `CatalogTab` drill-down had that an inline
-   * row does not.
-   */
-  detailProviderId?: string | null;
-  onOpenDetail?: (providerId: string | null) => void;
-  detailSlot?: ReactNode;
+  accessSlots?: Record<string, ReactNode>;
+  pooledSlots?: Record<string, ReactNode>;
+  pooledSecretsEnabled?: boolean;
+  /** Open the shared Models tab with all provider groups. */
+  onOpenModels?: (providerId: string) => void;
   className?: string;
 }
 
@@ -464,7 +459,7 @@ function ProviderKeyFields({
       ) : (
         // One border around the stack, `divide-y` for the seams — Bedrock's
         // three fields are one credential, so they get one box.
-        <div className="border-border divide-border dark:bg-input/30 divide-y overflow-hidden rounded-md border">
+        <div className="border-border divide-border bg-input divide-y overflow-hidden rounded-md border">
           {fields}
         </div>
       )}
@@ -513,7 +508,9 @@ function ProviderRow({
   onToggleReveal,
   onRemoveKey,
   subscriptionSlot,
-  onOpenDetail,
+  accessSlot,
+  pooledSlot,
+  onOpenModels,
 }: {
   row: ProviderConnectRow;
   values: Record<string, string>;
@@ -526,9 +523,12 @@ function ProviderRow({
   onToggleReveal: ProviderConnectViewProps['onToggleReveal'];
   onRemoveKey?: ProviderConnectViewProps['onRemoveKey'];
   subscriptionSlot?: ReactNode;
-  onOpenDetail?: (providerId: string) => void;
+  accessSlot?: ReactNode;
+  pooledSlot?: ReactNode;
+  onOpenModels?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
   const identity = (
     <div className="flex min-w-0 items-start gap-2.5">
       <ProviderLogo providerID={row.id} name={row.label} size="small" />
@@ -542,29 +542,32 @@ function ProviderRow({
               rel="noopener noreferrer"
               title={tI18nComplete('text2a94ea8db704', { value0: row.label })}
               aria-label={tI18nComplete('text2a94ea8db704', { value0: row.label })}
-              className="text-muted-foreground/50 hover:text-foreground shrink-0 transition-colors"
+              className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
             >
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           )}
+          {accessSlot}
         </div>
-        {onOpenDetail && row.modelCount > 0 && (
-          <button
-            type="button"
-            onClick={() => onOpenDetail(row.id)}
-            className="text-muted-foreground/50 hover:text-foreground mt-0.5 cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
-          >
-            {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
-            {row.modelCount === 1 ? '' : 's'}
-          </button>
-        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {onOpenModels && row.modelCount > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenModels(row.id)}
+              className="text-muted-foreground hover:text-foreground cursor-pointer text-xs tabular-nums underline underline-offset-2 transition-colors"
+            >
+              {row.modelCount} {tI18nComplete.raw('text9372c470eead')}
+              {row.modelCount === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 
   // Read-only members get the identity column and nothing else — no field to
   // type in, so no second column to line it up against either.
-  if (!canWrite) {
+  if (!canWrite && !pooledSlot) {
     return (
       <div className="py-1.5" data-provider-row={row.id}>
         {identity}
@@ -575,22 +578,47 @@ function ProviderRow({
   return (
     <div
       data-provider-row={row.id}
-      className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
+      className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
     >
       {identity}
-      <ProviderKeyFields
-        row={row}
-        values={values}
-        onValueChange={onValueChange}
-        onCommit={onCommit}
-        status={status}
-        errorMessage={errorMessage}
-        revealedFields={revealedFields}
-        onToggleReveal={onToggleReveal}
-        onRemoveKey={onRemoveKey}
-      >
-        {subscriptionSlot}
-      </ProviderKeyFields>
+      {pooledSlot ? (
+        <div className="min-w-0 space-y-2">
+          {pooledSlot}
+          {row.connected && canWrite && (
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-xs">{tPooled('legacyProjectKey')}</p>
+              <ProviderKeyFields
+                row={row}
+                values={values}
+                onValueChange={onValueChange}
+                onCommit={onCommit}
+                status={status}
+                errorMessage={errorMessage}
+                revealedFields={revealedFields}
+                onToggleReveal={onToggleReveal}
+                onRemoveKey={onRemoveKey}
+              />
+            </div>
+          )}
+          {subscriptionSlot}
+        </div>
+      ) : row.envVars.length === 0 ? (
+        <p className="text-muted-foreground py-2 text-xs text-pretty">{row.note}</p>
+      ) : (
+        <ProviderKeyFields
+          row={row}
+          values={values}
+          onValueChange={onValueChange}
+          onCommit={onCommit}
+          status={status}
+          errorMessage={errorMessage}
+          revealedFields={revealedFields}
+          onToggleReveal={onToggleReveal}
+          onRemoveKey={onRemoveKey}
+        >
+          {subscriptionSlot}
+        </ProviderKeyFields>
+      )}
     </div>
   );
 }
@@ -654,16 +682,14 @@ export function ProviderConnectView({
   search,
   onSearchChange,
   subscriptionSlots,
-  detailProviderId = null,
-  onOpenDetail,
-  detailSlot,
+  accessSlots,
+  pooledSlots,
+  pooledSecretsEnabled = false,
+  onOpenModels,
   className,
 }: ProviderConnectViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (detailProviderId && detailSlot) {
-    return <div className={cn('px-5 py-5', className)}>{detailSlot}</div>;
-  }
-
+  const tPooled = useTranslations('pooledSecrets');
   return (
     <div className={cn('flex flex-col gap-4 px-5 py-5', className)}>
       <InputGroupSearch data-provider-search="">
@@ -687,7 +713,9 @@ export function ProviderConnectView({
           auto-save nobody is told about is indistinguishable from an edit that
           was lost. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        {canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
+        {pooledSecretsEnabled
+          ? tPooled('sharedDescription')
+          : canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
       </p>
 
       {rows.length === 0 ? (
@@ -708,7 +736,9 @@ export function ProviderConnectView({
               onToggleReveal={onToggleReveal}
               onRemoveKey={onRemoveKey}
               subscriptionSlot={subscriptionSlots?.[row.id]}
-              onOpenDetail={onOpenDetail}
+              accessSlot={accessSlots?.[row.id]}
+              pooledSlot={pooledSlots?.[row.id]}
+              onOpenModels={onOpenModels}
             />
           ))}
         </div>
@@ -756,6 +786,18 @@ const CONNECTION_REFRESH_TIMEOUT_MS = 45_000;
  */
 export const PROVIDER_PAGE_SIZE = 12;
 
+// Mirrors the gateway's base-URL fallbacks in provider-registry.ts. A provider
+// without an API host or one of these fallbacks cannot create a gateway key.
+const GATEWAY_BASE_URL_FALLBACK_IDS = new Set([
+  'anthropic', 'openai', 'google', 'groq', 'x-ai', 'xai', 'mistral', 'deepseek',
+  'perplexity', 'cerebras', 'vercel', 'v0', 'deepinfra', 'togetherai',
+]);
+
+export function supportsPooledProviderKey(entry: LlmProviderEntry | undefined): boolean {
+  return Boolean(entry && entry.envVars.length === 1 &&
+    (entry.apiHost || GATEWAY_BASE_URL_FALLBACK_IDS.has(entry.id)));
+}
+
 function toRow(entry: LlmProviderEntry, connectedIds: Set<string>): ProviderConnectRow {
   return {
     id: entry.id,
@@ -777,6 +819,7 @@ export interface ProviderConnectProps {
   canWrite?: boolean;
   /** Set while this surface is visible; drives the underlying queries. */
   enabled?: boolean;
+  onOpenModels?: (providerId: string) => void;
   className?: string;
 }
 
@@ -784,11 +827,52 @@ export function ProviderConnect({
   projectId,
   canWrite = false,
   enabled = true,
+  onOpenModels,
   className,
 }: ProviderConnectProps) {
+  const access = useModelAccess(enabled ? projectId : null);
+  const pooledFlag = useFeatureFlag(enabled ? projectId : null, 'pooled_provider_secrets');
+  const pooledSecretsEnabled = pooledFlag.enabled;
+  const project = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: enabled && pooledSecretsEnabled,
+  });
+  const accountId = project.data?.project?.account_id;
+  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null);
+  const pooledProviderIds = useMemo(
+    () => new Set((pooledResources.data?.secrets ?? []).filter((secret) => secret.can_use && secret.active).map((secret) => secret.provider_id)),
+    [pooledResources.data],
+  );
+  const tAccess = useTranslations('modelAccess');
+  const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
+  const managedProvider = useMemo<LlmProviderEntry>(() => ({
+    id: 'kortix',
+    label: 'Kortix',
+    envVars: [],
+    authRequirement: { methods: [] },
+    helpUrl: null,
+    apiHost: null,
+    hint: tAccess('managedDescription'),
+    models: Object.entries(pickerCatalog?.models ?? {})
+      .filter(([id]) => !id.includes('/'))
+      .map(([id, model]) => ({
+        id,
+        name: model.name || id,
+        description: model.description,
+        reasoning: model.reasoning,
+        tool_call: model.tool_call,
+        attachment: model.attachment,
+        limit: model.limit,
+        cost: model.cost,
+      })),
+    featured: true,
+    managed: true,
+  }), [pickerCatalog, tAccess]);
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
   useLiveLlmProviderCatalog(projectId, enabled);
-  useLlmProviderCatalogRevision();
+  const catalogRevision = useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
   const queryClient = useQueryClient();
 
@@ -810,8 +894,6 @@ export function ProviderConnect({
   // `setState` in an effect body is what `react-hooks/set-state-in-effect`
   // flags, and it cost an extra render too.
   const [pendingRequest, setPendingRequest] = useState<string | null>(null);
-  const [detailProviderId, setDetailProviderId] = useState<string | null>(null);
-  const detailEntry = detailProviderId ? (LLM_PROVIDER_BY_ID.get(detailProviderId) ?? null) : null;
 
   const connectedIds = useMemo(
     () => new Set(connectedProviders.map((provider) => provider.id)),
@@ -826,7 +908,12 @@ export function ProviderConnect({
 
   // The revision subscription above re-renders this component after the live
   // catalog replaces the module binding.
-  const searchable = LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix');
+  const searchable = useMemo(() => [
+    ...(access.data?.enforced ? [managedProvider] : []),
+    ...LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix'),
+  // The module catalog is replaced out of band; its revision triggers a fresh read.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [access.data?.enforced, managedProvider, catalogRevision]);
 
   /**
    * THE list, in a FIXED order that a save never disturbs — see
@@ -837,7 +924,7 @@ export function ProviderConnect({
     () =>
       orderProviderRows({
         providers: searchable,
-        firstClassIds: FIRST_CLASS_PROVIDER_IDS,
+        firstClassIds: ['kortix', ...FIRST_CLASS_PROVIDER_IDS],
         connectedIds,
         search,
       }).map((entry) => toRow(entry, connectedIds)),
@@ -862,8 +949,8 @@ export function ProviderConnect({
    * instead: the rows before it come too, and nothing moves.
    */
   const lastConnectedIndex = useMemo(
-    () => rows.reduce((last, row, index) => (row.connected ? index : last), -1),
-    [rows],
+    () => rows.reduce((last, row, index) => (row.connected || pooledProviderIds.has(row.id) ? index : last), -1),
+    [rows, pooledProviderIds],
   );
   const limit = searching ? rows.length : Math.max(visibleCount, lastConnectedIndex + 1);
   const visibleRows = useMemo(() => rows.slice(0, limit), [rows, limit]);
@@ -1041,7 +1128,7 @@ export function ProviderConnect({
       null)
     : null;
 
-  if (providerStateLoading) {
+  if (providerStateLoading || pooledFlag.isLoading || (pooledSecretsEnabled && (project.isLoading || pooledResources.isLoading))) {
     return (
       <div
         className="flex min-h-[200px] items-center justify-center"
@@ -1056,6 +1143,33 @@ export function ProviderConnect({
   return (
     <>
       <ProviderConnectView
+        pooledSecretsEnabled={pooledSecretsEnabled}
+        pooledSlots={pooledSecretsEnabled ? Object.fromEntries(
+          visibleRows.filter((row) => supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get(row.id))).map((row) => [
+            row.id,
+            accountId ? <AccountSecretResourcesPanel
+              key={row.id}
+              accountId={accountId}
+              projectId={projectId}
+              providerId={row.id}
+              providerName={row.label}
+              envVar={row.envVars[0]!}
+              canWrite={true}
+            /> : <p key={row.id} className="text-muted-foreground text-xs">{tPooled('loadError')}</p>,
+          ]),
+        ) : undefined}
+        accessSlots={Object.fromEntries(
+          visibleRows.map((row) => [
+            row.id,
+            <ProviderAccessMenu
+              key={row.id}
+              access={access}
+              providerId={row.id}
+              name={row.id === 'kortix' ? tAccess('managedTitle') : row.label}
+              canWrite={canWrite}
+            />,
+          ]),
+        )}
         className={className}
         rows={visibleRows}
         totalCount={searchable.length}
@@ -1073,12 +1187,37 @@ export function ProviderConnect({
         search={search}
         onSearchChange={setSearch}
         subscriptionSlots={
-          canWrite
+          pooledSecretsEnabled && accountId ? {
+            openai: <div className="space-y-2">
+              <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <ProviderLogo providerID="openai" name="OpenAI" size="default" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground text-sm font-medium">{tPooled('chatGptAccounts')}</p>
+                    <p className="text-muted-foreground mt-0.5 text-xs leading-5">{tPooled('oauthPrivateDescription')}</p>
+                  </div>
+                  <ProviderAccessMenu access={access} providerId="codex" name="ChatGPT subscription" canWrite={canWrite} />
+                </div>
+                <AccountSecretResourcesPanel accountId={accountId} projectId={projectId} providerId="codex"
+                  providerName="ChatGPT Plus/Pro" envVar="CODEX_AUTH_JSON" canWrite={true}
+                  oauth={{ projectId, onConnected: setPendingRequest }} />
+              </div>
+              <ChatGptSubscriptionConnect projectId={projectId} onConnected={setPendingRequest} legacyOnly />
+            </div>,
+          } : canWrite
             ? {
                 // The ONLY live provider subscription flow in the repo. Anthropic
                 // has no OAuth anywhere — see this file's header comment.
                 openai: (
                   <ChatGptSubscriptionConnect
+                    accessSlot={
+                      <ProviderAccessMenu
+                        access={access}
+                        providerId="codex"
+                        name="ChatGPT subscription"
+                        canWrite={canWrite}
+                      />
+                    }
                     projectId={projectId}
                     onConnected={setPendingRequest}
                   />
@@ -1086,33 +1225,7 @@ export function ProviderConnect({
               }
             : undefined
         }
-        detailProviderId={detailProviderId}
-        onOpenDetail={setDetailProviderId}
-        detailSlot={
-          detailEntry ? (
-            <ProviderDetail
-              provider={detailEntry}
-              isConnected={connectedIds.has(detailEntry.id)}
-              canWrite={canWrite}
-              onBack={() => setDetailProviderId(null)}
-              // The credential field lives on the row BEHIND this detail, so
-              // Connect closes the detail and puts the caret in it. A button
-              // labelled "Connect" that only closes a panel is worse than none.
-              // `focusWithoutScroll` per repo convention — the field sits inside
-              // the panel's overflow-hidden scroller.
-              onConnect={() => {
-                const envVar = detailEntry.envVars[0];
-                setDetailProviderId(null);
-                if (!envVar) return;
-                requestAnimationFrame(() =>
-                  focusWithoutScroll(
-                    document.getElementById(providerKeyFieldId(detailEntry.id, envVar)),
-                  ),
-                );
-              }}
-            />
-          ) : undefined
-        }
+        onOpenModels={access.data?.enforced ? onOpenModels : undefined}
       />
 
       {/* The one destructive action on this screen. `ConfirmDialog` is mandatory

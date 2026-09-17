@@ -42,6 +42,140 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
 }
 
 describe('simple gateway pipeline', () => {
+  test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
+    const keys: string[] = [];
+    const upstream = Bun.serve({ port: 0, fetch: (request) => {
+      const key = request.headers.get('authorization') ?? '';
+      keys.push(key);
+      return new Response('limited', { status: 429, headers: { 'retry-after': key.includes('first') ? '7' : '120' } });
+    } });
+    try {
+      const response = await handleChatCompletions({
+        hooks: { ...hooks([], []), resolveUpstream: async () => [
+          { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
+          { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+        ] },
+        logger: { info() {}, warn() {}, error() {} },
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+      expect(response.status).toBe(429);
+      expect(response.headers.get('retry-after')).toBe('7');
+      expect(keys).toEqual(['Bearer first', 'Bearer second']);
+    } finally { await upstream.stop(true); }
+  });
+
+  test('pool failover never replays streamed output or a provider-wide failure', async () => {
+    for (const status of [200, 503]) {
+      const calls: string[] = [];
+      const response = await handleChatCompletions({
+        hooks: { ...hooks([], []), resolveUpstream: async () => [
+          { ...primary, poolSecretId: 'first', apiKey: 'first' },
+          { ...primary, poolSecretId: 'second', apiKey: 'second' },
+        ] },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_url, init) => {
+          calls.push(new Headers(init.headers).get('authorization') ?? '');
+          return new Response(status === 200
+            ? 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: {"error":{"code":429,"message":"limited"}}\n\ndata: [DONE]\n\n'
+            : 'provider unavailable', { status, headers: { 'content-type': 'text/event-stream' } });
+        },
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [] }) });
+      expect(response.status).toBe(status);
+      const body = await response.text();
+      if (status === 200) expect(body).toContain('hello');
+      expect(calls).toEqual(['Bearer first']);
+    }
+  });
+
+  test('a pooled credential moves to the next key after a pre-output 429', async () => {
+    const usedKeys: string[] = [];
+    const cooldowns: Array<{ secretId: string; seconds: number }> = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], []),
+        resolveUpstream: async () => [
+          { ...primary, poolSecretId: 'key-a', apiKey: 'first' },
+          { ...primary, poolSecretId: 'key-b', apiKey: 'second' },
+        ],
+        notePoolRateLimit: async (_principal, secretId, seconds) => { cooldowns.push({ secretId, seconds }); },
+      },
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (_url, init) => {
+        const credential = new Headers(init.headers).get('authorization') ?? '';
+        usedKeys.push(credential);
+        return new Response(credential.includes('first') ? 'limited' : '{"choices":[]}', {
+          status: credential.includes('first') ? 429 : 200,
+          headers: credential.includes('first') ? { 'retry-after': '12' } : undefined,
+        });
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(usedKeys).toEqual(['Bearer first', 'Bearer second']);
+    expect(cooldowns).toEqual([{ secretId: 'key-a', seconds: 12 }]);
+  });
+  test('a pool exhausts each key once and returns the provider rate limit', async () => {
+    const usedKeys: string[] = [];
+    const cooldowns: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], []),
+        resolveUpstream: async () => [
+          { ...primary, poolSecretId: 'key-a', apiKey: 'first' },
+          { ...primary, poolSecretId: 'key-b', apiKey: 'second' },
+        ],
+        notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
+      },
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (_url, init) => {
+        usedKeys.push(new Headers(init.headers).get('authorization') ?? '');
+        return new Response('limited', { status: 429, headers: { 'retry-after': '8' } });
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('8');
+    expect(usedKeys).toEqual(['Bearer first', 'Bearer second']);
+    expect(cooldowns).toEqual(['key-a', 'key-b']);
+  });
+
+// The admission hook is a NETWORK call to the API control plane on the
+  // standalone gateway. Every other hook the handler calls classifies its own
+  // failure (resolveRoute -> 502 routing_unavailable, resolveUpstream -> 400,
+  // billing/budget -> 402); `authorize` did not, so a control-plane transport
+  // failure escaped the whole pipeline and was reported by the server's
+  // catch-all as `503 gateway_error "Gateway unavailable"` with empty model
+  // fields — indistinguishable from a gateway crash. Classify it here instead.
+  test('classifies an admission-hook transport failure instead of letting it escape', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const errors: string[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          authorize: async () => {
+            throw new Error('attempt 3 exceeded 5000ms');
+          },
+        },
+        logger: {
+          info() {},
+          warn() {},
+          error(message: string) {
+            errors.push(message);
+          },
+        },
+        fetchImpl: async () => new Response('{}', { status: 200 }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [] }),
+      },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { code: string; error: { code: string } };
+    expect(body.code).toBe('admission_unavailable');
+    expect(body.error.code).toBe('admission_unavailable');
+    expect(errors.join(' ')).toContain('admission');
+  });
+
   test('aborts a provider fetch that does not return response headers before the deadline', async () => {
     const fetchWithTimeout = withUpstreamHeadersTimeout(
       async (_input, init) =>

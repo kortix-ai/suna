@@ -4,6 +4,7 @@
  *  user-message card. Full-width card, no reference chips. */
 
 import { useTranslations } from '@/i18n/use-translations';
+import { sanitizePromptUploadFilename } from '@kortix/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -50,6 +51,11 @@ import {
   isPreviewableImage,
 } from '../attachment-tile';
 import { MentionChip } from '../mention-chip';
+import {
+  releaseSentAttachmentPreview,
+  sentAttachmentPreview,
+  type SentAttachment,
+} from '../sent-attachment-previews';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
 import {
   parseAgentMentionReferences,
@@ -436,23 +442,29 @@ export const BUBBLE_TEXT = cn(
 
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
+  // Queue tone comes from the nearest `data-queue-tone` wrapper. The ring is
+  // inset so the transcript's overflow clip never cuts its right edge.
+  'ring-inset transition-[box-shadow] duration-(--duration-moderate) ease-(--ease-out)',
+  ' in-data-[queue-tone=pending]:bg-kortix-yellow/40!',
+  ' in-data-[queue-tone=held]:bg-kortix-orange/40!',
+  ' in-data-[queue-tone=failed]:bg-kortix-red/40!',
 );
 
 export interface NormalizedAttachment {
   key: string;
+  /** The attachment identity of a file this tab sent — see `sent-attachment-previews.ts`. */
+  id?: string;
   filename: string;
   mime?: string;
   src?: string;
   path?: string;
-  /** The bytes are still on their way to the sandbox. */
-  pending?: boolean;
 }
 
 interface OrderedUploadReference {
   path: string;
   mime: string;
   filename: string;
-  pending?: string;
+  attachment?: string;
   sourcePartIndex: number;
 }
 
@@ -513,15 +525,12 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
 /**
  * The attachment strip's input, merged in original message-part order.
  *
- * Uploads are keyed by POSITION first, then by their pending id or path. Keying
- * on the path alone was a duplicate-key generator: an optimistic ref carries no
- * path at all until the daemon answers, and three screenshots pasted in one
- * message are all named `image.png`, so they used to produce three identical
- * `upload:/workspace/uploads/image.png` keys and React collapsed them.
+ * A sent ref is keyed by its attachment identity. Any other upload is keyed by
+ * POSITION first, then its path: three screenshots pasted in one message are
+ * all named `image.png`, and path-only keys made React collapse them.
  *
- * A ref with no path is still in flight, so it renders `pending` — a spinner
- * over its own name — instead of asking the sandbox for a file that does not
- * exist yet.
+ * A user attachment is never pending. A ref with no path is a file the runtime
+ * does not hold yet; it draws its sent picture or its name, never a spinner.
  */
 export function normalizeAttachments(
   parts: readonly Part[],
@@ -529,7 +538,7 @@ export function normalizeAttachments(
     path: string;
     mime: string;
     filename: string;
-    pending?: string;
+    attachment?: string;
     sourcePartIndex?: number;
   }>,
 ): NormalizedAttachment[] {
@@ -549,12 +558,12 @@ export function normalizeAttachments(
 
   const addUpload = (file: (typeof uploads)[number], index: number) => {
     normalized.push({
-      key: `upload:${index}:${file.pending ?? file.path}`,
+      key: file.attachment ? `attachment:${file.attachment}` : `upload:${index}:${file.path}`,
+      ...(file.attachment ? { id: file.attachment } : {}),
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
       src: file.path || undefined,
       path: file.path || undefined,
-      pending: Boolean(file.pending) || !file.path,
     });
   };
 
@@ -575,6 +584,47 @@ export function normalizeAttachments(
 
   for (const { file, index } of unpositionedUploads) addUpload(file, index);
   return normalized;
+}
+
+/**
+ * The strip of a message this tab sent: its submitted list in send order, each
+ * entry keyed by its attachment identity.
+ *
+ * An entry draws the delivered tile that matches it (same identity, else the
+ * next unclaimed tile with the same filename), or its own tile until that part
+ * renders. The runtime streams the text part before the file parts, so the
+ * strip never shrinks and no tile remounts. Unclaimed delivered tiles follow.
+ * A reload has no submitted list and draws what arrived.
+ */
+export function mergeSentAttachments(
+  arrived: NormalizedAttachment[],
+  sent: ReadonlyArray<SentAttachment> | undefined,
+): NormalizedAttachment[] {
+  if (!sent?.length) return arrived;
+  const unclaimed = [...arrived];
+  const claim = (entry: SentAttachment) => {
+    let index = entry.id ? unclaimed.findIndex((tile) => tile.id === entry.id) : -1;
+    if (index < 0) {
+      // The API stores a sanitized name for an attachment and a trimmed name for an inline part.
+      const names = new Set([
+        entry.filename,
+        entry.filename.trim(),
+        sanitizePromptUploadFilename(entry.filename),
+      ]);
+      index = unclaimed.findIndex((tile) => !tile.id && names.has(tile.filename));
+    }
+    return index < 0 ? undefined : unclaimed.splice(index, 1)[0];
+  };
+  const drawn = sent.map((entry, index): NormalizedAttachment => {
+    const tile = claim(entry);
+    const identity = entry.id
+      ? { key: `attachment:${entry.id}`, id: entry.id }
+      : { key: `sent:${index}:${entry.filename}` };
+    return tile
+      ? { ...tile, ...identity }
+      : { ...identity, filename: entry.filename, mime: entry.mime };
+  });
+  return [...drawn, ...unclaimed];
 }
 
 /**
@@ -611,9 +661,9 @@ export function planAttachmentGrid(
   };
 }
 
-/** True when we can actually paint this attachment rather than name it. */
+/** A picture tile: a previewable image with a delivered source or a sent identity. */
 const isImageAttachment = (file: NormalizedAttachment) =>
-  Boolean(file.src && isPreviewableImage(file.filename, file.mime));
+  isPreviewableImage(file.filename, file.mime) && Boolean(file.src || file.id);
 
 // `AttachmentTile` (name top-left, extension badge bottom-left, or the picture
 // itself) lives in `../attachment-tile` — shared with the composer's preview so
@@ -622,43 +672,31 @@ const isImageAttachment = (file: NormalizedAttachment) =>
 /**
  * An image attachment: a square tile that opens full-size on click.
  *
- * Resolving the src here (rather than handing the path to `SandboxImage`) buys
- * two things: the lightbox gets the same URL the tile is already showing, and
- * the tile is free to be any size — `SandboxImage` pins its loading and error
- * states to an 80px minimum, which is what produced the oversized "Image
- * unavailable" block.
+ * Source order: the picture the composer showed (a file this tab sent, from
+ * the first frame), then the delivered source. The delivered source loads
+ * offscreen, and the tile swaps to it only after `img.decode()` resolves, so it
+ * never passes through a spinner or a name tile. With neither (a reload, bytes
+ * still loading) the tile is the named tile and swaps once when they decode.
  *
- * A tile that cannot resolve falls back to the named treatment. It used to
- * render an empty `<span>`, which is how eleven attachments became eleven blank
- * boxes — the layout looked broken on top of being ugly, and nothing on screen
- * said which picture was missing.
+ * Resolving the src here (rather than handing the path to `SandboxImage`) gives
+ * the lightbox the URL the tile shows, at any tile size.
  */
-function AttachmentImage({
-  file,
-  className,
-  pending,
-}: {
-  file: NormalizedAttachment;
-  className?: string;
-  /** The whole message is still being sent. */
-  pending?: boolean;
-}) {
-  const { resolvedSrc, isLoading } = useSandboxImageSrc(file.src!);
+function AttachmentImage({ file, className }: { file: NormalizedAttachment; className?: string }) {
+  // Read at mount: the cache revokes this URL once the delivered source decodes.
+  const [sentPreview] = useState(() => sentAttachmentPreview(file.id));
+  const { resolvedSrc } = useSandboxImageSrc(file.src ?? '');
+  // With no sent picture on screen, bytes the browser already holds show on the first frame. A
+  // sent picture stays until the delivered source decodes. HEIC may not decode here, so it waits.
+  const decodedSrc = useDecodedImageSrc(resolvedSrc, !sentPreview && !isHeicImage(file));
+  const shownSrc = decodedSrc ?? sentPreview;
 
-  if (!resolvedSrc) {
-    // An image that has not resolved is either still arriving or never will.
-    // Both used to render an empty box; now the first spins and the second
-    // falls back to the named tile, so the tile always says which it is.
-    return (
-      <AttachmentTile
-        filename={file.filename}
-        mime={file.mime}
-        pending={pending || isLoading || file.pending}
-        className={className}
-      />
-    );
+  useEffect(() => {
+    if (decodedSrc && file.id) releaseSentAttachmentPreview(file.id);
+  }, [decodedSrc, file.id]);
+
+  if (!shownSrc) {
+    return <AttachmentTile filename={file.filename} mime={file.mime} className={className} />;
   }
-
   return (
     <PreviewImage>
       <PreviewImageTrigger asChild>
@@ -671,14 +709,47 @@ function AttachmentImage({
           <AttachmentTile
             filename={file.filename}
             mime={file.mime}
-            imageSrc={resolvedSrc}
+            imageSrc={shownSrc}
             className="border-0 bg-transparent"
           />
         </button>
       </PreviewImageTrigger>
-      <PreviewImageContent fileContent={resolvedSrc} fileName={file.filename} fullscreen />
+      <PreviewImageContent fileContent={shownSrc} fileName={file.filename} fullscreen />
     </PreviewImage>
   );
+}
+
+/** Bytes the browser already holds: an inline part or a local object URL. */
+const IN_BROWSER_SOURCE = /^(data|blob):/i;
+
+const isHeicImage = (file: NormalizedAttachment) =>
+  /^image\/hei[cf]\b/i.test(file.mime ?? '') || /\.hei[cf]$/i.test(file.filename);
+
+/**
+ * `src` once it can show without a visible swap. With `showBytesNow`, a `data:` or `blob:`
+ * source shows on the first frame. Any other source decodes offscreen first; until then the
+ * last decoded source, or null.
+ */
+function useDecodedImageSrc(src: string | null, showBytesNow: boolean): string | null {
+  const [decoded, setDecoded] = useState<string | null>(null);
+  const now = showBytesNow && !!src && IN_BROWSER_SOURCE.test(src);
+  useEffect(() => {
+    if (!src || now) return;
+    let cancelled = false;
+    const image = new Image();
+    image.src = src;
+    image.decode().then(
+      () => {
+        if (!cancelled) setDecoded(src);
+      },
+      // Undecodable here (a HEIC echo, a broken file): keep what is on screen.
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [src, now]);
+  return now ? src : decoded;
 }
 
 /**
@@ -694,110 +765,113 @@ function AttachmentImage({
  * so the shell → chat crossfade never swaps card chrome for tile chrome.
  */
 /**
- * What the attachment strip should say about bytes still in flight.
+ * A failed send, the one attachment state the strip says out loud.
  *
- * The runtime does not create the user's message until every attachment has
- * been written to the box, so between Enter and that moment the ONLY thing on
- * screen is this bubble. A tile's spinner says "this file", and nothing said
- * how many were left or that one had failed — a stuck upload and a slow one
- * looked identical for minutes (2026-09-04).
+ * Upload progress lives on the composer tile only. A sent message is a
+ * finished object from its first frame, so the strip has no uploading state.
  */
 export interface AttachmentUploadStatus {
-  state: 'uploading' | 'failed';
-  /** Why it failed, shown verbatim. Ignored while uploading. */
+  state: 'failed';
+  /** Why it failed, shown verbatim. */
   message?: string;
+  /** Sends the message again. Present when the host kept a failed send on screen. */
+  onRetry?: () => void;
 }
 
 export function MessageAttachments({
   attachments,
-  pending,
   status,
 }: {
   attachments: NormalizedAttachment[];
-  /** The whole message is still being sent, so every tile is still uploading. */
-  pending?: boolean;
-  /** Progress for the strip as a whole — see {@link AttachmentUploadStatus}. */
+  /** A failed send — see {@link AttachmentUploadStatus}. */
   status?: AttachmentUploadStatus;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
 
   const { visible, hidden } = planAttachmentGrid(attachments, expanded);
-  if (visible.length === 0) return null;
-  const hasPendingAttachment = Boolean(pending) || attachments.some((file) => file.pending);
 
-  // Only a FAILURE gets a line: it is the one state a tile cannot show on its
-  // own. Uploading is already on every tile as its spinner — a second
-  // "Uploading N files…" line said the same thing twice (Jay, 2026-09-06).
-  const caption = status?.state === 'failed' ? (status.message ?? 'Upload failed') : null;
+  // A sent message never shows upload chrome: no spinner, no progress, no
+  // status text. A failed send is the one state a tile cannot show, so only it
+  // gets a line: "Couldn't send", then the reason when one is known. A kept
+  // send with no files (a text-only send delivered detached) gets the line too.
+  const failed = status?.state === 'failed' ? status : null;
+  if (visible.length === 0 && !failed) return null;
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <ul className="flex max-w-md flex-wrap justify-end gap-2">
-        {visible.map((file, index) => {
-          // The LAST visible tile carries the overflow count over its own
-          // contents, so the grid never shows a blank slot — the count is an
-          // overlay, not a placeholder. It opens the rest instead of the file, so
-          // it is a plain button: nesting one inside the preview trigger would be
-          // two buttons deep and invalid.
-          if (hidden > 0 && index === visible.length - 1) {
+      {visible.length > 0 && (
+        <ul className="flex max-w-md flex-wrap justify-end gap-2">
+          {visible.map((file, index) => {
+            // The LAST visible tile carries the overflow count over its own
+            // contents, so the grid never shows a blank slot — the count is an
+            // overlay, not a placeholder. It opens the rest instead of the file, so
+            // it is a plain button: nesting one inside the preview trigger would be
+            // two buttons deep and invalid.
+            if (hidden > 0 && index === visible.length - 1) {
+              return (
+                <li key={file.key} className="contents">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpanded(true);
+                    }}
+                    aria-label={tI18nComplete('textf9c98eec768a', {
+                      value0: hidden,
+                      value1: hidden === 1 ? '' : 's',
+                    })}
+                    className={cn(
+                      TILE_SURFACE,
+                      TILE_INTERACTIVE,
+                      'text-muted-foreground flex items-center justify-center text-sm font-medium',
+                    )}
+                  >
+                    +{hidden}
+                  </button>
+                </li>
+              );
+            }
+
+            if (isImageAttachment(file)) {
+              return (
+                <li key={file.key} className="contents">
+                  <AttachmentImage file={file} />
+                </li>
+              );
+            }
+
+            const canOpen = Boolean(file.path);
             return (
               <li key={file.key} className="contents">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded(true);
-                  }}
-                  aria-label={tI18nComplete('textf9c98eec768a', {
-                    value0: hidden,
-                    value1: hidden === 1 ? '' : 's',
-                  })}
-                  className={cn(
-                    TILE_SURFACE,
-                    TILE_INTERACTIVE,
-                    'text-muted-foreground flex items-center justify-center text-sm font-medium',
-                  )}
-                >
-                  +{hidden}
-                </button>
+                <AttachmentTile
+                  filename={file.filename}
+                  mime={file.mime}
+                  onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
+                />
               </li>
             );
-          }
-
-        if (isImageAttachment(file)) {
-          return (
-            <li key={file.key} className="contents">
-              <AttachmentImage file={file} pending={pending} />
-            </li>
-          );
-        }
-
-        const canOpen = Boolean(file.path);
-        return (
-          <li key={file.key} className="contents">
-            <AttachmentTile
-              filename={file.filename}
-              mime={file.mime}
-              pending={pending || file.pending}
-              onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
-            />
-          </li>
-        );
-      })}
-      </ul>
-      {caption && (
-        // Right-aligned under the strip, on the same rail as the tiles. One
-        // muted line: this is a progress note, not a status card. Failure
-        // reuses the same rung — the WORDS carry the difference, so a failed
-        // upload never needs a colour the palette does not have.
+          })}
+        </ul>
+      )}
+      {failed && (
+        // Right-aligned under the strip, on the same rail as the tiles. Muted
+        // text, not a status card: the WORDS carry the failure, so it needs no
+        // colour the palette does not have.
         <p
           className="text-muted-foreground max-w-md text-right text-xs leading-tight"
-          role={status?.state === 'failed' ? 'alert' : 'status'}
+          role="alert"
         >
-          {caption}
+          {tComposerAttachments('couldNotSend')}
+          {failed.message && <span className="block">{failed.message}</span>}
         </p>
+      )}
+      {failed?.onRetry && (
+        <Button type="button" variant="ghost" size="xs" onClick={failed.onRetry}>
+          {tI18nComplete('text942087cc2d41')}
+        </Button>
       )}
     </div>
   );
@@ -864,7 +938,7 @@ export function UserMessageBubble({
         BUBBLE_SURFACE,
         'relative overflow-hidden',
         fullWidth ? 'w-full' : 'w-fit',
-        canExpand && 'cursor-pointer transition-colors',
+        canExpand && 'cursor-pointer',
       )}
       onClick={() => canExpand && onToggle()}
     >
@@ -970,9 +1044,7 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
-  leading,
   leadingStatus,
-  alwaysVisible = false,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -985,21 +1057,11 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered FIRST in the fade group: a queued prompt's controls
-   * (`QueuedPromptActions`) — remove, send-now, retry. Same row as copy /
-   * rewind so a pending bubble does not grow a second strip, and so the X
-   * does not reserve a column beside the bubble.
-   */
-  leading?: React.ReactNode;
-  /**
-   * Rendered before `leading` and ALWAYS visible — a queued prompt's status
-   * word (`QueuedPromptStatus`). The dim is what marks a bubble as queued;
-   * the word is what makes the dim legible, so it does not wait for a hover.
+   * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
+   * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
+   * sending prompts render no words; the bubble's queue tone carries them.
    */
   leadingStatus?: React.ReactNode;
-  /** Keep the row visible without hover — a failed send must not be a thing
-   *  the user has to hunt for. */
-  alwaysVisible?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -1008,7 +1070,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leading && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !leadingStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -1022,30 +1084,27 @@ export function UserMessageActions({
       <div
         className={cn(
           'flex items-center gap-2 transition-opacity duration-150',
-          alwaysVisible
-            ? 'opacity-100'
-            : // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
-              //
-              // A touch screen has no hover, so under 768px this row would sit
-              // at zero opacity for the whole session: the timestamp, Copy and
-              // Edit-from-here all present, all invisible, all unreachable.
-              // Worse than absent, because the row still holds its height.
-              //
-              // Touch browsers also emulate `:hover` on tap and leave it stuck
-              // on the last-tapped element until you tap elsewhere — so the
-              // pre-fix behavior was not "never shows", it was "one arbitrary
-              // turn's actions stay lit while every other turn's stay hidden".
-              //
-              // Appended rather than folded into the desktop classes on
-              // purpose: the only utility it truly conflicts with is the bare
-              // `opacity-0`, and a variant always sorts after its bare
-              // counterpart. The two `opacity-100` variants it sits beside
-              // agree with it, so no ordering assumption is being made and the
-              // desktop string is unchanged.
-              'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
+          // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
+          //
+          // A touch screen has no hover, so under 768px this row would sit
+          // at zero opacity for the whole session: the timestamp, Copy and
+          // Edit-from-here all present, all invisible, all unreachable.
+          // Worse than absent, because the row still holds its height.
+          //
+          // Touch browsers also emulate `:hover` on tap and leave it stuck
+          // on the last-tapped element until you tap elsewhere — so the
+          // pre-fix behavior was not "never shows", it was "one arbitrary
+          // turn's actions stay lit while every other turn's stay hidden".
+          //
+          // Appended rather than folded into the desktop classes on
+          // purpose: the only utility it truly conflicts with is the bare
+          // `opacity-0`, and a variant always sorts after its bare
+          // counterpart. The two `opacity-100` variants it sits beside
+          // agree with it, so no ordering assumption is being made and the
+          // desktop string is unchanged.
+          'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
         )}
       >
-        {leading}
         {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
           entirely when there is no meta at all — the optimistic turn would
@@ -1200,9 +1259,7 @@ export function UserMessage({
   editPending,
   onEditCancel,
   onEditSend,
-  leadingActions,
   leadingStatus,
-  actionsAlwaysVisible = false,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1236,21 +1293,16 @@ export function UserMessage({
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
   onEditSend?: (messageId: string, text: string) => void;
-  /** See `UserMessageActions.leading` — a queued prompt's status + controls. */
-  leadingActions?: React.ReactNode;
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
-  /** See `UserMessageActions.alwaysVisible`. */
-  actionsAlwaysVisible?: boolean;
   /**
-   * Files this message is KNOWN to carry that its parts do not show yet. The
-   * runtime streams a message's parts text-first and the file parts seconds
-   * later; drawing these as pending tiles in the meantime is what keeps the
-   * strip from blinking out for that window. Deduped by name against the
-   * parts that have arrived.
+   * The files this message's Send carried, in send order. The runtime streams
+   * a message's parts text-first and the file parts seconds later; these keep
+   * every tile on screen, keyed by identity, until its delivered part renders
+   * (`mergeSentAttachments`).
    */
-  pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
-  /** What the strip says while `pendingAttachments` are in flight. */
+  pendingAttachments?: ReadonlyArray<SentAttachment>;
+  /** A failed accepted send remains visible until retry. */
   uploadStatus?: AttachmentUploadStatus;
   /**
    * The prompt's text as the sender knew it, for the frames where this
@@ -1306,20 +1358,11 @@ export function UserMessage({
 
   // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
   // parsed and then discarded — see `normalizeAttachments`.
-  const allAttachments = useMemo(() => {
-    const arrived = normalizeAttachments(message.parts, uploadedFiles);
-    if (!pendingAttachments?.length) return arrived;
-    const drawn = new Set(arrived.map((tile) => tile.filename));
-    const missing = pendingAttachments
-      .filter((file) => !drawn.has(file.filename))
-      .map((file, index) => ({
-        key: `pending:${message.info.id}:${index}:${file.filename}`,
-        filename: file.filename,
-        mime: file.mime,
-        pending: true,
-      }));
-    return [...arrived, ...missing];
-  }, [message.parts, uploadedFiles, pendingAttachments, message.info.id]);
+  const allAttachments = useMemo(
+    () =>
+      mergeSentAttachments(normalizeAttachments(message.parts, uploadedFiles), pendingAttachments),
+    [message.parts, uploadedFiles, pendingAttachments],
+  );
 
   /**
    * Whether THIS turn draws the plan.
@@ -1460,9 +1503,7 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
-      leading={leadingActions}
       leadingStatus={leadingStatus}
-      alwaysVisible={actionsAlwaysVisible}
     />
   );
 
@@ -1709,7 +1750,8 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {allAttachments.length > 0 && (
+      {/* A kept failed send with no files still states its failure, with Retry. */}
+      {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
       )}
 

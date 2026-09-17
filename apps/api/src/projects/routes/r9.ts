@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { refusesSelfMerge } from '../change-request-policy';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -17,6 +17,7 @@ import {
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString, readBody } from '../lib/serializers';
 
 projectsApp.openapi(
@@ -68,21 +69,22 @@ projectsApp.openapi(
       return c.json({ error: `Change request is ${cr.status}` }, 409);
     }
 
-    // A session may not merge the change request it opened — see
-    // change-request-policy.ts for why this is the only place it can be
-    // enforced (the merge writes the base ref server-side, never through the
-    // git proxy).
+    // An explicit agent grant permits self merge. Ungoverned sessions keep the
+    // original protection because a null grant makes assertAgentScope a no-op.
+    const agentGrant = getAgentGrant(c);
     if (
       refusesSelfMerge({
         actingSessionId: (c.get('sessionId') as string | null | undefined) ?? null,
         originSessionId: cr.originSessionId ?? null,
+        hasExplicitMergeGrant: agentGrant !== null
+          && agentMayPerform(agentGrant, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE),
       })
     ) {
       return c.json(
         {
           error:
-            `Change request #${cr.number} was opened by this session, so this session cannot ` +
-            'merge it. A person reviews and merges it from the dashboard or with `kortix cr merge`.',
+            `Change request #${cr.number} was opened by this session. ` +
+            'Self merge requires an explicit project.gitops.merge grant in kortix.yaml.',
           code: 'CR_SELF_MERGE_REFUSED',
         },
         403,
@@ -154,6 +156,21 @@ projectsApp.openapi(
         409,
       );
     }
+
+    // The base tip moved server-side (no proxy push saw it): queue the project
+    // snapshot archive for the exact merged SHA so the next fresh session
+    // boots from S3. Fire-and-forget; the merge is already durable.
+    void enqueueProjectSnapshot({
+      projectId: loaded.row.projectId,
+      ref: cr.baseRef,
+      commitSha: result.base_sha_after,
+      repoUrl: loaded.row.repoUrl,
+    }).catch((err) => {
+      console.warn('[project-snapshot] enqueue after merge failed', {
+        projectId: loaded.row.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     const [row] = await db
       .update(changeRequests)

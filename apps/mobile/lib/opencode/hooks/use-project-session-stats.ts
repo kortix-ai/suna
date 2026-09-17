@@ -10,7 +10,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getAuthToken } from '@/api/config';
-import { COST_MARKUP } from '@kortix/sdk';
+import { getSessionCost } from '@kortix/sdk';
 import type { MessageWithParts } from '@/lib/opencode/types';
 
 export type SessionStats = {
@@ -38,8 +38,7 @@ async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise
   if (!res.ok) throw new Error(`Failed to fetch session stats: ${res.status}`);
   const data = (await res.json()) as MessageWithParts[];
 
-  let cost = 0,
-    input = 0,
+  let input = 0,
     output = 0,
     reasoning = 0,
     cacheRead = 0,
@@ -52,7 +51,6 @@ async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise
     if (typeof ts === 'number' && (!lastUpdated || ts > lastUpdated)) lastUpdated = ts;
     for (const p of (item as any).parts ?? []) {
       if (p?.type === 'step-finish') {
-        cost += p.cost || 0;
         input += p.tokens?.input || 0;
         output += p.tokens?.output || 0;
         reasoning += p.tokens?.reasoning || 0;
@@ -64,7 +62,7 @@ async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise
 
   return {
     messageCount: data?.length ?? 0,
-    cost: cost * COST_MARKUP,
+    cost: getSessionCost(data ?? []),
     tokens: { input, output, reasoning, cacheRead, cacheWrite },
     lastUpdated,
   };

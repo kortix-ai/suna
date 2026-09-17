@@ -9,7 +9,10 @@ import { errorToast, loadingToast } from '@/components/ui/toast';
 import { createScopedSession } from '@/features/session/scope/create-scoped-session';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
+  confirmCommitted,
+  errorCode,
   getRequiredConnectorConnections,
+  isAmbiguousCreateFailure,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import {
@@ -33,6 +36,7 @@ import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   createProjectSession,
+  getProjectSession,
   getProjectSessionScope,
   markSessionFresh,
   setProjectSessionScope,
@@ -40,7 +44,7 @@ import {
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
-import { prefetchSessionStart, qk } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -234,10 +238,23 @@ export function useNewProjectSession(projectId: string | undefined) {
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-        await createProjectSession(projectId, {
-          session_id: sessionId,
-          ...opts?.create,
-        });
+        try {
+          await createProjectSession(projectId, {
+            session_id: sessionId,
+            ...opts?.create,
+          });
+        } catch (error) {
+          // A timeout is not a refusal: the server keeps running the create and
+          // commits the session WITH its first prompt. Rejecting here left the
+          // user on the page they sent from, composer unlocked with a prompt the
+          // agent was already answering. The id is ours, so ask for it.
+          const committed =
+            isAmbiguousCreateFailure(errorCode(error)) &&
+            (await confirmCommitted(async () =>
+              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
+            ));
+          if (!committed) throw error;
+        }
         return sessionId;
       };
 
@@ -269,9 +286,18 @@ export function useNewProjectSession(projectId: string | undefined) {
           // taken but never made it this far (a scope-replacement failure,
           // say) never seeds a phantom row here — see warm-session-seed.ts.
           if (adoptedWarmSession) {
-            queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
-              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
+            // Every cached shape, not just the flat key. The sidebar caches
+            // PAGES now (`useProjectSessions`), so a write aimed at the flat
+            // list left a brand-new session invisible there until the next
+            // refetch — the one surface the user is watching when they start
+            // one. `seedAdoptedWarmSession` still owns what an adopted row
+            // looks like; the cache write is the only part that moved.
+            const [adopted] = seedAdoptedWarmSession(
+              undefined,
+              adoptedWarmSession!,
+              new Date().toISOString(),
             );
+            if (adopted) upsertCachedProjectSession(queryClient, projectId, adopted);
           }
           // The row exists — kick provisioning so it overlaps the navigation.
           // For an adopted warm session this is also the call that drops the

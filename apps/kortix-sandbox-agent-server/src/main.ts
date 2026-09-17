@@ -31,6 +31,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { materializeProject } from './config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
@@ -207,7 +208,6 @@ async function main() {
   // reconfigured with the resolved dir below, before the process is ever
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
-  const opencodeBinaryPrefetchEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
     onFirstListeningResponse: () => {
@@ -218,7 +218,6 @@ async function main() {
       if (bootState.timeline.some((mark) => mark.label === 'opencode-session-api-ready')) return
       bootMark('opencode-session-api-ready')
     },
-    nativeBinaryFastPathEnabled: opencodeBinaryPrefetchEnabled,
     // The early-spawn path (below) starts OpenCode before the checkout exists.
     // Keep the directory-scoped probe closed until the workspace is complete so
     // no Instance — and no tool registry — is built against a partial tree.
@@ -296,19 +295,38 @@ async function main() {
   // long-pole, so the fetch costs no critical-path time.
   startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
 
-  // Platinum lazily faults image pages into a fresh VM. Read the OpenCode
-  // executable sequentially while repository and config work run. Stop at the
-  // spawn boundary, so a slow page fault cannot extend the critical path.
-  const opencodeBinaryPrefetchPromise =
-    opencodeBinaryPrefetchEnabled
-      ? opencode.prefetchBinary()
-      : Promise.resolve(false)
-
+  // Fresh-boot acquisition goes through the config-provider coordinator
+  // (git | prefer-s3 | require-s3, see src/config-provider). In `git` mode this
+  // is materializeRepo's exact behaviour, split across the coordinator's warm
+  // check and the Git transport.
   const repoMaterializePromise: Promise<void> = cfg.autoClone
-    ? materializeRepo(cfg).catch((err) => {
-        bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-        logger.error('[boot] repo materialization failed', err)
+    ? materializeProject(cfg, {
+        bootMark,
+        onSummary: (summary) => {
+          bootState.configProvider = summary
+        },
       })
+        .then((result) => {
+          // A prepared-S3 start already has the exact working tree; the
+          // optional history backfill waits for real readiness (see
+          // runDeferredHistoryBackfill) instead of competing with the runtime
+          // spawn for CPU and the proxied Git path.
+          if (result.provider === 's3') {
+            // …and after the blob-pack import has settled, so the two never
+            // write packs into the same object store at once.
+            const hydration = result.hydration ?? Promise.resolve()
+            bootState.deferredHistoryBackfill = () => {
+              void hydration.then(
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+              )
+            }
+          }
+        })
+        .catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[boot] repo materialization failed', err)
+        })
     : Promise.resolve()
 
   // Every gateway session routes OpenCode through the localhost LLM proxy.
@@ -345,7 +363,6 @@ async function main() {
   const earlyOpencodeStartPromise: Promise<void> | null =
     earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
       ? (async () => {
-          opencode.cancelBinaryPrefetch()
           opencode.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
           await opencode.start()
           opencodeStartedEarly = opencode.getPid() !== null
@@ -373,7 +390,6 @@ async function main() {
         await ensureOpencodeConfigDeps(compiledOpencodeConfigDir)
         await ensureInjectedManagedSkills(compiledOpencodeConfigDir)
         bootMark('compiled-config-deps')
-        opencode.cancelBinaryPrefetch()
         opencode.reconfigure(cfg, compiledOpencodeConfigDir, projectEnv)
         await opencode.start()
         opencodeStartedFromCompiledConfig = opencode.getPid() !== null
@@ -396,7 +412,7 @@ async function main() {
   // The boot clone is shallow; restore history in the background now that the
   // workspace is usable, so `git log`/`blame`/`diff` work without ever having
   // been on the critical path.
-  if (cfg.autoClone && !bootState.repoMaterializationError) {
+  if (cfg.autoClone && !bootState.repoMaterializationError && !bootState.deferredHistoryBackfill) {
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
 
@@ -433,11 +449,6 @@ async function main() {
       })
     })
   }
-
-  // Repository/config work defines the free overlap window. Stop any
-  // remaining sequential read here so prefetch cannot outlive either outcome.
-  opencode.cancelBinaryPrefetch()
-  void opencodeBinaryPrefetchPromise
 
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
@@ -645,6 +656,18 @@ function armSeedAdoption(
 // start happens (seed boot then fork adoption), so a box can never restart
 // OpenCode twice for the same reason.
 let managedReconcileRan = false
+
+/**
+ * Run the history backfill a prepared-S3 start deferred until the runtime is
+ * ACTUALLY ready (both readiness exits call this; the first one wins). A Git
+ * start schedules its backfill right after materialization as before.
+ */
+function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
+  const run = bootState.deferredHistoryBackfill
+  if (!run) return
+  bootState.deferredHistoryBackfill = null
+  run()
+}
 
 /**
  * Post-spawn managed-model reconcile — the OFF-CRITICAL-PATH half of "the
@@ -977,6 +1000,7 @@ async function startSessionRuntime(
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
+      runDeferredHistoryBackfill(bootState)
       // The boot push: the projection exists server-side from the moment the
       // box is usable, so a cold session answers its roster from Postgres.
       scheduleRuntimeProjectionPush('boot')
@@ -1024,6 +1048,7 @@ async function startSessionRuntime(
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
     relayBootTimelineToApi(bootState.timeline)
+    runDeferredHistoryBackfill(bootState)
     scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
@@ -1590,10 +1615,8 @@ async function maybeCreateInitialOpencodeSession(
   // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
   // boot's successful delivery, never this one's own pending write.
   const priorDeliveredMarker = readInitialPromptDeliveredMarker()
-  const fastRootReadinessEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
-  const rootListDeadlineMs = await waitForFastOpencodeRootReadiness({
-    fastPathEnabled: fastRootReadinessEnabled,
-    firstReadyResponse: opencode.waitForCurrentReadyResponse(),
+  const rootListDeadlineMs = await waitForOpencodeRootReadiness({
+    firstListening: opencode.waitForCurrentListening(),
   })
   // A verified reload can promote OpenCode onto the standby port while the
   // readiness gate waits. Resolve the live URL after that wait so root lookup
@@ -1605,7 +1628,6 @@ async function maybeCreateInitialOpencodeSession(
     priorPin,
     rootListDeadlineMs,
     onListening,
-    fastRootReadinessEnabled,
   )
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
@@ -1894,15 +1916,15 @@ export type ExistingRootResult =
 
 const OPENCODE_ROOT_RESOLUTION_DEADLINE_MS = 20_000
 const OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS = 5_000
-const OPENCODE_FIRST_READY_GATE_MAX_MS = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
+const OPENCODE_LISTENING_GATE_MAX_MS = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
 
-type FastOpencodeRootReadinessInput = {
-  fastPathEnabled: boolean
-  firstReadyResponse: Promise<void>
+type OpencodeRootReadinessInput = {
+  /** The current OpenCode announced its request handler (or the fallback proved it). */
+  firstListening: Promise<void>
   deadlineMs?: number
 }
 
-type FastOpencodeRootReadinessDeps = {
+type OpencodeRootReadinessDeps = {
   now?: () => number
   waitForSignal?: (signal: Promise<void>, timeoutMs: number) => Promise<void>
 }
@@ -1923,26 +1945,30 @@ async function waitForSignalOrTimeout(signal: Promise<void>, timeoutMs: number):
 }
 
 /**
- * Hold the optional FAST root lookup for the supervisor's first successful
- * session-API response. The gate replaces at most one doomed five-second
- * root-list request. Its elapsed time is deducted from the existing 20-second
+ * Hold the root lookup until OpenCode can actually answer it.
+ *
+ * Every boot waits for the current OpenCode's readiness announcement
+ * (`waitForCurrentListening`, see OPENCODE_LISTENING_LINE in opencode.ts). A
+ * freshly spawned OpenCode binds its port ~100 ms before its request handler
+ * exists, and a root-list request that lands in that window is never
+ * answered: it burns the whole 5 s attempt timeout, then the retry is answered
+ * in milliseconds. That was the S3-boot penalty measured on 2026-09-15
+ * (`opencode-listening` at 6.2 s instead of 2.3 s): the S3 checkout lands
+ * early enough for the poll to be running when the port binds, the Git
+ * checkout mostly does not. The wait is capped at one root-list attempt
+ * (5 s) and its elapsed time is deducted from the existing 20-second
  * root-resolution budget, so it cannot extend boot. The unchanged resolver
  * still owns retries, root selection, and found/create/defer decisions.
  */
-export async function waitForFastOpencodeRootReadiness(
-  input: FastOpencodeRootReadinessInput,
-  deps: FastOpencodeRootReadinessDeps = {},
+export async function waitForOpencodeRootReadiness(
+  input: OpencodeRootReadinessInput,
+  deps: OpencodeRootReadinessDeps = {},
 ): Promise<number> {
   const deadlineMs = Math.max(0, input.deadlineMs ?? OPENCODE_ROOT_RESOLUTION_DEADLINE_MS)
-  if (!input.fastPathEnabled) return deadlineMs
-
   const now = deps.now ?? Date.now
   const waitForSignal = deps.waitForSignal ?? waitForSignalOrTimeout
   const startedAt = now()
-  await waitForSignal(
-    input.firstReadyResponse,
-    Math.min(deadlineMs, OPENCODE_FIRST_READY_GATE_MAX_MS),
-  )
+  await waitForSignal(input.firstListening, Math.min(deadlineMs, OPENCODE_LISTENING_GATE_MAX_MS))
   const elapsedMs = Math.max(0, now() - startedAt)
   return Math.max(0, deadlineMs - elapsedMs)
 }
@@ -1976,22 +2002,15 @@ async function resolveExistingRoot(
   baseUrl: string,
   workspace: string,
   priorPin: string | null = readPinnedOpencodeSessionId(),
-  rootListDeadlineMs = 20_000,
+  rootListDeadlineMs = OPENCODE_ROOT_RESOLUTION_DEADLINE_MS,
   onListening?: () => void,
-  strictAttemptDeadline = false,
 ): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
   // boot as "no roots" would create a duplicate on restart — the exact bug we're
   // killing — so only conclude "create a fresh root" once opencode has actually
   // answered with an empty list (or never answers within the deadline, and
   // there is no prior pin to protect — see `defer` above).
-  const roots = await waitForRootList(
-    baseUrl,
-    workspace,
-    rootListDeadlineMs,
-    onListening,
-    strictAttemptDeadline,
-  )
+  const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs, onListening)
   if (!roots) {
     if (priorPin) {
       logger.warn(
@@ -2035,9 +2054,8 @@ interface RootLite { id: string; created: number; updated: number }
 async function waitForRootList(
   baseUrl: string,
   workspace: string,
-  deadlineMs = 20_000,
+  deadlineMs = OPENCODE_ROOT_RESOLUTION_DEADLINE_MS,
   onListening?: () => void,
-  strictAttemptDeadline = false,
 ): Promise<RootLite[] | null> {
   const deadline = Date.now() + deadlineMs
   let listeningSeen = false
@@ -2047,23 +2065,14 @@ async function waitForRootList(
     onListening?.()
   }
   while (Date.now() < deadline) {
-    const attemptTimeoutMs = strictAttemptDeadline
-      ? Math.min(
-          OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
-          Math.max(1, deadline - Date.now()),
-        )
-      : OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
     const roots = await listOpencodeRoots(
       baseUrl,
       workspace,
       markListening,
-      attemptTimeoutMs,
+      OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
     )
     if (roots !== null) return roots
-    const retryDelayMs = strictAttemptDeadline
-      ? Math.min(100, Math.max(0, deadline - Date.now()))
-      : 100
-    if (retryDelayMs > 0) await new Promise((r) => setTimeout(r, retryDelayMs))
+    await new Promise((r) => setTimeout(r, 100))
   }
   return null
 }

@@ -13,13 +13,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   SandboxTemplateMenu,
@@ -30,13 +24,9 @@ import type { AgentConfigBlock, AgentGrantSetV2, SandboxTemplate } from '@kortix
 import { useKortixRouteProjectId } from '@kortix/sdk/react';
 import { ArrowRightIcon, CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { WORKSPACE_MODES, WORKSPACE_MODE_HELP, WORKSPACE_MODE_LABEL } from './agent-editor-catalog';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
 import { type GrantOption, GrantSetField, KortixCliField, grantSummary } from './grant-mode-field';
-
-/** Every inherit-capable Select shares one sentinel — Radix forbids `""`. */
-const INHERIT = '__inherit__';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 
@@ -280,6 +270,7 @@ export function WorkspaceSection({
   defaultSandboxSlug: string | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepository = useI18nTranslations('repositoryAccess');
   const pinned = draft.sandbox ? sandboxTemplates.find((t) => t.slug === draft.sandbox) : undefined;
   const projectDefault = defaultSandboxSlug
     ? sandboxTemplates.find((t) => t.slug === defaultSandboxSlug)
@@ -337,35 +328,14 @@ export function WorkspaceSection({
       </SettingRow>
 
       <SettingRow
-        label={tI18nComplete.raw('text4f503dc583f3')}
-        help={
-          draft.workspace
-            ? WORKSPACE_MODE_HELP[draft.workspace]
-            : tI18nComplete.raw('text64f405e80a8d')
-        }
+        label={tRepository('label')}
+        help={tRepository(draft.repository_access === false ? 'disabled' : 'enabled')}
       >
-        <Select
-          value={draft.workspace ?? INHERIT}
-          onValueChange={(value) =>
-            set('workspace', value === INHERIT ? undefined : (value as typeof draft.workspace))
-          }
-        >
-          <SelectTrigger
-            aria-label={tI18nComplete.raw('text4f503dc583f3')}
-            className="w-full"
-            size="sm"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={INHERIT}>{tI18nComplete.raw('texte8cb80e5c5cb')}</SelectItem>
-            {WORKSPACE_MODES.map((mode) => (
-              <SelectItem key={mode} value={mode}>
-                {WORKSPACE_MODE_LABEL[mode]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Switch
+          aria-label={tRepository('label')}
+          checked={draft.repository_access ?? true}
+          onCheckedChange={(enabled) => set('repository_access', enabled)}
+        />
       </SettingRow>
     </EditorSection>
   );

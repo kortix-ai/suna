@@ -108,4 +108,26 @@ describe('boot instrumentation', () => {
     expect(report).toBeGreaterThan(probe)
     expect(MAIN).toContain("bootMark('opencode-http-listening')")
   })
+
+  test('no boot-time request is sent before OpenCode announces its handler on stdout', () => {
+    // OpenCode's port is bound ~100 ms before its request handler exists; a
+    // request sent then is never answered. The supervisor pipes stdout, waits
+    // for `opencode server listening on`, and every boot-time caller — the
+    // readiness probe, the root list, the /event subscribe — gates on it.
+    expect(OPENCODE).toContain("const OPENCODE_LISTENING_LINE = 'opencode server listening on'")
+    expect(OPENCODE).toContain("stdio: ['ignore', 'pipe', 'inherit']")
+    expect(OPENCODE).toContain('waitForCurrentListening(): Promise<void>')
+    expect(OPENCODE).toContain("startupMark('opencode-listening-line')")
+    const gate = OPENCODE.indexOf('if (probedChild && !mayProbe(probedChild))')
+    const probe = OPENCODE.indexOf('const probe = directoryProbeOpen', gate)
+    expect(gate).toBeGreaterThan(-1)
+    expect(probe).toBeGreaterThan(gate)
+    expect(MAIN).toContain('firstListening: opencode.waitForCurrentListening()')
+    const EVENTS = readFileSync(new URL('../opencode-events.ts', import.meta.url), 'utf8')
+    const wait = EVENTS.indexOf('await waitForListeningOrTimeout(opencode')
+    const connect = EVENTS.indexOf('await connectOnce()', wait)
+    expect(wait).toBeGreaterThan(-1)
+    expect(connect).toBeGreaterThan(wait)
+    expect(EVENTS).toContain("controller.abort(new DOMException('subscribe headers timeout', 'TimeoutError'))")
+  })
 })

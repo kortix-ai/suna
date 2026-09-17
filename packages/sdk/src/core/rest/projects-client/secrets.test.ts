@@ -191,6 +191,15 @@ test('startProjectProviderOAuth sends sharing: undefined when no input is given'
   expect(last().body).toEqual({ sharing: undefined });
 });
 
+test('startProjectProviderOAuth sends a named account resource request', async () => {
+  nextResponse = {
+    status: 200,
+    body: { flow_id: 'flow', verification_url: 'https://example.test', user_code: 'ABCD', expires_at: 1, interval_ms: 3000 },
+  };
+  await startProjectProviderOAuth('P1', 'openai', { resourceLabel: 'My ChatGPT' });
+  expect(last().body).toMatchObject({ resource_label: 'My ChatGPT' });
+});
+
 test('pollProjectProviderOAuth posts the flow_id and returns the poll result', async () => {
   nextResponse = { status: 200, body: { status: 'pending', next_poll_ms: 2000 } };
   const result = await pollProjectProviderOAuth('P1', 'chatgpt', 'flow-123');

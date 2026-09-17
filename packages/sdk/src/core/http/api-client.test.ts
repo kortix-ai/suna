@@ -314,7 +314,13 @@ describe('makeRequest retries transient transport failures on idempotent reads',
     }) as unknown as typeof fetch;
     try {
       const response = await backendApi.get('/projects/p1/sessions/s1/audit');
-      expect(response).toEqual({ success: true, data: { ok: true } });
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual({ ok: true });
+      // A successful response also carries its headers (ApiResponse.headers) so
+      // a surface can read a value the API keeps out of the body — the session
+      // list's `X-Next-Cursor`. Asserted here because this test is the one that
+      // pins the successful-response shape.
+      expect(response.headers?.get('content-type')).toContain('application/json');
       expect(attempts).toBe(2);
       expect(errors).toEqual([]);
     } finally {

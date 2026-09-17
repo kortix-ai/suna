@@ -130,12 +130,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
     stability: 'experimental',
     available: () => true,
-    // ON by default since COR-17: the marketplace is MCP-first, so the Discover
-    // catalogue (integrations.sh — server-cached, no credentials required) is
-    // the default source. Easy Connect (Composio/Pipedream) stays reachable as
-    // the secondary source via the catalogue's source switch. A project can
-    // still opt out explicitly (`experimental.connectors_api_discover: false`).
-    platformDefault: () => true,
+    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    platformDefault: () => false,
     enforcement: 'routes',
   },
   {
@@ -270,6 +266,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
+  },
+  {
+    key: 'pooled_provider_secrets',
+    name: 'Pooled Provider Secrets',
+    description: 'Share secret resources with members and select multiple provider keys for a session.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   {
     key: 'pi_worker',

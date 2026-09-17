@@ -39,8 +39,8 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { qk, useProjectSession } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -57,7 +57,7 @@ import {
   TerminalIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -115,13 +115,15 @@ export function SessionSiteHeader({
   const projectSessionId = projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
 
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
+  // The header needs ONE session — the one in the URL. It used to fetch the
+  // project's whole session list and find that row in it, which broke the
+  // moment the list became a bounded page: a session older than the first page
+  // is absent from it, and `projectSession` fell back to null — which reads as
+  // "you may not share or stop this", silently hiding Share, Stop and Reload.
+  // The read-by-id is exact at any age.
+  const { data: projectSession = null } = useProjectSession(projectId, projectSessionId, {
     enabled: isProjectSession,
-    ...contract('inventory'),
   });
-  const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   // Two verdicts, deliberately not one flag. `can_manage_sharing` is the
   // owner's right to change who can open the session; `can_manage_lifecycle`
   // is the manager-tier right to stop/restart/reload it. Reading the first for

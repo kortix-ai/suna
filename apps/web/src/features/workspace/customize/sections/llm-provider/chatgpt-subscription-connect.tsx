@@ -19,23 +19,27 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { subscriptionIsConnected, subscriptionPrimaryAction } from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
 
-// ChatGPT subscription logins connect project-wide, like every other LLM
-// provider credential (kortix policy: no per-user access choice at the LLM
-// level). The server's default sharing intent is project-wide.
+// Legacy ChatGPT subscription login. With pooled connections enabled this
+// component shows only an existing project login; new accounts use resources.
 export function ChatGptSubscriptionConnect({
   projectId,
   onConnected,
+  accessSlot,
+  legacyOnly = false,
 }: {
   projectId: string;
   onConnected: (providerId: string) => void;
+  accessSlot?: ReactNode;
+  legacyOnly?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tPooled = useTranslations('pooledSecrets');
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +150,7 @@ export function ChatGptSubscriptionConnect({
 
   const waiting = phase === 'waiting';
   const action = subscriptionPrimaryAction({ connected, failed: !!error });
+  if (legacyOnly && !connected) return null;
 
   return (
     <div className="bg-popover rounded-md border px-4 py-4">
@@ -153,16 +158,17 @@ export function ChatGptSubscriptionConnect({
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
           <div className="text-foreground text-sm font-medium">
-            {tHardcodedUi.raw(
+            {legacyOnly ? tPooled('legacyChatGptLogin') : tHardcodedUi.raw(
               'autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530',
             )}
           </div>
           <p className="text-muted-foreground mt-0.5 text-xs leading-5">
-            {tHardcodedUi.raw(
+            {legacyOnly ? tPooled('legacyChatGptDescription') : tHardcodedUi.raw(
               'autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c',
             )}
           </p>
         </div>
+        {accessSlot}
       </div>
 
       {waiting && (

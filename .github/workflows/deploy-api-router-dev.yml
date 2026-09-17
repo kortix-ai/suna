@@ -1,0 +1,63 @@
+name: Deploy Dev API Router
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/cloudflare/workers/api-router/**'
+      - '.github/workflows/deploy-api-router-dev.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api-router-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Test router behavior
+        run: bun test infra/cloudflare/workers/api-router/worker.test.mjs
+      - name: Deploy the dev router from this commit
+        working-directory: infra/cloudflare/workers/api-router
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          npx --yes wrangler@4.34.0 deploy --env dev --var "DEPLOYED_COMMIT:${GITHUB_SHA}"
+      - name: Verify the deployed commit and unauthenticated SCIM response
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/dev-api-kortix-router/settings" \
+            | jq -e --arg sha "$GITHUB_SHA" '.success == true and any(.result.bindings[]; .name == "DEPLOYED_COMMIT" and .text == $sha)'
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          for attempt in $(seq 1 12); do
+            status="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' \
+              -H 'User-Agent:' \
+              'https://dev-api.kortix.com/scim/v2/accounts/00000000-0000-4000-a000-000000000000/ServiceProviderConfig')"
+            if [ "$status" = 401 ] && jq -e '.status == "401" and .schemas == ["urn:ietf:params:scim:api:messages:2.0:Error"]' "$body"; then
+              echo "Dev router ${GITHUB_SHA}: SCIM without User-Agent reaches bearer authentication (401 JSON)." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: SCIM status ${status}"
+            sleep 5
+          done
+          echo '::error::SCIM without User-Agent did not reach Kortix authentication.'
+          exit 1

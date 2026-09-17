@@ -197,6 +197,11 @@ const DESKTOP_ALLOWED_ROUTES = [
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // These are probes for server files, not product routes. A plain response also
+  // avoids rendering the translated application shell for sensitive-file probes.
+  if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
+    return new NextResponse('Not found', { status: 404 });
+  }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
   // dynamic keys so the standalone container uses ECS runtime values instead of

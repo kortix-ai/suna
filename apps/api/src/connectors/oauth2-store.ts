@@ -22,7 +22,6 @@ import { isUniqueViolation } from '../shared/postgres-errors';
 import { config } from '../config';
 import { upsertConnectionCredential } from './credentials';
 import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
-import { oauth2RedirectDrifted, reregisteredOAuth2Application } from './oauth2-redirect-drift';
 import {
   createStoredDelegatedCredential,
   parseDelegatedCredential,
@@ -290,11 +289,6 @@ export async function registerConnectionOAuth2Client(
     ...(registration.revocation_url ? { revocation_url: registration.revocation_url } : {}),
     client_id: issued.client_id,
     token_endpoint_auth_method: issued.token_endpoint_auth_method,
-    // Recorded so a later authorize can detect that the public origin moved
-    // (rotated dev tunnel, domain change) and re-register instead of sending
-    // a redirect_uri the server will refuse — see oauth2-redirect-drift.ts.
-    redirect_uri: input.callbackUrl,
-    registration_endpoint: registration.registration_endpoint,
     ...(issued.client_secret ? { client_secret: issued.client_secret } : {}),
     ...(registration.scopes?.length ? { scopes: registration.scopes } : {}),
     ...(registration.resource ? { resource: registration.resource } : {}),
@@ -316,47 +310,17 @@ export async function discoverConfiguredOAuth2Application(
   return discoverOAuth2Metadata(discoveryUrl);
 }
 
-export async function createAuthorizationCodeSession(
-  input: {
-    connectionId: string;
-    initiatedBy: string;
-    callbackUrl: string;
-    scopes?: string[];
-    successRedirectUri?: string;
-    errorRedirectUri?: string;
-  },
-  runtime: OAuth2LifecycleRuntime = {},
-) {
+export async function createAuthorizationCodeSession(input: {
+  connectionId: string;
+  initiatedBy: string;
+  callbackUrl: string;
+  scopes?: string[];
+  successRedirectUri?: string;
+  errorRedirectUri?: string;
+}) {
   const loaded = await loadOAuth2Application(input.connectionId);
   if (!loaded) throw new Error('OAuth2 application is not configured');
-  let application = loaded.application;
-  // The public origin moved since this client was registered (a rotated dev
-  // tunnel, a domain change): the server would refuse the mismatched
-  // redirect_uri outright ("Invalid redirect URI"). Re-register a fresh
-  // client for the CURRENT callback before starting the flow.
-  if (oauth2RedirectDrifted(application, input.callbackUrl) && application.registration_endpoint) {
-    const issued = await registerOAuth2Client(
-      {
-        registrationEndpoint: application.registration_endpoint,
-        redirectUri: input.callbackUrl,
-        scopes: application.scopes,
-        tokenEndpointAuthMethodsSupported: [application.token_endpoint_auth_method],
-      },
-      runtime,
-    );
-    application = reregisteredOAuth2Application(application, issued, input.callbackUrl);
-    await saveOAuth2Application(
-      {
-        accountId: loaded.accountId,
-        projectId: loaded.projectId,
-        connectorId: loaded.connectorId,
-        connectionId: loaded.connectionId,
-      },
-      application,
-      input.initiatedBy,
-    );
-  }
-  const request = buildOAuth2AuthorizationRequest(application, {
+  const request = buildOAuth2AuthorizationRequest(loaded.application, {
     callbackUrl: input.callbackUrl,
     scopes: input.scopes,
   });

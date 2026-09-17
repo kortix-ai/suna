@@ -88,6 +88,39 @@ function createScheduler() {
 }
 
 describe('SessionSyncController', () => {
+  for (const status of [404, 410]) {
+    test(`does not automatically retry a missing conversation (${status}) but permits explicit recovery`, async () => {
+      const clock = createScheduler();
+      let attempts = 0;
+      let available = false;
+      const controller = createHttpSessionSyncController({
+        baseUrl: 'https://runtime.example.test',
+        sessionId: 'missing-session',
+        fetch: async () => {
+          attempts += 1;
+          return available ? Response.json([]) : Response.json({ error: 'Not found' }, { status });
+        },
+        hydrate: () => {},
+        markLoaded: () => {},
+        scheduler: clock.scheduler,
+      });
+      try {
+        controller.setBusy(true);
+        await controller.reconcile('initial');
+        expect(controller.getSnapshot().freshness).toBe('error');
+        clock.advance(60_000);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(attempts).toBe(1);
+        available = true;
+        await controller.reconcile('manual');
+        expect(attempts).toBe(2);
+        expect(controller.getSnapshot().freshness).toBe('fresh');
+      } finally {
+        controller.destroy();
+      }
+    });
+  }
+
   test('creates an authenticated framework-free HTTP controller for React Native', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const hydrated: MessageWithParts[][] = [];

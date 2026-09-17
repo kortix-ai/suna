@@ -1,0 +1,612 @@
+#!/usr/bin/env bun
+/**
+ * Real-boot smoke + benchmark for the S3 config provider, through the REAL
+ * session-create path (HTTP API → provider sandbox → kortixd → runtimeReady).
+ *
+ * Nothing here talks to a sandbox directly except through the API's proxy, and
+ * nothing is mocked: the arms differ only by which API answers (baseline main
+ * vs this branch) and by the project's `project_snapshot_mode` metadata.
+ *
+ *   bun run scripts/project-snapshot-bench.ts jwt   --email localdev@kortix.test
+ *   bun run scripts/project-snapshot-bench.ts setup --api http://localhost:13608/v1 --jwt <jwt> \
+ *        --name bench-repr --files 400 --file-bytes 4096            # provision + push fixture
+ *   bun run scripts/project-snapshot-bench.ts wait  --api … --pat <pat> --project <id> --sha <sha>
+ *   bun run scripts/project-snapshot-bench.ts run   --jwt <jwt> --project <id> --rounds 30 \
+ *        --arms "baseline-git=http://localhost:8008/v1|baseline,new-git=http://localhost:13608/v1|git,new-s3=http://localhost:13608/v1|prefer-s3" \
+ *        --out /tmp/bench.jsonl [--api-log <path>=<label> …] [--probe-hosts s3.us-east-2.amazonaws.com,…] [--daemon-log]
+ *   bun run scripts/project-snapshot-bench.ts report --in /tmp/bench.jsonl
+ *
+ * Every round: set the arm's mode on the project (SQL, shared DB), POST a
+ * session, poll /start to `ready`, poll the box's /kortix/health through the
+ * proxy to `runtimeReady`, record the daemon's `config_provider`, boot
+ * timeline, commit, sandbox provider, and count Git-proxy requests in the
+ * arm's API log inside the boot window. Arms alternate round by round.
+ */
+import { createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const SB = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
+const SB_JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? 'super-secret-jwt-token-with-at-least-32-characters-long';
+const DB_URL = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
+function arg(name: string, def?: string): string | undefined {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : def;
+}
+function need(name: string): string {
+  const v = arg(name);
+  if (!v) {
+    console.error(`--${name} is required`);
+    process.exit(2);
+  }
+  return v;
+}
+/** `--project` is interpolated into SQL and a log-matching regex below: accept a UUID only. */
+function projectIdArg(): string {
+  const v = need('project').toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v)) {
+    console.error('--project must be a project UUID');
+    process.exit(2);
+  }
+  return v;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function api<T = any>(base: string, token: string, path: string, init: RequestInit = {}): Promise<{ status: number; body: T; ms: number }> {
+  const t0 = performance.now();
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+  });
+  const text = await res.text();
+  let body: any = text;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  return { status: res.status, body, ms: performance.now() - t0 };
+}
+
+function psql(sqlText: string): string {
+  return execFileSync('psql', [DB_URL, '-At', '-c', sqlText], { encoding: 'utf8' }).trim();
+}
+
+// ── jwt ─────────────────────────────────────────────────────────────────────
+async function mintJwt(email: string): Promise<string> {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({ iss: 'supabase-demo', role: 'service_role', iat: now, exp: now + 600 });
+  const admin = `${head}.${body}.${createHmac('sha256', SB_JWT_SECRET).update(`${head}.${body}`).digest('base64url')}`;
+  const gl: any = await (
+    await fetch(`${SB}/auth/v1/admin/generate_link`, {
+      method: 'POST',
+      headers: { apikey: admin, Authorization: `Bearer ${admin}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'magiclink', email }),
+    })
+  ).json();
+  if (!gl?.email_otp) throw new Error(`generate_link failed: ${JSON.stringify(gl).slice(0, 200)}`);
+  const vr: any = await (
+    await fetch(`${SB}/auth/v1/verify`, {
+      method: 'POST',
+      headers: { apikey: admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'magiclink', email, token: gl.email_otp }),
+    })
+  ).json();
+  if (!vr?.access_token) throw new Error(`verify failed: ${JSON.stringify(vr).slice(0, 200)}`);
+  return vr.access_token;
+}
+
+// ── setup: provision + push a fixture through the Git proxy ────────────────
+async function setup(): Promise<void> {
+  const base = need('api');
+  const jwt = need('jwt');
+  const name = arg('name', `bench-${Date.now().toString(36)}`)!;
+  const files = Number(arg('files', '0'));
+  const fileBytes = Number(arg('file-bytes', '2048'));
+  const provisioned = await api(base, jwt, '/projects/provision', { method: 'POST', body: JSON.stringify({ name, seed_starter: true }) });
+  if (provisioned.status !== 201) throw new Error(`provision failed ${provisioned.status}: ${JSON.stringify(provisioned.body).slice(0, 300)}`);
+  const projectId: string = provisioned.body.project_id ?? provisioned.body.id ?? provisioned.body.project?.project_id;
+  const project = await api(base, jwt, `/projects/${projectId}`);
+  const originUrl: string = project.body.git_origin_url;
+  const pat = await api(base, jwt, '/accounts/tokens', { method: 'POST', body: JSON.stringify({ name: `bench-${name}` }) });
+  if (pat.status !== 201) throw new Error(`pat mint failed ${pat.status}: ${JSON.stringify(pat.body).slice(0, 300)}`);
+  const secret: string = pat.body.secret_key;
+  // A private, unpredictable directory (mkdtemp, mode 0700): the clone below
+  // carries the project token in its remote URL until it is cleaned up.
+  const work = join(mkdtempSync(join(tmpdir(), 'kortix-bench-')), name);
+  const authed = originUrl.replace('://', `://x-access-token:${encodeURIComponent(secret)}@`);
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: existsSync(work) ? work : undefined, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).trim();
+  execFileSync('git', ['clone', '-q', authed, work], { encoding: 'utf8' });
+  if (files > 0) {
+    mkdirSync(join(work, 'fixture'), { recursive: true });
+    for (let i = 0; i < files; i += 1) {
+      const dir = join(work, 'fixture', `d${Math.floor(i / 100)}`);
+      mkdirSync(dir, { recursive: true });
+      // Distinct, poorly-compressible content so the archive size is honest.
+      writeFileSync(join(dir, `f${i}.txt`), `${i}:${Buffer.from(crypto.getRandomValues(new Uint8Array(Math.ceil(fileBytes * 0.75)))).toString('base64')}\n`);
+    }
+    git('add', '-A');
+    git('-c', 'user.name=bench', '-c', 'user.email=bench@kortix.test', 'commit', '-q', '-m', `bench fixture: ${files} files x ~${fileBytes}B`);
+    git('push', '-q', 'origin', 'HEAD:main');
+  }
+  const sha = git('rev-parse', 'HEAD');
+  console.log(JSON.stringify({ project_id: projectId, name, git_origin_url: originUrl, sha, files, pat: secret }));
+}
+
+// ── wait: the archive for --sha is ready (descriptor answers 200) ───────────
+async function waitReady(): Promise<void> {
+  const base = need('api');
+  const pat = need('pat');
+  const projectId = projectIdArg();
+  const sha = need('sha');
+  const deadline = Date.now() + Number(arg('timeout-s', '600')) * 1000;
+  while (Date.now() < deadline) {
+    const r = await api(base, pat, `/git/${projectId}.git/project-snapshot?sha=${sha}`);
+    if (r.status === 200) {
+      const { url: _treeUrl, ...tree } = r.body.tree ?? r.body.archive ?? {};
+      const { url: _blobsUrl, ...blobs } = r.body.blobs ?? {};
+      console.log(JSON.stringify({ ready: true, sha, format: r.body.format, tree, blobs }));
+      return;
+    }
+    await sleep(2000);
+  }
+  console.error('archive not ready before timeout');
+  process.exit(1);
+}
+
+// ── run ─────────────────────────────────────────────────────────────────────
+interface Arm {
+  label: string;
+  api: string;
+  mode: 'baseline' | 'git' | 'prefer-s3' | 'require-s3';
+}
+function parseArms(raw: string): Arm[] {
+  return raw.split(',').map((part) => {
+    const [label, rest] = part.split('=');
+    const [apiUrl, mode] = (rest ?? '').split('|');
+    if (!label || !apiUrl || !mode) throw new Error(`bad arm: ${part}`);
+    return { label, api: apiUrl, mode: mode as Arm['mode'] };
+  });
+}
+
+function setProjectMode(projectId: string, mode: Arm['mode']): void {
+  if (mode === 'baseline') return;
+  psql(`update kortix.projects set metadata = coalesce(metadata,'{}'::jsonb) || jsonb_build_object('project_snapshot_mode','${mode}') where project_id = '${projectId}'`);
+}
+
+interface Round {
+  round: number;
+  arm: string;
+  mode: string;
+  api: string;
+  session_id: string;
+  ok: boolean;
+  error?: string;
+  create_ack_ms: number;
+  start_ready_ms: number | null;
+  runtime_ready_ms: number | null;
+  provider: string | null;
+  external_id: string | null;
+  commit_sha: string | null;
+  config_provider: unknown;
+  boot_marks: Record<string, number>;
+  session_start_timeline: unknown;
+  started_at: string;
+  runtime_ready_at: string | null;
+  git_proxy_requests: number | null;
+  git_proxy_paths: GitProxyRequest[];
+  runtime: unknown;
+  daemon_fingerprint: string | null;
+  /** v2: the blob-pack import that follows activation, as the daemon reported it once settled. */
+  hydration: { status: string; attempts: number; bytes: number; ms: number; reason: string | null } | null;
+  /** ms from create until the hydration report was observed settled (null = still pending at the poll cap). */
+  hydration_settled_ms: number | null;
+  s3_extractor: string | null;
+  /** On an S3 boot: `env` (presigned at create, no proxy call) or `proxy` (descriptor route). */
+  s3_descriptor: string | null;
+  /** `--probe-hosts`: after readiness, one `curl` per host from INSIDE the box (ms to TCP connect / first byte) plus the box's city — where this round's sandbox sat relative to the store. */
+  probe: { city: string | null; hosts: Record<string, { connect_ms: number; ttfb_ms: number }> } | null;
+  /** `--daemon-log`: the daemon's `s3 attempt failed; retrying` log entries for this boot (attempt, stage, reason, error). */
+  s3_retries: Array<Record<string, unknown>> | null;
+}
+
+/** The daemon's S3 retry log entries, read through the proxy before the session is deleted. Never fails a round. */
+async function readS3Retries(arm: Arm, token: string, logsPath: string): Promise<Round['s3_retries']> {
+  const r = await api<string>(arm.api, token, `${logsPath}?source=daemon&tail=600`).catch(() => null);
+  if (!r || r.status !== 200) return null;
+  const text = typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
+  const entries: Array<Record<string, unknown>> = [];
+  for (const line of text.split('\n')) {
+    if (!line.includes('s3 attempt failed')) continue;
+    try {
+      const { t, msg: _msg, ...rest } = JSON.parse(line) as Record<string, unknown>;
+      entries.push({ t, ...rest });
+    } catch {
+      entries.push({ raw: line.slice(0, 300) });
+    }
+  }
+  return entries;
+}
+
+/** One `curl` per host from inside the box, through the daemon's env-rpc exec op. Never fails a round. */
+async function probeBox(arm: Arm, token: string, rpcPath: string, hosts: string[]): Promise<Round['probe']> {
+  const command =
+    `echo "city $(curl -s -m 5 https://ipinfo.io/json | tr -d '\\n' | sed -E 's/.*"city": *"([^"]*)".*/\\1/')"; ` +
+    hosts.map((h) => `curl -s -o /dev/null -w '${h} %{time_connect} %{time_starttransfer}\\n' --max-time 10 https://${h}/`).join('; ');
+  const r = await api(arm.api, token, rpcPath, {
+    method: 'POST',
+    body: JSON.stringify({ op: 'exec', args: { command, timeout: 30_000 }, cwd: '/workspace' }),
+  }).catch(() => null);
+  const out = r?.body?.ok ? String(r.body.value?.stdout ?? '') : '';
+  if (!out) return null;
+  const probe: NonNullable<Round['probe']> = { city: null, hosts: {} };
+  for (const line of out.split('\n')) {
+    if (line.startsWith('city ')) probe.city = line.slice(5).trim() || null;
+    const [host, connect, ttfb] = line.trim().split(/\s+/);
+    if (host && connect && ttfb && !line.startsWith('city ')) probe.hosts[host] = { connect_ms: Math.round(Number(connect) * 1000), ttfb_ms: Math.round(Number(ttfb) * 1000) };
+  }
+  return probe;
+}
+
+async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
+  setProjectMode(projectId, arm.mode);
+  const startedAt = new Date();
+  const t0 = performance.now();
+  const provider = arg('provider');
+  const created = await api(arm.api, jwt, `/projects/${projectId}/sessions`, { method: 'POST', body: JSON.stringify(provider ? { provider } : {}) });
+  const createAckMs = performance.now() - t0;
+  const sessionId: string = created.body?.session_id ?? created.body?.id;
+  const result: Round = {
+    round,
+    arm: arm.label,
+    mode: arm.mode,
+    api: arm.api,
+    session_id: sessionId ?? '',
+    ok: false,
+    create_ack_ms: Math.round(createAckMs),
+    start_ready_ms: null,
+    runtime_ready_ms: null,
+    provider: null,
+    external_id: null,
+    commit_sha: null,
+    config_provider: null,
+    boot_marks: {},
+    session_start_timeline: null,
+    started_at: startedAt.toISOString(),
+    runtime_ready_at: null,
+    git_proxy_requests: null,
+    git_proxy_paths: [],
+    runtime: null,
+    daemon_fingerprint: null,
+    hydration: null,
+    hydration_settled_ms: null,
+    s3_extractor: null,
+    s3_descriptor: null,
+    probe: null,
+    s3_retries: null,
+  };
+  if (created.status !== 201 || !sessionId) {
+    result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
+    return result;
+  }
+  try {
+    const deadline = t0 + Number(arg('timeout-s', '300')) * 1000;
+    let externalId: string | null = null;
+    let runtimeUrl: string | null = null;
+    while (performance.now() < deadline) {
+      const s = await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}/start`, { method: 'POST' });
+      if (s.body?.stage === 'ready') {
+        externalId = s.body.sandbox?.external_id ?? null;
+        runtimeUrl = s.body.runtime_url ?? null;
+        result.provider = s.body.sandbox?.provider ?? null;
+        result.start_ready_ms = Math.round(performance.now() - t0);
+        break;
+      }
+      if (s.body?.stage === 'failed' && s.body?.retriable === false) throw new Error(`start failed: ${JSON.stringify(s.body.failure ?? s.body).slice(0, 300)}`);
+      await sleep(500);
+    }
+    if (!externalId) throw new Error('start never reached ready');
+    result.external_id = externalId;
+    const healthPath = runtimeUrl ? `${runtimeUrl.replace(/^\/v1/, '')}/kortix/health` : `/p/${externalId}/8000/kortix/health`;
+    while (performance.now() < deadline) {
+      const h = await api(arm.api, jwt, healthPath);
+      if (h.status === 200 && h.body?.runtimeReady === true) {
+        result.runtime_ready_ms = Math.round(performance.now() - t0);
+        result.runtime_ready_at = new Date().toISOString();
+        result.commit_sha = h.body.commit_sha ?? null;
+        result.config_provider = h.body.config_provider ?? null;
+        // Which daemon build actually ran: the runtime-assets convergence
+        // report plus a fingerprint of the health surface (`config_provider`
+        // exists only on this branch; `s3_skipped` only on its final build).
+        result.runtime = h.body.runtime ?? null;
+        result.daemon_fingerprint =
+          h.body.config_provider === undefined
+            ? 'legacy'
+            : h.body.config_provider && 'hydration' in h.body.config_provider
+              ? 'branch-v2'
+              : h.body.config_provider && 's3_skipped' in h.body.config_provider
+                ? 'branch-final'
+                : 'branch-early';
+        result.s3_extractor = h.body.config_provider?.s3_extractor ?? null;
+        result.s3_descriptor = h.body.config_provider?.s3_descriptor ?? null;
+        for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
+        break;
+      }
+      if (h.status === 200 && h.body?.status === 'error') throw new Error(`daemon error: ${h.body.boot_error}`);
+      await sleep(500);
+    }
+    if (result.runtime_ready_ms === null) throw new Error('runtimeReady never observed');
+    // v2: the blob-pack import runs AFTER readiness; keep polling (cap 20 s)
+    // until the daemon reports it settled so the round records its outcome
+    // and how long after create the workspace was fully hydrated.
+    const cp0 = result.config_provider as { hydration?: { status: string } } | null;
+    if (cp0?.hydration) {
+      const hydrationDeadline = performance.now() + 20_000;
+      while (performance.now() < hydrationDeadline) {
+        const h = await api(arm.api, jwt, healthPath);
+        const hy = h.body?.config_provider?.hydration;
+        if (hy && hy.status !== 'pending') {
+          result.hydration = hy;
+          result.hydration_settled_ms = Math.round(performance.now() - t0);
+          result.config_provider = h.body.config_provider;
+          for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
+          break;
+        }
+        await sleep(500);
+      }
+      if (!result.hydration) result.hydration = cp0.hydration as Round['hydration'];
+    }
+    const probeHosts = arg('probe-hosts');
+    if (probeHosts) result.probe = await probeBox(arm, jwt, healthPath.replace(/\/kortix\/health$/, '/kortix/env-rpc'), probeHosts.split(','));
+    if (process.argv.includes('--daemon-log') && (result.config_provider as { s3_attempted?: boolean } | null)?.s3_attempted) {
+      result.s3_retries = await readS3Retries(arm, jwt, healthPath.replace(/\/kortix\/health$/, '/kortix/logs'));
+    }
+    const row = await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`);
+    result.session_start_timeline = row.body?.metadata?.session_start_timeline ?? null;
+    result.ok = true;
+  } catch (err) {
+    result.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+  }
+  if (apiLog && result.runtime_ready_at) {
+    // Window: create → 5 s past observed readiness, so the daemon's own
+    // post-ready work (the deferred history backfill fires AT readiness) is
+    // visible and attributable by its offset instead of being cut in half by
+    // the 500 ms health poll.
+    const readyAt = new Date(result.runtime_ready_at);
+    const seen = listGitProxyRequests(apiLog, projectId, startedAt, new Date(readyAt.getTime() + 5000), readyAt);
+    result.git_proxy_paths = seen;
+    // Acquisition-related = anything that completed clearly BEFORE readiness.
+    // The descriptor exchange is the S3 path's one expected request.
+    result.git_proxy_requests = seen.filter((s) => s.offsetMs < -1000).length;
+  }
+  return result;
+}
+
+interface GitProxyRequest {
+  method: string;
+  path: string;
+  status: number;
+  /** Completion time relative to the observed runtimeReady (negative = before). */
+  offsetMs: number;
+}
+
+/**
+ * Git-proxy requests for this project logged by the arm's API inside
+ * [from, to]. Per PROJECT, not per session: rounds run sequentially with a
+ * cooldown, so a window belongs to one boot.
+ */
+function listGitProxyRequests(logPath: string, projectId: string, from: Date, to: Date, readyAt: Date): GitProxyRequest[] {
+  if (!existsSync(logPath)) return [];
+  // The id is validated as a UUID at the argument boundary (projectIdArg) and
+  // escaped here regardless, so a CLI value can never alter the pattern.
+  const safeProjectId = projectId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\[(\\d{4}-\\d{2}-\\d{2}T[^\\]]+)\\] \\[INFO\\] Request completed: (GET|POST) /v1/git/${safeProjectId}\\.git/(info/refs|git-upload-pack|fast-boot-bundle|compiled-checkout|project-snapshot) (\\d{3})`);
+  const seen: GitProxyRequest[] = [];
+  for (const line of readFileSync(logPath, 'utf8').split('\n')) {
+    const m = line.match(re);
+    if (!m) continue;
+    const at = new Date(m[1]!);
+    if (at >= from && at <= to) {
+      seen.push({ method: m[2]!, path: m[3]!, status: Number(m[4]), offsetMs: at.getTime() - readyAt.getTime() });
+    }
+  }
+  return seen;
+}
+
+async function run(): Promise<void> {
+  const jwt = need('jwt');
+  const projectId = projectIdArg();
+  const rounds = Number(arg('rounds', '1'));
+  const arms = parseArms(need('arms'));
+  const out = arg('out', join(tmpdir(), 'project-snapshot-bench.jsonl'))!;
+  const apiLogs = new Map<string, string>();
+  for (let i = 0; i < process.argv.length; i += 1) {
+    if (process.argv[i] === '--api-log') {
+      const [path, label] = (process.argv[i + 1] ?? '').split('=');
+      if (path && label) apiLogs.set(label, path);
+    }
+  }
+  const warmups = Number(arg('warmups', '1'));
+  for (let w = 0; w < warmups; w += 1) {
+    for (const arm of arms) {
+      const r = await oneRound(arm, jwt, projectId, -1 - w, apiLogs.get(arm.label));
+      console.error(`warmup ${arm.label}: ${r.ok ? `${r.runtime_ready_ms}ms` : `FAILED ${r.error}`}`);
+    }
+  }
+  for (let round = 1; round <= rounds; round += 1) {
+    // Alternate arm order every round so drift affects every arm equally.
+    const order = round % 2 === 1 ? arms : [...arms].reverse();
+    for (const arm of order) {
+      const r = await oneRound(arm, jwt, projectId, round, apiLogs.get(arm.label));
+      appendFileSync(out, `${JSON.stringify(r)}\n`);
+      await sleep(Number(arg('cooldown-ms', '10000')));
+      const cp = (r.config_provider ?? {}) as Record<string, unknown>;
+      console.error(
+        `round ${round} ${arm.label}: ${r.ok ? 'ok' : 'FAIL'} ack=${r.create_ack_ms}ms start=${r.start_ready_ms}ms ready=${r.runtime_ready_ms}ms ` +
+          `provider=${cp.provider ?? '?'} fallback=${cp.fallback ?? '?'} reason=${cp.s3_reason ?? '-'} git_proxy=${r.git_proxy_requests ?? '?'}${r.error ? ` ${r.error}` : ''}`,
+      );
+    }
+  }
+  console.log(out);
+}
+
+// ── report ──────────────────────────────────────────────────────────────────
+function histogram(rounds: Round[], keep: (q: GitProxyRequest) => boolean): Record<string, number> {
+  return rounds.reduce<Record<string, number>>((acc, r) => {
+    for (const q of r.git_proxy_paths ?? []) {
+      if (!keep(q)) continue;
+      const key = `${q.method} ${q.path} ${q.status}`;
+      acc[key] = (acc[key] ?? 0) + 1;
+    }
+    return acc;
+  }, {});
+}
+
+function pct(sorted: number[], p: number): number {
+  if (!sorted.length) return Number.NaN;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[idx]!;
+}
+function report(): void {
+  const rows: Round[] = readFileSync(need('in'), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  const byArm = new Map<string, Round[]>();
+  for (const r of rows) byArm.set(r.arm, [...(byArm.get(r.arm) ?? []), r]);
+  const table: Record<string, unknown>[] = [];
+  for (const [arm, list] of byArm) {
+    const ok = list.filter((r) => r.ok);
+    const boot = ok.map((r) => r.runtime_ready_ms!).sort((a, b) => a - b);
+    const acq = ok
+      .map((r) => {
+        const cp = r.config_provider as { timings?: Record<string, number> } | null;
+        const t = cp?.timings ?? {};
+        return (t.warm ?? 0) + (t.git ?? 0) + (t.s3_acquire ?? 0) + (t.s3_activate ?? 0) + (t.s3_failed ?? 0);
+      })
+      .sort((a, b) => a - b);
+    const materialized = ok.map((r) => r.boot_marks['repo-materialized'] ?? Number.NaN).filter(Number.isFinite).sort((a, b) => a - b);
+    const s3Attempts = ok.filter((r) => (r.config_provider as any)?.s3_attempted).length;
+    const s3Failures = ok.filter((r) => (r.config_provider as any)?.s3_failed).length;
+    const fallbacks = ok.filter((r) => (r.config_provider as any)?.fallback).length;
+    const providers = ok.reduce<Record<string, number>>((acc, r) => {
+      const p = String((r.config_provider as any)?.provider ?? 'n/a');
+      acc[p] = (acc[p] ?? 0) + 1;
+      return acc;
+    }, {});
+    table.push({
+      arm,
+      rounds: list.length,
+      ok: ok.length,
+      failed: list.length - ok.length,
+      providers,
+      s3_attempts: s3Attempts,
+      s3_failures: s3Failures,
+      fallbacks,
+      acquisition_p50_ms: pct(acq, 50),
+      acquisition_p95_ms: pct(acq, 95),
+      repo_materialized_mark_p50_ms: pct(materialized, 50),
+      full_boot_p50_ms: pct(boot, 50),
+      full_boot_p95_ms: pct(boot, 95),
+      full_boot_min_ms: boot[0] ?? null,
+      full_boot_max_ms: boot[boot.length - 1] ?? null,
+      // Git-proxy calls the arm's API logged for the project, summed over
+      // rounds, split by when they completed relative to the bench's
+      // OBSERVED readiness. Readiness is observed up to ~1 s late (500 ms
+      // health poll + proxy round trip), and the daemon kicks the deferred
+      // history backfill exactly at readiness — so `pre_ready` (< -1000 ms)
+      // is acquisition-related work and `at_or_after_ready` is the backfill
+      // pair (`info/refs` + `git-upload-pack`) or nothing.
+      git_proxy_pre_ready_by_path: histogram(ok, (q) => q.offsetMs < -1000),
+      git_proxy_at_or_after_ready_by_path: histogram(ok, (q) => q.offsetMs >= -1000),
+      git_proxy_pre_ready_avg: ok.length
+        ? ok.reduce((a, r) => a + (r.git_proxy_paths ?? []).filter((q) => q.offsetMs < -1000).length, 0) / ok.length
+        : null,
+      daemon_fingerprints: ok.reduce<Record<string, number>>((acc, r) => {
+        acc[r.daemon_fingerprint ?? '?'] = (acc[r.daemon_fingerprint ?? '?'] ?? 0) + 1;
+        return acc;
+      }, {}),
+      extractors: ok.reduce<Record<string, number>>((acc, r) => {
+        if (r.s3_extractor) acc[r.s3_extractor] = (acc[r.s3_extractor] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // Where the S3 boots got their descriptor: presigned in the env at
+      // create (no proxy call on the boot path) or fetched from the proxy.
+      descriptors: ok.reduce<Record<string, number>>((acc, r) => {
+        if (r.s3_descriptor) acc[r.s3_descriptor] = (acc[r.s3_descriptor] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // v2 hydration (blob-pack import after readiness): outcome counts, the
+      // import's own duration, and when after create it was observed settled.
+      hydration: (() => {
+        const rounds = ok.filter((r) => r.hydration);
+        if (rounds.length === 0) return null;
+        const statuses = rounds.reduce<Record<string, number>>((acc, r) => {
+          acc[r.hydration!.status] = (acc[r.hydration!.status] ?? 0) + 1;
+          return acc;
+        }, {});
+        const ms = rounds.filter((r) => r.hydration!.status === 'ok').map((r) => r.hydration!.ms).sort((a, b) => a - b);
+        const settled = rounds.map((r) => r.hydration_settled_ms).filter((v): v is number => v !== null).sort((a, b) => a - b);
+        return { statuses, import_ms_p50: pct(ms, 50), import_ms_p95: pct(ms, 95), settled_after_create_p50_ms: pct(settled, 50), settled_after_create_p95_ms: pct(settled, 95) };
+      })(),
+      sandbox_providers: ok.reduce<Record<string, number>>((acc, r) => {
+        acc[r.provider ?? '?'] = (acc[r.provider ?? '?'] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // `--probe-hosts`: where the boxes sat (city histogram) and the in-box
+      // network distance to each probed host.
+      probe: (() => {
+        const rounds = ok.filter((r) => r.probe);
+        if (rounds.length === 0) return null;
+        const cities = rounds.reduce<Record<string, number>>((acc, r) => {
+          const c = r.probe!.city ?? '?';
+          acc[c] = (acc[c] ?? 0) + 1;
+          return acc;
+        }, {});
+        const hosts: Record<string, { connect_p50_ms: number; ttfb_p50_ms: number; ttfb_p95_ms: number }> = {};
+        for (const h of new Set(rounds.flatMap((r) => Object.keys(r.probe!.hosts)))) {
+          const connect = rounds.map((r) => r.probe!.hosts[h]?.connect_ms).filter((v): v is number => v !== undefined).sort((a, b) => a - b);
+          const ttfb = rounds.map((r) => r.probe!.hosts[h]?.ttfb_ms).filter((v): v is number => v !== undefined).sort((a, b) => a - b);
+          hosts[h] = { connect_p50_ms: pct(connect, 50), ttfb_p50_ms: pct(ttfb, 50), ttfb_p95_ms: pct(ttfb, 95) };
+        }
+        return { cities, hosts };
+      })(),
+      // `--daemon-log`: why S3 first attempts failed, as the daemon logged them.
+      s3_retry_reasons: ok.reduce<Record<string, number>>((acc, r) => {
+        for (const e of r.s3_retries ?? []) {
+          const key = `${e.stage ?? '?'}/${e.reason ?? '?'}`;
+          acc[key] = (acc[key] ?? 0) + 1;
+        }
+        return acc;
+      }, {}),
+    });
+  }
+  console.log(JSON.stringify(table, null, 2));
+}
+
+switch (process.argv[2]) {
+  case 'jwt':
+    console.log(await mintJwt(arg('email', 'localdev@kortix.test')!));
+    break;
+  case 'setup':
+    await setup();
+    break;
+  case 'wait':
+    await waitReady();
+    break;
+  case 'run':
+    await run();
+    break;
+  case 'report':
+    report();
+    break;
+  default:
+    console.error('usage: project-snapshot-bench.ts <jwt|setup|wait|run|report> …');
+    process.exit(2);
+}
+process.exit(0);

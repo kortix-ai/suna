@@ -186,6 +186,9 @@ export const qk = {
      */
     modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
 
+    /** Persisted provider/model inference restrictions and the effective default. */
+    modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass
@@ -232,6 +235,25 @@ export const qk = {
      */
     sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
       [...qk.project.sessionsScope(id), 'list', scope] as const,
+
+    /**
+     * The PAGED session list — `useInfiniteQuery` over
+     * `listProjectSessionsPage`. A separate slot from `sessions(...)` because
+     * the two hold different SHAPES: this one caches
+     * `{ pages: ProjectSessionPage[], pageParams }`, that one caches a bare
+     * `ProjectSession[]`. react-query does not tag a cache entry with the hook
+     * that wrote it, so sharing one key between `useQuery` and
+     * `useInfiniteQuery` hands each hook the other's shape and both render
+     * garbage.
+     *
+     * It still nests under `sessionsScope(id)`, so the existing prefix
+     * invalidation every mutation already performs
+     * (`invalidateQueries({ queryKey: qk.project.sessionsScope(id) })`)
+     * reaches the paged list too. That is the point of the shared prefix — a
+     * new slot must not need a second invalidation nobody remembers to add.
+     */
+    sessionsPaged: (id: string, scope: 'visible' | 'project' = 'visible') =>
+      [...qk.project.sessionsScope(id), 'list-paged', scope] as const,
 
     /**
      * One session, by id. Nests directly under the scope-LESS

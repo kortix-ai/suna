@@ -163,23 +163,28 @@ mock.module('../shared/db', () => {
           return [];
         };
         return {
-          from: (table: any) => ({
-            // `.where(...)` is both awaitable (resolveShareSubject awaits it
-            // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (condition: any) => {
-              let ordered = false;
-              const query = {
-                orderBy: () => {
-                  ordered = true;
-                  return query;
-                },
-                limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
-                then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
-                  Promise.resolve(rowsFor(ordered)).then(resolve, reject),
-              };
-              return query;
-            },
-          }),
+          from: (table: any) => {
+            const afterFrom: Record<string, unknown> = {
+              // loadSandbox joins project_sessions for the session's own agent.
+              leftJoin: () => afterFrom,
+              // `.where(...)` is both awaitable (resolveShareSubject awaits it
+              // directly, expecting an array) and chainable via `.limit(n)`.
+              where: (condition: any) => {
+                let ordered = false;
+                const query = {
+                  orderBy: () => {
+                    ordered = true;
+                    return query;
+                  },
+                  limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
+                  then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                    Promise.resolve(rowsFor(ordered)).then(resolve, reject),
+                };
+                return query;
+              },
+            };
+            return afterFrom;
+          },
         };
       },
       update: (table: unknown) => ({
@@ -1344,6 +1349,65 @@ describe('Preview proxy: forwarding', () => {
   });
 });
 
+describe('Preview proxy: provider credential recovery', () => {
+  const providerRejection = JSON.stringify({
+    statusCode: 401,
+    code: 'UNAUTHORIZED',
+    message: 'unauthorized: authentication failed: Invalid or expired token',
+  });
+
+  const providerRefusals: typeof mockFetchResponses = [
+    { status: 401, body: providerRejection, headers: { 'content-type': 'application/json' } },
+    { status: 307, body: '', headers: { location: 'https://api.auth.daytona.io/user_management/authorize?state=opaque' } },
+  ];
+  for (const rejected of providerRefusals) {
+    test(`refreshes rejected Daytona ingress credentials after ${rejected.status}`, async () => {
+      mockFetchResponses = [rejected, { status: 200, body: '[]' }];
+      const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+      expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+      expect(mockFetchCallCount).toBe(2);
+      expect(mockWakeCalls).toEqual([]);
+    });
+  }
+
+  test('stops after one credential refresh and does not expose provider login redirects', async () => {
+    mockFetchResponses = Array.from({ length: 5 }, () => ({ status: 401, body: providerRejection }));
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe('sandbox_provider_auth_unavailable');
+    expect(mockFetchCallCount).toBe(2);
+  });
+
+  test('invalidates provider credentials without replaying a PTY creation', async () => {
+    mockFetchResponses = [{ status: 401, body: providerRejection }];
+    const app = createProxyTestApp();
+    const response = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
+      method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: '{}',
+    });
+    expect(response.status).toBe(503);
+    expect(mockFetchCallCount).toBe(1);
+    mockFetchResponses = [{ status: 200, body: '[]' }];
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, { headers: { Authorization: 'Bearer test' } });
+    expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
+  });
+
+  test('preserves application OAuth redirects', async () => {
+    mockFetchResponses = [{ status: 307, body: '', headers: { location: 'https://accounts.example.com/login' } }];
+    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://accounts.example.com/login');
+    expect(mockFetchCallCount).toBe(1);
+  });
+});
+
 describe('Preview proxy: CORS', () => {
   test('sets CORS headers for the web app, and for nobody else', async () => {
     // A preview's credential is an ambient SameSite=None cookie, so echoing an
@@ -1620,6 +1684,47 @@ describe('Preview proxy: long-turn completion timeout', () => {
     expect(callCount).toBe(1);
     // The sandbox is healthy and still working — waking it is both wrong
     // and wasted (an extra provider call to an already-running box).
+    expect(mockWakeCalls.length).toBe(0);
+  });
+
+  // The daemon replies to `/file/import` only after the download, fsync and
+  // rename, and it does not observe a client disconnect. A replay downloads the
+  // same attachment a second time, and a wake is wasted on a healthy box.
+  test('a connect-timer abort on POST /file/import is not replayed and does not wake', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    // Only the daemon port serves `/file/import`; on another port it is the user's own route.
+    const res = await app.request(`/v1/p/sandbox-file-import-001/8000/file/import`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command_id: 'c', attachment_id: 'a', part_index: 0 }),
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.ok).toBe(false);
+    expect(callCount).toBe(1);
     expect(mockWakeCalls.length).toBe(0);
   });
 

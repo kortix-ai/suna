@@ -111,7 +111,7 @@ export function TemplateSessionInstallDialog({
     } catch (e) {
       setError(
         isManagedGitUnavailableError(e)
-          ? "Managed git isn't set up on this server — an admin needs to connect GitHub in Git settings before projects can be created."
+          ? "Managed git isn't set up on this server — a platform admin connects GitHub in the admin console before projects can be created."
           : (e as Error).message || 'Could not open the install session',
       );
       setOpening(false);

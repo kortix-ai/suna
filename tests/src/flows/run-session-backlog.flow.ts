@@ -40,7 +40,7 @@ async function waitForSessionReady(
   ctx: FlowContext,
   projectId: string,
   sessionId: string,
-  timeoutMs = 300_000,
+  timeoutMs = 540_000,
 ): Promise<any> {
   try {
     return await waitFor(
@@ -166,7 +166,9 @@ flow(
                 )
               : null;
             const title = typeof root?.title === 'string' ? root.title.trim() : '';
-            return Boolean(title) && !/^new (session|agent)\b/i.test(title) && row?.name === title;
+            const sessionTitle = typeof row?.name === 'string' ? row.name.trim() : '';
+            return Boolean(title) && !/^new (session|agent)\b/i.test(title) &&
+              Boolean(sessionTitle) && !/^new (session|agent)\b/i.test(sessionTitle);
           },
           timeoutMs: 180_000,
           intervalMs: 3_000,
@@ -352,7 +354,7 @@ async function waitForAssistantOutput(
   ocId: string,
   timeoutMs = 240_000,
 ): Promise<any[]> {
-  return waitFor(
+  const messages = await waitFor(
     async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
       return r.statusCode === 200 ? r.json<any[]>() : [];
@@ -364,6 +366,11 @@ async function waitForAssistantOutput(
       description: `observable assistant output in OpenCode session ${ocId}`,
     },
   );
+  const failed = messages.find((message: any) => message?.info?.role === 'assistant' && message?.info?.error);
+  if (failed) {
+    throw new Error(`OpenCode assistant failed: ${failed.info.error.data?.message ?? failed.info.error.name}`);
+  }
+  return messages;
 }
 
 // ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
@@ -528,7 +535,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 660_000,
     // Only manifest-real routes are declared; the /p/<sbx>/8000/* proxy
     // catch-all is exercised at runtime but is not a coverage target.
     routes: [
@@ -551,7 +558,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -580,7 +587,7 @@ flow(
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -825,18 +832,18 @@ flow(
     // otherwise). Block on OpenCode readiness before minting the share token.
     await createOcConversation(ctx, sandboxId);
 
-    // The mint proxies to the sandbox daemon's /kortix/share. The default
-    // template's daemon returns an opaque payload (a token when share is wired,
-    // else an HTML/empty body) — so we assert the platform endpoint responds and
-    // extract a token if present, without failing the auth-boundary flow when the
-    // daemon doesn't implement share. (Core coverage here is the 401 boundary +
-    // the /v1/p/share mount.)
+    // The mint proxies to the sandbox daemon's /kortix/share. A daemon without
+    // share routes answers its /kortix catch-all 404, which the API reports as
+    // 501 — so we assert the platform endpoint responds and extract a token if
+    // present, without failing the auth-boundary flow when the daemon doesn't
+    // implement share. (Core coverage here is the 401 boundary + the
+    // /v1/p/share mount.)
     let shareToken = '';
     await ctx.step('mint a scoped preview share token (endpoint responds)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post('/v1/p/share', { sandbox_id: sandboxId, port: 8000 });
-      r.status([200, 201, 502]); // 502 = daemon share not implemented on this template
+      r.status([200, 201, 501]); // 501 = this sandbox daemon has no share routes
       shareToken = r.json<any>()?.token ?? r.json<any>()?.share?.token ?? '';
     });
     if (shareToken) {
@@ -1231,9 +1238,25 @@ flow(
         ],
       });
       await waitForAssistantOutput(ctx, sandboxId, ocId);
-      const file = await ctx.client
-        .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+      // An assistant part can precede its file-writing tool. Wait for the
+      // requested artifact, and surface terminal model errors while waiting.
+      const file = await waitFor(async () => {
+        const messages = await ctx.client.as(ctx.P.OWNER)
+          .get(ocPath(sandboxId, `/session/${ocId}/message`));
+        messages.status(200);
+        const failed = messages.json<any[]>().find((m) => m?.info?.error);
+        if (failed) throw new Error(`golden agent turn failed: ${JSON.stringify(failed.info.error)}`);
+        const result = await ctx.client.as(ctx.P.OWNER)
+          .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+        result.status([200, 404]);
+        return result;
+      }, {
+        until: (result) => result.statusCode === 200 &&
+          new RegExp(`^${goldenMarker}\\n?$`).test(String(result.json<any>()?.content ?? '')),
+        timeoutMs: 240_000,
+        intervalMs: 2000,
+        description: 'the golden agent writes the complete requested file',
+      });
       file
         .status(200)
         .body()

@@ -32,7 +32,7 @@ export type StepFamily =
   | 'delegate'
   | 'sessions'
   | 'memory'
-  | 'apps'
+  | 'connectors'
   | 'automations'
   | 'projects'
   | 'skills'
@@ -121,7 +121,7 @@ assign('sessions', [
   'session_list_spawned',
 ]);
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
-assign('apps', [
+assign('connectors', [
   'connector_get',
   'connector_list',
   'connector_setup',
@@ -353,22 +353,31 @@ function automationAction(part: ToolPart): AutomationAction {
   return classifyAutomationAction(m ? m[1] : 'list');
 }
 
-// ─── apps: discovery/reads vs actually connecting vs running a connected tool ─
+// ─── connectors: discovery/reads vs actually connecting vs running a connector action ─
+//
+// "Connector", never "app": an App is a Kortix product (a hosted web app), so a
+// connector narrated as "an app" reads as that product.
 
-type AppAction = 'connect' | 'read' | 'call';
+type ConnectorAction = 'connect' | 'read' | 'call';
 
-const APP_ACTION: Record<string, AppAction> = {
+const CONNECTOR_ACTION: Record<string, ConnectorAction> = {
   connector_setup: 'connect',
   connector_get: 'read',
   connector_list: 'read',
   kortix_connector_discover: 'read',
   kortix_connector_describe: 'read',
   kortix_connectors: 'read',
+  kortix_connectors_connectors: 'read',
+  kortix_connectors_discover: 'read',
+  kortix_connectors_describe: 'read',
   kortix_connector_call: 'call',
+  // The name the runtime registers today. Unmapped, it fell through to 'read'
+  // and a real call was narrated as "Checked".
+  kortix_connectors_call: 'call',
 };
 
-function appAction(part: ToolPart): AppAction {
-  return APP_ACTION[normalizeName(part.tool)] ?? 'read';
+function connectorAction(part: ToolPart): ConnectorAction {
+  return CONNECTOR_ACTION[normalizeName(part.tool)] ?? 'read';
 }
 
 // ─── projects: opening/viewing vs creating vs updating vs a delete that is a no-op ─
@@ -757,20 +766,22 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       }
       return 'Worked with its memory';
     }
-    case 'apps': {
-      const actions = parts.map(appAction);
+    case 'connectors': {
+      const actions = parts.map(connectorAction);
       if (allSame(actions)) {
         switch (actions[0]) {
           case 'connect':
-            if (n === 1) return arg ? `Connected to ${arg}` : 'Connected to an app';
-            return `Connected to ${n} apps`;
+            if (n === 1) return arg ? `Connected to ${arg}` : 'Connected a connector';
+            return `Connected ${n} connectors`;
           case 'call':
-            return n === 1 ? 'Used a connected app' : `Used ${n} connected apps`;
+            // `n` counts calls, not distinct connectors: two calls to Gmail
+            // are not "2 connectors".
+            return n === 1 ? 'Used a connector' : `Made ${n} connector calls`;
           case 'read':
-            return 'Checked your connected apps';
+            return 'Checked your connectors';
         }
       }
-      return 'Worked with your connected apps';
+      return 'Worked with your connectors';
     }
     case 'automations': {
       const actions = parts.map(automationAction);
@@ -871,8 +882,8 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
       return "Couldn't check earlier work";
     case 'memory':
       return "Couldn't reach its memory";
-    case 'apps':
-      return "Couldn't reach a connected app";
+    case 'connectors':
+      return "Couldn't reach a connector";
     case 'automations':
       return 'Hit a problem with your automations';
     case 'projects':

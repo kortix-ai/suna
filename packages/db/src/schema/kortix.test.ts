@@ -45,6 +45,7 @@ import {
   auditSessionSequences,
   auditWebhookDeliveries,
   accountSsoProviders,
+  accountScimUsers,
   connectorAuthorizationStrategyEnum,
   connectorCalls,
   connectorConnections,
@@ -731,5 +732,17 @@ describe('canonical RBAC tables (PR2)', () => {
     const pk = cfg.primaryKeys[0];
     expect(pk?.columns.map((c) => c.name)).toEqual(['project_id', 'user_id']);
     expect(cfg.indexes.some((i) => i.config.name === 'idx_project_members_project_user')).toBe(true);
+  });
+});
+
+
+describe('SCIM directory identity', () => {
+  test('scopes stable IDs and unique names to one account', () => {
+    const cfg = getTableConfig(accountScimUsers);
+    expect(cfg.primaryKeys[0]?.columns.map(c => c.name)).toEqual(['account_id', 'scim_id']);
+    const names = cfg.indexes.find(i => i.config.name === 'account_scim_users_account_email');
+    expect(names?.config.unique).toBe(true);
+    expect(names?.config.columns.map(c => 'name' in c ? c.name : null)).toEqual(['account_id', 'user_name']);
+    expect(cfg.foreignKeys[0]?.onDelete).toBe('cascade');
   });
 });

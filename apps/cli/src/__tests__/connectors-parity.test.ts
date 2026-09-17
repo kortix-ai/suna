@@ -148,6 +148,13 @@ function startServer(): string {
       if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_1/oauth2/device/sess_dev`) {
         return Response.json({ status: 'active', scopes: ['mail.read'] });
       }
+      if (url.pathname === `${ex}/connect/toolkits`) {
+        return Response.json({
+          items: [{ slug: 'slack', name: 'Slack', description: 'Chat', categories: ['comms'], connection: { isActive: false } }],
+          cursor: null,
+          totalPages: 1,
+        });
+      }
       if (url.pathname === `${ex}/pipedream/apps` && req.method === 'GET') {
         return Response.json({ apps: [{ slug: 'slack', name: 'Slack', description: 'Chat', categories: ['comms'] }], hasMore: false });
       }
@@ -406,9 +413,19 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stderr).toContain('--default risk|allow_all');
   });
 
-  test('apps forwards --category to the Pipedream catalogue', async () => {
+  // `apps` searches Composio by default — those are the slugs `add --provider
+  // composio --app` accepts. The Pipedream catalogue is legacy rollback-only.
+  test('apps forwards --category to the Composio toolkit catalogue', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'apps', 'sl', '--category', 'comms', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connect/toolkits?q=sl&category=comms`);
+    expect(r.stdout).toContain('slack');
+  });
+
+  test('apps --pipedream forwards --category to the legacy catalogue', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'apps', 'sl', '--category', 'comms', '--pipedream', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/pipedream/apps?q=sl&category=comms`);
     expect(r.stdout).toContain('slack');

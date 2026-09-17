@@ -62,7 +62,7 @@ describe('readAgentBlockV2', () => {
       secrets: ['STRIPE_KEY'],
       skills: ['pdf-export'],
       kortix_cli: ['project.session.start'],
-      workspace: 'runtime',
+      repository_access: false,
     });
     expect(read.block).not.toHaveProperty('opencode');
     expect(read.block).not.toHaveProperty('description');
@@ -137,7 +137,8 @@ describe('applyAgentBlockV2', () => {
     expect(agents.support.connectors).toBe('all');
     expect(agents.support.secrets).toBe('none');
     expect(agents.support.skills).toEqual(['pdf-export', 'web-research']);
-    expect(agents.support.workspace).toBe('branch');
+    expect(agents.support.repository_access).toBe(true);
+    expect(agents.support).not.toHaveProperty('workspace');
     // Sibling agents / default_agent are untouched by a single-agent edit.
     expect(applied.raw.default_agent).toBe('support');
   });
@@ -364,5 +365,35 @@ describe('connectors_required — the config route validation gate', () => {
     expect(normalized.ok).toBe(true);
     if (!normalized.ok) return;
     expect(normalized.block.connectors_required).toEqual([]);
+  });
+});
+
+
+describe('repository access', () => {
+  test('mirrors false for older API readers while returning only the boolean', () => {
+    const saved = applyAgentBlockV2(v2Manifest(), 'support', { repository_access: false });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect((saved.raw.agents as any).support).toEqual({ repository_access: false, workspace: 'runtime' });
+    const read = readAgentBlockV2({ ...v2Manifest(), raw: saved.raw }, 'support');
+    expect(read.ok && read.block).toEqual({ repository_access: false });
+  });
+  test('rejects conflicting aliases and invalid boolean values', () => {
+    for (const block of [{ repository_access: true, workspace: 'runtime' }, { repository_access: 'false' }]) {
+      expect(applyAgentBlockV2(v2Manifest(), 'support', block as any).ok).toBe(false);
+    }
+  });
+  test('keeps legacy read unavailable until a boolean is explicitly saved', () => {
+    const saved = applyAgentBlockV2(v2Manifest(), 'support', { workspace: 'read' });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    const agents = extractAgents({ ...v2Manifest(), raw: saved.raw });
+    expect(agents.specs[0]?.legacyReadWorkspace).toBe(true);
+    const resolved = applyAgentBlockV2({ ...v2Manifest(), raw: saved.raw }, 'support', { repository_access: false });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    const updated = extractAgents({ ...v2Manifest(), raw: resolved.raw });
+    expect(updated.specs[0]?.legacyReadWorkspace).toBe(false);
+    expect(updated.specs[0]?.repositoryAccess).toBe(false);
   });
 });

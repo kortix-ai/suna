@@ -4,6 +4,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import {
   ChartLineUpIcon,
   CubeIcon,
+  GitBranchIcon,
   KanbanIcon,
   SquaresFourIcon,
   UsersIcon,
@@ -44,6 +45,9 @@ const NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/projects', label: 'Projects', icon: KanbanIcon },
   { href: '/admin/analytics', label: 'Analytics', icon: ChartLineUpIcon },
   { href: '/admin/sandboxes', label: 'Sandboxes', icon: CubeIcon },
+  // The instance's ONE managed-git identity. It sits here, not on an account
+  // page, because it is instance-global — see `app/admin/git/page.tsx`.
+  { href: '/admin/git', label: 'Git', icon: GitBranchIcon },
   { href: '/admin/utils', label: 'Maintenance', icon: WrenchIcon },
 ];
 
