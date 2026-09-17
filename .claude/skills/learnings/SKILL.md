@@ -21,6 +21,10 @@ linked, not inlined.
 
 ## Register
 
+### Revalidate archived files after a sandbox restart (2026-09-17)
+
+**Rule:** When retrying a workspace import, check every required archive file in the live sandbox before invoking the native importer. Restore missing files from the captured local archive and verify their hashes. Interrupt a runtime start that has produced no output for six minutes. **Incident:** Four Suna retries retained a workspace restore receipt but their live sandboxes lacked `manifest.json` and `workspace.tar.gz`; another start remained in `starting` without progress. **Enforcement:** the private importer checks and restores missing archive copies; the recovery worker retries this exact diagnostic and watches start-stage inactivity.
+
 ### Keep read-back chunks below the observed provider reset size (2026-09-17)
 
 **Rule:** When a provider resets a file download before the first chunk completes, reduce new chunk size below the observed failure point. Preserve the size of any already verified chunk series so retries do not discard its prefix. **Incident:** Platinum reset the 778 MiB migration file read-back after about 11 MiB of a 64 MiB first chunk. The session stayed in review. **Enforcement:** the private verifier now starts new large-file reads at 8 MiB, resumes the chunk size stored in the first verified receipt, and still requires the full source SHA-256. Its interruption test changes configured chunk size between attempts and proves the first chunk is reused.
