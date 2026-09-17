@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "Ova instanca nema GitHub aplikaciju za instalaciju. Administrator platforme to podešava u administratorskoj konzoli.",
       "text7f59f014cd7b": "Već je instalirana kod željenog vlasnika?",
       "text9180f7df8906": "Poveži instalaciju kojom već administrirate",
-      "text0b0e4c425624": "Već je povezana sa {value0, plural, one {# drugim Kortix nalogom} few {# druga Kortix naloga} other {# drugih Kortix naloga}}."
+      "text0b0e4c425624": "Već je povezana sa {value0, plural, one {# drugim Kortix nalogom} few {# druga Kortix naloga} other {# drugih Kortix naloga}}.",
+      "text7dac2ca010fe": "Припрема целог транскрипта…"
     }
   },
   "projectOnboarding": {

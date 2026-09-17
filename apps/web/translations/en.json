@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "This instance has no GitHub App to install. A platform admin sets this up in the admin console.",
       "text7f59f014cd7b": "Already installed on the owner you want?",
       "text9180f7df8906": "Link an installation you already administer",
-      "text0b0e4c425624": "Already linked to {value0, plural, one {# other Kortix account} other {# other Kortix accounts}}."
+      "text0b0e4c425624": "Already linked to {value0, plural, one {# other Kortix account} other {# other Kortix accounts}}.",
+      "text7dac2ca010fe": "Preparing the full transcript…"
     }
   },
   "projectOnboarding": {

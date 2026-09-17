@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "Auf dieser Instanz gibt es keine GitHub-App zum Installieren. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
       "text7f59f014cd7b": "Beim gewünschten Inhaber bereits installiert?",
       "text9180f7df8906": "Eine bereits von Ihnen verwaltete Installation verknüpfen",
-      "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft."
+      "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft.",
+      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…"
     }
   },
   "projectOnboarding": {

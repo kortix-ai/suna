@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "Esta instancia no tiene ninguna app de GitHub para instalar. Un administrador de la plataforma lo configura en la consola de administración.",
       "text7f59f014cd7b": "¿Ya está instalada en el propietario que quieres?",
       "text9180f7df8906": "Vincular una instalación que ya administras",
-      "text0b0e4c425624": "Ya está vinculada a {value0, plural, one {# otra cuenta de Kortix} other {# otras cuentas de Kortix}}."
+      "text0b0e4c425624": "Ya está vinculada a {value0, plural, one {# otra cuenta de Kortix} other {# otras cuentas de Kortix}}.",
+      "text7dac2ca010fe": "Preparando la transcripción completa…"
     }
   },
   "projectOnboarding": {

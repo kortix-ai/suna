@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "此实例没有可安装的 GitHub 应用。平台管理员可在管理控制台中完成设置。",
       "text7f59f014cd7b": "已经安装在你想要的所有者上了吗？",
       "text9180f7df8906": "关联你已管理的安装",
-      "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。"
+      "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。",
+      "text7dac2ca010fe": "正在准备完整记录…"
     }
   },
   "projectOnboarding": {

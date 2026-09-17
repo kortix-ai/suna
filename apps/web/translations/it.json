@@ -18414,7 +18414,8 @@
       "text183bc0d276cc": "Questa istanza non ha nessuna app GitHub da installare. Un amministratore della piattaforma lo configura nella console di amministrazione.",
       "text7f59f014cd7b": "È già installata sul proprietario che ti serve?",
       "text9180f7df8906": "Collega un'installazione che amministri già",
-      "text0b0e4c425624": "Già collegata a {value0, plural, one {# altro account Kortix} other {# altri account Kortix}}."
+      "text0b0e4c425624": "Già collegata a {value0, plural, one {# altro account Kortix} other {# altri account Kortix}}.",
+      "text7dac2ca010fe": "Preparazione della trascrizione completa…"
     }
   },
   "projectOnboarding": {

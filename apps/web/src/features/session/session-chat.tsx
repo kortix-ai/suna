@@ -34,6 +34,8 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QueuedPromptList } from './composer/queued-prompt-list';
+import { SessionPrintHeader } from './print/session-print-header';
+import { useSessionPrint } from './print/use-session-print';
 import {
   COMPOSER_EDITOR_SELECTOR,
   SUGGESTION_MENU_SELECTOR,
@@ -2998,6 +3000,18 @@ export function SessionChat({
   } = useAutoScroll({
     hasContent: messageCount > 0,
   });
+  // Cmd/Ctrl+P prints the WHOLE conversation. The shortcut is intercepted
+  // because neither half of what printing needs can be done in CSS: the
+  // transcript is paged (so the tail would print alone) and its ancestors clip
+  // (so one viewport would print). See `use-session-print.ts`.
+  const { isPreparing: isPreparingPrint } = useSessionPrint({
+    scrollRef,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
+    enabled: !hideHeader,
+  });
+
   // Older history loads by scrolling, not by clicking: a sentinel above the
   // first turn pulls the previous page as it nears the top of the viewport.
   // A pull always prepends content above the reader, so every one is wrapped
@@ -5440,6 +5454,21 @@ export function SessionChat({
         )}
         data-testid="session-chat"
       >
+        {/* Cmd+P drains the whole history before the print dialog opens. On a
+            long session that is a visible pause, and a keystroke that appears
+            to do nothing reads as broken — so it says what it is doing. Hidden
+            from the printed page itself (`data-print-hide`). */}
+        {isPreparingPrint && (
+          <div
+            data-print-hide
+            role="status"
+            className="bg-popover text-muted-foreground fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border px-4 py-2 text-xs shadow-lg"
+          >
+            <Loading className="size-3.5 shrink-0" />
+            {tHardcodedUi.raw('i18nComplete.text7dac2ca010fe')}
+          </div>
+        )}
+
         {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
           messages, project selector, and chat input). Input renders as frosted
           glass so the wallpaper reads through uninterrupted. Portaled into
@@ -5548,6 +5577,14 @@ export function SessionChat({
                   className={SESSION_TRANSCRIPT_CLASS}
                 >
                   <div className="flex min-w-0 flex-col">
+                    {/* Print only — `print.css` keeps this hidden on screen.
+                        It lives inside the transcript column so a printed PDF
+                        opens with the title of the conversation it contains
+                        (`session-print-header.tsx`). */}
+                    <SessionPrintHeader
+                      title={session?.title || 'Untitled'}
+                      agentName={composerAgentName}
+                    />
                     {/* Turn-based message rendering.
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
@@ -5903,7 +5940,10 @@ export function SessionChat({
                       streaming in beneath it, and it keeps that height when the
                       turn ends — nothing shifts on idle. Height is written
                       directly by use-auto-scroll.ts. */}
-                  <div ref={spacerElRef} />
+                  {/* `data-scroll-spacer`: this box is sized to the viewport so
+                      the last turn can sit at the top of it. On paper that is a
+                      blank page, so `print.css` removes it by this hook. */}
+                  <div ref={spacerElRef} data-scroll-spacer />
                 </div>
               </div>
 
