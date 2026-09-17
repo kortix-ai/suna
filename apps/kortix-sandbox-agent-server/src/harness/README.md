@@ -88,10 +88,42 @@ pi-only: `KORTIX_PI_STATE_DIR`, `KORTIX_PI_MODEL_MODE=faux` +
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
 
+### System extensions
+
+`pi/extensions/` holds the extensions every pi session loads, listed in
+`pi/extensions/index.ts`. They are compiled into the daemon: loading one is a
+function call (0.29 ms for `subagents` in the unit rig), with no import from
+disk and no network read. An extension uses pi's own shape —
+`export default (pi) => { pi.on(event, handler); pi.registerTool(tool) }` — so
+it also runs under pi-coding-agent. `pi/extensions/runner.ts` maps each event
+onto a hook of the core `Agent`: `tool_call` → `beforeToolCall` (after the
+permission policy; a throwing handler blocks), `tool_result` → `afterToolCall`,
+`context` → `transformContext`, `before_provider_request` → `onPayload`,
+`before_agent_start` → the turn's system prompt, `session_start` /
+`session_shutdown` → runtime start/reconfigure/stop, and the agent events →
+`subscribe`. Tool, context and provider hooks also run in child sessions.
+Everything else pi offers (`registerCommand`, `ctx.ui`, the session manager, …)
+is absent: an extension that calls it fails to load, is skipped, and
+`[pi] runtime ready` logs it under `extensions.failed`. `ctx.kortix` is the
+Kortix-only host API (`compiledAgents()`, `spawnSession()`).
+
+`subagents` is OpenCode's `task` tool: input `{ description, prompt,
+subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
+(set while the child runs), output `task_id: <id>` + `<task_result>`. Each call
+runs an in-process pi agent in a child session (`parentID` = root), with its
+own wire transcript served by `/session`, `/session/:id`,
+`/session/:id/message`, `/session/:root/children`, the state document and
+`/kortix/opencode/messages/:id`, and persisted in the root's dump so `task_id`
+resumes it after a restart. Types: `general` (all workspace tools), `explore`
+(`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
+or `all`. A child gets no `task` (no nesting) and no `question`. Several task
+calls in one message run concurrently; a batch that includes any other tool
+stays sequential. A child session is read-only (prompts to it answer 501).
+
 Not supported by pi today (answered honestly, never silently): session rewind
 (`/session/:id/revert`, 501 `feature_not_supported`), slash commands
-(`/session/:id/command`), summarize/compaction, subagent sessions, MCP/connector
-tools, todo tools, warm-seed capture. `/kortix/health` reports `harness: 'pi'`
+(`/session/:id/command`), summarize/compaction, MCP/connector tools, todo
+tools, warm-seed capture, user-defined extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
 
