@@ -5,6 +5,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -21,6 +22,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -30,7 +32,10 @@ import {
   inviteRepoCollaborator,
   isManagedGithubProject,
   listProjectBranches,
+  listLinkableGitHubInstallations,
+  replaceProjectRepository,
   updateProject,
+  type LinkableGitHubInstallation,
   type KortixProject,
   type ProjectDetail,
   type ProjectGitConnection,
@@ -146,10 +151,10 @@ function CommandLine({
 }) {
   return (
     <div className="bg-muted group/command-line -mx-2 flex min-w-0 items-center gap-2 rounded-sm px-3 py-1.5 transition-colors">
-      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap">
+      <code className="text-foreground scrollbar-hide min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap">
         {value}
       </code>
-      <span className="shrink-0 opacity-0 transition-opacity duration-200 group-hover/command-line:opacity-100">
+      <span className="shrink-0 opacity-0 transition-opacity duration-moderate group-hover/command-line:opacity-100">
         <CopyButton code={value} size="sm" />
       </span>
     </div>
@@ -314,6 +319,12 @@ function RepositoryGroup({
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [targetRepo, setTargetRepo] = useState('');
+  const [installations, setInstallations] = useState<LinkableGitHubInstallation[]>([]);
+  const [installationId, setInstallationId] = useState('');
+  const [githubProof, setGithubProof] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const { debouncedValue: debouncedBranch, isLoading: isDebouncingBranch } = useDebounce(
     defaultBranch,
     500,
@@ -369,6 +380,41 @@ function RepositoryGroup({
   ]);
 
   const saving = isDebouncingBranch || isDebouncingManifest || isPending;
+  const changeRepository = useMutation({
+    mutationFn: () => replaceProjectRepository({
+      project_id: project.project_id,
+      repo_url: targetRepo.trim(),
+      expected_repo_url: project.repo_url,
+      installation_id: installationId,
+      github_user_token: githubProof,
+    }),
+    onSuccess: () => {
+      setChangeOpen(false);
+      setGithubProof('');
+      setInstallations([]);
+      setTargetRepo('');
+      queryClient.invalidateQueries({ queryKey: qk.project.detail(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.project.summary(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
+      successToast('Repository changed. New sessions will use the new repository.');
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
+  const verifyGitHub = async () => {
+    setVerifying(true);
+    try {
+      const proof = await requestGitHubUserProof();
+      const result = await listLinkableGitHubInstallations({ account_id: project.account_id, github_user_token: proof });
+      setGithubProof(proof);
+      setInstallations(result.installations);
+      setInstallationId(result.installations[0]?.installation_id ?? '');
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : 'Could not verify GitHub access.');
+    } finally {
+      setVerifying(false);
+    }
+  };
   const repositoryProvider =
     connection?.provider ??
     (connection ? undefined : projectRepoFallback(project.repo_url)?.provider);
@@ -392,6 +438,7 @@ function RepositoryGroup({
           description={providerSentence(repositoryProvider)}
         >
           <RepositoryValue connection={connection} repoUrl={project.repo_url} />
+          {canManage ? <Button variant="outline" size="sm" onClick={() => setChangeOpen(true)}>Change</Button> : null}
         </SettingsRow>
 
         <SettingsRow label={tI18nComplete.raw('text920e413c7d41')}>
@@ -442,6 +489,51 @@ function RepositoryGroup({
           />
         </SettingsRow>
       </SettingsRowGroup>
+      <Modal open={changeOpen} onOpenChange={(open) => {
+        if (changeRepository.isPending) return;
+        setChangeOpen(open);
+        if (!open) { setGithubProof(''); setInstallations([]); setInstallationId(''); setTargetRepo(''); }
+      }}>
+        <ModalContent className="sm:max-w-md">
+          <ModalHeader>
+            <ModalTitle>Change repository</ModalTitle>
+            <ModalDescription>New sessions will use the new repository. Existing sessions cannot restart after the change.</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="space-y-4">
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">Current repository</p>
+              <p className="break-all font-mono text-xs">{project.repo_url}</p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="replacement-repo-url" className="text-sm font-medium">New GitHub repository URL</label>
+              <Input id="replacement-repo-url" value={targetRepo} onChange={(event) => setTargetRepo(event.target.value)} placeholder="https://github.com/owner/repository" autoComplete="off" />
+            </div>
+            <div className="space-y-2">
+              <Button variant="outline" size="sm" onClick={verifyGitHub} disabled={verifying || changeRepository.isPending}>
+                {verifying ? 'Verifying GitHub…' : githubProof ? 'Verify GitHub again' : 'Verify GitHub access'}
+              </Button>
+              {githubProof && installations.length === 0 ? <p className="text-muted-foreground text-xs">No GitHub App installation is available. Add the repository to the Kortix App installation in GitHub.</p> : null}
+              {installations.length > 0 ? (
+                <Select value={installationId} onValueChange={setInstallationId}>
+                  <SelectTrigger aria-label="GitHub App installation"><SelectValue placeholder="Select installation" /></SelectTrigger>
+                  <SelectContent>{installations.map((installation) => (
+                    <SelectItem key={installation.installation_id} value={installation.installation_id}>{installation.owner_login ?? installation.installation_id}</SelectItem>
+                  ))}</SelectContent>
+                </Select>
+              ) : null}
+            </div>
+            <InfoBanner tone="warning" icon={WarningIcon} title="Check before changing">
+              The new repository must contain {project.manifest_path} on its default branch. Stop active sessions and close open change requests first. The current repository remains unchanged if validation fails.
+            </InfoBanner>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>Cancel</Button>
+            <Button onClick={() => changeRepository.mutate()} disabled={!targetRepo.trim() || targetRepo.trim() === project.repo_url || !installationId || !githubProof || changeRepository.isPending}>
+              {changeRepository.isPending ? 'Changing…' : 'Change repository'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </section>
   );
 }
@@ -469,7 +561,7 @@ function Step({
 }) {
   return (
     <li className="flex gap-3 px-4 py-3.5">
-      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium tabular-nums">
+      <span className="bg-muted text-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
         {index}
       </span>
       <div className="min-w-0 flex-1 space-y-2.5">
@@ -579,7 +671,7 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
             </span>
             <CaretDownIcon
               className={cn(
-                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-200',
+                'text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform duration-moderate',
                 open && 'rotate-180',
               )}
             />

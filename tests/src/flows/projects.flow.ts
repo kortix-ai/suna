@@ -211,3 +211,49 @@ flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] 
     r.status(404);
   });
 });
+
+flow("PROJ-36", { domain: "projects", routes: ["PUT /v1/projects/:projectId/git/repository", "GET /v1/projects/:projectId"] }, async (ctx) => {
+  const project = await ctx.fixtures.project({ name: ctx.fixtures.name("repo-replace") });
+  const path = "/v1/projects/:projectId/git/repository";
+  const params = { projectId: project.id };
+  let expectedRepoUrl = "";
+  await ctx.step("OWNER reads the repository before attempting replacement", async () => {
+    const response = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    response.status(200).body().exists("$.repo_url");
+    expectedRepoUrl = response.json<any>().repo_url;
+  });
+  const body = () => ({
+    repo_url: "https://example.test/not-github.git",
+    expected_repo_url: expectedRepoUrl,
+    github_token: "invalid-test-token",
+  });
+  await ctx.step("OWNER cannot replace the repository with a non-GitHub URL", async () => {
+    const response = await ctx.client.as(ctx.P.OWNER).put(path, body(), { params });
+    response.status(400);
+    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    current.status(200).body().has("$.repo_url", expectedRepoUrl);
+  });
+  await ctx.step("OWNER must choose one GitHub authorization method", async () => {
+    const missing = await ctx.client.as(ctx.P.OWNER).put(path, {
+      repo_url: "https://github.com/example-org/shared-repository",
+      expected_repo_url: expectedRepoUrl,
+    }, { params });
+    missing.status(400);
+    const ambiguous = await ctx.client.as(ctx.P.OWNER).put(path, {
+      repo_url: "https://github.com/example-org/shared-repository",
+      expected_repo_url: expectedRepoUrl,
+      github_token: "unused-token", installation_id: "123", github_user_token: "unused-user-token",
+    }, { params });
+    ambiguous.status(400);
+    const current = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+    current.status(200).body().has("$.repo_url", expectedRepoUrl);
+  });
+  await ctx.step("NONMEMBER cannot replace another project's repository", async () => {
+    const response = await ctx.client.as(ctx.P.NONMEMBER).put(path, body(), { params });
+    response.status([403, 404]);
+  });
+  await ctx.step("ANON cannot replace the repository", async () => {
+    const response = await ctx.client.as(ctx.P.ANON).put(path, body(), { params });
+    response.status(401);
+  });
+});

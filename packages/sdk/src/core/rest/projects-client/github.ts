@@ -62,6 +62,23 @@ export interface LinkRepositoryResponse {
   git_connection: ProjectGitConnection | null;
 }
 
+export interface ReplaceProjectRepositoryInput {
+  project_id: string;
+  repo_url: string;
+  expected_repo_url: string;
+  /** Stored encrypted per project when using a repository-scoped PAT. */
+  github_token?: string;
+  /** App installation id. The grant is persisted for this repository only. */
+  installation_id?: string;
+  /** Temporary GitHub user token used to verify organization admin rights. Never stored. */
+  github_user_token?: string;
+  /** Copy selected shared runtime secrets atomically during the cutover. */
+  copy_shared_secrets_from_project_id?: string;
+  copy_shared_secret_identifiers?: string[];
+}
+
+export type ReplaceProjectRepositoryResponse = LinkRepositoryResponse;
+
 export interface GitHubInstallationStatus {
   account_id: string;
   installation_row_id: string | null;
@@ -114,6 +131,18 @@ export async function linkRepository(input: LinkRepositoryInput) {
       {
         showErrors: false,
       },
+    ),
+  );
+}
+
+/** Change the Git repository for an existing project after validating access. */
+export async function replaceProjectRepository(input: ReplaceProjectRepositoryInput) {
+  const { project_id, ...body } = input;
+  return unwrap(
+    await backendApi.put<ReplaceProjectRepositoryResponse>(
+      `/projects/${encodeURIComponent(project_id)}/git/repository`,
+      body,
+      { showErrors: false },
     ),
   );
 }

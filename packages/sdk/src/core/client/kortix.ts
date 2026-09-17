@@ -370,6 +370,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
   const github = {
     linkRepository: P.linkRepository,
+    replaceProjectRepository: P.replaceProjectRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
     listLinkableInstallations: P.listLinkableGitHubInstallations,
