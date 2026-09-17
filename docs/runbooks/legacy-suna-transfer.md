@@ -1343,6 +1343,11 @@ plist remains on disk; do not bootstrap it while the normal batch is working
 on the same prepared sessions. The unavailable-source reconciler remains
 running for provider-state changes.
 
+At 00:07 UTC, three more Suna boxes had remained `archiving` for over two
+hours and entered the approved history-only queue. One `archiving` box had
+not reached two hours; one `restoring` box had not reached one hour. Both stay
+in source review, with the reconciler checking them every five minutes.
+
 The final direct source-state check changed one of the 47 Suna exception
 candidates to a recoverable box. Its real workspace contained 53 files and
 32,451,807 bytes. The migration captured and verified those files on the
@@ -1351,7 +1356,10 @@ destination. The other 46 candidates reached
 files-unavailable notice and verified history, owner, title, and sharing.
 Do not count the recovered box as a files-unavailable exception.
 
-At 00:07 UTC, three more Suna boxes had remained `archiving` for over two
-hours and entered the approved history-only queue. One `archiving` box had
-not reached two hours; one `restoring` box had not reached one hour. Both stay
-in source review, with the reconciler checking them every five minutes.
+The 6,897,488,682-byte Suna workspace for source thread
+`f2228347-ec6c-4189-9380-52599b849679` reached `verified` in destination
+session `ddac0e77-e507-4f83-8f05-4f8ead2cdea5`. Its 2,235 files passed
+destination API download and SHA-256 comparison against the source manifest.
+The 190 native messages, 1,202 source rows, owner, title, and sharing passed
+read-back checks. The session was already stopped when the final stop receipt
+was recorded. The archive worker remains responsible for its provider archive.
