@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
+import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
 import {
   migrationLedgerRepairConnectorName,
@@ -240,6 +241,13 @@ async function main() {
     }
   };
 
+  const releaseEarlyAppliedMigrations = async () => {
+    const released = await repairEarlyAppliedMigrations(databaseUrl, runtimeMigrations.path);
+    for (const name of released) {
+      console.warn(`[migrate] released early-applied ${name}; it re-runs after its predecessors.`);
+    }
+  };
+
   const applyPendingMigrations = () => withMigrationDeadlockRetry(
     () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
     {
@@ -257,6 +265,7 @@ async function main() {
       case 'up':
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'local-up': {
@@ -277,6 +286,7 @@ async function main() {
           );
         }
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       }
@@ -284,6 +294,7 @@ async function main() {
         // Fresh-DB convenience for self-host: prereqs → then `up`.
         await autoBaselineIfNeeded(base, databaseUrl);
         await repairAppliedMigrationRenames();
+        await releaseEarlyAppliedMigrations();
         await applyPendingMigrations();
         return;
       case 'fake':
