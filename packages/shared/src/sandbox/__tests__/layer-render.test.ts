@@ -230,6 +230,43 @@ describe('Chromium sits on deterministic parents (cache order is load-bearing)',
   });
 });
 
+describe('install steps do not ship their download caches', () => {
+  // Daytona's image builder copies where BuildKit hardlinks, so a package
+  // manager cache left in a layer is a second copy of what it installed. A
+  // later RUN cannot remove bytes from an earlier layer: each step must clean
+  // up after itself.
+  const toolchain = kortixToolchainLayer({
+    opencodeVersion: OPENCODE_VERSION,
+    agentBrowserVersion: AGENT_BROWSER_VERSION,
+    opencodeConfigPath: 'kortix-opencode-config',
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+    isSharedDefault: true,
+  });
+  const runSteps = (text: string) =>
+    text.split(/\n(?=[A-Z]+ )/).filter((step) => step.startsWith('RUN ')).map((step) => step.trimEnd());
+
+  test('every pnpm step prunes the store in the same RUN', () => {
+    const pnpmSteps = runSteps(toolchain).filter((step) => /pnpm (?:add|runtime set)/.test(step));
+    expect(pnpmSteps).toHaveLength(4);
+    for (const step of pnpmSteps) expect(step).toMatch(/&& pnpm store prune$/);
+  });
+
+  test('the Python floor step clears the uv cache in the same RUN', () => {
+    const [floor] = runSteps(toolchain).filter((step) => step.includes('uv pip install'));
+    expect(floor).toMatch(/&& uv cache clean$/);
+  });
+
+  test('keeps the Bun and npm caches that session boot reads offline', () => {
+    // ensureOpencodeConfigDeps runs `bun install --offline` against
+    // ~/.bun/install/cache, and the OpenCode warm-up leaves its plugin
+    // tarballs in ~/.npm. Removing either moves an install onto boot.
+    expect(toolchain).not.toMatch(/rm -rf[^\n]*\.bun\/install/);
+    expect(toolchain).not.toMatch(/bun pm cache rm/);
+    expect(toolchain).not.toMatch(/rm -rf[^\n]*\.npm/);
+    expect(toolchain).not.toMatch(/npm cache clean/);
+  });
+});
+
 describe('the /workspace cleanup is scoped to the shared default image', () => {
   const WIPE = 'kortix-opencode-warmup instance wipe';
 

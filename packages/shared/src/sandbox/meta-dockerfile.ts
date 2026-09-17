@@ -91,6 +91,7 @@ RUN curl -fsSL https://get.pnpm.io/install.sh \\
  && ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
  && test "$(/usr/local/bin/opencode-kortix --version)" = "${OPENCODE_VERSION}" \\
  && ln -sf "\$(command -v node)" /usr/local/bin/node \\
+ && HOME=/home/kortix pnpm store prune \\
  && chown -R kortix:kortix /home/kortix
 
 COPY ${options.agentBinaryPath} /tmp/kortix-agent.gz

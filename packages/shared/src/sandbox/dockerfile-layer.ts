@@ -379,18 +379,31 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // The import check is a single-line `python3 -c` on purpose: E2B's
     // Dockerfile parser reads a heredoc body's first line as an instruction
     // and aborts the build.
+    //
+    // Download caches are cleared in the SAME step that fills them. BuildKit
+    // hardlinks uv's cache into site-packages, but Daytona's image builder
+    // copies instead, so the cache doubled the floor on disk (645 MB of 6.3 GB,
+    // measured 2026-09-17). A later step cannot shrink an earlier layer.
+    // `uv run --with <floor package>` still resolves offline from site-packages.
     'RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\',
     ...Object.entries(PYTHON_PACKAGE_FLOOR).map(
       ([pkg, version]) => `        "${pkg}==${version}" \\`,
     ),
     `    && python3 -c 'import importlib; [importlib.import_module(m) for m in ${JSON.stringify(
       Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS).sort(),
-    )}]; print("python package floor OK")'`,
+    )}]; print("python package floor OK")' \\`,
+    '    && uv cache clean',
     '',
     // Install pnpm's versioned standalone release artifact after verifying the
     // repository-controlled checksum. pnpm then owns the JavaScript runtime
     // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
     // pnpm's isolated global package store.
+    //
+    // Every pnpm step ends with `pnpm store prune`. It deletes store files that
+    // no installed package links to, plus the registry metadata cache. On
+    // BuildKit the store is hardlinked into the installs, so nothing is freed.
+    // On Daytona the builder copies, so each store file was a second copy of
+    // node, OpenCode and every global CLI (408 MB) next to 230 MB of metadata.
     'ENV SHELL=/bin/bash',
     'RUN case "$(uname -m)" in \\',
     `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
@@ -406,7 +419,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `    && pnpm runtime set node ${NODE_VERSION} -g \\`,
     `    && test "$(node --version)" = "v${NODE_VERSION}" \\`,
     `    && pnpm add -g "npm@${NPM_VERSION}" \\`,
-    `    && test "$(npm --version)" = "${NPM_VERSION}"`,
+    `    && test "$(npm --version)" = "${NPM_VERSION}" \\`,
+    '    && pnpm store prune',
     '',
     // agent-browser (Vercel) — the browser-automation CLI the agent-browser
     // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
@@ -485,7 +499,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
     // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
     // detection line, not the launch verdict, so the gate is emulation-safe.
-    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome' \\",
+    '    && pnpm store prune',
     '',
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
@@ -496,7 +511,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `    && test "$("$opencode_native" --version)" = "${opencodeVersion}" \\`,
     '    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\',
     '    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\',
-    `    && test "$(/usr/local/bin/opencode-kortix --version)" = "${opencodeVersion}"`,
+    `    && test "$(/usr/local/bin/opencode-kortix --version)" = "${opencodeVersion}" \\`,
+    '    && pnpm store prune',
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
@@ -544,7 +560,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // install (first non-deterministic layer downstream).
     `RUN pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \\`,
     '    && command -v anydoc \\',
-    `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
+    `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}" \\`,
+    '    && pnpm store prune',
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import

@@ -23,6 +23,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).not.toContain('pnpm list -g');
     expect(dockerfile).not.toContain('pnpm root -g');
     expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
+    expect(dockerfile).toContain('HOME=/home/kortix pnpm store prune \\\n && chown -R kortix:kortix /home/kortix');
     expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
     expect(dockerfile).toContain(
       'ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix',

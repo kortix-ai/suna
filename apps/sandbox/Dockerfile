@@ -148,7 +148,8 @@ RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-vers
 # contain no whitespace, and the `markitdown[pptx]` glob matches no file here.
 RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \
         $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
-    && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
+    && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')" \
+    && uv cache clean
 
 ENV SHELL=/bin/bash
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
@@ -170,7 +171,8 @@ RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-ru
     && pnpm runtime set node "$NODE_VERSION" -g \
     && test "$(node --version)" = "v${NODE_VERSION}" \
     && pnpm add -g "npm@${NPM_VERSION}" \
-    && test "$(npm --version)" = "$NPM_VERSION"
+    && test "$(npm --version)" = "$NPM_VERSION" \
+    && pnpm store prune
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
@@ -192,7 +194,8 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && mkdir -p /home/kortix/.agent-browser/browsers \
     && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \
     && chromium --version \
-    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome' \
+    && pnpm store prune
 
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
@@ -204,7 +207,8 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && test "$("$opencode_native" --version)" = "$OPENCODE_VERSION" \
     && ln -sfn "$opencode_native" /opt/kortix/opencode.current \
     && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "$OPENCODE_VERSION"
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "$OPENCODE_VERSION" \
+    && pnpm store prune
 
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
@@ -228,7 +232,8 @@ RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.js
 RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').anydoc)")" \
     && pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \
     && command -v anydoc \
-    && test "$(anydoc --version)" = "$ANYDOC_VERSION"
+    && test "$(anydoc --version)" = "$ANYDOC_VERSION" \
+    && pnpm store prune
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \
