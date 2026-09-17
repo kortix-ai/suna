@@ -39,7 +39,6 @@ describe('SETTINGS_TABS', () => {
       'appearance',
       'sessions',
       'preferences',
-      'provider-connections',
       'tokens',
     ]);
   });

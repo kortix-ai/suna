@@ -179,7 +179,7 @@ flow(
       });
     }
 
-    await ctx.step('enabled catalog reports zero subscription rates and positive OpenAI API rates', async () => {
+    await ctx.step('enabled catalog retains published rates for ChatGPT picker rows', async () => {
       (await ctx.client.as(ctx.P.OWNER).patch(
         '/v1/projects/:projectId/experimental',
         { feature: 'llm_gateway', enabled: true },
@@ -190,11 +190,9 @@ flow(
       response.status(200);
       const models = response.json<{ models: Record<string, { cost?: Record<string, unknown> }> }>().models;
       const subscription = models['codex/gpt-5.6-sol']?.cost;
-      if (JSON.stringify(subscription) !== JSON.stringify({ input: 0, output: 0, cache_read: 0, cache_write: 0 })) {
-        throw new Error(`ChatGPT must have zero rates without paid tiers: ${JSON.stringify(subscription)}`);
-      }
-      if (!(Number(models['openai/gpt-5.6-sol']?.cost?.input) > 0)) {
-        throw new Error('Paid OpenAI API input rate must remain positive');
+      const api = models['openai/gpt-5.6-sol']?.cost;
+      if (!(Number(api?.input) > 0) || JSON.stringify(subscription) !== JSON.stringify(api)) {
+        throw new Error(`ChatGPT picker must retain published API rate context: ${JSON.stringify(subscription)}`);
       }
     });
 

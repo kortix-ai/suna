@@ -157,5 +157,3 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     expect(openrouterKeyReads).toBe(0);
   });
 });
-
-mock.module('../../provider-connections/store', () => ({ resolveUserProviderConnection: async () => null }));

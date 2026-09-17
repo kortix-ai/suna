@@ -1096,13 +1096,6 @@ Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in
 the app, including when the frontend uses a custom host.
-### Personal provider connections across projects
-
-`SEC-30` A signed-in user saves a provider credential independently of projects. Anonymous and account-token callers cannot manage global credentials. Metadata responses omit credential values. Another user cannot see or bind the credential. Project use requires explicit binding, and two projects reference the same connection. Disabling one binding preserves the other. Disconnecting removes all bindings. Unsupported OAuth providers, tampered device handles, and empty API keys fail safely.
-
-This flow also covers named connections and explicit personal pools. Repeating the same credential preserves its connection identity. A project selects one owned connection or the owner's pool. Selecting both fails with 400. Another user cannot overwrite or delete a connection. Deleting one pool member preserves siblings and the pool binding. Provider-wide disconnect revokes all selections.
-
-Browser journey **28 — provider connection scope** keeps one provider row with status and Connect or Manage. Credentials and ownership appear only inside the dialog. New supported connections default to the user's private account. Changing ownership clears the draft key. Changing choices and cancelling perform no writes. Explicit submission writes either a shared project secret or a personal credential and binding. Reload preserves the connection. A second project reuses the same account without rewriting credentials. A stale account fails visibly without creating a binding. OpenAI subscription and API key share the same dialog, including at mobile width. Gateway-disabled projects use the same dialog for shared credentials. Project members can save and bind personal keys but cannot edit shared keys. Stopping personal use removes only the project binding and preserves the saved account.
 
 
 `SESS-28` creates separate sessions with repository access disabled and enabled.
@@ -1113,4 +1106,4 @@ Changing the agent policy does not widen the existing restricted session.
 
 `GW-ACCESS-1` Project provider and model access. New projects have no explicit restrictions. Anonymous and nonmember reads/writes are denied; members cannot write. Managers disable managed or BYOK providers and individual models. The current default model/provider cannot be disabled. Concurrent edits persist together. Disables survive reads, hide models from the picker, and reject direct gateway requests with `provider_disabled` or `model_disabled` before upstream inference. Provider re-enable retains individual model restrictions. Model re-enable restores access; invalid payloads do not change policy. A disabled target cannot become the routing default. Other project metadata survives. The web app uses one Models list for provider browsing and access controls. Provider model-count links open the Models tab with all provider groups listed together and no provider selector. Enabled providers have no status label; provider menus expose enable/disable and explain default protection.
 
-ChatGPT usage regression: `GW-5` asserts explicit zero subscription rates and positive OpenAI API rates through the authenticated catalog. Browser journey 26 reads persisted historical transcripts and asserts `$0.00` for subscription usage, preserved token counts, and `$2.40` for a mixed session with `$2.00` raw API cost.
+ChatGPT usage regression: `GW-5` asserts published model rates remain visible in ChatGPT picker rows. Browser journey 26 reads persisted historical transcripts and asserts `$0.00` for subscription usage, preserved token counts, and `$2.40` for a mixed session with `$2.00` raw API cost.

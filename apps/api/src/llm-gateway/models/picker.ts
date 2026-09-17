@@ -1,5 +1,3 @@
-import { listProjectUserProviderConnections } from '../../provider-connections/store';
-import { providerConnectionAdapter } from '../../provider-connections/adapters';
 import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { resolveEffectiveModel } from '../resolution/default-model';
 import type { ModelSource } from '../resolution/effective';
@@ -38,18 +36,16 @@ export async function listPickerModels(params: {
 }> {
   const models: PickerModel[] = params.freeManagedOnly ? [] : managedPickerModels();
 
-  // Project credentials and this user's explicit personal bindings share the picker.
+  // CONNECTED BYOK providers: a provider whose first env var is a saved
+  // project-wide secret. We match against the project-wide snapshot because that
+  // is exactly what request-time resolution (resolveCandidates → project-wide
+  // getProjectSecretValue) keys off — so the picker and servability agree.
   try {
     const names = await listProjectSecretNamesForConsumer({
       projectId: params.projectId,
       principalUserId: params.userId,
       consumer: 'llm_gateway',
     });
-    const personal = await listProjectUserProviderConnections(params.projectId, params.userId);
-    for (const binding of personal) {
-      const adapter = providerConnectionAdapter(binding.provider_id);
-      if (adapter) names.push(adapter.secretName);
-    }
     const connected = new Set(names);
     models.push(...connectedByokPickerModels(connected));
   } catch {
