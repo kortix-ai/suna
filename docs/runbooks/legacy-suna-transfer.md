@@ -1363,3 +1363,15 @@ destination API download and SHA-256 comparison against the source manifest.
 The 190 native messages, 1,202 source rows, owner, title, and sharing passed
 read-back checks. The session was already stopped when the final stop receipt
 was recorded. The archive worker remains responsible for its provider archive.
+
+At 05:20 UTC on 2026-09-17, the fresh Suna queue had drained. The ledger
+held 313 destination `apply-review` rows, including 208 without a recovery
+attempt. The recovery worker had selected by newest source activity, so a
+long pass could select the same recent failures after its 15-minute cooldown
+and starve older rows. The private worker now selects null or oldest
+`transfer_retry_at` first, uses source recency only for ties, and accepts
+interrupted apply logs without an error line. It limits recovery to eight
+concurrent sessions during the observed API connection-error period. The
+supervisor starts the revised worker after the current pass exits. The local
+dashboard treats that destination recovery worker as active transfer work;
+its browser badge and archive backlog counts were verified at 05:24 UTC.
