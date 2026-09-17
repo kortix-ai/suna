@@ -80,12 +80,9 @@
       "noGitHubAccount": "Ниједан GitHub налог још није повезан са налогом овог пројекта.",
       "connectGitHub": "Повежи GitHub налог",
       "connectGitHubSuffix": "да бисте користили ову опцију.",
-      "loadingGitHubAccounts": "Учитавање GitHub налога…",
-      "loadGitHubAccountsError": "GitHub налози нису могли да се учитају: {error}",
-      "githubAccount": "GitHub налог",
-      "selectGitHubAccount": "Изаберите GitHub налог",
+      "loadGitHubAccountsError": "Učitavanje GitHub naloga nije uspelo. Pokušajte ponovo.",
       "createsPath": "Прави <path>{path}</path>",
-      "loadRepositoriesError": "Репозиторијуми нису могли да се учитају: {error}",
+      "loadRepositoriesError": "Učitavanje repozitorijuma nije uspelo. Pokušajte ponovo.",
       "sources": {
         "managed": {
           "label": "Kortix управља",
@@ -99,7 +96,17 @@
           "label": "Увези са GitHub-а",
           "description": "Изаберите постојећи репозиторијум са свог GitHub налога."
         }
-      }
+      },
+      "repositoryLabel": "Repozitorijum",
+      "createInOwner": "Napravi repozitorijum u {owner}",
+      "importFromOwner": "Uvezi repozitorijum iz {owner}",
+      "selectOption": "Izaberite opciju repozitorijuma",
+      "loadingOptions": "Učitavanje opcija repozitorijuma…",
+      "managedUnavailable": "Repozitorijumi kojima upravlja Kortix nisu dostupni na ovoj instanci. Administrator platforme to podešava u administratorskoj konzoli.",
+      "installationUnreachable": "Ova GitHub veza više ne radi. Povežite je ponovo da biste izlistali repozitorijume.",
+      "reconnect": "Ponovo poveži u Git podešavanjima",
+      "managedImportLabel": "Uvezi postojeći upravljani repozitorijum",
+      "managedImportHint": "Samo za self-host operatere. Izlistava repozitorijume koje vlasnik upravljanog git-a već poseduje."
     }
   },
   "projectHome": {
@@ -1233,8 +1240,6 @@
     "selectAllConversations": "Изаберите све разговоре",
     "deselectAllConversations": "Поништи избор свих разговора",
     "loadMore": "Учитајте више",
-    "loadingMore": "Учитавање…",
-    "loadMoreSessions": "Учитајте још сесија",
     "remaining": "преостало",
     "newSession": "Нова сесија",
     "collapse": "Скупи бочну траку",
@@ -1287,7 +1292,6 @@
       "switch": "Промени пројекат",
       "switchMenu": "Промени пројекат",
       "create": "Направи пројекат…",
-      "createIn": "Направи пројекат у {account}",
       "createAccount": "Направите налог…",
       "settings": "Подешавања",
       "downloadApp": "Преузми апликацију",
@@ -1297,7 +1301,8 @@
       "noMatches": "Нема одговарајућих пројеката",
       "empty": "Још нема пројеката",
       "account": "Налог",
-      "loadError": "Учитавање пројеката није успело"
+      "loadError": "Учитавање пројеката није успело",
+      "createIn": "Направи пројекат у {account}"
     },
     "manifestUpgrade": {
       "title": "Надогради на v2",
@@ -1351,7 +1356,9 @@
         "mine": "Моја ћаскања",
         "shared": "Дељено"
       }
-    }
+    },
+    "loadingMore": "Учитавање…",
+    "loadMoreSessions": "Учитајте још сесија"
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -1687,7 +1694,11 @@
     "hintChanged": "Питајте шта се променило у пројекту",
     "hintNewLine": "Притисните Shift+Enter за нови ред",
     "hintSettings": "Притисните {modifier}, да отворите подешавања",
-    "hintCompact": "Затражите сажимање сесије када постане дуга"
+    "hintCompact": "Затражите сажимање сесије када постане дуга",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
+    "queued": "На чекању",
+    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}"
   },
   "billing": {
     "plan": {
@@ -12407,7 +12418,6 @@
       "text588032878324": "Пошаљи одмах",
       "text5885ace14d89": "Преузимање сесије",
       "text5887e718dea1": "убрао",
-      "text58a34c9573cf": "Инсталирај GitHub App",
       "text58a4ba90dc79": "Вратите недељу коју је појела координација.",
       "text58aede554b21": "Повежите алат једном, за целу компанију. Агенти му приступају преко једног токена са ограниченим опсегом који Kortix посредује на серверу — тако сирови акредитиви никада не стижу на машину којом модел управља.",
       "text58bf3410b028": "Постави вредност",
@@ -18390,7 +18400,22 @@
       "text03a01dd53ffa": "Притисните ↑ да измените поруке у реду",
       "text1eb132d9d4da": "Ред је паузиран",
       "textf8e64a37950a": "Поруке у реду",
-      "textcd5f943d5863": "Није послато"
+      "textcd5f943d5863": "Није послато",
+      "text42888e8dc93e": "Jedna veza za celu instancu. Kortix kroz nju kreira i šalje svaki projektni repozitorijum, u svakom nalogu.",
+      "textf40d94365439": "GitHub identitet ove instance dolazi iz promenljivih okruženja na serveru. Ovde se ne može promeniti.",
+      "textbd6cc9a4cf4b": "Podešeno preko",
+      "text39481fc24bd5": "Repozitorijumi kojima upravlja Kortix na ovoj instanci kreiraju se pod {value0}.",
+      "text89a9816ffa6f": "Repozitorijumi kojima upravlja Kortix dostupni su na ovoj instanci.",
+      "textb79bb0e54e4f": "Repozitorijumi kojima upravlja Kortix nisu dostupni na ovoj instanci. Administrator platforme to podešava u administratorskoj konzoli.",
+      "textf7be8a17b0e7": "Dodaj GitHub nalog",
+      "text659d5668b62b": "Povežite lični GitHub nalog ili organizaciju sa ovim Kortix nalogom.",
+      "textdc520b664af2": "GitHub navodi svaki lični nalog i organizaciju kojima administrirate. Izaberite jedan, odredite kojim repozitorijumima Kortix aplikacija sme da pristupi i taj vlasnik se povezuje sa ovim Kortix nalogom.",
+      "text8d3f36f31348": "Instaliraj Kortix aplikaciju",
+      "text183bc0d276cc": "Ova instanca nema GitHub aplikaciju za instalaciju. Administrator platforme to podešava u administratorskoj konzoli.",
+      "text7f59f014cd7b": "Već je instalirana kod željenog vlasnika?",
+      "text9180f7df8906": "Poveži instalaciju kojom već administrirate",
+      "text0b0e4c425624": "Već je povezana sa {value0, plural, one {# drugim Kortix nalogom} few {# druga Kortix naloga} other {# drugih Kortix naloga}}.",
+      "text7dac2ca010fe": "Припрема целог транскрипта…"
     }
   },
   "projectOnboarding": {

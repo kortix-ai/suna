@@ -36,7 +36,7 @@ interface SessionComposerPrefillState {
   setPrefill: (sessionId: string, text: string, files?: AttachedFile[]) => void;
   /** Called once the composer has been handed this session's prefill —
    *  removes it so a later remount doesn't re-apply stale text. */
-  clearPrefill: (sessionId: string) => void;
+  clearPrefill: (sessionId: string, expectedId?: number) => void;
 
   /** sessionId → an incrementing marker asking the composer to open its
    *  attach (file-picker) flow. Same held-then-cleared shape as the prefill
@@ -63,9 +63,10 @@ export const useSessionComposerPrefillStore = create<SessionComposerPrefillState
         [sessionId]: { text, id: ++nextId, ...(files?.length ? { files } : {}) },
       },
     })),
-  clearPrefill: (sessionId) =>
+  clearPrefill: (sessionId, expectedId) =>
     set((s) => {
       if (!(sessionId in s.prefillBySession)) return s;
+      if (expectedId !== undefined && s.prefillBySession[sessionId]?.id !== expectedId) return s;
       const { [sessionId]: _removed, ...rest } = s.prefillBySession;
       return { prefillBySession: rest };
     }),

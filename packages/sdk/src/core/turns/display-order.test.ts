@@ -166,3 +166,23 @@ describe('grouping follows the fixed order', () => {
     expect(turns[2].assistantMessages).toEqual([]);
   });
 });
+
+describe('durable queue display order', () => {
+  test('client wire IDs remain after delivered turns until the inbox releases them', () => {
+    const message = (id: string, role = 'user', parentID?: string) => ({
+      info: { id, role, parentID, time: { created: 1 } }, parts: [],
+    });
+    const waitingA = message('msg_000000000002queued');
+    const waitingB = message('msg_000000000003queued');
+    const delivered = message('msg_000000000010delivered');
+    const reply = message('msg_000000000011reply', 'assistant', delivered.info.id);
+    const pendingMessageIds = new Set([waitingA.info.id, waitingB.info.id]);
+    for (const input of permutations([waitingA, waitingB, delivered, reply])) {
+      const turns = groupMessagesIntoTurns(input, { pendingMessageIds });
+      expect(turns.map((turn) => turn.userMessage.info.id)).toEqual([
+        delivered.info.id, waitingA.info.id, waitingB.info.id,
+      ]);
+      expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([reply.info.id]);
+    }
+  });
+});

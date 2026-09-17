@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 645,
+  "count": 647,
   "routes": [
     {
       "method": "GET",
@@ -2233,6 +2233,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/create-repo"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/git/backend/repositories"
     },
     {
       "method": "DELETE",

@@ -1,10 +1,12 @@
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { deadLetterCause } from './dead-letter-cause';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { currentInstanceId } from '../instance-scope';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
-import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
+import { inboxLaneSql, inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -175,6 +177,7 @@ export interface QueuedContinueSessionPayload {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -206,6 +209,7 @@ export interface EnqueueContinueSessionCommandInput {
   /** The sender tab's clock at Enter — the SEND order across surfaces whose
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
+  placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -225,6 +229,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
+    ...(input.placement ? { placement: input.placement } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
   };
   return {
@@ -368,6 +373,34 @@ export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Pr
  */
 export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
 
+/**
+ * Put back a REDELIVERY whose already-answered check could not read the
+ * transcript. A prompt that was posted before may already have its answer on
+ * record; re-sending it blind shows the user the same prompt twice. The row
+ * waits and counts the failure; after `MAX_ANSWER_CHECK_FAILURES` (engine.ts)
+ * the drain sends it anyway, so an unreadable box cannot strand the prompt.
+ */
+export async function requeueUnverifiedRedelivery(
+  commandId: string,
+  availableAt: Date,
+): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || '{"admission_reason": "answer_unverified"}'::jsonb
+        || jsonb_build_object('answer_check_failures',
+             COALESCE((${sessionLifecycleCommands.result}->>'answer_check_failures')::int, 0) + 1)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
+}
+
 /** How many times a prompt the runtime accepted-but-never-wrote is re-sent
  *  under a fresh key before it is dead-lettered for the user to retry. */
 export const MAX_LANDING_RETRIES = 2;
@@ -413,6 +446,18 @@ export async function requeueUnlandedPrompt(
     .returning({ result: sessionLifecycleCommands.result });
   const refusals = Number(((rows[0]?.result ?? {}) as { landing_refusals?: unknown }).landing_refusals ?? 0);
   return { requeued: rows.length > 0, refusals };
+}
+
+/** Publish delivery only after the worker passes admission. */
+export async function markInboxDeliveryStarted(commandId: string): Promise<void> {
+  await db.update(sessionLifecycleCommands).set({
+    result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+      || ${JSON.stringify({ delivery_started_at: new Date().toISOString() })}::jsonb`,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(sessionLifecycleCommands.commandId, commandId),
+    eq(sessionLifecycleCommands.status, 'running'),
+  ));
 }
 
 export async function requeueForAdmission(
@@ -1002,11 +1047,19 @@ export async function claimDueLifecycleCommands(input: {
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
   const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
+  const instanceId = currentInstanceId();
   const rows = await db
     .select()
     .from(sessionLifecycleCommands)
     .where(
       and(
+        // Do not claim a peer worktree's rows and postpone them before its own
+        // worker can see them. Deployed replicas have no instance scope.
+        instanceId ? sql`NOT EXISTS (
+          SELECT 1 FROM ${sessionSandboxes} AS box
+          WHERE box.session_id = ${qualifiedColumn(sessionLifecycleCommands.sessionId)}
+            AND COALESCE(box.metadata->>'instanceId', '') NOT IN ('', ${instanceId})
+        )` : undefined,
         or(
           and(
             eq(sessionLifecycleCommands.status, 'queued'),
@@ -1031,6 +1084,7 @@ export async function claimDueLifecycleCommands(input: {
     )
     .orderBy(
       asc(sessionLifecycleCommands.availableAt),
+      asc(inboxLaneSql),
       asc(inboxSentAtSql),
       asc(inboxWireIdSql),
       asc(sessionLifecycleCommands.commandId),
@@ -1044,6 +1098,7 @@ export async function claimDueLifecycleCommands(input: {
       .set({
         status: 'running',
         attempts: row.attempts + 1,
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
         lockedBy: input.workerId,
         lockedUntil: new Date(now.getTime() + 5 * 60_000),
         updatedAt: now,

@@ -46,7 +46,7 @@ import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
+import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
@@ -72,6 +72,15 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SettingsRowGroup } from '@/components/ui/settings-row';
@@ -118,7 +127,6 @@ import {
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isGitHubAppInstallationId } from '@/lib/github-installations';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
   type AccountDetail,
@@ -485,10 +493,17 @@ export function AccountHubContent() {
             </div>
           ) : null}
 
+          {/* Account-scoped ONLY. The instance's managed-git identity used to
+              render here as `GitHubAppSetupCard`, one card below the
+              account's own connections — and on 2026-09-16 a platform admin
+              reconfigured production's GitHub App from inside one customer's
+              settings. That card lives at `/admin/git` now. What is left here
+              is the account's own App installations plus one read-only line
+              naming the instance's managed-git owner. */}
           {activeSection === 'git' && canWriteAccount ? (
             <div className="space-y-8">
               <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-              <GitHubAppSetupCard canManage={canWriteAccount} />
+              <ManagedGitNotice />
             </div>
           ) : null}
 
@@ -648,6 +663,7 @@ function GitHubConnectionCard({
     ownerLogin: string | null;
   } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   const installationsQuery = useQuery({
     queryKey: ['github-installations', account.account_id],
@@ -671,17 +687,52 @@ function GitHubConnectionCard({
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6e9715f4f2a9')),
   });
 
-  function handleConnect() {
-    if (!canManage) return;
+  /** Remember where to come back to, and drop the entry the hub modal pushed,
+   *  so Back from GitHub returns to the page the hub was opened over. */
+  function leaveForGitHub() {
     setIsConnecting(true);
     rememberGitHubSetupReturn(`${window.location.pathname}${window.location.search}`);
     forgetPushedEntry();
+  }
+
+  /**
+   * "Install the App on a GitHub account or organization" — a real page load on
+   * github.com. GitHub redirects back to `/github/setup` with `state` and
+   * `installation_id`, which is where the account link is actually written.
+   */
+  function handleInstallOnGitHub() {
+    if (!canManage || !installUrl) return;
+    setAddOpen(false);
+    leaveForGitHub();
+    window.location.assign(installUrl);
+  }
+
+  /**
+   * "Link an installation you already administer" — no GitHub install, just the
+   * identity proof plus a pick from the installations this GitHub user already
+   * administers.
+   *
+   * This used to be what the "Add account" button did on its own click, with no
+   * label saying which of the two things it was about to do: a user who wanted
+   * to install the App on a new organization was sent into an OAuth round trip
+   * that could only ever list what already existed.
+   */
+  function handleLinkExisting() {
+    if (!canManage) return;
+    setAddOpen(false);
+    leaveForGitHub();
     router.replace(`/github/setup?account_id=${encodeURIComponent(account.account_id)}`);
   }
 
-  const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
-    isGitHubAppInstallationId(installation.installation_id),
-  );
+  // Account connections only. The instance git backend used to be injected
+  // here as a synthetic entry, which made one instance-global credential look
+  // like this account's own GitHub connection; it has its own namespace now
+  // and is reported read-only by `ManagedGitNotice`.
+  const installations = installationsQuery.data?.installations ?? [];
+  // Where GitHub installs the Kortix App. `null` on an instance with no App
+  // configured at all — the action says so rather than opening a 404 on
+  // github.com, which is what a wrong slug used to produce.
+  const installUrl = installationsQuery.data?.install_url ?? null;
 
   return (
     <div className="space-y-4">
@@ -711,7 +762,7 @@ function GitHubConnectionCard({
           variant="secondary"
           className="gap-1.5"
           disabled={!canManage || isConnecting}
-          onClick={handleConnect}
+          onClick={() => setAddOpen(true)}
           title={canManage ? undefined : tI18nComplete.raw('text89a0e2d1b569')}
         >
           {isConnecting ? <Loading className="size-4 shrink-0" /> : <Github className="size-4" />}
@@ -803,6 +854,63 @@ function GitHubConnectionCard({
           })}
         </ul>
       )}
+
+      {/* Two labelled actions, not one ambiguous button. Which one a user
+          needs depends on a fact only they know — whether the Kortix App is
+          already installed on the GitHub account they have in mind — so the
+          dialog states both and lets them pick. */}
+      <Modal open={addOpen} onOpenChange={setAddOpen}>
+        <ModalContent className="lg:max-w-lg">
+          <ModalHeader>
+            <ModalTitle>{tI18nComplete.raw('textf7be8a17b0e7')}</ModalTitle>
+            <ModalDescription>{tI18nComplete.raw('text659d5668b62b')}</ModalDescription>
+          </ModalHeader>
+          <ModalBody className="space-y-4">
+            <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+              {tI18nComplete.raw('textdc520b664af2')}
+            </p>
+            {/* Installing is the primary action: it is the one that works no
+                matter what the user's GitHub looks like. Linking an existing
+                installation only helps when the App is already on the owner
+                they have in mind, which is the rarer case — and it used to be
+                the ONLY thing this button did, with no label saying so. */}
+            <Button
+              type="button"
+              size="lg"
+              className="w-full gap-1.5"
+              disabled={!installUrl}
+              onClick={handleInstallOnGitHub}
+            >
+              <Github className="size-4" />
+              {tI18nComplete.raw('text8d3f36f31348')}
+            </Button>
+            {installUrl ? null : (
+              <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+                {tI18nComplete.raw('text183bc0d276cc')}
+              </p>
+            )}
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text7f59f014cd7b')}
+              </span>
+              <Button
+                type="button"
+                variant="transparent"
+                size="sm"
+                className="h-auto p-0"
+                onClick={handleLinkExisting}
+              >
+                {tI18nComplete.raw('text9180f7df8906')}
+              </Button>
+            </div>
+          </ModalBody>
+          <ModalFooter className="pb-5">
+            <Button type="button" variant="outline-ghost" onClick={() => setAddOpen(false)}>
+              {tI18nComplete.raw('text19766ed6ccb2')}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <ConfirmDialog
         open={Boolean(disconnectTarget)}

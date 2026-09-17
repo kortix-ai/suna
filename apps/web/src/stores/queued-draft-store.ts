@@ -17,10 +17,11 @@
  * still lists every row.
  */
 
-import { create } from 'zustand';
 import type { AttachedFile } from '@/features/session/composer/types';
+import { create } from 'zustand';
 
 export interface QueuedDraft {
+  placement?: 'transcript' | 'composer';
   /** The inbox idempotency key — the id that joins this draft to its row. */
   clientMessageId: string;
   /** The text as typed, before reply context, uploads, or mention blocks. */

@@ -79,16 +79,19 @@ failure against dev commit `80a175ad3acab7abf0c19f088074dd065fb4933e`.
 ## The managed-git credential
 
 Managed projects live as repos in the GitHub org `managed-kortix`. The API
-creates them with, in this order (`apps/api/src/projects/git-backends/github.ts`):
+creates them through the INSTANCE GIT BACKEND, resolved whole from ONE source
+(`apps/api/src/platform/services/managed-git-backend.ts`):
 
-1. a PAT stored through `POST /v1/platform/github-app/pat`
-   (`platform_settings.managed_github_app.pat`, 30 s cache per task);
-2. `MANAGED_GIT_GITHUB_TOKEN` from the environment;
-3. an installation token of the GitHub App (`KORTIX_GITHUB_APP_*` +
-   `MANAGED_GIT_GITHUB_INSTALL_ID`).
+1. env, whenever any `MANAGED_GIT_*` variable is set — `MANAGED_GIT_GITHUB_OWNER`
+   with either `MANAGED_GIT_GITHUB_TOKEN` (token backend) or
+   `MANAGED_GIT_GITHUB_INSTALL_ID` (App backend);
+2. otherwise a complete `platform_settings.managed_git_backend` row (30 s cache
+   per task), written by `POST /v1/platform/github-app/{pat,app}`.
 
-A PAT short-circuits the App everywhere. `GET /v1/platform/github-app/status`
-reports which one is in use (`source: pat | db | env`).
+The two sources are never mixed: a stored owner never pairs with an env token.
+`GET /v1/platform/github-app/status` reports `backend_source`, `identity_source`
+and `mutable`; `GET /v1/projects/git/backend` reports the owner and kind to any
+authenticated user. Full model: `docs/runbooks/managed-git-config.md`.
 
 **A credential is verified by the write it authorises, never by a read.**
 Creating an org repo needs `Administration: write` (fine-grained PAT, resource

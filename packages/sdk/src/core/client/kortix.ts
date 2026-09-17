@@ -371,6 +371,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     deleteInstallation: P.deleteGitHubInstallation,
   };
 
+  /**
+   * The instance git backend ("Kortix managed") — one deployment-wide owner
+   * plus credential, never an account connection. `backend()` is readable by
+   * any authenticated user; `backendRepositories()` is self-host-operator only.
+   */
+  const gitBackend = {
+    get: P.getManagedGitBackend,
+    repositories: P.listManagedGitRepositories,
+  };
+
   /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
   const sandboxShares = {
     list: P.listSandboxShares,
@@ -1355,6 +1365,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
+    /** The instance git backend ("Kortix managed", deployment-scoped). */
+    gitBackend,
     /** Billing read surface, including unified session costs. */
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */

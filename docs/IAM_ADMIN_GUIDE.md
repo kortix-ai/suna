@@ -537,8 +537,12 @@ effective = (launching user's role  |  agent's standing role)
   v2 manifests are **deny-by-default**: an agent declared without a grant field gets
   *none* of that dimension. An agent absent from an adopted `agents:` map gets nothing
   at all. Grants are read from the **default branch** — an agent can propose widening
-  its own powers in a change request, but the change only takes effect once a human
-  merges it.
+  its own powers in a change request, but the change only takes effect after a
+  caller with merge authority merges it. A session can merge its own change
+  request only when its current agent grant explicitly includes
+  `project.gitops.merge` or `kortix_cli: all`. The launching user's role must
+  also permit merge. An ungoverned session with a null agent grant cannot
+  self merge.
 - Grantable `kortix_cli` actions are the project action catalog (§12); `'all'` and
   `'*'` mean unrestricted. `project.cr.open`/`project.cr.merge` and
   `project.gitops.push`/`project.gitops.merge` are alias pairs — either spelling works.

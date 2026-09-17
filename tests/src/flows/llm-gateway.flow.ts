@@ -465,16 +465,6 @@ flow(
   },
 );
 
-// A model the catalog does not know resolves differently on a DEPLOYED target:
-// the managed upstream answers 503 before the gateway can classify the name as
-// `model_not_found` (400). Pre-existing — the v0.13.17 release gate failed the
-// same assertion (run 35012251397, job 104544285765) and that release shipped.
-// Accepted here on deployed targets only so the other five steps of this flow
-// keep gating releases; locally the 400 is still required.
-// FOLLOW-UP: classify an unknown model as 400 before the upstream call.
-const KE2E_TARGET = process.env.KE2E_TARGET ?? process.env.E2E_TARGET ?? 'local';
-const DEPLOYED_TARGET = KE2E_TARGET !== 'local';
-
 flow('GW-ACCESS-1', {
   domain: 'llm-gateway',
   routes: [
@@ -549,9 +539,7 @@ flow('GW-ACCESS-1', {
     (await set('provider', 'custom-test', true)).status(200).body().has('$.disabledModels', ['custom-test/model']);
     (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_disabled');
     (await set('model', 'kortix/custom-test/model', true)).status(200).body().has('$.disabledModels', []);
-    const notFound = await request('custom-test/model');
-    if (DEPLOYED_TARGET) notFound.status([400, 503]);
-    else notFound.status(400).body().has('$.error.code', 'model_not_found');
+    (await request('custom-test/model')).status(400).body().has('$.error.code', 'model_not_found');
   });
   await ctx.step('invalid changes and selecting a disabled default leave policy unchanged', async () => {
     (await owner.put(path, { target: 'provider', id: 'bad/provider', enabled: false }, { params })).status(400);

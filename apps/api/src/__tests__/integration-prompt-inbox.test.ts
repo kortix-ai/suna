@@ -35,11 +35,14 @@ import {
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  markInboxDeliveryStarted,
   markCommandForwarded,
   promoteNextInboxRow,
   requeueForAdmission,
+  requeueUnverifiedRedelivery,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
+import { promptState } from '../projects/lib/session-prompt-view';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
@@ -49,7 +52,12 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 
 async function enqueue(
   clientMessageId: string,
-  overrides: { wireMessageId?: string; createdAt?: string; clientSentAtMs?: number } = {},
+  overrides: {
+    wireMessageId?: string;
+    createdAt?: string;
+    clientSentAtMs?: number;
+    placement?: 'transcript' | 'composer';
+  } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
     source: 'ui',
@@ -62,6 +70,7 @@ async function enqueue(
     clientMessageId,
     wireMessageId: overrides.wireMessageId ?? WIRE_ID,
     clientSentAtMs: overrides.clientSentAtMs,
+    ...(overrides.placement ? { placement: overrides.placement } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -254,6 +263,26 @@ describe('requeueForAdmission against real Postgres', () => {
     expect((after.payload as Record<string, unknown>).wireMessageId).toBe(WIRE_ID);
   });
 
+  test('an unverifiable redelivery waits, counts its failures, and keeps admission refusals', async () => {
+    const row = await enqueue('q_unverified');
+    await requeueForAdmission(row.commandId, 'turn_active', new Date());
+    await requeueUnverifiedRedelivery(row.commandId, new Date(Date.now() + 5_000));
+    await requeueUnverifiedRedelivery(row.commandId, new Date(Date.now() + 10_000));
+
+    const read = await readRow(row.commandId);
+    expect(read.status).toBe('queued');
+    expect(read.locked_by).toBeNull();
+    expect(read.result).toMatchObject({
+      admission_reason: 'answer_unverified',
+      answer_check_failures: 2,
+      admission_refusals: 1,
+    });
+    expect(promptState({ status: 'queued', result: read.result } as never)).toEqual({
+      state: 'waiting',
+      reason: 'answer_unverified',
+    });
+  });
+
   test('the attempt give-back FLOORS at zero', async () => {
     // A concurrent writer can already have reset `attempts`; `GREATEST(...,0)`
     // is what stops a negative count, which the dead-letter budget compares on.
@@ -318,6 +347,46 @@ describe('admitInboxPrompt against real rows', () => {
         metadata: boxRows[0].metadata as Record<string, unknown>,
       }),
     ).toBe(true);
+  });
+
+  test('a Quick Queue entry behind an older Queue List entry heads the queue and arms the interrupt', async () => {
+    // 2026-09-17, local: "stop" (Quick Queue) waited 72 refusals behind an
+    // older Queue List entry, so the response never stopped at its tool boundary.
+    const sentAt = Date.now();
+    const queueList = await enqueue('q_list', {
+      clientSentAtMs: sentAt,
+      placement: 'composer',
+      wireMessageId: 'msg_000000000001QueueListEntryW',
+    });
+    const quickQueue = await enqueue('q_quick', {
+      clientSentAtMs: sentAt + 1_000,
+      placement: 'transcript',
+      wireMessageId: 'msg_000000000002QuickQueueEntry',
+    });
+    await setBox('active', turn);
+
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((row) => row.commandId)).toEqual([
+      quickQueue.commandId,
+      queueList.commandId,
+    ]);
+    expect(await admitInboxPrompt(quickQueue)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
+    });
+    expect(await admitInboxPrompt(queueList)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET available_at = now() + interval '5 minutes',
+             result = '{"admission_reason":"turn_active"}'::jsonb
+       WHERE command_id IN (${queueList.commandId}::uuid, ${quickQueue.commandId}::uuid)`);
+    expect(await promoteNextInboxRow(SESSION_ID)).toBe(quickQueue.idempotencyKey);
   });
 
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {
@@ -686,7 +755,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toEqual([
       row.commandId,
     ]);
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -773,7 +842,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     // marker, so the drain re-reads the transcript before delivering.
     expect((after.payload as Record<string, unknown>).remintOnDelivery).toBe(true);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(row.commandId);
   });
 
@@ -931,7 +1000,7 @@ describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
     expect(after.status).toBe('queued');
     expect(after.result).toMatchObject({ held: true });
     // Visible, but not due: nothing claims it until the user releases the hold.
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 1, idempotencyKey: row.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
   });
 
@@ -1086,7 +1155,7 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() - interval '11 minutes'
        WHERE command_id = ${stranded.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-reclaim', limit: 1, idempotencyKey: stranded.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).toContain(stranded.commandId);
     expect((await readRow(stranded.commandId)).locked_by).toBe('w-reclaim');
   });
@@ -1100,7 +1169,7 @@ describe('a claim nobody is working on is reclaimed, not left to wedge the sessi
              locked_until = now() + interval '2 minutes'
        WHERE command_id = ${working.commandId}::uuid`);
 
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 10 });
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-nope', limit: 1, idempotencyKey: working.idempotencyKey! });
     expect(claimed.map((r) => r.commandId)).not.toContain(working.commandId);
     expect(LIFECYCLE_RUNNING_RECLAIM_GRACE_MS).toBeGreaterThan(0);
   });
@@ -1144,4 +1213,44 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     await db.execute(sql`
       UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = ${SESSION_ID}`);
   });
+});
+
+test('claims only the owning instance before changing queue availability', async () => {
+  const { config } = await import('../config');
+  const original = config.KORTIX_INSTANCE_ID;
+  try {
+    config.KORTIX_INSTANCE_ID = 'queue-owner-test';
+    const row = await enqueue('instance-claim');
+    await setBox('active', {});
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-peer-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    const input = { workerId: 'instance-test', limit: 1, idempotencyKey: row.idempotencyKey! };
+    expect(await claimDueLifecycleCommands(input)).toEqual([]);
+    expect((await readRow(row.commandId)).status).toBe('queued');
+    await db.execute(sql`UPDATE kortix.session_sandboxes
+      SET metadata = metadata || '{"instanceId":"queue-owner-test"}'::jsonb
+      WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    expect((await claimDueLifecycleCommands(input)).map((claimed) => claimed.commandId)).toEqual([row.commandId]);
+  } finally {
+    config.KORTIX_INSTANCE_ID = original;
+  }
+});
+
+
+test('a retry claim resets delivery evidence and stays waiting until admitted', async () => {
+  const row = await enqueue('claim-state');
+  const claim = () => claimDueLifecycleCommands({
+    workerId: 'claim-state-worker', limit: 1, idempotencyKey: row.idempotencyKey!,
+  });
+  const [first] = await claim();
+  expect(promptState(first).state).toBe('queued');
+  await markInboxDeliveryStarted(row.commandId);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
+  await requeueForAdmission(row.commandId, 'turn_active', new Date());
+  const [retry] = await claim();
+  expect(promptState(retry)).toEqual({ state: 'waiting', reason: 'turn_active' });
+  expect(retry.result).not.toHaveProperty('delivery_started_at');
+  await markInboxDeliveryStarted(row.commandId);
+  expect(promptState((await listInboxPrompts(SESSION_ID, 200))[0]).state).toBe('delivering');
 });

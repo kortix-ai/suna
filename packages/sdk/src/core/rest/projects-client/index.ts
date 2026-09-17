@@ -5,6 +5,7 @@
 export * from './accounts';
 export * from './projects';
 export * from './github';
+export * from './git-backend';
 export * from './access';
 export * from './secrets';
 export * from './connectors';

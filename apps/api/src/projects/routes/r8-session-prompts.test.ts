@@ -434,6 +434,14 @@ describe('POST .../prompts', () => {
   // for a message the user typed before the last reload. The server re-mints
   // against the live root before delivering, which is the only place that can
   // be right — see `remintWireMessageId`.
+  test('persists explicit placement and rejects unsupported locations', async () => {
+    for (const placement of ['transcript', 'composer']) {
+      expect((await post({ ...validBody, placement })).status).toBe(202);
+      expect(enqueued.at(-1)?.placement).toBe(placement);
+    }
+    expect((await post({ ...validBody, placement: 'sidebar' })).status).toBe(400);
+  });
+
   test('remint_on_delivery is carried into the payload', async () => {
     await post({ ...validBody, remint_on_delivery: true });
     expect(enqueued[0].remintOnDelivery).toBe(true);
@@ -448,7 +456,7 @@ describe('POST .../prompts', () => {
     await post(validBody);
     expect(enqueued[0].idempotencyKey).toBe(`prompt:${SESSION_ID}:q_1`);
 
-    enqueueResult = { deduped: true, row: row({ status: 'running' }) };
+    enqueueResult = { deduped: true, row: row({ status: 'running', result: { delivery_started_at: new Date().toISOString() } }) };
     const repeat = await post(validBody);
     expect(repeat.status).toBe(200);
     expect(await repeat.json()).toEqual({
@@ -573,6 +581,8 @@ describe('GET .../prompts', () => {
         state: 'queued',
         reason: null,
         text: 'say hi',
+        full_text: 'say hi',
+        placement: 'composer',
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
@@ -585,12 +595,12 @@ describe('GET .../prompts', () => {
     ]);
   });
 
-  test('a claimed row reads `delivering`, and an admission-refused one reads `waiting` with its reason', async () => {
+  test('an admitted delivery reads `delivering`, and an admission-refused claim stays `waiting`', async () => {
     commandTable = [
-      row({ commandId: PROMPT_ID, status: 'running' }),
+      row({ commandId: PROMPT_ID, status: 'running', result: { delivery_started_at: new Date().toISOString() } }),
       row({
         commandId: '77777777-7777-4777-8777-777777777777',
-        status: 'queued',
+        status: 'running',
         result: { admission_reason: 'older_prompt_pending' },
       }),
     ];
@@ -629,7 +639,7 @@ describe('GET .../prompts', () => {
     commandTable = [row({ status: 'dead_lettered', lastError: 'delivery outcome: failed' })];
     const body = await list();
     expect(body.prompts[0].state).toBe('failed');
-    expect(body.prompts[0].last_error).toBe('delivery outcome: failed');
+    expect(body.prompts[0].last_error).toBe('the session refused it');
   });
 
   test('a FORWARDED row is still listed, as `delivering`', async () => {
@@ -716,6 +726,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       removed: {
+        placement: 'composer',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',

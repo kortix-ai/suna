@@ -80,12 +80,9 @@
       "noGitHubAccount": "このプロジェクトのアカウントには、まだ GitHub アカウントが接続されていません。",
       "connectGitHub": "GitHub アカウントを接続",
       "connectGitHubSuffix": "すると、このオプションを使用できます。",
-      "loadingGitHubAccounts": "GitHub アカウントを読み込み中…",
-      "loadGitHubAccountsError": "GitHub アカウントを読み込めませんでした：{error}",
-      "githubAccount": "GitHub アカウント",
-      "selectGitHubAccount": "GitHub アカウントを選択",
+      "loadGitHubAccountsError": "GitHub アカウントを読み込めませんでした。もう一度お試しください。",
       "createsPath": "<path>{path}</path> を作成します",
-      "loadRepositoriesError": "リポジトリを読み込めませんでした：{error}",
+      "loadRepositoriesError": "リポジトリを読み込めませんでした。もう一度お試しください。",
       "sources": {
         "managed": {
           "label": "Kortix が管理",
@@ -99,7 +96,17 @@
           "label": "GitHub からインポート",
           "description": "GitHub アカウントから既存のリポジトリを選択します。"
         }
-      }
+      },
+      "repositoryLabel": "リポジトリ",
+      "createInOwner": "{owner} にリポジトリを作成",
+      "importFromOwner": "{owner} からリポジトリをインポート",
+      "selectOption": "リポジトリの選択肢を選ぶ",
+      "loadingOptions": "リポジトリの選択肢を読み込んでいます…",
+      "managedUnavailable": "このインスタンスでは Kortix 管理リポジトリを利用できません。プラットフォーム管理者が管理コンソールで設定します。",
+      "installationUnreachable": "この GitHub 接続は使えなくなりました。リポジトリを一覧表示するには接続し直してください。",
+      "reconnect": "Git 設定で接続し直す",
+      "managedImportLabel": "既存の管理リポジトリをインポート",
+      "managedImportHint": "セルフホスト運用者のみ。管理 git の所有者がすでに保有しているリポジトリを一覧表示します。"
     }
   },
   "projectHome": {
@@ -1233,8 +1240,6 @@
     "selectAllConversations": "すべての会話を選択",
     "deselectAllConversations": "すべての会話を解除",
     "loadMore": "もっと読み込む",
-    "loadingMore": "読み込み中…",
-    "loadMoreSessions": "セッションをさらに読み込む",
     "remaining": "残り",
     "newSession": "新しいセッション",
     "collapse": "サイドバーを折りたたむ",
@@ -1287,7 +1292,6 @@
       "switch": "プロジェクトを切り替える",
       "switchMenu": "プロジェクトを切り替える",
       "create": "プロジェクトを作成…",
-      "createIn": "{account} にプロジェクトを作成",
       "createAccount": "アカウントを作成…",
       "settings": "設定",
       "downloadApp": "アプリをダウンロード",
@@ -1297,7 +1301,8 @@
       "noMatches": "一致するプロジェクトがありません",
       "empty": "プロジェクトはまだありません",
       "account": "アカウント",
-      "loadError": "プロジェクトを読み込めませんでした"
+      "loadError": "プロジェクトを読み込めませんでした",
+      "createIn": "{account} にプロジェクトを作成"
     },
     "manifestUpgrade": {
       "title": "v2 にアップグレード",
@@ -1351,7 +1356,9 @@
         "mine": "自分のチャット",
         "shared": "共有"
       }
-    }
+    },
+    "loadingMore": "読み込み中…",
+    "loadMoreSessions": "セッションをさらに読み込む"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -1687,7 +1694,11 @@
     "hintChanged": "プロジェクトの変更点について質問",
     "hintNewLine": "Shift+Enter を押して改行",
     "hintSettings": "{modifier}, を押して設定を開く",
-    "hintCompact": "長くなったセッションの圧縮を依頼"
+    "hintCompact": "長くなったセッションの圧縮を依頼",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
+    "queued": "待機中",
+    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}"
   },
   "billing": {
     "plan": {
@@ -12407,7 +12418,6 @@
       "text588032878324": "今すぐ送信",
       "text5885ace14d89": "セッションを取得",
       "text5887e718dea1": "選んだ",
-      "text58a34c9573cf": "GitHub Appをインストール",
       "text58a4ba90dc79": "調整業務に奪われた1週間を取り戻す。",
       "text58aede554b21": "ツールを一度接続すれば、会社全体で利用できます。エージェントは、Kortixがサーバー側で仲介するスコープ付きトークンを通じてアクセスするため、生の認証情報がモデルの操作するマシンに保存されることはありません。",
       "text58bf3410b028": "値を設定",
@@ -18390,7 +18400,22 @@
       "text03a01dd53ffa": "↑ キーでキュー内のメッセージを編集",
       "text1eb132d9d4da": "キューを一時停止中",
       "textf8e64a37950a": "キュー内のメッセージ",
-      "textcd5f943d5863": "未送信"
+      "textcd5f943d5863": "未送信",
+      "text42888e8dc93e": "インスタンス全体で 1 つの接続です。Kortix はすべてのアカウントで、この接続を通じて各プロジェクトのリポジトリを作成してプッシュします。",
+      "textf40d94365439": "このインスタンスの GitHub ID はサーバーの環境変数で設定されています。ここでは変更できません。",
+      "textbd6cc9a4cf4b": "設定元",
+      "text39481fc24bd5": "このインスタンスの Kortix 管理リポジトリは {value0} の下に作成されます。",
+      "text89a9816ffa6f": "このインスタンスでは Kortix 管理リポジトリを利用できます。",
+      "textb79bb0e54e4f": "このインスタンスでは Kortix 管理リポジトリを利用できません。プラットフォーム管理者が管理コンソールで設定します。",
+      "textf7be8a17b0e7": "GitHub アカウントを追加",
+      "text659d5668b62b": "GitHub の個人アカウントまたは組織を、この Kortix アカウントにリンクします。",
+      "textdc520b664af2": "GitHub には、あなたが管理するすべての個人アカウントと組織が表示されます。1 つを選び、Kortix アプリがアクセスできるリポジトリを指定すると、その所有者がこの Kortix アカウントにリンクされます。",
+      "text8d3f36f31348": "Kortix アプリをインストール",
+      "text183bc0d276cc": "このインスタンスにはインストールできる GitHub アプリがありません。プラットフォーム管理者が管理コンソールで設定します。",
+      "text7f59f014cd7b": "目的の所有者にすでにインストール済みですか？",
+      "text9180f7df8906": "すでに管理しているインストールをリンクする",
+      "text0b0e4c425624": "すでに {value0, plural, other {# 件の他の Kortix アカウント}} にリンクされています。",
+      "text7dac2ca010fe": "全文の記録を準備しています…"
     }
   },
   "projectOnboarding": {

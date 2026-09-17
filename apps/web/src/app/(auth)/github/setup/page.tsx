@@ -28,6 +28,30 @@ type GitHubProofMessage =
   | { type: 'github-connect-success'; provider_token: string }
   | { type: 'github-connect-error'; message: string };
 
+/**
+ * `?github=error&reason=<slug>` — what the backend says when an account link
+ * fails, turned into a sentence.
+ *
+ * The slugs are the ones `apps/api/src/platform/routes/github-app.ts` emits on
+ * the install callback, plus whatever GitHub itself returns as `error` (e.g.
+ * `access_denied`). Anything unrecognized falls through to the generic line:
+ * a raw slug on screen is not a message, it is a leak.
+ */
+function setupErrorMessage(reason: string | null): string {
+  switch (reason) {
+    case 'access_denied':
+      return 'GitHub authorization was declined. Nothing was connected.';
+    case 'app_not_configured':
+    case 'install_url_unavailable':
+      return 'This instance has no GitHub App to install. A platform admin sets this up in the admin console.';
+    case 'missing_installation_id':
+    case 'owner_unresolved':
+      return 'GitHub did not return a usable installation. Install the Kortix App again and pick an account.';
+    default:
+      return 'GitHub did not finish connecting this account. Start again from this account\'s Git settings.';
+  }
+}
+
 export default function GitHubSetupPage() {
   return (
     <Suspense fallback={<AuthPendingScreen />}>
@@ -67,7 +91,14 @@ function GitHubSetup() {
   const installationId = searchParams.get('installation_id') || '';
   const setupAction = searchParams.get('setup_action') || '';
   const accountId = searchParams.get('account_id') || '';
-  const selectingExistingInstallation = Boolean(accountId && !installState && !installationId);
+  // The backend redirects a FAILED account link back here now, not to
+  // `/accounts/<id>?tab=git` — there is no `/accounts` route, so that URL was a
+  // 404 carrying the only explanation of what went wrong.
+  const failureFlag = searchParams.get('github') === 'error';
+  const failureReason = searchParams.get('reason');
+  const selectingExistingInstallation = Boolean(
+    accountId && !installState && !installationId && !failureFlag,
+  );
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -80,6 +111,12 @@ function GitHubSetup() {
 
   useEffect(() => {
     if (isLoading || !user) return;
+
+    if (failureFlag) {
+      setState('error');
+      setMessage(setupErrorMessage(failureReason));
+      return;
+    }
 
     if (setupAction === 'uninstall') {
       setState('done');
@@ -107,6 +144,8 @@ function GitHubSetup() {
     setState('verify');
     setMessage('Confirm that your GitHub user owns this account or administers this organization.');
   }, [
+    failureFlag,
+    failureReason,
     installState,
     installationId,
     isLoading,
@@ -142,10 +181,18 @@ function GitHubSetup() {
         const available = result.installations.filter((installation) => !installation.linked);
         if (available.length === 0) {
           setState('empty');
-          setMessage(
+          // The dead end this state used to be: it said everything was already
+          // linked and offered no way forward. Installing the App on ANOTHER
+          // organization is the way forward, and it is only honest to offer it
+          // when the instance actually has an App to install.
+          const already =
             result.installations.length > 0
               ? `Every installation available to ${result.github_login} is already linked to this Kortix account.`
-              : `No existing Kortix App installation is available to ${result.github_login}.`,
+              : `No existing Kortix App installation is available to ${result.github_login}.`;
+          setMessage(
+            result.install_url
+              ? `${already} To connect another organization, install the Kortix App on it.`
+              : `${already} This instance has no GitHub App to install. A platform admin sets this up in the admin console.`,
           );
         } else {
           setState('select');
@@ -259,6 +306,16 @@ function GitHubSetup() {
                         </span>
                       ) : null}
                     </div>
+                    {/* One GitHub installation can back several Kortix
+                        accounts. Linking it again is legal, so this is a
+                        warning on the row and not a disabled button. */}
+                    {installation.linked_to_other_accounts > 0 ? (
+                      <p className="text-kortix-orange mt-1 text-xs">
+                        {tI18nComplete('text0b0e4c425624', {
+                          value0: installation.linked_to_other_accounts,
+                        })}
+                      </p>
+                    ) : null}
                   </div>
                   <Button
                     type="button"
@@ -283,7 +340,7 @@ function GitHubSetup() {
                   onClick={() => window.location.assign(installUrl)}
                 >
                   <Github className="size-4 shrink-0" />
-                  {tI18nComplete.raw('text58a34c9573cf')}
+                  {tI18nComplete.raw('text8d3f36f31348')}
                 </Button>
               ) : null}
               <Button size="lg" variant="outline" className="w-full" asChild>
@@ -294,10 +351,15 @@ function GitHubSetup() {
             </div>
           </Rise>
         ) : state === 'error' ? (
+          // Back to the page that opened this flow when there is one — a
+          // failed link should return the user to the Git tab they started
+          // from, not strand them on the app's landing page.
           <Rise delay={0.06}>
             <Button size="lg" className="w-full" asChild>
-              <Link href={homeHref} replace prefetch>
-                {tI18nComplete.raw('text5fae82827f98')}
+              <Link href={backHref} replace prefetch onClick={clearGitHubSetupReturn}>
+                {returnPath
+                  ? tI18nComplete.raw('text76900f1bfd16')
+                  : tI18nComplete.raw('text5fae82827f98')}
               </Link>
             </Button>
           </Rise>
@@ -320,7 +382,7 @@ function getHeading(
     case 'select':
       return 'Select a GitHub account';
     case 'empty':
-      return 'Install the GitHub App';
+      return 'Install the Kortix App';
     case 'saving':
       return 'Linking GitHub';
     case 'done':

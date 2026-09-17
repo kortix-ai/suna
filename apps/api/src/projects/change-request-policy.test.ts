@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { refusesSelfMerge, resolveChangeRequestBase } from './change-request-policy';
+import { refusesSelfMerge, resolveChangeRequestBase, resolveChangeRequestOrigin } from './change-request-policy';
 
 const SESSION = 'sess-a';
 const OTHER = 'sess-b';
@@ -65,26 +65,52 @@ describe('resolveChangeRequestBase', () => {
 });
 
 describe('refusesSelfMerge', () => {
-  test('a session may not merge the change request it opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION })).toBe(true);
+  test('an ungoverned session may not merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(true);
+  });
+
+  test('an explicitly granted session may merge the change request it opened', () => {
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: SESSION, hasExplicitMergeGrant: true })).toBe(false);
   });
 
   test('a session MAY merge a change request opened by someone else', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: OTHER, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a session may merge a change request a PERSON opened', () => {
-    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: SESSION, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('a person is never refused', () => {
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION })).toBe(false);
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: SESSION, hasExplicitMergeGrant: false })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
   });
 
   test('two null ids are not treated as a match', () => {
     // Guards the obvious `a === b` bug: without the truthiness check, a person
     // merging a person-opened CR would be refused.
-    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null })).toBe(false);
+    expect(refusesSelfMerge({ actingSessionId: null, originSessionId: null, hasExplicitMergeGrant: false })).toBe(false);
+  });
+});
+
+describe('resolveChangeRequestOrigin', () => {
+  test('binds an omitted session_id to the authenticated session', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: null }))
+      .toEqual({ ok: true, originSessionId: SESSION });
+  });
+
+  test('rejects a different session_id', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: SESSION, requestedSessionId: OTHER }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_MISMATCH' });
+  });
+
+  test('requires authenticated session identity for an agent principal', () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: true, actingSessionId: null, requestedSessionId: null }))
+      .toMatchObject({ ok: false, code: 'CR_SESSION_ID_REQUIRED' });
+  });
+
+  test("keeps a person's supplied session origin", () => {
+    expect(resolveChangeRequestOrigin({ actorIsSession: false, actingSessionId: null, requestedSessionId: SESSION }))
+      .toEqual({ ok: true, originSessionId: SESSION });
   });
 });

@@ -24,6 +24,8 @@ export type WorkingSource = 'server' | 'stream' | 'optimistic';
 
 export interface WorkingProjection {
   state: 'idle' | 'working';
+  /** Work is waiting for delivery; do not present it as an agent response. */
+  pendingDelivery?: true;
   /** WHICH observation decided this. Never inferred, never fabricated. */
   source: WorkingSource;
   /** The wire message id (server) or the optimistic receipt id. */
@@ -533,11 +535,15 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return true;
   };
 
-  if (activityAfterIdle) {
+  if (activityAfterIdle && activity!.atMs >= abortFloor) {
     return {
       state: 'working',
       source: 'stream',
-      turnId: null,
+      // Activity proves liveness; the ledger identifies which prompt owns it.
+      // Keep that identity while an older inbox snapshot still lists the prompt.
+      turnId: serverFresh
+        ? server!.turns.find((turn) => turn.state === 'active' && !endedByRuntime(turn))?.message_id ?? null
+        : null,
       since: activity!.atMs,
       serverOpenTurnToken: server?.turns[0]?.turn_token ?? null,
     };
@@ -565,7 +571,8 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // ordered newest-first. Testing only `turns[0]` would let one spent row hide
   // a live one behind it, so the projection keeps the first turn the runtime
   // has NOT finished.
-  const openTurn = serverFresh ? server!.turns.find((t) => !endedByRuntime(t)) : undefined;
+  const openTurns = serverFresh ? server!.turns.filter((t) => !endedByRuntime(t)) : [];
+  const openTurn = openTurns.find((turn) => turn.state === 'active') ?? openTurns[0];
 
   // A turn the authority is holding open, unless the stream has since said the
   // session went idle. The stream frame is newer BY OBSERVATION, and the daemon
@@ -581,6 +588,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     !!stream && !(stream.type === 'idle' && stream.origin === 'local');
   if (openTurn && server!.atMs >= abortFloor && (!streamContradicts || server!.atMs >= stream!.atMs)) {
     return {
+      ...(openTurn.state === 'delivering' ? { pendingDelivery: true as const } : {}),
       state: 'working',
       source: 'server',
       turnId: openTurn.message_id,
@@ -598,8 +606,11 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // turn in front of it says nothing about it. Measured on the local stack
   // 2026-08-21: suppressing forwarded rows on that frame left the composer idle
   // for 13.8s with the user's queued prompt still waiting to run.
-  if (inboxFresh && inbox!.pending > 0) {
+  if (inboxFresh && inbox!.pending > 0 && inbox!.atMs >= abortFloor) {
+    const runtimeIsResponding = streamFresh && stream!.type !== 'idle' &&
+      (!serverFresh || stream!.atMs > server!.atMs) && stream!.atMs >= abortFloor;
     return {
+      ...(!runtimeIsResponding ? { pendingDelivery: true as const } : {}),
       state: 'working',
       source: 'server',
       turnId: receiptLive ? receiptTurnId : null,
@@ -642,6 +653,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     !(serverFresh && server!.atMs >= drainedAtMs);
   if (drainFloorHolds) {
     return {
+      pendingDelivery: true,
       state: 'working',
       source: 'server',
       turnId: null,
@@ -651,7 +663,8 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   }
 
   const serverAnswers = serverFresh && !openTurn && server!.atMs >= serverFloor;
-  const streamAnswers = streamFresh && stream!.atMs >= streamFloor;
+  const streamAnswers = streamFresh && stream!.atMs >= streamFloor &&
+    (stream!.type === 'idle' || stream!.atMs >= abortFloor);
 
   if (serverAnswers && (!stream || server!.atMs >= stream.atMs)) {
     return {
@@ -675,6 +688,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
 
   if (receiptLive) {
     return {
+      pendingDelivery: true,
       state: 'working',
       source: 'optimistic',
       turnId: receiptTurnId,

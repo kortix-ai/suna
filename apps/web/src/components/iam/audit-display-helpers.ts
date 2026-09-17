@@ -159,6 +159,10 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
+  // The instance git backend ("Kortix managed") — one deployment-wide thing
+  // with its own namespace since 2026-09-16, never an account connection.
+  'GET /v1/projects/git/backend': 'Read the instance git backend',
+  'GET /v1/projects/git/backend/repositories': 'Listed instance git backend repositories',
   // Same underlying create as bare `POST /v1/projects/provision` (both run
   // `runProvision` in `apps/api/src/projects/provision-core.ts` — see that
   // route's own doc comment) — this is just the phased-progress transport for

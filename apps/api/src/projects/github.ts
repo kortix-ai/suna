@@ -1,6 +1,6 @@
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
-import { managedGithubAppConfig } from '../platform/services/managed-github-app';
+import { resolveAppIdentity } from '../platform/services/github-app-identity';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -109,67 +109,44 @@ export interface CreateRepoInput {
   auth?: GitHubAuthContext;
 }
 
-// DB-first, env-fallback: the in-app self-host setup flow
-// (platform/routes/github-app.ts) writes the App's creds into
-// kortix.platform_settings (managed-github-app.ts); a self-host operator who
-// still configures everything via `.env` keeps working unchanged since the DB
-// config resolves to `{}` until someone runs the setup flow.
+// The App identity is resolved WHOLE from one source — env or the
+// `github_app_identity` platform setting — by
+// platform/services/github-app-identity.ts. These accessors never mix the two
+// field by field: one stored row shadowing six env values is the 2026-09-16
+// production incident.
 export function githubAppId() {
-  return (
-    managedGithubAppConfig().appId?.trim() ||
-    process.env.KORTIX_GITHUB_APP_ID ||
-    process.env.GITHUB_APP_ID ||
-    null
-  );
+  return resolveAppIdentity()?.appId ?? null;
 }
 
 function githubAppPrivateKey() {
-  return (
-    managedGithubAppConfig().privateKey?.trim() ||
-    process.env.KORTIX_GITHUB_APP_PRIVATE_KEY ||
-    process.env.GITHUB_APP_PRIVATE_KEY ||
-    null
-  );
+  return resolveAppIdentity()?.privateKey ?? null;
 }
 
-export function githubAppSlug() {
-  return (
-    managedGithubAppConfig().slug?.trim() ||
-    process.env.KORTIX_GITHUB_APP_SLUG ||
-    process.env.GITHUB_APP_SLUG ||
-    null
-  );
+/**
+ * The slug an operator configured, on whichever source owns the identity.
+ * It is a FALLBACK: `resolveGitHubAppSlug()` derives the live slug from
+ * `GET /app` and only reads this when derivation fails. Production ran for
+ * months with `KORTIX_GITHUB_APP_SLUG=kortix-private-repo-access` while the
+ * App's real slug was `kortix-managed`, so every install URL 404ed.
+ */
+export function configuredGitHubAppSlug() {
+  return resolveAppIdentity()?.configuredSlug ?? null;
 }
 
 export function isGithubAppConfigured() {
-  return Boolean(githubAppId() && githubAppPrivateKey());
+  return resolveAppIdentity() !== null;
 }
 
 // The App's own OAuth client (every GitHub App gets one for "user access
 // token" / user-to-server flows) — used to prove a caller's GitHub identity
 // and org role for account-linking (see platform/routes/github-app.ts's
-// oauth/authorize + oauth/callback). Populated automatically by the manifest
-// flow (exchangeManifestCode stores client_id/client_secret alongside the App
-// creds); env fallback lets a self-host operator who pasted an existing App
-// (POST /app) or configured everything via `.env` set these two values
-// directly, mirroring every other githubApp* accessor's DB-first/env-fallback
-// shape.
+// oauth/authorize + oauth/callback).
 export function githubAppClientId() {
-  return (
-    managedGithubAppConfig().clientId?.trim() ||
-    process.env.KORTIX_GITHUB_APP_CLIENT_ID ||
-    process.env.GITHUB_APP_CLIENT_ID ||
-    null
-  );
+  return resolveAppIdentity()?.clientId ?? null;
 }
 
 export function githubAppClientSecret() {
-  return (
-    managedGithubAppConfig().clientSecret?.trim() ||
-    process.env.KORTIX_GITHUB_APP_CLIENT_SECRET ||
-    process.env.GITHUB_APP_CLIENT_SECRET ||
-    null
-  );
+  return resolveAppIdentity()?.clientSecret ?? null;
 }
 
 /** Whether the App's own OAuth identity-proof flow (oauth/authorize +
@@ -181,14 +158,86 @@ export function isGithubAppOAuthConfigured() {
   return Boolean(githubAppClientId() && githubAppClientSecret());
 }
 
+/**
+ * The HMAC key behind the install-state token. The identity's own state
+ * secret first; `SUPABASE_JWT_SECRET` and the private key are last-resort
+ * signing keys for a deployment that never set one. They are signing keys,
+ * not identity fields, so reading them here is not a mixed identity.
+ */
 export function githubAppStateSecret() {
+  const identity = resolveAppIdentity();
   return (
-    managedGithubAppConfig().stateSecret?.trim() ||
+    identity?.stateSecret ||
     process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
     process.env.SUPABASE_JWT_SECRET ||
-    githubAppPrivateKey() ||
+    identity?.privateKey ||
     null
   );
+}
+
+// ─── Slug derivation ─────────────────────────────────────────────────────────
+// The slug is a PROPERTY of the App, so it is read from the App: `GET /app`
+// signed with the identity's own JWT. A configured slug is only consulted when
+// that read fails, and a mismatch between the two is logged once.
+
+const SLUG_TTL_MS = 60 * 60 * 1000;
+const SLUG_FAILURE_TTL_MS = 60 * 1000;
+const slugCache = new Map<string, { slug: string | null; at: number; ttl: number }>();
+const slugMismatchLogged = new Set<string>();
+
+export interface ResolvedGitHubAppSlug {
+  slug: string | null;
+  source: 'derived' | 'configured' | 'none';
+}
+
+/** Test-only: drop the per-appId slug cache. */
+export function resetGitHubAppSlugCache(): void {
+  slugCache.clear();
+  slugMismatchLogged.clear();
+}
+
+export async function resolveGitHubAppSlug(): Promise<ResolvedGitHubAppSlug> {
+  const identity = resolveAppIdentity();
+  if (!identity) return { slug: null, source: 'none' };
+
+  const cached = slugCache.get(identity.appId);
+  const fresh = cached && Date.now() - cached.at < cached.ttl;
+  let derived = fresh ? cached.slug : null;
+
+  if (!fresh) {
+    try {
+      const app = await ghFetch<{ slug?: string }>(
+        '/app',
+        { method: 'GET' },
+        { token: createGitHubAppJwt() },
+      );
+      derived = typeof app.slug === 'string' && app.slug.trim() ? app.slug.trim() : null;
+      slugCache.set(identity.appId, { slug: derived, at: Date.now(), ttl: SLUG_TTL_MS });
+    } catch (err) {
+      derived = null;
+      slugCache.set(identity.appId, { slug: null, at: Date.now(), ttl: SLUG_FAILURE_TTL_MS });
+      console.warn(
+        `[github-app] could not derive the App slug from GET /app for appId ${identity.appId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (derived) {
+    const configured = identity.configuredSlug;
+    if (configured && configured !== derived && !slugMismatchLogged.has(identity.appId)) {
+      slugMismatchLogged.add(identity.appId);
+      console.warn(
+        `[github-app] configured slug "${configured}" does not match the App's own slug "${derived}" ` +
+          `(appId ${identity.appId}); using the derived one`,
+      );
+    }
+    return { slug: derived, source: 'derived' };
+  }
+
+  const configured = identity.configuredSlug;
+  if (configured) return { slug: configured, source: 'configured' };
+  return { slug: null, source: 'none' };
 }
 
 function signGitHubAppStatePayload(payload: string) {
@@ -295,13 +344,18 @@ export function verifyGitHubAppInstallStatePayload(
   }
 }
 
-export function buildGitHubAppInstallUrl(
+/**
+ * The App's install URL. Never emitted for a slug that was not derived from
+ * `GET /app` or explicitly configured — a guessed slug is a permanent 404 on
+ * github.com, which is what production served until 2026-09-16.
+ */
+export async function buildGitHubAppInstallUrl(
   accountId?: string | null,
   nonce?: string,
   purpose: 'account_link' | 'platform_setup' = 'account_link',
   frontendOrigin?: string,
-) {
-  const slug = githubAppSlug()?.trim();
+): Promise<string | null> {
+  const { slug } = await resolveGitHubAppSlug();
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${slug}/installations/new`);
   if (accountId) {

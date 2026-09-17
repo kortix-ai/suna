@@ -80,12 +80,9 @@
       "noGitHubAccount": "此项目的账户尚未连接 GitHub 账户。",
       "connectGitHub": "连接 GitHub 账户",
       "connectGitHubSuffix": "以使用此选项。",
-      "loadingGitHubAccounts": "正在加载 GitHub 账户…",
-      "loadGitHubAccountsError": "无法加载 GitHub 账户：{error}",
-      "githubAccount": "GitHub 账户",
-      "selectGitHubAccount": "选择 GitHub 账户",
+      "loadGitHubAccountsError": "无法加载 GitHub 账户。请重试。",
       "createsPath": "创建 <path>{path}</path>",
-      "loadRepositoriesError": "无法加载代码仓库：{error}",
+      "loadRepositoriesError": "无法加载仓库。请重试。",
       "sources": {
         "managed": {
           "label": "由 Kortix 管理",
@@ -99,7 +96,17 @@
           "label": "从 GitHub 导入",
           "description": "从您的 GitHub 账户中选择现有代码仓库。"
         }
-      }
+      },
+      "repositoryLabel": "仓库",
+      "createInOwner": "在 {owner} 中创建仓库",
+      "importFromOwner": "从 {owner} 导入仓库",
+      "selectOption": "选择仓库选项",
+      "loadingOptions": "正在加载仓库选项…",
+      "managedUnavailable": "此实例无法使用由 Kortix 托管的仓库。平台管理员可在管理控制台中完成设置。",
+      "installationUnreachable": "此 GitHub 连接已失效。请重新连接以列出仓库。",
+      "reconnect": "在 Git 设置中重新连接",
+      "managedImportLabel": "导入现有的托管仓库",
+      "managedImportHint": "仅限自托管运维人员。列出托管 git 所有者已持有的仓库。"
     }
   },
   "projectHome": {
@@ -1233,8 +1240,6 @@
     "selectAllConversations": "全选对话",
     "deselectAllConversations": "取消全选对话",
     "loadMore": "加载更多",
-    "loadingMore": "加载中…",
-    "loadMoreSessions": "加载更多会话",
     "remaining": "剩余",
     "newSession": "新会议",
     "collapse": "折叠侧边栏",
@@ -1287,7 +1292,6 @@
       "switch": "切换项目",
       "switchMenu": "切换项目",
       "create": "创建项目…",
-      "createIn": "在 {account} 中创建项目",
       "createAccount": "创建账户…",
       "settings": "设置",
       "downloadApp": "下载应用",
@@ -1297,7 +1301,8 @@
       "noMatches": "没有匹配的项目",
       "empty": "暂无项目",
       "account": "账户",
-      "loadError": "项目加载失败"
+      "loadError": "项目加载失败",
+      "createIn": "在 {account} 中创建项目"
     },
     "manifestUpgrade": {
       "title": "升级到 v2",
@@ -1351,7 +1356,9 @@
         "mine": "我的聊天",
         "shared": "共享"
       }
-    }
+    },
+    "loadingMore": "加载中…",
+    "loadMoreSessions": "加载更多会话"
   },
   "dashboard": {
     "title": "仪表板",
@@ -1687,7 +1694,11 @@
     "hintChanged": "询问项目中发生了哪些变化",
     "hintNewLine": "按 Shift+Enter 换行",
     "hintSettings": "按 {modifier}, 打开设置",
-    "hintCompact": "会话过长时，请要求压缩会话"
+    "hintCompact": "会话过长时，请要求压缩会话",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "queued": "排队中",
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
   },
   "billing": {
     "plan": {
@@ -12407,7 +12418,6 @@
       "text588032878324": "立即发送",
       "text5885ace14d89": "获取会话",
       "text5887e718dea1": "挑选的",
-      "text58a34c9573cf": "安装 GitHub App",
       "text58a4ba90dc79": "夺回被协调工作吞噬的一周。",
       "text58aede554b21": "连接一次，全公司使用。Agents 通过 Kortix 在服务器端代理的单个受限令牌访问工具——因此原始凭据永远不会落到模型操控的机器上。",
       "text58bf3410b028": "设置值",
@@ -18390,7 +18400,22 @@
       "text03a01dd53ffa": "按 ↑ 编辑排队的消息",
       "text1eb132d9d4da": "队列已暂停",
       "textf8e64a37950a": "排队的消息",
-      "textcd5f943d5863": "未发送"
+      "textcd5f943d5863": "未发送",
+      "text42888e8dc93e": "整个实例只有一个连接。Kortix 在所有账户中都通过它创建并推送每个项目的仓库。",
+      "textf40d94365439": "此实例的 GitHub 身份来自服务器上的环境变量，无法在此处更改。",
+      "textbd6cc9a4cf4b": "设置来源",
+      "text39481fc24bd5": "此实例中由 Kortix 托管的仓库将创建在 {value0} 下。",
+      "text89a9816ffa6f": "此实例可以使用由 Kortix 托管的仓库。",
+      "textb79bb0e54e4f": "此实例无法使用由 Kortix 托管的仓库。平台管理员可在管理控制台中完成设置。",
+      "textf7be8a17b0e7": "添加 GitHub 账户",
+      "text659d5668b62b": "将 GitHub 个人账户或组织关联到此 Kortix 账户。",
+      "textdc520b664af2": "GitHub 会列出你管理的所有个人账户和组织。选择其中一个，指定 Kortix 应用可以访问哪些仓库，该所有者便会关联到此 Kortix 账户。",
+      "text8d3f36f31348": "安装 Kortix 应用",
+      "text183bc0d276cc": "此实例没有可安装的 GitHub 应用。平台管理员可在管理控制台中完成设置。",
+      "text7f59f014cd7b": "已经安装在你想要的所有者上了吗？",
+      "text9180f7df8906": "关联你已管理的安装",
+      "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。",
+      "text7dac2ca010fe": "正在准备完整记录…"
     }
   },
   "projectOnboarding": {

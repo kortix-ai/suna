@@ -277,7 +277,7 @@ describe('messageFor', () => {
     expect(msg).not.toBe('Could not create the workspace. Try again.');
     expect(msg).not.toContain('Try again');
     expect(msg).toBe(
-      "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.",
+      "Managed git isn't set up on this server. A platform admin connects GitHub in the admin console before workspaces can be created.",
     );
   });
 

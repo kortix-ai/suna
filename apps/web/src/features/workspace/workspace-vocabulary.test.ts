@@ -145,7 +145,10 @@ describe('project vocabulary: each surface actually renders its project copy', (
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'new/advanced-fields.tsx'), 'utf8'),
     );
-    expect(code).toContain("t(`repository.sources.${SOURCE_KEYS[state.source]}.description`)");
+    // The repository control is one list of concrete choices now — each
+    // connected GitHub owner, then `Kortix managed` — so the description comes
+    // from the selected choice rather than from a source-key lookup.
+    expect(code).toContain("t('repository.sources.managed.description')");
   });
 
   test('account-picker.tsx names its control Account', () => {

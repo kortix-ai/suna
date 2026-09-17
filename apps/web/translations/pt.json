@@ -80,12 +80,9 @@
       "noGitHubAccount": "Ainda não há uma conta do GitHub conectada à conta deste projeto.",
       "connectGitHub": "Conectar uma conta do GitHub",
       "connectGitHubSuffix": "para usar esta opção.",
-      "loadingGitHubAccounts": "Carregando contas do GitHub…",
-      "loadGitHubAccountsError": "Não foi possível carregar as contas do GitHub: {error}",
-      "githubAccount": "Conta do GitHub",
-      "selectGitHubAccount": "Selecione uma conta do GitHub",
+      "loadGitHubAccountsError": "Não foi possível carregar as contas do GitHub. Tente novamente.",
       "createsPath": "Cria <path>{path}</path>",
-      "loadRepositoriesError": "Não foi possível carregar os repositórios: {error}",
+      "loadRepositoriesError": "Não foi possível carregar os repositórios. Tente novamente.",
       "sources": {
         "managed": {
           "label": "Gerenciado pela Kortix",
@@ -99,7 +96,17 @@
           "label": "Importar do GitHub",
           "description": "Selecione um repositório existente da sua conta do GitHub."
         }
-      }
+      },
+      "repositoryLabel": "Repositório",
+      "createInOwner": "Criar um repositório em {owner}",
+      "importFromOwner": "Importar um repositório de {owner}",
+      "selectOption": "Selecione uma opção de repositório",
+      "loadingOptions": "A carregar opções de repositório…",
+      "managedUnavailable": "Os repositórios geridos pelo Kortix não estão disponíveis nesta instância. Um administrador da plataforma configura isto na consola de administração.",
+      "installationUnreachable": "Esta ligação do GitHub já não funciona. Volte a ligá-la para listar repositórios.",
+      "reconnect": "Voltar a ligar nas definições de Git",
+      "managedImportLabel": "Importar um repositório gerido existente",
+      "managedImportHint": "Apenas para operadores self-hosted. Lista os repositórios que o proprietário do git gerido já possui."
     }
   },
   "projectHome": {
@@ -1233,8 +1240,6 @@
     "selectAllConversations": "Selecionar todas as conversas",
     "deselectAllConversations": "Desselecionar todas as conversas",
     "loadMore": "Carregar mais",
-    "loadingMore": "A carregar…",
-    "loadMoreSessions": "Carregar mais sessões",
     "remaining": "restantes",
     "newSession": "Nova sessão",
     "collapse": "Recolher barra lateral",
@@ -1287,7 +1292,6 @@
       "switch": "Alternar projeto",
       "switchMenu": "Alternar projeto",
       "create": "Criar projeto…",
-      "createIn": "Criar um projeto em {account}",
       "createAccount": "Criar uma conta…",
       "settings": "Configurações",
       "downloadApp": "Transferir aplicação",
@@ -1297,7 +1301,8 @@
       "noMatches": "Nenhum projeto correspondente",
       "empty": "Ainda não existem projetos",
       "account": "Conta",
-      "loadError": "Não foi possível carregar os projetos"
+      "loadError": "Não foi possível carregar os projetos",
+      "createIn": "Criar um projeto em {account}"
     },
     "manifestUpgrade": {
       "title": "Atualizar para v2",
@@ -1351,7 +1356,9 @@
         "mine": "As minhas conversas",
         "shared": "Partilhadas"
       }
-    }
+    },
+    "loadingMore": "A carregar…",
+    "loadMoreSessions": "Carregar mais sessões"
   },
   "dashboard": {
     "title": "Painel",
@@ -1687,7 +1694,11 @@
     "hintChanged": "Pergunte o que mudou no projeto",
     "hintNewLine": "Pressione Shift+Enter para uma nova linha",
     "hintSettings": "Pressione {modifier}, para abrir as configurações",
-    "hintCompact": "Peça para compactar a sessão quando ela ficar longa"
+    "hintCompact": "Peça para compactar a sessão quando ela ficar longa",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
+    "queued": "Na fila",
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
   },
   "billing": {
     "plan": {
@@ -12407,7 +12418,6 @@
       "text588032878324": "Enviar agora",
       "text5885ace14d89": "Obter sessão",
       "text5887e718dea1": "escolhido",
-      "text58a34c9573cf": "Instalar o GitHub App",
       "text58a4ba90dc79": "Recupere a semana consumida pela coordenação.",
       "text58aede554b21": "Conecte uma ferramenta uma vez, para toda a empresa. Os agentes a acessam por meio de um único token com escopo, intermediado pelo Kortix no servidor — assim, a credencial original nunca chega à máquina controlada pelo modelo.",
       "text58bf3410b028": "Definir valor",
@@ -18390,7 +18400,22 @@
       "text03a01dd53ffa": "Pressione ↑ para editar as mensagens na fila",
       "text1eb132d9d4da": "Fila pausada",
       "textf8e64a37950a": "Mensagens na fila",
-      "textcd5f943d5863": "Não enviado"
+      "textcd5f943d5863": "Não enviado",
+      "text42888e8dc93e": "Uma conexão para toda a instância. O Kortix cria e envia cada repositório de projeto por ela, em todas as contas.",
+      "textf40d94365439": "A identidade do GitHub desta instância vem de variáveis de ambiente no servidor. Não pode ser alterada aqui.",
+      "textbd6cc9a4cf4b": "Definido por",
+      "text39481fc24bd5": "Os repositórios geridos pelo Kortix nesta instância são criados em {value0}.",
+      "text89a9816ffa6f": "Os repositórios geridos pelo Kortix estão disponíveis nesta instância.",
+      "textb79bb0e54e4f": "Os repositórios geridos pelo Kortix não estão disponíveis nesta instância. Um administrador da plataforma configura isto na consola de administração.",
+      "textf7be8a17b0e7": "Adicionar uma conta do GitHub",
+      "text659d5668b62b": "Associe uma conta pessoal ou organização do GitHub a esta conta Kortix.",
+      "textdc520b664af2": "O GitHub lista todas as contas pessoais e organizações que administra. Escolha uma, indique a que repositórios a app Kortix pode aceder e esse proprietário fica associado a esta conta Kortix.",
+      "text8d3f36f31348": "Instalar a app Kortix",
+      "text183bc0d276cc": "Esta instância não tem nenhuma app do GitHub para instalar. Um administrador da plataforma configura isto na consola de administração.",
+      "text7f59f014cd7b": "Já está instalada no proprietário que pretende?",
+      "text9180f7df8906": "Associar uma instalação que já administra",
+      "text0b0e4c425624": "Já associada a {value0, plural, one {# outra conta Kortix} other {# outras contas Kortix}}.",
+      "text7dac2ca010fe": "Preparando a transcrição completa…"
     }
   },
   "projectOnboarding": {

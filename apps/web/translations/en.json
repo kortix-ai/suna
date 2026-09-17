@@ -80,12 +80,9 @@
       "noGitHubAccount": "No GitHub account is connected to this project's account yet.",
       "connectGitHub": "Connect a GitHub account",
       "connectGitHubSuffix": "to use this option.",
-      "loadingGitHubAccounts": "Loading GitHub accounts…",
-      "loadGitHubAccountsError": "Could not load GitHub accounts: {error}",
-      "githubAccount": "GitHub account",
-      "selectGitHubAccount": "Select a GitHub account",
+      "loadGitHubAccountsError": "Could not load GitHub accounts. Try again.",
       "createsPath": "Creates <path>{path}</path>",
-      "loadRepositoriesError": "Could not load repositories: {error}",
+      "loadRepositoriesError": "Could not load repositories. Try again.",
       "sources": {
         "managed": {
           "label": "Kortix managed",
@@ -99,7 +96,17 @@
           "label": "Import from GitHub",
           "description": "Select an existing repository from your GitHub account."
         }
-      }
+      },
+      "repositoryLabel": "Repository",
+      "createInOwner": "Create a repository in {owner}",
+      "importFromOwner": "Import a repository from {owner}",
+      "selectOption": "Select a repository option",
+      "loadingOptions": "Loading repository options…",
+      "managedUnavailable": "Kortix-managed repositories are not available on this instance. A platform admin sets this up in the admin console.",
+      "installationUnreachable": "This GitHub connection no longer works. Reconnect it to list repositories.",
+      "reconnect": "Reconnect in Git settings",
+      "managedImportLabel": "Import an existing managed repository",
+      "managedImportHint": "Self-host operators only. Lists repositories the managed git owner already holds."
     }
   },
   "projectHome": {
@@ -1233,8 +1240,6 @@
     "selectAllConversations": "Select all conversations",
     "deselectAllConversations": "Deselect all conversations",
     "loadMore": "Load more",
-    "loadingMore": "Loading…",
-    "loadMoreSessions": "Load more sessions",
     "remaining": "remaining",
     "newSession": "New session",
     "collapse": "Collapse sidebar",
@@ -1287,7 +1292,6 @@
       "switch": "Switch project",
       "switchMenu": "Switch Project",
       "create": "Create a project…",
-      "createIn": "Create a project in {account}",
       "createAccount": "Create an account…",
       "settings": "Settings",
       "downloadApp": "Download app",
@@ -1297,7 +1301,8 @@
       "noMatches": "No matching projects",
       "empty": "No projects yet",
       "account": "Account",
-      "loadError": "Failed to load projects"
+      "loadError": "Failed to load projects",
+      "createIn": "Create a project in {account}"
     },
     "manifestUpgrade": {
       "title": "Upgrade to v2",
@@ -1351,7 +1356,9 @@
         "mine": "My chats",
         "shared": "Shared"
       }
-    }
+    },
+    "loadingMore": "Loading…",
+    "loadMoreSessions": "Load more sessions"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1665,6 +1672,10 @@
     "title": "Threads",
     "newThread": "New Thread",
     "sendMessage": "Send message",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Could not confirm Stop. The agent may still be running. Try Stop again.",
+    "queued": "Queued",
+    "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "placeholder": "Type your message...",
     "messageInput": "Message input",
     "attachFiles": "Attach files",
@@ -12407,7 +12418,6 @@
       "text588032878324": "Send now",
       "text5885ace14d89": "Session Get",
       "text5887e718dea1": "picked",
-      "text58a34c9573cf": "Install GitHub App",
       "text58a4ba90dc79": "Take back the week the coordination ate.",
       "text58aede554b21": "Connect a tool once, for the whole company. Agents reach it through one scoped token that Kortix brokers server-side — so the raw credential never lands in the machine the model is driving.",
       "text58bf3410b028": "Set value",
@@ -18390,7 +18400,22 @@
       "text03a01dd53ffa": "Press ↑ to edit queued messages",
       "text1eb132d9d4da": "Queue paused",
       "textf8e64a37950a": "Queued messages",
-      "textcd5f943d5863": "Not sent"
+      "textcd5f943d5863": "Not sent",
+      "text42888e8dc93e": "One connection for the whole instance. Kortix creates and pushes every project repository through it, in every account.",
+      "textf40d94365439": "This instance's GitHub identity comes from environment variables on the server. It cannot be changed here.",
+      "textbd6cc9a4cf4b": "Set by",
+      "text39481fc24bd5": "Kortix-managed repositories on this instance are created under {value0}.",
+      "text89a9816ffa6f": "Kortix-managed repositories are available on this instance.",
+      "textb79bb0e54e4f": "Kortix-managed repositories are not available on this instance. A platform admin sets this up in the admin console.",
+      "textf7be8a17b0e7": "Add a GitHub account",
+      "text659d5668b62b": "Link a GitHub personal account or organization to this Kortix account.",
+      "textdc520b664af2": "GitHub lists every personal account and organization you administer. Pick one, choose which repositories the Kortix App may reach, and that owner is linked to this Kortix account.",
+      "text8d3f36f31348": "Install the Kortix App",
+      "text183bc0d276cc": "This instance has no GitHub App to install. A platform admin sets this up in the admin console.",
+      "text7f59f014cd7b": "Already installed on the owner you want?",
+      "text9180f7df8906": "Link an installation you already administer",
+      "text0b0e4c425624": "Already linked to {value0, plural, one {# other Kortix account} other {# other Kortix accounts}}.",
+      "text7dac2ca010fe": "Preparing the full transcript…"
     }
   },
   "projectOnboarding": {

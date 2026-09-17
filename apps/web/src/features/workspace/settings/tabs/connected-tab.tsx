@@ -45,7 +45,6 @@
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { hubTarget, type HubTarget } from '@/stores/account-panel-store';
-import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
@@ -53,17 +52,12 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Github } from '@/features/icon/icons/github';
-import {
-  githubInstallationLabel,
-  isGitHubAppInstallationId,
-  rememberGitHubSetupReturn,
-} from '@/lib/github-installations';
+import { githubInstallationLabel, rememberGitHubSetupReturn } from '@/lib/github-installations';
 import { usePermission } from '@/lib/use-permission';
 import { deleteGitHubInstallation, listGitHubInstallations } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
 import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
@@ -82,7 +76,6 @@ export interface ConnectedAccountsTabViewProps {
   /** The account hub's Git pane — a modal target, not a URL: the hub has no
    *  route (`stores/account-panel-store.ts`). */
   githubManageAllTo?: HubTarget;
-  githubAppSetupSlot?: ReactNode;
   copy?: ConnectedAccountsTabCopy;
 }
 
@@ -147,7 +140,6 @@ export function ConnectedAccountsTabView({
   isGitHubActionPending = false,
   githubOtherInstallationsCount = 0,
   githubManageAllTo,
-  githubAppSetupSlot,
   copy = DEFAULT_CONNECTED_ACCOUNTS_COPY,
 }: ConnectedAccountsTabViewProps) {
   // `loading` gets its own branch rather than falling through to the
@@ -188,19 +180,10 @@ export function ConnectedAccountsTabView({
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="connected" />
 
-      {/* Managed GitHub — the instance's git backend — leads the pane, above
-          the account-level row it unblocks: without a managed-git connection no
-          project gets a repository at all.
-
-          It does NOT sit below the row, which is where
-          `accounts/[id]/page.tsx:579-583` put it relative to the account-level
-          `GitHubConnectionCard` this row replaced. That order cannot be
-          transplanted. The card is a titled section with its own bordered
-          panel; the row lives in a `SettingsRowGroup`, a bordered box whose
-          rows share hairlines. Leading the pane keeps the two GitHub surfaces
-          adjacent and ordered widest-scope-first — instance, then account. */}
-      {canManageAccount ? githubAppSetupSlot : null}
-
+      {/* No managed-git setup card here. It configures ONE instance-global
+          row, and this pane is account-scoped — the same shape that let a
+          platform admin reconfigure production's GitHub App from inside a
+          customer's settings on 2026-09-16. It lives at `/admin/git` now. */}
       {canManageAccount ? (
         <section className="space-y-3">
           <SettingsRowGroup>
@@ -273,9 +256,10 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
     staleTime: 0,
   });
 
-  const installations = (installationsQuery.data?.installations ?? []).filter((installation) =>
-    isGitHubAppInstallationId(installation.installation_id),
-  );
+  // Account connections only — `GET /projects/github/installations` no longer
+  // injects the instance git backend as a synthetic entry, so there is nothing
+  // to filter out of this list.
+  const installations = installationsQuery.data?.installations ?? [];
   const primaryInstallation = installations[0];
   const otherInstallationsCount = Math.max(0, installations.length - 1);
 
@@ -321,10 +305,7 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
       githubStatus={githubStatus}
       githubInstallationName={
         primaryInstallation
-          ? githubInstallationLabel(
-              primaryInstallation.installation_id,
-              primaryInstallation.owner_login,
-            )
+          ? githubInstallationLabel(primaryInstallation.owner_login)
           : null
       }
       githubError={
@@ -335,9 +316,6 @@ export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
       isGitHubActionPending={disconnectGitHubMutation.isPending}
       githubOtherInstallationsCount={otherInstallationsCount}
       githubManageAllTo={resolvedAccountId ? hubTarget(resolvedAccountId, { tab: 'git' }) : undefined}
-      githubAppSetupSlot={
-        canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined
-      }
     />
   );
 }
