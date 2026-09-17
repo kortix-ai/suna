@@ -36,12 +36,16 @@ const api = createApiJsonClient(apiBase);
  * read. Both causes clear on a retry, so retry — and when it never clears,
  * fail naming which of the three states was actually on screen.
  */
-async function openAdminOverview(page: Page, path: string): Promise<void> {
+async function openAdminOverview(
+  page: Page,
+  path: string,
+  heading = "Overview",
+): Promise<void> {
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     await page.goto(path, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL((url) => url.pathname === path);
-    const overview = page.getByRole("heading", { name: "Overview" }).first();
+    const overview = page.getByRole("heading", { name: heading }).first();
     const refused = page.getByText("Admin access required").first();
     // Resolve the guard's skeleton into one of its two terminal states first,
     // so a slow probe is a wait and not a failure.
@@ -59,6 +63,7 @@ async function assertAdminRouteClean(
   page: Page,
   path: string,
   expectedTexts: string[],
+  heading = "Overview",
 ) {
   const badResponses: string[] = [];
   const consoleErrors: string[] = [];
@@ -105,12 +110,12 @@ async function assertAdminRouteClean(
 
   // First pass: get the guard to let us in. Any attempt here may have raced a
   // degraded replica, so nothing it recorded is evidence about the product.
-  await openAdminOverview(page, path);
+  await openAdminOverview(page, path, heading);
   badResponses.length = 0;
   consoleErrors.length = 0;
 
   // Second pass: this is the load the assertions below judge.
-  await openAdminOverview(page, path);
+  await openAdminOverview(page, path, heading);
 
   for (const text of expectedTexts) {
     await expect(page.getByText(text).first()).toBeVisible();
@@ -171,7 +176,21 @@ on conflict (account_id) do update set role = excluded.role;
         "Projects",
         "Sandboxes",
         "Maintenance",
+        "Git",
       ]);
+
+      // /admin/git — the instance's ONE managed-git surface. It lived on the
+      // account Git tab until 2026-09-16, when a platform admin ran its
+      // manifest flow from a customer's settings and replaced production's
+      // GitHub App. The card renders here and nowhere else; the page says in
+      // words that it decides how every project on the instance reaches
+      // GitHub.
+      await assertAdminRouteClean(
+        page,
+        "/admin/git",
+        ["Managed GitHub", "One connection for the whole instance"],
+        "Git",
+      );
 
     } finally {
       if (grantedAccountId) {

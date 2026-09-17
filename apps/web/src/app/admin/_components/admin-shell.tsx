@@ -35,6 +35,7 @@ const NAV_LABELS: { href: string; label: string }[] = [
   { href: '/admin/projects', label: 'Projects' },
   { href: '/admin/analytics', label: 'Analytics' },
   { href: '/admin/sandboxes', label: 'Sandboxes' },
+  { href: '/admin/git', label: 'Git' },
   { href: '/admin/utils', label: 'Maintenance' },
 ];
 

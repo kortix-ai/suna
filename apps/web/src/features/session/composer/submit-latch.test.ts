@@ -1,22 +1,3 @@
-/**
- * The submit latch: one user action = one submission — WITHOUT eating the next
- * user action.
- *
- * The inline predecessor (`submissionInFlight` in composer.tsx) returned on any
- * re-entrant submit, holding the gate for the entire await of the previous
- * send's ACK. That ACK can take seconds (file uploads) to ~30s (the sandbox
- * boot/wake retry window in `promptOpenCodeMessage`), and every Enter inside
- * the window was silently dropped — the message the queue exists to hold never
- * reached the queue decision. That is the "second message never queues, Enter
- * does nothing" report.
- *
- * The discriminator between the two cases the latch must separate:
- *  - a same-tick DOUBLE-FIRE of one action arrives with an empty draft
- *    (dispatch already cleared the editor synchronously; only un-flushed
- *    `attachedFiles` state can linger) → still dropped, same as before.
- *  - a DISTINCT second message arrives with typed text → deferred, and re-runs
- *    once the in-flight dispatch settles, landing in the normal busy→queue path.
- */
 import { describe, expect, test } from 'bun:test';
 
 import { createSubmitLatch } from './submit-latch';
@@ -57,16 +38,17 @@ describe('createSubmitLatch', () => {
     expect(d.calls()).toBe(1);
   });
 
-  test('a re-entrant submit with draft text defers, then dispatches after settle', async () => {
+  test('a distinct prompt dispatches before the previous acceptance returns', async () => {
     const d = controlledDispatch();
     const submit = createSubmitLatch(d.dispatch, () => true);
     const first = submit();
     void submit(); // the second message, typed while the first ACK is pending
-    expect(d.calls()).toBe(1); // not re-entrant — still in flight
+    expect(d.calls()).toBe(2); // paint and POST now, while the first ACK waits
     d.settle(0);
     await first;
     await tick();
-    expect(d.calls()).toBe(2); // the deferred submission ran
+    expect(d.calls()).toBe(2); // acceptance does not dispatch it twice
+    d.settle(1);
   });
 
   test('a re-entrant submit with an EMPTY draft is dropped (double-fire guard)', async () => {
@@ -81,12 +63,7 @@ describe('createSubmitLatch', () => {
   });
 
   test('each distinct re-entrant submit is its OWN submission, fired as one burst in order', async () => {
-    // Three messages typed during one slow ACK used to collapse into ONE
-    // deferred re-run that re-read the live editor — i.e. one message with
-    // the three texts run together. Every Enter is one message; when the
-    // in-flight dispatch settles the whole stash goes out TOGETHER (invoked
-    // in Enter order — the sync prefix mints ids in order — awaited
-    // concurrently, so one slow ack cannot hold the burst back).
+    // Every Enter paints and submits independently, in input order.
     const d = controlledDispatch();
     let n = 0;
     const submit = createSubmitLatch(d.dispatch, () => `draft-${++n}`);
@@ -94,7 +71,7 @@ describe('createSubmitLatch', () => {
     void submit();
     void submit();
     void submit();
-    expect(d.calls()).toBe(1);
+    expect(d.calls()).toBe(4);
     d.settle(0);
     await first;
     await tick();
@@ -121,7 +98,7 @@ describe('createSubmitLatch', () => {
     d.settle(1);
   });
 
-  test('the deferred re-run happens even when the first dispatch throws', async () => {
+  test('a later prompt survives a failed earlier acceptance', async () => {
     // The first send failing is not a reason to lose the second message.
     const d = controlledDispatch();
     const submit = createSubmitLatch(d.dispatch, () => true);
@@ -145,7 +122,7 @@ describe('createSubmitLatch', () => {
     d.settle(1);
   });
 
-  test('a submit during the burst stashes and fires when the burst settles', async () => {
+  test('a third submit dispatches while the second acceptance is pending', async () => {
     const d = controlledDispatch();
     let n = 0;
     const submit = createSubmitLatch(d.dispatch, () => `draft-${++n}`);
@@ -156,10 +133,29 @@ describe('createSubmitLatch', () => {
     await tick();
     expect(d.calls()).toBe(2); // burst in flight
     void submit(); // typed during the burst
-    expect(d.calls()).toBe(2); // not re-entrant
+    expect(d.calls()).toBe(3); // the pending ACK cannot delay local feedback
     d.settle(1);
     await tick();
     expect(d.calls()).toBe(3);
     d.settle(2);
+  });
+
+  test('out-of-order acceptances keep duplicate protection for the remaining send', async () => {
+    const d = controlledDispatch();
+    let draft: string | null = 'second';
+    const submit = createSubmitLatch(d.dispatch, () => draft);
+    const first = submit();
+    const second = submit();
+    d.settle(1);
+    await second;
+    draft = null;
+    await submit();
+    expect(d.calls()).toBe(2);
+    d.settle(0);
+    await first;
+    const third = submit();
+    expect(d.calls()).toBe(3);
+    d.settle(2);
+    await third;
   });
 });

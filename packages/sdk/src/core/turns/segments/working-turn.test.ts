@@ -1,6 +1,57 @@
 import { projectWorking } from '../../session/working';
 import { describe, expect, test } from 'bun:test';
-import { freshSendHint, resolveWorkingTurn } from './working-turn';
+import {
+  freshSendHint,
+  fallbackBusyRowAfterTurnId,
+  resolveWorkingTurn,
+  shouldSuppressWorkingTurnBusy,
+  turnIsConfirmedActive,
+  workingTurnDrawsBusyRow,
+} from './working-turn';
+
+test('a finished answer yields its row to a prompt being delivered below it', () => {
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'answered',
+    activeTurnId: null,
+    pendingDelivery: false,
+    deliveringBelow: true,
+  })).toBe(true);
+});
+
+test('a confirmed active turn keeps its working row through completed intermediate steps', () => {
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'running',
+    pendingDelivery: false,
+  })).toBe(false);
+  // A null active id is missing evidence, not another turn. Suppressing on it
+  // moved Thinking below the Quick Queue bubbles for a frame (2026-09-17).
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: null,
+    pendingDelivery: false,
+  })).toBe(false);
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'queued-next',
+    pendingDelivery: false,
+  })).toBe(true);
+  expect(shouldSuppressWorkingTurnBusy({
+    hasPendingTurns: true,
+    newestAssistantCompleted: true,
+    workingTurnId: 'running',
+    activeTurnId: 'running',
+    pendingDelivery: true,
+  })).toBe(true);
+});
 
 const turn = (id: string, ...assistant: Array<'open' | 'done'>) => ({
   userMessage: { info: { id } },
@@ -258,5 +309,110 @@ describe('resolveWorkingTurn — a transcript with no assistant content at all',
     expect(
       resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds: new Set(['u2']) }),
     ).toEqual({ workingTurnId: 'u1', pendingTurnIds: ['u2'] });
+  });
+});
+
+describe('the fallback Thinking row stays above the queue', () => {
+  const queued = new Set(['queued-a', 'queued-b']);
+
+  test('it follows the last turn before the first queued bubble', () => {
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('done', 'done'), turn('running', 'done'), turn('queued-a'), turn('queued-b')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('running'), turn('later')],
+      pendingTurnIds: new Set(['later']),
+      pendingPromptIds: new Set(),
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
+  });
+
+  test('a prompt being delivered owns the row, directly under its bubble', () => {
+    // 2026-09-17, local: the previous answer had finished and the next Quick
+    // Queue prompt was mid-delivery (9 attachments). Thinking sat under the
+    // finished answer, above the prompt the agent was about to run.
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('answered', 'done'), turn('queued-a'), turn('queued-b')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(['queued-a']),
+    })).toBe('queued-a');
+  });
+
+  test('with no queue, or a queue that starts the transcript, it stays at the end', () => {
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('done', 'done'), turn('running')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(),
+      deliveringPromptIds: new Set(),
+    })).toBeNull();
+    expect(fallbackBusyRowAfterTurnId({
+      turns: [turn('queued-a'), turn('queued-b')],
+      pendingTurnIds: new Set(),
+      pendingPromptIds: queued,
+      deliveringPromptIds: new Set(),
+    })).toBeNull();
+  });
+});
+
+describe('a busy session always draws exactly one Thinking row', () => {
+  test('an aborted reply finishes its turn, so the running prompt below is the working turn', () => {
+    // 2026-09-17, local: a Quick Queue interrupt aborted the previous answer.
+    // The live stream stalled, so the page had the aborted reply without its
+    // completion stamp and no reply to the running prompt yet. The working
+    // turn landed on the aborted answer, which never draws Thinking.
+    const aborted = {
+      userMessage: { info: { id: 'answered' } },
+      assistantMessages: [
+        { info: { time: { completed: 1 } } },
+        { info: { time: {}, error: { name: 'MessageAbortedError' } } },
+      ],
+    };
+    expect(resolveWorkingTurn({
+      turns: [aborted, turn('running')],
+      hintMessageId: null,
+    })).toEqual({ workingTurnId: 'running', pendingTurnIds: [] });
+  });
+
+  test('a working turn that cannot draw its row hands it to the fallback', () => {
+    const base = { lastTurnWorking: true, workingTurnId: 'turn', suppressed: false, isRetrying: false };
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false })).toBe(true);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: true, isRetrying: true })).toBe(true);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, suppressed: true })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, workingTurnId: null })).toBe(false);
+    expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, lastTurnWorking: false })).toBe(false);
+  });
+});
+
+describe('only a confirmed active turn drops its pending presentation', () => {
+  test('a fresh send still waiting for acceptance keeps its pending bubble while it draws Thinking', () => {
+    // CI, journey 27: the first Enter became the working turn through the
+    // fresh-send hint and lost `data-pending-prompt-id` and its queue tint
+    // while the inbox still held it.
+    expect(turnIsConfirmedActive({
+      isTurnWorking: true,
+      turnId: 'sent',
+      activeTurnId: 'receipt',
+      pendingDelivery: true,
+    })).toBe(false);
+  });
+
+  test('the server naming the running turn clears it', () => {
+    expect(turnIsConfirmedActive({
+      isTurnWorking: true,
+      turnId: 'sent',
+      activeTurnId: 'sent',
+      pendingDelivery: false,
+    })).toBe(true);
+    expect(turnIsConfirmedActive({
+      isTurnWorking: false,
+      turnId: 'sent',
+      activeTurnId: 'sent',
+      pendingDelivery: false,
+    })).toBe(false);
   });
 });

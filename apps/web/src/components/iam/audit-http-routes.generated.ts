@@ -560,6 +560,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|turn-stream",
   "GET|v1|projects|:projectId|version-diff",
   "POST|v1|projects|create-repo",
+  "GET|v1|projects|git|backend",
+  "GET|v1|projects|git|backend|repositories",
   "DELETE|v1|projects|github|installation",
   "GET|v1|projects|github|installation",
   "POST|v1|projects|github|installation",

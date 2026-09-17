@@ -149,6 +149,13 @@ function hasImage(body: Record<string, unknown>): boolean {
   });
 }
 
+// `ADMISSION_UNAVAILABLE` is a TRANSPORT failure of the admission gate itself
+// (the standalone gateway's `authorize` hook is an HTTP call to the API control
+// plane), not a denial. It is deliberately distinct from every `ok: false`
+// verdict the gate can return: those mean "the caller may not run this", this
+// one means "we could not find out".
+const ADMISSION_UNAVAILABLE = 'admission_unavailable';
+
 async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
   if (hooks.authorize) return hooks.authorize(token);
   let principal = await hooks.authenticate(token);
@@ -293,7 +300,36 @@ export async function handleChatCompletions(
     });
   }
 
-  const admission = await authorize(hooks, token);
+  // Every other hook this handler calls has its failure classified —
+  // resolveRoute -> 502 `routing_unavailable`, resolveUpstream -> 400,
+  // billing/budget -> 402. `authorize` did not, so a control-plane transport
+  // failure (a timed-out or unreachable API) threw straight out of the whole
+  // pipeline and was served by the host's catch-all as an opaque
+  // `503 gateway_error "Gateway unavailable"` with empty model fields —
+  // indistinguishable from a gateway crash, and the reason the GW-ACCESS-1
+  // release-gate flake read as a product bug for two releases. Same 503 the
+  // caller already got; now it says which hop failed, and it says so in the
+  // gateway's own error envelope with a `retry-after`.
+  let admission: AuthorizeResult;
+  try {
+    admission = await authorize(hooks, token);
+  } catch (error) {
+    // No principal exists yet, so there is nothing to refund and no account to
+    // attribute a trace to — and `recordTrace` is another call to the control
+    // plane this request just failed to reach. Log it and answer.
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.error(`[gateway] ${id}: admission control unavailable — ${detail}`);
+    return gatewayErrorResponse(503, {
+      message: 'Gateway admission control is unavailable',
+      code: ADMISSION_UNAVAILABLE,
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId: id,
+      suggestion: 'Retry the request.',
+      retryAfterSeconds: 5,
+    });
+  }
   if (!admission.ok) {
     return gatewayErrorResponse(admission.status, {
       message: admission.message ?? 'Request denied',

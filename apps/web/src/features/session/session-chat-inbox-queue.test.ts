@@ -50,17 +50,19 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
   });
 
   test('queued rows draw their files, a session unmount releases previews, and nothing says "Upload failed"', () => {
-    // Only the session's FIRST prompt is painted as a turn before the runtime
-    // has it; every other unpainted row is listed above the composer.
-    expect(chat).toContain('if (!isFirstPromptRow(prompt)) continue;');
+    // The session's FIRST prompt and Quick Queue rows are painted as turns
+    // before the runtime has them; Queue List rows stay above the composer.
+    expect(chat).toContain(
+      "if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;",
+    );
     expect(chat).toContain('useEffect(() => retainSentAttachmentPreviews(), []);');
     expect(chat).toContain('sentAttachmentsOf(firstPromptSource.files)');
     expect(chat).not.toContain("'Upload failed'");
     expect(shell).not.toContain("'Upload failed'");
-    // The shell lists every durable row after the first, plus the sends it has
-    // made that no row carries yet.
-    expect(shell).toContain('const behind = rows.slice(1).map((p) => ({ id: p.prompt_id, text: p.text }));');
-    expect(shell).toContain('{ id: extraId, text, attachments: sentAttachmentsOf(files ?? []) }');
+    // The shell projects every durable row after the first, plus the sends it
+    // has made that no row carries yet, through the same queue projection.
+    expect(shell).toContain('projectQueueRows({');
+    expect(shell).toContain('attachments: sentAttachmentsOf(files ?? []),');
   });
 });
 
@@ -174,7 +176,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(send.replace(/\s+/g, ' ').match(/void postWhenUploaded\( sessionId, attachments,/g)).toHaveLength(2);
     // A later send with uploads keeps its bubble, marked failed, instead of vanishing.
     expect(send.replace(/\s+/g, ' ')).toContain(
-      'prev.map((extra) => (extra.id === extraId ? { ...extra, uploadStatus } : extra))',
+      'prev.map((extra) => (extra.id === clientMessageId ? { ...extra, uploadStatus } : extra))',
     );
     // Send time, not POST time: a message sent while the uploads run is
     // ordered after this one.
@@ -334,22 +336,18 @@ describe('queue row actions address the inbox that holds the row', () => {
 });
 
 describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
-  test('an idle send paints the transcript bubble under the WIRE id; a queued send paints nothing there', () => {
-    // REWRITTEN when the queue moved out of the transcript. Enter while a turn runs — or while
-    // anything is already queued — puts the prompt in the list above the
-    // composer and nothing in the transcript; it enters the transcript when the
-    // runtime echoes it. Idle with an empty queue, the bubble is painted on
-    // Enter under the id the inbox row carries.
+  test('Enter paints the transcript immediately; explicit queue intent paints the composer', () => {
     const send = between(chat, "playSound('send');", 'const receiptTurnId');
     expect(send).toContain(
       'const messageID = mintSessionWireMessageId(sessionId, clientMessageId);',
     );
-    expect(send).toContain('isBusyRef.current || queueRowsRef.current.some(');
+    expect(send).toContain("const paintTranscript = placement === 'transcript';");
+    expect(send).toContain('isBusyRef.current || promptInbox.prompts.some(');
     expect(send).toMatch(
-      /if \(willQueue\) \{\s*useQueuedDraftStore\.getState\(\)\.add\([\s\S]*\} else \{\s*beginOptimisticSend\(sessionId, messageID, optimisticText, \[textPartId\]\);/,
+      /if \(!paintTranscript\) \{\s*useQueuedDraftStore\.getState\(\)\.add\([\s\S]*\} else \{\s*beginOptimisticSend\(sessionId, messageID, optimisticText, \[textPartId\]\);/,
     );
-    // A queued send never marks a bubble it never painted.
-    expect(chat).toContain('if (!willQueue) markOptimisticSendDispatched(sessionId, messageID);');
+    // A composer entry never marks a transcript bubble it never painted.
+    expect(chat).toContain('if (paintTranscript) markOptimisticSendDispatched(sessionId, messageID);');
     expect(chat).not.toContain('willWaitInInbox');
   });
 
@@ -455,18 +453,18 @@ describe('Up takes the queue back into the composer', () => {
   });
 
   test('the composer gets the key handler and the hint', () => {
-    expect(chat).toContain('onArrowUpAtStart={handleTakeBackQueue}');
+    expect(chat).toContain('onArrowUpAtStart={() => handleTakeBackQueue()}');
     // The hint shows only while there is something Up would take back.
     expect(chat).toMatch(/hint=\{\s*canTakeBackQueue \?/);
   });
 
-  test('only the first prompt is drawn as a turn before the runtime has it', () => {
+  test('first and Enter prompts are drawn as turns before the runtime has them', () => {
     const synthetic = between(
       chat,
       'const queuedSyntheticMessages = useMemo(',
       'const rawTurns = useMemo(',
     );
-    expect(synthetic).toContain('if (!isFirstPromptRow(prompt)) continue;');
+    expect(synthetic).toContain("if (!isFirstPromptRow(prompt) && prompt.placement !== 'transcript') continue;");
   });
 });
 
@@ -511,7 +509,7 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
       'const dispatchSubmissionRef = useRef',
     );
     expect(promptBranch).toContain(
-      'send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission)',
+      'onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission, placement)',
     );
     expect(promptBranch).not.toContain('onQueueMessage(');
     // The shared blocker set has no `session_working` member for a prompt:
@@ -553,7 +551,7 @@ describe('the boot shell never swallows what the user typed', () => {
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {
-    const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
+    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
     expect(send).toContain("prompt: ''");
     // And the shell paints the durable rows, so the bubble survives a reload.
     expect(shell).toContain('useSessionPrompts(projectId, sessionId');

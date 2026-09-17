@@ -34,7 +34,6 @@ import { compactionTurnInfo } from '@/features/session/turn/compaction-state';
 import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
-  QueuedPromptStatus,
   type QueuedPromptState,
 } from '@/features/session/turn/queued-prompt-bubbles';
 import { segmentTurn } from '@/features/session/turn/segment-turn';
@@ -255,7 +254,7 @@ export function FixtureTurn({
           sessionId={sessionId}
           ownsPlan={false}
           rewindDisabled
-          leadingStatus={queueState ? <QueuedPromptStatus state={queueState} /> : undefined}
+          // Main: queued and interrupted prompts show no status words; the bubble tone carries them.
         />
       </div>
 

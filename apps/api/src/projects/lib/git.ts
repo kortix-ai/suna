@@ -14,7 +14,7 @@ import {
 import { recordAuditEvent } from '../../shared/audit';
 import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
-import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
 import {
@@ -79,14 +79,83 @@ export async function getAccountMembership(userId: string, accountId: string) {
 }
 
 
-export async function listAccountGitHubInstallations(accountId: string) {
-  return await db
+/**
+ * Every account connection, oldest first. The order is explicit because
+ * callers that pass no installation id take the FIRST row, and an unordered
+ * select returns whatever the heap hands back — so the same request could
+ * resolve to a different connection between two calls.
+ */
+export function accountGitHubInstallationsQuery(accountId: string) {
+  return db
     .select()
     .from(accountGithubInstallations)
-    .where(eq(accountGithubInstallations.accountId, accountId));
+    .where(eq(accountGithubInstallations.accountId, accountId))
+    .orderBy(
+      asc(accountGithubInstallations.createdAt),
+      asc(accountGithubInstallations.installationId),
+    );
 }
 
 
+export async function listAccountGitHubInstallations(accountId: string) {
+  return await accountGitHubInstallationsQuery(accountId);
+}
+
+
+/**
+ * How many OTHER accounts hold each of these installations. A count only: the
+ * picker may say "also connected to 2 other accounts" and can never say which,
+ * so one tenant cannot read another tenant's name out of it.
+ */
+export async function countInstallationsLinkedToOtherAccounts(
+  accountId: string,
+  installationIds: string[],
+): Promise<Map<string, number>> {
+  const ids = [...new Set(installationIds.filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const rows = await installationsLinkedToOtherAccountsQuery(accountId, ids);
+  return new Map(rows.map((row) => [row.installationId, Number(row.accounts)]));
+}
+
+
+export function installationsLinkedToOtherAccountsQuery(
+  accountId: string,
+  installationIds: string[],
+) {
+  return db
+    .select({
+      installationId: accountGithubInstallations.installationId,
+      accounts: countDistinct(accountGithubInstallations.accountId),
+    })
+    .from(accountGithubInstallations)
+    .where(
+      and(
+        inArray(accountGithubInstallations.installationId, installationIds),
+        ne(accountGithubInstallations.accountId, accountId),
+      ),
+    )
+    .groupBy(accountGithubInstallations.installationId);
+}
+
+
+/** Raised when a caller must say WHICH connection it means. */
+export class GitHubInstallationAmbiguousError extends Error {
+  constructor(
+    readonly accountId: string,
+    readonly installationIds: string[],
+  ) {
+    super('This account has several GitHub connections — pass installation_id to choose one');
+    this.name = 'GitHubInstallationAmbiguousError';
+  }
+}
+
+
+/**
+ * One account connection. With an explicit id it is exact. Without one it
+ * returns the OLDEST connection — deterministic, and only correct for a
+ * caller that genuinely has no id to pass. Anything a user drives should pass
+ * the id and let `requireAccountGitHubInstallation` refuse an ambiguity.
+ */
 export async function getAccountGitHubInstallation(accountId: string, installationId?: string | null) {
   const rows = await listAccountGitHubInstallations(accountId);
   if (installationId) {
@@ -96,10 +165,33 @@ export async function getAccountGitHubInstallation(accountId: string, installati
 }
 
 
+/**
+ * Like `getAccountGitHubInstallation`, but refuses to GUESS: with no id and
+ * more than one connection it throws instead of silently picking one. Every
+ * write path that creates or links a repository uses this.
+ */
+export async function requireAccountGitHubInstallation(
+  accountId: string,
+  installationId?: string | null,
+) {
+  const rows = await listAccountGitHubInstallations(accountId);
+  if (installationId) {
+    return rows.find((row) => row.installationId === installationId) ?? null;
+  }
+  if (rows.length > 1) {
+    throw new GitHubInstallationAmbiguousError(
+      accountId,
+      rows.map((row) => row.installationId),
+    );
+  }
+  return rows[0] ?? null;
+}
+
+
 export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(
+  const installUrl = await buildGitHubAppInstallUrl(
     accountId,
     nonce,
     'account_link',
@@ -199,7 +291,7 @@ export async function resolveGitHubRepoAuth(accountId: string, installationId?: 
   authSource: 'app_installation';
   installation?: typeof accountGithubInstallations.$inferSelect;
 }> {
-  const installation = await getAccountGitHubInstallation(accountId, installationId);
+  const installation = await requireAccountGitHubInstallation(accountId, installationId);
   if (installation) {
     const token = await createInstallationToken(installation.installationId);
     return {

@@ -128,6 +128,7 @@ mock.module('../store', () => ({
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
+  markInboxDeliveryStarted: async () => {},
   markCommandFailed: async (commandId: string, message: string) => {
     failedCalls.push({ commandId, message });
   },

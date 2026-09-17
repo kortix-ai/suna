@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { serializePrompt } from './session-prompt-view';
+import { promptState, serializePrompt } from './session-prompt-view';
 
 function row(payload: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
   return {
@@ -58,5 +58,38 @@ describe('serializePrompt attachments', () => {
       row({ text: 'x', parts: [{ type: 'file', mime: 'image/png', url: 'data:x' }] }),
     );
     expect(view.attachments).toEqual([{ filename: 'File', mime: 'image/png' }]);
+  });
+});
+
+test('reload preserves placement and full code text while keeping the legacy preview bounded', () => {
+  const text = '  const result = await run();\n'.repeat(120);
+  const view = serializePrompt(row({ text, placement: 'transcript' }));
+  expect(view.placement).toBe('transcript');
+  expect(view.full_text).toBe(text);
+  expect(view.text).toHaveLength(2000);
+  expect(serializePrompt(row({ text: 'old row' })).placement).toBe('composer');
+});
+
+
+test('legacy delivery failures expose a readable cause on reload', () => {
+  expect(serializePrompt(row({}, { status: 'dead_lettered', lastError: 'delivery outcome: pending' })).last_error)
+    .toBe('the session was not ready in time');
+  expect(serializePrompt(row({}, { status: 'dead_lettered', lastError: 'Connector access is unavailable' })).last_error)
+    .toBe('Connector access is unavailable');
+});
+
+
+describe('worker claims are not delivery', () => {
+  test('the admission check keeps a waiting prompt waiting', () => {
+    expect(promptState({ status: 'running', result: { admission_reason: 'turn_active' } }))
+      .toEqual({ state: 'waiting', reason: 'turn_active' });
+    expect(promptState({ status: 'running', result: {} }))
+      .toEqual({ state: 'queued', reason: null });
+  });
+
+  test('only an admitted delivery reports sending', () => {
+    expect(promptState({ status: 'running', result: {
+      admission_reason: 'turn_active', delivery_started_at: '2026-09-16T10:00:00.000Z',
+    } })).toEqual({ state: 'delivering', reason: null });
   });
 });

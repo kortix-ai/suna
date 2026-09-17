@@ -268,6 +268,8 @@ export function optimisticSessionPrompt(
   const at = new Date(nowMs).toISOString();
   return {
     prompt_id: `${OPTIMISTIC_PROMPT_PREFIX}${input.clientMessageId}`,
+    placement: input.placement,
+    full_text: text,
     client_message_id: input.clientMessageId,
     message_id: input.messageId,
     state: 'queued',

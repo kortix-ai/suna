@@ -3,6 +3,7 @@ import { logger } from '../logger'
 import { readPinnedOpencodeSessionId } from '../main'
 import type { Config } from '../config'
 import type { Opencode } from '../opencode'
+import type { QuickQueueInterrupt } from '../quick-queue-interrupt'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -12,8 +13,53 @@ import {
 // session. apps/api calls this when the user clicks "Stop" on the Slack
 // stream. opencode's /session/{id}/abort cancels the running model call and
 // any in-flight tools; the next prompt to the same session resumes cleanly.
-export function createAbortRouter(cfg: Config, opencode: Opencode): Hono {
+export function createAbortRouter(
+  cfg: Config,
+  opencode: Opencode,
+  quickQueue?: Pick<QuickQueueInterrupt, 'arm' | 'disarm'>,
+): Hono {
   const app = new Hono()
+
+  const validId = (value: unknown): value is string =>
+    typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+
+  app.post('/after-tool', async (c) => {
+    if (!cfg.sandboxToken) return c.json({ error: 'daemon not configured' }, 503)
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
+    if (!auth.ok) return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
+    if (!quickQueue) return c.json({ error: 'queue interrupt unavailable' }, 503)
+    const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
+    if (!validId(body?.prompt_id) || !validId(body?.opencode_session_id) ||
+        !validId(body?.turn_message_id)) {
+      return c.json({ error: 'prompt_id, opencode_session_id and turn_message_id are required' }, 400)
+    }
+    try {
+      await quickQueue.arm({
+        promptId: body.prompt_id,
+        opencodeSessionId: body.opencode_session_id,
+        messageId: body.turn_message_id,
+      })
+      return c.json({ armed: true }, 202)
+    } catch (error) {
+      logger.warn('[abort] queue interrupt arm failed', { error })
+      return c.json({ error: 'queue interrupt unavailable' }, 503)
+    }
+  })
+
+  app.delete('/after-tool', async (c) => {
+    if (!cfg.sandboxToken) return c.json({ error: 'daemon not configured' }, 503)
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
+    if (!auth.ok) return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
+    if (!quickQueue) return c.json({ error: 'queue interrupt unavailable' }, 503)
+    const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
+    if (body?.all === true) {
+      quickQueue.disarm()
+      return c.json({ armed: false })
+    }
+    if (!validId(body?.prompt_id)) return c.json({ error: 'prompt_id is required' }, 400)
+    quickQueue.disarm(body.prompt_id)
+    return c.json({ armed: false })
+  })
 
   app.post('/', async (c) => {
     if (!cfg.sandboxToken) {
@@ -25,6 +71,9 @@ export function createAbortRouter(cfg: Config, opencode: Opencode): Hono {
       logger.warn('[abort] reject', { reason: auth.reason })
       return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
     }
+
+    // An explicit Stop wins over a pending automatic queue interrupt.
+    quickQueue?.disarm()
 
     const sessionId = readPinnedOpencodeSessionId()
     if (!sessionId) {

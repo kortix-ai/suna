@@ -2,18 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { githubInstallationLabel, isGitHubAppInstallationId } from './github-installations';
+import { gitHubInstallationUnreachable, githubInstallationLabel } from './github-installations';
 
 describe('GitHub installation presentation', () => {
-  test('separates real GitHub App installations from the managed PAT fallback', () => {
-    expect(isGitHubAppInstallationId('123456')).toBe(true);
-    expect(isGitHubAppInstallationId('pat')).toBe(false);
-    expect(isGitHubAppInstallationId(null)).toBe(false);
+  /**
+   * Every row this labels is a real account connection now. The instance git
+   * backend used to arrive in the same list as a synthetic `pat` entry, which
+   * needed both a predicate to filter it out and a second label shape; the API
+   * stopped producing it, so both are gone.
+   */
+  test('names a connection by its GitHub owner', () => {
+    expect(githubInstallationLabel('acme')).toBe('github.com/acme');
   });
 
-  test('labels the managed PAT fallback as a server connection', () => {
-    expect(githubInstallationLabel('pat', 'kortixd')).toBe('Managed GitHub · github.com/kortixd');
-    expect(githubInstallationLabel('123456', 'acme')).toBe('github.com/acme');
+  test('falls back to a usable name when the owner is unknown', () => {
+    expect(githubInstallationLabel(null)).toBe('github.com/GitHub');
   });
 });
 
@@ -37,5 +40,56 @@ describe('GitHub account connection surfaces', () => {
     expect(accountPageSource).toContain(
       '<GitHubConnectionCard account={account} canManage={canWriteAccount} />',
     );
+  });
+});
+
+describe('an installation GitHub no longer resolves', () => {
+  /**
+   * Reported 2026-09-16: the create-project repository picker spun, then
+   * printed `/app/installations/148404669/access_tokens failed (404): Not
+   * Found` — GitHub's own sentence, naming an internal id, an API path and a
+   * status code. The typed 409 is what lets the picker say something a person
+   * can act on instead.
+   */
+  test('recognizes the typed 409 and carries what the retry needs', () => {
+    expect(
+      gitHubInstallationUnreachable({
+        status: 409,
+        data: {
+          error: 'github_installation_unreachable',
+          installation_id: '148404669',
+          install_url: 'https://github.com/apps/kortix/installations/new',
+        },
+      }),
+    ).toEqual({
+      installationId: '148404669',
+      installUrl: 'https://github.com/apps/kortix/installations/new',
+    });
+  });
+
+  test('reads the status off `.response.status` too — both shapes reach a caller', () => {
+    expect(
+      gitHubInstallationUnreachable({
+        response: { status: 409 },
+        data: { error: 'github_installation_unreachable' },
+      }),
+    ).toEqual({ installationId: null, installUrl: null });
+  });
+
+  test('is null for every other failure, so they keep their own message', () => {
+    expect(gitHubInstallationUnreachable(null)).toBeNull();
+    expect(gitHubInstallationUnreachable(new Error('network error'))).toBeNull();
+    // A 409 that is some OTHER conflict must not be relabelled as an
+    // unreachable installation.
+    expect(
+      gitHubInstallationUnreachable({ status: 409, data: { error: 'provision_in_flight' } }),
+    ).toBeNull();
+    // The right slug on the wrong status is not this failure either.
+    expect(
+      gitHubInstallationUnreachable({
+        status: 500,
+        data: { error: 'github_installation_unreachable' },
+      }),
+    ).toBeNull();
   });
 });

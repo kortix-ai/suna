@@ -106,3 +106,44 @@ need a running session. Each mirrors a method on the
 
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
 - [Reference](/docs/sdk/reference) — the full REST surface these hooks read from.
+
+### Pending prompts
+
+`useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.
+The server runs pending prompts automatically, each as its own turn.
+
+Pass `placement: 'transcript'` to display a pending message in the conversation.
+It runs before every `composer` entry and ends the active response after the
+current tool call completes.
+Pass `placement: 'composer'` to keep it in the editable list above the input.
+It waits for the active response to finish. Each placement keeps submission order.
+The web composer uses Enter for transcript placement and Command+Enter
+(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+
+List rows include `full_text` for complete previews after reload. `text` remains
+the bounded preview for older clients. Attachment bytes are excluded from list
+responses. Delete returns the complete prompt for lossless undo.
+
+### Pending delivery and active responses
+
+`useSessionWorking()` keeps `state: 'working'` while a prompt waits in the durable
+inbox. This keeps Stop available. `pendingDelivery: true` marks a prompt still on
+its way to the runtime; the web app shows one working indicator whenever `state`
+is `working`, whatever that flag says. Active runtime turns and fresh runtime
+activity clear it. A timed-out cancel does not confirm that execution stopped.
+
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
+Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
+delivered turns, with no status text. Queue List entries remain editable until delivery starts.
+The server recovers missed completion events from exact runtime evidence, including
+after reload, without treating an unreachable runtime as a completed turn.
+
+Each distinct Enter displays its pending prompt immediately, even while an earlier
+acceptance request is unresolved. Only a delivery failure adds text: its cause,
+Retry, and Remove. The server inbox continues to own execution order.

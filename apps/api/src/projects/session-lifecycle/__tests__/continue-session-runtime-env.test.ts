@@ -10,7 +10,10 @@ const PROJECT_ID = 'proj-1';
 const EXTERNAL_ID = 'sandbox-1';
 const events: string[] = [];
 
-mock.module('../../../config', () => ({ config: { KORTIX_URL: 'https://api.test' } }));
+mock.module('../../../config', () => ({
+  config: { KORTIX_URL: 'https://api.test' },
+  SANDBOX_VERSION: 'test',
+}));
 
 mock.module('../../../shared/db', () => ({
   // `mock.module` replaces the WHOLE module: every export the import graph
@@ -130,6 +133,7 @@ mock.module('../store', () => ({
   requeueUnlandedPrompt: async () => {
     throw new Error('not expected: this test never fails a landing proof');
   },
+  markInboxDeliveryStarted: async () => {},
   markCommandFailed: async () => {},
   markCommandQueued: async () => {},
   // Delivery of a row that carries a wire id closes through this now — see

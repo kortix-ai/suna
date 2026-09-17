@@ -10,6 +10,7 @@ import {
   SessionChatInput,
   type SessionChatInputProps,
 } from '@/features/session/session-chat-input';
+import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
 import {
   type Command,
@@ -26,6 +27,7 @@ import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
 export interface ComposerOptions {
+  placement?: 'transcript' | 'composer';
   agent?: string;
   model?: ModelKey;
   variant?: string;
@@ -55,6 +57,7 @@ export function ComposerChatInput({
   autoFocus,
   placeholder,
   prefill,
+  onPrefillApplied,
   inputSlot,
   toolbarSlot,
   underbarPlacement,
@@ -98,7 +101,9 @@ export function ComposerChatInput({
     id: number;
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
+    options?: SessionPromptOverrides | null;
   } | null;
+  onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -131,6 +136,17 @@ export function ComposerChatInput({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
+  const restoredOptions = prefill?.options;
+  const setAgent = local.agent.set;
+  const setModel = local.model.set;
+  const setVariant = local.model.variant.set;
+  useEffect(() => {
+    if (!restoredOptions) return;
+    if (restoredOptions.agent) setAgent(restoredOptions.agent);
+    if (restoredOptions.model) setModel(restoredOptions.model);
+    setVariant(restoredOptions.variant ?? undefined);
+  }, [restoredOptions, setAgent, setModel, setVariant]);
+
   // The meta agent is the only thing that pins the picker: a meta session must
   // keep running its own agent. Every other session is freely switchable.
   const lockedAgentName = isMetaAgentName(boundAgentName) ? boundAgentName?.trim() || null : null;
@@ -217,8 +233,8 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      onSend={(text, files, _mentions, attachments) =>
-        onSend(text, files, options(), attachments)
+      onSend={(text, files, _mentions, attachments, placement) =>
+        onSend(text, files, { ...options(), placement }, attachments)
       }
       promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
@@ -232,6 +248,7 @@ export function ComposerChatInput({
       autoFocus={autoFocus}
       placeholder={placeholder}
       prefill={prefill}
+      onPrefillApplied={onPrefillApplied}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}

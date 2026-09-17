@@ -385,7 +385,7 @@ export function applyOptimisticAbort(sessionId: string): void {
     // or a turn that failed) stamped "Interrupted" onto a COMPLETED turn
     // further up the transcript. The marker appeared detached, above the turn
     // it belonged to, instead of at the end of it.
-    if (msg.error) break;
+    if (msg.error || msg.time?.completed != null) break;
     {
       // Typed as the wider `MessageError` (not just the literal shape below)
       // so the assertion further down overlaps with `AssistantMessage.error`'s

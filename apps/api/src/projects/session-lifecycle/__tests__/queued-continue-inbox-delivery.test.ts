@@ -47,7 +47,10 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  */
 const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
+let completeDuringRequeue = false;
+let deliveryStarts: string[] = [];
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
@@ -58,6 +61,7 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
+let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
@@ -304,8 +308,14 @@ mock.module('../store', () => ({
     return { requeued: true, refusals: 2 - unlandedBudgetLeft };
   },
   MAX_LANDING_RETRIES: 2,
+  markInboxDeliveryStarted: async (commandId: string) => { deliveryStarts.push(commandId); },
+  requeueUnverifiedRedelivery: async (commandId: string, availableAt: Date) => {
+    unverifiedRequeues.push({ commandId, availableAt });
+    simulatedInFlightCommands.delete(commandId);
+  },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
+    if (completeDuringRequeue) boxRow = { status: 'active', metadata: { activeTurns: {} } };
     simulatedInFlightCommands.delete(commandId);
   },
   claimCreateSessionCommand: async () => {
@@ -442,6 +452,9 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 beforeEach(() => {
   pauseAfterPosts = null;
   requeues = [];
+  unverifiedRequeues = [];
+  completeDuringRequeue = false;
+  deliveryStarts = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
   sessionRow = {
@@ -459,6 +472,7 @@ beforeEach(() => {
   deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
+  quickQueueControlRequests = [];
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
@@ -490,8 +504,16 @@ beforeEach(() => {
   maxActivePosts = 0;
   postDelayMs = 0;
   simulatedInFlightCommands.clear();
-  globalThis.fetch = (async (url: string | URL) => {
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
     const href = String(url);
+    if (href.endsWith('/kortix/abort/after-tool')) {
+      quickQueueControlRequests.push({
+        url: href,
+        method: init?.method ?? 'GET',
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return Response.json({ armed: true }, { status: 202 });
+    }
     // The staged-revert guard reads the session row; the re-mint and the
     // answered check read the message list.
     if (href.includes('/message')) {
@@ -502,6 +524,40 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(requeues).toHaveLength(1);
+    expect(quickQueueControlRequests).toEqual([{
+      url: 'https://sandbox.test/kortix/abort/after-tool',
+      method: 'POST',
+      body: { prompt_id: 'cmd-1', opencode_session_id: OC_SESSION_ID,
+        turn_message_id: 'msg_other' },
+    }]);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'composer' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(requeues).toHaveLength(1);
+    expect(quickQueueControlRequests).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
   test('Stop during a transient delivery failure prevents another POST', async () => {
     promptResponsePlan = ['failed'];
     pauseAfterPosts = 1;
@@ -1137,6 +1193,52 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(wireIdTime(sent)!).toBeGreaterThan(openCodeId);
   });
 
+  test('a redelivery whose answered check cannot read the transcript is not re-sent blind', async () => {
+    // 2026-09-17, local: a live turn was settled `runtime_gone` and its prompt
+    // redelivered. The transcript held two replies to it, but the full read
+    // failed and the guard failed open, so the user saw the prompt twice.
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          ...baseRow().payload,
+          remintOnDelivery: true,
+          redeliveries: 1,
+          redeliveredMessageIds: [NEWER_TRANSCRIPT_ID],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(unverifiedRequeues).toHaveLength(1);
+    expect(unverifiedRequeues[0].availableAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test('an answered check that stays unreadable is bounded, so the prompt is not stranded', async () => {
+    globalThis.fetch = (async (url: string | URL) => {
+      const href = String(url);
+      if (href.includes('/message')) return new Response('upstream timeout', { status: 504 });
+      return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
+    }) as typeof fetch;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: { ...baseRow().payload, remintOnDelivery: true, redeliveries: 1 },
+        result: { answer_check_failures: 3 },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(unverifiedRequeues).toEqual([]);
+    expect(capturedBodies).toHaveLength(1);
+  });
+
   test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {
     // The already-answered guard is not a redelivery-only concern: every
     // re-mint path re-reads the transcript, and the same assistant reply proves
@@ -1458,4 +1560,31 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       'queue-c',
     ]);
   });
+});
+
+
+test('a turn ending during admission requeue immediately wakes the head again', async () => {
+  boxRow = { status: 'active', metadata: { activeTurns: {
+    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+      messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+  } } };
+  completeDuringRequeue = true;
+  promotionResult = 'queue-resumed';
+  targetedClaims.set('queue-resumed', [baseRow({ result: { admission_reason: 'turn_active' } })]);
+  expect(await executeQueuedContinue(baseRow())).toBe('queued');
+  await Bun.sleep(20);
+  expect(promotionCalls).toEqual([SESSION_ID]);
+  expect(claimInputs).toContainEqual(expect.objectContaining({ idempotencyKey: 'queue-resumed' }));
+  expect(capturedBodies).toHaveLength(1);
+  expect(deliveryStarts).toEqual(['cmd-1']);
+});
+
+test('a refused claim never announces delivery', async () => {
+  boxRow = { status: 'active', metadata: { activeTurns: {
+    't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+      messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+  } } };
+  expect(await executeQueuedContinue(baseRow())).toBe('queued');
+  expect(deliveryStarts).toEqual([]);
+  expect(promotionCalls).toEqual([]);
 });

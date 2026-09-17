@@ -285,23 +285,17 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
 });
 
 describe('ChatGPT subscription pricing', () => {
-  test('every subscription model has explicit zero rates without paid context tiers', () => {
-    const models = gatewayCodexModels();
-    expect(Object.keys(models).length).toBeGreaterThan(0);
-    for (const model of Object.values(models)) {
-      expect(model.cost).toEqual({
-        input: 0,
-        output: 0,
-        cache_read: 0,
-        cache_write: 0,
-      });
-      expect(model.limit!.context).toBeGreaterThan(0);
-    }
+  test('subscription rows retain the published model price context', () => {
+    const models = gatewayModelCatalog('proj');
+    const subscription = models['codex/gpt-5.6-sol']!;
+    const api = models['openai/gpt-5.6-sol']!;
+    expect(subscription.cost).toEqual(api.cost);
+    expect(subscription.cost!.input).toBeGreaterThan(0);
+    expect(subscription.limit!.context).toBeGreaterThan(0);
   });
 
-  test('OpenAI API pricing remains positive for the same model', () => {
-    const models = gatewayModelCatalog('proj');
-    expect(models['openai/gpt-5.6-sol']!.cost!.input).toBeGreaterThan(0);
-    expect(models['codex/gpt-5.6-sol']!.cost!.input).toBe(0);
+  test('the subscription row retains paid context tiers', () => {
+    const model = gatewayCodexModels()['codex/gpt-5.6-sol']!;
+    expect(model.cost).toEqual(gatewayModelCatalog('proj')['openai/gpt-5.6-sol']!.cost);
   });
 });

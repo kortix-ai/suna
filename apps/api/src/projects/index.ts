@@ -19,6 +19,7 @@
 // middleware first (its first statement), then the remaining route groups.
 import './routes/r1';
 import './routes/github-repositories';
+import './routes/git-backend';
 import './routes/r2';
 import './routes/r3';
 import './routes/secret-broker';
