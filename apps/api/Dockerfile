@@ -16,7 +16,7 @@ FROM oven/bun:${BUN_VERSION}-slim AS base
 # App snapshots are built at API runtime. The deployed API image therefore
 # carries the exact supervisor and ingress binaries that every provider adds to
 # a user image.
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS app-runtime
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS app-runtime
 
 WORKDIR /runtime
 COPY apps/kortix-app-runtime/go.mod apps/kortix-app-runtime/main.go ./
