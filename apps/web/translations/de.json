@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repository geändert. Neue Sitzungen verwenden das neue Repository.",
+    "verifyError": "GitHub-Zugriff konnte nicht überprüft werden.",
+    "change": "Ändern",
+    "title": "Repository ändern",
+    "description": "Neue Sitzungen verwenden das neue Repository. Bestehende Sitzungen können nach der Änderung nicht neu gestartet werden.",
+    "current": "Aktuelles Repository",
+    "newUrl": "URL des neuen GitHub-Repositories",
+    "verifying": "GitHub wird überprüft…",
+    "verifyAgain": "GitHub erneut überprüfen",
+    "verify": "GitHub-Zugriff überprüfen",
+    "noInstallation": "Für diesen Repository-Eigentümer ist keine Kortix-App-Installation verfügbar. Fügen Sie das Repository in GitHub zur App-Installation hinzu und überprüfen Sie es erneut.",
+    "installation": "GitHub-App-Installation",
+    "selectInstallation": "Installation auswählen",
+    "manifestRequirement": "Das neue Repository benötigt {manifest} auf seinem Standard-Branch. Beenden Sie zuerst aktive Sitzungen und schließen Sie offene Änderungsanfragen.",
+    "cancel": "Abbrechen",
+    "changing": "Wird geändert…"
+  },
   "pooledSecrets": {
     "creationDescription": "Der Wert bleibt verschlüsselt. Wählen Sie vor dem Speichern, wer diese Verbindung nutzen darf.",
     "whoCanUse": "Wer darf diese Verbindung nutzen?",

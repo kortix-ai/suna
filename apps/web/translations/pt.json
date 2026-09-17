@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repositório alterado. As novas sessões usarão o novo repositório.",
+    "verifyError": "Não foi possível verificar o acesso ao GitHub.",
+    "change": "Alterar",
+    "title": "Alterar repositório",
+    "description": "As novas sessões usarão o novo repositório. As sessões existentes não poderão ser reiniciadas após a alteração.",
+    "current": "Repositório atual",
+    "newUrl": "URL do novo repositório GitHub",
+    "verifying": "Verificando o GitHub…",
+    "verifyAgain": "Verificar o GitHub novamente",
+    "verify": "Verificar acesso ao GitHub",
+    "noInstallation": "Não há uma instalação do app Kortix disponível para o proprietário deste repositório. Adicione o repositório à instalação do app no GitHub e verifique novamente.",
+    "installation": "Instalação do app GitHub",
+    "selectInstallation": "Selecionar instalação",
+    "manifestRequirement": "O novo repositório precisa de {manifest} na branch padrão. Primeiro, pare as sessões ativas e feche as solicitações de alteração abertas.",
+    "cancel": "Cancelar",
+    "changing": "Alterando…"
+  },
   "pooledSecrets": {
     "creationDescription": "O valor permanece criptografado. Escolha quem pode usar esta conexão antes de salvá-la.",
     "whoCanUse": "Quem pode usar esta conexão?",

@@ -271,6 +271,7 @@ export function RepositoryValue({
 
 function SaveStatus() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepo = useI18nTranslations('repositoryChange');
   return (
     <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
       {tI18nComplete.raw('text23e39291d613')}
@@ -401,7 +402,7 @@ function RepositoryGroup({
       queryClient.invalidateQueries({ queryKey: qk.project.summary(project.project_id) });
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
-      successToast('Repository changed. New sessions will use the new repository.');
+      successToast(tRepo('changedToast'));
     },
     onError: (error: Error) => errorToast(error.message),
   });
@@ -416,7 +417,7 @@ function RepositoryGroup({
         installation.owner_login?.toLowerCase() === targetOwner,
       )?.installation_id ?? '');
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Could not verify GitHub access.');
+      errorToast(error instanceof Error ? error.message : tRepo('verifyError'));
     } finally {
       setVerifying(false);
     }
@@ -444,7 +445,7 @@ function RepositoryGroup({
           description={providerSentence(repositoryProvider)}
         >
           <RepositoryValue connection={connection} repoUrl={project.repo_url} />
-          {canManage ? <Button variant="outline" size="sm" onClick={() => setChangeOpen(true)}>Change</Button> : null}
+          {canManage ? <Button variant="outline" size="sm" onClick={() => setChangeOpen(true)}>{tRepo('change')}</Button> : null}
         </SettingsRow>
 
         <SettingsRow label={tI18nComplete.raw('text920e413c7d41')}>
@@ -502,40 +503,38 @@ function RepositoryGroup({
       }}>
         <ModalContent className="flex flex-col overflow-hidden sm:max-w-md">
           <ModalHeader className="shrink-0">
-            <ModalTitle>Change repository</ModalTitle>
-            <ModalDescription>New sessions will use the new repository. Existing sessions cannot restart after the change.</ModalDescription>
+            <ModalTitle>{tRepo('title')}</ModalTitle>
+            <ModalDescription>{tRepo('description')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
             <div className="space-y-1 text-sm">
-              <p className="text-muted-foreground">Current repository</p>
+              <p className="text-muted-foreground">{tRepo('current')}</p>
               <p className="break-all font-mono text-xs">{project.repo_url}</p>
             </div>
             <div className="space-y-2">
-              <label htmlFor="replacement-repo-url" className="text-sm font-medium">New GitHub repository URL</label>
+              <label htmlFor="replacement-repo-url" className="text-sm font-medium">{tRepo('newUrl')}</label>
               <Input id="replacement-repo-url" value={targetRepo} onChange={(event) => setTargetRepo(event.target.value)} placeholder="https://github.com/owner/repository" autoComplete="off" />
             </div>
             <div className="space-y-2">
               <Button variant="outline" size="sm" onClick={verifyGitHub} disabled={verifying || changeRepository.isPending}>
-                {verifying ? 'Verifying GitHub…' : githubProof ? 'Verify GitHub again' : 'Verify GitHub access'}
+                {verifying ? tRepo('verifying') : githubProof ? tRepo('verifyAgain') : tRepo('verify')}
               </Button>
-              {githubProof && availableInstallations.length === 0 ? <p className="text-muted-foreground text-xs">No Kortix App installation is available for this repository owner. Add the repository to the App installation in GitHub, then verify again.</p> : null}
+              {githubProof && availableInstallations.length === 0 ? <p className="text-muted-foreground text-xs">{tRepo('noInstallation')}</p> : null}
               {availableInstallations.length > 0 ? (
                 <Select value={installationId} onValueChange={setInstallationId}>
-                  <SelectTrigger aria-label="GitHub App installation"><SelectValue placeholder="Select installation" /></SelectTrigger>
+                  <SelectTrigger aria-label={tRepo('installation')}><SelectValue placeholder={tRepo('selectInstallation')} /></SelectTrigger>
                   <SelectContent>{availableInstallations.map((installation) => (
                     <SelectItem key={installation.installation_id} value={installation.installation_id}>{installation.owner_login ?? installation.installation_id}</SelectItem>
                   ))}</SelectContent>
                 </Select>
               ) : null}
             </div>
-            <p className="text-muted-foreground text-xs">
-              The new repository needs {project.manifest_path} on its default branch. Stop active sessions and close open change requests first.
-            </p>
+            <p className="text-muted-foreground text-xs">{tRepo('manifestRequirement', { manifest: project.manifest_path })}</p>
           </ModalBody>
           <ModalFooter className="shrink-0 bg-sidebar py-3">
-            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>Cancel</Button>
+            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>{tRepo('cancel')}</Button>
             <Button onClick={() => changeRepository.mutate()} disabled={!targetOwner || targetRepo.trim() === project.repo_url || !availableInstallations.some((installation) => installation.installation_id === installationId) || !githubProof || changeRepository.isPending}>
-              {changeRepository.isPending ? 'Changing…' : 'Change repository'}
+              {changeRepository.isPending ? tRepo('changing') : tRepo('title')}
             </Button>
           </ModalFooter>
         </ModalContent>
