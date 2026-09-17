@@ -90,10 +90,10 @@ describe('shikiKey', () => {
     );
   });
 
-  test('BUG: two different long strings of the same length collide on one key', () => {
-    // Past 200 characters the signature is head(100) + tail(100) + length, so
-    // any edit that stays inside the middle and keeps the length produces the
-    // same key as the text it replaced. Documented, not asserted away.
+  test('two different long strings of the same length get different keys', () => {
+    // The signature used to be head(100) + tail(100) + length, so any edit that
+    // stayed inside the middle and kept the length produced a byte-identical
+    // key. The key now hashes the whole snippet, so the middle counts.
     const head = 'a'.repeat(100);
     const tail = 'b'.repeat(100);
     const plus = `${head}const total = subtotal + tax;${tail}`;
@@ -101,14 +101,32 @@ describe('shikiKey', () => {
 
     expect(plus).not.toBe(minus);
     expect(plus.length).toBe(minus.length);
-    expect(shikiKey(plus, 'typescript', SHIKI_THEME_DARK)).toBe(
+    expect(shikiKey(plus, 'typescript', SHIKI_THEME_DARK)).not.toBe(
       shikiKey(minus, 'typescript', SHIKI_THEME_DARK),
     );
   });
 
-  test('BUG: the collision serves one snippet the other snippet’s highlighted HTML', () => {
-    // What the key collision costs a reader: highlightSync answers from the
-    // cache before it looks at the code it was handed.
+  test('a one-character edit in the middle of a long snippet changes the key', () => {
+    const head = 'a'.repeat(100);
+    const tail = 'b'.repeat(100);
+
+    expect(shikiKey(`${head}xMIDDLEx${tail}`, 'typescript', SHIKI_THEME_DARK)).not.toBe(
+      shikiKey(`${head}xMIDDLEy${tail}`, 'typescript', SHIKI_THEME_DARK),
+    );
+  });
+
+  test('the same long snippet always hashes to the same key', () => {
+    const code = `${'a'.repeat(100)}const total = subtotal + tax;${'b'.repeat(100)}`;
+
+    expect(shikiKey(code, 'typescript', SHIKI_THEME_DARK)).toBe(
+      shikiKey(code, 'typescript', SHIKI_THEME_DARK),
+    );
+  });
+
+  test('a cached snippet is never served for a different snippet', () => {
+    // What the old key collision cost a reader: highlightSync answers from the
+    // cache before it looks at the code it was handed, so the wrong snippet's
+    // highlighted HTML was rendered verbatim.
     const head = 'a'.repeat(100);
     const tail = 'b'.repeat(100);
     const plus = `${head}const total = subtotal + tax;${tail}`;
@@ -116,7 +134,8 @@ describe('shikiKey', () => {
 
     cacheHtml(shikiKey(plus, 'typescript', SHIKI_THEME_DARK), '<pre>PLUS</pre>');
 
-    expect(highlightSync(minus, 'typescript', SHIKI_THEME_DARK)).toBe('<pre>PLUS</pre>');
+    expect(highlightSync(minus, 'typescript', SHIKI_THEME_DARK)).not.toBe('<pre>PLUS</pre>');
+    expect(highlightSync(plus, 'typescript', SHIKI_THEME_DARK)).toBe('<pre>PLUS</pre>');
   });
 });
 
