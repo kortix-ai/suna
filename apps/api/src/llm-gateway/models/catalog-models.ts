@@ -290,8 +290,7 @@ export function gatewayCodexModels(
         : {}),
       ...(typeof model?.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
       ...(model?.modalities ? { modalities: model.modalities } : {}),
-      // ChatGPT subscriptions have no per-token charge. Never inherit API price tiers.
-      cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+      ...(model?.cost ? { cost: model.cost } : {}),
       ...(typeof model?.description === 'string' ? { description: model.description } : {}),
       ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),

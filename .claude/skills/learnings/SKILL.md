@@ -21,6 +21,45 @@ linked, not inlined.
 
 ## Register
 
+### Keep subscription picker prices distinct from session charges (2026-09-16)
+
+**When:** publishing ChatGPT/Codex models to the picker. Retain the published
+model price fields. Zeroing catalog rates makes the picker call a paid ChatGPT
+subscription “Free.” Keep subscription session cost at `$0.00` in SDK accounting;
+the picker rates are reference prices, not an extra per-token subscription bill.
+*Correction to the 2026-09-15 entry below:* zero catalog rates misstate the
+subscription price. *Enforcers:* catalog model tests, `GW-5`, and browser journey 26.
+
+### Ship the same change to `main` and `staging` ONCE, through the promote — never twice (2026-09-16)
+
+**When:** a fix is wanted on staging before the next promote. Land it on `main`,
+then promote. A second PR that re-implements it against `staging` gives git two
+unrelated edits to the same lines, and the next `main -> staging` PR goes DIRTY.
+*Incident:* "the project session list is a keyset page" shipped as #7308 (main,
+`6f52904b61`) AND #7314 (staging, `a5290753fa`). Promote #7292 blocked on a
+4-file conflict for hours. Worse, the two were NOT equivalent: #7314 also
+pinned the session cursor's GCM nonce and auth-tag lengths, so `main` ran for a
+day accepting a client-supplied 4-byte auth tag — ~2^32 to forge a cursor
+instead of ~2^128. Resolving such a conflict by `--ours`/`--theirs` reflex
+silently picks one; diff the two sides and take the superset.
+*Enforcer:* none for the duplicate itself — the conflict IS the signal. Read it
+as "two branches disagree", never as "git being annoying".
+
+### A committed conflict marker passes every lane — grep for it (2026-09-16)
+
+**When:** resolving any merge, especially in a file no build step reads.
+`a5290753fa` (#7314) committed `<<<<<<< HEAD` / `=======` / `>>>>>>> 6f52904b61`
+straight into `.claude/skills/learnings/SKILL.md` and shipped it to `staging`.
+Every CI lane stayed green: nothing compiles, lints or imports that file. It
+surfaced only when the next promote produced a NESTED conflict. Note the rule
+can only key on `<<<<<<< ` and `>>>>>>> ` at line start — a Setext heading
+underlines its title with exactly `=======`, so flagging the middle marker
+rejects ordinary markdown. *Enforcer:* `tests/unit/conflict-markers.test.ts`
+scans every `git ls-files` path and fails with `path:line`; proven against the
+real corruption replanted in the same file, and against the naive rule.
+
+
+||||||| 88cb598b14
 ### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
 
 **When:** writing or reviewing any admission/quota gate that reserves a
