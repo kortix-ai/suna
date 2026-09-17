@@ -17,6 +17,7 @@ import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
+import type { SystemExtension } from '../harness/pi/extensions/runner'
 
 const TOKEN = 'pi-test-token'
 
@@ -41,7 +42,7 @@ interface Rig {
 
 let rig: Rig | null = null
 
-async function boot(input: { script: unknown[]; env?: Record<string, string>; start?: boolean }): Promise<Rig> {
+async function boot(input: { script: unknown[]; env?: Record<string, string>; start?: boolean; extensions?: SystemExtension[] }): Promise<Rig> {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
   const env: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
@@ -57,7 +58,7 @@ async function boot(input: { script: unknown[]; env?: Record<string, string>; st
     ...(input.env ?? {}),
   }
   const cfg = requirePiConfig(loadConfig(env))
-  const service = createPiHarnessService(cfg, undefined, { env })
+  const service = createPiHarnessService(cfg, undefined, { env, ...(input.extensions ? { extensions: input.extensions } : {}) })
   const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
   if (input.start !== false) {
     await service.lifecycle.start()
@@ -215,7 +216,7 @@ describe('pi harness', () => {
     const agents = (await r.user('/agent').then((res) => res.json())) as Array<Record<string, unknown>>
     expect(agents[0]).toMatchObject({ name: 'coder', description: 'Writes code', mode: 'primary', prompt: 'You code.' })
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
     const providers = (await r.user('/provider').then((res) => res.json())) as { all: Array<{ id: string }>; default: Record<string, string> }
     expect(providers.all[0]!.id).toBe('faux')
     expect(providers.default).toEqual({ faux: 'faux-1' })
@@ -360,5 +361,257 @@ describe('pi harness', () => {
     await r.service.lifecycle.start()
     const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
     expect(skills.map((s) => s.name)).toEqual(['deploy'])
+  })
+})
+
+type WirePage = { messages: Array<{ info: Record<string, any>; parts: Array<Record<string, any>> }> }
+
+async function promptAndSettle(r: Rig, text: string): Promise<void> {
+  const root = r.service.runtime()!.rootId
+  const accepted = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text }] }) })
+  expect(accepted.status).toBe(204)
+  await waitFor(() => !r.service.runtime()!.busy())
+}
+
+function toolParts(page: WirePage, tool: string): Array<Record<string, any>> {
+  return page.messages.flatMap((m) => m.parts.filter((p) => p.type === 'tool' && p.tool === tool))
+}
+
+describe('pi system extensions', () => {
+  test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
+    let promptSeen = ''
+    const guard: SystemExtension = {
+      name: 'guard',
+      factory(pi) {
+        pi.on('tool_call', (event, ctx) => {
+          promptSeen = ctx.getSystemPrompt()
+          return event.toolName === 'write' ? { block: true, reason: 'writes are blocked by guard' } : undefined
+        })
+        pi.on('tool_result', (event) => (event.toolName === 'bash' ? { content: [{ type: 'text' as const, text: 'patched output' }] } : undefined))
+        pi.on('before_agent_start', (event) => ({ systemPrompt: `${event.systemPrompt}\n\nGUARD ACTIVE` }))
+      },
+    }
+    const r = await boot({
+      script: [{ tool: 'write', args: { path: 'blocked.txt', content: 'x' } }, { tool: 'bash', args: { command: 'echo real' } }, { text: 'done' }],
+      extensions: [guard],
+    })
+    await promptAndSettle(r, 'try')
+    expect(require('node:fs').existsSync(join(r.workspace, 'blocked.txt'))).toBe(false)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'write')[0]!.state).toMatchObject({ status: 'error', error: expect.stringContaining('writes are blocked by guard') })
+    expect(toolParts(page, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: 'patched output' })
+    expect(promptSeen).toContain('GUARD ACTIVE')
+    // The per-turn system prompt does not leak into the next turn.
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['guard'], failed: [] })
+  })
+
+  test('an extension that throws or calls an unsupported API is skipped; the runtime still starts', async () => {
+    const broken: SystemExtension = { name: 'broken', factory: () => { throw new Error('boom') } }
+    const unsupported: SystemExtension = {
+      name: 'unsupported',
+      factory(pi) {
+        pi.registerTool({ name: 'never_registered', label: 'x', description: 'x', parameters: {} as never, execute: async () => ({ content: [], details: {} }) })
+        ;(pi as unknown as { registerCommand: (name: string) => void }).registerCommand('x')
+      },
+    }
+    const events: string[] = []
+    const lifecycle: SystemExtension = {
+      name: 'lifecycle',
+      factory(pi) {
+        pi.on('session_start', (event) => void events.push(`start:${event.reason}`))
+        pi.on('session_shutdown', () => void events.push('shutdown'))
+        pi.on('turn_end', () => void events.push('turn_end'))
+      },
+    }
+    const r = await boot({ script: [{ text: 'ok' }], extensions: [broken, unsupported, lifecycle] })
+    const status = r.service.runtime()!.extensionStatus()
+    expect(status.loaded).toEqual(['lifecycle'])
+    expect(status.failed.map((f) => f.name)).toEqual(['broken', 'unsupported'])
+    expect(status.failed[0]!.error).toContain('boom')
+    expect(status.failed[1]!.error).toContain('registerCommand')
+    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(tools).not.toContain('never_registered')
+    await promptAndSettle(r, 'hi')
+    await r.service.lifecycle.stop()
+    expect(events).toEqual(['start:startup', 'turn_end', 'shutdown'])
+  })
+
+  test('the context and before_provider_request hooks rewrite what the model receives', async () => {
+    const { ExtensionRunner } = await import('../harness/pi/extensions/runner')
+    const runner = await ExtensionRunner.load(
+      [
+        {
+          name: 'rewrite',
+          factory(pi) {
+            pi.on('context', (event) => ({ messages: event.messages.slice(-1) }))
+            pi.on('before_provider_request', (event) => ({ ...(event.payload as object), temperature: 0 }))
+          },
+        },
+      ],
+      { cwd: '/workspace', systemPrompt: () => '', kortix: {} as never },
+    )
+    const first = { role: 'user', content: 'a', timestamp: 1 } as never
+    const last = { role: 'user', content: 'b', timestamp: 2 } as never
+    expect(await runner.agentHooks().transformContext!([first, last])).toEqual([last])
+    expect(await runner.agentHooks().onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
+    const none = await ExtensionRunner.load([], { cwd: '/workspace', systemPrompt: () => '', kortix: {} as never })
+    expect(none.agentHooks()).toEqual({})
+  })
+})
+
+describe('pi subagents extension', () => {
+  const TASK = (args: Record<string, unknown>) => ({ tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general', ...args } })
+
+  test('task runs a child session whose transcript the product can read', async () => {
+    const r = await boot({
+      script: [TASK({}), { tool: 'bash', args: { command: 'printf from-subagent > sub.txt && cat sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }],
+    })
+    const root = r.service.runtime()!.rootId
+    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(tools).toContain('task')
+
+    await promptAndSettle(r, 'delegate it')
+    expect(readFileSync(join(r.workspace, 'sub.txt'), 'utf8')).toBe('from-subagent')
+
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const task = toolParts(page, 'task')[0]!
+    const childId = task.state.metadata.sessionId as string
+    expect(childId).toMatch(/^ses_pi[0-9a-f]{24}$/)
+    expect(childId).not.toBe(root)
+    expect(task.state.status).toBe('completed')
+    expect(task.state.output).toContain(`task_id: ${childId}`)
+    expect(task.state.output).toContain('<task_result>\nchild wrote sub.txt\n</task_result>')
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'parent done' })
+
+    // The child session, through every read the web client uses.
+    const child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(child.messages.every((m) => m.info.sessionID === childId)).toBe(true)
+    expect(child.messages[0]!.parts[0]).toMatchObject({ type: 'text', text: 'write sub.txt' })
+    expect(child.messages[1]!.info).toMatchObject({ parentID: child.messages[0]!.info.id, agent: 'general' })
+    expect(toolParts(child, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('from-subagent') })
+    const raw = (await r.user(`/session/${childId}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    expect(raw.map((m) => m.info.id)).toEqual(child.messages.map((m) => String(m.info.id)))
+    expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: expect.stringContaining('Write the note') })
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([childId])
+    expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([root, childId])
+    // The root transcript holds no child message.
+    expect(page.messages.every((m) => m.info.sessionID === root)).toBe(true)
+
+    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    expect(state.sessions.value.map((s: { id: string; parent_id: string | null }) => [s.id, s.parent_id])).toEqual([[root, null], [childId, root]])
+    expect(state.statuses.value).toEqual({ [root]: { type: 'idle' }, [childId]: { type: 'idle' } })
+
+    // The stream carried the child id on the RUNNING task part, so the UI links the child while it works.
+    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes(`"sessionID":"${childId}"`) && t.includes('parent done'))
+    const running = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+      .find((e) => e.type === 'message.part.updated' && e.payload.part.tool === 'task' && e.payload.part.state.status === 'running' && e.payload.part.state.metadata?.sessionId)
+    expect(running?.payload.part.state.metadata.sessionId).toBe(childId)
+  })
+
+  test('explore is read-only, children cannot nest tasks, and an unknown type is an error', async () => {
+    const r = await boot({
+      script: [
+        TASK({ subagent_type: 'explore', prompt: 'look around' }),
+        { tool: 'write', args: { path: 'nope.txt', content: 'x' } },
+        { tool: 'task', args: { description: 'nested', prompt: 'x', subagent_type: 'general' } },
+        { text: 'explored' },
+        TASK({ subagent_type: 'wizard' }),
+        { text: 'parent done' },
+      ],
+    })
+    await promptAndSettle(r, 'explore')
+    expect(require('node:fs').existsSync(join(r.workspace, 'nope.txt'))).toBe(false)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const [explore, wizard] = toolParts(page, 'task')
+    expect(explore!.state.status).toBe('completed')
+    expect(wizard!.state.status).toBe('error')
+    expect(wizard!.state.error).toBe('Unknown subagent_type "wizard". Available: general, explore.')
+    const child = (await r.bearer(`/kortix/opencode/messages/${explore!.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(child, 'write')[0]!.state.status).toBe('error')
+    expect(toolParts(child, 'task')[0]!.state.status).toBe('error')
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('a compiled subagent is offered and used; task_id resumes the same child after a restart', async () => {
+    const compiled = {
+      agent: {
+        build: { mode: 'primary', prompt: 'You build.' },
+        reviewer: { mode: 'subagent', description: 'Reviews one change', prompt: 'You review.' },
+        hidden: { mode: 'subagent', description: 'Disabled', disable: true },
+      },
+    }
+    const r = await boot({
+      script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), { text: 'looks good' }, { text: 'first done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) },
+    })
+    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!
+    expect(described.description).toContain('reviewer: Reviews one change')
+    expect(described.description).not.toContain('hidden')
+    await promptAndSettle(r, 'review')
+    const root = r.service.runtime()!.rootId
+    let page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const childId = toolParts(page, 'task')[0]!.state.metadata.sessionId as string
+    let child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages[1]!.info.agent).toBe('reviewer')
+
+    // A restart rebuilds the faux provider from the runtime's config: queue the second turn.
+    ;(r.service.runtime() as unknown as { cfg: { piFauxScript: string } }).cfg.piFauxScript = JSON.stringify([
+      TASK({ subagent_type: 'reviewer', prompt: 'check again', task_id: childId }),
+      { text: 'still good' },
+      { text: 'second done' },
+    ])
+    await r.service.lifecycle.stop()
+    await r.service.lifecycle.start()
+    expect((await r.user(`/session/${childId}/message`)).status).toBe(200)
+    await promptAndSettle(r, 'again')
+    child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'task')[1]!.state.output).toContain('<task_result>\nstill good\n</task_result>')
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('several task calls in one message run their subagents concurrently', async () => {
+    const r = await boot({
+      script: [
+        { tools: [TASK({ description: 'A', prompt: 'a' }).args, TASK({ description: 'B', prompt: 'b' }).args].map((args) => ({ tool: 'task', args })) },
+        // Both children take their first step from the shared queue at once: each sleeps 1 s.
+        { tool: 'bash', args: { command: 'sleep 1 && printf x >> ran.txt' } },
+        { tool: 'bash', args: { command: 'sleep 1 && printf x >> ran.txt' } },
+        { text: 'child done' },
+        { text: 'child done' },
+        { text: 'parent done' },
+      ],
+    })
+    const started = Date.now()
+    await promptAndSettle(r, 'fan out')
+    const elapsed = Date.now() - started
+    expect(readFileSync(join(r.workspace, 'ran.txt'), 'utf8')).toBe('xx')
+    expect(elapsed).toBeLessThan(1_900)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const tasks = toolParts(page, 'task')
+    expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
+    expect(new Set(tasks.map((t) => t.state.metadata.sessionId)).size).toBe(2)
+  })
+
+  test('aborting the parent turn aborts the running subagent', async () => {
+    const r = await boot({ script: [TASK({}), { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'never' }, { text: 'never' }] })
+    const root = r.service.runtime()!.rootId
+    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    await waitFor(() => (r.service.runtime()!.stateDoc().sessions as { value: unknown[] }).value.length === 2)
+    await Bun.sleep(200)
+    const started = Date.now()
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(r.service.runtime()!.busy()).toBe(false)
+    const state = r.service.runtime()!.stateDoc() as Record<string, any>
+    expect(Object.values(state.statuses.value)).toEqual([{ type: 'idle' }, { type: 'idle' }])
   })
 })

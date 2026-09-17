@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Agent, AgentEvent, AgentMessage, AgentTool, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
+import type { Agent, AgentEvent, AgentMessage, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel, TextContent, UserMessage } from '@earendil-works/pi-ai'
 import type { HarnessState } from '../lifecycle-contract'
 import type { ProjectEnvStore } from '../../project-env'
@@ -23,12 +23,13 @@ import { logger } from '../../logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '../../secret-capabilities'
 import type { PiConfig } from './config'
 import { resolvePiSkillDirectories } from './config'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, type PermissionPolicy, type QuestionRequestWire } from './interactions'
+import type { ExtensionRunner, KortixHost, SpawnSessionInput, SpawnSessionResult, SystemExtension } from './extensions/runner'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, type PermissionPolicy, type PermissionRule, type QuestionRequestWire } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
 import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
-import { WIRE_MESSAGE_ID, WireIdClock, mintRootId } from './wire-id'
+import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
 export const PI_HARNESS_VERSION = 'pi-agent-core@0.85.1'
 
@@ -157,6 +158,33 @@ export interface PiRuntimeOptions {
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
   now?: () => number
+  /** The system extensions to load; `SYSTEM_EXTENSIONS` when absent. */
+  extensions?: readonly SystemExtension[]
+}
+
+/** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
+interface ChildSession {
+  id: string
+  title: string
+  agentName: string
+  createdAt: number
+  updatedAt: number
+  status: 'idle' | 'busy'
+  transcript: WireTranscript
+  /** The child's pi conversation, kept so `task_id` resumes it. */
+  agentMessages: AgentMessage[]
+  /** Set while a prompt runs in the child. */
+  agent: Agent | null
+}
+
+interface ChildDump {
+  id: string
+  title: string
+  agentName: string
+  createdAt: number
+  updatedAt: number
+  agentMessages: AgentMessage[]
+  transcript: WireMessage[]
 }
 
 interface Turn {
@@ -174,6 +202,8 @@ interface Dump {
   agentMessages: AgentMessage[]
   transcript: WireMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
+  /** Absent in dumps written before child sessions existed. */
+  children?: ChildDump[]
 }
 
 function decodeDataUrl(url: string): { mime: string; data: string } | null {
@@ -201,7 +231,17 @@ export class PiRuntime {
   private models: PiModels | null = null
   private selected: SelectedModel | null = null
   private executionEnv: ExecutionEnv | null = null
+  private core: typeof import('@earendil-works/pi-agent-core') | null = null
+  /** bash/read/write/edit/glob/grep: what a child session may be given. */
+  private workspaceTools: AgentTool<any, any>[] = []
+  /** Workspace tools + `question`: the root's tools before extensions add theirs. */
+  private baseTools: AgentTool<any, any>[] = []
   private tools: AgentTool<any, any>[] = []
+  private readonly extensionList: readonly SystemExtension[] | undefined
+  private extensions: ExtensionRunner | null = null
+  /** Extension notifications run in event order, off the agent's path. */
+  private extensionEvents: Promise<void> = Promise.resolve()
+  private readonly children = new Map<string, ChildSession>()
   private skills: Skill[] = []
   private compiled: CompiledAgentConfig | null = null
   private agentName = 'build'
@@ -220,6 +260,7 @@ export class PiRuntime {
     this.env = opts.env ?? process.env
     this.now = opts.now ?? (() => Date.now())
     this.hooks = opts.hooks ?? {}
+    this.extensionList = opts.extensions
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
@@ -258,12 +299,15 @@ export class PiRuntime {
     this.startError = null
     const startedAt = this.now()
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, node, { ExtensionRunner }, { SYSTEM_EXTENSIONS }] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-agent-core/node'),
+        import('./extensions/runner'),
+        import('./extensions'),
       ])
+      this.core = core
       this.compiled = parseCompiledAgentConfig(this.env.KORTIX_COMPILED_AGENT_CONFIG)
       this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
@@ -284,17 +328,28 @@ export class PiRuntime {
         now: this.now,
         publish: (frame) => this.publish(frame),
       })
-      this.tools = [
-        ...createWorkspaceTools(this.executionEnv),
-        createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId)),
-      ]
+      this.workspaceTools = createWorkspaceTools(this.executionEnv)
+      // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
+      // so only a batch made entirely of parallel tools (task calls) runs concurrently.
+      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
+        (tool) => ({ ...tool, executionMode: 'sequential' as const }),
+      )
+      const extensionsStartedAt = performance.now()
+      this.extensions = await ExtensionRunner.load(this.extensionList ?? SYSTEM_EXTENSIONS, {
+        cwd: this.workspace,
+        systemPrompt: () => this.agent?.state.systemPrompt ?? '',
+        kortix: this.kortixHost(),
+      })
+      await this.extensions.emit({ type: 'session_start', reason: 'startup' })
+      const extensionsMs = performance.now() - extensionsStartedAt
+      this.tools = [...this.baseTools, ...this.extensions.agentTools()]
       this.skills = await this.loadSkills(core.loadSkills)
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
       this.agent = new core.Agent({
         streamFn: (model, context, options) => this.models!.models.streamSimple(model, context, options),
-        toolExecution: 'sequential',
+        toolExecution: 'parallel',
         initialState: {
           systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt),
           model: this.selected.model,
@@ -302,19 +357,9 @@ export class PiRuntime {
           tools: this.tools,
           messages: restored?.agentMessages ?? [],
         },
+        ...this.extensions.agentHooks(),
       })
-      this.agent.beforeToolCall = async (context) => {
-        const tool = context.toolCall.name
-        const rule = this.permissions.rule(tool)
-        if (rule === 'deny') return { block: true, reason: `The project policy denies the ${tool} tool.` }
-        if (rule !== 'ask') return undefined
-        const reply = await this.permissions.ask({
-          tool,
-          args: context.args,
-          ref: this.adapter?.toolRef(context.toolCall.id, { name: tool, args: context.args }),
-        })
-        return reply === 'reject' ? { block: true, reason: 'The user rejected this tool call.' } : undefined
-      }
+      this.agent.beforeToolCall = this.toolGate((tool) => this.permissions.rule(tool), true)
       this.agent.subscribe((event) => this.onAgentEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
@@ -323,6 +368,8 @@ export class PiRuntime {
         agent: this.agentName,
         tools: this.tools.map((t) => t.name),
         skills: this.skills.length,
+        extensions: this.extensions.status(),
+        extensionsMs: Math.round(extensionsMs * 100) / 100,
         restoredMessages: restored?.agentMessages.length ?? 0,
         ms: this.now() - startedAt,
       })
@@ -338,6 +385,8 @@ export class PiRuntime {
     if (this.state === 'down') return
     await this.abort()
     await this.queue.catch(() => {})
+    await this.extensionEvents
+    await this.extensions?.emit({ type: 'session_shutdown' })
     this.persist()
     this.state = 'down'
   }
@@ -368,6 +417,10 @@ export class PiRuntime {
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
     const core = await import('@earendil-works/pi-agent-core')
+    // Extensions re-register what depends on the agent config (the task tool lists the subagents).
+    await this.extensions?.emit({ type: 'session_start', reason: 'reload' })
+    this.tools = [...this.baseTools, ...(this.extensions?.agentTools() ?? [])]
+    this.agent.state.tools = this.tools
     this.skills = await this.loadSkills(core.loadSkills)
     this.agent.state.systemPrompt = this.systemPrompt(core.formatSkillsForSystemPrompt)
     this.agent.state.model = this.selected.model
@@ -413,7 +466,7 @@ export class PiRuntime {
       const modelId = input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
       if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     }
-    this.publishUserMessage(messageId, input)
+    this.publishUserMessage(this.rootId, messageId, input)
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
@@ -472,6 +525,9 @@ export class PiRuntime {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
       if (turn.input.system) agent.state.systemPrompt = `${originalPrompt}\n\n${turn.input.system}`
+      if (this.extensions?.has('before_agent_start')) {
+        agent.state.systemPrompt = await this.extensions.beforeAgentStart(turn.input.text, agent.state.systemPrompt)
+      }
       await agent.prompt(this.userMessage(turn.input))
       const last = [...agent.state.messages].reverse().find((m) => m.role === 'assistant') as
         | { stopReason?: string; errorMessage?: string }
@@ -509,8 +565,158 @@ export class PiRuntime {
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
     this.translateAndPublish(event)
+    const runner = this.extensions
+    if (runner?.has(event.type as never)) {
+      this.extensionEvents = this.extensionEvents.then(() => runner.emit(event as never))
+    }
     // After the frames: the finished tool part is on the transcript before the turn is cut.
     if (event.type === 'tool_execution_end') this.checkAbortAfterTool()
+  }
+
+  /** Permission policy first, then extension `tool_call` handlers. Root and child agents share it. */
+  private toolGate(rule: (tool: string) => PermissionRule, attachToPart: boolean) {
+    return async (context: BeforeToolCallContext, signal?: AbortSignal): Promise<BeforeToolCallResult | undefined> => {
+      const tool = context.toolCall.name
+      const decided = rule(tool)
+      if (decided === 'deny') return { block: true, reason: `The project policy denies the ${tool} tool.` }
+      if (decided === 'ask') {
+        const reply = await this.permissions.ask({
+          tool,
+          args: context.args,
+          ...(attachToPart ? { ref: this.adapter?.toolRef(context.toolCall.id, { name: tool, args: context.args }) } : {}),
+        })
+        if (reply === 'reject') return { block: true, reason: 'The user rejected this tool call.' }
+      }
+      if (!this.extensions?.has('tool_call')) return undefined
+      return this.extensions.toolCall(
+        { type: 'tool_call', toolName: tool, toolCallId: context.toolCall.id, input: (context.args ?? {}) as Record<string, unknown> },
+        signal,
+      )
+    }
+  }
+
+  // ── child sessions ───────────────────────────────────────────────────────
+
+  private kortixHost(): KortixHost {
+    return {
+      compiledAgents: () => this.compiled?.agent ?? {},
+      spawnSession: (input) => this.spawnSession(input),
+    }
+  }
+
+  /**
+   * Run one prompt in a child session: its own pi agent, wire adapter and
+   * transcript, on the same models, workspace and extension hooks. Frames go
+   * on the bus under the child's id, so the product streams the child exactly
+   * as it streams an OpenCode subagent. The caller's signal aborts the child.
+   */
+  async spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult> {
+    const core = this.core
+    if (!core || !this.models || !this.selected || this.state !== 'ok') throw new Error('pi runtime is not ready')
+    let child = input.sessionId ? this.children.get(input.sessionId) : undefined
+    if (input.sessionId && !child) throw new Error(`task_id ${input.sessionId} is not a subagent session of this session`)
+    if (child?.agent) throw new Error(`task_id ${child.id} is already running`)
+    if (!child) {
+      const createdAt = this.now()
+      child = {
+        id: mintChildId(this.rootId, this.clock.mint(createdAt)),
+        title: input.title,
+        agentName: input.agent,
+        createdAt,
+        updatedAt: createdAt,
+        status: 'idle',
+        transcript: new WireTranscript(),
+        agentMessages: [],
+        agent: null,
+      }
+      this.children.set(child.id, child)
+      this.publish({ type: 'session.created', properties: { sessionID: child.id, info: this.childSessionObject(child) } })
+    }
+    const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
+    const model = { providerID: selected.providerID, modelID: selected.modelID }
+    const tools = input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools
+    const policy = compilePermissionPolicy(input.permission)
+    const messageId = this.clock.mint(this.now())
+    this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
+    const adapter = new PiWireAdapter({
+      sessionID: child.id,
+      mintMessageId: () => this.clock.mint(this.now()),
+      parentMessageId: () => messageId,
+      model: () => model,
+      agent: input.agent,
+      workspace: this.workspace,
+      now: this.now,
+      publish: (frame) => this.publish(frame),
+    })
+    const agent = new core.Agent({
+      streamFn: (m, context, options) => this.models!.models.streamSimple(m, context, options),
+      toolExecution: 'sequential',
+      initialState: {
+        systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, interactive: false }),
+        model: selected.model,
+        thinkingLevel: this.thinkingLevel(input.variant, selected),
+        tools,
+        messages: child.agentMessages,
+      },
+      ...(this.extensions?.agentHooks() ?? {}),
+    })
+    agent.beforeToolCall = this.toolGate((tool) => policy[tool] ?? policy['*'] ?? this.permissions.rule(tool), false)
+    agent.subscribe((event) => {
+      for (const frame of adapter.translate(event)) this.publish(frame, frame.transcriptOnly ? { transcriptOnly: true } : undefined)
+    })
+    child.agent = agent
+    input.onSession?.({ sessionId: child.id, model })
+    const abort = () => agent.abort()
+    input.signal?.addEventListener('abort', abort, { once: true })
+    let status: SpawnSessionResult['status'] = 'completed'
+    let error: string | undefined
+    let text = ''
+    try {
+      if (input.signal?.aborted) status = 'aborted'
+      else {
+        await agent.prompt({ role: 'user', content: input.prompt, timestamp: this.now() })
+        const last = [...agent.state.messages].reverse().find((m) => m.role === 'assistant') as
+          | { stopReason?: string; errorMessage?: string; content?: Array<{ type: string; text?: string }> }
+          | undefined
+        text = (last?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
+        if (last?.stopReason === 'aborted') status = 'aborted'
+        else if (last?.stopReason === 'error' || last?.stopReason === 'length') {
+          status = 'error'
+          error = last.errorMessage || (last.stopReason === 'length' ? 'The subagent hit the output length limit.' : 'The model request failed.')
+        }
+      }
+    } catch (err) {
+      status = 'error'
+      error = err instanceof Error ? err.message : String(err)
+      logger.error('[pi] child session failed', { sessionId: child.id, err: error })
+    } finally {
+      input.signal?.removeEventListener('abort', abort)
+      child.agentMessages = agent.state.messages
+      child.agent = null
+      if (child.status === 'busy') {
+        this.publish({ type: 'session.status', properties: { sessionID: child.id, status: { type: 'idle' } } })
+        this.publish({ type: 'session.idle', properties: { sessionID: child.id } })
+      }
+    }
+    return { sessionId: child.id, status, text, ...(error ? { error } : {}), model }
+  }
+
+  /** The child session a read names, or null. */
+  childSession(id: string): { object: Record<string, unknown>; transcript: WireTranscript } | null {
+    const child = this.children.get(id)
+    return child ? { object: this.childSessionObject(child), transcript: child.transcript } : null
+  }
+
+  childSessions(): Array<Record<string, unknown>> {
+    return [...this.children.values()].map((child) => this.childSessionObject(child))
+  }
+
+  private childSessionObject(child: ChildSession): Record<string, unknown> {
+    return { ...this.sessionObject(), id: child.id, slug: child.id, parentID: this.rootId, title: child.title, time: { created: child.createdAt, updated: child.updatedAt } }
+  }
+
+  extensionStatus(): { loaded: string[]; failed: Array<{ name: string; error: string }> } {
+    return this.extensions?.status() ?? { loaded: [], failed: [] }
   }
 
   private translateAndPublish(event: AgentEvent): void {
@@ -527,38 +733,48 @@ export class PiRuntime {
 
   /** Sequence one wire frame onto the bus AND fold it into the transcript. */
   publish(frame: WireFrame, opts: { transcriptOnly?: boolean; busOnly?: boolean } = {}): void {
-    this.updatedAt = this.now()
-    if (frame.type === 'session.status') {
-      const status = (frame.properties.status as { type?: string } | undefined)?.type
-      if (status === 'busy' || status === 'idle') this.status = status
-    }
-    if (!opts.busOnly) this.transcript.apply(frame)
-    if (opts.transcriptOnly) return
     const p = frame.properties
     const session =
       (p.sessionID as string | undefined) ??
       (p.info as { sessionID?: string } | undefined)?.sessionID ??
       (p.part as { sessionID?: string } | undefined)?.sessionID
+    const status = frame.type === 'session.status' ? (p.status as { type?: string } | undefined)?.type : undefined
+    const child = session && session !== this.rootId ? this.children.get(session) : undefined
+    if (child) {
+      child.updatedAt = this.now()
+      if (status === 'busy' || status === 'idle') child.status = status
+      if (!opts.busOnly) child.transcript.apply(frame)
+    } else {
+      this.updatedAt = this.now()
+      if (status === 'busy' || status === 'idle') this.status = status
+      if (!opts.busOnly) this.transcript.apply(frame)
+    }
+    if (opts.transcriptOnly) return
     kortixEventBus().publish(frame.type, p, session)
   }
 
-  private publishUserMessage(messageId: string, input: PromptInput): void {
+  private publishUserMessage(
+    sessionID: string,
+    messageId: string,
+    input: PromptInput,
+    as: { agent: string; selected: SelectedModel } = { agent: this.agentName, selected: this.selected! },
+  ): void {
     const created = this.now()
-    if (this.title === 'New session') {
+    if (sessionID === this.rootId && this.title === 'New session') {
       const line = input.text.trim().split('\n')[0] ?? ''
       if (line) this.title = line.length > 80 ? `${line.slice(0, 77)}…` : line
     }
     this.publish({
       type: 'message.updated',
       properties: {
-        sessionID: this.rootId,
+        sessionID,
         info: {
           id: messageId,
           role: 'user',
-          sessionID: this.rootId,
+          sessionID,
           time: { created },
-          agent: this.agentName,
-          model: { providerID: this.selected!.providerID, modelID: this.selected!.modelID, ...(input.variant ? { variant: input.variant } : {}) },
+          agent: as.agent,
+          model: { providerID: as.selected.providerID, modelID: as.selected.modelID, ...(input.variant ? { variant: input.variant } : {}) },
         },
       },
     })
@@ -567,9 +783,9 @@ export class PiRuntime {
       this.publish({
         type: 'message.part.updated',
         properties: {
-          sessionID: this.rootId,
+          sessionID,
           time: created,
-          part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID: this.rootId, type: 'text', text: input.text },
+          part: { id: `${messageId}-p${index++}`, messageID: messageId, sessionID, type: 'text', text: input.text },
         },
       })
     }
@@ -577,12 +793,12 @@ export class PiRuntime {
       this.publish({
         type: 'message.part.updated',
         properties: {
-          sessionID: this.rootId,
+          sessionID,
           time: created,
           part: {
             id: `${messageId}-p${index++}`,
             messageID: messageId,
-            sessionID: this.rootId,
+            sessionID,
             type: 'file',
             mime: file.mime,
             url: file.url,
@@ -619,9 +835,9 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
-  private thinkingLevel(variant: string | undefined): ModelThinkingLevel {
-    if (!this.selected || !variant) return 'off'
-    return this.selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
+  private thinkingLevel(variant: string | undefined, selected: SelectedModel | null = this.selected): ModelThinkingLevel {
+    if (!selected || !variant) return 'off'
+    return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
@@ -642,8 +858,12 @@ export class PiRuntime {
     }
   }
 
-  private systemPrompt(formatSkills: (skills: Skill[]) => string): string {
-    const parts = [this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
+  /** The root's system prompt; a child passes its own base prompt and tools, and cannot ask questions. */
+  private systemPrompt(
+    formatSkills: (skills: Skill[]) => string,
+    child?: { base: string; tools: AgentTool<any, any>[]; interactive: false },
+  ): string {
+    const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
     parts.push(`Working directory: ${this.workspace}`)
     if (this.skills.length > 0) parts.push(formatSkills(this.skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
@@ -651,9 +871,9 @@ export class PiRuntime {
     parts.push(
       [
         '## Runtime capabilities',
-        `Registered tools: ${this.tools.map((t) => t.name).join(', ')}.`,
+        `Registered tools: ${(child?.tools ?? this.tools).map((t) => t.name).join(', ')}.`,
         'Call tools normally; the runtime asks the user for permission when the project policy requires it.',
-        'Use question to collect answers through the interactive question UI.',
+        ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),
       ].join('\n'),
     )
     return parts.join('\n\n')
@@ -848,9 +1068,20 @@ export class PiRuntime {
             time: { created: this.createdAt, updated: this.updatedAt, compacting: null },
             revert: null,
           },
+          ...[...this.children.values()].map((child) => ({
+            id: child.id,
+            title: child.title,
+            parent_id: this.rootId,
+            directory: this.workspace,
+            time: { created: child.createdAt, updated: child.updatedAt, compacting: null },
+            revert: null,
+          })),
         ],
       },
-      statuses: { known: true, value: { [this.rootId]: this.sessionStatus() } },
+      statuses: {
+        known: true,
+        value: Object.fromEntries([[this.rootId, this.sessionStatus()], ...[...this.children.values()].map((child) => [child.id, { type: child.status }])]),
+      },
       permissions: { known: true, value: this.permissions.list() },
       questions: { known: true, value: this.questions.list() },
     }
@@ -901,6 +1132,15 @@ export class PiRuntime {
         agentMessages: this.agent.state.messages,
         transcript: this.transcript.all(),
         turns: [...this.completedTurns.entries()].map(([messageId, status]) => ({ messageId, status })),
+        children: [...this.children.values()].map((child) => ({
+          id: child.id,
+          title: child.title,
+          agentName: child.agentName,
+          createdAt: child.createdAt,
+          updatedAt: child.updatedAt,
+          agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
+          transcript: child.transcript.all(),
+        })),
       }
       const tmp = `${this.dumpPath()}.tmp`
       writeFileSync(tmp, JSON.stringify(dump), { mode: 0o600 })
@@ -918,6 +1158,14 @@ export class PiRuntime {
       this.transcript.load(dump.transcript)
       for (const message of dump.transcript) this.clock.observe(message.info.id as string)
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
+      this.children.clear()
+      for (const saved of dump.children ?? []) {
+        const transcript = new WireTranscript()
+        transcript.load(saved.transcript)
+        for (const message of saved.transcript) this.clock.observe(message.info.id as string)
+        const { transcript: _saved, ...rest } = saved
+        this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null })
+      }
       this.title = dump.title
       return dump
     } catch (err) {

@@ -122,9 +122,11 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
 
 export function createFauxScriptResponses(script: readonly unknown[]) {
   return script.map((rawStep) => {
-    const step = rawStep && typeof rawStep === 'object' && !Array.isArray(rawStep) ? (rawStep as { tool?: unknown; args?: unknown; text?: unknown }) : {}
-    return typeof step.tool === 'string'
-      ? fauxAssistantMessage([fauxToolCall(step.tool, (step.args as Record<string, unknown>) ?? {})], { stopReason: 'toolUse' })
+    const step = rawStep && typeof rawStep === 'object' && !Array.isArray(rawStep) ? (rawStep as { tool?: unknown; args?: unknown; text?: unknown; tools?: unknown }) : {}
+    // `{ tools: [{ tool, args }, …] }`: one assistant message with several tool calls.
+    const calls = Array.isArray(step.tools) ? (step.tools as Array<{ tool: string; args?: Record<string, unknown> }>) : typeof step.tool === 'string' ? [{ tool: step.tool, args: step.args as Record<string, unknown> }] : []
+    return calls.length > 0
+      ? fauxAssistantMessage(calls.map((call) => fauxToolCall(call.tool, call.args ?? {})), { stopReason: 'toolUse' })
       : fauxAssistantMessage(String(step.text ?? ''), { stopReason: 'stop' })
   })
 }
