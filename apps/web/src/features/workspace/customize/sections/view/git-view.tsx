@@ -271,7 +271,6 @@ export function RepositoryValue({
 
 function SaveStatus() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tRepo = useI18nTranslations('repositoryChange');
   return (
     <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
       {tI18nComplete.raw('text23e39291d613')}
@@ -305,6 +304,7 @@ function RepositoryGroup({
   canManage: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tRepo = useI18nTranslations('repositoryChange');
   const queryClient = useQueryClient();
   const branchesQuery = useQuery({
     queryKey: qk.project.branches(project.project_id),
