@@ -354,6 +354,9 @@ test.describe("30 — Git connections", () => {
       await dialog.getByRole('button', { name: 'Verify GitHub access' }).click();
       await page.evaluate(() => window.postMessage({ type: 'github-connect-success', provider_token: 'temporary-proof' }, window.location.origin));
       await expect(dialog.getByRole('combobox', { name: 'GitHub App installation' })).toBeVisible();
+      await dialog.getByRole('textbox', { name: 'New GitHub repository URL' }).fill('https://github.com/another-org/shared-repository');
+      await expect(dialog.getByRole('button', { name: 'Change repository', exact: true })).toBeDisabled();
+      await dialog.getByRole('textbox', { name: 'New GitHub repository URL' }).fill('https://github.com/example-org/shared-repository');
       await dialog.getByRole('button', { name: 'Change repository', exact: true }).click();
       await expect(dialog).toBeHidden();
       expect(requestBodies).toHaveLength(1);

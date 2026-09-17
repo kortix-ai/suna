@@ -380,6 +380,10 @@ function RepositoryGroup({
   ]);
 
   const saving = isDebouncingBranch || isDebouncingManifest || isPending;
+  const targetOwner = targetRepo.trim().match(/^https:\/\/github\.com\/([^/]+)\/[^/]+\/?$/i)?.[1]?.toLowerCase();
+  const availableInstallations = installations.filter((installation) =>
+    installation.owner_login?.toLowerCase() === targetOwner,
+  );
   const changeRepository = useMutation({
     mutationFn: () => replaceProjectRepository({
       project_id: project.project_id,
@@ -408,7 +412,9 @@ function RepositoryGroup({
       const result = await listLinkableGitHubInstallations({ account_id: project.account_id, github_user_token: proof });
       setGithubProof(proof);
       setInstallations(result.installations);
-      setInstallationId(result.installations[0]?.installation_id ?? '');
+      setInstallationId(result.installations.find((installation) =>
+        installation.owner_login?.toLowerCase() === targetOwner,
+      )?.installation_id ?? '');
     } catch (error) {
       errorToast(error instanceof Error ? error.message : 'Could not verify GitHub access.');
     } finally {
@@ -512,11 +518,11 @@ function RepositoryGroup({
               <Button variant="outline" size="sm" onClick={verifyGitHub} disabled={verifying || changeRepository.isPending}>
                 {verifying ? 'Verifying GitHub…' : githubProof ? 'Verify GitHub again' : 'Verify GitHub access'}
               </Button>
-              {githubProof && installations.length === 0 ? <p className="text-muted-foreground text-xs">No GitHub App installation is available. Add the repository to the Kortix App installation in GitHub.</p> : null}
-              {installations.length > 0 ? (
+              {githubProof && availableInstallations.length === 0 ? <p className="text-muted-foreground text-xs">No Kortix App installation is available for this repository owner. Add the repository to the App installation in GitHub, then verify again.</p> : null}
+              {availableInstallations.length > 0 ? (
                 <Select value={installationId} onValueChange={setInstallationId}>
                   <SelectTrigger aria-label="GitHub App installation"><SelectValue placeholder="Select installation" /></SelectTrigger>
-                  <SelectContent>{installations.map((installation) => (
+                  <SelectContent>{availableInstallations.map((installation) => (
                     <SelectItem key={installation.installation_id} value={installation.installation_id}>{installation.owner_login ?? installation.installation_id}</SelectItem>
                   ))}</SelectContent>
                 </Select>
@@ -528,7 +534,7 @@ function RepositoryGroup({
           </ModalBody>
           <ModalFooter>
             <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>Cancel</Button>
-            <Button onClick={() => changeRepository.mutate()} disabled={!targetRepo.trim() || targetRepo.trim() === project.repo_url || !installationId || !githubProof || changeRepository.isPending}>
+            <Button onClick={() => changeRepository.mutate()} disabled={!targetOwner || targetRepo.trim() === project.repo_url || !availableInstallations.some((installation) => installation.installation_id === installationId) || !githubProof || changeRepository.isPending}>
               {changeRepository.isPending ? 'Changing…' : 'Change repository'}
             </Button>
           </ModalFooter>
