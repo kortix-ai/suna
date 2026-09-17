@@ -577,6 +577,18 @@ describe('pi subagents extension', () => {
     expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
   })
 
+  test('a live agent-config change re-lists the subagent types in the task tool', async () => {
+    const r = await boot({ script: [{ text: 'ok' }] })
+    const describe = async () =>
+      ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    expect(await describe()).not.toContain('reviewer')
+    const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ agent: { build: { mode: 'primary' }, reviewer: { mode: 'subagent', description: 'Reviews one change' } } })
+    await runtime.reconfigure()
+    expect(await describe()).toContain('reviewer: Reviews one change')
+    expect(((await r.user('/tool/ids').then((res) => res.json())) as string[]).filter((id) => id === 'task')).toHaveLength(1)
+  })
+
   test('several task calls in one message run their subagents concurrently', async () => {
     const r = await boot({
       script: [
