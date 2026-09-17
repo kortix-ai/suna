@@ -16,6 +16,7 @@ import { createRefreshRouter } from './routes/refresh'
 import { createLogsRouter } from './routes/logs'
 import { createDiagRouter } from './routes/diag'
 import { type ResourceMonitor, startResourceMonitor } from './resources'
+import { startOpenCodeGlobWatchdog } from './opencode-glob-watchdog'
 import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload'
 import { opencodeSessionInFlight, opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state'
 import { kortixEventBus } from './kortix-event-bus'
@@ -669,6 +670,7 @@ export function startProxy(
       },
     },
   })
+  const globWatchdog = startOpenCodeGlobWatchdog({ opencodePid: () => opencode.getPid() })
   resourceMonitor = proxyResourceMonitor
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
@@ -767,6 +769,7 @@ export function startProxy(
       clearTimeout(offloadBootTimer)
       clearInterval(offloadTimer)
       proxyResourceMonitor.stop()
+      globWatchdog.stop()
       if (resourceMonitor === proxyResourceMonitor) resourceMonitor = null
       server.stop(true)
     },

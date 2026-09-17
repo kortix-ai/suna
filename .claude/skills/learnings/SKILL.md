@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Bound OpenCode's recursive file searches on remote mounts (2026-09-17)
+
+**When:** running OpenCode `glob` against SSHFS or another slow filesystem.
+Its ripgrep child has no deadline. Stop only OpenCode's direct glob child after
+60 seconds; let the tool fail so the agent can choose a narrower search.
+**Incident:** LibreMax session `faf6e950` held a turn open twice while `rg`
+waited in FUSE for 10 and 5 minutes. The API, daemon, and stream stayed healthy.
+**Enforcement:** `opencode-glob-watchdog.test.ts` pins the deadline, child scope,
+PID reuse, and signal escalation. The daemon logs each stopped search.
+
 ### Keep persistent preview migrations tolerant of branch ledger order (2026-09-17)
 
 **When:** redeploying a branch preview after merging `main`. The preview keeps
