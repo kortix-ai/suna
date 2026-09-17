@@ -9,6 +9,8 @@ import { findConflictMarkers } from '../src/core/conflict-markers';
 const OPEN = `${'<'.repeat(7)} HEAD`;
 const CLOSE = `${'>'.repeat(7)} 6f52904b61`;
 const MIDDLE = '='.repeat(7);
+const BASE_LABELLED = `${'|'.repeat(7)} 88cb598b14`;
+const BASE_BARE = '|'.repeat(7);
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
@@ -28,6 +30,27 @@ describe('findConflictMarkers', () => {
 
   it('does not flag prose that merely mentions the characters', () => {
     const prose = ['Resolve it, then delete the ' + OPEN.trim() + ' line.', 'a >>> b', '<<< c'];
+    expect(findConflictMarkers(prose.join('\n'))).toEqual([]);
+  });
+
+  it('finds a diff3 BASE marker, labelled or bare', () => {
+    // `merge.conflictStyle = diff3` writes a third section. A hand-resolution
+    // that greps only for the two familiar markers leaves these behind, and
+    // they are as invisible to CI as the conflict this file exists to catch —
+    // 5 were already committed on `main` when this case was added.
+    expect(findConflictMarkers([BASE_LABELLED, BASE_BARE].join('\n'))).toEqual([
+      { line: 1, kind: 'base', text: BASE_LABELLED },
+      { line: 2, kind: 'base', text: BASE_BARE },
+    ]);
+  });
+
+  it('finds all three sections of a diff3 conflict', () => {
+    const content = [OPEN, 'ours', BASE_LABELLED, 'base', MIDDLE, 'theirs', CLOSE].join('\n');
+    expect(findConflictMarkers(content).map((m) => m.kind)).toEqual(['open', 'base', 'close']);
+  });
+
+  it('does not flag prose or a table that merely uses pipes', () => {
+    const prose = ['| a | b |', '|---|---|', 'a || b', '|| c'];
     expect(findConflictMarkers(prose.join('\n'))).toEqual([]);
   });
 
