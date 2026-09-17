@@ -124,7 +124,6 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(code).toContain(
       "const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut')",
     );
-
   });
 
   test('the create-into account is a field IN the form, above the repository fields', () => {
@@ -524,8 +523,10 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     expect(code).not.toContain('phase');
     expect(code).not.toContain('provision-progress');
     expect(code).not.toContain('provision-phases');
-    expect(code).toContain(
-      'const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();',
+    // Multi-line since `limitReached` joined the destructure (2026-09-17);
+    // the pin is on WHICH names the page takes from the hook, not the wrap.
+    expect(code.replace(/\s+/g, ' ')).toContain(
+      'const { create, status, error: createError, retry, canRetry, limitReached, } = useCreateWorkspace();',
     );
   });
 

@@ -23,8 +23,6 @@ Options:
   --inherit-secrets              Remove session narrowing; use the agent grant.
   --connector <alias>=<connection-id>  Replace connector bindings (repeatable).
   --no-connectors                Replace explicit connector bindings with none.
-  --require-connector <alias>    Replace required connector aliases (repeatable).
-  --no-required-connectors       Require no connector aliases.
   --json                         Print the authoritative scope as JSON.
   --project <id>                 Operate on this project id.
   --host <name>                  Operate on this logged-in host.
@@ -74,8 +72,6 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
   const inheritSecrets = takeFlagBool(rest, ["--inherit-secrets"]);
   const connectorPairs = takeFlagValues(rest, ["--connector"]);
   const noConnectors = takeFlagBool(rest, ["--no-connectors"]);
-  const requiredConnectors = takeFlagValues(rest, ["--require-connector"]);
-  const noRequiredConnectors = takeFlagBool(rest, ["--no-required-connectors"]);
 
   const secretModes =
     Number(secrets.length > 0) + Number(noSecrets) + Number(inheritSecrets);
@@ -86,11 +82,6 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
   }
   if (connectorPairs.length > 0 && noConnectors) {
     throw new Error("Choose either --connector or --no-connectors.");
-  }
-  if (requiredConnectors.length > 0 && noRequiredConnectors) {
-    throw new Error(
-      "Choose either --require-connector or --no-required-connectors.",
-    );
   }
 
   const sessionId = rest.shift();
@@ -104,9 +95,6 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
   if (connectorPairs.length > 0)
     input.connector_bindings = parseBindings(connectorPairs);
   else if (noConnectors) input.connector_bindings = {};
-  if (requiredConnectors.length > 0)
-    input.require_connectors = unique(requiredConnectors);
-  else if (noRequiredConnectors) input.require_connectors = [];
 
   return {
     sessionId,
@@ -153,9 +141,6 @@ function printScope(
   );
   process.stdout.write(
     `  ${C.dim}secrets    ${C.reset}${secretScopeLabel(scope.secrets_allowlist)}\n`,
-  );
-  process.stdout.write(
-    `  ${C.dim}required   ${C.reset}${listScopeLabel(scope.required_connectors)}\n`,
   );
   process.stdout.write(
     `  ${C.dim}connectors ${C.reset}${bindings.length === 0 ? "None" : ""}\n`,

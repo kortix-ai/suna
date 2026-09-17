@@ -160,6 +160,7 @@
     "actions": {
       "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
+      "upgrade": "Tarif upgraden",
       "logOut": "Abmelden",
       "signingOut": "Abmeldung läuft",
       "back": "Zurück zu den Projekten"
@@ -18516,7 +18517,13 @@
       "text7f59f014cd7b": "Beim gewünschten Inhaber bereits installiert?",
       "text9180f7df8906": "Eine bereits von Ihnen verwaltete Installation verknüpfen",
       "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft.",
-      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…"
+      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…",
+      "textc6309c452031": "Gemeinsames Konto verbinden",
+      "textded4b88e52f7": "Noch kein gemeinsames Konto",
+      "textc3bafa5156b4": "Noch kein eigenes Konto",
+      "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
+      "text3d6627454174": "Anmeldedaten festlegen",
+      "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden."
     }
   },
   "projectOnboarding": {

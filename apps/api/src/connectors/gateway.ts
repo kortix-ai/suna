@@ -36,6 +36,7 @@ import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy'
 import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
+import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 
 export interface GatewayConnector {
   connectorId: string;
@@ -45,6 +46,14 @@ export interface GatewayConnector {
   connectionId?: string | null;
   connectionIsDefault?: boolean;
   connectionMetadata?: Record<string, unknown>;
+  /**
+   * Human-facing name + ownership of the resolved connection, carried through
+   * so a successful call can echo WHICH account ran it (`CallResult.account`).
+   * A transcript that never names the account cannot answer "whose mailbox
+   * sent that" on read-back.
+   */
+  connectionLabel?: string | null;
+  connectionOwnerType?: ConnectionOwnerType | null;
   slug: string;
   provider:
     | 'pipedream'
@@ -130,7 +139,9 @@ export interface GatewayDeps {
   explainMissingConnector?(
     projectId: string,
     slug: string,
-  ): Promise<'connector_not_found' | 'connector_not_connected' | 'connector_disabled'>;
+  ): Promise<
+    'connector_not_found' | 'connector_not_connected' | 'connector_disabled' | 'account_required'
+  >;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -271,8 +282,15 @@ export interface CallInput {
   approvalExecutionId?: string | null;
 }
 
+/** Which account a successful call ran as — echoed on the wire (router.ts). */
+export interface CallResultAccount {
+  connection_id: string;
+  label: string;
+  owner_type: string;
+}
+
 export type CallResult =
-  | { status: 'ok'; data: unknown; risk: Risk }
+  | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
   | { status: 'denied'; reason: string }
   | {
       status: 'pending_approval';
@@ -336,6 +354,20 @@ async function resolveConnectorForCall(
   return {
     slug: input.connectorSlug,
     connector: await deps.loadConnectorBySlug(input.projectId, input.connectorSlug),
+  };
+}
+
+/**
+ * The account echo for a successful call — `undefined` when the connector
+ * resolved no connection (a no-credential/public connector, or a Computers
+ * profile keyed on tunnelIds rather than a `connector_connections` row).
+ */
+function gatewayConnectorAccount(connector: GatewayConnector): CallResultAccount | undefined {
+  if (!connector.connectionId) return undefined;
+  return {
+    connection_id: connector.connectionId,
+    label: connector.connectionLabel ?? '',
+    owner_type: connector.connectionOwnerType ?? 'project',
   };
 }
 
@@ -684,7 +716,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
-        return { status: 'ok', data: outcome.data, risk: action.risk };
+        return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
       }
       if (outcome.kind === 'permission_required') {
         await audit(deps, input, connector, 'pending_approval', action.risk, {
@@ -813,7 +845,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
       });
-      return { status: 'ok', data: result.data, risk: action.risk };
+      return { status: 'ok', data: result.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore

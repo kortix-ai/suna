@@ -332,20 +332,16 @@ export async function setConnectorCredentialShared(
       connectorId: connectors.connectorId,
       accountId: connectors.accountId,
       providerType: connectors.providerType,
-      authorizationStrategy: connectors.authorizationStrategy,
       authSecret: connectors.authSecret,
     })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!connector) return { ok: false, error: 'connector not found', status: 404 };
-  if (connector.authorizationStrategy !== 'project') {
-    return {
-      ok: false,
-      error: 'Shared credentials require a project authorization strategy',
-      status: 409,
-    };
-  }
+  // No more "this connector's strategy must be project" gate — see
+  // connection-access.ts. A shared (project-owned) and a private (member-owned)
+  // account can coexist on the same connector now, so storing a shared
+  // credential is never refused for the connector's other accounts' shape.
   if (connector.authSecret) {
     return {
       ok: false,

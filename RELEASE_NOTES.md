@@ -1,27 +1,20 @@
-Private provider key pools, print whole conversations, and Entra SCIM fixes
+Per-call connector accounts, no more guessed account, and a sign-out fix
 
 ### New
 
-- **Private provider key pools.** Bring several keys for one provider, keep them private or share them with named members, and let each session hold its own key. Sessions fail over to the next key and report the earliest retry time when a pool is exhausted. Gemini and ChatGPT keys pool too, and pooled keys are managed in Models. Pool access is bound to the session owner, and a pool is checked against the model you actually picked.
-- **Print a whole conversation.** Cmd+P prints the full session as a clean document — every message, not one clipped screen of the app.
-- **Queued prompts you can see and edit.** Queued messages show in a list above the composer. Press Up to edit the last one, and Resume picks the queue back up.
-- **Microsoft Teams install reports what happened.** One-click install publishes in the background, lands on Channels with a real status, and offers a retry with the actual reason when publishing fails.
-- **Astra** is available as a ChatGPT subscription model.
+- **Choose which account a connector runs as, per call.** A connection now carries the accounts you may run it as, and the account is chosen when the connector is called rather than pinned to the whole session. The connector catalog, the SDK and the CLI all report the available accounts and the pinned default, and `connectors/describe` shows accounts instead of only tool counts.
+- **An ambiguous connector call is refused, not guessed.** When several accounts are reachable and none is named or pinned as default, the call is denied with `account_required` instead of silently picking one — no more mail sent from the wrong mailbox.
+- **Choosing a connector account is discoverable in the CLI** rather than a dead end.
 
 ### Improved
 
-- **Faster project boot.** New sessions fetch the project from storage instead of cloning it, and start sooner.
-- **Faster session lists.** A project's session list is now a page, not the whole inventory.
-- **Menus open instantly** — menus, popovers, tooltips and the command palette no longer wait to appear.
-- **Smaller sandbox images**, which start faster.
-- **Git connections** are organized per account, with one instance backend and an identity that cannot drift. Verifying with GitHub no longer signs you out, and the new-connection screen always has a way out.
+- **A connector you have your own accounts for reads as connected**, not "needs setup", and the admin connector list now agrees with what each caller can actually reach.
+- Connector accounts are per connection instead of a connector-level strategy, and connections the old strategy flag made unreachable are revoked.
+- The sandbox daemon's internals were reorganised behind explicit service boundaries, with its HTTP controllers separated from its adapters.
 
 ### Fixed
 
-- **Microsoft Entra directory sync.** Patches apply atomically, large directories paginate, groups survive while a user is inactive or a sign-in session is stale, deactivation and single-member removal behave correctly, and users resolve across the whole directory.
-- **The gateway retries a slow internal call** instead of answering "Gateway unavailable".
-- **Composer drafts survive session startup**, and opening session settings no longer closes itself while the composer takes focus.
-- **One session lifecycle drain at a time** per API task, so queued work is not claimed twice.
-- **Session attachments** are more reliable, and model prices show correctly in the ChatGPT picker.
-- Security hardening across session cursors, webhook signing keys, and the remaining high-severity scanner findings.
-- Database migrations apply cleanly on staging and production.
+- **A failed identity check no longer signs you out.** A failed `getUser` round trip used to end the browser session; it no longer does, and the new-connection screen offers Upgrade when you are at the project cap.
+- **Connector authorization:** finalizing a connection that the whole project can use now requires the connections-manage capability, matching the gate the connect step already applied. Previously a role with connector-write but not connections-manage could complete a project-wide shared connection.
+- Auto-created connections no longer claim to be the default, and the CLI's account column no longer truncates away the pinned-default marker.
+- Stale connector banner copy and a dead connector detail shell removed; the account list renders for every direct provider.

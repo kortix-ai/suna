@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { pickLlmGatewayKey } from '../opencode'
+import { pickLlmGatewayKey } from '../harness/open-code/lifecycle'
 
 describe('pickLlmGatewayKey', () => {
   test('current box: the session PAT in KORTIX_TOKEN wins', () => {

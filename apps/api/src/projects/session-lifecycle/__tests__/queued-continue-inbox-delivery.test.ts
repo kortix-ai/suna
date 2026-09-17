@@ -97,7 +97,7 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let promptResponsePlan: Array<'failed' | 'deduplicated' | 'connector-required'> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> = [];
 // Models the sandbox edge DISCARDING an oversized body while answering ok: the
 // POST is captured, but the runtime never holds that message. Scoped to the
 // FIRST posted id, so the delivery's retry lands and the test does not have to
@@ -242,7 +242,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
         if (idempotencyKey) seenKeys.add(idempotencyKey);
       };
       const plannedResponse = promptResponsePlan.shift();
-      if (plannedResponse === 'connector-required') return Response.json({ code: 'CONNECTOR_CONNECTION_REQUIRED', message: 'Create the required connections before continuing this session.' }, { status: 409 });
+      // A permanent runtime refusal: any 4xx the classifier treats as terminal
+      // (`throwIfPromptRefused` — not 404/408/409/429). The old fixture answered
+      // 409 CONNECTOR_CONNECTION_REQUIRED, which no route emits since the
+      // session connector gate was retired (2026-09-16); a 409 is retryable now.
+      if (plannedResponse === 'permanent-refusal') return Response.json({ code: 'PROMPT_REJECTED', message: 'The runtime rejected this prompt.' }, { status: 422 });
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
         remember();
@@ -567,12 +571,12 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(failedCalls).toHaveLength(0);
   });
 
-  test('connector refusals fail once and retain the actionable error', async () => {
-    promptResponsePlan = ['connector-required'];
+  test('a permanent runtime refusal fails once and retains the actionable error', async () => {
+    promptResponsePlan = ['permanent-refusal'];
     expect(await executeQueuedContinue(baseRow())).toBe('failed');
     expect(capturedBodies).toHaveLength(1);
     expect(failedCalls.at(-1)).toMatchObject({
-      message: 'Create the required connections before continuing this session.',
+      message: 'The runtime rejected this prompt.',
       options: { retryable: false },
     });
   });

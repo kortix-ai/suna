@@ -160,6 +160,7 @@
     "actions": {
       "create": "Направи пројекат",
       "tryAgain": "Покушај поново",
+      "upgrade": "Надогради план",
       "logOut": "Одјави се",
       "signingOut": "Одјављивање",
       "back": "Назад на пројекте"
@@ -18516,7 +18517,13 @@
       "text7f59f014cd7b": "Već je instalirana kod željenog vlasnika?",
       "text9180f7df8906": "Poveži instalaciju kojom već administrirate",
       "text0b0e4c425624": "Već je povezana sa {value0, plural, one {# drugim Kortix nalogom} few {# druga Kortix naloga} other {# drugih Kortix naloga}}.",
-      "text7dac2ca010fe": "Припрема целог транскрипта…"
+      "text7dac2ca010fe": "Припрема целог транскрипта…",
+      "textc6309c452031": "Повежи заједнички налог",
+      "textded4b88e52f7": "Још нема заједничког налога",
+      "textc3bafa5156b4": "Још немате сопствени налог",
+      "textea5d0ffa0962": "Заједнички налог повезује менаџер пројекта.",
+      "text3d6627454174": "Постави акредитив",
+      "text929505ef815a": "Још ниједан налог није повезан. Додајте сопствени испод, или замолите менаџера пројекта да повеже заједнички налог."
     }
   },
   "projectOnboarding": {
