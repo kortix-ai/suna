@@ -1424,3 +1424,17 @@ requests occupied all eight slots; only 24 unarchived sessions had a recorded
 archive error. The supervised worker restarted cleanly. Archive confirmations
 rose from 8,198 to 8,216 during the first observed interval, with no new
 recorded archive errors. Keep checking provider errors before another increase.
+
+A 778 MiB destination file read-back stopped after about 19 minutes when its
+Platinum sandbox stopped. The session retained 34 of 35 file receipts and
+remained `apply-review`. The old verifier deleted each completed 64 MiB chunk,
+so a retry would have downloaded the file again from byte zero. The private
+verifier now stores each chunk under the session artifact directory. It records
+each chunk size and SHA-256 in the destination-bound SQLite read-back ledger.
+On retry it hashes cached chunks again, downloads only missing or corrupt
+chunks, and checks the full source manifest SHA-256 before recording the file
+receipt. It deletes the chunk cache after that receipt. The recovery worker's
+child timeout now increases with the largest manifest file, capped at four
+hours. A focused test interrupted chunk two, resumed without downloading
+chunk one, and verified the full file hash. A live retry of the 778 MiB file
+has not completed yet; the session remains in review until it does.
