@@ -1456,7 +1456,8 @@ Production's session list currently pages by `project_sessions.updated_at`.
 That field is bookkeeping and also drives cleanup jobs, so the backfill did
 not rewrite it. The canonical branch adds an opt-in project metadata flag,
 `session_list_order: "activity"`, that pages by `last_activity_at` with a
-separate sealed cursor. A read-only query over the 16,110-row Suna project
+separate sealed cursor. Create and patch reject client writes to this
+server-managed activity stamp. A read-only query over the 16,110-row Suna project
 returned two 50-row pages with zero overlap; the first page took 42 ms in
 `EXPLAIN ANALYZE`. Do not set the project flag until the branch is deployed.
 After deployment, set it on both destination projects, then verify the first
