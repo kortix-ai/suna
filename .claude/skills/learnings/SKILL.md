@@ -21,6 +21,23 @@ linked, not inlined.
 
 ## Register
 
+### Keep large migration staging on persistent disk and resume verified prefixes (2026-09-17)
+
+**When:** transferring a workspace archive larger than 1 GiB, check the destination
+filesystem and preserve a SHA-256-checked upload prefix across retries. *Near-miss:*
+a 4.82 GB Suna archive filled Platinum's 2 GB `/tmp` and later hit its idle stop.
+*Enforcer:* the private uploader stages under `/home/kortix`, verifies resumed
+prefixes, and retries idempotent file calls. `restore-workspace.test.py` rejects
+a second extraction while prior staging exists.
+
+### Preserve the capture queue when an isolated worker loses the lease (2026-09-17)
+
+**When:** manually capturing a legacy sandbox, claim its queue state before launch
+and treat an existing session lease as an active worker, not a capture failure.
+*Near-miss:* an isolated attempt collided with the coordinator and temporarily
+marked a live capture `capture-review`. *Enforcer:* the private isolated wrapper
+restores `prepared` on lease conflict; the per-session lease blocks duplicate work.
+
 ### Pace provider mutations across all migration workers (2026-09-15)
 
 **When:** increasing migration concurrency, enforce a shared request budget in

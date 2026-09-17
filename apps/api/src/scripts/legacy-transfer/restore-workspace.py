@@ -1,4 +1,4 @@
-import os,json,tarfile,pathlib,stat,hashlib,subprocess,tempfile,shutil
+import os,json,tarfile,pathlib,stat,hashlib,subprocess,tempfile,shutil,glob
 
 def restore(base, project, workspace="/workspace"):
  target=workspace+'/'+project
@@ -28,6 +28,7 @@ def restore(base, project, workspace="/workspace"):
     assert st.st_size==e['size']
     with open(p,'rb') as f: assert hashlib.file_digest(f,'sha256').hexdigest()==e['sha256']
  if not os.path.lexists(target):
+  assert not glob.glob(workspace+'/.legacy-restore-'+project+'-*'), 'Existing restore staging; reconcile it before retry'
   staging=tempfile.mkdtemp(prefix='.legacy-restore-'+project+'-',dir=workspace)
   try:
    with tarfile.open(base+'/workspace.tar.gz') as t:

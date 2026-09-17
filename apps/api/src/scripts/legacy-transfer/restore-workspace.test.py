@@ -57,6 +57,11 @@ class RestoreTests(unittest.TestCase):
   (self.base/'workspace.tar.gz').write_bytes(b'corrupted')
   with self.assertRaises(AssertionError): self.run_restore()
   self.assertFalse((self.workspace/PROJECT).exists())
+ def test_existing_restore_staging_blocks_duplicate_extraction(self):
+  pending=self.workspace/('.legacy-restore-'+PROJECT+'-pending');pending.mkdir()
+  with self.assertRaisesRegex(AssertionError,'Existing restore staging'): self.run_restore()
+  self.assertTrue(pending.is_dir())
+  self.assertFalse((self.workspace/PROJECT).exists())
  def test_changed_symlink_target_is_rejected(self):
   self.run_restore(); p=self.workspace/PROJECT/'external';p.unlink();p.symlink_to('/mnt/other')
   with self.assertRaises(AssertionError):self.run_restore()
