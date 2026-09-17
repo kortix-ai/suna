@@ -21,6 +21,10 @@ linked, not inlined.
 
 ## Register
 
+### Keep established sandbox IDs immutable during migration recovery (2026-09-17)
+
+**Rule:** If a destination sandbox is permanently missing, do not clear its established `external_id` to reuse the session URL. Create a replacement session, verify its history and files, then retire the failed partial session. **Near-miss:** two unverified Suna sandboxes returned provider 404 and rejected backup restore. A guarded reset attempt raised `established session sandbox identity is immutable`; PostgreSQL rolled back. **Enforcement:** `kortix.guard_session_sandbox_identity()` blocked the unsafe update. The private replacement workflow verified both new histories and workspaces before soft-deleting the old partial sessions; the ledger retains old-to-new IDs.
+
 ### Recheck a provider 404 before declaring a session permanently lost (2026-09-17)
 
 **Rule:** On a stopped or archiving session, do not treat one provider 404 as permanent data loss. Recheck provider state and keep the session identity while the result is uncertain. **Incident:** Suna import `0ae2a972` showed "computer lost" after a Platinum 404 at 16:03 UTC; Platinum returned the same sandbox as `archived` with a completed backup at 17:44 UTC. A guarded production repair cleared the false loss flag. **Enforcement:** the parked-runtime verifier already heals a settled runtime, but its batch can delay repair. A durable missing-state confirmation before the loss card remains to be implemented.
