@@ -1438,3 +1438,26 @@ child timeout now increases with the largest manifest file, capped at four
 hours. A focused test interrupted chunk two, resumed without downloading
 chunk one, and verified the full file hash. A live retry of the 778 MiB file
 has not completed yet; the session remains in review until it does.
+
+### Historical session dates and sidebar order (2026-09-17)
+
+Production import creation set `project_sessions.created_at` to import time.
+The sidebar had no `metadata.last_activity_at` for 16,683 of 16,685 migrated
+sessions. A source Data API read supplied each immutable thread `created_at`;
+the cutoff ledger and retained message records supplied conversation activity.
+The backfill matched all 16,685 destination rows by project, source ref, thread
+ID, and destination session ID. It changed `created_at` and set
+`metadata.last_activity_at`, preserving two newer destination activity stamps.
+The production read-back found zero creation-date mismatches and zero missing
+activity stamps. The original destination dates are in private, mode-0600
+`session-dates-before-2026-09-17T16-14-55-449Z.jsonl`.
+
+Production's session list currently pages by `project_sessions.updated_at`.
+That field is bookkeeping and also drives cleanup jobs, so the backfill did
+not rewrite it. The canonical branch adds an opt-in project metadata flag,
+`session_list_order: "activity"`, that pages by `last_activity_at` with a
+separate sealed cursor. A read-only query over the 16,110-row Suna project
+returned two 50-row pages with zero overlap; the first page took 42 ms in
+`EXPLAIN ANALYZE`. Do not set the project flag until the branch is deployed.
+After deployment, set it on both destination projects, then verify the first
+page and one cursor continuation through the live API and sidebar.

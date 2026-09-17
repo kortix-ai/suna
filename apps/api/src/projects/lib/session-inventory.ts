@@ -175,6 +175,8 @@ export interface SessionListCursor {
 export interface SessionCursorScope {
   projectId: string;
   viewerId: string;
+  /** Separates activity-order cursors from updated_at-order cursors. */
+  ordering?: 'activity';
 }
 
 /** GCM nonce and authentication-tag sizes, pinned on both sides. */
@@ -184,7 +186,7 @@ const CURSOR_TAG_BYTES = 16;
 function cursorKey(scope: SessionCursorScope): Buffer {
   if (!config.API_KEY_SECRET) throw new Error('API_KEY_SECRET is required');
   return Buffer.from(
-    hkdfSync('sha256', config.API_KEY_SECRET, scope.projectId, `kortix-session-cursor-v1:${scope.viewerId}`, 32),
+    hkdfSync('sha256', config.API_KEY_SECRET, scope.projectId, `kortix-session-cursor-v1:${scope.viewerId}${scope.ordering === 'activity' ? ':activity' : ''}`, 32),
   );
 }
 

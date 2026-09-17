@@ -21,6 +21,10 @@ linked, not inlined.
 
 ## Register
 
+### Restore legacy activity dates without changing housekeeping timestamps (2026-09-17)
+
+**Rule:** For imported sessions, restore source `created_at` and a separate activity stamp. Keep `updated_at` as bookkeeping when cleanup jobs use it. Check the list cursor's sort key before claiming the sidebar is fixed. **Incident:** all 16,685 Suna/Trimaran imports had import-time creation dates; 16,683 lacked `last_activity_at`. Production pages by `updated_at`, so stamping activity alone did not reorder the first page. **Enforcement:** the private backfill verifies each source/destination identity and preserves newer activity, then reads all 16,685 rows back. The opt-in activity-order list uses a cursor sealed to that ordering; its unit test rejects a cursor from the other mode.
+
 ### Keep large migration staging on persistent disk and resume verified prefixes (2026-09-17)
 
 **When:** transferring a workspace archive larger than 1 GiB, check the destination

@@ -480,6 +480,16 @@ describe('session list cursor', () => {
     expect(decodeSessionCursor(encoded, SCOPE)?.sessionId).toBe('S1');
   });
 
+  test('an activity-order cursor does not open under updated-at ordering', () => {
+    const activityScope = { ...SCOPE, ordering: 'activity' as const };
+    const cursor = encodeSessionCursor(
+      { updatedAt: new Date('2026-06-22T15:13:07.896Z'), sessionId: 'LEGACY-1' },
+      activityScope,
+    );
+    expect(decodeSessionCursor(cursor, activityScope)?.sessionId).toBe('LEGACY-1');
+    expect(decodeSessionCursor(cursor, SCOPE)).toBeNull();
+  });
+
   test('a session id containing the separator survives the round trip', () => {
     // The payload is split on the FIRST separator, so only the timestamp half
     // is bounded by it. A split on the last one would truncate this id.
