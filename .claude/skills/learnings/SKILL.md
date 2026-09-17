@@ -21,6 +21,336 @@ linked, not inlined.
 
 ## Register
 
+### Keep established sandbox IDs immutable during migration recovery (2026-09-17)
+
+**Rule:** If a destination sandbox is permanently missing, do not clear its established `external_id` to reuse the session URL. Create a replacement session, verify its history and files, then retire the failed partial session. **Near-miss:** two unverified Suna sandboxes returned provider 404 and rejected backup restore. A guarded reset attempt raised `established session sandbox identity is immutable`; PostgreSQL rolled back. **Enforcement:** `kortix.guard_session_sandbox_identity()` blocked the unsafe update. The private replacement workflow verified both new histories and workspaces before soft-deleting the old partial sessions; the ledger retains old-to-new IDs.
+
+### Recheck a provider 404 before declaring a session permanently lost (2026-09-17)
+
+**Rule:** On a stopped or archiving session, do not treat one provider 404 as permanent data loss. Recheck provider state and keep the session identity while the result is uncertain. **Incident:** Suna import `0ae2a972` showed "computer lost" after a Platinum 404 at 16:03 UTC; Platinum returned the same sandbox as `archived` with a completed backup at 17:44 UTC. A guarded production repair cleared the false loss flag. **Enforcement:** the parked-runtime verifier already heals a settled runtime, but its batch can delay repair. A durable missing-state confirmation before the loss card remains to be implemented.
+
+### Revalidate archived files after a sandbox restart (2026-09-17)
+
+**Rule:** When retrying a workspace import, check every required archive file in the live sandbox before invoking the native importer. Restore missing files from the captured local archive and verify their hashes. Interrupt a runtime start that has produced no output for six minutes. **Incident:** Four Suna retries retained a workspace restore receipt but their live sandboxes lacked `manifest.json` and `workspace.tar.gz`; another start remained in `starting` without progress. **Enforcement:** the private importer checks and restores missing archive copies; the recovery worker retries this exact diagnostic and watches start-stage inactivity.
+
+### Keep read-back chunks below the observed provider reset size (2026-09-17)
+
+**Rule:** When a provider resets a file download before the first chunk completes, reduce new chunk size below the observed failure point. Preserve the size of any already verified chunk series so retries do not discard its prefix. **Incident:** Platinum reset the 778 MiB migration file read-back after about 11 MiB of a 64 MiB first chunk. The session stayed in review. **Enforcement:** the private verifier now starts new large-file reads at 8 MiB, resumes the chunk size stored in the first verified receipt, and still requires the full source SHA-256. Its interruption test changes configured chunk size between attempts and proves the first chunk is reused.
+
+### Restore legacy activity dates without changing housekeeping timestamps (2026-09-17)
+
+**Rule:** For imported sessions, restore source `created_at` and a separate activity stamp. Keep `updated_at` as bookkeeping when cleanup jobs use it. Check the list cursor's sort key before claiming the sidebar is fixed. **Incident:** all 16,685 Suna/Trimaran imports had import-time creation dates; 16,683 lacked `last_activity_at`. Production pages by `updated_at`, so stamping activity alone did not reorder the first page. **Enforcement:** the private backfill verifies each source/destination identity and preserves newer activity, then reads all 16,685 rows back. The opt-in activity-order list uses a cursor sealed to that ordering; its unit test rejects a cursor from the other mode. The API rejects client writes to the activity stamp.
+
+### Keep large migration staging on persistent disk and resume verified prefixes (2026-09-17)
+
+**When:** transferring a workspace archive larger than 1 GiB, check the destination
+filesystem and preserve a SHA-256-checked upload prefix across retries. *Near-miss:*
+a 4.82 GB Suna archive filled Platinum's 2 GB `/tmp` and later hit its idle stop.
+*Enforcer:* the private uploader stages under `/home/kortix`, verifies resumed
+prefixes, and retries idempotent file calls. `restore-workspace.test.py` rejects
+a second extraction while prior staging exists.
+
+### Preserve the capture queue when an isolated worker loses the lease (2026-09-17)
+
+**When:** manually capturing a legacy sandbox, claim its queue state before launch
+and treat an existing session lease as an active worker, not a capture failure.
+*Near-miss:* an isolated attempt collided with the coordinator and temporarily
+marked a live capture `capture-review`. *Enforcer:* the private isolated wrapper
+restores `prepared` on lease conflict; the per-session lease blocks duplicate work.
+
+### Pace provider mutations across all migration workers (2026-09-15)
+
+**When:** increasing migration concurrency, enforce a shared request budget in
+addition to pipeline limits. *Incident:* 112 pipelines exhausted Platinum's
+20-writes/second organization limit; 25 creations had no runtime afterward.
+*Enforcer:* the private SQLite write budget is tested across independent connections.
+Mutation retries share that budget; creation is paced separately. Scoped recovery
+retains owners and session IDs and requires full verification before completion.
+
+### Apply captured-workspace reconciliation to every migrated source (2026-09-15)
+
+**When:** a valid captured archive waits for its source sandbox to finish archiving,
+revalidate bytes and inventory, then track source cleanup independently. *Incident:*
+Suna accumulated 38 capture reviews although the equivalent Trimaran release was
+already implemented. *Enforcer:* the periodic reconciler now applies the same
+Suna guards, excludes active writers, and records pending cleanup without claiming
+source archive completion or bypassing destination file verification.
+
+### Scope an internal migration quota override to the original owner and UUID (2026-09-15)
+
+**When:** using the existing internal `enforceAccountCap: false` create command,
+validate the account, project, mapped owner, destination UUID and archive proof.
+*Incident:* the public create quota prevented the authorized Libremax transfer.
+*Enforcer:* the private migration policy has an expiry and scope tests; production
+commands use original actor IDs and deterministic idempotency keys. The canary
+passed 79 independent file readbacks before broad activation. Keep runner-side
+concurrency limits because this flag also skips active-session caps.
+
+### Treat session-create quotas separately from provider capacity (2026-09-15)
+
+**When:** probing migration throughput, distinguish application create quotas
+from provider throttles. *Incident:* a 64-pipeline probe hit the 100/hour/project
+replica-local create bucket; retries replayed its terminal failure as HTTP 500.
+*Enforcer:* the private quota retry policy tests restrict retries to known quota
+failures and fixed destination IDs. The operator checks destination existence
+before a fresh lifecycle command key. Account seat increases do not change this cap.
+
+### Classify the terminal failure separately from recovered retries (2026-09-15)
+
+**When:** controlling migration concurrency from subprocess output, do not treat
+an earlier recovered 429 as the cause of a later failed attempt. *Incident:*
+a 48-pipeline probe reduced capacity when a file readback returned 404 after
+an earlier throttle recovered. *Enforcer:* retry output uses a separate marker;
+the private capacity probe classifies historical logs from their terminal error.
+Missing file readbacks retain their failed verification status.
+
+### Distinguish recovered throttles from failed imports when probing capacity (2026-09-15)
+
+**When:** scaling a transfer, record endpoint-level pressure and completed imports.
+Honor `Retry-After` for rejected 429 requests. Do not replay the whole import for
+one rejected request. A recovered throttle postpones scaling; a failed attempt
+reduces concurrency. *Incident:* a 32-pipeline probe hit Platinum `/exec` and
+`/files` throttles, then overly broad backoff reduced successful work to nine.
+*Enforcer:* controller tests cover recovered throttles, hard backoff, and expiring
+probe holds. File finalization tests verify corruption cannot replace a target.
+
+### Recover migration capacity after the rate-limit window ends (2026-09-15)
+
+**When:** throttling a migration, base recovery on a quiet time window and
+successful imports. Do not require an entire long batch to contain zero past
+errors. *Incident:* one early burst held Suna at 13 pipelines for more than an
+hour despite a configured 64. A bounded 500-item run also drained to one capture.
+*Enforcer:* `concurrency-controller.test.ts` checks the five-minute quiet window,
+20-success threshold, +4 recovery steps, 25% backoff, floor, and ceiling.
+
+### Recheck externally archiving sandboxes without starving later work (2026-09-15)
+
+**When:** an archive worker observes an existing archive transition, schedule a
+later recheck and let other stopped sessions enter the queue. Reserve each new
+archive request before awaiting the provider; cap migration-requested transitions
+at eight. *Incident:* eight externally archiving Daytona sandboxes occupied every
+selection slot for 45 minutes. Later stopped Platinum sessions were never selected.
+*Enforcer:* the private archive worker uses recheck timestamps and request reservations.
+
+### Scope retry permission changes to committed transfer artifacts (2026-09-15)
+
+**When:** retrying a sandbox import, name the expected archive files explicitly.
+Do not apply `chmod` to a wildcard that includes upload staging files.
+*Incident:* interrupted Platinum uploads left root-owned `.transfer-*` files.
+The runtime user's wildcard chmod failed before native import could start.
+*Enforcer:* the private importer lists the three history artifacts and, for
+captured workspaces, the manifest and workspace archive. Failure output is saved
+in the private artifact directory for diagnosis.
+
+### Prepare cross-source workspaces and track source cleanup independently (2026-09-15)
+
+**When:** importing legacy sessions, include verified cross-source workspace
+policies in preparation. Recheck project, account, owner identity, and sandbox
+against the evidence source. Keep archive cleanup pending until live state confirms it.
+*Incident:* 56 Trimaran threads were excluded from preparation; 40 valid captures
+waited on source cleanup. Import can proceed after archive SHA-256 and inventory
+revalidation when the source is archived or archiving. This supersedes the earlier
+requirement to block destination import on delayed source archive completion.
+*Enforcer:* private preparation guards, `release-captured-trimaran.ts`, and the
+independent `source_cleanup` ledger. Full destination file verification is unchanged.
+
+### Measure CPU during live migration file readback (2026-09-15)
+
+**When:** a migration downloads files for verification, use bounded response
+reads and file writes with backpressure. Verify every byte and SHA-256 afterward.
+*Incident:* 15 Platinum import workers consumed most of one CPU core each while
+waiting in the Bun response-to-file path. Explicit reader/file-handle writes
+verified 34 live files in 2.83 seconds using 170 milliseconds of CPU.
+*Enforcer:* private `platinum-destination.test.ts` covers delayed chunks, empty
+files, stream failure, and partial-file cleanup. Retry only checkpointed imports.
+
+### Retry transport-stalled session imports from the existing checkpoint (2026-09-15)
+
+**When:** a batch stops on a source or destination connection failure, retain
+the prepared session and archive receipts. Before requeueing an apply review,
+verify the same destination `session_id`, project, owner, stopped state, and
+remote archive. Retry preparation and the batch without creating another
+session. *Near-miss:* five Suna imports reached `created` or `imported` before
+a transient network failure; Trimaran preparation also lost source connectivity.
+*Enforcer:* `requeue-transport-apply-reviews.ts` checks owner readback and both
+transport retry logs. The private batch and coordinator retry three times.
+
+### Confirm delayed Daytona archive transitions before releasing captures (2026-09-15)
+
+**When:** source capture writes `workspace_status=captured` before an archived
+box returns to `archived`, leave the queue in review. Recheck the original
+source ID and state, archive SHA-256, and capture failure log before stamping
+the lifecycle receipt. *Near-miss:* six Trimaran captures produced valid archives,
+but Daytona remained `archiving` beyond the 180-second lifecycle wait.
+*Enforcer:* `confirm-delayed-source-archives.ts` releases only an exact archived
+state with matching capture artifacts; the review worker retries every 120 seconds.
+
+### Preserve unlinked legacy tool rows as labeled native history (2026-09-15)
+
+**When:** a legacy tool row has no exact assistant or call link, keep its source
+role and metadata in the raw archive. If it is a source-compressed result, or
+its referenced assistant is absent from cutoff history, put its exact source
+content in a labeled native history message. Do not guess an assistant anchor.
+*Near-miss:* 171 compressed tool rows and one missing-assistant result blocked
+five production threads despite their source content being available.
+*Enforcer:* `projection.test.ts` covers both dispositions; the production pilot
+verified all six compressed rows in native history and retained 106 raw rows.
+
+### Retain malformed source tool arguments without inventing JSON (2026-09-15)
+
+**When:** legacy tool arguments are invalid JSON, put the exact string in
+`state.input.legacy_arguments` and keep the original row in the raw archive.
+Do not drop the full thread when the source has no matching tool result.
+*Near-miss:* one 234-row Suna thread remained in projection review because
+one 59-character argument string was malformed.
+*Enforcer:* `projection.test.ts` asserts the native error part keeps the string;
+production reassessment released that thread with zero unresolved rows.
+
+### Rotate a dead-lettered create key only after proving no session exists (2026-09-15)
+
+**When:** retrying a session create that hit a temporary cap, inspect the
+idempotency command. A `dead_lettered` command replays its old error forever.
+Require no bound `session_id`, an exact cap error, and owner GET 404. Keep the
+same destination session UUID and record one fresh idempotency key in the ledger.
+*Near-miss:* 27 Suna creates kept returning the stored 100-session error after
+the project had one running session. One rotated pilot imported successfully.
+*Enforcer:* production key rotation verifies command, destination absence, and
+archive checkpoint before permitting a new key.
+
+### Verify native attachment references by authenticated bytes (2026-09-15)
+
+**When:** comparing imported native file parts, expect the runtime proxy to
+replace a large inline `data:` URL with `/kortix/part/`. Verify session,
+message, and part IDs, then fetch the reference as the owner. Compare MIME,
+byte count, and SHA-256 with the captured source bytes.
+*Near-miss:* two production sessions stayed in apply review because their
+byte-identical images changed URL representation after import.
+*Enforcer:* production apply rejects any attachment reference or byte mismatch
+before setting `verified`; both reviewed sessions passed readback.
+
+### Preserve the original Daytona lifecycle state during source capture (2026-09-15)
+
+**When:** capturing a legacy workspace, record the source box state. Capture a
+`started` box in place. Start and return a `stopped` box to `stopped`. Start and
+return an `archived` box to `archived`. Hold transient/error states in review.
+*Near-miss:* 14 prepared captures blocked because boxes were no longer archived;
+some were actively used and must not be stopped by the transfer.
+*Enforcer:* production capture records initial/final states and requires a
+state-preservation timestamp before the batch marks capture complete.
+
+### Keep a thread in review when any image archive is pending (2026-09-15)
+
+**When:** preparing or reassessing a legacy thread, treat a pending image URL
+as a blocking condition even if the native projector reports no unresolved
+content block. Record the thread and continue the other queue items.
+*Near-miss:* one Suna batch stopped after 11 preparations because the image
+loader and projector disagreed. The retained checkpoint allowed a restart.
+*Enforcer:* production preparation and reassessment require zero pending image
+archives before moving a thread to `prepared` or `queued`.
+
+### Read both legacy tool metadata formats before blocking a result (2026-09-15)
+
+**When:** projecting a legacy `tool` row with an exact assistant link, read
+`frontend_content.tool_execution` and direct `metadata` fields. Preserve the
+result, call ID, function name, and return format in the native part.
+*Near-miss:* 50 results in one 507-message Suna thread had direct metadata;
+the first projector blocked all 50 although every assistant link matched.
+*Enforcer:* `projection.test.ts` covers both metadata formats; the production
+reassessment keeps unmatched links in review.
+
+### Stop verified migration sessions before the active-session cap (2026-09-15)
+
+**When:** importing many sessions into one project, check the native message count
+and owner before stopping a verified sandbox. Confirm `stopped` by session GET.
+*Near-miss:* the Suna destination reached its 100 active-session limit and
+blocked 27 prepared imports. None of those 27 lost their checkpoint.
+*Enforcer:* `stop-one-verified-session.ts` runs after each verified apply;
+`stop-verified-sessions.ts` checks message counts before bulk release.
+
+### Anchor legacy tool results only to their exact assistant message (2026-09-15)
+
+**When:** projecting a legacy `tool` row without assistant `tool_calls`, use its
+`assistant_message_id` and `frontend_content.tool_execution` only if they link
+to a projected assistant. Otherwise retain the row in review.
+*Near-miss:* one seven-result legacy thread remained ambiguous despite exact
+assistant links in metadata. The pilot retained all seven as native tool parts.
+*Enforcer:* `projection.test.ts` asserts the anchored disposition and tool part.
+
+### Compare cloned source inventories before declaring Storage bytes lost (2026-09-15)
+
+**When:** a legacy Storage metadata row returns missing bytes, search each
+approved source inventory for the same object ID, bucket, name, size, metadata,
+user metadata, creation time, and version. Verify the other source bytes and
+record the source reference before copying into the missing source namespace.
+*Near-miss:* 18 Trimaran Storage rows returned missing-resource responses; all
+18 matched Suna metadata rows, and 14 had byte-verified Suna archives.
+*Enforcer:* `recover-cross-source-storage.ts` rejects any identity mismatch and
+requires two archive SHA-256 readbacks before `verified-cross-source`.
+
+### Put an outer deadline around every migration subprocess (2026-09-15)
+
+**When:** orchestrating provider capture, archive, or restore commands, enforce a
+deadline outside the provider SDK. Record timeout exit `124` and retain the
+checkpoint for retry. Verify the source sandbox returns to its original state.
+*Near-miss:* four Suna capture subprocesses remained alive for 47 minutes after
+their SDK operations stopped making progress.
+*Enforcer:* the production batch runner terminates capture/archive after 15
+minutes and apply after 20 minutes; the ledger keeps incomplete work unverified.
+
+### Model every captured filesystem entry before restoring it (2026-09-14)
+
+**When:** migrating a workspace, preserve each supported entry type and its
+type-specific metadata. Keep an entry blocked until capture and restore both
+model it. Never downgrade a blocked entry into a completed empty workspace.
+*Near-miss:* one production orphan restore blocked on two captured absolute
+symlinks after all regular-file checks passed.
+*Enforcer:* `restore-workspace.test.py` restores a symlink, verifies its target
+with `readlink`, and rejects a changed destination target.
+
+### Verify migrated binary files through a byte-preserving download (2026-09-14)
+
+**When:** validating restored workspace files, download the bytes through the
+sandbox provider and compare every file's SHA-256 and size with the source
+manifest. The OpenCode `/file/content` text response is not a binary proof.
+*Near-miss:* production readback turned one 363,046-byte source file into
+363,052 UTF-8 bytes despite HTTP 200; the provider download returned the exact
+363,046 bytes and matching hash. The session stayed incomplete.
+*Enforcer:* `assertWorkspaceVerified` requires a verified download count equal
+to the captured file count; production apply and restore use
+`verify-downloaded-files.ts`.
+
+### A missing legacy sandbox reference is not an empty workspace (2026-09-14)
+
+**When:** migrating session files, require a captured manifest and matching
+destination inventory before marking the session verified. A null reference
+blocks file completion. Compare other approved source databases only after exact
+project and owner identity checks; retain the cross-source evidence.
+*Incident:* 14 imported histories were wrongly marked verified without files;
+the reported reconciliation session's 17-file workspace existed in the other
+legacy database. Recovery found 62 such project mappings.
+*Enforcer:* `source.test.ts` rejects null references as resolved, and
+`verification.test.ts` requires matching capture/restore evidence, including
+empty workspaces. Production apply calls `assertWorkspaceVerified`.
+
+### Preserve titles across legacy schema generations (2026-09-14)
+
+**When:** importing legacy sessions, resolve a nonblank thread name before the
+linked project name. Verify the destination index and runtime title separately.
+*Incident:* eight production imports displayed `Legacy conversation` because
+their thread names were null while their project names contained the titles.
+*Enforcer:* `projection.test.ts` covers missing/blank thread names, precedence,
+and project identity. Repairs preserve user renames and assert owner identity.
+
+### Serialize migration checkpoint writers and preserve immutable runtime IDs (2026-09-14)
+
+**When:** bounded migration scripts share a progress ledger. Allow one writer;
+store stable IDs separately from transient start responses and append operation
+proof before polling. A whole-file save from stale memory can lose another step.
+*Near-miss:* Suna-dev rehearsal lost restart-response fields during concurrent
+JSON saves; source and imported data remained intact. Later checks run serially.
+*Enforcer:* preparation CLI exposes no apply command; manual single-writer rule
+in `docs/runbooks/legacy-suna-transfer.md`. TODO: transactional apply lease/checkpoints.
+
 ### Keep persistent preview migrations tolerant of branch ledger order (2026-09-17)
 
 **When:** redeploying a branch preview after merging `main`. The preview keeps
@@ -5566,6 +5896,130 @@ before connecting, and deletes the minted token by `token_id`. Preview test
 configuration no longer exports the signing secret; its unit test rejects
 that export. The flow allows five minutes for managed Git writes and ten
 sequential manifest reads; all existing assertions remain required.
+
+### Re-read Daytona state before restoring source lifecycle (2026-09-15)
+
+**Rule:** Restore the original source state from a fresh provider read. Wait for archiving or restoring transitions; do not unconditionally stop a sandbox. Write the preservation receipt only after observing the original state. **Incident:** production legacy captures retried HTTP 400 `Sandbox is not in a stoppable state` during source cleanup. **Enforcer:** private `restore-source-state.test.ts` covers five lifecycle paths, including a stuck transition that must not receive a success receipt.
+
+### Refill migration workers before the slowest item finishes (2026-09-15)
+
+**Rule:** Overlap bounded preparation with transfers; keep a single source selection lease and deduplicate claimed session IDs. Drain active jobs before releasing the lease after preparation failure. **Incident:** 90 configured pipelines fell to five active jobs while a fixed batch waited for its slowest files. **Enforcer:** private `refilling-pool.test.ts` asserts overlap, concurrency limits, and draining on failure. Parallel file readback tests reject corrupted bytes and verify cleanup after outstanding downloads finish.
+
+### Validate the destination provider independently of the legacy source (2026-09-15)
+
+**Rule:** A legacy Daytona source does not authorize a Daytona destination. Assert the intended destination provider on create and live readback, and use a compatible destination file-transfer adapter before bulk dispatch. **Incident:** the Libremax importer explicitly sent `provider: daytona` and restored through the Daytona SDK while the user expected Platinum; 1,835 local creation receipts existed at discovery. New dispatch was suspended; active children drain. **Enforcement:** private `provider-correction-pause.json` now blocks new batch startup and destination creation. A destination-provider invariant test and Platinum pilot are required before removing this guard.
+
+### Run native imports as the destination runtime user and bind its actual project (2026-09-15)
+
+**Rule:** Match the runtime UID and HOME, enforce provider exec limits, and resolve the actual workspace project before importing a native session. Verify the imported root appears in the workspace list and survives stop/wake. **Incident:** Platinum exec defaulted to root with `HOME=/`; after correction, a template root retained `project_id=global` while `/workspace` acquired a Git project ID, so direct reads passed but wake readiness failed. **Enforcer:** private Platinum adapter and runtime-project binding tests cover the UID/HOME command, timeout cap, hash gate, exact root identity, missing-project rejection, and backup retention. Native title verification now covers every import.
+
+### Gate cold-storage migration on an archive-and-reopen pilot (2026-09-15)
+
+**Rule:** Archive only verified destination imports after both the session API and provider report stopped. Treat accepted archive requests as pending until the provider reports archived. Before bulk activation, reopen one archived destination and verify stable IDs, native history/title, and every file hash. **Incident:** adding cold storage to the Libremax migration required distinguishing stopped from archived and preserving user-reopened sessions. **Enforcer:** `archive-disposition.test.ts` rejects provider/owner drift and active state; the private archive queue starts only after the real Platinum archive/wake receipt exists, and limits in-flight archives to eight.
+
+### Require a sustained signal before transient-error concurrency backoff (2026-09-15)
+
+**Rule:** Evaluate transient provider failures against a rolling attempt count and distinct failing resources. Do not infer overload from one exhausted 5xx or repeated failures of one sandbox. Keep explicit rate-limit and capacity refusals separate. **Incident:** two Daytona capture failures among 123 attempts reduced migration concurrency from 112 to 84 despite no observed Platinum quota refusal in that window. **Enforcer:** private `transient-pressure.test.ts` covers isolated failures, sustained failures, window expiry, phase isolation, and repeated failures of one resource. The running dispatcher uses a temporary guard until native policy version 2 takes over.
+
+### Reclaim only proven redundant migration caches (2026-09-15)
+
+**Rule:** Before raising transfer concurrency, inspect free disk against the readback reserve. Remove a workspace cache only after destination verification, preserved source state, remote part readback receipts, local hash validation, and exclusion of active writers. Retain the receipt needed to reconstruct the cache. **Incident:** cached completed transfers reduced free disk to 22 GiB against a 20 GiB reserve while a higher concurrency probe was requested. **Enforcer:** private `prune-verified-workspace-cache.ts` uses the existing workspace assertion and session/capture/archive leases, validates remote part receipts and the local tar, and records pruning in an append-only ledger.
+
+### Inspect provisioning errors behind generic runtime-start failures (2026-09-15)
+
+**Rule:** Do not infer provider health from a quiet direct file/exec rate-limit log. Inspect persisted provisioning errors when runtime starts fail or verified throughput reaches zero. **Incident:** Platinum migration provisioning records reported 68 `503 no capacity`, 39 `503 overloaded`, and 37 unknown image-state failures while direct adapter 429 logging remained quiet. Pipeline admission was reduced to eight; existing operations drain and failed imports retain their ledger checkpoints. **Enforcement:** private `inspect-current-platinum.ts` groups destination-scoped provider errors. Automatic classification of these generic runtime-start failures remains a follow-up; the current mitigation is an operator admission limit.
+
+### Pin each migration create while allowing provider fallback for future creates (2026-09-15)
+
+**Rule:** Persist the selected provider before creation. Validate the existing command and destination against that choice on retry. Route future imports to the alternate only within the authorized provider set; never redirect an existing runtime with imported data implicitly. **Incident:** Platinum returned capacity errors during bulk legacy imports, requiring user-authorized Daytona fallback. **Enforcement:** private migration-create policy/readback checks bind owner, scope, ID, and provider. Routing tests cover both directions, isolated failures, and refusal to alternate between two failing providers. Daytona pilots verify actual history, file inventory, ownership, and sharing.
+
+### Maintain migration cache headroom continuously (2026-09-15)
+
+**Rule:** Reclaim all eligible verified transfer caches continuously, not only workspace tar files during manual checks. Preserve unverified inputs and every durable receipt. **Incident:** free disk fell to 17 GiB against a 20 GiB reserve; 174 of the inspected 200 failures reported `Local disk reserve`, starving imports and preventing completion-gated admission recovery. **Enforcer:** private `run-cache-maintenance.ts` checks every minute below a 25 GiB watermark. The existing lease/hash/remote-receipt pruning gate now also covers `raw-records.json` and `native.json` for fully verified captured sessions. Pruning reclaimed approximately 6 GiB; 17 capture completion receipts appeared in the next observed two-minute window. Full import throughput recovery remained pending at that observation.
+
+### Inspect inactive build caches before changing migration disk safeguards (2026-09-15)
+
+**Rule:** When workstation disk constrains a transfer, inspect generated caches across inactive worktrees before weakening capture or verification reserves. Exclude live process working directories, symlinks, and tracked files before deleting build output. **Incident:** 15 inactive Next.js build directories consumed 100.21 GiB while legacy captures had stalled below their disk reserve. **Enforcement:** the operator cleanup checks live working directories again before every removal and records each exact target in `/tmp/kortix-build-cache-cleanup-1789508987.json`; migration reserve gates remain unchanged.
+
+### Supervise the entire transfer and include destination data-plane failures (2026-09-16)
+
+**Rule:** Provider routing must inspect failed destination uploads/downloads and execution, not only provisioning records. Count distinct sessions, discount successful retries, and exclude legacy-source capture failures. Restart failed coordinators and auxiliary workers under a supervised process with a validated decrypted environment. **Incident:** Platinum returned `503 control plane is at its in-memory body budget` on a fresh 21-byte upload; provisioning-only monitoring reported no failures. The coordinator later exhausted retries after dotenv decryption failures and stopped. **Enforcement:** private `destination-pressure.test.ts` covers transfer failures, source exclusion, expiry, retry deduplication, and low failure ratios. `run-transfer-services.ts` validates environment presence, holds a singleton lease, logs worker exits, and restarts workers. Dashboard readback confirmed `running-with-reviews` with coordinator and dispatcher after restart.
+
+### Deploy capacity-setting validators before raising live limits (2026-09-16)
+
+**Rule:** Do not raise a shared live setting above the maximum accepted by processes that already loaded the previous validator. Drain or restart those processes first, or keep the new setting backward-compatible. **Incident:** raising archive slots from 32 to 48 caused 65 existing uploader processes to fail with `Invalid archive network limit`; their retries loaded the new 64-slot validator and resumed. **Enforcement:** archive phase telemetry and attempt logs identify validator failures separately from provider failures. Future capacity changes must verify the oldest live worker accepts the setting before writing it.
+
+### Bound archive transfer concurrency separately from pipeline admissions (2026-09-16)
+
+**Rule:** Inspect per-phase completions and timeouts before increasing total migration workers. Give bulk archive I/O its own concurrency bound and resumable chunk layout. Preserve existing remote receipts when changing chunk size. **Incident:** 105 archive attempts timed out in 30 minutes; 60 upload workers stayed busy while global admissions collapsed to eight. **Enforcement:** private `archiveLayout` tests preserve legacy receipts and reject mixed layouts. `archive-network-slot.ts` limits live transfers through process leases. A real 11,498,162-byte workspace pilot passed three part readbacks and the complete six-file archive gate after switching new uploads to 4 MiB parts.
+
+### Keep capacity recovery reachable at low throughput (2026-09-16)
+
+**Rule:** A capacity recovery gate must be reachable at the reduced admission limit. Use measured successes at low throughput to probe upward, while retaining failure-based backoff. **Incident:** the Suna pipeline fell to 16 admissions and verified 14 sessions in three minutes. The provider monitor required 20 verified sessions in three minutes before raising admission, so it could not recover promptly even with zero recent provider failures. **Enforcement:** the production routing monitor probes upward by 16 after six verified sessions in three minutes, zero preferred-provider failures, and a three-minute interval. The existing pipeline pressure controller still reduces admission on sustained errors.
+
+### Retry incomplete archive lease reads during concurrent creation (2026-09-16)
+
+**Rule:** Treat a partially written network-slot lease as temporary contention. Retry slot acquisition after the creator finishes writing. **Incident:** an archive uploader read a newly created empty lease file and failed with `SyntaxError: JSON Parse error: Unexpected EOF`. The batch retried, but the failure consumed an archive attempt and lowered throughput. **Enforcement:** `archive-network-slot.ts` retries syntax and disappearing-file races while it scans the network lease pool.
+
+### Accept completed primary imports as provider recovery evidence (2026-09-16)
+
+**Rule:** A fallback router must recognize fully verified primary imports completed after the fallback timestamp. Do not depend only on a one-off recovery probe that may finish just before the fallback. **Incident:** Platinum's last recovery probe finished eight seconds before Daytona became preferred. No further probe candidate existed, so routing stayed on Daytona for over an hour despite successful Platinum imports at 16:09 and 16:10 UTC and zero recent Platinum failures. **Enforcement:** the private provider monitor requires two post-fallback, fully verified Platinum imports within 20 minutes before returning to Platinum. Provider-routing tests retain the stale-probe rejection.
+
+### Keep provider-specific import failures out of alternate admission (2026-09-16)
+
+**Rule:** After a provider switch, failures from imports already pinned to the old provider must not reduce admission for the new provider. Keep source-capture failures in the shared pressure signal. **Incident:** Platinum `/files` errors triggered fallback to Daytona at 18:40 UTC. Continued Platinum retries then reduced Daytona admission from 32 to 13 although the router counted zero Daytona destination failures. Repeated switches also reset admission to 16 and depressed the 30-minute rate to about 450 verified sessions/hour. **Enforcement:** the private batch runner buckets transient apply failures by assigned provider and gates admission backoff against the current preferred provider. The routing monitor restarts at 32 admissions and waits three minutes before returning from Daytona to Platinum. Provider-pressure and routing tests cover these decisions.
+
+### Reserve create admission before opening remote database connections (2026-09-16)
+
+**Rule:** When each import opens its own production database connection, acquire the shared create budget before opening that connection. Keep database connection failures in global admission pressure after a provider switch. **Incident:** at 44 admissions, 15 of 30 recent attempts failed across distinct sessions; logs included PostgreSQL `CONNECT_TIMEOUT` and `CONNECTION_CLOSED` and Platinum connection refusals. The create budget previously ran after opening the PostgreSQL client, allowing connection bursts while callers waited for their one-per-second slot. **Enforcement:** the private `migration-create.ts` acquires that slot first. Provider-pressure tests retain shared database failures in the backoff signal. A 40-admission Platinum window later completed 85 verified sessions in five minutes; a sustained 30-minute 1,000/hour rate remains unproven.
+
+### Limit simultaneous Platinum file uploads as well as their start rate (2026-09-16)
+
+**Rule:** A start-rate gate does not bound in-flight upload memory. Give Platinum `/files` PUT calls a separate process-shared concurrency limit, and release each slot when the HTTP request completes. **Incident:** the 40-admission migration briefly verified 89 sessions in five minutes, then repeated Platinum `/files` HTTP 5xx responses caused another Daytona fallback. The existing gate spaced starts by 100 ms but allowed simultaneous requests to accumulate. **Enforcement:** private `platinum-file-slot.ts` caps in-flight uploads at 12 through leases while retaining the start-rate gate and file hash/readback checks. The live monitor returned to Platinum at 19:13 UTC; 40 admissions resumed at 19:16 UTC. Sustained provider improvement remains under observation.
+
+### Enforce provider admission caps after hold expiry (2026-09-16)
+
+**Rule:** A provider admission cap must correct values above the cap on every monitor cycle. Refresh a stable hold before it expires even when verification slows. **Incident:** the Platinum 40-admission hold expired while fresh sessions became scarce. The batch controller raised admission to 56, although the provider monitor considered 40 the tested cap. Verified throughput fell to four sessions in three minutes while recovery workers retried stopped runtimes. **Enforcement:** the private provider monitor now resets any Platinum admission above 40 and refreshes the 40-admission hold after eight minutes without requiring a minimum verification count.
+
+### Include runtime-start failures in migration retry selection (2026-09-16)
+
+**Rule:** Select retries from the actual failed stage and preserve the destination identity checks. Restart a failed, unbound runtime before polling `/start` again. **Incident:** 244 Suna review rows ended with `Runtime start failed` or `Runtime start starting`, but the recovery selector included neither error. It also required a native and external ID before retrying, excluding 117 of those rows. A direct retry of an unbound failed runtime returned the same terminal stage. **Enforcement:** the private recovery selector now includes both start errors, verifies the destination owner and provider, and uses the existing `/restart` route only when both runtime IDs are absent. Archive receipts and full workspace verification remain required.
+
+### Reap stale hot migration workers by ledger state (2026-09-16)
+
+**Rule:** Inspect parentage, CPU, destination state, and queue claims before stopping a long-lived worker. A worker with no active claim or destination write may be reaped without changing ledger status. **Incident:** an orphaned apply worker and a supervised recovery probe each consumed approximately one CPU core for over 90 minutes. The apply session remained `prepared` with no destination provider; the probe had no `apply-draining` claim. **Enforcement:** the operator checked process IDs against the ledger before sending `SIGTERM`. The lease implementation rejects live owners and removes stale lock files when the next worker starts.
+
+### Reconcile migration queue states from verified evidence after interruption (2026-09-16)
+
+**Rule:** A supervisor interruption must not leave dead queue claims or hide completed imports. Reconcile each state only after checking the worker lease, persisted proof, and destination readback. **Incident:** the transfer supervisor stopped while four `apply-draining` claims remained. Another 39 verified, stopped sessions still counted as `prepared` or `apply-review`; nine complete source captures still counted as `capture-review`. **Enforcement:** private reconciliation scripts check dead PIDs, destination owner/title/provider/sharing and workspace proofs, or local archive SHA and manifest inventory before moving queue rows. Both the supervisor and dashboard now run as persistent user LaunchAgents.
+
+### Distinguish Daytona SDK lookup errors from provider absence (2026-09-16)
+
+**Rule:** Before a missing-sandbox exception, check the direct provider HTTP response and its state. A failed SDK lookup alone does not prove HTTP 404. Recover source sandboxes only when the provider explicitly reports `error` and `recoverable=true`; confirm capture and final source state. **Incident:** the last Trimaran SDK lookup said “not found,” but the direct API returned HTTP 200 and `archiving`. The Suna review contained 138 recoverable error-state sandboxes. **Enforcement:** the one-off Trimaran waiver failed closed before changing the ledger. A Suna pilot recovered one sandbox, verified a 51-file workspace capture, and returned the source to `stopped`. The bounded source-recovery worker enforces the provider flag and per-box lease.
+
+### Use the migration source environment for provider diagnostics (2026-09-16)
+
+**Rule:** A manual source-provider diagnostic must load the same absolute `.env.local` path as the production migration worker and fail before HTTP when `LEGACY_SOURCE_DAYTONA_API_KEY` is absent. **Incident:** a read-only diagnostic loaded the worktree's empty `.env.local`, sent unauthenticated requests, and received Daytona HTTP 401 followed by its failed-auth HTTP 429 limiter. The running worker used the primary checkout's key and continued recovering sandboxes. **Enforcement:** rerun diagnostics with `/Users/markokraemer/Projects/kortix/suna/apps/api/.env.local`; the corrected read returned direct source states. Do not infer provider-key failure from a diagnostic until the environment matches the worker.
+
+### Schedule migration recovery by least recent attempt (2026-09-17)
+
+**Rule:** Select destination recovery by oldest retry timestamp, with never-attempted rows first. Use source recency only to break ties. Include interrupted attempts with no error line. Bound concurrent retries by observed API connection failures. **Incident:** 208 of 313 Suna `apply-review` sessions had no recovery attempt. Ordering by latest source activity repeatedly selected the same recent sessions after the 15-minute cooldown. Some Daytona attempts ended without a parseable error and were excluded. **Enforcement:** the private recovery worker orders null/oldest `transfer_retry_at` first, includes empty-error attempts, and uses eight concurrent retries during the observed connection-error period. The ledger count of never-attempted rows is the fairness check.
+
+### Preserve partial runtime identity during migration recovery (2026-09-17)
+
+**Rule:** A failed runtime may have a verified sandbox ID before it has a native session ID. Retry that state only through in-place restart, and reject any response that changes the sandbox ID. Keep the queue in review until full file and history verification passes. **Incident:** five Suna `created` sessions with `last_start_stage=failed` had an external ID but no native ID; the old Boolean identity guard excluded them. A live restart of `34c800ac-f977-4205-9da1-7cec4c91c762` preserved its sandbox ID, but Platinum then returned `409 sandbox_not_running` and the import stayed in review. **Enforcement:** the private recovery worker permits only this exact partial state, calls `/restart`, checks the existing sandbox ID, and leaves any failed import unverified.
+
+### Read back large migration files below provider transfer limits (2026-09-17)
+
+**Rule:** Inspect the provider error body before treating `404 /files` as a missing workspace file. Read back files above the endpoint limit in bounded chunks and hash the concatenated bytes against the source manifest. Delete each temporary chunk after verification. **Incident:** Platinum returned `404` with `file too large: 287168344 > 268435456` for `hub.json`; the original destination restore had passed exact inventory and remote hashes, but direct file read-back could never finish. Fifty-five remaining Suna review sessions contained 59 files above the 256 MiB endpoint limit. **Enforcement:** the private verifier stages 64 MiB chunks inside the same destination sandbox, downloads each through `/files`, validates chunk sizes and the full SHA-256, and records the original file receipt only after the complete hash matches. The live pilot completed 665/665 file receipts and reached `verified` without changing sandbox identity.
+
+### Distinguish provider placement conflicts from missing migrated files (2026-09-17)
+
+**Rule:** When a destination runtime will not resume, read its direct provider state and error message before changing migration data. Keep its session and archive receipts intact if the provider reports a host placement conflict. **Incident:** Platinum stopped a restored 4.5 GB Suna workspace after `resume ... guest IP ... is already reserved on this host`; an in-place restart preserved the sandbox ID but hit the same conflict. A direct survey of 97 reviewed Platinum boxes found 31 guest-IP conflicts, five provider HTTP 404s, and other stopped or archived states. **Enforcement:** the migration queue leaves these sessions in `apply-review`, retries in-place without provider or session ID changes, and never records final file proof until the sandbox can serve the data. The private recovery worker checks the direct provider error and defers confirmed guest-IP conflicts for one hour so other review sessions can use its capacity.
+
+### Preserve verified chunks across interrupted large-file read-back (2026-09-17)
+
+**Rule:** Persist size- and hash-verified read-back chunks under the destination-bound checkpoint before attempting the next chunk. Rehash cached chunks on retry and record a complete file receipt only after the source manifest SHA-256 matches. Scale recovery timeout to manifest size while retaining a finite cap. **Incident:** Platinum stopped a sandbox during a 778 MiB file read-back after about 19 minutes. The session kept 34 of 35 file receipts, but the original helper deleted completed 64 MiB chunks and would have restarted from byte zero. **Enforcement:** the private verifier records per-chunk SHA-256 receipts in SQLite, uses atomic chunk renames, and deletes the cache after full-file verification. `verify-downloaded-files.test.ts` interrupts chunk two and proves that retry skips chunk one. The private recovery timeout grows with the largest manifest file, capped at four hours.
 
 ### Preview runtime secret contracts span two Git revisions (2026-09-14)
 
