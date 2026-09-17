@@ -1344,7 +1344,7 @@
     "upgradePlan": "Upgrade plan",
     "sessionList": {
       "loadError": "Failed to load sessions",
-      "empty": "No sessions yet",
+      "empty": "Sessions you start will show up here",
       "noMatches": "No sessions match the active filters.",
       "actions": "Session actions",
       "actionsFor": "Actions for {title}",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "No policy = a locked door: Cloudflare denies everyone until at least one Allow policy exists. This is the most common \"SSO redirects but access is denied\" cause.",
       "text93d6de7104f0": "Remove icon",
       "text93dcf1d1d25e": "Weekends",
-      "text93e404732659": "Start a session to give this project its first task.",
       "text93f4b14c9e2b": "No active notifications",
       "text93f5222a6e5c": "- Escalate only what needs a human",
       "text93fbaf02beca": "01 · Isolation",
@@ -18513,11 +18512,6 @@
       "title": "Book a 20-minute setup call",
       "description": "A couple of focused minutes with the team to get your command center dialed in."
     },
-    "kickoff": {
-      "tools": " I connected these tools too: {count}. Use them if they help.",
-      "noDomain": "I finished setting up my project.{toolsClause} Introduce yourself, explain what you can do, and ask what I need help with first.",
-      "withDomain": "I finished setting up my project for {domain}. Research the company and tell me what you find.{toolsClause} Then ask what I need help with first."
-    },
     "company": {
       "title": "Tell us about your company",
       "description": "Your agent uses the domain to research your own company. Nothing is shared publicly.",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "{count} tools connected. Opening starts your first conversation with Kortix.",
       "description": "Opening starts your first conversation with Kortix.",
       "openProject": "Open project",
-      "firstMessage": "Your first message",
       "bookCall": "Book a 20-minute setup call with Marko"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "Could not update model access.",
     "hiddenShort": "Hidden from the picker. Direct requests are still allowed.",
     "resetError": "Could not reset the model list."
+  },
+  "firstChat": {
+    "title": "Your first chat with Kortix",
+    "greeting": "Welcome, {name}. I'm Kortix.",
+    "greetingNoName": "Welcome. I'm Kortix.",
+    "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
+    "question": "Where do you want to start?",
+    "recommendTools": "Recommend tools for my workflow",
+    "updateMemory": "Update memory",
+    "placeholder": "Tell Kortix what you're working on",
+    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
+    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them."
   }
 }

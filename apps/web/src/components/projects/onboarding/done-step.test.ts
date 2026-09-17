@@ -1,7 +1,6 @@
 /**
- * The finish step is the payoff for the two survey screens. "Open project"
- * now auto-starts the first conversation using what the survey actually
- * collected, instead of handing the user a picker of generic starter tiles.
+ * The finish step hands the person to their project's first chat: a welcome
+ * and an idle composer. It no longer sends a message on their behalf.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -9,13 +8,13 @@ import { join } from 'node:path';
 
 const source = readFileSync(join(import.meta.dir, 'steps', 'done-step.tsx'), 'utf8');
 const shell = readFileSync(join(import.meta.dir, '..', 'project-onboarding-wizard.tsx'), 'utf8');
+const prefillStore = readFileSync(
+  join(import.meta.dir, '..', '..', '..', 'stores', 'composer-prefill-store.ts'),
+  'utf8',
+);
 
 describe('done step', () => {
-  test('previews the exact message it is about to auto-send', () => {
-    expect(source).toContain('buildOnboardingKickoffPrompt');
-  });
-
-  test('has no starter-tile picker — one real opener beats three generic ones', () => {
+  test('has no starter-tile picker', () => {
     expect(source).not.toContain('starterPromptsFor');
     expect(source).not.toContain('<ActionRow');
     expect(source).not.toContain('onUsePrompt');
@@ -29,28 +28,35 @@ describe('done step', () => {
   test('omits the tool-count clause when nothing is connected', () => {
     expect(source).toContain('connectedCount > 0');
   });
+
+  test('opens the project on the done step primary action', () => {
+    expect(source).toContain('onPrimary={onStart}');
+    expect(shell).toContain('onStart={openProject}');
+  });
 });
 
-describe('prompt handoff', () => {
-  // The store's own docstring names the onboarding wizard as an intended
-  // caller, and project-home.tsx consumes it on mount. No new store invented.
-  test('seeds the existing project composer prefill store', () => {
-    expect(shell).toContain('useComposerPrefillStore');
-    expect(shell).toContain('setPrefill(projectId,');
+describe('first chat hand-off', () => {
+  // Both ways out of the wizard land on the first chat, so a person who skips
+  // gets the same calm start as a person who finishes.
+  test('finishing and skipping both start the first chat before completing', () => {
+    const openProject = shell.slice(
+      shell.indexOf('const openProject = useCallback'),
+      shell.indexOf('const skipSurvey'),
+    );
+    expect(openProject).toContain('useFirstChatStore.getState().start(projectId)');
+    expect(openProject).toContain('complete()');
+
+    const skip = shell.slice(
+      shell.indexOf('const skip = useCallback'),
+      shell.indexOf('const openProject = useCallback'),
+    );
+    expect(skip).toContain('useFirstChatStore.getState().start(projectId)');
+    expect(skip).toContain('onboarding.complete()');
   });
 
-  // "Open project" is the one explicit action the user takes — it both
-  // stamps onboarding complete and asks project-home to auto-send the
-  // kickoff prompt as the session's first turn.
-  test('auto-sends the kickoff prompt rather than just prefilling the box', () => {
-    expect(shell).toContain('buildOnboardingKickoffPrompt');
-    expect(shell).toContain('{ autoSend: true }');
-  });
-
-  // A prefill that outlives the wizard would reappear on an unrelated visit;
-  // the store's `consume` clears it, but only if onboarding actually completes.
-  test('completes onboarding in the same action that seeds the prompt', () => {
-    expect(shell).toContain('openProject');
-    expect(shell).toContain('complete()');
+  // The regression this ticket removes: a turn the person never asked for.
+  test('nothing in the hand-off sends a message', () => {
+    expect(shell).not.toContain('setPrefill(');
+    expect(prefillStore).not.toContain('autoSend');
   });
 });

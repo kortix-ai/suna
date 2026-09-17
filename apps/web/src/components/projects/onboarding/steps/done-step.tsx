@@ -3,17 +3,9 @@
 /**
  * Step 5 — the finish line.
  *
- * "Open project" now does two things at once: completes onboarding AND
- * auto-sends the first message — the exact text previewed below — as the
- * new session's opening turn. There is no starter-tile picker any more:
- * three generic tiles ("Turn notes into actions", "Triage my inbox", "Watch
- * the market") plus an auto-sent message asked the user to choose twice for
- * the same outcome, and none of the tiles used what onboarding just
- * collected. One real, personalized opener beats three generic ones.
- *
- * The kickoff text itself lives in `onboarding-profile.ts`
- * (`buildOnboardingKickoffPrompt`) so this preview and the actual send always
- * say the same thing.
+ * "Open project" completes onboarding and opens the project on its first chat
+ * (`first-chat-store.ts`). Nothing is sent for the person, so there is no
+ * message to preview here. The first chat offers its own two starters.
  *
  * This is also the ONE place in the product that throws confetti made of the
  * workspace's own icon (`components/ui/identity-confetti.tsx`). It belongs
@@ -25,7 +17,6 @@
 
 import {
   CalendarBlankIcon as Calendar,
-  ChatCircleIcon as ChatCircle,
   CheckCircleIcon as CheckCircle,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -36,12 +27,10 @@ import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-import { buildOnboardingKickoffPrompt } from '../onboarding-profile';
 import { StepShell } from '../step-shell';
 
 export function DoneStep({
   projectId,
-  domain,
   connectedCount,
   showFounderCall,
   onBookCall,
@@ -49,22 +38,14 @@ export function DoneStep({
 }: {
   /** Read only to learn what this workspace's icon IS, for the confetti. */
   projectId: string;
-  /** The company-step's domain field, trimmed. Empty when skipped. */
-  domain: string;
   connectedCount: number;
   /** Founder-concierge tier. The CTA used to live on the deleted welcome step. */
   showFounderCall?: boolean;
   onBookCall?: () => void;
-  /** Completes onboarding AND fires the kickoff prompt as the first turn. */
+  /** Completes onboarding and opens the project on its first chat. */
   onStart: () => void;
 }) {
   const t = useTranslations('projectOnboarding');
-  const kickoff = buildOnboardingKickoffPrompt(domain, connectedCount, {
-    noDomain: (toolsClause) => t('kickoff.noDomain', { toolsClause }),
-    withDomain: (companyDomain, toolsClause) =>
-      t('kickoff.withDomain', { domain: companyDomain, toolsClause }),
-    tools: (count) => t('kickoff.tools', { count }),
-  });
 
   // The same key and fetcher workspace Settings' General tab uses, so the two
   // share one cache entry rather than each holding a copy of the project.
@@ -104,18 +85,8 @@ export function DoneStep({
         primaryLabel={t('done.openProject')}
         onPrimary={onStart}
       >
-        <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-4">
-          <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-sm">
-            <ChatCircle className="text-muted-foreground size-4" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-muted-foreground text-xs font-medium">{t('done.firstMessage')}</p>
-            <p className="text-foreground text-sm leading-6 text-pretty">{kickoff}</p>
-          </div>
-        </div>
-
-        {/* Rehomed from the deleted welcome step. Quiet, below the prompts —
-            it is an offer, not the main path. */}
+        {/* Rehomed from the deleted welcome step. Quiet, below the main
+            action — it is an offer, not the main path. */}
         {showFounderCall && onBookCall && (
           <div className="mt-6 flex justify-center">
             <Button

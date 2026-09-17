@@ -117,8 +117,9 @@ interface LocaleMessages {
     tools: { title: string; searchPlaceholder: string; continue: string };
     slack: { title: string; notNow: string };
     plan: { title: string; continue: string };
-    done: { title: string; firstMessage: string; openProject: string };
+    done: { title: string; openProject: string };
   };
+  firstChat: { question: string; recommendTools: string; updateMemory: string };
   billing: {
     plan: {
       currentPlan: string;
@@ -867,11 +868,6 @@ test.describe("26 — Settings localization", () => {
               exact: true,
             }),
           ).toBeVisible();
-          await expect(
-            wizard.getByText(copy.projectOnboarding.done.firstMessage, {
-              exact: true,
-            }),
-          ).toBeVisible();
           const openProjectButton = wizard
             .getByRole("button", {
               name: copy.projectOnboarding.done.openProject,
@@ -881,6 +877,25 @@ test.describe("26 — Settings localization", () => {
           await expect(openProjectButton).toBeVisible();
           await openProjectButton.click();
           await expect(wizard).toBeHidden();
+
+          // Opening the project lands on its first chat, in this locale, with
+          // nothing sent: still project home, the welcome and both starters.
+          await expect(
+            page.getByText(copy.firstChat.question, { exact: true }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("button", {
+              name: copy.firstChat.recommendTools,
+              exact: true,
+            }),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("button", {
+              name: copy.firstChat.updateMemory,
+              exact: true,
+            }),
+          ).toBeVisible();
+          expect(new URL(page.url()).pathname).toBe(`/projects/${projectId}`);
 
           await page.goto("about:blank");
           await clearCookiesPreservingBypass(page.context());

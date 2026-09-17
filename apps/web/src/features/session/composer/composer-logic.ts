@@ -242,6 +242,28 @@ export function shouldApplyPrefill({
   return true;
 }
 
+export interface ShouldSubmitPrefillInput {
+  prefillId: number | undefined;
+  prefillSubmit: boolean;
+  /** The id this composer last submitted a prefill for, or null. */
+  submittedPrefillId: number | null;
+}
+
+/**
+ * Whether an applied prefill should also be submitted.
+ *
+ * The apply effect re-runs whenever one of its dependencies changes identity,
+ * and each run re-applies the same prefill. A plain fill survives that. A
+ * submit would send the same message again, so each prefill id submits once.
+ */
+export function shouldSubmitPrefill({
+  prefillId,
+  prefillSubmit,
+  submittedPrefillId,
+}: ShouldSubmitPrefillInput): boolean {
+  return prefillSubmit && prefillId !== undefined && prefillId !== submittedPrefillId;
+}
+
 export interface ResolveEditorPlaceholderInput {
   lockForApproval: boolean;
   lockForQuestion: boolean;

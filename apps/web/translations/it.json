@@ -1344,7 +1344,7 @@
     "upgradePlan": "Aggiorna il piano",
     "sessionList": {
       "loadError": "Impossibile caricare le sessioni",
-      "empty": "Nessuna sessione",
+      "empty": "Le sessioni che avvii compariranno qui",
       "noMatches": "Nessuna sessione corrisponde ai filtri attivi.",
       "actions": "Azioni della sessione",
       "actionsFor": "Azioni per {title}",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "Nessuna policy equivale a una porta chiusa: Cloudflare nega l’accesso a tutti finché non esiste almeno una policy Allow. È la causa più comune del messaggio \"SSO redirects but access is denied\".",
       "text93d6de7104f0": "Rimuovi icona",
       "text93dcf1d1d25e": "Fine settimana",
-      "text93e404732659": "Avvia una sessione per assegnare al progetto la sua prima attività.",
       "text93f4b14c9e2b": "Nessuna notifica attiva",
       "text93f5222a6e5c": "- Fai escalation solo di ciò che richiede una persona",
       "text93fbaf02beca": "01 · Isolamento",
@@ -18513,11 +18512,6 @@
       "title": "Prenota una chiamata di configurazione di 20 minuti",
       "description": "Un paio di minuti di concentrazione con la squadra per mettere in contatto il tuo centro di comando."
     },
-    "kickoff": {
-      "tools": "Ho collegato anche questi strumenti: {count}. Usateli se aiutano.",
-      "noDomain": "Ho finito di configurare il mio progetto.{toolsClause} Presentati, spiega cosa puoi fare e chiedi prima per cosa ho bisogno di aiuto.",
-      "withDomain": "Ho finito di configurare il mio progetto per {domain}. Effettua una ricerca sull'azienda e dimmi cosa trovi.{toolsClause} Quindi chiedi prima per cosa ho bisogno di aiuto."
-    },
     "company": {
       "title": "Raccontaci della tua azienda",
       "description": "Il tuo agente utilizza il dominio per effettuare ricerche sulla tua azienda. Niente è condiviso pubblicamente.",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "{count} strumenti collegati. L'apertura avvia la tua prima conversazione con Kortix.",
       "description": "L'apertura avvia la tua prima conversazione con Kortix.",
       "openProject": "Apri progetto",
-      "firstMessage": "Il tuo primo messaggio",
       "bookCall": "Prenota una chiamata di configurazione di 20 minuti con Marko"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "Impossibile aggiornare l’accesso al modello.",
     "hiddenShort": "Nascosto nel selettore. Le richieste dirette sono ancora consentite.",
     "resetError": "Impossibile reimpostare l’elenco dei modelli."
+  },
+  "firstChat": {
+    "title": "La tua prima chat con Kortix",
+    "greeting": "Ti diamo il benvenuto, {name}. Sono Kortix.",
+    "greetingNoName": "Ti diamo il benvenuto. Sono Kortix.",
+    "intro": "Portami qualsiasi cosa: un'attività, un workflow o un'idea non ancora definita. La risolviamo insieme.",
+    "question": "Da dove vuoi iniziare?",
+    "recommendTools": "Consiglia strumenti per il mio workflow",
+    "updateMemory": "Aggiorna la memoria del progetto",
+    "placeholder": "Dì a Kortix su cosa stai lavorando",
+    "toolsPrompt": "Consigliami strumenti e connettori adatti al mio workflow. Se ti serve, chiedimi prima su cosa lavoro.",
+    "memoryPrompt": "Scopri come lavoro. Fammi una domanda breve alla volta sul mio ruolo, su cosa lavoro, gli strumenti che uso e come mi piace lavorare. Salva le mie risposte nella memoria del progetto così le prossime sessioni partono già con queste informazioni."
   }
 }

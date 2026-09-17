@@ -1344,7 +1344,7 @@
     "upgradePlan": "升级方案",
     "sessionList": {
       "loadError": "无法加载会话",
-      "empty": "暂无会话",
+      "empty": "您开始的会话会显示在这里",
       "noMatches": "没有会话符合当前筛选条件。",
       "actions": "会话操作",
       "actionsFor": "{title} 的操作",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "没有策略就像一扇锁上的门：Cloudflare 会拒绝所有人，直到至少存在一条 Allow 策略。这是最常见的“SSO 重定向但访问被拒绝”原因。",
       "text93d6de7104f0": "移除图标",
       "text93dcf1d1d25e": "周末",
-      "text93e404732659": "启动会话，为此项目处理第一个任务。",
       "text93f4b14c9e2b": "没有活动通知",
       "text93f5222a6e5c": "- 仅升级需要人工处理的事项",
       "text93fbaf02beca": "01 · 隔离",
@@ -18513,11 +18512,6 @@
       "title": "预约 20 分钟的设置电话",
       "description": "与团队一起集中几分钟来拨通您的指挥中心。"
     },
-    "kickoff": {
-      "tools": "我也连接了这些工具：{count}。如果有帮助就使用它们。",
-      "noDomain": "我完成了项目的设置。{toolsClause} 介绍一下你自己，解释一下你能做什么，并首先询问我需要什么帮助。",
-      "withDomain": "我完成了 {domain} 的项目设置。研究一下这家公司并告诉我你发现了什么。{toolsClause}然后首先询问我需要什么帮助。"
-    },
     "company": {
       "title": "告诉我们您的公司",
       "description": "您的代理使用该域名来研究您自己的公司。没有任何内容是公开分享的。",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "已连接 {count} 个工具。开头是您与 Kortix 的第一次对话。",
       "description": "开头是您与 Kortix 的第一次对话。",
       "openProject": "打开项目",
-      "firstMessage": "您的第一条消息",
       "bookCall": "与 Marko 预订 20 分钟的设置通话"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "无法更新模型访问权限。",
     "hiddenShort": "已从选择器中隐藏。仍允许直接请求。",
     "resetError": "无法重置模型列表。"
+  },
+  "firstChat": {
+    "title": "与 Kortix 的第一次聊天",
+    "greeting": "欢迎，{name}。我是 Kortix。",
+    "greetingNoName": "欢迎。我是 Kortix。",
+    "intro": "无论是任务、工作流，还是还没想清楚的点子，都可以带给我。我们一起理清楚。",
+    "question": "您想从哪里开始？",
+    "recommendTools": "推荐适合我工作流的工具",
+    "updateMemory": "更新项目记忆",
+    "placeholder": "告诉 Kortix 您在做什么",
+    "toolsPrompt": "推荐适合我工作流的工具和连接器。如果需要，先问我在做什么。",
+    "memoryPrompt": "了解我的工作方式。每次只问我一个简短的问题，内容关于我的角色、我在做什么、我使用的工具，以及我喜欢的工作方式。把我的回答保存到项目记忆中，让以后的会话直接从这些信息开始。"
   }
 }

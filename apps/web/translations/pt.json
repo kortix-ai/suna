@@ -1344,7 +1344,7 @@
     "upgradePlan": "Atualizar plano",
     "sessionList": {
       "loadError": "Não foi possível carregar as sessões",
-      "empty": "Ainda não existem sessões",
+      "empty": "As sessões que você iniciar vão aparecer aqui",
       "noMatches": "Nenhuma sessão corresponde aos filtros ativos.",
       "actions": "Ações da sessão",
       "actionsFor": "Ações para {title}",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "Sem política = porta trancada: o Cloudflare nega acesso a todos até existir pelo menos uma política Allow. Esta é a causa mais comum de \"o SSO redireciona, mas o acesso é negado\".",
       "text93d6de7104f0": "Remover ícone",
       "text93dcf1d1d25e": "Fins de semana",
-      "text93e404732659": "Inicie uma sessão para dar a este projeto sua primeira tarefa.",
       "text93f4b14c9e2b": "Nenhuma notificação ativa",
       "text93f5222a6e5c": "- Escale apenas o que precisa de uma pessoa",
       "text93fbaf02beca": "01 · Isolamento",
@@ -18513,11 +18512,6 @@
       "title": "Agende uma chamada de configuração de 20 minutos",
       "description": "Alguns minutos de concentração com a equipe para conectar seu centro de comando."
     },
-    "kickoff": {
-      "tools": "Conectei essas ferramentas também: {count}. Use-os se eles ajudarem.",
-      "noDomain": "Terminei de configurar meu projeto.{toolsClause} Apresente-se, explique o que você pode fazer e pergunte primeiro em que preciso de ajuda.",
-      "withDomain": "Terminei de configurar meu projeto para {domain}. Pesquise a empresa e me diga o que você encontrou.{toolsClause} Em seguida, pergunte primeiro no que preciso de ajuda."
-    },
     "company": {
       "title": "Conte-nos sobre sua empresa",
       "description": "Seu agente usa o domínio para pesquisar sua própria empresa. Nada é compartilhado publicamente.",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "{count} ferramentas conectadas. A abertura inicia sua primeira conversa com Kortix.",
       "description": "A abertura inicia sua primeira conversa com Kortix.",
       "openProject": "Abrir projeto",
-      "firstMessage": "Sua primeira mensagem",
       "bookCall": "Agende uma chamada de configuração de 20 minutos com Marko"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "Não foi possível atualizar o acesso ao modelo.",
     "hiddenShort": "Oculto no seletor. Solicitações diretas continuam permitidas.",
     "resetError": "Não foi possível redefinir a lista de modelos."
+  },
+  "firstChat": {
+    "title": "Seu primeiro chat com Kortix",
+    "greeting": "Boas-vindas, {name}. Eu sou o Kortix.",
+    "greetingNoName": "Boas-vindas. Eu sou o Kortix.",
+    "intro": "Traga qualquer coisa: uma tarefa, um workflow ou uma ideia ainda em formação. Vamos resolver isso juntos.",
+    "question": "Por onde você quer começar?",
+    "recommendTools": "Recomendar ferramentas para meu workflow",
+    "updateMemory": "Atualizar a memória do projeto",
+    "placeholder": "Conte ao Kortix no que você está trabalhando",
+    "toolsPrompt": "Recomende ferramentas e conectores que combinem com meu workflow. Pergunte primeiro no que eu trabalho, se precisar.",
+    "memoryPrompt": "Conheça como eu trabalho. Faça uma pergunta curta de cada vez sobre minha função, no que trabalho, as ferramentas que uso e como gosto de trabalhar. Salve minhas respostas na memória do projeto para que as próximas sessões já comecem com elas."
   }
 }

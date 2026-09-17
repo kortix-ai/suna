@@ -86,7 +86,7 @@ describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
 describe('ProjectOnboardingWizard: skipping stamps, exactly like finishing', () => {
   test('skip routes through the same completeThenNotify path as finishing', () => {
     expect(code).toMatch(
-      /const skip = useCallback\(\s*\(\)\s*=>\s*completeThenNotify\(\(\)\s*=>\s*onboarding\.complete\(\),\s*onSkip\),/,
+      /const skip = useCallback\(\(\)\s*=>\s*\{[^}]*return completeThenNotify\(\(\)\s*=>\s*onboarding\.complete\(\),\s*onSkip\);/,
     );
   });
 

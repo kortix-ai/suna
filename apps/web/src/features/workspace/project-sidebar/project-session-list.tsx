@@ -25,12 +25,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
+import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -57,6 +59,7 @@ import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
+import { useFirstChatPending } from '@/stores/first-chat-store';
 import {
   selectCollapsedSections,
   selectGroupMode,
@@ -195,6 +198,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const firstChatPending = useFirstChatPending(projectId);
   const activeOpenCodeSessionId = searchParams.get('oc');
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
@@ -341,10 +345,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     }
 
     if (viewState === 'empty') {
-      return (
-        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-          {t('sessionList.empty')}
-        </div>
+      return firstChatPending ? (
+        <FirstChatRow projectId={projectId} isActive={pathname === `/projects/${projectId}`} />
+      ) : (
+        <SessionsEmptyState className="flex-1 pb-16" />
       );
     }
 
@@ -1057,6 +1061,40 @@ function ProjectSessionRow({
         </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+/**
+ * The one row an empty list shows while the project's first chat is waiting
+ * (`first-chat-store.ts`). It opens project home, where that chat lives.
+ *
+ * The same box as `ProjectSessionRow`, with the Kortix mark in the status slot
+ * and nothing after the title: no status, no hover card, no `⋯`. It is not a
+ * session yet, so there is nothing to report and nothing to act on.
+ */
+function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: boolean }) {
+  const t = useTranslations('firstChat');
+
+  return (
+    <HoverPrefetchLink
+      href={`/projects/${projectId}`}
+      aria-current={isActive ? 'page' : undefined}
+      className={cn(
+        'flex h-8 items-center gap-2 rounded-md px-2 transition-none',
+        'max-md:h-auto max-md:min-h-12 max-md:gap-1',
+        '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
+        '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
+        'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
+        isActive
+          ? 'bg-card text-sidebar-foreground'
+          : 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
+      )}
+    >
+      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
+        <KortixLogo variant="icon" size={12} />
+      </span>
+      <SessionTitle title={t('title')} className={cn('min-w-0', isActive && 'font-medium')} />
+    </HoverPrefetchLink>
   );
 }
 
