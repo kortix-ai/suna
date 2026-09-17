@@ -1385,3 +1385,16 @@ preserved its Platinum sandbox ID. The runtime then failed to become ready;
 the provider's `/exec` returned `409 sandbox_not_running`. The pilot remains
 `apply-review` with a retry timestamp. Do not mark this case verified without
 the normal history and file read-back proofs.
+
+At 15:40 UTC on 2026-09-17, Suna held 167 destination `apply-review`
+sessions. One imported Platinum session,
+`ea01c859-4260-4dfc-a738-2d84977acc34`, had 664 of 665 file read-back
+receipts. Its final file was `hub.json` at 287,168,344 bytes. Direct
+Platinum `/files` returned HTTP 404 with `file too large: 287168344 >
+268435456`, although a small file in the same sandbox returned HTTP 200.
+The private verifier now reads files above 256 MiB in 64 MiB staged chunks,
+then checks the complete SHA-256 against the source manifest. The live pilot
+reached 665/665 file receipts, verified 359 native messages and 2,313 source
+rows, and recorded a destination stop receipt. Its queue row is `verified`.
+The remaining review set contained 55 sessions with 59 files above 256 MiB;
+their retries use the same chunked path.
