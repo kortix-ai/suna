@@ -5,6 +5,7 @@ import {
   fallbackBusyRowAfterTurnId,
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
+  turnIsConfirmedActive,
   workingTurnDrawsBusyRow,
 } from './working-turn';
 
@@ -384,5 +385,34 @@ describe('a busy session always draws exactly one Thinking row', () => {
     expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, suppressed: true })).toBe(false);
     expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, workingTurnId: null })).toBe(false);
     expect(workingTurnDrawsBusyRow({ ...base, workingTurnHasError: false, lastTurnWorking: false })).toBe(false);
+  });
+});
+
+describe('only a confirmed active turn drops its pending presentation', () => {
+  test('a fresh send still waiting for acceptance keeps its pending bubble while it draws Thinking', () => {
+    // CI, journey 27: the first Enter became the working turn through the
+    // fresh-send hint and lost `data-pending-prompt-id` and its queue tint
+    // while the inbox still held it.
+    expect(turnIsConfirmedActive({
+      isTurnWorking: true,
+      turnId: 'sent',
+      activeTurnId: 'receipt',
+      pendingDelivery: true,
+    })).toBe(false);
+  });
+
+  test('the server naming the running turn clears it', () => {
+    expect(turnIsConfirmedActive({
+      isTurnWorking: true,
+      turnId: 'sent',
+      activeTurnId: 'sent',
+      pendingDelivery: false,
+    })).toBe(true);
+    expect(turnIsConfirmedActive({
+      isTurnWorking: false,
+      turnId: 'sent',
+      activeTurnId: 'sent',
+      pendingDelivery: false,
+    })).toBe(false);
   });
 });

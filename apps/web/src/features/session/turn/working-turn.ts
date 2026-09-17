@@ -117,6 +117,21 @@ export function fallbackBusyRowAfterTurnId(
 }
 
 /**
+ * Has the server confirmed this turn is the one running? Only then does it drop
+ * its pending bubble presentation before the next inbox poll. A fresh send the
+ * inbox still holds is the working turn too, and keeps its tint and pending id
+ * beside its Thinking row until delivery.
+ */
+export function turnIsConfirmedActive(input: {
+  isTurnWorking: boolean;
+  turnId: string;
+  activeTurnId: string | null;
+  pendingDelivery: boolean;
+}): boolean {
+  return input.isTurnWorking && !input.pendingDelivery && input.activeTurnId === input.turnId;
+}
+
+/**
  * Does the working turn draw the Thinking row itself? It does not when it has
  * no id, when a finished answer yields it to the queue, or when its reply
  * reported an error that is not being retried. Then the fallback row draws, so

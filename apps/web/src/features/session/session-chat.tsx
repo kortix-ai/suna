@@ -73,6 +73,7 @@ import {
   freshSendHint,
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
+  turnIsConfirmedActive,
   workingTurnDrawsBusyRow,
 } from './turn/working-turn';
 
@@ -5684,8 +5685,14 @@ export function SessionChat({
                           // hiding every subsequent assistant response in that turn.
                           // Fall through to the normal turn renderer instead.
 
+                          const confirmedActive = turnIsConfirmedActive({
+                            isTurnWorking,
+                            turnId: turn.userMessage.info.id,
+                            activeTurnId: working.turnId,
+                            pendingDelivery: !!working.pendingDelivery,
+                          });
                           const pendingPrompt =
-                            !isTurnWorking && turn.assistantMessages.length === 0
+                            !confirmedActive && turn.assistantMessages.length === 0
                               ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
                               : undefined;
                           return (
@@ -5764,7 +5771,7 @@ export function SessionChat({
                                   }
                                   suppressBusyIndicator={suppressWorkingTurnBusy}
                                   pending={
-                                    !isTurnWorking &&
+                                    !confirmedActive &&
                                     (Boolean(pendingPrompt) ||
                                       pendingTurnIds.has(turn.userMessage.info.id))
                                   }

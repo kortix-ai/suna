@@ -154,8 +154,11 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
 
 
 test('a confirmed working turn cannot retain a stale pending inbox presentation', () => {
-  expect(chat).toContain('!isTurnWorking && turn.assistantMessages.length === 0');
-  const pending = between(chat, 'pending={\n                                    !isTurnWorking', 'pendingPrompt={pendingPrompt}');
+  // Confirmed by the server, not by the fresh-send hint: a send the inbox still
+  // holds keeps its pending bubble beside its Thinking row.
+  expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
+  expect(chat).toContain('!confirmedActive && turn.assistantMessages.length === 0');
+  const pending = between(chat, 'pending={\n                                    !confirmedActive', 'pendingPrompt={pendingPrompt}');
   expect(pending).toContain('Boolean(pendingPrompt)');
   expect(pending).toContain('pendingTurnIds.has(turn.userMessage.info.id)');
 });
