@@ -206,7 +206,11 @@ describe('useSessionSync: a turn boundary while the session stays busy', () => {
 
   /** Mounts the hook against a controller whose runtime answers every tail
    *  read with an empty page, and counts those reads. */
-  async function mountBusySession(sessionId: string, openTurnTokens: readonly string[] | undefined) {
+  async function mountBusySession(
+    sessionId: string,
+    openTurnTokens: readonly string[] | undefined,
+    mountOptions: { networkEnabled?: boolean } = {},
+  ) {
     let reads = 0;
     useSyncStore.getState().clearSession(sessionId);
     // No current runtime in this test, so the hook resolves the 'none' scope.
@@ -222,16 +226,34 @@ describe('useSessionSync: a turn boundary while the session stays busy', () => {
       },
       'none',
     );
-    function Probe(props: { tokens: readonly string[] | undefined; working: boolean }) {
-      useSessionSync(sessionId, { working: props.working, openTurnTokens: props.tokens });
+    function Probe(props: {
+      tokens: readonly string[] | undefined;
+      working: boolean;
+      networkEnabled: boolean;
+    }) {
+      useSessionSync(sessionId, {
+        working: props.working,
+        openTurnTokens: props.tokens,
+        networkEnabled: props.networkEnabled,
+      });
       return null;
     }
     await act(async () => {
-      root = create(createElement(Probe, { tokens: openTurnTokens, working: true }));
+      root = create(
+        createElement(Probe, {
+          tokens: openTurnTokens,
+          working: true,
+          networkEnabled: mountOptions.networkEnabled ?? true,
+        }),
+      );
     });
-    const rerender = async (tokens: readonly string[] | undefined, working = true) => {
+    const rerender = async (
+      tokens: readonly string[] | undefined,
+      working = true,
+      networkEnabled = true,
+    ) => {
       await act(async () => {
-        root?.update(createElement(Probe, { tokens, working }));
+        root?.update(createElement(Probe, { tokens, working, networkEnabled }));
         await Bun.sleep(5);
       });
     };
@@ -273,5 +295,45 @@ describe('useSessionSync: a turn boundary while the session stays busy', () => {
     await session.rerender(['tok_B']);
 
     expect(session.reads()).toBe(1);
+  });
+
+  // Reads are off (a runtime switch sets `networkEnabled` false), so the busy
+  // switch never armed and `setBusy(false)` has nothing to read for. The
+  // boundary waits for reads to come back instead of being spent unread.
+  test('a boundary seen while reads are off issues the turn-end read once they are back', async () => {
+    const session = await mountBusySession('ses_boundary_offline_busy', ['tok_A'], {
+      networkEnabled: false,
+    });
+
+    await session.rerender(['tok_B'], true, false);
+    expect(session.reads()).toBe(0);
+    await session.rerender(['tok_B'], true, true);
+
+    expect(session.reads()).toBe(1);
+  });
+
+  test('a boundary seen while reads are off still reads when the session is idle once they are back', async () => {
+    const session = await mountBusySession('ses_boundary_offline_idle', ['tok_A'], {
+      networkEnabled: false,
+    });
+
+    await session.rerender([], false, false);
+    expect(session.reads()).toBe(0);
+    await session.rerender([], false, true);
+
+    expect(session.reads()).toBe(1);
+  });
+
+  test('a deferred boundary reads once, and the later busy-to-idle switch reads once', async () => {
+    const session = await mountBusySession('ses_boundary_offline_once', ['tok_A'], {
+      networkEnabled: false,
+    });
+
+    await session.rerender(['tok_B'], true, false);
+    await session.rerender(['tok_B'], true, true);
+    await session.rerender(['tok_B'], false, true);
+
+    // One deferred boundary read, one busy-to-idle read.
+    expect(session.reads()).toBe(2);
   });
 });

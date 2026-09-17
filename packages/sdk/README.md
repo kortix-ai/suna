@@ -443,6 +443,16 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
+`onGapRehydrate` fires after a reconnect, once the new subscription delivers
+its first frame, when frames may have been lost: the dropped subscription
+delivered content, or no content arrived for more than 5 s. `gapMs` is the
+time since the last content frame (daemon keepalive, `server.connected`, and
+`server.heartbeat` do not count), so it can be under 5 s. It fires at most
+once per 5 s per stream. A call that comes due inside that window fires when
+the window ends, on the live subscription, or on the next subscription's first
+frame. `openEventStream` also passes a second argument, `{ contentLost }`: true
+when the dropped subscription delivered content.
+
 `session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
 `@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
@@ -687,6 +697,10 @@ React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-fre
 `createHttpSessionSyncController` for message history, status recovery, and older
 pagination. Mobile keeps its platform-specific event transport because React
 Native cannot consume the SDK's fetch-based SSE stream.
+After a turn ends, the controller re-reads the tail until the last assistant
+message completes, at most 5 reads. Those repair reads call `hydrate` with
+`{ stampActivity: false }`: the page is not evidence that the runtime is
+producing, so it must not restart the liveness clock.
 
 ## Rules of the road
 
@@ -867,3 +881,78 @@ Queue acceptance and runtime execution are separate states. Each distinct submis
 appears immediately, including while a previous POST is pending. The working hook
 updates `pendingDelivery` when the same turn becomes active, without waiting for
 a different turn ID or timestamp.
+
+### Queue row actions
+
+`useSessionPrompts().remove` and `.retry` are one request per row intent,
+shared by every mounted `useSessionPrompts` of the session. A second call of
+the same action while the first is in flight returns that promise and sends
+nothing. A call of the *other* action rejects without sending, with an `Error`
+whose `code` is `prompt_action_pending`. A `remove` of a row this tab already
+removed, inside the 15 s tombstone window, resolves that earlier
+`RemovedSessionPrompt` and sends nothing.
+
+`pendingActions` maps `prompt_id` to the action in flight (`'retry'` or
+`'remove'`). A row with an entry must not offer another action — gate Retry,
+Remove and Edit on it. Both actions resolve on their own request; the list
+refetch that follows does not hold the caller.
+
+`classifyPromptActionError(error)` turns any refusal into one of five
+outcomes. Map the outcome to your own words; never show `error.message`.
+
+| Outcome         | Cause                                                             |
+| --------------- | ----------------------------------------------------------------- |
+| `gone`          | 404 `prompt_not_found` — the row is no longer in the inbox.        |
+| `already_sent`  | 409 `prompt_already_sent` — a model step already read it.          |
+| `unreachable`   | 409 `prompt_cancel_unreachable`, a timeout, or no server answer.   |
+| `pending`       | `prompt_action_pending` — the other action on this row is running. |
+| `failed`        | Anything else.                                                    |
+
+`retry` has no optimistic state: the row keeps its listed state until the
+server answers, and `pendingActions` is what says it is being retried.
+`retrySessionPrompt` answers `observed_at`, the server's clock after the write,
+so a list read stamped before it cannot repaint the row `failed`. Delivery
+re-mints the retried row's wire id; a delivery that already landed is not run
+twice because the delivery idempotency key dedupes it, not because the id is
+unchanged.
+
+`SessionPrompt.failure_code` is why delivery gave up, as a stable code
+(`last_error` stays the server's prose). It is `null` unless `state` is
+`failed`, and a row failed before the server recorded codes reads `unknown`.
+The vocabulary is `out_of_credits`, `model_unavailable`, `connector_required`,
+`runtime_unreachable`, `not_landed`, `redelivery_exhausted`, `rewound`,
+`session_gone`, `refused`, `unknown`. Treat any code you do not recognize as
+`unknown`, so new codes stay additive.
+
+Undo re-creates a removed row with `createSessionPrompt({ restore: true })`.
+A restore does not release the session's hold, so Undo after Stop does not
+resume the queue. `RemovedSessionPrompt.held` reports whether the removed row
+was held; pass it back as `held` so the restored row keeps that hold. A restore
+reaches the host `onError` sink only for a `402`.
+
+### Server turn authority
+
+`useSessionWorking().serverOpenTurnToken` is the `turn_token` the control plane
+holds open in the freshest `/turn` read, deliberately age-free: it keeps the
+transcript liveness poll running. A caller that HOLDS a control on that token —
+Stop pinned by a retrying assistant, for example — reads
+`serverOpenTurnFresh` instead. It is `true` only while the token is set AND the
+read behind it is younger than the projection's observation bound.
+
+`turnId` names a turn only from a `/turn` read issued after the current busy
+phase began. Immediately after a busy frame it is `null` until that read lands,
+which costs one round trip. A session-open bundle's `/turn` answer never names
+a turn against a busy-phase stamp and never retires the inbox drain floor. A
+queued send's receipt names the running turn only while that turn runs; the
+wire idle frame, or a new busy phase, ends the association. A row leaving the
+inbox list arms the drain floor when it was live work — `queued`, `delivering`,
+or `waiting` for any reason except `held` — and this tab neither minted it
+optimistically nor removed it.
+
+`useSessionSync(sessionId, { openTurnTokens })` takes the `turn_token`s the
+control plane currently holds open (`null` means unknown). When a token of the
+last set is absent from the next one, the hook issues one `'turn-end'`
+transcript read while the session stays busy, so a turn that ends into a queued
+prompt still settles without an idle frame. `openTurnTokensEnded(previous,
+next)` is that set comparison, exported for hosts that hold the list
+themselves.

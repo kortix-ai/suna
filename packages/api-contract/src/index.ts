@@ -802,6 +802,12 @@ export const PendingSessionPromptSchema = z
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
     /**
+     * Client epoch ms at which the user pressed Send. Timing only: the API
+     * stores it as `sendStartedAtMs` and logs `sinceSendMs` on the deliver
+     * provision timeline. It never orders inbox rows (`client_sent_at_ms` does).
+     */
+    send_started_at_ms: z.number().int().positive().optional(),
+    /**
      * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
      * carry attachments as `data:` URLs — the session's sandbox does not exist
      * yet, so there is nowhere to upload into. The API converts the whole

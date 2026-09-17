@@ -4,6 +4,9 @@ import { firstPromptAttachments } from '@/features/session/sent-attachment-previ
 import { sentAttachmentsOf } from '@/features/session/uploaded-file-refs';
 
 import {
+  captureHeldSend,
+  heldSendFailureCode,
+  heldSendResendInput,
   retryHeldSend,
   useCarriedDraftStore,
   useFirstPromptPreviewStore,
@@ -73,6 +76,9 @@ describe('useHeldSendFailureStore', () => {
     expect(resent).toEqual([]);
     expect(useHeldSendFailureStore.getState().failuresBySession.S1?.msg_1).toEqual({
       message: 'Attachment expired. Attach the file again.',
+      // The restart threw, so the files are the cause — whatever the first
+      // failure was. The queue says "Not sent. A file didn't upload."
+      code: 'upload_failed',
       send,
     });
   });
@@ -151,5 +157,145 @@ describe('useCarriedDraftStore', () => {
     useCarriedDraftStore.getState().carryDraft('S1', 'look at this', [file]);
 
     expect(useCarriedDraftStore.getState().draftBySession.S1.files).toEqual([file]);
+  });
+});
+
+/**
+ * A kept send has to be re-sendable EXACTLY as it went out. Retry used to
+ * re-resolve the agent, model and variant from whatever the composer showed at
+ * click time, re-stamp the queue order with the click's clock, and hand the
+ * reply-context-wrapped text back in as if the user had typed it.
+ */
+describe('captureHeldSend', () => {
+  const attachments = {
+    submittedIds: [],
+    readyAtSend: true,
+    whenReady: async () => [],
+    retry: () => {},
+    resubmit: () => {},
+    release: () => {},
+  };
+  const captured = () =>
+    captureHeldSend({
+      rawText: 'fix the parser',
+      text: '<reply_context>earlier answer</reply_context>\n\nfix the parser',
+      files: [],
+      mentions: [],
+      attachments,
+      clientMessageId: 'q_1',
+      sentAtMs: 1_700_000_000_000,
+      agent: 'build',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      variant: 'thinking',
+      placement: 'composer',
+    });
+
+  test('the picks the send RESOLVED are kept, so Retry cannot use a later one', () => {
+    expect(captured().overrides).toEqual({
+      agent: 'build',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      variant: 'thinking',
+      clientMessageId: 'q_1',
+      sentAtMs: 1_700_000_000_000,
+      // A Queue List send retried as a transcript send would paint a bubble
+      // the user never asked for.
+      placement: 'composer',
+    });
+  });
+
+  test('a send that picked nothing keeps that, rather than inheriting the composer', () => {
+    const send = captureHeldSend({
+      rawText: 'hi',
+      text: 'hi',
+      attachments,
+      clientMessageId: 'q_2',
+      sentAtMs: 5,
+      agent: null,
+      model: null,
+      variant: null,
+      placement: 'transcript',
+    });
+    expect(send.overrides).toEqual({
+      agent: null,
+      model: null,
+      variant: null,
+      clientMessageId: 'q_2',
+      sentAtMs: 5,
+      placement: 'transcript',
+    });
+  });
+
+  test('both texts are kept: the words typed, and the ones the wire carried', () => {
+    expect(captured().rawText).toBe('fix the parser');
+    expect(captured().text).toBe('<reply_context>earlier answer</reply_context>\n\nfix the parser');
+  });
+});
+
+describe('heldSendResendInput', () => {
+  const send: HeldSend = {
+    rawText: 'fix the parser',
+    text: '<reply_context>earlier answer</reply_context>\n\nfix the parser',
+    files: [],
+    mentions: [],
+    attachments: {
+      submittedIds: [],
+      readyAtSend: true,
+      whenReady: async () => [],
+      retry: () => {},
+      resubmit: () => {},
+      release: () => {},
+    },
+    overrides: {
+      agent: 'build',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      variant: 'thinking',
+      clientMessageId: 'q_1',
+      sentAtMs: 42,
+      placement: 'composer',
+    },
+  };
+
+  test('the resend sends the typed words, and the wire text is passed through untouched', () => {
+    // `rawText` is what the queued row shows and what the composer would have
+    // returned. `sentText` is what actually went out, so a reply context is
+    // not wrapped a second time and one picked since is not stolen.
+    const input = heldSendResendInput(send);
+    expect(input.text).toBe('fix the parser');
+    expect(input.overrides.sentText).toBe(send.text);
+    expect(input.attachments).toBe(send.attachments);
+    expect(input.files).toBe(send.files);
+    expect(input.mentions).toBe(send.mentions);
+  });
+
+  test('the send-time picks, key and Enter time are what the resend carries', () => {
+    expect(heldSendResendInput(send).overrides).toMatchObject({
+      agent: 'build',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      variant: 'thinking',
+      clientMessageId: 'q_1',
+      sentAtMs: 42,
+      placement: 'composer',
+    });
+  });
+
+  test('a send kept before both texts existed still re-sends what it has', () => {
+    const legacy = { ...send, rawText: undefined } as unknown as HeldSend;
+    expect(heldSendResendInput(legacy).text).toBe(send.text);
+  });
+});
+
+describe('heldSendFailureCode', () => {
+  test('a file that never became a part', () => {
+    expect(heldSendFailureCode('upload', new Error('a.png did not upload'))).toBe('upload_failed');
+  });
+
+  test('a POST that never reached a server has no status', () => {
+    expect(heldSendFailureCode('post', new TypeError('Failed to fetch'))).toBe('network');
+    expect(heldSendFailureCode('post', null)).toBe('network');
+  });
+
+  test('a refusal that DID reach the server is named by the server, not guessed here', () => {
+    expect(heldSendFailureCode('post', { status: 402 })).toBe('unknown');
+    expect(heldSendFailureCode('post', { status: 500 })).toBe('unknown');
   });
 });

@@ -85,12 +85,17 @@ export interface OpenEventStreamOptions {
    * window is called once the window ends, on the live subscription (or on the
    * next subscription's first frame if none is live then).
    *
+   * `info.contentLost` is true when the resync is owed for a dropped
+   * subscription that delivered content (a running turn's frames can be lost),
+   * and false when it is owed only for more than 5 s without content. A host
+   * can keep slower bounds on its re-reads for the second case.
+   *
    * Lets the host re-read anything it fears went stale (e.g. the transcript
    * tail) — the machine itself holds no host state to re-hydrate. A read issued
    * here postdates the new subscription, so every frame is covered by either
    * the read or the stream.
    */
-  onGapRehydrate?: (gapMs: number) => void;
+  onGapRehydrate?: (gapMs: number, info: { contentLost: boolean }) => void;
   /** External signal that also stops the stream when aborted (in addition to
    *  calling `close()` on the returned handle). Optional — most hosts just use
    *  `close()`. */
@@ -222,11 +227,27 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
   return { promise, cleanup: () => signal.removeEventListener('abort', handler) };
 }
 
+/** A resync owed to subscribers — see `OpenEventStreamOptions.onGapRehydrate`. */
+interface ResyncDue {
+  gapMs: number;
+  contentLost: boolean;
+}
+
+/** Two owed resyncs as one dispatch: the larger gap, and lost content if
+ *  either lost it. */
+function mergeResyncDue(held: ResyncDue | undefined, next: ResyncDue): ResyncDue {
+  if (!held) return next;
+  return {
+    gapMs: Math.max(held.gapMs, next.gapMs),
+    contentLost: held.contentLost || next.contentLost,
+  };
+}
+
 /** One `openEventStream()` caller's callbacks, held by the shared connection
  *  for the lifetime of its subscription — see `LiveStream` below. */
 interface StreamSubscriber {
   onEvent: (event: OpenCodeEvent) => void;
-  onGapRehydrate?: (gapMs: number) => void;
+  onGapRehydrate?: (gapMs: number, info: { contentLost: boolean }) => void;
   onParked?: (reason: EventStreamParkedInfo) => void;
 }
 
@@ -314,8 +335,9 @@ function createLiveStream(
   // The current attempt has yielded a frame and has not ended.
   let subscribed = false;
   let lastResyncAt: number | undefined;
-  // A resync the floor held back, with the largest gap it was due for.
-  let pendingResyncGapMs: number | undefined;
+  // A resync the floor held back: the largest gap it was due for, and whether
+  // any resync folded into it was owed for lost content.
+  let pendingResync: ResyncDue | undefined;
   let resyncTimer: EventStreamTimerHandle | undefined;
 
   // Event coalescing queue (like the SolidJS reference)
@@ -357,48 +379,51 @@ function createLiveStream(
     flushTimer = t.setTimeout(flush, Math.max(0, COALESCE_FLUSH_MS - elapsed));
   };
 
-  const dispatchResync = (gapMs: number) => {
+  const dispatchResync = (due: ResyncDue) => {
     lastResyncAt = t.now();
-    pendingResyncGapMs = undefined;
+    pendingResync = undefined;
     if (resyncTimer !== undefined) {
       t.clearTimeout(resyncTimer);
       resyncTimer = undefined;
     }
-    dispatchToSubscribers((sub) => sub.onGapRehydrate, gapMs);
+    dispatchToSubscribers((sub) => sub.onGapRehydrate, due.gapMs, {
+      contentLost: due.contentLost,
+    });
   };
 
   /** Dispatch a due resync now, or once the per-stream floor ends. */
-  const requestResync = (gapMs: number) => {
+  const requestResync = (due: ResyncDue) => {
     const now = t.now();
     if (lastResyncAt === undefined || now - lastResyncAt >= GAP_REHYDRATE_MS) {
-      dispatchResync(gapMs);
+      dispatchResync(due);
       return;
     }
-    pendingResyncGapMs = Math.max(pendingResyncGapMs ?? 0, gapMs);
+    pendingResync = mergeResyncDue(pendingResync, due);
     if (resyncTimer !== undefined) return;
     resyncTimer = t.setTimeout(() => {
       resyncTimer = undefined;
-      if (abortController.signal.aborted || pendingResyncGapMs === undefined) return;
+      if (abortController.signal.aborted || pendingResync === undefined) return;
       // Between attempts, a read would predate the next subscription. That
       // subscription's first frame dispatches the pending resync instead.
       if (!subscribed) return;
-      dispatchResync(pendingResyncGapMs);
+      dispatchResync(pendingResync);
     }, lastResyncAt + GAP_REHYDRATE_MS - now);
   };
 
   /**
-   * The resync gap owed when an attempt yields its first frame, or undefined.
+   * The resync owed when an attempt yields its first frame, or undefined.
    * Due on a reconnect whose dropped subscription delivered content (any gap),
    * on a reconnect with no content for more than GAP_REHYDRATE_MS, and for a
    * resync the floor held back.
    */
-  const resyncGapOnSubscribe = (isReconnect: boolean): number | undefined => {
+  const resyncOnSubscribe = (isReconnect: boolean): ResyncDue | undefined => {
     const gapMs = t.now() - lastStreamActivityTime;
-    const contentBefore = contentSinceSubscribe;
+    const contentLost = isReconnect && contentSinceSubscribe;
     contentSinceSubscribe = false;
-    if (pendingResyncGapMs !== undefined) return Math.max(pendingResyncGapMs, gapMs);
-    if (isReconnect && (contentBefore || gapMs > GAP_REHYDRATE_MS)) return gapMs;
-    return undefined;
+    const due =
+      contentLost || (isReconnect && gapMs > GAP_REHYDRATE_MS) ? { gapMs, contentLost } : undefined;
+    if (pendingResync === undefined) return due;
+    return mergeResyncDue(pendingResync, due ?? { gapMs, contentLost: false });
   };
 
   // Consume the stream in the background with automatic retry
@@ -547,7 +572,7 @@ function createLiveStream(
           ) as OpenCodeEvent;
           // The first frame proves the new subscription exists. Decide the
           // resync before this frame counts as the new attempt's content.
-          const resyncGapMs = subscribed ? undefined : resyncGapOnSubscribe(isReconnect);
+          const resyncDue = subscribed ? undefined : resyncOnSubscribe(isReconnect);
           subscribed = true;
           if (isStreamContentEvent(e)) contentSinceSubscribe = true;
           if (e?.type) {
@@ -562,11 +587,11 @@ function createLiveStream(
             queue.push({ type: (e as any).type, event: e });
             schedule();
           }
-          if (resyncGapMs !== undefined) {
+          if (resyncDue !== undefined) {
             // Hand this frame over first, so subscribers see the resync after
             // the frame that proves the subscription.
             flush();
-            requestResync(resyncGapMs);
+            requestResync(resyncDue);
           }
           if (!e?.type) continue;
 

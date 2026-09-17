@@ -126,6 +126,45 @@ List rows include `full_text` for complete previews after reload. `text` remains
 the bounded preview for older clients. Attachment bytes are excluded from list
 responses. Delete returns the complete prompt for lossless undo.
 
+`failure_code` on a row is why delivery gave up, as a stable code you map to
+your own words (`last_error` stays the server's prose). It is `null` unless
+`state` is `failed`, and a row failed before the server recorded codes reads
+`unknown`. The vocabulary is `out_of_credits`, `model_unavailable`,
+`connector_required`, `runtime_unreachable`, `not_landed`,
+`redelivery_exhausted`, `rewound`, `session_gone`, `refused`, `unknown`. Treat
+an unrecognized code as `unknown`.
+
+### Queue row actions
+
+`remove` and `retry` are one request per row intent, shared by every mounted
+`useSessionPrompts` of the session. Calling the same action again while the
+first is in flight returns that promise and sends nothing. Calling the other
+action rejects without sending, with `code: 'prompt_action_pending'`. A
+`remove` of a row this tab already removed, inside the 15 s tombstone window,
+resolves that earlier removal and sends nothing.
+
+`pendingActions` maps `prompt_id` to the action in flight (`'retry'` or
+`'remove'`). Disable a row's other actions — Retry, Remove, Edit — while it has
+an entry. Both actions resolve on their own request; the list refetch that
+follows does not hold the caller.
+
+`classifyPromptActionError(error)` turns any refusal into `gone` (404, the row
+left the inbox), `already_sent` (409, a model step already read it),
+`unreachable` (409 `prompt_cancel_unreachable`, a timeout, or no answer at
+all), `pending` (the other action on this row is running), or `failed`. Map the
+outcome to your own copy; never show `error.message`.
+
+`retry` has no optimistic state: the row keeps its listed state until the
+server answers, and `pendingActions` is what says it is being retried. The
+response carries `observed_at`, the server's clock after the write, so a list
+read stamped before it cannot repaint the row `failed`.
+
+Undo re-creates a removed row with `enqueue`/`createSessionPrompt` and
+`restore: true`. A restore does not release the session's hold, so Undo after
+Stop does not resume the queue. Pass back the removed row's `held` so the
+restored row keeps its own hold. A restore reaches the host error sink only for
+a `402`.
+
 ### Pending delivery and active responses
 
 `useSessionWorking()` keeps `state: 'working'` while a prompt waits in the durable
@@ -137,8 +176,22 @@ activity clear it. A timed-out cancel does not confirm that execution stopped.
 
 A worker claim only checks admission and keeps the prompt waiting. Delivery starts
 after admission succeeds. A confirmed active turn clears the pending presentation
-even if the previous inbox snapshot still lists that prompt. Runtime activity
-preserves the active turn's message ID during this handoff.
+even if the previous inbox snapshot still lists that prompt. A `/turn` read
+issued after the busy phase began preserves the active turn's message ID during
+this handoff.
+
+`turnId` names a turn only from a `/turn` read issued after the current busy
+phase began. Right after a busy frame it is `null` until that read lands, which
+costs one round trip. A session-open bundle's `/turn` answer never names a turn
+against a busy-phase stamp and never retires the inbox drain floor. A queued
+send's receipt names the running turn only while that turn runs; the wire idle
+frame, or a new busy phase, ends the association.
+
+`serverOpenTurnToken` is the `turn_token` the control plane holds open in the
+freshest read, deliberately age-free so the transcript liveness poll keeps
+running. A control you HOLD on that token — Stop pinned by a retrying assistant,
+for example — must read `serverOpenTurnFresh` instead: it is `true` only while
+the token is set and the read behind it is still young.
 
 The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
 Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after

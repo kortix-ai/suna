@@ -24,6 +24,17 @@ export interface QueuedDraft {
   placement?: 'transcript' | 'composer';
   /** The inbox idempotency key — the id that joins this draft to its row. */
   clientMessageId: string;
+  /**
+   * The WIRE message id this send went out under (`mintSessionWireMessageId`),
+   * kept because it is the key `useHeldSendFailureStore` holds this send's
+   * failure by. It is stored, never re-derived: the mint memoizes in a module
+   * Map capped at 256 pairs and evicts the oldest, so deriving it later can
+   * hand back a different id and lose the failure.
+   *
+   * Absent only for a producer that keeps no held send — `InstantSessionShell`
+   * builds throwaway drafts for the projection and passes no failures.
+   */
+  messageId?: string;
   /** The text as typed, before reply context, uploads, or mention blocks. */
   text: string;
   files: AttachedFile[];
@@ -34,6 +45,13 @@ export interface QueuedDraft {
 
 interface QueuedDraftState {
   bySession: Record<string, readonly QueuedDraft[]>;
+  /**
+   * Write this session's draft for one submission. An UPSERT keyed by
+   * `clientMessageId`: a Retry re-enters `handleSend` with the same key, and
+   * appending would list the message twice under one React key. The original
+   * `createdAtMs` is kept, because the queue is ordered by when the user sent
+   * it, not by when they retried.
+   */
   add: (sessionId: string, draft: QueuedDraft) => void;
   markPosted: (sessionId: string, clientMessageId: string) => void;
   remove: (sessionId: string, clientMessageIds: readonly string[]) => void;
@@ -60,7 +78,17 @@ function withSession(
 export const useQueuedDraftStore = create<QueuedDraftState>((set) => ({
   bySession: {},
   add: (sessionId, draft) =>
-    set((s) => withSession(s, sessionId, [...(s.bySession[sessionId] ?? EMPTY), draft])),
+    set((s) => {
+      const drafts = s.bySession[sessionId] ?? EMPTY;
+      const existing = drafts.find((d) => d.clientMessageId === draft.clientMessageId);
+      if (!existing) return withSession(s, sessionId, [...drafts, draft]);
+      const merged = { ...draft, createdAtMs: existing.createdAtMs };
+      return withSession(
+        s,
+        sessionId,
+        drafts.map((d) => (d.clientMessageId === draft.clientMessageId ? merged : d)),
+      );
+    }),
   markPosted: (sessionId, clientMessageId) =>
     set((s) => {
       const drafts = s.bySession[sessionId];

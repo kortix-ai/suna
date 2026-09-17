@@ -455,7 +455,7 @@ describe('SessionSyncController', () => {
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
   });
 
-  test('deduplicates initial and reconciliation reads', async () => {
+  test('a freshness reconcile during the initial read shares no page with it and issues one follow-up read', async () => {
     let resolvePage!: (value: SessionSyncPage) => void;
     let calls = 0;
     const pending = new Promise<SessionSyncPage>((resolve) => {
@@ -473,9 +473,12 @@ describe('SessionSyncController', () => {
 
     const first = controller.start();
     const second = controller.reconcile('sse-gap');
+    // One read on the wire at a time: the gap waits for the initial read.
     expect(calls).toBe(1);
     resolvePage(page([]));
     await Promise.all([first, second]);
+    // The initial read was issued before the gap, so the gap gets its own read.
+    expect(calls).toBe(2);
   });
 
   test('does not reload an already synchronized tail on remount', async () => {
@@ -1594,6 +1597,78 @@ describe('SessionSyncController — a turn-end read reflects the finished turn',
     controller.destroy();
   });
 
+  test('an aborted read reports no failed read telemetry', async () => {
+    const clock = createScheduler();
+    const runtime = deferredRuntime(turnPage(PARTIAL));
+    const reads: Array<{ reason: SessionSyncReason; succeeded: boolean }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reads.push({ reason: event.reason, succeeded: event.succeeded }),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+    const abortError = () =>
+      Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+
+    controller.setBusy(true);
+    // Read 1: a poll read that passes its deadline.
+    clock.advance(10_001);
+    clock.advance(30_000);
+    await flush();
+    expect(runtime.reads[0].signal?.aborted).toBe(true);
+    runtime.reads[0].reject(abortError());
+    await flush();
+
+    // Read 2: a poll read superseded by the turn end (read 3). Its loader
+    // ignores the signal and fails with a transport error after the abort.
+    clock.advance(10_000);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    controller.setBusy(false);
+    expect(runtime.reads[1].signal?.aborted).toBe(true);
+    runtime.reads[1].reject(new Error('socket closed'));
+    await flush();
+    runtime.reads[2].reject(new Error('proxy reset'));
+    await flush();
+
+    // Only the real failure is reported.
+    expect(reads).toEqual([{ reason: 'turn-end', succeeded: false }]);
+    controller.destroy();
+  });
+
+  test('a turn-end follow-up still waiting when a new turn starts issues a stamping read', async () => {
+    const runtime = deferredRuntime(turnPage(PARTIAL));
+    const reasons: SessionSyncReason[] = [];
+    const hydrateOptions: Array<{ stampActivity?: boolean } | undefined> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (_messages, options?: { stampActivity?: boolean }) => hydrateOptions.push(options),
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+    });
+
+    controller.setBusy(true);
+    void controller.reconcile('visible');
+    // The turn ends during the visible read, so the turn-end read waits in the
+    // follow-up slot. The next turn starts before that read is issued.
+    controller.setBusy(false);
+    controller.setBusy(true);
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await flush();
+
+    // The follow-up reads the running turn: it is a liveness read and stamps.
+    expect(reasons).toEqual(['visible', 'poll']);
+    expect(hydrateOptions).toEqual([undefined, undefined]);
+    controller.destroy();
+  });
+
   test('a turn-end that joins a pending follow-up makes the shared read a repair read', async () => {
     const runtime = deferredRuntime(page(['message-1']));
     const reasons: SessionSyncReason[] = [];
@@ -1933,6 +2008,125 @@ describe('SessionSyncController — turn-end settle', () => {
       { stampActivity: false },
       { stampActivity: false },
     ]);
+    controller.destroy();
+  });
+
+  test('a poll retry pending when the turn ends does not read after the turn-end read lands', async () => {
+    const clock = createScheduler();
+    const log: Array<
+      | { at: number; reason: SessionSyncReason; succeeded: boolean }
+      | { at: number; hydrate: { stampActivity?: boolean } | undefined }
+    > = [];
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: () => {
+        calls += 1;
+        if (calls === 1) return Promise.reject(new Error('proxy reset'));
+        // The turn-end read is slow (600 ms), later reads are fast (100 ms):
+        // the poll retry, due at 11_001, fires before the first settle read.
+        const latencyMs = calls === 2 ? 600 : 100;
+        return new Promise<SessionSyncPage>((resolve) => {
+          clock.scheduler.setTimeout!(() => resolve(openOrClosedPage()), latencyMs);
+        });
+      },
+      hydrate: (_messages, options?: { stampActivity?: boolean }) =>
+        log.push({ at: clock.scheduler.now(), hydrate: options }),
+      markLoaded: () => {},
+      onTelemetry: (event) =>
+        log.push({ at: clock.scheduler.now(), reason: event.reason, succeeded: event.succeeded }),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await flush();
+    // The poll read failed. Its retry is due at 11_001.
+    controller.setBusy(false);
+    await flush();
+    for (let step = 0; step < 600; step++) {
+      clock.advance(100);
+      await flush();
+    }
+
+    expect(log).toEqual([
+      { at: 10_001, reason: 'poll', succeeded: false },
+      { at: 10_601, reason: 'turn-end', succeeded: true },
+      { at: 10_601, hydrate: { stampActivity: false } },
+      { at: 11_701, reason: 'turn-end', succeeded: true },
+      { at: 11_701, hydrate: { stampActivity: false } },
+      { at: 13_801, reason: 'turn-end', succeeded: true },
+      { at: 13_801, hydrate: { stampActivity: false } },
+      { at: 17_901, reason: 'turn-end', succeeded: true },
+      { at: 17_901, hydrate: { stampActivity: false } },
+      { at: 26_001, reason: 'turn-end', succeeded: true },
+      { at: 26_001, hydrate: { stampActivity: false } },
+    ]);
+    controller.destroy();
+  });
+
+  test('a read that lands outside the settle cycle keeps the cycle\'s pending retry', async () => {
+    const clock = createScheduler();
+    const issuedAt: number[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        issuedAt.push(clock.scheduler.now());
+        if (issuedAt.length === 2) throw new Error('proxy reset');
+        return openOrClosedPage();
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    // The first settle read, at 1_000, fails. Its retry is due at 2_000.
+    await advanceBy(clock, 1_000);
+    clock.advance(500);
+    await controller.reconcile('visible');
+    await flush();
+    await advanceBy(clock, 60_000);
+
+    // The visible read at 1_500 is not a cycle read. The retry (due 2_000,
+    // fired on the 2_500 step) is, and the cycle continues from it: 5 cycle
+    // reads in total.
+    expect(issuedAt).toEqual([0, 1_000, 1_500, 2_500, 6_500, 14_500]);
+    controller.destroy();
+  });
+
+  test('a turn-end retry still waiting when a new turn starts issues a stamping read', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const hydrateOptions: Array<{ stampActivity?: boolean } | undefined> = [];
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error('proxy reset');
+        return openOrClosedPage();
+      },
+      hydrate: (_messages, options?: { stampActivity?: boolean }) => hydrateOptions.push(options),
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    // The turn-end read failed; its retry is due at 1_000. A new turn starts first.
+    controller.setBusy(true);
+    await advanceBy(clock, 1_000);
+
+    expect(reasons).toEqual(['turn-end', 'poll']);
+    expect(hydrateOptions).toEqual([undefined]);
     controller.destroy();
   });
 

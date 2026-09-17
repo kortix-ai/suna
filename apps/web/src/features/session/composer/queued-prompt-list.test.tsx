@@ -5,7 +5,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { QueueRow } from '../queue-projection';
-import { QueuedPromptList, type QueuedPromptListProps } from './queued-prompt-list';
+import {
+  QUEUE_ROW_ACTION_COOLDOWN_MS,
+  QueuedPromptList,
+  acceptRowAction,
+  focusMovesToComposer,
+  focusedRowAfter,
+  nextRowActionState,
+  type QueuedPromptListProps,
+} from './queued-prompt-list';
 
 const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   clientMessageId: `c-${over.id}`,
@@ -13,9 +21,17 @@ const row = (over: Partial<QueueRow> & { id: string }): QueueRow => ({
   attachmentCount: 0,
   state: 'queued',
   removable: true,
+  retryable: false,
   takeBackEligible: true,
   ...over,
 });
+
+/** Each `<button>` whole, so an attribute is read on the button that carries
+ *  it — a `toContain` over the row matches either one. */
+const buttons = (markup: string) =>
+  Array.from(markup.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)).map((m) => m[0]);
+const button = (markup: string, label: string) =>
+  buttons(markup).find((html) => html.includes(`aria-label="${label}"`));
 
 const render = (props: Partial<QueuedPromptListProps>) =>
   renderToStaticMarkup(
@@ -68,7 +84,15 @@ describe('QueuedPromptList', () => {
 
   test('a failed row says so and offers Retry and Remove, both visible without hover', () => {
     const markup = render({
-      rows: [row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })],
+      rows: [
+        row({
+          id: 'f',
+          state: 'failed',
+          retryable: true,
+          lastError: 'boom',
+          takeBackEligible: false,
+        }),
+      ],
     });
     expect(markup).toContain('Not sent');
     expect(markup).toContain('aria-label="Retry"');
@@ -101,4 +125,257 @@ test('Queue List rows carry no waiting or sending caption', () => {
   expect(markup).not.toContain('Waiting');
   expect(markup).not.toContain('Sending');
   expect(markup).not.toContain('role="status"');
+});
+
+describe('acceptRowAction', () => {
+  // A Remove takes its row off the list and the NEXT row slides up under the
+  // pointer, with its own Remove in the same place. The second click of a
+  // double-click lands on that row and removes a prompt nobody chose.
+  const at = (nowMs: number) => ({ detail: 1, nowMs, lastShiftAtMs: 1_000 });
+
+  const table = [
+    ['the click that starts the cooldown', at(1_000), false],
+    ['halfway through it', at(1_000 + QUEUE_ROW_ACTION_COOLDOWN_MS / 2), false],
+    ['one ms before it ends', at(1_000 + QUEUE_ROW_ACTION_COOLDOWN_MS - 1), false],
+    ['exactly when it ends', at(1_000 + QUEUE_ROW_ACTION_COOLDOWN_MS), true],
+    ['well after it', at(1_000 + 5_000), true],
+  ] as const;
+  for (const [label, input, accepted] of table) {
+    test(`a pointer activation ${label} → ${accepted}`, () => {
+      expect(acceptRowAction(input)).toBe(accepted);
+    });
+  }
+
+  test('the first action of a list is always accepted', () => {
+    expect(acceptRowAction({ detail: 1, nowMs: 1_000, lastShiftAtMs: null })).toBe(true);
+  });
+
+  test('a keyboard activation is never blocked — the pointer is not over anything', () => {
+    // Space and Enter on a focused button report `detail === 0`. Focus moves
+    // deliberately, so the row under it is the row the user chose.
+    expect(acceptRowAction({ detail: 0, nowMs: 1_000, lastShiftAtMs: 1_000 })).toBe(true);
+  });
+
+  test('a row whose own action is still running accepts nothing, from either input', () => {
+    expect(
+      acceptRowAction({ detail: 0, nowMs: 9_000, lastShiftAtMs: null, pendingAction: 'remove' }),
+    ).toBe(false);
+    expect(
+      acceptRowAction({ detail: 1, nowMs: 9_000, lastShiftAtMs: null, pendingAction: 'retry' }),
+    ).toBe(false);
+  });
+
+  test('the cooldown is 400 ms', () => {
+    expect(QUEUE_ROW_ACTION_COOLDOWN_MS).toBe(400);
+  });
+});
+
+describe('nextRowActionState', () => {
+  // Remove and Edit BOTH take the row off the list (Edit is a removal whose
+  // body goes into the composer, and the SDK filters the row out of the cache
+  // on the click). Retry leaves the row where it is, so it starts no cooldown.
+  const table = [
+    ['remove', 400, true],
+    ['edit', 400, true],
+    ['retry', 400, false],
+  ] as const;
+  for (const [action, expectedStamp, shifts] of table) {
+    test(`${action} ${shifts ? 'starts' : 'does not start'} the cooldown`, () => {
+      expect(
+        nextRowActionState({ action, detail: 1, nowMs: 400, lastShiftAtMs: null }),
+      ).toEqual({ accepted: true, lastShiftAtMs: shifts ? expectedStamp : null });
+    });
+  }
+
+  const doubleClick = [
+    ['remove', 'remove'],
+    ['remove', 'edit'],
+    ['edit', 'edit'],
+    ['edit', 'remove'],
+    ['edit', 'retry'],
+  ] as const;
+  for (const [first, second] of doubleClick) {
+    test(`a pointer ${second} 200 ms after a ${first} lands on the shifted list and is refused`, () => {
+      const after = nextRowActionState({
+        action: first,
+        detail: 1,
+        nowMs: 1_000,
+        lastShiftAtMs: null,
+      });
+      expect(after.accepted).toBe(true);
+      expect(
+        nextRowActionState({
+          action: second,
+          detail: 1,
+          nowMs: 1_200,
+          lastShiftAtMs: after.lastShiftAtMs,
+        }),
+      ).toEqual({ accepted: false, lastShiftAtMs: 1_000 });
+    });
+  }
+
+  test('a refused activation never re-arms the cooldown', () => {
+    // Otherwise a held-down double-click would extend the block indefinitely.
+    expect(
+      nextRowActionState({ action: 'remove', detail: 1, nowMs: 1_399, lastShiftAtMs: 1_000 }),
+    ).toEqual({ accepted: false, lastShiftAtMs: 1_000 });
+  });
+
+  test('a keyboard Edit right after a pointer Remove is accepted, and re-stamps', () => {
+    expect(
+      nextRowActionState({ action: 'edit', detail: 0, nowMs: 1_010, lastShiftAtMs: 1_000 }),
+    ).toEqual({ accepted: true, lastShiftAtMs: 1_010 });
+  });
+
+  test('a row with its own action in flight accepts nothing and stamps nothing', () => {
+    expect(
+      nextRowActionState({
+        action: 'edit',
+        detail: 1,
+        nowMs: 9_000,
+        lastShiftAtMs: null,
+        pendingAction: 'remove',
+      }),
+    ).toEqual({ accepted: false, lastShiftAtMs: null });
+  });
+});
+
+describe('a row with an action in flight', () => {
+  test('is marked, so the gate and a test can both see it', () => {
+    const markup = render({
+      rows: [row({ id: 'a', pendingAction: 'remove' }), row({ id: 'b' })],
+    });
+    expect(markup).toContain('data-queued-pending="remove"');
+    expect(count(markup, 'data-queued-pending=')).toBe(1);
+  });
+});
+
+describe('a failed row', () => {
+  const failed = (over: Partial<QueueRow> = {}) =>
+    render({
+      rows: [
+        row({
+          id: 'f',
+          state: 'failed',
+          retryable: true,
+          takeBackEligible: false,
+          ...over,
+        }),
+      ],
+    });
+
+  test('a named cause reads as one sentence; the server prose only hovers', () => {
+    const markup = failed({
+      failureCode: 'out_of_credits',
+      lastError: 'Out of credits. Top up to continue.',
+    });
+    expect(markup).toContain('Not sent. Out of credits.');
+    expect(markup).not.toContain('— Out of credits');
+    expect(markup).toContain('title="Out of credits. Top up to continue."');
+  });
+
+  test('a cause with no code of its own still shows the reason it has', () => {
+    const markup = failed({ lastError: 'admission check failed: no driver' });
+    expect(markup).toContain('Not sent — admission check failed: no driver');
+  });
+
+  test('the sentence is a live region the buttons point at', () => {
+    const markup = failed({ failureCode: 'network' });
+    expect(markup).toContain('id="queued-failure-f"');
+    expect(markup).toContain('role="status"');
+    for (const label of ['Retry', 'Remove from queue']) {
+      expect(button(markup, label)).toContain('aria-describedby="queued-failure-f"');
+    }
+  });
+
+  test('a session that no longer exists offers no Retry, only Remove', () => {
+    const markup = failed({ failureCode: 'session_gone', retryable: false });
+    expect(markup).toContain('Not sent. This session no longer exists.');
+    expect(button(markup, 'Retry')).toBeUndefined();
+    expect(button(markup, 'Remove from queue')).toBeDefined();
+  });
+
+  test('a retry in flight marks the row busy and shows Loading in Retry alone', () => {
+    // `aria-disabled`, never `disabled`: disabling the focused button drops
+    // focus to <body> and the user loses their place mid-action.
+    const markup = failed({ failureCode: 'network', pendingAction: 'retry' });
+    expect(markup).toContain('aria-busy="true"');
+    const retry = button(markup, 'Retry')!;
+    const remove = button(markup, 'Remove from queue')!;
+    expect(retry).toContain('aria-disabled="true"');
+    expect(remove).toContain('aria-disabled="true"');
+    expect(retry).not.toContain('disabled=""');
+    expect(remove).not.toContain('disabled=""');
+    expect(retry).toContain('<svg');
+    expect(remove).not.toContain('<svg');
+  });
+
+  test('a removal in flight shows Loading in Remove alone', () => {
+    const markup = failed({ failureCode: 'network', pendingAction: 'remove' });
+    expect(button(markup, 'Remove from queue')!).toContain('<svg');
+    expect(button(markup, 'Retry')!).not.toContain('<svg');
+  });
+
+  test('a row with nothing running is not busy', () => {
+    expect(failed({ failureCode: 'network' })).not.toContain('aria-busy');
+  });
+});
+
+describe('focusMovesToComposer', () => {
+  // A failed row's Retry removes the row it lives on. Without this the focused
+  // button unmounts, focus falls to <body>, and the next keystroke goes nowhere.
+  const rows = [row({ id: 'a', state: 'failed', retryable: true }), row({ id: 'b' })];
+
+  test('the row holding focus left the list', () => {
+    expect(focusMovesToComposer({ focusedRowId: 'gone', rows, activeElementIsBody: true })).toBe(
+      true,
+    );
+  });
+
+  test('the row holding focus stopped being failed, so its buttons went', () => {
+    expect(focusMovesToComposer({ focusedRowId: 'b', rows, activeElementIsBody: true })).toBe(true);
+  });
+
+  test('the row is still failed, so its buttons are still there', () => {
+    expect(focusMovesToComposer({ focusedRowId: 'a', rows, activeElementIsBody: true })).toBe(
+      false,
+    );
+  });
+
+  test('nothing in the list had focus', () => {
+    expect(focusMovesToComposer({ focusedRowId: null, rows, activeElementIsBody: true })).toBe(
+      false,
+    );
+  });
+
+  test('focus went somewhere the user chose, so it is not taken away again', () => {
+    expect(focusMovesToComposer({ focusedRowId: 'gone', rows, activeElementIsBody: false })).toBe(
+      false,
+    );
+  });
+});
+
+describe('focusedRowAfter', () => {
+  // The latch may only survive a focus loss caused by the row's OWN unmount.
+  // Kept across an ordinary blur it goes stale, and any later `rows` change
+  // while focus happens to sit on <body> yanks the caret into the composer.
+  test('a focused row becomes the latch', () => {
+    expect(focusedRowAfter(null, { type: 'focus', rowId: 'a' })).toBe('a');
+    expect(focusedRowAfter('a', { type: 'focus', rowId: 'b' })).toBe('b');
+  });
+
+  test('the row losing focus drops the latch', () => {
+    expect(focusedRowAfter('a', { type: 'blur', rowId: 'a' })).toBeNull();
+  });
+
+  test('another row losing focus leaves the latch alone', () => {
+    expect(focusedRowAfter('a', { type: 'blur', rowId: 'b' })).toBe('a');
+  });
+
+  test('moving between two buttons of ONE row ends up back on that row', () => {
+    // focusout bubbles from the old button before focusin bubbles from the new
+    // one, so the pair has to be a no-op overall.
+    const afterBlur = focusedRowAfter('a', { type: 'blur', rowId: 'a' });
+    expect(focusedRowAfter(afterBlur, { type: 'focus', rowId: 'a' })).toBe('a');
+  });
 });

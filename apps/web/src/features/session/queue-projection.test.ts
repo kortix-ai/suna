@@ -2,7 +2,16 @@ import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from './composer/types';
-import { cleanPromptText, composeTakeBack, projectQueueRows } from './queue-projection';
+import {
+  cleanPromptText,
+  composeTakeBack,
+  draftClientMessageId,
+  draftMessageId,
+  isDraftRowId,
+  projectQueueRows,
+  promptIdForClientMessage,
+  rowsToRemoveOnRewind,
+} from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -23,6 +32,7 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
 function draft(clientMessageId: string, over: Partial<QueuedDraft> = {}): QueuedDraft {
   return {
     clientMessageId,
+    messageId: `wire_${clientMessageId}`,
     text: `typed ${clientMessageId}`,
     files: [],
     createdAtMs: 1_000,
@@ -207,6 +217,193 @@ describe('projectQueueRows', () => {
     });
     expect(rows.map((r) => r.id)).toEqual(['optimistic:q_1']);
   });
+
+  test('a row whose remove or retry is in flight says which action it is', () => {
+    // The row keeps its buttons visible while the request runs. What it must
+    // not do is accept a second one — `acceptRowAction` reads this field.
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'cmd-1', client_message_id: 'q_1' }),
+        prompt({ prompt_id: 'cmd-2', client_message_id: 'q_2', state: 'failed' }),
+        prompt({ prompt_id: 'cmd-3', client_message_id: 'q_3' }),
+      ],
+      pendingActions: { 'cmd-1': 'remove', 'cmd-2': 'retry' },
+    });
+    expect(rows.map((r) => [r.id, r.pendingAction])).toEqual([
+      ['cmd-1', 'remove'],
+      ['cmd-2', 'retry'],
+      ['cmd-3', undefined],
+    ]);
+  });
+
+  test('no pending actions at all leaves every row free', () => {
+    const { rows } = projectQueueRows({ prompts: [prompt()] });
+    expect(rows[0].pendingAction).toBeUndefined();
+  });
+
+  test('a draft with no server row yet can carry no pending action', () => {
+    // Its id is `draft:<clientMessageId>`, which is not a `prompt_id`, so a
+    // same-named entry must not reach it.
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_1', { posted: false })],
+      pendingActions: { 'draft:q_1': 'remove', q_1: 'remove' },
+    });
+    expect(rows[0].pendingAction).toBeUndefined();
+  });
+
+  test("a failed server row carries the server's code and whether Retry can help", () => {
+    const { rows } = projectQueueRows({
+      prompts: [
+        prompt({
+          prompt_id: 'credits',
+          state: 'failed',
+          last_error: 'Out of credits. Top up to continue.',
+          failure_code: 'out_of_credits',
+        }),
+        prompt({ prompt_id: 'gone', state: 'failed', failure_code: 'session_gone' }),
+        prompt({ prompt_id: 'old', state: 'failed', last_error: 'admission check failed' }),
+        prompt({ prompt_id: 'live' }),
+      ],
+    });
+    expect(rows.map((r) => [r.id, r.failureCode ?? null, r.retryable])).toEqual([
+      ['credits', 'out_of_credits', true],
+      // The session is gone: sending it again can only fail the same way.
+      ['gone', 'session_gone', false],
+      // A row written before the server recorded codes.
+      ['old', null, true],
+      // Not failed: there is nothing to retry.
+      ['live', null, false],
+    ]);
+  });
+
+  test('a Queue List send that failed before the server had a row is a failed row', () => {
+    // The failure lives in the held-send store, keyed by the wire id
+    // `handleSend` minted — the ONE source of failure truth. The projection
+    // mints the same id from the same pair.
+    const files = [remoteFile];
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_up', { posted: false, text: 'summarise the report', files })],
+      heldSendFailures: {
+        wire_q_up: { message: "a.png didn't upload", code: 'upload_failed' },
+      },
+    });
+    expect(rows).toEqual([
+      {
+        id: 'draft:q_up',
+        clientMessageId: 'q_up',
+        text: 'summarise the report',
+        attachmentCount: 1,
+        state: 'failed',
+        lastError: "a.png didn't upload",
+        failureCode: 'upload_failed',
+        removable: true,
+        retryable: true,
+        takeBackEligible: false,
+      },
+    ]);
+  });
+
+  test('a draft whose send is still on the wire stays `sending`, with nothing to click', () => {
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_wire', { posted: false })],
+      heldSendFailures: { wire_q_other: { message: 'x' } },
+    });
+    expect(rows[0]).toMatchObject({
+      state: 'sending',
+      removable: false,
+      retryable: false,
+      takeBackEligible: false,
+    });
+    expect(rows[0].lastError).toBeUndefined();
+  });
+
+  test('the failure key is the id the draft CARRIES, never one re-derived here', () => {
+    // `mintSessionWireMessageId` memoizes in a module Map capped at 256 pairs
+    // and evicts the oldest, so a re-derived key is a different key once a
+    // long-lived tab has minted past the cap — and the failed row would
+    // silently go back to `sending` with no Retry and no Remove. The draft
+    // holds the id its own send was minted under, so nothing can evict it.
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_lru', { posted: false, messageId: 'msg_minted_long_ago' })],
+      heldSendFailures: { msg_minted_long_ago: { message: 'nope', code: 'network' } },
+    });
+    expect(rows[0]).toMatchObject({ state: 'failed', failureCode: 'network', retryable: true });
+  });
+
+  test('a draft kept by a producer that holds no send stays `sending`', () => {
+    // The boot shell builds its rows from its own send state and has no wire
+    // id to give. It must not crash, and must not claim a failure.
+    const { messageId: _omitted, ...noWireId } = draft('q_shell', { posted: false });
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [noWireId],
+      heldSendFailures: { wire_q_shell: { message: 'x' } },
+    });
+    expect(rows[0]).toMatchObject({ state: 'sending', removable: false, retryable: false });
+  });
+
+  test('a failure with no code of its own still shows its reason', () => {
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_net', { posted: false })],
+      heldSendFailures: { wire_q_net: { message: 'Failed to fetch' } },
+    });
+    expect(rows[0]).toMatchObject({ state: 'failed', lastError: 'Failed to fetch' });
+    expect(rows[0].failureCode).toBeUndefined();
+  });
+});
+
+describe('draft row ids', () => {
+  test('a draft row names its draft, and a server row never does', () => {
+    expect(isDraftRowId('draft:q_1')).toBe(true);
+    expect(isDraftRowId('cmd-1')).toBe(false);
+    expect(draftClientMessageId('draft:q_1')).toBe('q_1');
+    expect(draftClientMessageId('cmd-1')).toBeNull();
+  });
+
+  test('a client message id containing the separator survives the round trip', () => {
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('pending:ses_1', { posted: false })],
+    });
+    expect(draftClientMessageId(rows[0].id)).toBe('pending:ses_1');
+  });
+});
+
+describe('draftMessageId', () => {
+  // The two draft handlers need the wire id the send was minted under. Reading
+  // it off the draft keeps them on the same key the projection reads.
+  test('hands back the id the draft was sent under', () => {
+    expect(draftMessageId([draft('a'), draft('b')], 'b')).toBe('wire_b');
+  });
+
+  test('no draft, or a draft with no wire id, has nothing to hand back', () => {
+    expect(draftMessageId([draft('a')], 'missing')).toBeNull();
+    const { messageId: _omitted, ...noWireId } = draft('c');
+    expect(draftMessageId([noWireId], 'c')).toBeNull();
+  });
+});
+
+describe('promptIdForClientMessage', () => {
+  // A DELETE matches `prompt_id`. A send that failed before its response
+  // arrived holds only its `client_message_id`, so the row a lost POST created
+  // is found by that.
+  test('finds the row a lost POST created', () => {
+    const rows = [
+      prompt({ prompt_id: 'cmd-1', client_message_id: 'q_1' }),
+      prompt({ prompt_id: 'cmd-2', client_message_id: 'q_2' }),
+    ];
+    expect(promptIdForClientMessage(rows, 'q_2')).toBe('cmd-2');
+  });
+
+  test('no row means nothing to remove', () => {
+    expect(promptIdForClientMessage([], 'q_1')).toBeNull();
+    expect(promptIdForClientMessage([prompt({ client_message_id: 'q_9' })], 'q_1')).toBeNull();
+  });
 });
 
 describe('cleanPromptText', () => {
@@ -259,5 +456,43 @@ describe('composeTakeBack', () => {
     const result = composeTakeBack({ removed: [withUpload, withFilePart], drafts: [] });
     expect(result.text).toBe('');
     expect(result.requeue).toEqual([withUpload, withFilePart]);
+  });
+});
+
+describe('rowsToRemoveOnRewind', () => {
+  // A rewind stages `session.revert` and the NEXT delivered prompt commits it,
+  // so every queued row has to go before the replacement prompt is sent. The
+  // selection is read AFTER the rewind await, and it must not re-DELETE a row
+  // the user removed during that await, nor a row whose own action is still on
+  // the wire — both would spend a request on an outcome that already happened.
+  test('a row already gone from the list is not in the result', () => {
+    const stillQueued = prompt({ prompt_id: 'cmd-2', client_message_id: 'q_2' });
+    expect(rowsToRemoveOnRewind({ prompts: [stillQueued] })).toEqual([stillQueued]);
+    // The removed row is simply absent from `prompts` — the SDK filters it out
+    // of the cache on the click — so the loop never sees it.
+    expect(rowsToRemoveOnRewind({ prompts: [] })).toEqual([]);
+  });
+
+  test('a row whose remove or retry is in flight is not in the result', () => {
+    const removing = prompt({ prompt_id: 'cmd-2', client_message_id: 'q_2' });
+    const retrying = prompt({ prompt_id: 'cmd-3', client_message_id: 'q_3', state: 'failed' });
+    const free = prompt({ prompt_id: 'cmd-4', client_message_id: 'q_4' });
+    expect(
+      rowsToRemoveOnRewind({
+        prompts: [removing, retrying, free],
+        pendingActions: { 'cmd-2': 'remove', 'cmd-3': 'retry' },
+      }),
+    ).toEqual([free]);
+  });
+
+  test('a row already handed to the runtime is not in the result: the server refuses it', () => {
+    const delivering = prompt({ prompt_id: 'cmd-5', state: 'delivering' });
+    const queued = prompt({ prompt_id: 'cmd-6' });
+    expect(rowsToRemoveOnRewind({ prompts: [delivering, queued] })).toEqual([queued]);
+  });
+
+  test('no pending actions at all leaves every removable row in the result', () => {
+    const rows = [prompt({ prompt_id: 'cmd-7' }), prompt({ prompt_id: 'cmd-8', state: 'failed' })];
+    expect(rowsToRemoveOnRewind({ prompts: rows, pendingActions: {} })).toEqual(rows);
   });
 });

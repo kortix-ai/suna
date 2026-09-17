@@ -27,6 +27,12 @@ import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk
  * `clientMessageId` is the original, so the inbox's unique idempotency key
  * makes a repeated undo a no-op rather than a second copy of the message.
  *
+ * `restore` says this POST puts a row BACK. Every other new prompt releases the
+ * session's hold, so Stop, remove, undo used to restart the whole queue: the
+ * undo was an ordinary send. `held` carries the removed row's own hold bit
+ * (`RemovedSessionPrompt.held`), so the restored row is exactly as held as the
+ * one that was destroyed. A server that does not report it gets no `held` key.
+ *
  * `messageId` is NOT. OpenCode resolves "has this prompt been answered?" by id
  * ORDER, and the original id was minted when the row was first queued — before
  * a turn that has been writing higher ids ever since. (Stop, remove, undo is
@@ -46,6 +52,8 @@ export function restoreQueuedMessage(
     clientMessageId: removed.client_message_id,
     messageId: mintMessageId(),
     parts: removed.parts,
+    restore: true,
+    ...(typeof removed.held === 'boolean' ? { held: removed.held } : {}),
     ...(removed.placement ? { placement: removed.placement } : {}),
     ...(removed.overrides ? { overrides: removed.overrides } : {}),
   };

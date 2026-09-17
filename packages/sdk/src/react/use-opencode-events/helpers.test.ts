@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   refetchKortixSessionMirrors,
+  releaseMessageRehydrate,
   reserveMessageRehydrate,
+  resyncReadIsUrgent,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
   WIRE_STATUS_FILL_FRESHNESS_MS,
@@ -209,21 +211,25 @@ describe('resolveClientEvictionUrl', () => {
 /**
  * The transcript re-read a stream resync asks for, per session.
  *
- * Every resync now comes from `openEventStream` after a reconnect, and the
- * stream already dispatches at most one per 5 s. The old 30 s cooldown and
- * in-flight lock swallowed the second resync of a flapping busy stream: the
- * frames lost in that reconnect were never re-read, and the final
- * `message.part.updated` then failed the prefix guard. The session sync
- * controller coalesces reads that overlap, so the only bound needed here is
- * a floor for streams that remount, shorter than the stream's own 5 s floor.
+ * Two bounds, chosen per read by `resyncReadIsUrgent`:
+ * - URGENT (the dropped subscription carried content and the session is
+ *   running): only a floor below the stream's 5 s floor. The old 30 s cooldown
+ *   and in-flight lock swallowed the resync of a second reconnect of a
+ *   flapping busy stream, so the frames that reconnect lost were never
+ *   re-read. The session sync controller chains an `sse-gap` read that arrives
+ *   during another read into one follow-up read.
+ * - OTHERWISE (a gap-only resync, or a session that is not running): the
+ *   30 s cooldown and no new read while this path's read is in flight. A
+ *   flapping stream otherwise re-read every held transcript back to back.
  */
 describe('reserveMessageRehydrate', () => {
-  test('a post-reconnect resync bypasses the 30 s cooldown but respects the floor', () => {
+  test('an urgent read bypasses the 30 s cooldown and the in-flight lock but respects the floor', () => {
     const sessionId = 'ses_resync_floor';
-    expect(reserveMessageRehydrate(sessionId, 100_000)).toBe(true);
-    expect(reserveMessageRehydrate(sessionId, 103_999)).toBe(false);
-    expect(reserveMessageRehydrate(sessionId, 104_000)).toBe(true);
-    expect(reserveMessageRehydrate(sessionId, 112_000)).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 100_000 })).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 103_999 })).toBe(false);
+    // The first read is still in flight: never released.
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 104_000 })).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 112_000 })).toBe(true);
   });
 
   /**
@@ -232,18 +238,56 @@ describe('reserveMessageRehydrate', () => {
    * reservation lands a few ms late. The stream's next resync can come exactly
    * 5 s after its stamp, and that resync must still re-read the transcript.
    */
-  test('a reservation 2 ms late still leaves the stream resync 5 s later its read', () => {
+  test('an urgent reservation 2 ms late still leaves the stream resync 5 s later its read', () => {
     const sessionId = 'ses_resync_late_reservation';
-    expect(reserveMessageRehydrate(sessionId, 400_002)).toBe(true);
-    expect(reserveMessageRehydrate(sessionId, 405_000)).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 400_002 })).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 405_000 })).toBe(true);
+  });
+
+  test('a non-urgent read waits for the in-flight read, then for 30 s from its reservation', () => {
+    const sessionId = 'ses_resync_cooldown';
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 500_000 })).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 540_000 })).toBe(false);
+    releaseMessageRehydrate(sessionId);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 540_000 })).toBe(true);
+    releaseMessageRehydrate(sessionId);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 569_999 })).toBe(false);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 570_000 })).toBe(true);
+  });
+
+  test('a non-urgent read waits for an urgent read still in flight', () => {
+    const sessionId = 'ses_resync_mixed';
+    expect(reserveMessageRehydrate(sessionId, { urgent: true, nowMs: 600_000 })).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 700_000 })).toBe(false);
+    releaseMessageRehydrate(sessionId);
+    expect(reserveMessageRehydrate(sessionId, { urgent: false, nowMs: 700_000 })).toBe(true);
   });
 
   test('guard: each session has its own floor', () => {
-    expect(reserveMessageRehydrate('ses_floor_a', 200_000)).toBe(true);
-    expect(reserveMessageRehydrate('ses_floor_b', 200_001)).toBe(true);
+    expect(reserveMessageRehydrate('ses_floor_a', { urgent: true, nowMs: 200_000 })).toBe(true);
+    expect(reserveMessageRehydrate('ses_floor_b', { urgent: true, nowMs: 200_001 })).toBe(true);
   });
 
   test('guard: an empty session id reserves nothing', () => {
-    expect(reserveMessageRehydrate('', 300_000)).toBe(false);
+    expect(reserveMessageRehydrate('', { urgent: true, nowMs: 300_000 })).toBe(false);
+    expect(reserveMessageRehydrate('', { urgent: false, nowMs: 300_000 })).toBe(false);
+  });
+});
+
+describe('resyncReadIsUrgent', () => {
+  test('lost content of a running session is urgent', () => {
+    expect(resyncReadIsUrgent({ contentLost: true, status: { type: 'busy' } })).toBe(true);
+    expect(
+      resyncReadIsUrgent({
+        contentLost: true,
+        status: { type: 'retry', attempt: 1, message: 'overloaded', next: 0 },
+      }),
+    ).toBe(true);
+  });
+
+  test('a session that is not running, or a gap-only resync, is not urgent', () => {
+    expect(resyncReadIsUrgent({ contentLost: true, status: { type: 'idle' } })).toBe(false);
+    expect(resyncReadIsUrgent({ contentLost: true, status: undefined })).toBe(false);
+    expect(resyncReadIsUrgent({ contentLost: false, status: { type: 'busy' } })).toBe(false);
   });
 });

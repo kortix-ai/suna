@@ -9,6 +9,7 @@ import {
   parseReplyContext,
   parseSessionReferences,
 } from './message-parsing';
+import { isRetryableFailure } from './queue-failure-copy';
 
 /**
  * What the queued list above the composer (`composer/queued-prompt-list.tsx`)
@@ -52,10 +53,19 @@ export interface QueueRow {
   attachmentCount: number;
   state: QueueRowState;
   lastError?: string;
+  /** Why delivery gave up, as a stable code (`queue-failure-copy.ts` turns it
+   *  into a sentence). Absent for a failure nothing named. */
+  failureCode?: string;
+  /** Sending this again can help — false for a session that no longer exists,
+   *  and for every row that has not failed. */
+  retryable: boolean;
   /** The server can still remove this prompt. */
   removable: boolean;
   /** Up takes it back into the composer without losing anything. */
   takeBackEligible: boolean;
+  /** This row already has a request in flight (`promptInbox.pendingActions`).
+   *  It must not accept a second one — see `acceptRowAction`. */
+  pendingAction?: 'retry' | 'remove';
 }
 
 export interface QueueProjection {
@@ -96,6 +106,15 @@ export function projectQueueRows(input: {
    *  transcript (tests). */
   transcriptMessageIds?: ReadonlySet<string>;
   drafts?: readonly QueuedDraft[];
+  /** The row actions in flight, by `prompt_id` (`promptInbox.pendingActions`).
+   *  A draft has no server row, so no entry can reach it. */
+  pendingActions?: Readonly<Record<string, 'retry' | 'remove'>>;
+  /** Sends that failed before the server had a row, by WIRE message id
+   *  (`useHeldSendFailureStore`). That store is the one source of failure
+   *  truth for a send: the transcript reads it for a Quick Queue bubble, and
+   *  this reads the same entry for a Queue List row. A draft names its own key
+   *  (`QueuedDraft.messageId`), so this stays a pure read. */
+  heldSendFailures?: Readonly<Record<string, { message: string; code?: string }>>;
 }): QueueProjection {
   const draftsById = new Map((input.drafts ?? []).map((d) => [d.clientMessageId, d] as const));
   const rows: QueueRow[] = [];
@@ -122,6 +141,8 @@ export function projectQueueRows(input: {
       ? draft.files.length
       : Math.max(prompt.attachments?.length ?? 0, cleaned.fileCount);
 
+    const failureCode = state === 'failed' ? (prompt.failure_code ?? null) : null;
+
     rows.push({
       id: prompt.prompt_id,
       clientMessageId: prompt.client_message_id,
@@ -129,11 +150,16 @@ export function projectQueueRows(input: {
       attachmentCount,
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
+      ...(failureCode ? { failureCode } : {}),
+      retryable: state === 'failed' && isRetryableFailure(failureCode),
       removable: state === 'queued' || state === 'failed',
       // A row from another tab or from before a reload comes back only when
       // its text is all there is: its files live as sandbox paths the composer
       // cannot re-attach.
       takeBackEligible: state === 'queued' && (Boolean(draft) || attachmentCount === 0),
+      ...(input.pendingActions?.[prompt.prompt_id]
+        ? { pendingAction: input.pendingActions[prompt.prompt_id] }
+        : {}),
     });
   }
 
@@ -141,18 +167,104 @@ export function projectQueueRows(input: {
   for (const draft of input.drafts ?? []) {
     if (draft.placement === 'transcript' || draft.posted || listed.has(draft.clientMessageId))
       continue;
+    // The wire id `handleSend` minted for this draft, carried ON the draft —
+    // never re-derived here. `mintSessionWireMessageId` memoizes in a module
+    // Map capped at 256 pairs and evicts the oldest, so re-deriving would mint
+    // a NEW id once a long-lived tab passed the cap, miss the failure, and
+    // strand the row as `sending` with no Retry and no Remove. It would also
+    // make this projection write to that Map during render.
+    const failure = draft.messageId ? input.heldSendFailures?.[draft.messageId] : undefined;
     rows.push({
-      id: `draft:${draft.clientMessageId}`,
+      id: draftRowId(draft.clientMessageId),
       clientMessageId: draft.clientMessageId,
       text: draft.text,
       attachmentCount: draft.files.length,
-      state: 'sending',
-      removable: false,
+      // A send that failed before the POST leaves nothing durable behind. The
+      // row is this tab's only copy of the message, so it has to say what went
+      // wrong and offer both ways out.
+      state: failure ? 'failed' : 'sending',
+      ...(failure ? { lastError: failure.message } : {}),
+      ...(failure?.code ? { failureCode: failure.code } : {}),
+      retryable: Boolean(failure) && isRetryableFailure(failure?.code),
+      removable: Boolean(failure),
       takeBackEligible: false,
     });
   }
 
   return { rows, heldCount };
+}
+
+/** A queued row with no server row yet: `draft:<clientMessageId>`. */
+const DRAFT_ROW_PREFIX = 'draft:';
+
+function draftRowId(clientMessageId: string): string {
+  return `${DRAFT_ROW_PREFIX}${clientMessageId}`;
+}
+
+/** Is this row this tab's own draft rather than an inbox row? */
+export function isDraftRowId(rowId: string): boolean {
+  return rowId.startsWith(DRAFT_ROW_PREFIX);
+}
+
+/** The submission this draft row stands for, or `null` for a server row. */
+export function draftClientMessageId(rowId: string): string | null {
+  return isDraftRowId(rowId) ? rowId.slice(DRAFT_ROW_PREFIX.length) : null;
+}
+
+/**
+ * The wire id one draft's send was minted under, or `null`.
+ *
+ * The two draft row actions need the key the held-send store holds the failure
+ * by, and it has to be the SAME key this projection read — so both take it off
+ * the draft rather than minting it a second time.
+ */
+export function draftMessageId(
+  drafts: readonly QueuedDraft[],
+  clientMessageId: string,
+): string | null {
+  return drafts.find((d) => d.clientMessageId === clientMessageId)?.messageId ?? null;
+}
+
+/**
+ * The `prompt_id` of the row a submission created, or `null`.
+ *
+ * A DELETE matches `prompt_id`, never the wire message id. A send whose
+ * response was lost holds only its `client_message_id`, so the row it may have
+ * created is found by that and removed by the id the route accepts.
+ */
+export function promptIdForClientMessage(
+  prompts: readonly SessionPrompt[],
+  clientMessageId: string,
+): string | null {
+  return prompts.find((p) => p.client_message_id === clientMessageId)?.prompt_id ?? null;
+}
+
+/**
+ * Which queued prompts an edit-send's rewind has to DELETE.
+ *
+ * A rewind stages `session.revert` and the NEXT delivered prompt commits it, so
+ * every row queued before the rewind would commit the truncation and then run
+ * against a trajectory that no longer exists. They all go.
+ *
+ * Two are left alone, and neither is a preference:
+ *
+ * - A row whose own remove or retry is already on the wire (`pendingActions`).
+ *   The SDK returns that in-flight result for a duplicate, so a second DELETE
+ *   buys nothing and its refusal is swallowed by the loop's `console.warn`.
+ * - A row already handed to the runtime (`state === 'delivering'`). The server
+ *   refuses to remove it.
+ *
+ * A row the user removed during the rewind await is not here at all: the caller
+ * passes the LIVE inbox, and the SDK filters a removed row out of its cache on
+ * the click.
+ */
+export function rowsToRemoveOnRewind(input: {
+  prompts: readonly SessionPrompt[];
+  pendingActions?: Readonly<Record<string, 'retry' | 'remove'>>;
+}): SessionPrompt[] {
+  return input.prompts.filter(
+    (prompt) => prompt.state !== 'delivering' && !input.pendingActions?.[prompt.prompt_id],
+  );
 }
 
 /**

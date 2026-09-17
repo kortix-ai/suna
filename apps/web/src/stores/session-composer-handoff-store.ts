@@ -139,7 +139,12 @@ export const useFirstPromptPreviewStore = create<FirstPromptPreviewState>((set) 
 
 /** One follow-up send, in the arguments `SessionChat.handleSend` takes, kept to send again. */
 export interface HeldSend {
+  /** What went on the wire: the typed words plus the reply context this send
+   *  carried. Re-sent as-is, so a Retry cannot wrap a second context around it. */
   text: string;
+  /** The words as typed. The queued row shows these, never `<reply_context>`
+   *  markup. Absent on a send kept before this field existed. */
+  rawText?: string;
   files?: AttachedFile[];
   mentions?: TrackedMention[];
   attachments: AttachmentSubmission;
@@ -149,12 +154,100 @@ export interface HeldSend {
     variant?: string | null;
     /** The same inbox key on Retry, so the wire id and the bubble stay the same. */
     clientMessageId: string;
+    /** The clock at the ORIGINAL Enter. The inbox orders racing sends by it, so
+     *  a Retry must not re-stamp it with the click. Absent on a send kept
+     *  before this field existed. */
+    sentAtMs?: number;
+    /** Where this send waits. A Queue List send retried as a transcript send
+     *  would paint a bubble the user never asked for. */
+    placement?: 'transcript' | 'composer';
+    /** The inline edit's send: it still commits the rewind it staged. */
+    commitsRewind?: boolean;
   };
 }
 
 export interface HeldSendFailure {
   message: string;
+  /** Why it was not sent, as a code the queue maps to one sentence
+   *  (`queue-failure-copy.ts`). Absent when nothing named the cause. */
+  code?: string;
   send: HeldSend;
+}
+
+/**
+ * Keep one send, exactly as it went out.
+ *
+ * The picks are the ones this send RESOLVED, not references to the composer:
+ * Retry used to re-read the agent, model and variant at click time, so a
+ * failure the user investigated by switching models was retried with the wrong
+ * one. `null` is a send that picked nothing, and stays nothing on Retry.
+ */
+export function captureHeldSend(input: {
+  rawText: string;
+  text: string;
+  files?: AttachedFile[];
+  mentions?: TrackedMention[];
+  attachments: AttachmentSubmission;
+  clientMessageId: string;
+  sentAtMs: number;
+  agent: string | null;
+  model: { providerID: string; modelID: string } | null;
+  variant: string | null;
+  placement: 'transcript' | 'composer';
+  commitsRewind?: boolean;
+}): HeldSend {
+  return {
+    text: input.text,
+    rawText: input.rawText,
+    files: input.files,
+    mentions: input.mentions,
+    attachments: input.attachments,
+    overrides: {
+      agent: input.agent,
+      model: input.model,
+      variant: input.variant,
+      clientMessageId: input.clientMessageId,
+      sentAtMs: input.sentAtMs,
+      placement: input.placement,
+      ...(input.commitsRewind ? { commitsRewind: true } : {}),
+    },
+  };
+}
+
+/** The `handleSend` arguments that send this kept send again, unchanged. */
+export function heldSendResendInput(send: HeldSend): {
+  text: string;
+  files?: AttachedFile[];
+  mentions?: TrackedMention[];
+  attachments: AttachmentSubmission;
+  overrides: HeldSend['overrides'] & { sentText: string };
+} {
+  return {
+    // The typed words, so the row and the composer show what the user wrote…
+    text: send.rawText ?? send.text,
+    files: send.files,
+    mentions: send.mentions,
+    attachments: send.attachments,
+    // …and the wire text verbatim, so the reply context is neither dropped nor
+    // wrapped again around a context picked since.
+    overrides: { ...send.overrides, sentText: send.text },
+  };
+}
+
+/** Where a send died, for the two failures that never reach the server. */
+export type HeldSendFailureOrigin = 'upload' | 'post';
+
+/**
+ * Why a send failed before the server had a row, as a code.
+ *
+ * Only two causes are named here. A refusal that DID reach the server carries
+ * the server's own `failure_code` on its row; this path has no row, and
+ * guessing a cause from a status would be a second, weaker classifier.
+ */
+export function heldSendFailureCode(origin: HeldSendFailureOrigin, error: unknown): string {
+  if (origin === 'upload') return 'upload_failed';
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === 'number' ? 'unknown' : 'network';
 }
 
 interface HeldSendFailureState {
@@ -214,7 +307,13 @@ export function retryHeldSend(
   try {
     failure.send.attachments.retry();
   } catch (error) {
-    store.setHeldSendFailure(sessionId, messageId, { message: describe(error), send: failure.send });
+    store.setHeldSendFailure(sessionId, messageId, {
+      message: describe(error),
+      // The restart itself threw: the files are the problem, whatever the
+      // first failure was.
+      code: heldSendFailureCode('upload', error),
+      send: failure.send,
+    });
     return;
   }
   // A failed POST is surfaced by the send path itself.

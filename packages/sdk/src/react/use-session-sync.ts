@@ -404,6 +404,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // last known set, so [A] -> unknown -> [B] is still a boundary. A boundary
   // that also ends the busy state is left to `setBusy(false)`: two turn-end
   // calls would cost a second, chained read.
+  //
+  // While reads are off (`networkEnabled` false, e.g. a runtime switch) the
+  // poll is not busy, so `setBusy(false)` reads nothing either. The last known
+  // set is kept and marked `readsWereOff`; the boundary is compared and read
+  // when reads come back, busy or not. The busy switch cannot also read then:
+  // it was not armed while reads were off.
   const openTurnSetKey =
     openTurnTokens == null ? null : JSON.stringify([...new Set(openTurnTokens)].sort());
   const pollBusy = livenessBusy({
@@ -413,17 +419,28 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     streamBusy,
     serverHoldsTurn,
   });
-  const lastOpenTurnsRef = useRef<{ sessionId: string; tokens: readonly string[] } | null>(null);
+  const lastOpenTurnsRef = useRef<{
+    sessionId: string;
+    tokens: readonly string[];
+    readsWereOff: boolean;
+  } | null>(null);
   useEffect(() => {
     if (openTurnSetKey === null) return;
     const tokens = JSON.parse(openTurnSetKey) as string[];
     const last = lastOpenTurnsRef.current;
-    lastOpenTurnsRef.current = { sessionId, tokens };
-    if (!last || last.sessionId !== sessionId) return;
+    const sameSession = last !== null && last.sessionId === sessionId;
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) {
+      lastOpenTurnsRef.current = sameSession
+        ? { ...last, readsWereOff: true }
+        : { sessionId, tokens, readsWereOff: true };
+      return;
+    }
+    lastOpenTurnsRef.current = { sessionId, tokens, readsWereOff: false };
+    if (!sameSession) return;
     if (!openTurnTokensEnded(last.tokens, tokens)) return;
-    if (!pollBusy || !canQueryOpenCodeSession(sessionId)) return;
+    if (!pollBusy && !last.readsWereOff) return;
     void controller.reconcile('turn-end');
-  }, [controller, openTurnSetKey, pollBusy, sessionId]);
+  }, [controller, networkEnabled, openTurnSetKey, pollBusy, sessionId]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

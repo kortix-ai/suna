@@ -20,7 +20,7 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import {
@@ -422,14 +422,56 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         );
     }
 
-    await db
-      .update(projectSessions)
-      .set({ status: 'running', updatedAt: now })
-      .where(eq(projectSessions.sessionId, row.sessionId));
+    await markSessionRunningQuery({
+      sessionId: row.sessionId,
+      sandboxId: row.sandboxId,
+      externalId: sandboxId,
+      now,
+    });
   } catch (err) {
     sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);
   }
+}
+
+/**
+ * The session-row write of `markSandboxUsed`, as an unexecuted query so its
+ * rendered SQL can be pinned in a hermetic test (backend-mark-used-sql.test.ts).
+ *
+ * Traffic proves the proxy reached the box, not that the runtime is up. A
+ * restart and an in-place recovery keep the same `external_id` and hold the
+ * sandbox row `provisioning` until the box is back, and a refused heal leaves
+ * it `stopped`. Writing `running` then flips the sidebar dot back to green
+ * while the runtime is down. So the session row follows only a sandbox row
+ * that is `active` now. The check is in the same statement, so a restart that
+ * commits before it wins.
+ */
+export function markSessionRunningQuery(input: {
+  sessionId: string;
+  sandboxId: string;
+  externalId: string;
+  now: Date;
+}) {
+  return db
+    .update(projectSessions)
+    .set({ status: 'running', updatedAt: input.now })
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        exists(
+          db
+            .select({ sandboxId: sessionSandboxes.sandboxId })
+            .from(sessionSandboxes)
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, input.sandboxId),
+                eq(sessionSandboxes.externalId, input.externalId),
+                eq(sessionSandboxes.status, 'active'),
+              ),
+            ),
+        ),
+      ),
+    );
 }
 
 /**

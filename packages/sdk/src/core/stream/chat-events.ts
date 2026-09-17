@@ -11,10 +11,13 @@
  * instead of the raw untyped `properties` bag.
  *
  * `heartbeat-gap` has no wire representation of its own — `openEventStream`'s
- * `onGapRehydrate(gapMs)` callback fires out-of-band when the SSE stream
- * reconnects after a gap large enough that cached state may be stale. Build
- * it with `heartbeatGapEvent(gapMs)` and dispatch it the same way as
- * `narrowChatEvent`'s output:
+ * `onGapRehydrate(gapMs)` callback fires out-of-band after a reconnect, once
+ * the new subscription delivers its first frame, when cached state may be
+ * stale: the dropped subscription delivered content (then `gapMs` can be
+ * under 5 s), or no content arrived for more than 5 s. `gapMs` counts from the
+ * last content frame; connection-only frames do not count. It fires at most
+ * once per 5 s per stream. Build it with `heartbeatGapEvent(gapMs)` and
+ * dispatch it the same way as `narrowChatEvent`'s output:
  *
  * ```ts
  * openEventStream({

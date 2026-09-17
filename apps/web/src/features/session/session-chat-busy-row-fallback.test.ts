@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
+import { busyRowTurnPresentation, resolveBusyRow } from './turn/working-turn';
 
 // Source assertions, same rationale as `session-chat-working-projection.test.ts`:
 // `SessionChat` is a 5k-line component with no DOM harness in this app, and what
@@ -27,15 +28,71 @@ function between(source: string, start: string, end: string): string {
  * recording that was ~11s on a new session's first prompt and ~1s on the
  * second: the session read as INACTIVE with the user's prompt in flight.
  */
+const turn = (id: string, ...assistant: Array<'open' | 'done'>) => ({
+  userMessage: { info: { id } },
+  assistantMessages: assistant.map((state) => ({
+    info: state === 'done' ? { time: { completed: 1 }, finish: 'stop' } : { time: {} },
+  })),
+});
+const row = (id: string, state = 'waiting') => ({
+  prompt_id: `p_${id}`,
+  state,
+  message_id: id,
+  wire_message_id: id,
+});
+type Input = Parameters<typeof resolveBusyRow<ReturnType<typeof turn>, ReturnType<typeof row>>>[0];
+const busyInput = (over: Partial<Input>): Input => ({
+  turns: [],
+  prompts: [],
+  projection: { state: 'working', turnId: null },
+  freshSendTurnId: null,
+  lastTurnWorking: true,
+  isRetrying: false,
+  turnHasError: () => false,
+  firstPromptStandIn: false,
+  ...over,
+});
+
 describe('the waiting row has a fallback when no turn owns it', () => {
   test('the fallback knows exactly when a turn is drawing the row itself', () => {
-    const gate = between(chat, 'const someTurnDrawsBusyRow = workingTurnDrawsBusyRow({', '});');
-    expect(gate).toContain('lastTurnWorking,');
-    expect(gate).toContain('workingTurnId: workingTurn.workingTurnId,');
-    expect(gate).toContain('suppressed: suppressWorkingTurnBusy,');
+    const running = busyInput({
+      turns: [turn('a', 'open')],
+      projection: { state: 'working', turnId: 'a' },
+    });
+    expect(resolveBusyRow(running)).toMatchObject({
+      someTurnDrawsBusyRow: true,
+      showFallbackBusyRow: false,
+    });
     // An errored working turn hides its own row, so the fallback must draw.
-    expect(gate).toContain('workingTurnHasError,');
-    expect(gate).toContain('isRetrying: !!getRetryInfo(sessionStatus),');
+    expect(resolveBusyRow({ ...running, turnHasError: () => true })).toMatchObject({
+      someTurnDrawsBusyRow: false,
+      showFallbackBusyRow: true,
+    });
+    // A retry keeps the errored turn's own row.
+    expect(
+      resolveBusyRow({ ...running, turnHasError: () => true, isRetrying: true }),
+    ).toMatchObject({ someTurnDrawsBusyRow: true, showFallbackBusyRow: false });
+    // A suppressed working turn: a finished answer with a prompt delivering below.
+    expect(
+      resolveBusyRow(
+        busyInput({
+          turns: [turn('a', 'done'), turn('b')],
+          prompts: [row('b', 'delivering')],
+          projection: { state: 'working', turnId: null },
+        }),
+      ),
+    ).toMatchObject({ suppressWorkingTurnBusy: true, someTurnDrawsBusyRow: false, showFallbackBusyRow: true });
+    // No busy value, no row anywhere.
+    expect(resolveBusyRow({ ...running, lastTurnWorking: false })).toMatchObject({
+      someTurnDrawsBusyRow: false,
+      showFallbackBusyRow: false,
+    });
+    // The page feeds it the same values the turn card reads.
+    const call = between(chat, 'resolveBusyRow({', '}),');
+    expect(call).toContain('lastTurnWorking,');
+    expect(call).toContain('isRetrying: isRetryingStatus,');
+    expect(call).toContain('turnHasError: (turn) => !!resolveTurnError(turn),');
+    expect(chat).toContain('const isRetryingStatus = !!getRetryInfo(sessionStatus);');
   });
 
   test('Stop and Thinking read one busy value', () => {
@@ -47,25 +104,44 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   });
 
   test('the trailing row is gated on that, not on an empty transcript', () => {
-    const row = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
+    const trailing = between(chat, '{showFallbackBusyRow && fallbackBusyRowTurnId === null && (', '/>\n                      )}');
     // The old gate. `turns.length === 0` is why a session with one queued
     // bubble drew nothing at all.
     expect(chat).not.toContain('{isBusy && turns.length === 0 && <SessionBusyIndicator');
-    expect(chat).toContain('const showFallbackBusyRow =\n    lastTurnWorking &&\n    !someTurnDrawsBusyRow &&');
-    expect(row).toContain('<SessionBusyIndicator');
-    expect(row).toContain('sessionId={sessionId}');
+    // One queued bubble, nothing answered: no turn is working, the row still draws.
+    const queuedOnly = resolveBusyRow(
+      busyInput({ turns: [turn('q')], prompts: [row('q')], projection: { state: 'working', turnId: null, pendingDelivery: true } }),
+    );
+    expect(queuedOnly).toMatchObject({ workingTurnId: null, showFallbackBusyRow: true, fallbackBusyRowTurnId: null });
+    // Not busy, so nothing draws.
+    expect(
+      resolveBusyRow(busyInput({ turns: [turn('q')], prompts: [row('q')], lastTurnWorking: false })),
+    ).toMatchObject({ showFallbackBusyRow: false });
+    expect(trailing).toContain('<SessionBusyIndicator');
+    expect(trailing).toContain('sessionId={sessionId}');
   });
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
-    const gate = between(chat, 'const showFallbackBusyRow =', 'const fallbackBusyRowTurnId');
     // First prompts and Enter submissions share this stand-in exclusion.
-    expect(gate).toMatch(
-      /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
+    expect(resolveBusyRow(busyInput({ firstPromptStandIn: true }))).toMatchObject({
+      showFallbackBusyRow: false,
+    });
+    // Once the transcript carries a turn, the stand-in is gone and the row draws.
+    expect(
+      resolveBusyRow(busyInput({ firstPromptStandIn: true, turns: [turn('q')], prompts: [row('q')] })),
+    ).toMatchObject({ showFallbackBusyRow: true });
+    expect(chat).toMatch(
+      /const firstPromptStandIn =\s*showFirstPromptPreview && !!firstPromptSource && queuedSyntheticMessages\.length === 0;/,
     );
+    expect(between(chat, 'resolveBusyRow({', '}),')).toContain('firstPromptStandIn,');
     expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
-    // The stand-in's own gate is unchanged — it is the one that decides
-    // whether the boot row is on screen at all.
-    expect(chat).toContain('busy={turns.length === 0 && lastTurnWorking}');
+    // The stand-in's own gate still decides whether the boot row is on screen
+    // at all, and an empty transcript is still what opens it. What it reads
+    // moved into `firstPromptStandInBusy` — the shell's rule, so the row does
+    // not blink out on an idle projection frame at the crossfade.
+    expect(between(chat, 'busy={firstPromptStandInBusy({', '})}')).toContain(
+      'transcriptHasTurns: turns.length > 0,',
+    );
   });
 
   test('it sits where the stand-in sat, so the crossfade does not move it', () => {
@@ -76,7 +152,17 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
     const inTurn = between(chat, '{showFallbackBusyRow &&\n                                fallbackBusyRowTurnId === turn.userMessage.info.id', '</TurnViewport>');
     expect(inTurn).toContain('<SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />');
-    expect(chat).toContain('fallbackBusyRowAfterTurnId({');
+    // A finished answer with a Quick Queue bubble under it: the row sits in the
+    // answered turn, above the bubble.
+    expect(
+      resolveBusyRow(
+        busyInput({
+          turns: [turn('answered', 'done'), turn('queued')],
+          prompts: [row('queued')],
+          projection: { state: 'working', turnId: null, pendingDelivery: true },
+        }),
+      ),
+    ).toMatchObject({ showFallbackBusyRow: true, fallbackBusyRowTurnId: 'answered' });
   });
 });
 
@@ -156,9 +242,32 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
 test('a confirmed working turn cannot retain a stale pending inbox presentation', () => {
   // Confirmed by the server, not by the fresh-send hint: a send the inbox still
   // holds keeps its pending bubble beside its Thinking row.
-  expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
-  expect(chat).toContain('!confirmedActive && turn.assistantMessages.length === 0');
-  const pending = between(chat, 'pending={\n                                    !confirmedActive', 'pendingPrompt={pendingPrompt}');
-  expect(pending).toContain('Boolean(pendingPrompt)');
-  expect(pending).toContain('pendingTurnIds.has(turn.userMessage.info.id)');
+  const turns = [turn('old', 'done'), turn('sent')];
+  const stillHeld = resolveBusyRow(
+    busyInput({
+      turns,
+      prompts: [row('sent')],
+      freshSendTurnId: 'sent',
+      projection: { state: 'working', turnId: 'sent', pendingDelivery: true },
+    }),
+  );
+  expect(stillHeld.workingTurnId).toBe('sent');
+  expect(busyRowTurnPresentation(stillHeld, turns[1])).toMatchObject({
+    confirmedActive: false,
+    pending: true,
+  });
+  expect(busyRowTurnPresentation(stillHeld, turns[1]).pendingPrompt?.prompt_id).toBe('p_sent');
+  // The server names the running turn while a stale inbox read still lists it.
+  const confirmed = resolveBusyRow(
+    busyInput({ turns, prompts: [row('sent')], projection: { state: 'working', turnId: 'sent' } }),
+  );
+  expect(busyRowTurnPresentation(confirmed, turns[1])).toEqual({
+    confirmedActive: true,
+    pendingPrompt: undefined,
+    pending: false,
+  });
+  // The page renders exactly that presentation.
+  expect(chat).toContain('const { pending, pendingPrompt } = busyRowTurnPresentation(busyRow, turn);');
+  expect(chat).toContain('pending={pending}');
+  expect(chat).toContain('pendingPrompt={pendingPrompt}');
 });

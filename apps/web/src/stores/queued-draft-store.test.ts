@@ -24,6 +24,19 @@ describe('useQueuedDraftStore', () => {
     expect(drafts('s2').map((d) => d.clientMessageId)).toEqual(['c']);
   });
 
+  test('add upserts by clientMessageId, so a Retry replaces its row instead of drawing a second', () => {
+    // Retry re-enters `handleSend` with the SAME `clientMessageId`. Appending
+    // would list the message twice, under one React key.
+    const { add } = useQueuedDraftStore.getState();
+    add('s1', draft('a', { text: 'first try', createdAtMs: 1_000 }));
+    add('s1', draft('b'));
+    add('s1', draft('a', { text: 'retried', createdAtMs: 9_000, posted: true }));
+    expect(drafts('s1').map((d) => d.clientMessageId)).toEqual(['a', 'b']);
+    expect(drafts('s1')[0]).toMatchObject({ text: 'retried', posted: true });
+    // Enter time, not Retry time: the queue is ordered by when the user sent it.
+    expect(drafts('s1')[0].createdAtMs).toBe(1_000);
+  });
+
   test('markPosted flips only the named draft', () => {
     const { add, markPosted } = useQueuedDraftStore.getState();
     add('s1', draft('a'));

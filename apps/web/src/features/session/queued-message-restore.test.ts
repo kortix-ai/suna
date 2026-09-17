@@ -29,7 +29,27 @@ describe('restoreQueuedMessage', () => {
       messageId: 'msg_fresh',
       parts: body.parts,
       overrides: body.overrides!,
+      restore: true,
     });
+  });
+
+  test('says it is a restore, so the POST does not resume a held queue', () => {
+    // Every other new prompt releases the session hold. Stop, remove, undo used
+    // to restart the whole queue: the undo POST was an ordinary send.
+    expect(restoreQueuedMessage(removed(), () => 'msg_fresh').restore).toBe(true);
+  });
+
+  test('puts the row back the way it was held', () => {
+    // The hold is per-row state. Restoring a held row unheld is the same defect
+    // as resuming the queue, one row at a time.
+    expect(restoreQueuedMessage(removed({ held: true }), () => 'msg_fresh').held).toBe(true);
+    expect(restoreQueuedMessage(removed({ held: false }), () => 'msg_fresh').held).toBe(false);
+  });
+
+  test('omits `held` for a server that does not report it', () => {
+    // An older API answers a DELETE without the field. Sending `held: false`
+    // there would assert a state this tab never read.
+    expect(restoreQueuedMessage(removed(), () => 'msg_fresh')).not.toHaveProperty('held');
   });
 
   test('keeps the clientMessageId, so a repeated undo is one row', () => {

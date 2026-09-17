@@ -341,7 +341,9 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    // The last consumer left. That is not a turn end: a working session keeps
+    // running, so issue one tail read and no settle cycle.
+    if (current.consumers === 0) controller.setBusy(false, { settle: false });
     evictInactiveControllers();
   };
 }

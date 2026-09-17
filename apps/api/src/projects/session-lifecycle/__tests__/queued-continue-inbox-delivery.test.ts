@@ -1325,6 +1325,53 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
+  test('the deliver timeline logs sinceSendMs per mark when the row carries the Send instant', async () => {
+    // A first prompt from project home carries `sendStartedAtMs` (the
+    // browser's Send press). The `[provision-timeline] deliver` line must turn
+    // that into the latency the user waited, per mark. A row without it logs
+    // no `sinceSendMs` at all.
+    transcript = [];
+    const lines: unknown[][] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args);
+    };
+    try {
+      const withSend = await executeQueuedContinue(
+        baseRow({
+          commandId: 'cmd-since-send',
+          payload: { ...baseRow().payload, sendStartedAtMs: Date.now() - 5_000 },
+        }),
+      );
+      const withoutSend = await executeQueuedContinue(baseRow({ commandId: 'cmd-no-send' }));
+      expect(withSend).toBe('succeeded');
+      expect(withoutSend).toBe('succeeded');
+    } finally {
+      console.log = originalLog;
+    }
+
+    const deliverLine = (prefix: string) =>
+      lines.find(
+        (args) =>
+          typeof args[0] === 'string' &&
+          args[0].startsWith(`[provision-timeline] deliver ${prefix}`),
+      );
+    const withSendLine = deliverLine('cmd-sinc');
+    expect(withSendLine).toBeDefined();
+    const extra = withSendLine![1] as { sinceSendMs?: Record<string, number | null> };
+    expect(extra.sinceSendMs).toBeDefined();
+    const values = Object.values(extra.sinceSendMs!);
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      expect(value).not.toBeNull();
+      expect(value!).toBeGreaterThanOrEqual(5_000);
+    }
+
+    const withoutSendLine = deliverLine('cmd-no-s');
+    expect(withoutSendLine).toBeDefined();
+    expect(withoutSendLine![1]).not.toHaveProperty('sinceSendMs');
+  });
+
   test('a prompt submitted into a LIVE TURN waits — then goes out re-minted when the turn ends', async () => {
     // REWRITTEN 2026-09-04, and this is the behaviour change, not a fixture
     // tweak. It used to assert the prompt was FORWARDED into the live turn.

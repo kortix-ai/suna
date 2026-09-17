@@ -1199,22 +1199,24 @@ describe('openEventStream resync after resubscribe', () => {
   function recordingStream(clock: FakeClock) {
     const log: string[] = [];
     const gaps: number[] = [];
+    const infos: Array<{ contentLost: boolean }> = [];
     const { client, channels, attempts } = createConnectableClient(() => log.push('connect'));
     const handle = openEventStream({
       client,
       onEvent: (event) => log.push(`event:${event.type}`),
-      onGapRehydrate: (gapMs) => {
+      onGapRehydrate: (gapMs, info) => {
         log.push('resync');
         gaps.push(gapMs);
+        infos.push(info);
       },
       timers: clock,
     });
-    return { log, gaps, channels, attempts, handle };
+    return { log, gaps, infos, channels, attempts, handle };
   }
 
   test('a reconnect after a content-bearing attempt resyncs after the new first frame, even under 5 s', async () => {
     const clock = createFakeClock();
-    const { log, gaps, channels, attempts, handle } = recordingStream(clock);
+    const { log, gaps, infos, channels, attempts, handle } = recordingStream(clock);
     await tick();
 
     channels[0].push(partUpdated('p1'));
@@ -1232,6 +1234,9 @@ describe('openEventStream resync after resubscribe', () => {
 
     expect(gaps).toHaveLength(1);
     expect(gaps[0]).toBeLessThan(5_000);
+    // The dropped subscription carried content: frames of a running turn can
+    // be lost, so the host may bypass its slower bounds for this resync.
+    expect(infos).toEqual([{ contentLost: true }]);
     expect(log).toEqual([
       'connect',
       'event:message.part.updated',
@@ -1269,7 +1274,7 @@ describe('openEventStream resync after resubscribe', () => {
 
   test('a keepalive-only stretch of 61 s followed by a reconnect reports the content gap, over 5 s', async () => {
     const clock = createFakeClock();
-    const { gaps, channels, attempts, handle } = recordingStream(clock);
+    const { gaps, infos, channels, attempts, handle } = recordingStream(clock);
     await tick();
 
     for (let i = 0; i < 3; i++) {
@@ -1288,6 +1293,8 @@ describe('openEventStream resync after resubscribe', () => {
 
     expect(gaps).toHaveLength(1);
     expect(gaps[0]).toBeGreaterThan(5_000);
+    // A gap-only resync: the dropped subscription delivered no content.
+    expect(infos).toEqual([{ contentLost: false }]);
 
     handle.close();
   });
@@ -1326,7 +1333,7 @@ describe('openEventStream resync after resubscribe', () => {
 
   test('a resync the floor held back is dispatched once the floor ends, while subscribed', async () => {
     const clock = createFakeClock();
-    const { log, gaps, channels, handle } = recordingStream(clock);
+    const { log, gaps, infos, channels, handle } = recordingStream(clock);
     await tick();
 
     channels[0].push(partUpdated('p1'));
@@ -1350,6 +1357,48 @@ describe('openEventStream resync after resubscribe', () => {
     await clock.advance(firstResyncAt + 5_000 - clock.now());
     expect(gaps).toHaveLength(2);
     expect(log.filter((entry) => entry === 'resync')).toHaveLength(2);
+    // The held resync was owed for a dropped subscription that carried content.
+    expect(infos).toEqual([{ contentLost: true }, { contentLost: true }]);
+
+    handle.close();
+  });
+
+  test('a held resync owed for lost content keeps contentLost when a later reconnect lost none', async () => {
+    const clock = createFakeClock();
+    const { infos, channels, handle } = recordingStream(clock);
+    await tick();
+
+    // Attempt 1 carries content; attempt 2's first frame resyncs at 1266 ms.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(1016);
+    channels[0].end();
+    await tick();
+    await clock.advance(250);
+    channels[1].push(partUpdated('p2'));
+    await tick();
+    const firstResyncAt = clock.now();
+
+    // Attempt 2 carries content and drops: attempt 3's resync is held.
+    await clock.advance(500);
+    channels[1].end();
+    await tick();
+    await clock.advance(250);
+    channels[2].push(keepalive());
+    await tick();
+
+    // Attempt 3 carries no content and drops: attempt 4 adds a resync that
+    // lost none, still inside the floor.
+    await clock.advance(500);
+    channels[2].end();
+    await tick();
+    await clock.advance(250);
+    channels[3].push(keepalive());
+    await tick();
+    expect(infos).toEqual([{ contentLost: true }]);
+
+    await clock.advance(firstResyncAt + 5_000 - clock.now());
+    expect(infos).toEqual([{ contentLost: true }, { contentLost: true }]);
 
     handle.close();
   });

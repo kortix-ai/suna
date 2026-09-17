@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { useTranslations } from '@/i18n/use-translations';
+import { isRetryableFailure, queueFailureLine } from '../queue-failure-copy';
 
 /** Pending text stays legible while the active turn continues above it. */
 export const QUEUED_BUBBLE_OPACITY_CLASS =
@@ -33,25 +34,32 @@ export function queuedBubbleTone(
  */
 export function QueuedPromptFailure({
   lastError,
+  failureCode,
   onRetry,
   onRemove,
 }: {
   lastError?: string | null;
+  /** The server's stable cause. The same sentence map the Queue List uses, so
+   *  Quick Queue and Queue List cannot describe one failure two ways. */
+  failureCode?: string | null;
   onRetry?: () => void;
   onRemove?: () => void;
 }) {
-  const copy = useTranslations('hardcodedUi.i18nComplete');
+  const copy = useTranslations('hardcodedUi');
   const common = useTranslations('common');
+  const failure = queueFailureLine({ failureCode, lastError, copy: (key) => copy.raw(key) });
+  // A session that no longer exists refuses every retry, so the bubble offers
+  // only Remove — the same rule the Queue List row follows.
+  const canRetry = isRetryableFailure(failureCode);
   return (
     <InlineMeta>
       <span data-queued-status="failed" className="flex items-center gap-1">
-        <span className="text-kortix-red" role="status" title={lastError ?? undefined}>
-          {copy.raw('textcd5f943d5863')}
-          {lastError ? ` — ${lastError}` : ''}
+        <span className="text-kortix-red" role="status" title={failure.title}>
+          {failure.text}
         </span>
-        {onRetry && (
+        {onRetry && canRetry && (
           <Button type="button" variant="ghost" size="xs" onClick={onRetry}>
-            {copy.raw('text942087cc2d41')}
+            {copy.raw('i18nComplete.text942087cc2d41')}
           </Button>
         )}
         {onRemove && (

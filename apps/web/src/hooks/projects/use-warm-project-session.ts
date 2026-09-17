@@ -526,7 +526,13 @@ export function useWarmProjectSession(
  * the row (`convertPendingPromptToInboxRow`, re-minted at delivery), drops the
  * warm marker, and kicks the drain so the box answers now.
  *
- * Returns false when the claim was REFUSED (another tab took the session, the
+ * Returns the CLAIMED ROW — the session as the server holds it after the claim
+ * transaction, which is what the caller seeds its sessions caches with. The
+ * warm entry's own `session` is the create-time insert from seconds earlier
+ * (status `provisioning`), so seeding that one paints a session the server
+ * already runs as still starting.
+ *
+ * Returns null when the claim was REFUSED (another tab took the session, the
  * marker is already gone) — the caller falls back to the ordinary create,
  * which carries the same prompt. Never throws.
  *
@@ -547,27 +553,33 @@ export async function primeTakenWarmSession(
   read: typeof getProjectSession = getProjectSession,
   /** Injected in tests; a real timer otherwise. */
   sleep?: (ms: number) => Promise<void>,
-): Promise<boolean> {
+): Promise<ProjectSession | null> {
   try {
-    await claim(projectId, {
+    return await claim(projectId, {
       session_id: warm.sessionId,
       ...(input.agent_name ? { agent_name: input.agent_name } : {}),
       ...(input.sandbox_slug ? { sandbox_slug: input.sandbox_slug } : {}),
       pending_prompt: input.pending_prompt,
     });
-    return true;
   } catch (error) {
-    if (!isAmbiguousCreateFailure(errorCode(error))) return false;
+    if (!isAmbiguousCreateFailure(errorCode(error))) return null;
     // A timed-out claim can still commit. The claim's CAS drops the `warm`
     // marker in the same transaction that inserts the prompt row, so a session
-    // without the marker already holds this prompt. Answering false here sent
+    // without the marker already holds this prompt. Answering null here sent
     // the same prompt through a second create — two sessions, two turns.
-    return confirmCommitted(
+    //
+    // There is no response body to return, so the row this probe read is the
+    // claimed row: a fresh server read, never the stale warm-create copy.
+    let committed: ProjectSession | null = null;
+    await confirmCommitted(
       async () => {
         const row = await read(projectId, warm.sessionId, { showErrors: false });
-        return !(row?.metadata as { warm?: unknown } | null | undefined)?.warm;
+        if ((row?.metadata as { warm?: unknown } | null | undefined)?.warm) return false;
+        committed = row ?? null;
+        return committed !== null;
       },
       sleep ? { sleep } : {},
     );
+    return committed;
   }
 }

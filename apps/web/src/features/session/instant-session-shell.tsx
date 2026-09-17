@@ -8,9 +8,16 @@ import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
+import { firstPromptRowIsLive } from '@/features/session/first-prompt-presentation';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
+import {
+  queueResumeFailedToast,
+  createQueueRemoveHandler,
+  removeFailureCopyKey,
+  retryFailureCopyKey,
+} from '@/features/session/queue-action-copy';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -48,6 +55,7 @@ import { deliverInOrder } from '@/features/session/composer/delivery-chain';
 import type { SessionPromptOverrides, SessionPromptPart, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
+  classifyPromptActionError,
   mintSessionWireMessageId,
   readStartStash,
   startSessionWithPrompt,
@@ -192,6 +200,32 @@ export function InstantSessionShell({
   // written by a pre-deploy tab.
   const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
   const firstPromptRow = promptInbox.prompts.find((p) => isFirstPromptRow(p));
+  // The SAME handler `SessionChat` removes with. The boot shell used to remove
+  // silently — no confirmation, no Undo — and toast the server's own prose on a
+  // refusal, so one button did two different things depending on whether the
+  // sandbox had finished starting.
+  const removeQueuedPrompt = useMemo(
+    () =>
+      createQueueRemoveHandler({
+        sessionId,
+        copy: (key) => tI18nHardcoded.raw(key),
+        remove: promptInbox.remove,
+        enqueue: promptInbox.enqueue,
+        mintMessageId: () => mintSessionWireMessageId(sessionId),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, promptInbox.remove, promptInbox.enqueue],
+  );
+  const retryQueuedPrompt = useCallback(
+    (promptId: string) => {
+      void promptInbox.retry(promptId).catch((error) => {
+        const key = retryFailureCopyKey(classifyPromptActionError(error));
+        if (key) errorToast(tI18nHardcoded.raw(key));
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.retry],
+  );
   const pendingRowSubmission = useMemo(() => {
     // A row with NO text is still a real send — an attachment-only prompt is a
     // legal message — so the first row that carries either wins.
@@ -219,6 +253,12 @@ export function InstantSessionShell({
     () =>
       projectQueueRows({
         prompts: promptInbox.prompts,
+        pendingActions: promptInbox.pendingActions,
+        // No `heldSendFailures` and no `messageId`: the boot shell keeps its own
+        // send state (`postWhenUploaded`) rather than a held send, so a Queue
+        // List send that fails DURING the boot shows as `sending` here until
+        // `SessionChat` mounts and reads the store. Knowingly unhandled — the
+        // shell's own send state would have to feed the store first.
         drafts: extraSends.map((entry) => ({
           clientMessageId: entry.id,
           text: entry.text,
@@ -228,7 +268,7 @@ export function InstantSessionShell({
           posted: false,
         })),
       }),
-    [promptInbox.prompts, extraSends],
+    [promptInbox.prompts, promptInbox.pendingActions, extraSends],
   );
   const transcriptQueue = useMemo(() => {
     const rows = promptInbox.prompts.filter(
@@ -450,11 +490,12 @@ export function InstantSessionShell({
         // painted nothing, or the docked one, whose bubble is taken back.
         if (first) firstSendInFlight.current = false;
         else setExtraSends((prev) => prev.filter((extra) => extra.id !== clientMessageId));
-        errorToast(
-          error instanceof Error
-            ? error.message
-            : tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'),
-        );
+        // NOT `error.message`: the server's prose is English, untranslated and
+        // written for an API client ("Not found", "prompt_not_found"). One
+        // sentence the user can act on, and the cause stays in the console and
+        // on the rethrow for whoever is debugging.
+        console.warn('[instant-session-shell] the first send was refused', error);
+        errorToast(tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'));
         throw error;
       }
       if (first) {
@@ -521,15 +562,15 @@ export function InstantSessionShell({
             rows={shellQueue.rows}
             heldCount={shellQueue.heldCount}
             onResume={() => {
-              void promptInbox.hold(false).catch((error) => errorToast(error.message));
+              void promptInbox
+                .hold(false)
+                .catch(() => queueResumeFailedToast(tI18nHardcoded.raw));
             }}
-            onRemove={(id) => {
-              void promptInbox.remove(id).catch((error) => errorToast(error.message));
-            }}
-            onRetry={(id) => {
-              void promptInbox.retry(id).catch((error) => errorToast(error.message));
-            }}
+            onRemove={removeQueuedPrompt}
+            onRetry={retryQueuedPrompt}
             onEdit={(id) => {
+              // Edit is a removal whose body goes into the composer, so a
+              // refusal reads as a refused removal.
               void promptInbox
                 .remove(id)
                 .then((removed) => {
@@ -539,7 +580,10 @@ export function InstantSessionShell({
                     .join('\n');
                   setPrefill({ text, id: Date.now(), mode: 'merge', options: removed.overrides });
                 })
-                .catch((error) => errorToast(error.message));
+                .catch((error) => {
+                  const key = removeFailureCopyKey(classifyPromptActionError(error));
+                  if (key) errorToast(tI18nHardcoded.raw(key));
+                });
             }}
           />
         ) : undefined
@@ -630,14 +674,21 @@ export function InstantSessionShell({
                     onFileClick={openFileInComputer}
                     deferPreview
                     sessionId={sessionId}
-                    busy={firstPromptRow?.state !== 'failed'}
+                    // No row yet means the POST is still in flight, and the
+                    // boot shell is busy by definition. Once the row exists it
+                    // decides — and a HELD row (a Stop during boot) draws no
+                    // waiting row, same as the chat's stand-in.
+                    busy={!firstPromptRow || firstPromptRowIsLive(firstPromptRow)}
                     leadingStatus={
                       firstPromptRow?.state === 'failed' ? (
                         <QueuedPromptFailure
                           lastError={firstPromptRow.last_error}
+                          // The same sentence map `SessionChat` renders. Without
+                          // it the crossfade out of the boot shell rewrote one
+                          // failure's explanation seconds after showing it.
+                          failureCode={firstPromptRow.failure_code}
                           onRetry={() => {
-                            void promptInbox.retry(firstPromptRow.prompt_id)
-                              .catch((error) => errorToast(error.message));
+                            retryQueuedPrompt(firstPromptRow.prompt_id);
                           }}
                         />
                       ) : undefined
@@ -664,15 +715,12 @@ export function InstantSessionShell({
                         entry.prompt?.state === 'failed' ? (
                           <QueuedPromptFailure
                             lastError={entry.prompt.last_error}
+                            failureCode={entry.prompt.failure_code}
                             onRetry={() => {
-                              void promptInbox
-                                .retry(entry.prompt!.prompt_id)
-                                .catch((error) => errorToast(error.message));
+                              retryQueuedPrompt(entry.prompt!.prompt_id);
                             }}
                             onRemove={() => {
-                              void promptInbox
-                                .remove(entry.prompt!.prompt_id)
-                                .catch((error) => errorToast(error.message));
+                              void removeQueuedPrompt(entry.prompt!.prompt_id);
                             }}
                           />
                         ) : undefined

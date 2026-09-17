@@ -111,6 +111,13 @@ export interface PendingSessionPrompt {
    * server enqueues; `text` remains the flat copy for previews and titling.
    */
   parts?: SessionPromptPart[];
+  /**
+   * When the user pressed Send, in milliseconds since epoch. Rides the inbox
+   * row as `payload.sendStartedAtMs` so the delivery timeline can report
+   * send-to-delivery latency. It is NOT `client_sent_at_ms`: that key orders
+   * inbox rows, and the first prompt keeps its create-time place.
+   */
+  send_started_at_ms?: number;
 }
 
 /**

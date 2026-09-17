@@ -594,7 +594,19 @@ export class SessionSyncController {
    * transcript refreshed behind the SSE stream: a caller passes the working
    * state it already has, and the last consumer leaving passes `false`.
    */
-  setBusy(isBusy: boolean): void {
+  setBusy(
+    isBusy: boolean,
+    options?: {
+      /**
+       * `false` when the switch-off is not a turn end, for example the last
+       * consumer leaving a session that is still working: issue the single
+       * turn-end read and start no settle cycle. The tail of a running
+       * session is open on every read, so a settle cycle there spends its
+       * whole read budget. Default `true`. Ignored when `isBusy` is `true`.
+       */
+      settle?: boolean;
+    },
+  ): void {
     if (!isBusy) {
       // The turn is over — and that is exactly when the transcript is most
       // likely to be short. A stream that dropped its last frames leaves the
@@ -609,13 +621,22 @@ export class SessionSyncController {
       // idle session churns nothing.
       const wasBusy = this.livenessTimer !== undefined;
       this.stopLivenessTimer();
-      if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
+      if (!wasBusy || this.destroyed) return;
+      if (options?.settle === false) {
+        this.cancelTurnEndSettle();
+        void this.requestTailRead('turn-end', undefined);
+        return;
+      }
+      void this.reconcile('turn-end');
       return;
     }
     if (this.livenessTimer !== undefined) return;
     // A new turn started: the last turn's settle reads would now read this
-    // turn's open tail. The liveness poll owns the transcript from here.
+    // turn's open tail. The liveness poll owns the transcript from here, so a
+    // turn-end read still waiting to be issued becomes a liveness read: it
+    // reads the running turn and its page is activity evidence.
     this.cancelTurnEndSettle();
+    this.downgradeWaitingTurnEndReads();
     this.lastActivityAt = this.scheduler.now();
     this.livenessTimer = this.scheduler.setInterval(
       () => void this.checkLiveness(),
@@ -739,6 +760,15 @@ export class SessionSyncController {
     followUp.finish(this.issueTailRead(followUp.reason, followUp.settle));
   }
 
+  /** Re-issue a turn-end read that is not on the wire yet as a poll read. */
+  private downgradeWaitingTurnEndReads(): void {
+    for (const waiting of [this.followUp, this.tailRetry]) {
+      if (!waiting) continue;
+      waiting.settle = undefined;
+      if (waiting.reason === 'turn-end') waiting.reason = 'poll';
+    }
+  }
+
   private cancelTurnEndSettle(): void {
     const settle = this.turnEndSettle;
     if (!settle) return;
@@ -756,14 +786,13 @@ export class SessionSyncController {
    *
    * Busy (the liveness timer runs): a queued or forwarded turn started right
    * after the one that ended, and the tail is that running turn's open reply.
-   * The tail used to keep the cycle going here too, so every busy boundary
-   * spent all 5 reads, the last one 15 s after the first. Each one aborted a
-   * poll read in flight and hydrated without stamping, and a poll tick that
-   * joined one did not stamp either, so the running turn lost its REST
-   * activity evidence for that whole window. The
-   * cycle now stops at the first page whose ended-turn replies are closed
+   * An open tail therefore says nothing about the ended turn here. The cycle
+   * stops at the first page whose ended-turn replies are closed
    * (`isEndedTurnReplyOpen`), normally 1 read, 2 when the completion lag is
-   * caught. Accepted gap: when the running turn's prompt is not on the page
+   * caught. Reason: every cycle read aborts a poll read in flight and hydrates
+   * without stamping, so a cycle that followed the running turn's tail would
+   * spend all 5 reads over 15 s and hide the running turn's REST activity
+   * evidence for that window. Accepted gap: when the running turn's prompt is not on the page
    * yet, the ended turn's open reply is the tail and reads as the running
    * turn, so the cycle stops after 1 read. The liveness poll re-reads that
    * tail within `verifyIntervalMs`.
@@ -848,6 +877,7 @@ export class SessionSyncController {
       this.options.markLoaded();
       this.retryAttempt = 0;
       this.tailUnavailable = false;
+      this.dropRetryAnsweredBy(settle);
       if (settle) this.continueTurnEndSettle(settle, page.messages);
     } catch (error) {
       if (this.destroyed) return;
@@ -888,9 +918,9 @@ export class SessionSyncController {
     if (pending) {
       // One retry serves every failed read, on the backoff already running. A
       // turn-end read that fails while an earlier read's retry waits takes
-      // that retry over. It used to be dropped: the retry re-issued the
-      // earlier reason (a poll read), which stamps activity on a finished
-      // turn, and the settle cycle stopped with no timer and no read.
+      // that retry over: the retry then re-issues a turn-end read, which does
+      // not stamp activity on a finished turn, and it stays the settle
+      // cycle's next read, so the cycle keeps a timer.
       if (reason === 'turn-end') {
         pending.reason = 'turn-end';
         if (currentSettle) pending.settle = currentSettle;
@@ -914,6 +944,21 @@ export class SessionSyncController {
       );
     }, delay);
     this.tailRetry = retry;
+  }
+
+  /**
+   * A read landed, so a pending retry of an earlier failed read has its answer.
+   * Reads run one at a time, so that failed read settled before this one was
+   * issued. Left in place, the retry re-reads under the failed read's reason:
+   * a poll retry that fires after the turn-end read lands stamps runtime
+   * activity on a finished turn. A retry that carries a different current
+   * settle cycle stays, because that retry is the cycle's next read.
+   */
+  private dropRetryAnsweredBy(settle: TurnEndSettle | undefined): void {
+    const retry = this.tailRetry;
+    if (!retry) return;
+    if (retry.settle && retry.settle !== settle && this.turnEndSettle === retry.settle) return;
+    this.cancelTailRetry();
   }
 
   private cancelTailRetry(): void {
@@ -949,6 +994,10 @@ export class SessionSyncController {
       });
       return page;
     } catch (error) {
+      // An aborted read (superseded, past the poll deadline, or destroyed) is
+      // not a failure. Reporting it as one would mix intentional cancels into
+      // the failed-read signal.
+      if (signal.aborted) throw error;
       this.options.onTelemetry?.({
         operation,
         reason,

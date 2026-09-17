@@ -604,29 +604,53 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       calls.push([projectId, input]);
       return serverRow(WARM);
     });
-    const ok = await primeTakenWarmSession(
+    const claimed = await primeTakenWarmSession(
       P,
       warmEntry(),
       { pending_prompt: { text: 'hello' }, agent_name: 'kortix' },
       claim as never,
     );
-    expect(ok).toBe(true);
+    expect(claimed?.session_id).toBe(WARM);
     expect(calls).toEqual([
       [P, { session_id: WARM, agent_name: 'kortix', pending_prompt: { text: 'hello' } }],
     ]);
   });
 
-  test('a refused claim is false, never a throw — the caller falls back to create', async () => {
+  // The claim response is the row as the server holds it NOW. The warm entry's
+  // copy is the create-time insert, seconds stale and still `provisioning`:
+  // seeding that one paints a running session yellow again.
+  test('the claim RESPONSE row comes back, not the stale warm-create row', async () => {
+    const claim = mock(async () => ({
+      ...serverRow(WARM),
+      status: 'running',
+      metadata: {},
+      updated_at: '2026-08-15T00:00:30.000Z',
+    }));
+    const stale = warmEntry();
+    stale.session = { ...stale.session, status: 'provisioning' } as ProjectSession;
+
+    const claimed = await primeTakenWarmSession(
+      P,
+      stale,
+      { pending_prompt: { text: 'hello' } },
+      claim as never,
+    );
+
+    expect(claimed?.status).toBe('running');
+    expect(claimed?.updated_at).toBe('2026-08-15T00:00:30.000Z');
+  });
+
+  test('a refused claim is null, never a throw — the caller falls back to create', async () => {
     const claim = mock(async () => {
       throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
     });
-    const ok = await primeTakenWarmSession(
+    const claimed = await primeTakenWarmSession(
       P,
       warmEntry(),
       { pending_prompt: { text: 'hi' } },
       claim as never,
     );
-    expect(ok).toBe(false);
+    expect(claimed).toBeNull();
   });
 
   // A large first prompt (attachments ride as data: URLs) can outlast the
@@ -641,24 +665,34 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       code: 'request_deadline',
     });
 
-  test('an ambiguous claim failure whose warm marker is gone IS the claim — true', async () => {
+  // The timed-out claim has no response body. The row the probe read IS the
+  // server's current copy, so it is what the caller seeds — never the warm
+  // entry's create-time row.
+  test('an ambiguous claim failure whose warm marker is gone IS the claim — the READ row', async () => {
     const claim = mock(async () => {
       throw timeout();
     });
     const reads: string[] = [];
     const read = mock(async (_projectId: string, sessionId: string) => {
       reads.push(sessionId);
-      return { ...serverRow(WARM), metadata: { pending_prompt: { agent: 'kortix' } } };
+      return {
+        ...serverRow(WARM),
+        status: 'running',
+        metadata: { pending_prompt: { agent: 'kortix' } },
+      };
     });
-    const ok = await primeTakenWarmSession(
+    const stale = warmEntry();
+    stale.session = { ...stale.session, status: 'provisioning' } as ProjectSession;
+    const claimed = await primeTakenWarmSession(
       P,
-      warmEntry(),
+      stale,
       { pending_prompt: { text: 'with a file' } },
       claim as never,
       read as never,
       noSleep,
     );
-    expect(ok).toBe(true);
+    expect(claimed?.status).toBe('running');
+    expect(claimed?.session_id).toBe(WARM);
     expect(reads).toEqual([WARM]);
   });
 
@@ -667,7 +701,7 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       throw deadline();
     });
     const read = mock(async () => ({ ...serverRow(WARM), metadata: {} }));
-    const ok = await primeTakenWarmSession(
+    const claimed = await primeTakenWarmSession(
       P,
       warmEntry(),
       { pending_prompt: { text: 'with a file' } },
@@ -675,15 +709,15 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       read as never,
       noSleep,
     );
-    expect(ok).toBe(true);
+    expect(claimed?.session_id).toBe(WARM);
   });
 
-  test('an ambiguous failure whose session is STILL warm is false after polling', async () => {
+  test('an ambiguous failure whose session is STILL warm is null after polling', async () => {
     const claim = mock(async () => {
       throw timeout();
     });
     const read = mock(async () => serverRow(WARM));
-    const ok = await primeTakenWarmSession(
+    const claimed = await primeTakenWarmSession(
       P,
       warmEntry(),
       { pending_prompt: { text: 'with a file' } },
@@ -691,7 +725,7 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       read as never,
       noSleep,
     );
-    expect(ok).toBe(false);
+    expect(claimed).toBeNull();
     expect(read.mock.calls.length).toBeGreaterThan(1);
   });
 
@@ -700,7 +734,7 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
     });
     const read = mock(async () => serverRow(WARM));
-    const ok = await primeTakenWarmSession(
+    const claimed = await primeTakenWarmSession(
       P,
       warmEntry(),
       { pending_prompt: { text: 'hi' } },
@@ -708,7 +742,7 @@ describe('primeTakenWarmSession — the first prompt lands as a durable row on t
       read as never,
       noSleep,
     );
-    expect(ok).toBe(false);
+    expect(claimed).toBeNull();
     expect(read.mock.calls.length).toBe(0);
   });
 });

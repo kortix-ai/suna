@@ -74,7 +74,7 @@ import {
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
+import { finishSessionTiming, markSessionFirstOutput, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
@@ -1321,6 +1321,16 @@ function ActiveSessionChat({
   useEffect(() => {
     if (sessionsListed) sessionMark(sessionId, 'opencode-listed');
   }, [sessionsListed, sessionId]);
+  // The wait the user actually feels ends here, not at `chat-ready`: the chat
+  // is usable seconds before the agent says anything. The scan stops at the
+  // first assistant message, and the mark itself is filed once
+  // (`markSessionFirstOutput`), so this costs nothing on a long transcript.
+  useEffect(() => {
+    const hasOutput = sessionState.messages.some(
+      (message) => message.info.role === 'assistant' && message.parts.length > 0,
+    );
+    if (hasOutput) markSessionFirstOutput(sessionId);
+  }, [sessionState.messages, sessionId]);
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');

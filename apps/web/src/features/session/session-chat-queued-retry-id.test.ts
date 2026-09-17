@@ -41,7 +41,14 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     );
 
     expect(retry).toMatch(/promptInbox\s*\.retry\(id\)/);
-    expect(retry).not.toContain('clientMessageId');
+    // The SERVER row's branch alone. The handler now opens with a `draft:`
+    // branch — a send that never reached the server, which HAS to re-enter
+    // `handleSend` under its own key, because that key is all it has.
+    const serverRow = between(
+      '// Re-queued UNDER ITS ORIGINAL WIRE ID',
+      '// Associate stashed command info',
+    );
+    expect(serverRow).not.toContain('clientMessageId');
   });
 
   test('handleSend accepts it as an override rather than minting its own', () => {

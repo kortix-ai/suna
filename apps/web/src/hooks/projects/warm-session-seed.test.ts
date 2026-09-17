@@ -1,7 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 
 import type { ProjectSession } from '@kortix/sdk';
-import { reconcileSessionsAfterCreate, seedAdoptedWarmSession } from './warm-session-seed';
+import {
+  pickAdoptedWarmSession,
+  reconcileSessionsAfterCreate,
+  seedAdoptedWarmSession,
+} from './warm-session-seed';
 
 const AT = '2026-08-17T10:00:00.000Z';
 
@@ -43,6 +47,18 @@ describe('seedAdoptedWarmSession', () => {
     expect(metadata.warm).toBeUndefined();
     expect(metadata.last_activity_at).toBe(AT);
     expect(metadata.source).toBe('ui');
+  });
+
+  // The seed carries the row it is handed, field for field. WHICH row it is
+  // handed is `pickAdoptedWarmSession`, below.
+  test('the adopted row keeps the claim response status', () => {
+    const result = seedAdoptedWarmSession(
+      undefined,
+      makeSession({ session_id: 'w1', status: 'running', metadata: { warm: true } }),
+      AT,
+    );
+
+    expect(result[0].status).toBe('running');
   });
 
   test('a null metadata row seeds with just the stamp', () => {
@@ -145,5 +161,28 @@ describe('reconcileSessionsAfterCreate', () => {
     await Promise.resolve();
 
     expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Which row an adoption seeds into the sidebar.
+ *
+ * The warm entry's row was created seconds ago with an empty body and is still
+ * `provisioning`. Seeding it paints a session the server already runs as still
+ * starting, and its `metadata.warm` is still set. The claim response is that
+ * same session as the server holds it AFTER the claim transaction.
+ */
+describe('pickAdoptedWarmSession', () => {
+  const warmEntryRow = makeSession({ session_id: 'w1', status: 'provisioning' });
+  const claimRow = makeSession({ session_id: 'w1', status: 'running', metadata: {} });
+
+  test('a send that claimed seeds the CLAIM response, not the warm-create row', () => {
+    expect(pickAdoptedWarmSession(claimRow, warmEntryRow).status).toBe('running');
+  });
+
+  // A take with no prompt makes no claim, so there is no response row. The
+  // warm entry's row is all this tab has; `/start` drops the marker for it.
+  test('a prompt-less take seeds the warm entry row', () => {
+    expect(pickAdoptedWarmSession(null, warmEntryRow).status).toBe('provisioning');
   });
 });

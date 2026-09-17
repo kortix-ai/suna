@@ -1,8 +1,10 @@
 import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
+  busyRowTurnPresentation,
   freshSendHint,
   fallbackBusyRowAfterTurnId,
+  resolveBusyRow,
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
@@ -53,10 +55,94 @@ test('a confirmed active turn keeps its working row through completed intermedia
   })).toBe(true);
 });
 
-const turn = (id: string, ...assistant: Array<'open' | 'done'>) => ({
+describe('a finished answer with no queued bubble below it', () => {
+  const base = {
+    hasPendingTurns: false,
+    newestAssistantCompleted: true,
+    newestAssistantContinuesTurn: false,
+    workingTurnId: 'answered',
+    pendingDelivery: false,
+    sessionWorking: true,
+  };
+
+  test('yields its row when the session works and names no turn: the next turn has no bubble yet', () => {
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: null })).toBe(true);
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: 'next' })).toBe(true);
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: 'answered', pendingDelivery: true })).toBe(true);
+  });
+
+  test('guard: keeps its row while the projection names it', () => {
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: 'answered' })).toBe(false);
+  });
+
+  test('guard: keeps its row through the idle fade, so the row never moves as it leaves', () => {
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: null, sessionWorking: false })).toBe(false);
+    expect(shouldSuppressWorkingTurnBusy({ ...base, activeTurnId: null, sessionWorking: undefined })).toBe(false);
+  });
+
+  test('guard: a step that finished with tool calls keeps its row, whatever the projection names', () => {
+    // A trigger or `/` command turn has no message id, so the projection never
+    // names it. Between two of its steps the newest message is complete.
+    expect(
+      shouldSuppressWorkingTurnBusy({
+        ...base,
+        newestAssistantContinuesTurn: true,
+        activeTurnId: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSuppressWorkingTurnBusy({
+        ...base,
+        newestAssistantContinuesTurn: true,
+        pendingDelivery: true,
+        activeTurnId: null,
+      }),
+    ).toBe(false);
+  });
+
+  test('an ABSENT finish reason yields the row: the rule stands on positive evidence only', () => {
+    // `AssistantMessage.finish` is optional on the wire and nothing else in
+    // this app reads it. Requiring a reason to release the row made the whole
+    // rule a no-op on a runtime that reports none: the answered turn kept the
+    // row until the next echo, which is the placement this rule exists to fix.
+    // Only `tool-calls` / `unknown` — the two reasons OpenCode continues on —
+    // hold the row.
+    expect(
+      shouldSuppressWorkingTurnBusy({
+        ...base,
+        newestAssistantContinuesTurn: undefined,
+        activeTurnId: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressWorkingTurnBusy({
+        ...base,
+        newestAssistantContinuesTurn: undefined,
+        activeTurnId: 'answered',
+        pendingDelivery: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('guard: an open answer always keeps its row', () => {
+    expect(
+      shouldSuppressWorkingTurnBusy({ ...base, newestAssistantCompleted: false, activeTurnId: null }),
+    ).toBe(false);
+  });
+});
+
+/** `open` streams; `done` finished with `stop`; `step` finished with
+ *  `tool-calls`, so another step is coming; `closed` completed with NO finish
+ *  reason — `AssistantMessage.finish` is optional on the wire. */
+const turn = (id: string, ...assistant: Array<'open' | 'done' | 'step' | 'closed'>) => ({
   userMessage: { info: { id } },
   assistantMessages: assistant.map((s) => ({
-    info: { time: s === 'done' ? { completed: 1 } : {} },
+    info:
+      s === 'open'
+        ? { time: {} }
+        : s === 'closed'
+          ? { time: { completed: 1 } }
+          : { time: { completed: 1 }, finish: s === 'done' ? 'stop' : 'tool-calls' },
   })),
 });
 
@@ -414,5 +500,496 @@ describe('only a confirmed active turn drops its pending presentation', () => {
       activeTurnId: 'sent',
       pendingDelivery: false,
     })).toBe(false);
+  });
+});
+
+/**
+ * The busy row from the send frame to the answer, fed by the SDK's real
+ * `projectWorking`. Every step is one observation the tab can make, in the
+ * order the runtime and the control plane produce them.
+ */
+describe('resolveBusyRow — the busy row draws on the turn that is starting', () => {
+  type Inputs = Parameters<typeof projectWorking>[0];
+  type Row = {
+    prompt_id: string;
+    state: string;
+    message_id: string;
+    wire_message_id: string;
+    /** Why admission waits, as `GET .../prompts` reports it. */
+    reason?: string | null;
+  };
+  type Turn = ReturnType<typeof turn>;
+  interface Step {
+    name: string;
+    turns: Turn[];
+    prompts: Row[];
+    inputs: Inputs;
+    /** The id `handleSend` recorded for an idle send, when there was one. */
+    freshSendId?: string;
+    /** The delay-hidden busy value; defaults to the projection's state. */
+    lastTurnWorking?: boolean;
+  }
+
+  const T = 1_789_000_000_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const ledger = (id: string, startedAtMs: number) => ({
+    turn_token: `t_${id}`,
+    state: 'active' as const,
+    message_id: id,
+    opencode_session_id: 'oc',
+    started_at: iso(startedAtMs),
+    accepted_at: iso(startedAtMs),
+  });
+  const waiting = (id: string, reason = 'turn_active'): Row => ({
+    prompt_id: `p_${id}`,
+    state: 'waiting',
+    message_id: id,
+    wire_message_id: id,
+    reason,
+  });
+
+  /** Where the page draws the row: in a turn card, in the fallback slot under
+   *  a turn, at the transcript's end, or nowhere. */
+  function place(step: Step) {
+    const projection = projectWorking(step.inputs);
+    const freshSendTurnId = step.freshSendId
+      ? freshSendHint(step.turns, (id) => id === step.freshSendId)
+      : null;
+    const row = resolveBusyRow({
+      turns: step.turns,
+      prompts: step.prompts,
+      projection,
+      freshSendTurnId,
+      lastTurnWorking: step.lastTurnWorking ?? projection.state === 'working',
+      isRetrying: false,
+      turnHasError: () => false,
+      firstPromptStandIn: false,
+    });
+    const at = row.someTurnDrawsBusyRow
+      ? `turn:${row.workingTurnId}`
+      : row.showFallbackBusyRow
+        ? row.fallbackBusyRowTurnId === null
+          ? 'end'
+          : `under:${row.fallbackBusyRowTurnId}`
+        : 'none';
+    const pending = step.turns
+      .filter((t) => busyRowTurnPresentation(row, t).pending)
+      .map((t) => t.userMessage.info.id);
+    return { state: projection.state, at, pending };
+  }
+
+  function run(steps: Step[]) {
+    return steps.map((step) => ({ step: step.name, ...place(step) }));
+  }
+
+  test('a direct send draws the row on its own bubble at every step', () => {
+    // Turn A ended 4 s ago. Its idle frame triggered a /turn read that landed
+    // before the relay closed A's ledger row, so the cached read still lists A.
+    const ended: Inputs = {
+      optimistic: null,
+      inbox: { pending: 0, atMs: T + 1_010 },
+      server: { turns: [ledger('A', T - 60_000)], atMs: T + 1_010, source: 'read' },
+      stream: { type: 'idle', origin: 'wire', atMs: T + 1_000 },
+      activity: { atMs: T + 900 },
+      runtimeBusySinceAtMs: T - 60_000,
+      nowMs: T + 1_050,
+    };
+    const sent = [turn('A', 'done'), turn('W')];
+    const receipt = { messageId: 'W', turnId: 'W', atMs: T + 5_000, acceptedAtMs: null };
+    const enter: Step = {
+      name: 'Enter',
+      turns: sent,
+      prompts: [{ ...waiting('W'), state: 'queued' }],
+      freshSendId: 'W',
+      inputs: { ...ended, optimistic: receipt, inbox: { pending: 1, atMs: T + 5_000 }, nowMs: T + 5_001 },
+    };
+    // Sent inside the relay window: the admission gate still sees A and lists
+    // the row `waiting (turn_active)`.
+    const accepted: Step = {
+      ...enter,
+      name: 'POST accepted',
+      prompts: [waiting('W')],
+      inputs: {
+        ...enter.inputs,
+        optimistic: { ...receipt, acceptedAtMs: T + 5_200 },
+        inbox: { pending: 1, atMs: T + 5_200 },
+        nowMs: T + 5_201,
+      },
+    };
+    const drained: Step = {
+      ...accepted,
+      name: 'drain',
+      prompts: [],
+      inputs: {
+        ...accepted.inputs,
+        inbox: { pending: 0, atMs: T + 6_000, drainedAtMs: T + 6_000 },
+        nowMs: T + 6_001,
+      },
+    };
+    const busy: Step = {
+      ...drained,
+      name: 'busy frame',
+      inputs: {
+        ...drained.inputs,
+        stream: { type: 'busy', origin: 'wire', atMs: T + 6_100 },
+        runtimeBusySinceAtMs: T + 6_100,
+        nowMs: T + 6_101,
+      },
+    };
+    const echo: Step = {
+      ...busy,
+      name: 'echo, /turn still [A]',
+      inputs: { ...busy.inputs, activity: { atMs: T + 6_200 }, nowMs: T + 6_201 },
+    };
+    const read: Step = {
+      ...echo,
+      name: '/turn [W]',
+      inputs: {
+        ...echo.inputs,
+        server: { turns: [ledger('W', T + 6_050)], atMs: T + 6_150, source: 'read' },
+        nowMs: T + 6_301,
+      },
+    };
+    const open: Step = {
+      ...read,
+      name: 'assistant open',
+      turns: [turn('A', 'done'), turn('W', 'open')],
+      inputs: { ...read.inputs, activity: { atMs: T + 6_400 }, nowMs: T + 6_401 },
+    };
+
+    expect(run([enter, accepted, drained, busy, echo, read, open]).map(({ step, state, at }) => ({ step, state, at }))).toEqual([
+      { step: 'Enter', state: 'working', at: 'turn:W' },
+      { step: 'POST accepted', state: 'working', at: 'turn:W' },
+      { step: 'drain', state: 'working', at: 'turn:W' },
+      { step: 'busy frame', state: 'working', at: 'turn:W' },
+      { step: 'echo, /turn still [A]', state: 'working', at: 'turn:W' },
+      { step: '/turn [W]', state: 'working', at: 'turn:W' },
+      { step: 'assistant open', state: 'working', at: 'turn:W' },
+    ]);
+  });
+
+  /** A prompt queued in the list above the composer while `running` answers.
+   *  It has no transcript bubble until the runtime echoes it as `echoId`. */
+  function composerQueuedTurn(input: {
+    before: Turn[];
+    running: string;
+    runningStartedAtMs: number;
+    queued: string;
+    echoId: string;
+    /** Rows still listed after this prompt leaves the inbox. */
+    behind: Row[];
+    receipt: NonNullable<Inputs['optimistic']>;
+    /** The instant the running turn's idle frame reaches the tab. */
+    idleAtMs: number;
+    busySinceAtMs: number;
+    /** How the running turn's answer closed. `closed` reports no finish
+     *  reason, which the wire type allows. */
+    runningEnd?: 'done' | 'closed';
+  }): Step[] {
+    const { idleAtMs: I } = input;
+    const answered = [...input.before, turn(input.running, input.runningEnd ?? 'done')];
+    const rows = [waiting(input.queued), ...input.behind];
+    const idle: Step = {
+      name: `${input.running} idle`,
+      turns: answered,
+      prompts: rows,
+      inputs: {
+        optimistic: input.receipt,
+        inbox: { pending: rows.length, atMs: I + 10 },
+        server: {
+          turns: [ledger(input.running, input.runningStartedAtMs)],
+          atMs: I + 10,
+          source: 'read',
+        },
+        stream: { type: 'idle', origin: 'wire', atMs: I },
+        activity: { atMs: I - 100 },
+        runtimeBusySinceAtMs: input.busySinceAtMs,
+        nowMs: I + 50,
+      },
+    };
+    const promoted: Step = {
+      ...idle,
+      name: `${input.queued} promoted`,
+      prompts: input.behind,
+      inputs: {
+        ...idle.inputs,
+        inbox:
+          input.behind.length > 0
+            ? { pending: input.behind.length, atMs: I + 2_010 }
+            : { pending: 0, atMs: I + 2_010, drainedAtMs: I + 2_010 },
+        nowMs: I + 2_050,
+      },
+    };
+    const busy: Step = {
+      ...promoted,
+      name: `${input.queued} busy frame`,
+      inputs: {
+        ...promoted.inputs,
+        stream: { type: 'busy', origin: 'wire', atMs: I + 2_100 },
+        runtimeBusySinceAtMs: I + 2_100,
+        nowMs: I + 2_120,
+      },
+    };
+    const echo: Step = {
+      ...busy,
+      name: `echo ${input.echoId}`,
+      turns: [...answered, turn(input.echoId)],
+      inputs: { ...busy.inputs, activity: { atMs: I + 2_200 }, nowMs: I + 2_210 },
+    };
+    const read: Step = {
+      ...echo,
+      name: `/turn [${input.echoId}]`,
+      inputs: {
+        ...echo.inputs,
+        server: { turns: [ledger(input.echoId, I + 2_080)], atMs: I + 2_150, source: 'read' },
+        nowMs: I + 2_300,
+      },
+    };
+    const open: Step = {
+      ...read,
+      name: `${input.echoId} assistant open`,
+      turns: [...answered, turn(input.echoId, 'open')],
+      inputs: { ...read.inputs, activity: { atMs: I + 2_400 }, nowMs: I + 2_410 },
+    };
+    return [idle, promoted, busy, echo, read, open];
+  }
+
+  test('a prompt queued above the composer: the end-of-list row until its echo, then its own turn', () => {
+    const steps = composerQueuedTurn({
+      before: [],
+      running: 'A',
+      runningStartedAtMs: T - 60_000,
+      queued: 'W_B',
+      echoId: 'R_B',
+      behind: [],
+      receipt: { messageId: 'W_B', turnId: 'A', atMs: T - 20_000, acceptedAtMs: T - 19_800 },
+      idleAtMs: T + 1_000,
+      busySinceAtMs: T - 60_000,
+    });
+    expect(run(steps)).toEqual([
+      { step: 'A idle', state: 'working', at: 'end', pending: [] },
+      { step: 'W_B promoted', state: 'working', at: 'end', pending: [] },
+      { step: 'W_B busy frame', state: 'working', at: 'end', pending: [] },
+      { step: 'echo R_B', state: 'working', at: 'turn:R_B', pending: [] },
+      { step: '/turn [R_B]', state: 'working', at: 'turn:R_B', pending: [] },
+      { step: 'R_B assistant open', state: 'working', at: 'turn:R_B', pending: [] },
+    ]);
+  });
+
+  test('the queued prompt still leaves A when A reported no finish reason', () => {
+    // Same steps as above with ONE difference: A's answer completed without a
+    // finish reason. `AssistantMessage.finish` is optional on the wire, so a
+    // rule that needs one to release the row is a rule that never fires.
+    const steps = composerQueuedTurn({
+      before: [],
+      running: 'A',
+      runningEnd: 'closed',
+      runningStartedAtMs: T - 60_000,
+      queued: 'W_B',
+      echoId: 'R_B',
+      behind: [],
+      receipt: { messageId: 'W_B', turnId: 'A', atMs: T - 20_000, acceptedAtMs: T - 19_800 },
+      idleAtMs: T + 1_000,
+      busySinceAtMs: T - 60_000,
+    });
+    expect(run(steps).map(({ step, at }) => ({ step, at }))).toEqual([
+      { step: 'A idle', at: 'end' },
+      { step: 'W_B promoted', at: 'end' },
+      { step: 'W_B busy frame', at: 'end' },
+      { step: 'echo R_B', at: 'turn:R_B' },
+      { step: '/turn [R_B]', at: 'turn:R_B' },
+      { step: 'R_B assistant open', at: 'turn:R_B' },
+    ]);
+  });
+
+  test('two prompts queued above the composer drain back to back, each on its own row', () => {
+    const receipt = { messageId: 'W_C', turnId: 'A', atMs: T - 10_000, acceptedAtMs: T - 9_800 };
+    const first = composerQueuedTurn({
+      before: [],
+      running: 'A',
+      runningStartedAtMs: T - 60_000,
+      queued: 'W_B',
+      echoId: 'R_B',
+      behind: [waiting('W_C', 'older_prompt_pending')],
+      receipt,
+      idleAtMs: T + 1_000,
+      busySinceAtMs: T - 60_000,
+    });
+    const second = composerQueuedTurn({
+      before: [turn('A', 'done')],
+      running: 'R_B',
+      runningStartedAtMs: T + 3_080,
+      queued: 'W_C',
+      echoId: 'R_C',
+      behind: [],
+      receipt,
+      idleAtMs: T + 10_000,
+      busySinceAtMs: T + 3_100,
+    });
+    expect(run([...first, ...second]).map(({ step, state, at }) => ({ step, state, at }))).toEqual([
+      { step: 'A idle', state: 'working', at: 'end' },
+      { step: 'W_B promoted', state: 'working', at: 'end' },
+      { step: 'W_B busy frame', state: 'working', at: 'end' },
+      { step: 'echo R_B', state: 'working', at: 'turn:R_B' },
+      { step: '/turn [R_B]', state: 'working', at: 'turn:R_B' },
+      { step: 'R_B assistant open', state: 'working', at: 'turn:R_B' },
+      { step: 'R_B idle', state: 'working', at: 'end' },
+      { step: 'W_C promoted', state: 'working', at: 'end' },
+      { step: 'W_C busy frame', state: 'working', at: 'end' },
+      { step: 'echo R_C', state: 'working', at: 'turn:R_C' },
+      { step: '/turn [R_C]', state: 'working', at: 'turn:R_C' },
+      { step: 'R_C assistant open', state: 'working', at: 'turn:R_C' },
+    ]);
+  });
+
+  test('the projection names the turn first; the fresh-send hint decides only where it names none', () => {
+    const turns = [turn('old', 'open'), turn('new')];
+    const at = (turnId: string | null, freshSendTurnId: string | null) =>
+      resolveBusyRow({
+        turns,
+        prompts: [],
+        projection: { state: 'working', turnId },
+        freshSendTurnId,
+        lastTurnWorking: true,
+        isRetrying: false,
+        turnHasError: () => false,
+        firstPromptStandIn: false,
+      }).workingTurnId;
+    expect(at('old', 'new')).toBe('old');
+    expect(at(null, 'new')).toBe('new');
+    expect(at(null, null)).toBe('old');
+  });
+
+  test('a claimed first prompt keeps its queued dimming while the server holds it', () => {
+    // The claim hides the duplicate bubble; the surviving copy is on screen
+    // under the claim's id, which no inbox row carries.
+    const turns = [turn('first-bubble')];
+    const input = {
+      turns,
+      prompts: [{ prompt_id: 'p1', state: 'queued', message_id: 'row-id', wire_message_id: 'row-id' }],
+      projection: { state: 'working' as const, turnId: null, pendingDelivery: true as const },
+      freshSendTurnId: null,
+      lastTurnWorking: true,
+      isRetrying: false,
+      turnHasError: () => false,
+      firstPromptStandIn: false,
+    };
+    expect(resolveBusyRow(input).workingTurnId).toBe('first-bubble');
+    const claimed = resolveBusyRow({ ...input, claimedFirstTurnId: 'first-bubble' });
+    expect(claimed.workingTurnId).toBeNull();
+    expect([...claimed.pendingTurnIds]).toEqual(['first-bubble']);
+  });
+
+  test('guard: a turn the projection cannot name keeps its row between two steps', () => {
+    // A trigger's turn: the ledger row carries no message id.
+    const between: Step = {
+      name: 'between steps',
+      turns: [turn('A', 'done'), turn('X', 'step')],
+      prompts: [],
+      inputs: {
+        optimistic: null,
+        inbox: { pending: 0, atMs: T + 20_000 },
+        server: {
+          turns: [{ ...ledger('X', T + 10_000), message_id: null }],
+          atMs: T + 12_000,
+          source: 'read',
+        },
+        stream: { type: 'busy', origin: 'wire', atMs: T + 10_000 },
+        activity: { atMs: T + 19_900 },
+        runtimeBusySinceAtMs: T + 10_000,
+        nowMs: T + 20_000,
+      },
+    };
+    expect(run([between])).toEqual([
+      { step: 'between steps', state: 'working', at: 'turn:X', pending: [] },
+    ]);
+  });
+
+  test('guard: a finished turn keeps its row through the idle fade', () => {
+    const fade: Step = {
+      name: 'idle fade',
+      turns: [turn('A', 'done')],
+      prompts: [],
+      lastTurnWorking: true,
+      inputs: {
+        optimistic: null,
+        inbox: { pending: 0, atMs: T + 1_010 },
+        server: { turns: [], atMs: T + 1_010, source: 'read' },
+        stream: { type: 'idle', origin: 'wire', atMs: T + 1_000 },
+        activity: { atMs: T + 900 },
+        runtimeBusySinceAtMs: T - 60_000,
+        nowMs: T + 1_100,
+      },
+    };
+    expect(run([fade])).toEqual([{ step: 'idle fade', state: 'idle', at: 'turn:A', pending: [] }]);
+  });
+
+  test('a prompt queued in the transcript draws the row on its bubble from promotion', () => {
+    const answered = [turn('A', 'done'), turn('W_B')];
+    const idle: Step = {
+      name: 'A idle',
+      turns: answered,
+      prompts: [waiting('W_B')],
+      inputs: {
+        optimistic: { messageId: 'W_B', turnId: 'A', atMs: T - 20_000, acceptedAtMs: T - 19_800 },
+        inbox: { pending: 1, atMs: T + 1_010 },
+        server: { turns: [ledger('A', T - 60_000)], atMs: T + 1_010, source: 'read' },
+        stream: { type: 'idle', origin: 'wire', atMs: T + 1_000 },
+        activity: { atMs: T + 900 },
+        runtimeBusySinceAtMs: T - 60_000,
+        nowMs: T + 1_050,
+      },
+    };
+    // The drain has re-minted the row's `message_id`; the bubble keeps its wire id.
+    const delivering: Step = {
+      ...idle,
+      name: 'W_B delivering',
+      prompts: [{ ...waiting('W_B'), state: 'delivering', message_id: 'R_B' }],
+      inputs: { ...idle.inputs, inbox: { pending: 1, atMs: T + 2_010 }, nowMs: T + 2_050 },
+    };
+    const promoted: Step = {
+      ...idle,
+      name: 'W_B promoted',
+      prompts: [],
+      inputs: {
+        ...idle.inputs,
+        inbox: { pending: 0, atMs: T + 3_010, drainedAtMs: T + 3_010 },
+        nowMs: T + 3_050,
+      },
+    };
+    const busy: Step = {
+      ...promoted,
+      name: 'W_B busy frame',
+      inputs: {
+        ...promoted.inputs,
+        stream: { type: 'busy', origin: 'wire', atMs: T + 3_100 },
+        runtimeBusySinceAtMs: T + 3_100,
+        nowMs: T + 3_120,
+      },
+    };
+    const echo: Step = {
+      ...busy,
+      name: 'echo R_B',
+      turns: [turn('A', 'done'), turn('R_B')],
+      inputs: { ...busy.inputs, activity: { atMs: T + 3_200 }, nowMs: T + 3_210 },
+    };
+    const read: Step = {
+      ...echo,
+      name: '/turn [R_B]',
+      inputs: {
+        ...echo.inputs,
+        server: { turns: [ledger('R_B', T + 3_080)], atMs: T + 3_150, source: 'read' },
+        nowMs: T + 3_300,
+      },
+    };
+    expect(run([idle, delivering, promoted, busy, echo, read])).toEqual([
+      // Not promoted yet: the row stays above the queued bubble.
+      { step: 'A idle', state: 'working', at: 'under:A', pending: ['W_B'] },
+      { step: 'W_B delivering', state: 'working', at: 'under:W_B', pending: ['W_B'] },
+      { step: 'W_B promoted', state: 'working', at: 'turn:W_B', pending: [] },
+      { step: 'W_B busy frame', state: 'working', at: 'turn:W_B', pending: [] },
+      { step: 'echo R_B', state: 'working', at: 'turn:R_B', pending: [] },
+      { step: '/turn [R_B]', state: 'working', at: 'turn:R_B', pending: [] },
+    ]);
   });
 });
