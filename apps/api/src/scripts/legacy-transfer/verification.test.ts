@@ -58,9 +58,12 @@ test('provider-error and stuck-archiving waivers require matching provider evide
  const providerError={...base,approved_exception:{...approved,reason:'unrecoverable-provider-error',provider_state:'error'}};
  expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',providerError)).not.toThrow();
  expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...providerError,approved_exception:{...providerError.approved_exception,recoverable:true}})).toThrow();
- const oldUpdatedAt=new Date(Date.now()-3*24*60*60*1000).toISOString();
+ const oldUpdatedAt=new Date(Date.now()-3*60*60*1000).toISOString();
  const archiving={...base,approved_exception:{...approved,reason:'stuck-archiving',provider_state:'archiving',provider_updated_at:oldUpdatedAt}};
  expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',archiving)).not.toThrow();
  expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...archiving,approved_exception:{...archiving.approved_exception,provider_updated_at:new Date().toISOString()}})).toThrow();
  expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...archiving,approved_exception:{...archiving.approved_exception,provider_checked_at:''}})).toThrow();
+ const restoring={...base,approved_exception:{...approved,reason:'stuck-restoring',provider_state:'restoring',provider_updated_at:new Date(Date.now()-2*60*60*1000).toISOString()}};
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',restoring)).not.toThrow();
+ expect(()=>assertApprovedUnrecoverableWorkspaceException('source','project',{...restoring,approved_exception:{...restoring.approved_exception,provider_updated_at:new Date().toISOString()}})).toThrow();
 });

@@ -1312,7 +1312,9 @@ could not be captured. Before applying an exception, the private preflight
 checks the exact source project-to-sandbox mapping, source account owner,
 destination owner, direct Daytona state, and absence of a prior file capture.
 The exception verifier accepts `error` with `recoverable=false` or `archiving`
-with `recoverable=false` and a provider update older than 48 hours. A box that
+with `recoverable=false` and a provider update older than two hours. A
+`restoring` box remains pending for one hour before the approved history-only
+path can apply. Each decision rechecks the direct provider state. A box that
 returns to `stopped` is requeued for real file capture instead. At 23:55 UTC,
 42 Suna sessions met the exception criteria: 21 stuck archiving, 19 other
 unrecoverable provider errors, and two missing-volume errors. Four archiving
@@ -1331,3 +1333,17 @@ it captures a recovered box or marks files unavailable only under the user's
 scoped authorization. Both LaunchAgents use the production dotenvx file and
 the primary checkout's machine-local source credentials. Remove both with
 `launchctl bootout` after all exceptions close.
+
+At 00:04 UTC on 2026-09-17, the normal Suna batch also began the approved
+history-only imports. The dedicated unavailable-import worker was booted out
+after its first 16-session pass to prevent concurrent claims. It verified 15
+sessions; one transient runtime-start failure returned to `prepared` and the
+normal batch moved that session to `apply-review`. The unused LaunchAgent
+plist remains on disk; do not bootstrap it while the normal batch is working
+on the same prepared sessions. The unavailable-source reconciler remains
+running for provider-state changes.
+
+At 00:07 UTC, three more Suna boxes had remained `archiving` for over two
+hours and entered the approved history-only queue. One `archiving` box had
+not reached two hours; one `restoring` box had not reached one hour. Both stay
+in source review, with the reconciler checking them every five minutes.
