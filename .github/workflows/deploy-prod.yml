@@ -694,9 +694,21 @@ jobs:
   # macOS/Windows runners that can get stuck queued for ~50min (or fail on a cert
   # problem). Desktop installers are attached afterward by the separate
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
+  # `needs:` deliberately EXCLUDES the npm publishes. It used to include
+  # publish-sdk + publish-agent-tunnel, and with the default `if: success()`
+  # that meant one npm failure SKIPPED the release record entirely — no tag, no
+  # GitHub Release, no changelog, and (because they need this job) no
+  # main/staging VERSION sync, no Slack announce, no installers — while ECS had
+  # already rolled and prod was serving the new version. That is the
+  # "invisibly half-finished release" of v0.13.6, recovered by hand.
+  #
+  # An npm registry outage must not be able to erase the record of what shipped.
+  # build-cli STAYS: this job downloads its `cli-binaries` artifact as release
+  # assets. The publishes still run, still gate nothing here, and a failed one
+  # is re-runnable on its own.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
+    needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     permissions:
       contents: write

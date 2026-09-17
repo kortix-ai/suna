@@ -5,7 +5,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, staging, prod]
+    # NOT `prod`. A release PR's tree is staging's tree plus VERSION,
+    # RELEASE_NOTES.md, RELEASE_SOURCE_SHA and a `merge -s ours` commit — none
+    # of which a typecheck or a build can see. Running ci a third time there
+    # added ~3 min and six checks to every release PR and verified nothing.
+    branches: [main, staging]
   workflow_dispatch:
 
 concurrency:

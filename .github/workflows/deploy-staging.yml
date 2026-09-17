@@ -15,6 +15,11 @@ on:
         description: "Staging commit SHA to deploy; defaults to current staging HEAD"
         required: false
         type: string
+      force_during_release:
+        description: "Deploy even while a release PR into prod is open (breaks that release's gate)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-staging
@@ -23,6 +28,7 @@ concurrency:
 permissions:
   contents: write
   id-token: write
+  pull-requests: read
 
 env:
   AWS_REGION: us-west-2
@@ -50,6 +56,40 @@ jobs:
         with:
           ref: staging
           fetch-depth: 0
+      # A release PR pins its gate to the SHA staging was serving when it was
+      # cut (`RELEASE_SOURCE_SHA`; `tests/src/core/target-smoke.ts` throws on a
+      # mismatch for the api AND the gateway). Moving deployed staging while
+      # that PR is open therefore makes its required check permanently
+      # unpassable — not flaky, unpassable, and unfixable by re-running or
+      # approving. It has to be re-cut.
+      #
+      # 2026-09-17, v0.13.21: release PR #7336 was cut from `8cfb6d43`; #7340
+      # merged `main` into staging 44 min later, staging redeployed to
+      # `9025ab3dbf` at 15:41Z, and every shard died in preflight from then on.
+      #
+      # So staging holds still while a release is in flight. This is a FAILURE,
+      # not a skip: a red run that names the open release PR is the signal. Land
+      # the release (or close it), or dispatch with force_during_release=true.
+      #
+      # NOTE: this workflow is `workflow_run`, so GitHub loads it from the
+      # DEFAULT branch — this gate is inert until it is merged to `main`.
+      - name: Refuse to move staging while a release PR is open
+        if: ${{ inputs.force_during_release != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          open="$(gh pr list --repo "$GITHUB_REPOSITORY" --base prod --state open \
+                    --json number,headRefName,title \
+                    --jq '.[] | "#\(.number) \(.headRefName) — \(.title)"')"
+          if [ -n "$open" ]; then
+            echo "::error::staging is frozen: a release PR into prod is open."
+            echo "$open"
+            echo "Merge or close it, then push to staging again — or re-dispatch this workflow with force_during_release=true (that breaks the open release's gate and it must be re-cut)."
+            exit 1
+          fi
+          echo "✓ no open release PR into prod; staging may move."
+
       - name: Resolve deploy commit
         id: ref
         env:
@@ -737,3 +777,50 @@ jobs:
               "$IMAGE:staging-${SHA8}"
             echo "✓ $IMAGE:staging → staging-${SHA8}"
           done
+
+  # ── Pre-promote release gate (dry run) ──────────────────────────────────────
+  # The release gate (`tests-release.yml`, the ONLY required check on `prod`)
+  # takes 22-66 min and historically ran for the FIRST time on the release PR —
+  # squarely on the critical path, and the first place a stale test or a broken
+  # staging surfaced. v0.13.16 failed, v0.13.17 failed, v0.13.18 needed 6 runs,
+  # v0.13.21 failed: roughly half of releases burned attempts there.
+  #
+  # The gate already supports a dry run against deployed staging
+  # (`workflow_dispatch` + `expected_sha`), so fire it here, as soon as this
+  # exact SHA is live. By promote time the answer is already known, and the
+  # release PR's own run is a formality over identical code.
+  #
+  # Non-blocking by design: it must never fail a staging deploy that succeeded.
+  # Set the repo variable STAGING_PREPROMOTE_GATE=off to stop dispatching it.
+  release-gate-dry-run:
+    name: Pre-promote release gate (dry run)
+    needs: [preflight, verify]
+    if: ${{ always() && needs.verify.result == 'success' && vars.STAGING_PREPROMOTE_GATE != 'off' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: staging
+      - name: Dispatch the gate against the SHA staging now serves
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.preflight.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::warning::no 40-hex staging SHA to test; skipping."
+            exit 0
+          }
+          gh workflow run tests-release.yml --ref staging -f "expected_sha=$SOURCE_SHA"
+          echo "Dispatched tests-release.yml against staging @ $SOURCE_SHA"
+          {
+            echo "### Pre-promote release gate dispatched"
+            echo ""
+            echo "Target: deployed staging @ \`$SOURCE_SHA\`"
+            echo ""
+            echo "If this run is green, a promote from this SHA cuts a release PR whose required check already passed."
+          } >> "$GITHUB_STEP_SUMMARY"

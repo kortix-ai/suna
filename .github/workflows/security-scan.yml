@@ -11,8 +11,12 @@ name: Security Scan
 on:
   schedule:
     - cron: "0 6 * * 1"
+  # NOT `prod`. These scanners gate nothing (no ruleset requires them), and on a
+  # release PR their red checks are actively harmful: on 2026-09-17 a failing
+  # Trivy + Hadolint on release PR #7336 were read as the merge blocker by two
+  # people while the real blocker was the one required check.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [main, staging]
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"

@@ -6244,3 +6244,58 @@ to permit a single provisioning check before starting another full run.
 **Enforcement.** The pending queue fixture is verified with the local browser
 runner, which uses local Git. The preview gate stays explicitly blocked until
 GitHub provisioning recovers; a local pass does not replace that gate.
+
+### A release pinned to a SHA needs the thing it is pinned to held still, and "nobody can bypass prod" is a fact you must measure, not assume (2026-09-17)
+
+**When:** cutting a release, diagnosing a release PR that will not merge, or
+answering "can't you just bypass it?".
+
+**Incident.** Release PR #7336 (v0.13.21) sat `BLOCKED` for ~1h40m with two
+approvals and `reviewDecision: APPROVED`. It was not blocked on review, and not
+on the failing Trivy/Hadolint checks everyone was looking at — those gate
+nothing. `prod`'s ONLY required check is `full suite + quality gates`
+(`tests-release.yml:430`), and it could never pass again: the release was cut
+from `origin/staging` tip `8cfb6d43` at 14:47Z, #7340 merged `main` into staging
+at 15:31Z, staging redeployed to `9025ab3dbf` at 15:41Z, and
+`tests/src/core/target-smoke.ts:187` hard-throws unless BOTH deployed halves
+serve `RELEASE_SOURCE_SHA`. Every shard then died in preflight on a "SHA
+mismatch" buried in the logs. The PR had to be re-cut at the deployed SHA; the
+re-cut also picked up two test fixes and three composer fixes the first cut had
+missed, because it was cut 44 min before they reached staging.
+
+**Rules.**
+1. **Promote from what staging SERVES, never from the branch tip.** The branch
+   moves on every merge and sits ahead of the deployed halves for the length of
+   a build plus a deploy. Read the SHA from
+   `staging-api.kortix.com/v1/health.commit`, require the gateway to agree, and
+   require it to be an ancestor of `origin/staging`.
+2. **Freeze staging while a release PR into `prod` is open.** Anything else
+   makes that PR's required check unpassable — not flaky, unpassable, and
+   unfixable by re-running or approving.
+3. **Run the gate before the release, not on it.** `tests-release.yml` already
+   takes `expected_sha` for a dry run; fire it from `deploy-staging` so a stale
+   test or a broken staging surfaces hours before anyone cuts a release.
+4. **Checking rulesets is NOT checking branch protection.** `prod` carried a
+   legacy CLASSIC protection (`GET /branches/prod/protection`) holding the
+   required check plus `enforce_admins: true`, invisible in the Rules UI and
+   invisible to `/rulesets`. Every ruleset reported
+   `current_user_can_bypass: "never"` — for an org OWNER with repo ADMIN. There
+   was no merge-button override for anyone, so "just bypass it" was not a thing
+   a repo `write` member had declined to do; it did not exist. Query BOTH
+   endpoints before telling anyone what gates a branch, and before blaming them
+   for not bypassing it. (Corrects
+   `promote-pr-scanner-baselines`, which measured only rulesets and concluded
+   "no check was ever required".)
+5. A bot-authored release PR's workflow runs land `action_required` even on
+   `fork-pr-contributor-approval: first_time_contributors` — measured, the repo
+   was already on that policy. The required check does not START until someone
+   clicks Approve. Approve it from promote.
+
+**Enforcement.** `tests/unit/promote-path.test.ts` (24 assertions, pinned as
+source text, proven falsifiable): promote resolves the deployed SHA and refuses
+a split-brain staging; `deploy-staging` refuses while a release PR is open and
+dispatches the pre-promote dry run; `codeql` keeps every push baseline while
+dropping the duplicate PR scans; `tests.yml`'s lanes are untouched; and
+`github-release` no longer depends on the npm publishes (v0.13.6's
+half-finished release). `deploy-staging.yml` is `workflow_run`, so rule 2 is
+inert until it is on `main`.
