@@ -29,9 +29,24 @@ describe('API image sandbox runtime artifacts', () => {
 
   test('copies every migration runner dependency into the self-host image', () => {
     const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+    const scriptsDir = resolve(repoRoot, 'packages/db/scripts');
+    const pending = ['migrate.ts'];
+    const runnerFiles = new Set<string>();
+    while (pending.length > 0) {
+      const file = pending.pop() as string;
+      if (runnerFiles.has(file)) continue;
+      runnerFiles.add(file);
+      const source = readFileSync(resolve(scriptsDir, file), 'utf8');
+      for (const match of source.matchAll(/from '\.\/([\w-]+)'/g)) {
+        pending.push(`${match[1]}.ts`);
+      }
+    }
 
-    expect(dockerfile).toContain(
-      'COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts',
-    );
+    expect(runnerFiles.size).toBeGreaterThan(1);
+    for (const file of runnerFiles) {
+      expect(dockerfile).toContain(
+        `COPY --from=deps /app/packages/db/scripts/${file} ./packages/db/scripts/${file}`,
+      );
+    }
   });
 });
