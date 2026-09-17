@@ -381,7 +381,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         >
           <LazyMotionProvider>
             <IconProvider>
-              <TooltipProvider delayDuration={300}>
+              <TooltipProvider delayDuration={150}>
                 <AuthProvider>
                   <I18nProvider initialLocale={htmlLang} initialMessages={resolvedMessages}>
                     <WebMcpTools />

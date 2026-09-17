@@ -864,6 +864,8 @@ export interface SessionPromptPart {
   text?: string;
   mime?: string;
   url?: string;
+  /** Completed private project upload. Legacy URL parts remain supported. */
+  attachment_id?: string;
   filename?: string;
   name?: string;
   source?: unknown;
@@ -890,6 +892,10 @@ export interface SessionPromptOverrides {
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
 export interface SessionPrompt {
+  /** Pending presentation only; both placements use the same automatic FIFO. */
+  placement?: 'transcript' | 'composer';
+  /** Full accepted text for pending messages after reload. Absent on older servers. */
+  full_text?: string;
   prompt_id: string;
   /** The host's own stable submission name — the same value re-POSTing is a
    *  no-op on, and the key an optimistic row is matched by. */
@@ -904,11 +910,8 @@ export interface SessionPrompt {
    *  from servers older than this field. */
   wire_message_id?: string;
   state: SessionPromptState;
-  /** Why the prompt is `waiting`: `older_prompt_pending` (its own queue is
-   *  ahead of it) or `held` (the user pressed Stop — only an explicit send or
-   *  send-now releases it). A running turn is NOT one of them: the control
-   *  plane forwards a prompt into a live turn, and OpenCode runs it in arrival
-   *  order. */
+  /** Why admission waits: `turn_active`, `older_prompt_pending`, or `held`.
+   * A live turn holds all later prompts until its terminal event. */
   reason: string | null;
   /** Flattened text preview, capped server-side. */
   text: string;
@@ -941,6 +944,8 @@ export interface CreateSessionPromptResult {
 }
 
 export interface CreateSessionPromptInput {
+  /** Pending presentation; omitted preserves the legacy composer queue. */
+  placement?: 'transcript' | 'composer';
   clientMessageId: string;
   messageId: string;
   parts: SessionPromptPart[];
@@ -984,6 +989,7 @@ export async function createSessionPrompt(
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
         parts: input.parts,
+        ...(input.placement ? { placement: input.placement } : {}),
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
         ...(typeof input.clientSentAtMs === 'number'
@@ -1005,6 +1011,8 @@ export async function listSessionPrompts(
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      // A background poll: a failed tick must not toast every second.
+      { showErrors: false },
     ),
   );
 }
@@ -1012,12 +1020,11 @@ export async function listSessionPrompts(
 /**
  * The prompt a DELETE removed, in the shape that re-creates it exactly.
  *
- * Deliberately not a `SessionPrompt`: that carries a truncated text PREVIEW and
- * no parts at all, because it is what a queue row RENDERS. Undoing a removal
- * from that shape silently drops every attachment, the agent/model/variant
- * picks, and anything past the truncation — under a button labelled "Undo".
+ * Unlike `SessionPrompt`, this includes full parts and captured overrides.
+ * Restoring from a list row would drop attachment bytes and model selections.
  */
 export interface RemovedSessionPrompt {
+  placement?: 'transcript' | 'composer';
   prompt_id: string;
   client_message_id: string;
   message_id: string;
@@ -1045,6 +1052,8 @@ export async function deleteSessionPrompt(
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
   return body.removed;
@@ -1068,6 +1077,8 @@ export async function retrySessionPrompt(
     await backendApi.post<SessionPrompt>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }
@@ -1089,11 +1100,13 @@ export async function holdSessionPrompts(
   projectId: string,
   sessionId: string,
   held: boolean,
-): Promise<{ prompts: SessionPrompt[] }> {
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.post<{ prompts: SessionPrompt[] }>(
+    await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
     ),
   );
 }

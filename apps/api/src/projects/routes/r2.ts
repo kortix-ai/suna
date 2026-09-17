@@ -17,11 +17,15 @@ import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import { GitHubInstallationAmbiguousError, GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import {
+  githubInstallationUnreachableBody,
+  isGitHubInstallationUnreachable,
+} from '../lib/github-installation-errors';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
-import { PAT_MANAGED_GIT_INSTALLATION_ID, deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
+import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
@@ -121,14 +125,16 @@ projectsApp.openapi(
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
   const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
-  // Narrowed from `isPlatformAdmin` to `isSelfHostOperator`: this path imports
-  // ANY repo in MANAGED_GIT_GITHUB_OWNER, which on cloud is the shared
-  // `managed-kortix` org. Staff admins are platform admins too, so the old gate
-  // let one import another customer's project repository.
-  if (
-    installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID &&
-    !(await isSelfHostOperator(scope.userId))
-  ) {
+  // `source: 'managed'` imports through the INSTANCE git backend instead of an
+  // account connection. It is the one place the instance backend meets an
+  // account flow, and it is self-host-operator gated: the backend owner on
+  // cloud is the shared `managed-kortix` org, and `isPlatformAdmin` admits
+  // staff, so that gate once let one customer import another's repository.
+  const managedImport = normalizeString(body.source) === 'managed';
+  if (managedImport && installationIdInput) {
+    return c.json({ error: 'source: managed and installation_id are mutually exclusive' }, 400);
+  }
+  if (managedImport && !(await isSelfHostOperator(scope.userId))) {
     return c.json(
       { error: 'Managed GitHub repository import is only available to a self-host operator' },
       403,
@@ -140,21 +146,20 @@ projectsApp.openapi(
 
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
-  // PAT path: link an existing repo with a token, no GitHub App install
+  // Token path: link an existing repo with a token, no GitHub App install
   // needed — either a caller-supplied token (the seamless `kortix ship` flow
   // for a repo you already own, and the App-free fallback in environments
-  // where the App can't be installed), or the account-level managed-git PAT
-  // ("Use a token" self-host setup) when the Import-repo UI picked its
-  // synthetic installation (see serializeGitHubInstallations /
-  // GET github/installations). Everything downstream (`resolveProjectGitAuth`
-  // → `project_credential`) already consumes the stored PAT either way.
+  // where the App can't be installed), or the INSTANCE git backend's own token
+  // when the caller selects it with `source: 'managed'` (operator-gated
+  // above). Everything downstream (`resolveProjectGitAuth` →
+  // `project_credential`) consumes the stored token either way.
   const githubToken = normalizeString(body.github_token ?? body.githubToken);
-  const managedPatToken =
-    !githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID
-      ? managedGithubToken()
-      : null;
-  if (!githubToken && installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID && !managedPatToken) {
-    return c.json({ error: 'The managed GitHub token is no longer configured on this server' }, 409);
+  const managedPatToken = !githubToken && managedImport ? managedGithubToken() : null;
+  if (!githubToken && managedImport && !managedPatToken) {
+    return c.json(
+      { error: 'This server has no token-backed instance git backend configured' },
+      409,
+    );
   }
   const patToken = githubToken ?? managedPatToken;
   if (patToken) {
@@ -210,6 +215,16 @@ projectsApp.openapi(
         error: error.message,
         install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
       }, 409);
+    }
+    // A dead connection is a reconnect prompt, never a raw GitHub string.
+    if (isGitHubInstallationUnreachable(error)) {
+      return c.json(
+        githubInstallationUnreachableBody(
+          installationIdInput ?? '',
+          await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+        ),
+        409,
+      );
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
@@ -304,6 +319,26 @@ projectsApp.openapi(
       return c.json({
         error: error.message,
         install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+      }, 409);
+    }
+    // The account's connection no longer mints tokens — it was made against a
+    // different App identity, or somebody uninstalled it.
+    if (isGitHubInstallationUnreachable(error)) {
+      return c.json(
+        githubInstallationUnreachableBody(
+          normalizeString(body.installation_id ?? body.installationId) ?? '',
+          await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+        ),
+        409,
+      );
+    }
+    // Several connections and no `installation_id`: refuse rather than create
+    // the repository under whichever connection happened to sort first.
+    if (error instanceof GitHubInstallationAmbiguousError) {
+      return c.json({
+        error: 'installation_id_required',
+        message: error.message,
+        installation_ids: error.installationIds,
       }, 409);
     }
     const message = (error as Error).message || 'GitHub is not configured on the server';

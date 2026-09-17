@@ -108,6 +108,14 @@ module "project_snapshots" {
   source = "../../modules/project-snapshots-bucket"
   name   = "${local.name}-project-snapshots"
   tags   = local.tags
+  # Transfer Acceleration for the dev measurement of 2026-09-16: the bucket is
+  # in us-west-2 while the sandboxes are not (Daytona `us` boxes on the US east
+  # coast, Platinum boxes in Amsterdam), and a 1.6 MB boot object over a
+  # 150-190 ms round trip is bound by TLS setup + TCP slow start. Pairs with
+  # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true in deploy-dev.yml's task env
+  # overrides. Read docs/runbooks/project-snapshot-s3-benchmark.md ("Dev after
+  # PR #7242 merged") before flipping this back; about USD 0.04/GB extra.
+  transfer_acceleration = true
 }
 
 module "api" {

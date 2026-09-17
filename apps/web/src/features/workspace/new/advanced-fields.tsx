@@ -10,58 +10,70 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { MANAGED_GIT_BACKEND_KEY } from '@/components/iam/managed-git-notice';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { BranchPicker, RepositoryPicker } from '@/features/projects/modal/github-import-pickers';
-import {
-  isGitHubSource,
-  plannedRepoPath,
-  withRepositorySource,
-} from '@/features/workspace/new/github-source';
+import { plannedRepoPath, withRepositoryChoice } from '@/features/workspace/new/github-source';
 import type {
   NewWorkspaceFormState,
   RepositorySource,
 } from '@/features/workspace/new/new-workspace-form';
+import {
+  type RepositoryChoice,
+  defaultRepositoryChoice,
+  parseRepositoryChoice,
+  repositoryChoices,
+  selectedChoice,
+} from '@/features/workspace/new/repository-options';
 import { newWorkspaceReturnPath } from '@/features/workspace/new/source-param';
 import { useDebounce } from '@/hooks/use-debounce';
 import {
+  gitHubInstallationUnreachable,
   githubInstallationLabel,
-  isGitHubAppInstallationId,
   rememberGitHubSetupReturn,
 } from '@/lib/github-installations';
+import { hubTarget } from '@/stores/account-panel-store';
 import {
+  getManagedGitBackend,
   listGitHubInstallations,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
+  listManagedGitRepositories,
 } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Repository source is a disclosure, not a visible choice, because `managed`
- * is right for almost everyone and `projects.repo_url` being NOT NULL means
- * the decision cannot be skipped — only defaulted. Same call the old create
- * modal made (`project-create-modal.tsx:171`), kept collapsed by default here
- * so `/new` still opens as a single name field.
+ * The repository fields on `/new`.
  *
- * Wording matches `project-create-modal.tsx:125-129` (`REPOSITORY_MODE_DESCRIPTIONS`)
- * so the two surfaces never diverge while both exist — "workspace" replaces
- * "project" in the managed line only, the other two already say neither word.
+ * ## One list, connections first
+ *
+ * This used to be two controls: an abstract source (`Kortix managed`, `Create
+ * in GitHub`, `Import from GitHub`) and — only after a GitHub source was
+ * picked — a second select for WHICH GitHub account. The default was
+ * `Kortix managed`, so an account that had gone to the trouble of connecting
+ * GitHub was still offered the option that ignores it.
+ *
+ * Now there is one list (`repository-options.ts`): every connected GitHub
+ * owner contributes "create a repository in it" and "import a repository from
+ * it", in the API's order, and `Kortix managed` is a single option at the end.
+ * The first entry is the default, so a connected account defaults to its
+ * connection and an unconnected one defaults to `Kortix managed`.
+ *
+ * ## Nothing here prints a GitHub error verbatim
+ *
+ * A repository listing whose installation GitHub no longer resolves used to
+ * spin through three silent retries and then print GitHub's own sentence —
+ * `/app/installations/148404669/access_tokens failed (404): Not Found`. Every
+ * query below is `retry: false`, and the two failures that have an action
+ * attached (`github_installation_unreachable`, managed git not configured) say
+ * what to do instead of what the upstream returned.
  */
-const SOURCE_KEYS: Record<RepositorySource, 'managed' | 'githubCreate' | 'githubImport'> = {
-  managed: 'managed',
-  'github-create': 'githubCreate',
-  'github-import': 'githubImport',
-};
 
 /**
  * Shown when the account has no GitHub App installation to act through.
- *
- * `github-create` and `github-import` both need one — `POST
- * /projects/create-repo` and `POST /projects/link-repository` resolve their
- * credentials from it (`apps/api/src/projects/routes/r2.ts`), and answer 409
- * `Install the Kortix GitHub App…` when there is none. Sending the user to
- * `/github/setup` BEFORE they press Create is that 409 turned into a link.
  *
  * `rememberGitHubSetupReturn` is what makes it a round trip rather than a
  * one-way exit: the setup page reads that path back on completion
@@ -102,195 +114,6 @@ function ConnectGitHubNote({
   );
 }
 
-/**
- * The inputs the two GitHub sources need on top of the workspace name.
- *
- * Mounted only while a GitHub source is selected, so its three queries never
- * run for the `managed` default — which is the source almost every create
- * uses. Splitting it out of `AdvancedFields` is what keeps that true: hooks
- * cannot be called conditionally, so the queries have to live in a component
- * whose MOUNT is the condition.
- */
-function GitHubSourceFields({
-  state,
-  accountId,
-  onChange,
-}: {
-  state: NewWorkspaceFormState;
-  accountId: string | null;
-  onChange: (next: NewWorkspaceFormState) => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const t = useTranslations('newWorkspace');
-  const [repoSearch, setRepoSearch] = useState('');
-  // The repositories route takes `search` as a server-side filter, so every
-  // keystroke would otherwise be a request. `RepositoryPicker` also filters
-  // what it already holds client-side, so the debounce only delays WIDENING
-  // the result set, never the responsiveness of the list in front of the user.
-  const { debouncedValue: debouncedRepoSearch } = useDebounce(repoSearch, 300);
-
-  // Same cache key `accounts/[id]/page.tsx` and `connected-tab.tsx` already
-  // use, so arriving here after connecting an account on either surface hits a
-  // warm cache instead of refetching.
-  const installationsQuery = useQuery({
-    queryKey: ['github-installations', accountId],
-    queryFn: () => listGitHubInstallations(accountId as string),
-    enabled: Boolean(accountId),
-    staleTime: 60_000,
-  });
-
-  const installations = installationsQuery.data?.installations ?? [];
-  // REAL GitHub App installations only — for BOTH sources.
-  //
-  // `serializeGitHubInstallations` can also return a synthetic `pat` entry
-  // standing for the server's managed-git token, and picking it lists
-  // MANAGED_GIT_GITHUB_OWNER's ENTIRE repository set. On cloud that owner is
-  // `managed-kortix`, which holds every customer's project repo — so on
-  // 2026-08-29 this picker showed a Kortix admin a list of other people's
-  // private repositories, one click from importing one.
-  //
-  // The server no longer offers that entry to anyone but a self-host operator
-  // (`isSelfHostOperator`, apps/api/src/shared/self-host-operator.ts). This
-  // filter is the second layer: `/new` is a "create MY workspace" flow, and an
-  // org-wide token is not a thing a person picks there. An operator who wants
-  // it has the CLI and `link-repository` directly.
-  const selectable = installations.filter((installation) =>
-    isGitHubAppInstallationId(installation.installation_id),
-  );
-
-  const installationId = state.installationId;
-  const onlyInstallationId =
-    selectable.length === 1 ? (selectable[0]?.installation_id ?? null) : null;
-
-  // Seed the single installation rather than making the user "choose" from a
-  // list of one. An effect, not a render-time derivation: `githubSourceReady`
-  // (the submit gate) reads `state.installationId`, so a value that exists
-  // only as a local variable would show a filled-in Select above a disabled
-  // Create button.
-  useEffect(() => {
-    if (installationId || !onlyInstallationId) return;
-    onChange({ ...state, installationId: onlyInstallationId });
-    // `state`/`onChange` are excluded deliberately: this must fire on the
-    // arrival of the single installation, not on every keystroke in the name
-    // field, and the guard above already makes it idempotent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installationId, onlyInstallationId]);
-
-  const reposQuery = useQuery({
-    queryKey: ['github-repositories', accountId, installationId, debouncedRepoSearch],
-    queryFn: () =>
-      listGitHubRepositories(accountId as string, installationId, {
-        search: debouncedRepoSearch || undefined,
-      }),
-    enabled: Boolean(accountId && installationId) && state.source === 'github-import',
-    staleTime: 30_000,
-  });
-
-  const repos = reposQuery.data?.repositories ?? [];
-  const selectedOwner =
-    selectable.find((installation) => installation.installation_id === installationId)
-      ?.owner_login ?? null;
-  const plannedPath = plannedRepoPath(selectedOwner, state.name);
-
-  if (installationsQuery.isLoading) {
-    return (
-      <p className="text-muted-foreground flex items-center gap-2 text-xs">
-        <Loading className="size-3.5 shrink-0" />
-        {t('repository.loadingGitHubAccounts')}
-      </p>
-    );
-  }
-
-  if (installationsQuery.isError) {
-    return (
-      <p className="text-destructive text-xs">
-        {t('repository.loadGitHubAccountsError', {
-          error: (installationsQuery.error as Error).message,
-        })}
-      </p>
-    );
-  }
-
-  if (selectable.length === 0) {
-    return <ConnectGitHubNote accountId={accountId} source={state.source} />;
-  }
-
-  return (
-    <>
-      <div className="flex flex-col space-y-3">
-        <Label htmlFor="workspace-installation">{t('repository.githubAccount')}</Label>
-        <Select
-          value={installationId ?? ''}
-          onValueChange={(value) =>
-            // The repository belongs to the installation, so changing the
-            // installation invalidates it — clearing it here is what stops a
-            // repo from one account being submitted against another.
-            onChange({ ...state, installationId: value, repoFullName: null })
-          }
-        >
-          <SelectTrigger id="workspace-installation" className="w-full" size="md">
-            <SelectValue placeholder={t('repository.selectGitHubAccount')} />
-          </SelectTrigger>
-          <SelectContent>
-            {selectable.map((installation) => (
-              <SelectItem
-                key={installation.installation_id ?? ''}
-                value={installation.installation_id ?? ''}
-              >
-                {githubInstallationLabel(installation.installation_id, installation.owner_login)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {state.source === 'github-create' && plannedPath ? (
-          // The workspace name is free text and a GitHub repository name is
-          // not, so `repoSlugFromName` can change it noticeably. Showing the
-          // result before the create is what stops that being a surprise
-          // discovered in the repository list afterwards.
-          <p className="text-muted-foreground text-xs">
-            {t.rich('repository.createsPath', {
-              path: () => <span className="font-mono">{plannedPath}</span>,
-            })}
-          </p>
-        ) : null}
-      </div>
-
-      {state.source === 'github-import' ? (
-        <div className="flex flex-col space-y-3">
-          <Label htmlFor="workspace-repository">{tI18nComplete.raw('text13d6ff07b8a5')}</Label>
-          <RepositoryPicker
-            value={state.repoFullName ?? ''}
-            repos={repos}
-            loading={reposQuery.isLoading || reposQuery.isFetching}
-            disabled={!installationId}
-            onSearchChange={setRepoSearch}
-            onValueChange={(repoFullName) => {
-              // Seed the branch from the repository's OWN default in the same
-              // update. `link-repository` VALIDATES `default_branch` against
-              // GitHub when it is sent (`resolveImportedDefaultBranch`), so
-              // leaving the managed default of `main` here is a 400 for every
-              // repository whose trunk is called anything else.
-              const repo = repos.find((candidate) => candidate.full_name === repoFullName);
-              onChange({
-                ...state,
-                repoFullName,
-                defaultBranch: repo?.default_branch || state.defaultBranch,
-              });
-            }}
-          />
-          {reposQuery.isError ? (
-            <p className="text-destructive text-xs">
-              {t('repository.loadRepositoriesError', {
-                error: (reposQuery.error as Error).message,
-              })}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </>
-  );
-}
-
 export function AdvancedFields({
   state,
   accountId,
@@ -305,34 +128,144 @@ export function AdvancedFields({
   onChange: (next: NewWorkspaceFormState) => void;
 }) {
   const t = useTranslations('newWorkspace');
+
+  // Same cache key the account hub's Git tab and `connected-tab.tsx` use, so
+  // arriving here after connecting an account on either surface hits a warm
+  // cache instead of refetching.
+  const installationsQuery = useQuery({
+    queryKey: ['github-installations', accountId],
+    queryFn: () => listGitHubInstallations(accountId as string),
+    enabled: Boolean(accountId),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  // Whether this instance can create a managed repository at all. Any
+  // authenticated user may read it; the platform-admin status endpoint must
+  // never be called from here.
+  const managedQuery = useQuery({
+    queryKey: MANAGED_GIT_BACKEND_KEY,
+    queryFn: () => getManagedGitBackend(),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  // Account connections, as the API returns them: oldest first, and account
+  // connections ONLY. The synthetic managed-git entry that used to be injected
+  // into this list is gone — on 2026-08-29 picking it listed the managed
+  // owner's ENTIRE repository set, every customer's project repo, to a Kortix
+  // admin, one click from importing one. The instance backend has its own
+  // control below (`ManagedImportField`).
+  const connections = useMemo(
+    () => installationsQuery.data?.installations ?? [],
+    [installationsQuery.data],
+  );
+  const managedConfigured = managedQuery.data?.configured ?? false;
+  const choices = useMemo(
+    () => repositoryChoices(connections, managedConfigured),
+    [connections, managedConfigured],
+  );
+  const optionsLoading = installationsQuery.isLoading || managedQuery.isLoading;
+  const selected = selectedChoice(choices, state.source, state.installationId);
+
+  // Seed the default ONCE, when the options land. An effect, not a render-time
+  // derivation: the submit gate reads `state.source`/`state.installationId`, so
+  // a value that existed only as a local would show a filled-in Select above a
+  // disabled Create button.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || optionsLoading) return;
+    seeded.current = true;
+    const fallback = defaultRepositoryChoice(choices);
+    // `managed` is already the initial state; only a connection is a change.
+    if (!fallback || fallback.kind === 'managed') return;
+    onChange(withRepositoryChoice(state, fallback));
+    // Fires on the arrival of the options, not on every keystroke in the name
+    // field, and `seeded` makes it idempotent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsLoading]);
+
+  function choiceLabel(choice: RepositoryChoice): string {
+    const owner = githubInstallationLabel(choice.ownerLogin);
+    if (choice.kind === 'github-create') return t('repository.createInOwner', { owner });
+    if (choice.kind === 'github-import') return t('repository.importFromOwner', { owner });
+    return t('repository.sources.managed.label');
+  }
+
+  function choiceDescription(choice: RepositoryChoice): string {
+    if (choice.kind === 'github-create') return t('repository.sources.githubCreate.description');
+    if (choice.kind === 'github-import') return t('repository.sources.githubImport.description');
+    return t('repository.sources.managed.description');
+  }
+
   return (
     <>
       <div className="flex flex-col space-y-3">
         <Label htmlFor="workspace-source">{t('repository.label')}</Label>
-        <Select
-          value={state.source}
-          onValueChange={(value) =>
-            onChange(withRepositorySource(state, value as RepositorySource))
-          }
-        >
-          <SelectTrigger id="workspace-source" className="w-full" size="md">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(SOURCE_KEYS) as RepositorySource[]).map((source) => (
-              <SelectItem key={source} value={source}>
-                {t(`repository.sources.${SOURCE_KEYS[source]}.label`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-muted-foreground text-xs">
-          {t(`repository.sources.${SOURCE_KEYS[state.source]}.description`)}
-        </p>
+        {optionsLoading ? (
+          <p className="text-muted-foreground flex items-center gap-2 text-xs">
+            <Loading className="size-3.5 shrink-0" />
+            {t('repository.loadingOptions')}
+          </p>
+        ) : choices.length === 0 ? (
+          // No connection AND no managed git: the only honest thing left is to
+          // say managed git is unavailable and offer the connect route.
+          <>
+            <p className="text-muted-foreground text-xs">{t('repository.managedUnavailable')}</p>
+            <ConnectGitHubNote accountId={accountId} source={state.source} />
+          </>
+        ) : (
+          <>
+            <Select
+              value={selected?.value ?? ''}
+              onValueChange={(value) => {
+                const choice = parseRepositoryChoice(choices, value);
+                if (choice) onChange(withRepositoryChoice(state, choice));
+              }}
+            >
+              <SelectTrigger id="workspace-source" className="w-full" size="md">
+                <SelectValue placeholder={t('repository.selectOption')} />
+              </SelectTrigger>
+              <SelectContent>
+                {choices.map((choice) => (
+                  <SelectItem key={choice.value} value={choice.value}>
+                    {choiceLabel(choice)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selected ? (
+              <p className="text-muted-foreground text-xs">{choiceDescription(selected)}</p>
+            ) : null}
+            {installationsQuery.isError ? (
+              <p className="text-destructive text-xs">{t('repository.loadGitHubAccountsError')}</p>
+            ) : null}
+            {connections.length === 0 ? (
+              <ConnectGitHubNote accountId={accountId} source={state.source} />
+            ) : null}
+          </>
+        )}
+        {selected?.kind === 'github-create' && plannedRepoPath(selected.ownerLogin, state.name) ? (
+          // The workspace name is free text and a GitHub repository name is
+          // not, so `repoSlugFromName` can change it noticeably. Showing the
+          // result before the create is what stops that being a surprise
+          // discovered in the repository list afterwards.
+          <p className="text-muted-foreground text-xs">
+            {t.rich('repository.createsPath', {
+              path: () => (
+                <span className="font-mono">{plannedRepoPath(selected.ownerLogin, state.name)}</span>
+              ),
+            })}
+          </p>
+        ) : null}
       </div>
 
-      {isGitHubSource(state.source) ? (
-        <GitHubSourceFields state={state} accountId={accountId} onChange={onChange} />
+      {selected?.kind === 'github-import' ? (
+        <ImportRepositoryField state={state} accountId={accountId} onChange={onChange} />
+      ) : null}
+
+      {selected?.kind === 'managed' ? (
+        <ManagedImportField state={state} onChange={onChange} />
       ) : null}
 
       {/* `create-repo` does not accept a default branch — it reads
@@ -342,7 +275,7 @@ export function AdvancedFields({
           Import gets a real branch list off the chosen repository; managed
           gets the free-text field, because the repo it names does not exist
           yet and so has no branches to list. */}
-      {state.source === 'github-create' ? null : state.source === 'github-import' ? (
+      {selected?.kind === 'github-create' ? null : selected?.kind === 'github-import' ? (
         <div className="flex flex-col space-y-3">
           <Label htmlFor="workspace-branch">{t('repository.defaultBranch')}</Label>
           <ImportBranchField state={state} accountId={accountId} onChange={onChange} />
@@ -360,6 +293,140 @@ export function AdvancedFields({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * The repository list for `import a repository from <owner>`.
+ *
+ * `retry: false` is the fix for the report that opened this work: with the
+ * default three retries a connection whose installation GitHub no longer
+ * resolves spun for seconds with no bound and then printed GitHub's raw
+ * sentence. One attempt, then a state that says what to do.
+ */
+function ImportRepositoryField({
+  state,
+  accountId,
+  onChange,
+}: {
+  state: NewWorkspaceFormState;
+  accountId: string | null;
+  onChange: (next: NewWorkspaceFormState) => void;
+}) {
+  const t = useTranslations('newWorkspace');
+  const [repoSearch, setRepoSearch] = useState('');
+  // The repositories route takes `search` as a server-side filter, so every
+  // keystroke would otherwise be a request. `RepositoryPicker` also filters
+  // what it already holds client-side, so the debounce only delays WIDENING
+  // the result set, never the responsiveness of the list in front of the user.
+  const { debouncedValue: debouncedRepoSearch } = useDebounce(repoSearch, 300);
+
+  const reposQuery = useQuery({
+    queryKey: ['github-repositories', accountId, state.installationId, debouncedRepoSearch],
+    queryFn: () =>
+      listGitHubRepositories(accountId as string, state.installationId, {
+        search: debouncedRepoSearch || undefined,
+      }),
+    enabled: Boolean(accountId && state.installationId),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const repos = reposQuery.data?.repositories ?? [];
+  const unreachable = gitHubInstallationUnreachable(reposQuery.error);
+
+  return (
+    <div className="flex flex-col space-y-3">
+      <Label htmlFor="workspace-repository">{t('repository.repositoryLabel')}</Label>
+      <RepositoryPicker
+        value={state.repoFullName ?? ''}
+        repos={repos}
+        loading={reposQuery.isFetching}
+        disabled={!state.installationId || Boolean(unreachable)}
+        onSearchChange={setRepoSearch}
+        onValueChange={(repoFullName) => {
+          // Seed the branch from the repository's OWN default in the same
+          // update. `link-repository` VALIDATES `default_branch` against
+          // GitHub when it is sent (`resolveImportedDefaultBranch`), so
+          // leaving the managed default of `main` here is a 400 for every
+          // repository whose trunk is called anything else.
+          const repo = repos.find((candidate) => candidate.full_name === repoFullName);
+          onChange({
+            ...state,
+            repoFullName,
+            defaultBranch: repo?.default_branch || state.defaultBranch,
+          });
+        }}
+      />
+      {reposQuery.isError ? (
+        <p className="text-destructive text-xs">
+          {unreachable ? t('repository.installationUnreachable') : t('repository.loadRepositoriesError')}{' '}
+          {unreachable && accountId ? (
+            <HubLink
+              to={hubTarget(accountId, { tab: 'git' })}
+              className="text-foreground underline underline-offset-2"
+            >
+              {t('repository.reconnect')}
+            </HubLink>
+          ) : null}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Import an existing managed repository" — the self-host operator's way to
+ * adopt a repository the managed-git owner already holds.
+ *
+ * It replaces the synthetic `pat` entry that used to appear in the GitHub
+ * ACCOUNT list, where it read like one more customer connection and listed the
+ * managed owner's entire repository set to anyone who picked it. This control
+ * only exists when `GET /projects/git/backend/repositories` answers — the
+ * route is operator-only and 403s for everyone else, which is a reason to hide
+ * the control, not an error to report.
+ */
+function ManagedImportField({
+  state,
+  onChange,
+}: {
+  state: NewWorkspaceFormState;
+  onChange: (next: NewWorkspaceFormState) => void;
+}) {
+  const t = useTranslations('newWorkspace');
+  const [search, setSearch] = useState('');
+  const { debouncedValue: debouncedSearch } = useDebounce(search, 300);
+
+  const managedReposQuery = useQuery({
+    queryKey: ['managed-git-repositories', debouncedSearch],
+    queryFn: () => listManagedGitRepositories({ search: debouncedSearch || undefined }),
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  if (!managedReposQuery.isSuccess) return null;
+  const repos = managedReposQuery.data.repositories;
+
+  return (
+    <div className="flex flex-col space-y-3">
+      <Label htmlFor="workspace-managed-repository">{t('repository.managedImportLabel')}</Label>
+      <RepositoryPicker
+        value={state.repoFullName ?? ''}
+        repos={repos}
+        loading={managedReposQuery.isFetching}
+        disabled={false}
+        onSearchChange={setSearch}
+        onValueChange={(repoFullName) => {
+          const repo = repos.find((candidate) => candidate.full_name === repoFullName);
+          onChange({
+            ...state,
+            repoFullName,
+            defaultBranch: repo?.default_branch || state.defaultBranch,
+          });
+        }}
+      />
+      <p className="text-muted-foreground text-xs">{t('repository.managedImportHint')}</p>
+    </div>
   );
 }
 
@@ -390,6 +457,9 @@ function ImportBranchField({
       ),
     enabled: Boolean(accountId && state.installationId && state.repoFullName),
     staleTime: 30_000,
+    // Same bound as the repository list: the branch route answers the same 409
+    // for an installation GitHub no longer resolves.
+    retry: false,
   });
 
   return (

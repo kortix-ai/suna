@@ -5,9 +5,11 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
   sessionLifecycleCommands,
+  sessionProviderSecretPools,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -451,6 +453,7 @@ export async function buildSessionSandboxEnvVars(input: {
   /** S3 config provider mode + prepared-archive pin — see session-runtime-env.ts. */
   projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
   projectSnapshotPin?: string | null;
+  projectSnapshotDescriptor?: string | null;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -664,7 +667,6 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       repositoryAccess: input.repositoryAccess,
-      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
@@ -676,6 +678,7 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeConfigDir: input.opencodeConfigDir,
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
+      projectSnapshotDescriptor: input.projectSnapshotDescriptor,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -820,6 +823,7 @@ async function loadParentSessionSharing(
 }
 
 export async function createProjectSession(input: {
+  attachmentSourceCommandId?: string;
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
@@ -1068,6 +1072,10 @@ export async function createProjectSession(input: {
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
+  if (body.provider_secret_pools !== undefined &&
+    (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets') || !llmGatewayEnabled)) {
+    return { error: { status: 403, body: { error: 'Provider secret pools are unavailable' } } };
+  }
 
   // Model: normalize + fail-fast at create. Two paths, forked on the project's
   // `llm_gateway` flag:
@@ -1119,6 +1127,7 @@ export async function createProjectSession(input: {
         projectId,
         freeModelsOnly,
         model: requestedModel,
+        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
       });
       if (!servable) {
         return {
@@ -1143,6 +1152,7 @@ export async function createProjectSession(input: {
         agentName,
         explicit: null,
         freeModelsOnly,
+        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
       });
       const concreteModel =
         resolved.model ??
@@ -1605,6 +1615,12 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
+    const requestedPools = body.provider_secret_pools as Record<string, string[]> | undefined;
+    if (requestedPools && Object.keys(requestedPools).length > 0) {
+      await tx.insert(sessionProviderSecretPools).values(
+        Object.entries(requestedPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
+      );
+    }
     if (parsedRuntimeContext.context !== undefined) {
         await tx
           .insert(projectSessionRuntimeContexts)
@@ -1621,10 +1637,26 @@ export async function createProjectSession(input: {
         // its first prompt durable, or neither does. No conflict handling —
         // `sessionId` is fresh here, so the idempotency key cannot collide
         // without the projectSessions PK colliding first.
-        await tx
+        const insertPrompt = tx
           .insert(sessionLifecycleCommands)
-          .values(pendingPromptConversion.rowValues)
-          .returning({ commandId: sessionLifecycleCommands.commandId });
+          .values(pendingPromptConversion.rowValues);
+        // Only a handle prompt reads its payload back, for binding. A legacy
+        // prompt can carry up to 12 MiB of data-URL parts it never needs again.
+        if ((pendingPromptConversion.rowValues.payload.parts as Array<{ attachment_id?: string }> | undefined)?.some((part) => part.attachment_id)) {
+          const [promptCommand] = await insertPrompt.returning({
+            commandId: sessionLifecycleCommands.commandId,
+            accountId: sessionLifecycleCommands.accountId,
+            projectId: sessionLifecycleCommands.projectId,
+            actorUserId: sessionLifecycleCommands.actorUserId,
+            payload: sessionLifecycleCommands.payload,
+          });
+          if (promptCommand) {
+            const { bindPromptAttachments } = await import('../prompt-attachments');
+            await bindPromptAttachments(tx, promptCommand, input.attachmentSourceCommandId);
+          }
+        } else {
+          await insertPrompt.returning({ commandId: sessionLifecycleCommands.commandId });
+        }
       }
       if (validatedConnectorBindings.bindings.length > 0) {
         await tx
@@ -1663,6 +1695,9 @@ export async function createProjectSession(input: {
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
+    if (error instanceof HTTPException && error.status < 500) {
+      return { error: { status: error.status, body: await error.getResponse().json() } };
+    }
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
   }
@@ -1713,9 +1748,7 @@ export async function createProjectSession(input: {
       // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
       // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
       // OpenCode before the checkout. Bounded by the 2 s race below; a miss
-      // just means the daemon's fetch fallback. Deliberately NOT tied to
-      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
-      // deploy-dev pins to an explicit `false`.
+      // just means the daemon's fetch fallback.
       // The worker path never clones: the scaffold/delta hint is pure waste
       // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
@@ -1802,13 +1835,14 @@ export async function createProjectSession(input: {
           })
         : fastBootGitHintPromise
         .then(async (fastBootGitHint) => {
-          // S3 config provider: pin a PREPARED archive for the exact base tip,
-          // or record the miss and queue the build for the next session. One
-          // indexed read; never a bucket call on the create path.
+          // S3 config provider: pin a PREPARED archive for the exact base tip
+          // and presign its download descriptor right here (local signing, no
+          // bucket call on the create path), or record the miss and queue the
+          // build for the next session. One indexed read.
           const projectSnapshotMode = resolveProjectSnapshotMode(project.metadata);
           const projectSnapshot =
             projectSnapshotMode === 'git'
-              ? { pin: null, cache: 'unconfigured' as const }
+              ? { pin: null, descriptor: null, cache: 'unconfigured' as const }
               : await resolveProjectSnapshotPinForSession({
                   projectId,
                   ref: baseRef,
@@ -1820,14 +1854,19 @@ export async function createProjectSession(input: {
                     sessionId,
                     error: err instanceof Error ? err.message : String(err),
                   });
-                  return { pin: null, cache: 'miss' as const };
+                  return { pin: null, descriptor: null, cache: 'miss' as const };
                 });
           if (projectSnapshotMode !== 'git') {
             tl.mark(`project-snapshot-${projectSnapshot.cache}`);
           }
-          return { fastBootGitHint, projectSnapshotMode, projectSnapshotPin: projectSnapshot.pin };
+          return {
+            fastBootGitHint,
+            projectSnapshotMode,
+            projectSnapshotPin: projectSnapshot.pin,
+            projectSnapshotDescriptor: projectSnapshot.descriptor,
+          };
         })
-        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin }) =>
+        .then(({ fastBootGitHint, projectSnapshotMode, projectSnapshotPin, projectSnapshotDescriptor }) =>
           buildSessionSandboxEnvVars({
             accountId,
             projectId,
@@ -1842,6 +1881,7 @@ export async function createProjectSession(input: {
             freshSession: true,
             projectSnapshotMode,
             projectSnapshotPin,
+            projectSnapshotDescriptor,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,

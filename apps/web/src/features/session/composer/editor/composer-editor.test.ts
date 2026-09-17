@@ -233,6 +233,32 @@ describe('createSubmitOnEnterHandler', () => {
     expect(handled).toBe(true);
   });
 
+  test('Enter and modified Enter keep distinct submission intents; composition never submits', () => {
+    const placements: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (placement) => placements.push(placement),
+      () => false,
+    );
+    const fire = (extra: Partial<KeyboardEvent>) =>
+      handler(
+        null as unknown as EditorView,
+        {
+          key: 'Enter',
+          shiftKey: false,
+          preventDefault() {},
+          ...extra,
+        } as KeyboardEvent,
+      );
+    expect(fire({ shiftKey: undefined })).toBe(false);
+    fire({});
+    fire({ metaKey: true });
+    fire({ ctrlKey: true });
+    expect(fire({ isComposing: true })).toBe(false);
+    expect(fire({ keyCode: 229 })).toBe(false);
+    expect(fire({ shiftKey: true })).toBe(false);
+    expect(placements).toEqual(['transcript', 'composer', 'composer']);
+  });
+
   test('Enter while disabled does NOT call onSubmit, and reports unhandled', () => {
     // This is the bug: editable=false alone does not stop this handler from
     // firing, because it's not a document edit — it's an imperative
@@ -264,6 +290,89 @@ describe('createSubmitOnEnterHandler', () => {
     expect(submitted).toBe(0);
     expect(wasPrevented()).toBe(false);
     expect(handled).toBe(false);
+  });
+
+  describe('Up from the first visual row', () => {
+    const atFirstRow = {
+      state: { selection: { empty: true, $head: { index: () => 0 } } },
+      endOfTextblock: () => true,
+    } as unknown as EditorView;
+    const belowFirstRow = {
+      state: { selection: { empty: true, $head: { index: () => 1 } } },
+      endOfTextblock: () => true,
+    } as unknown as EditorView;
+    const arrowUp = (mods: Partial<KeyboardEvent> = {}) => {
+      let prevented = false;
+      const event = {
+        key: 'ArrowUp',
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        ...mods,
+        preventDefault: () => (prevented = true),
+      } as unknown as KeyboardEvent;
+      return { event, wasPrevented: () => prevented };
+    };
+
+    test('takes the key when the host acts on it', () => {
+      let calls = 0;
+      const handler = createSubmitOnEnterHandler(
+        () => {},
+        () => false,
+        () => (++calls, true),
+      );
+      const { event, wasPrevented } = arrowUp();
+      expect(handler(atFirstRow, event)).toBe(true);
+      expect(calls).toBe(1);
+      expect(wasPrevented()).toBe(true);
+    });
+
+    test('leaves the key to ProseMirror when the host has nothing to take back', () => {
+      const handler = createSubmitOnEnterHandler(
+        () => {},
+        () => false,
+        () => false,
+      );
+      const { event, wasPrevented } = arrowUp();
+      expect(handler(atFirstRow, event)).toBe(false);
+      expect(wasPrevented()).toBe(false);
+    });
+
+    test('below the first row, with a modifier, or while disabled, the host is never asked', () => {
+      let calls = 0;
+      const onUp = () => (++calls, true);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(belowFirstRow, arrowUp().event),
+      ).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ shiftKey: true }).event),
+      ).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ isComposing: true }).event),
+      ).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => true,
+          onUp,
+        )(atFirstRow, arrowUp().event),
+      ).toBe(false);
+      expect(calls).toBe(0);
+    });
   });
 
   test('any other key is a no-op regardless of disabled state', () => {

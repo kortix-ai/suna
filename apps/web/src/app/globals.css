@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+/* Cmd+P — the session transcript as a document. Kept in its own file because
+   it is one self-contained media block and reads as a unit. */
+@import './print.css';
 @plugin 'tailwind-scrollbar';
 @plugin 'tailwind-scrollbar-hide';
 

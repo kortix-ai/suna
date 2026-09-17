@@ -14,7 +14,7 @@ import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/re
 import { resolveTransportKind } from '../transports/route-kind';
 import { type ExtractedUsage, type SseErrorFrame, extractUsageFromJson } from '../usage';
 import { calculateCost } from '../usage/pricing';
-import { gatewayErrorResponse } from './error-response';
+import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import { relayStream } from './streaming';
@@ -149,6 +149,13 @@ function hasImage(body: Record<string, unknown>): boolean {
   });
 }
 
+// `ADMISSION_UNAVAILABLE` is a TRANSPORT failure of the admission gate itself
+// (the standalone gateway's `authorize` hook is an HTTP call to the API control
+// plane), not a denial. It is deliberately distinct from every `ok: false`
+// verdict the gate can return: those mean "the caller may not run this", this
+// one means "we could not find out".
+const ADMISSION_UNAVAILABLE = 'admission_unavailable';
+
 async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
   if (hooks.authorize) return hooks.authorize(token);
   let principal = await hooks.authenticate(token);
@@ -239,7 +246,7 @@ function needsInferenceProfile(error: unknown): boolean {
 function rawProviderError(error: UpstreamHttpError): Response {
   return new Response(error.body || JSON.stringify({ error: { message: error.message } }), {
     status: error.status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(error.headers?.['retry-after'] ? { 'retry-after': error.headers['retry-after'] } : {}) },
   });
 }
 
@@ -293,7 +300,36 @@ export async function handleChatCompletions(
     });
   }
 
-  const admission = await authorize(hooks, token);
+  // Every other hook this handler calls has its failure classified —
+  // resolveRoute -> 502 `routing_unavailable`, resolveUpstream -> 400,
+  // billing/budget -> 402. `authorize` did not, so a control-plane transport
+  // failure (a timed-out or unreachable API) threw straight out of the whole
+  // pipeline and was served by the host's catch-all as an opaque
+  // `503 gateway_error "Gateway unavailable"` with empty model fields —
+  // indistinguishable from a gateway crash, and the reason the GW-ACCESS-1
+  // release-gate flake read as a product bug for two releases. Same 503 the
+  // caller already got; now it says which hop failed, and it says so in the
+  // gateway's own error envelope with a `retry-after`.
+  let admission: AuthorizeResult;
+  try {
+    admission = await authorize(hooks, token);
+  } catch (error) {
+    // No principal exists yet, so there is nothing to refund and no account to
+    // attribute a trace to — and `recordTrace` is another call to the control
+    // plane this request just failed to reach. Log it and answer.
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.error(`[gateway] ${id}: admission control unavailable — ${detail}`);
+    return gatewayErrorResponse(503, {
+      message: 'Gateway admission control is unavailable',
+      code: ADMISSION_UNAVAILABLE,
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId: id,
+      suggestion: 'Retry the request.',
+      retryAfterSeconds: 5,
+    });
+  }
   if (!admission.ok) {
     return gatewayErrorResponse(admission.status, {
       message: admission.message ?? 'Request denied',
@@ -372,12 +408,14 @@ export async function handleChatCompletions(
   }
 
   let descriptor: UpstreamDescriptor | undefined;
+  let resolvedCandidates: UpstreamDescriptor[] = [];
   try {
-    descriptor = (await hooks.resolveUpstream(principal, routedModel))[0];
+    resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
+    descriptor = resolvedCandidates[0];
   } catch (error) {
     refundHold(hooks, principal, logger);
     const resolution = error instanceof GatewayResolutionError ? error : null;
-    return gatewayErrorResponse(400, {
+    return gatewayErrorResponse(resolution?.code === 'provider_pool_rate_limited' ? 429 : 400, {
       message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
       code: resolution?.code ?? 'model_unavailable',
       provider: '',
@@ -385,6 +423,7 @@ export async function handleChatCompletions(
       resolvedModel: routedModel,
       requestId: id,
       suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
+      retryAfterSeconds: resolution?.retryAfterSeconds,
     });
   }
   if (!descriptor) {
@@ -432,6 +471,24 @@ export async function handleChatCompletions(
   // the body for a bare Bedrock id and re-dispatch once per profile prefix on
   // exactly that 400.
   const profileRetryBody = bedrockBareModelId(served) ? structuredClone(body) : null;
+  const poolRetryBody = served.poolSecretId ? structuredClone(body) : null;
+  const poolCandidates = served.poolSecretId
+    ? resolvedCandidates.filter((candidate) => Boolean(candidate.poolSecretId) && candidate.provider === served.provider)
+    : [];
+  let earliestPoolRetryAt = Infinity;
+  const noteRateLimit = async (candidate: UpstreamDescriptor, response: Response): Promise<void> => {
+    const seconds = clampRetryAfterSeconds(response.headers.get('retry-after')) ?? 30;
+    earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + seconds * 1000);
+    if (!candidate.poolSecretId || !hooks.notePoolRateLimit) return;
+    try {
+      await hooks.notePoolRateLimit(principal, candidate.poolSecretId, seconds);
+    } catch (error) {
+      logger.error('[gateway] provider key cooldown could not be recorded', {
+        secretId: candidate.poolSecretId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
   let attempts = 1;
   const candidatesTried = [served.provider];
   try {
@@ -447,7 +504,9 @@ export async function handleChatCompletions(
     try {
       upstream = await dispatch;
     } catch (error) {
-      if (retryWithoutEffort && isUnknownParameterRejection(error, 'reasoning_effort')) {
+      if (poolRetryBody && error instanceof UpstreamHttpError && error.status === 429) {
+        upstream = rawProviderError(error);
+      } else if (retryWithoutEffort && isUnknownParameterRejection(error, 'reasoning_effort')) {
         const model = served.resolvedModel ?? routedModel;
         noteBedrockOpenAiRejectsReasoningEffort(model);
         logger.warn(
@@ -485,6 +544,31 @@ export async function handleChatCompletions(
         upstream = retried;
       } else {
         throw error;
+      }
+    }
+    if (poolRetryBody && upstream.status === 429) {
+      await noteRateLimit(served, upstream);
+      for (const candidate of poolCandidates.slice(1)) {
+        attempts += 1;
+        candidatesTried.push(`${candidate.provider}:${candidate.poolSecretId}`);
+        served = candidate;
+        try {
+          upstream = await callUpstream(structuredClone(poolRetryBody), candidate, {
+            fetchImpl: dispatchFetch,
+            signal: req.signal,
+            requestId: id,
+          });
+        } catch (error) {
+          if (!(error instanceof UpstreamHttpError) || error.status !== 429) throw error;
+          upstream = rawProviderError(error);
+        }
+        if (upstream.status === 429) await noteRateLimit(candidate, upstream);
+        if (upstream.status !== 429) break;
+      }
+      if (upstream.status === 429) {
+        const headers = new Headers(upstream.headers);
+        headers.set('retry-after', String(Math.max(1, Math.ceil((earliestPoolRetryAt - Date.now()) / 1000))));
+        upstream = new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
       }
     }
     retryWithoutEffort = null;

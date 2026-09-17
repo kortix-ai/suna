@@ -1,4 +1,85 @@
 {
+  "pooledSecrets": {
+    "providerDisabled": "Ce fournisseur est désactivé pour cette session.",
+    "unavailableKeys": "{count, plural, one {# clé sélectionnée est indisponible.} other {# clés sélectionnées sont indisponibles.}} Retirez ces clés ou rétablissez leur accès.",
+    "removeUnavailable": "Retirer les clés indisponibles",
+    "selectionLimit": "10 clés maximum par fournisseur",
+    "manageKeys": "Gérer les clés des fournisseurs",
+    "readOnlyPool": "Seul le propriétaire de la session ou un responsable du projet peut modifier ce groupe.",
+    "legacyChatGptLogin": "Connexion de projet existante",
+    "legacyChatGptDescription": "Cette ancienne connexion est partagée avec le projet. Les nouveaux comptes ChatGPT ci-dessus restent privés tant que vous ne les partagez pas.",
+    "chatGptAccounts": "Comptes ChatGPT",
+    "accountCount": "{count, plural, one {# compte} other {# comptes}}",
+    "addAccount": "Ajouter un compte",
+    "deleteAccount": "Supprimer le compte",
+    "connectAccount": "Connecter le compte",
+    "oauthWaiting": "En attente d’autorisation…",
+    "oauthExpired": "L’autorisation a expiré. Réessayez.",
+    "oauthPrivateDescription": "Votre connexion ChatGPT reste privée tant que vous ne donnez pas accès à un autre membre. Sélectionnez des comptes dans les paramètres de session.",
+    "accountLabelPlaceholder": "p. ex. Mon compte ChatGPT",
+    "chooseProvider": "Choisissez un fournisseur.",
+    "saved": "Secret enregistré",
+    "saveError": "Impossible d’enregistrer le secret",
+    "deleted": "Secret supprimé",
+    "deleteError": "Impossible de supprimer le secret",
+    "accessError": "Impossible de modifier l’accès",
+    "sharedTitle": "Secrets de fournisseur partagés",
+    "sharedDescription": "Ajoutez plusieurs clés de fournisseur et comptes ChatGPT. Partagez chaque connexion avec les membres et sélectionnez-la par session.",
+    "legacyProjectKey": "Clé de projet existante · Utilisée si aucune clé n’est sélectionnée pour cette session",
+    "keyCount": "{count, plural, one {# clé} other {# clés}}",
+    "providerKeysFor": "Clés API de {provider}",
+    "addKey": "Ajouter une clé",
+    "loadError": "Impossible de charger les secrets du fournisseur.",
+    "key": "Clé",
+    "provider": "Fournisseur",
+    "access": "Accès",
+    "actions": "Actions",
+    "coolingDown": "En attente après une limite",
+    "member": "membre",
+    "members": "membres",
+    "actionsFor": "Actions pour {label}",
+    "manageAccess": "Gérer l'accès",
+    "rotateKey": "Renouveler la clé",
+    "deleteKey": "Supprimer la clé",
+    "empty": "Aucune clé de fournisseur partagée pour le moment.",
+    "rotateLabel": "Renouveler {label}",
+    "addProviderKey": "Ajouter une clé de fournisseur",
+    "valueNeverShown": "Seuls les membres autorisés peuvent sélectionner cette clé. Sa valeur ne sera plus affichée.",
+    "label": "Libellé",
+    "primaryKey": "Clé principale",
+    "apiKey": "Clé API",
+    "cancel": "Annuler",
+    "saving": "Enregistrement…",
+    "saveKey": "Enregistrer la clé",
+    "accessTo": "Accès à {label}",
+    "grantedMembers": "Les membres autorisés peuvent utiliser cette clé dans leurs sessions de ce compte.",
+    "oauthGrantedMembers": "Les membres autorisés peuvent utiliser ce compte ChatGPT dans leurs sessions.",
+    "done": "OK",
+    "deleteConfirmTitle": "Supprimer cette clé pour tous ?",
+    "deleteAccountConfirmTitle": "Supprimer ce compte ChatGPT pour tous ?",
+    "deleteConfirmDescription": "{label} sera retiré de tous les groupes de clés de session. Les autres clés resteront disponibles.",
+    "deleteAccountConfirmDescription": "{label} sera retiré de tous les pools de session. Les autres comptes resteront disponibles.",
+    "keysUpdated": "Clés du fournisseur mises à jour",
+    "keysUpdateError": "Impossible de mettre à jour les clés du fournisseur",
+    "loadingKeys": "Chargement des clés…",
+    "keysLoadError": "Impossible de charger les clés.",
+    "addSharedKey": "Ajoutez une clé de fournisseur dans Modèles pour créer un groupe de clés.",
+    "selectedForSession": "{count} clés sélectionnées pour cette session",
+    "projectDefault": "Paramètre par défaut du projet utilisé",
+    "personalChatGptDefault": "Utilisation de votre connexion ChatGPT par défaut",
+    "resetPersonalChatGptDefault": "Rétablir votre compte par défaut",
+    "saveSelection": "Enregistrer la sélection",
+    "resetDefault": "Rétablir la valeur par défaut du projet",
+    "selectedKeys": "{count} clés sélectionnées",
+    "providerKeys": "Clés du fournisseur",
+    "chooseSharedKeys": "Choisissez les clés partagées que cette session peut utiliser.",
+    "sessionKeyPool": "Groupe de clés de session",
+    "projectDefaultShort": "Valeur par défaut du projet",
+    "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
+    "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
+    "selectedOneForSession": "{count} clé sélectionnée pour cette session",
+    "selectedOne": "{count} clé sélectionnée"
+  },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
   },
@@ -80,12 +161,9 @@
       "noGitHubAccount": "Aucun compte GitHub n’est encore connecté au compte de cet projet.",
       "connectGitHub": "Connecter un compte GitHub",
       "connectGitHubSuffix": "pour utiliser cette option.",
-      "loadingGitHubAccounts": "Chargement des comptes GitHub…",
-      "loadGitHubAccountsError": "Impossible de charger les comptes GitHub : {error}",
-      "githubAccount": "Compte GitHub",
-      "selectGitHubAccount": "Sélectionner un compte GitHub",
+      "loadGitHubAccountsError": "Impossible de charger les comptes GitHub. Réessayez.",
       "createsPath": "Crée <path>{path}</path>",
-      "loadRepositoriesError": "Impossible de charger les dépôts : {error}",
+      "loadRepositoriesError": "Impossible de charger les dépôts. Réessayez.",
       "sources": {
         "managed": {
           "label": "Géré par Kortix",
@@ -99,7 +177,17 @@
           "label": "Importer depuis GitHub",
           "description": "Sélectionnez un dépôt existant dans votre compte GitHub."
         }
-      }
+      },
+      "repositoryLabel": "Dépôt",
+      "createInOwner": "Créer un dépôt dans {owner}",
+      "importFromOwner": "Importer un dépôt depuis {owner}",
+      "selectOption": "Sélectionnez une option de dépôt",
+      "loadingOptions": "Chargement des options de dépôt…",
+      "managedUnavailable": "Les dépôts gérés par Kortix ne sont pas disponibles sur cette instance. Un administrateur de la plateforme les configure dans la console d'administration.",
+      "installationUnreachable": "Cette connexion GitHub ne fonctionne plus. Reconnectez-la pour lister les dépôts.",
+      "reconnect": "Reconnecter dans les réglages Git",
+      "managedImportLabel": "Importer un dépôt géré existant",
+      "managedImportHint": "Réservé aux opérateurs auto-hébergés. Liste les dépôts que le propriétaire git géré possède déjà."
     }
   },
   "projectHome": {
@@ -989,6 +1077,10 @@
           "name": "Secrets protégés par le réseau",
           "description": "Contrôlez les outils et destinations autorisés à recevoir les secrets du projet."
         },
+        "pooled_provider_secrets": {
+          "name": "Secrets de fournisseur partagés",
+          "description": "Partagez plusieurs clés de fournisseur avec les membres et choisissez un groupe de clés pour chaque session."
+        },
         "pi_worker": {
           "name": "Environnement du worker Pi (compilé)",
           "description": "Exécutez les sessions avec l’environnement expérimental du worker Pi."
@@ -1233,8 +1325,6 @@
     "selectAllConversations": "Sélectionner toutes les conversations",
     "deselectAllConversations": "Désélectionner toutes les conversations",
     "loadMore": "Charger plus",
-    "loadingMore": "Chargement…",
-    "loadMoreSessions": "Charger plus de sessions",
     "remaining": "restants",
     "newSession": "Nouvelle séance",
     "collapse": "Réduire la barre latérale",
@@ -1287,7 +1377,6 @@
       "switch": "Changer de projet",
       "switchMenu": "Changer de projet",
       "create": "Créer un projet…",
-      "createIn": "Cr\u00e9er un projet dans {account}",
       "createAccount": "Créer un compte…",
       "settings": "Paramètres",
       "downloadApp": "Télécharger l’application",
@@ -1297,7 +1386,8 @@
       "noMatches": "Aucun projet correspondant",
       "empty": "Aucun projet pour le moment",
       "account": "Compte",
-      "loadError": "Impossible de charger les projets"
+      "loadError": "Impossible de charger les projets",
+      "createIn": "Créer un projet dans {account}"
     },
     "manifestUpgrade": {
       "title": "Passer à la v2",
@@ -1351,7 +1441,9 @@
         "mine": "Mes discussions",
         "shared": "Partagées"
       }
-    }
+    },
+    "loadingMore": "Chargement…",
+    "loadMoreSessions": "Charger plus de sessions"
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -1534,7 +1626,9 @@
       "bringKey": "Utiliser votre propre clé",
       "barTitle": "Aucun modèle connecté",
       "barDescription": "connectez-en un pour commencer à discuter",
-      "connectModel": "Connecter un modèle"
+      "connectModel": "Connecter un modèle",
+      "imagesUnsupported": "{model} ne peut pas lire les images",
+      "imagesUnsupportedHint": "retirez-les ou choisissez un autre modèle"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt enregistré",
@@ -1685,7 +1779,11 @@
     "hintChanged": "Demande ce qui a changé dans ton projet",
     "hintNewLine": "Appuie sur Shift+Enter pour une nouvelle ligne",
     "hintSettings": "Appuie sur {modifier}, pour ouvrir les paramètres",
-    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue"
+    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "L’arrêt n’a pas pu être confirmé. L’agent fonctionne peut-être encore. Réessayez de l’arrêter.",
+    "queued": "En attente",
+    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"
   },
   "billing": {
     "plan": {
@@ -9334,7 +9432,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Aucune question",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recharger",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gérer le forfait",
+    "composerAttachments": {
+      "couldNotAttach": "Impossible de joindre les fichiers",
+      "couldNotRetry": "Impossible de réessayer la pièce jointe",
+      "couldNotSend": "Échec de l’envoi",
+      "failedBlocksSend": "Réessayez ou supprimez la pièce jointe en échec.",
+      "uploadFailed": "Échec du téléversement. Vérifiez votre connexion.",
+      "retryNamed": "Réessayer le téléversement de {name}",
+      "didNotUpload": "{name} n’a pas été téléversé.",
+      "billingRequired": "Votre forfait ou vos crédits ne permettent pas de téléverser pour le moment.",
+      "budgetExceeded": "Trop de téléversements non envoyés. Les téléversements inutilisés expirent sous 24 heures.",
+      "tooLarge": "Ce fichier dépasse 50 Mio.",
+      "expired": "Ce téléversement a expiré. Supprimez-le, puis joignez de nouveau le fichier.",
+      "checkConnection": "Vérifiez votre connexion, puis réessayez."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Téléversement de la pièce jointe démarré",
+      "text40078a553439": "Bloc de la pièce jointe téléversé",
+      "text4c7f8000aabd": "Téléversement de la pièce jointe terminé",
+      "text91420d2587c2": "Téléversement de la pièce jointe supprimé",
+      "text3aab5b3be2b9": "Descripteur de pièce jointe d’exécution résolu",
       "text0005b85debac": "Pack de sons joué pour les événements de session.",
       "text000c02c11c7a": "Instructions réutilisables que vos agents chargent à la demande.",
       "text0017bda47853": "URL copiée",
@@ -12386,7 +12503,6 @@
       "text588032878324": "Envoyer maintenant",
       "text5885ace14d89": "Récupération de la session",
       "text5887e718dea1": "choisi",
-      "text58a34c9573cf": "Installer l’application GitHub",
       "text58a4ba90dc79": "Reprenez la semaine dévorée par la coordination.",
       "text58aede554b21": "Connectez un outil une seule fois pour toute l’entreprise. Les agents y accèdent via un jeton limité que Kortix gère côté serveur — l’identifiant brut n’est donc jamais transmis à la machine contrôlée par le modèle.",
       "text58bf3410b028": "Définir la valeur",
@@ -18365,7 +18481,26 @@
       "textb38cb5e18525": "ce processus et montre son travail. Vous avez vingt minutes ?",
       "textff5bd8333c4e": "Vous et toute personne pouvant gérer ce projet",
       "text36d8691ae566": "Toute personne disposant du lien, ainsi que votre équipe",
-      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe"
+      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe",
+      "text03a01dd53ffa": "Appuyez sur ↑ pour modifier les messages en attente",
+      "text1eb132d9d4da": "File d’attente en pause",
+      "textf8e64a37950a": "Messages en attente",
+      "textcd5f943d5863": "Non envoyé",
+      "text42888e8dc93e": "Une connexion pour toute l'instance. Kortix crée et pousse chaque dépôt de projet via celle-ci, dans tous les comptes.",
+      "textf40d94365439": "L'identité GitHub de cette instance provient de variables d'environnement sur le serveur. Elle ne peut pas être modifiée ici.",
+      "textbd6cc9a4cf4b": "Défini par",
+      "text39481fc24bd5": "Les dépôts gérés par Kortix sur cette instance sont créés sous {value0}.",
+      "text89a9816ffa6f": "Les dépôts gérés par Kortix sont disponibles sur cette instance.",
+      "textb79bb0e54e4f": "Les dépôts gérés par Kortix ne sont pas disponibles sur cette instance. Un administrateur de la plateforme les configure dans la console d'administration.",
+      "textf7be8a17b0e7": "Ajouter un compte GitHub",
+      "text659d5668b62b": "Liez un compte personnel ou une organisation GitHub à ce compte Kortix.",
+      "textdc520b664af2": "GitHub liste chaque compte personnel et organisation que vous administrez. Choisissez-en un, indiquez les dépôts auxquels l'app Kortix peut accéder, et ce propriétaire est lié à ce compte Kortix.",
+      "text8d3f36f31348": "Installer l'app Kortix",
+      "text183bc0d276cc": "Cette instance n'a aucune app GitHub à installer. Un administrateur de la plateforme la configure dans la console d'administration.",
+      "text7f59f014cd7b": "Déjà installée sur le propriétaire souhaité ?",
+      "text9180f7df8906": "Lier une installation que vous administrez déjà",
+      "text0b0e4c425624": "Déjà liée à {value0, plural, one {# autre compte Kortix} other {# autres comptes Kortix}}.",
+      "text7dac2ca010fe": "Préparation de la transcription complète…"
     }
   },
   "projectOnboarding": {

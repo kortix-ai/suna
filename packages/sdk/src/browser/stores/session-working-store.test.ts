@@ -282,3 +282,15 @@ describe('clearSession', () => {
     expect(useSessionWorkingStore.getState().receipts).toBe(before);
   });
 });
+
+
+test('an abort timeout or skipped cancel cannot acknowledge Stop', () => {
+  const store = useSessionWorkingStore.getState();
+  store.noteAbortReceipt('stop-timeout', 100);
+  store.settleAbortReceipt('stop-timeout', 200, 'timed-out');
+  expect(useSessionWorkingStore.getState().aborts['stop-timeout']?.settledAtMs).toBeNull();
+  store.settleAbortReceipt('stop-timeout', 300, 'skipped');
+  expect(useSessionWorkingStore.getState().aborts['stop-timeout']?.settledAtMs).toBeNull();
+  store.settleAbortReceipt('stop-timeout', 400, 'aborted');
+  expect(useSessionWorkingStore.getState().aborts['stop-timeout']?.settledAtMs).toBe(400);
+});

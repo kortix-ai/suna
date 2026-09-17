@@ -23,7 +23,8 @@ kortix.projects; // top-level project operations
 kortix.connectors; // Connector calls scoped by an agent-minted token
 kortix.project(id); // id-bound project handle
 kortix.session(pid, sid); // id-bound session handle → see Sessions
-kortix.github; // GitHub App install + repo linking
+kortix.github; // GitHub App install + repo linking (account-scoped)
+kortix.gitBackend; // the instance git backend ("Kortix managed")
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
@@ -147,8 +148,23 @@ Account-scoped GitHub App install and repo linking, not project-scoped.
 | --- | --- |
 | `getInstallation(accountId)` · `listInstallations(accountId)` | this account's install · installs the user can reach |
 | `saveInstallation(input)` · `deleteInstallation(accountId, installationId?)` | record · unlink an install |
+| `listLinkableInstallations(input)` | installs the authorized GitHub user may link; each entry carries `linked_to_other_accounts`, a count of other Kortix accounts holding it — never their names |
 | `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
-| `linkRepository(input)` | import a repo as a project |
+| `linkRepository(input)` | import a repo as a project. `source: 'managed'` imports one the instance git backend holds (self-host operator only, 403 otherwise) and is mutually exclusive with `installation_id` (400) |
+
+This list holds real account connections only. "Kortix managed" is not one of
+them — it is the instance backend below.
+
+### Instance git backend — `kortix.gitBackend`
+
+One deployment-wide owner plus credential, used for Kortix-managed
+repositories. It is never an account connection and never appears in
+`kortix.github.listInstallations`.
+
+| method | what |
+| --- | --- |
+| `get()` | `{ configured, kind: 'app' | 'pat' | null, owner }` — readable by any authenticated user; it exposes only the owner login that every managed `repo_url` already carries |
+| `repositories({ search?, limit? })` | repositories under that owner. Self-host operators only: on cloud that owner holds every customer's project repo, so the API answers `403` for anyone else |
 
 ### Billing — `kortix.billing`
 
@@ -894,6 +910,11 @@ Both functions read cost and token totals from `step-finish` parts. When a
 part reports zero, they estimate cost from token counts using a
 `ModelPricingLookup`. Every total is multiplied by `COST_MARKUP` (`1.2`) to
 match what Kortix bills.
+
+ChatGPT/Codex subscription messages contribute `$0.00`, including historical
+messages with nonzero runtime costs. Token and context usage remain visible.
+Mixed sessions retain charges for paid API messages. OpenAI API models remain
+billable, including API models whose names contain `codex`.
 
 ### Child sessions and pending requests
 

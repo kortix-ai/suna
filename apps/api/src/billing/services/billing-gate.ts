@@ -95,6 +95,32 @@ export class BillingGateError extends HTTPException {
   }
 }
 
+async function resolveAdmissionState(accountId: string) {
+  await ensureFreeTierAccountReady(accountId);
+  const account = await getCreditAccount(accountId);
+  const snapshot = billingSnapshotFromAccount(account);
+  const state = resolveBillingState(snapshot);
+  const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)
+    ? 'per_seat'
+    : 'legacy';
+  return { snapshot, state, billingModel };
+}
+
+/**
+ * The same account decision as `checkBillingActive`, without its admission
+ * hold. For an admission that spends no compute, such as a prompt attachment
+ * upload: only an LLM gateway settle reconciles a hold, so a hold taken here
+ * would never be refunded. The prompt that later sends the upload runs
+ * `checkBillingActive` itself.
+ */
+export async function checkBillingAdmission(
+  accountId: string,
+): Promise<{ ok: true } | BillingGateBlocked> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { ok: true };
+  const { snapshot, state, billingModel } = await resolveAdmissionState(accountId);
+  return billingStateAllowsRun(state) ? { ok: true } : blockedResult(state, snapshot, billingModel);
+}
+
 export async function checkBillingActive(
   accountId: string,
 ): Promise<BillingGateOk | BillingGateBlocked> {
@@ -105,15 +131,8 @@ export async function checkBillingActive(
     return { ok: true };
   }
 
-  await ensureFreeTierAccountReady(accountId);
-
-  const account = await getCreditAccount(accountId);
-  const snapshot = billingSnapshotFromAccount(account);
-  const state = resolveBillingState(snapshot);
+  const { snapshot, state, billingModel } = await resolveAdmissionState(accountId);
   const balance = snapshot.balance;
-  const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)
-    ? 'per_seat'
-    : 'legacy';
 
   if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
 

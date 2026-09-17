@@ -52,21 +52,42 @@ export function resolveChangeRequestBase(input: {
 /**
  * May this caller merge this change request?
  *
- * A session may not merge the change request it opened. Without this an agent
- * refused a direct push to `main` could open a change request onto `main` and
- * merge it a second later, landing exactly the same commits with no human in
- * the loop — the ref policy defeated by one extra HTTP call.
+ * A session may merge its own change request only when its agent has an
+ * explicit merge grant. Without this, an ungoverned agent (null grant) could
+ * open and merge a change request to bypass the direct-push ref policy.
  *
- * Structural, not configured: it holds on ungoverned projects too, where the
- * per-agent grant is null and `assertAgentScope` is a no-op. An agent merging a
- * change request a PERSON opened stays allowed — that is a reviewed merge
- * someone asked for.
+ * A session merging a change request another actor opened still follows the
+ * ordinary role and agent-scope gates on the route.
  */
 export function refusesSelfMerge(input: {
   /** Session id of the acting token, or null for a person. */
   actingSessionId: string | null;
   /** The session the change request was opened from, if any. */
   originSessionId: string | null;
+  /** Whether the agent's manifest explicitly grants project.gitops.merge. */
+  hasExplicitMergeGrant: boolean;
 }): boolean {
-  return Boolean(input.actingSessionId) && input.actingSessionId === input.originSessionId;
+  return Boolean(input.actingSessionId)
+    && input.actingSessionId === input.originSessionId
+    && !input.hasExplicitMergeGrant;
+}
+
+/** Bind a session-opened CR to the authenticated session, not a body field. */
+export function resolveChangeRequestOrigin(input: {
+  actorIsSession: boolean;
+  actingSessionId: string | null;
+  requestedSessionId: string | null;
+}): { ok: true; originSessionId: string | null } | { ok: false; code: string; error: string } {
+  if (!input.actorIsSession) return { ok: true, originSessionId: input.requestedSessionId };
+  if (!input.actingSessionId) {
+    return { ok: false, code: 'CR_SESSION_ID_REQUIRED', error: 'Session identity is required.' };
+  }
+  if (input.requestedSessionId && input.requestedSessionId !== input.actingSessionId) {
+    return {
+      ok: false,
+      code: 'CR_SESSION_ID_MISMATCH',
+      error: 'session_id must match the authenticated session.',
+    };
+  }
+  return { ok: true, originSessionId: input.actingSessionId };
 }

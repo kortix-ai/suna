@@ -1,15 +1,26 @@
-Faster session lists in large projects
+Print whole conversations, private provider pools, and Entra SCIM fixes
 
-### Fixed
+### New
 
-- Projects with thousands of sessions no longer slow the app down. The session list now loads one page at a time — 50 sessions, with a **Load more** control — instead of returning every session on every refresh. On a project with 12,617 sessions that is a 46 KB response instead of about 11 MB, and the sidebar was refreshing it every five seconds.
-- Opening, sharing, stopping, restarting or renaming a session now works however old the session is. These controls used to look the session up in the full list, so once a project grew past the first page the controls could quietly disappear.
+- **Print a whole conversation.** Cmd+P prints the full session as a clean document — every message, not one clipped screen of the app.
+- **Queued prompts you can see and edit.** Queued messages show in a list above the composer. Press Up to edit the last one, and Resume picks the queue back up reliably.
+- **Private provider connection pools.** Bring several keys for one provider, keep them private or share them with named members, and let a session hold its own key. Sessions fail over to the next key and report the earliest retry time when a pool is exhausted. Gemini and ChatGPT keys pool too, and pooled keys are managed in Models.
+- **Astra** is available as a ChatGPT subscription model.
 
 ### Improved
 
-- Date grouping (Today, This week, Older), filters and search work as before, applied to the sessions you have loaded.
-- A new database index serves the paged list, so a request no longer sorts every session in the project.
+- **Faster project boot.** New sessions fetch the project from storage instead of cloning it, and start sooner.
+- **Faster session lists.** A project's session list is now a page, not the whole inventory.
+- **Menus open instantly.** Menus, popovers, tooltips and the command palette no longer wait to appear.
+- **Smaller sandbox images**, which start faster.
+- **Git connections** are now organized per account, with one instance backend and an identity that cannot drift.
 
-### Security
+### Fixed
 
-- The pagination cursor is encrypted and tied to both the project and the person viewing it. It cannot reveal a session they are not allowed to open, and it cannot be reused by anyone else.
+- **Microsoft Entra directory sync.** Patches apply atomically, large directories paginate, groups survive while a user is inactive or a sign-in session is stale, deactivation and single-member removal behave correctly, and users resolve across the whole directory.
+- **The gateway retries a slow internal call** instead of answering "Gateway unavailable".
+- **Composer drafts survive session startup**, and opening session settings no longer closes itself while the composer takes focus.
+- **Session attachments** are more reliable.
+- **Model prices** show correctly in the ChatGPT picker.
+- Security hardening across session cursors, webhook signing keys, and the remaining high-severity scanner findings.
+- Database migrations now apply cleanly on staging and production.

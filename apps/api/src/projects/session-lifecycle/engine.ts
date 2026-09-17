@@ -1,3 +1,9 @@
+import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
+import {
+  assertInboxDeliveryActive,
+  InboxDeliveryPaused,
+  releasePausedInboxDelivery,
+} from './inbox-delivery-hold';
 import {
   connectorCalls,
   projectSessions,
@@ -28,6 +34,7 @@ import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { sendQuickQueueControl } from './quick-queue-control';
 import {
   currentInstanceId,
   sandboxBelongsToThisInstance,
@@ -50,7 +57,7 @@ import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
-import { type DeliveryTarget, deliverWithRetry } from './deliver';
+import { type DeliveryTarget, type SendOutcome, deliverWithRetry } from './deliver';
 import * as lifecycleStore from './store';
 import {
   MAX_RUNTIME_UNREACHABLE_RETRIES,
@@ -69,6 +76,7 @@ import {
   withNextDeliveryAttempt,
   withRemintedWireId,
 } from './store';
+import { DELIVERY_FAILURE_COPY } from './types';
 import type {
   PromptOverridesWire,
   PromptPartWire,
@@ -196,6 +204,12 @@ export async function createSession(
         },
       };
     }
+    if (JSON.stringify(existingBody.provider_secret_pools ?? null) !== JSON.stringify(command.body.provider_secret_pools ?? null)) {
+      return {
+        status: 'failed', commandId: claimed.row.commandId, retryable: false,
+        error: { status: 409, body: { error: 'Idempotency key was already used with different provider secret pools', code: 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT' } },
+      };
+    }
     if (
       secretsAllowlistPayloadConflicts(
         existingBody.secrets as string[] | null | undefined,
@@ -290,7 +304,7 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession(command);
+  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -408,6 +422,7 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
+  beforeSend?: () => Promise<void>,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -494,8 +509,9 @@ export async function continueSession(
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
-  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
+  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
+    await beforeSend?.();
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
@@ -508,6 +524,8 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        accountId: session.accountId,
+        projectId: session.projectId,
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -550,6 +568,10 @@ export async function continueSession(
       // the transcript against this exact command-id XML and records the marker.
       await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
+    // Carry the reachability verdict through to `deliverWithRetry` rather than
+    // flattening it to false — a down path must not spend the dead-letter
+    // budget. See SendOutcome.
+    if (delivery === 'unreachable') return 'unreachable';
     return delivery !== 'failed';
   };
 
@@ -578,6 +600,7 @@ export async function continueSession(
 
   const loaded = { row: project, userId };
   const openOnce = async () => {
+    await beforeSend?.();
     const [fresh] = await db
       .select({
         status: projectSessions.status,
@@ -740,6 +763,8 @@ export async function drainSessionLifecycleQueue(
     limit?: number;
     /** Drain one freshly-enqueued callback without waiting behind older work. */
     idempotencyKey?: string;
+    /** Completion wakes target rows already in the inbox; they need no burst delay. */
+    coalesce?: boolean;
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
@@ -751,7 +776,7 @@ export async function drainSessionLifecycleQueue(
   // the rest of the burst was even durable (measured: one of four boot sends
   // delivered a step behind, out of order). A quarter second collects the
   // stragglers and is invisible next to the ~1.3 s delivery itself.
-  if (input.idempotencyKey) {
+  if (input.idempotencyKey && input.coalesce !== false) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const rows = await claimDueLifecycleCommands({
@@ -1092,6 +1117,47 @@ export async function resolveSessionOpencodeEndpoint(
   return { endpoint, opencodeSessionId: session.opencodeSessionId };
 }
 
+/** Cancel a pending boundary interrupt when its inbox prompt is removed. */
+export async function disarmQuickQueueInterrupt(
+  sessionId: string,
+  actorUserId: string,
+  promptId: string,
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  if (!resolved) return;
+  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm', promptId });
+}
+
+/** Stop holds all inbox rows, so no automatic boundary interrupt may remain. */
+export async function disarmAllQuickQueueInterrupt(
+  sessionId: string,
+  actorUserId: string,
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId, actorUserId).catch(() => null);
+  if (!resolved) return;
+  await sendQuickQueueControl(resolved.endpoint, { kind: 'disarm-all' });
+}
+
+async function armQuickQueueInterrupt(
+  row: SessionLifecycleCommandRow,
+  identity: { opencodeSessionId: string; messageId: string },
+): Promise<void> {
+  const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
+  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return;
+  const armed = await sendQuickQueueControl(resolved.endpoint, {
+    kind: 'arm',
+    promptId: row.commandId,
+    opencodeSessionId: identity.opencodeSessionId,
+    messageId: identity.messageId,
+  });
+  if (!armed) {
+    logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+    });
+  }
+}
+
 /** What one read of the root transcript tells the drain about this prompt. */
 interface InboxTranscriptState {
   /** The highest id clock on record, for placing a re-mint above it. */
@@ -1115,6 +1181,14 @@ interface InboxTranscriptState {
 /** Newest-N read for placement. Only the tip decides where a re-mint lands,
  *  and a first delivery has no delivered id an `answered` check could match. */
 const INBOX_TRANSCRIPT_TIP_LIMIT = 8;
+/** A full read serves only the redelivery answered check. A long transcript
+ *  with inline attachments is megabytes, so it gets more than the tip's 5s. */
+const INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS = 15_000;
+const INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS = 5_000;
+/** First wait before re-checking an unreadable redelivery; doubles per failure. */
+const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
+/** How many redelivery answered-checks may fail before the prompt is sent anyway. */
+const MAX_ANSWER_CHECK_FAILURES = 3;
 
 async function readInboxTranscriptState(
   row: SessionLifecycleCommandRow,
@@ -1135,7 +1209,9 @@ async function readInboxTranscriptState(
     const res = await fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(
+        opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
+      ),
     });
     if (!res.ok) return empty;
     const tip = parsePlacementTip(await res.json().catch(() => null));
@@ -1538,6 +1614,7 @@ export async function executeQueuedContinue(
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
+    if (admission.admit) await lifecycleStore.markInboxDeliveryStarted(row.commandId);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
@@ -1561,6 +1638,28 @@ export async function executeQueuedContinue(
         { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';
+    }
+    // The row is durable before the daemon may end this turn. The terminal
+    // relay then promotes this same row and delivers it as the next turn.
+    if (admission.interruptAtBoundary) {
+      await armQuickQueueInterrupt(row, admission.interruptAtBoundary);
+    }
+    // A terminal relay can arrive while this row is claimed, before it becomes
+    // queued again. Recheck after the write so that completion cannot lose its wake.
+    if (admission.reason === 'turn_active') {
+      try {
+        if (!(await sessionHoldsLiveTurn(row.sessionId))) {
+          const idempotencyKey = await lifecycleStore.promoteNextInboxRow(row.sessionId);
+          if (idempotencyKey) {
+            void drainSessionLifecycleQueue({ idempotencyKey, coalesce: false }).catch((error) => {
+              logger.error('[session-lifecycle] completion handoff drain failed', { sessionId: row.sessionId, error });
+            });
+          }
+        }
+      } catch (error) {
+        // The row is durably queued. The retry worker remains its fallback.
+        logger.warn('[session-lifecycle] completion handoff check failed', { sessionId: row.sessionId, error });
+      }
     }
     return 'queued';
   }
@@ -1733,6 +1832,31 @@ export async function executeQueuedContinue(
     }
     const transcript = await transcriptPromise;
     tl.mark('transcript-read');
+    // A prompt POSTed before may already be answered. An unreadable transcript
+    // cannot prove it is not, so the redelivery waits and re-checks instead of
+    // re-sending blind, up to MAX_ANSWER_CHECK_FAILURES times. A first delivery
+    // was never posted, so its fail-open read stays safe.
+    const alreadyPosted = deliveryAttempt > 0 || redeliveries > 0;
+    const answerCheckFailures = Number(
+      (row.result as { answer_check_failures?: unknown } | null)?.answer_check_failures ?? 0,
+    );
+    if (
+      alreadyPosted &&
+      !transcript.read &&
+      answerCheckFailures < MAX_ANSWER_CHECK_FAILURES
+    ) {
+      console.warn('[session-lifecycle] redelivery waits — the answered check could not read the transcript', {
+        sessionId: row.sessionId,
+        commandId: row.commandId,
+        redeliveries,
+        answerCheckFailures,
+      });
+      await lifecycleStore.requeueUnverifiedRedelivery(
+        row.commandId,
+        new Date(Date.now() + ANSWER_CHECK_RETRY_BASE_MS * 2 ** answerCheckFailures),
+      );
+      return 'queued';
+    }
     // The already-answered guard is not redelivery-only. Every re-mint path
     // re-reads the transcript, and an assistant reply parented on one of THIS
     // prompt's delivered ids proves the same thing on all of them: the turn
@@ -1824,6 +1948,7 @@ export async function executeQueuedContinue(
         // redelivery. See `withNextDeliveryAttempt`.
         attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId,
         tl,
+        payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined,
       );
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -1953,13 +2078,13 @@ export async function executeQueuedContinue(
     if (delivery === 'unreachable') {
       const parked = await parkPromptForUnreachableRuntime(
         row.commandId,
-        `delivery outcome: ${delivery}`,
+        DELIVERY_FAILURE_COPY[delivery],
         { sessionId: row.sessionId },
       );
       if (parked.parked) return 'queued';
       await markCommandFailed(
         row.commandId,
-        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';
@@ -1993,19 +2118,24 @@ export async function executeQueuedContinue(
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
-    await markCommandFailed(row.commandId, `delivery outcome: ${delivery}`, {
+    await markCommandFailed(row.commandId, DELIVERY_FAILURE_COPY[delivery], {
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
+    if (e instanceof InboxDeliveryPaused) {
+      await releasePausedInboxDelivery(row.commandId);
+      return 'queued';
+    }
+    const retryable = !(e instanceof PromptDeliveryRefused);
     await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
-      retryable: true,
+      retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
     });
-    return 'queued';
+    return retryable ? 'queued' : 'failed';
   }
 }
 
@@ -2069,6 +2199,7 @@ async function executeQueuedCreate(
     requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
   }
   return executeCreateSession({
+    attachmentSourceCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2098,6 +2229,7 @@ async function executeCreateSession(
     ...(command.metadata ?? {}),
   };
   const result = await createProjectSession({
+    attachmentSourceCommandId: command.attachmentSourceCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -2408,8 +2540,10 @@ async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    accountId?: string;
+    projectId?: string;
   },
-): Promise<'accepted' | 'deduplicated' | 'failed'> {
+): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const deliverableParts = prompt?.materializationKey
@@ -2418,6 +2552,8 @@ async function postPrompt(
         externalId,
         sessionId: callerSessionId,
         userId,
+        accountId: prompt.accountId,
+        projectId: prompt.projectId,
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
       })
@@ -2503,14 +2639,24 @@ async function postPrompt(
       }
       return 'accepted';
     }
+    await throwIfPromptRefused(res);
     if (res.status !== 404)
       console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+    // 502/503/504 is the PROXY saying it could not reach the box (a dead
+    // ingress, a control plane refusing the forward, an attempt that timed
+    // out) — not the daemon refusing the prompt. Say so, so a spent deadline
+    // parks the message on the runtime-unreachable ladder instead of spending
+    // the dead-letter budget on a path that is simply down. See SendOutcome.
+    if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
+    if (err instanceof PromptDeliveryRefused) throw err;
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
     console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
-    return 'failed';
+    // Connection refused/reset/timed out: the box is not reachable. Same
+    // reasoning as the 502/503/504 branch above.
+    return 'unreachable';
   }
 }

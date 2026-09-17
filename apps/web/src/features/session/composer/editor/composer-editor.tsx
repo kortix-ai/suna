@@ -1,11 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
 import { textToParagraphs } from '../composer-logic';
@@ -17,6 +17,7 @@ import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
+import { isCursorOnFirstVisualLine } from './first-visual-line';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
@@ -116,7 +117,9 @@ export interface ComposerEditorProps {
   placeholder: string;
   disabled?: boolean;
   autoFocus?: boolean;
-  onSubmit: () => void;
+  onSubmit: (placement: 'transcript' | 'composer') => void;
+  /** Up with the caret on the first visual row — see `createSubmitOnEnterHandler`. */
+  onArrowUpAtStart?: () => boolean;
   /**
    * Fires ONLY on the empty↔non-empty boundary — once when the first character
    * is typed, once when the last is deleted, never in between. This is the
@@ -266,14 +269,36 @@ export function createUpdateHandler(
  * submitting.
  */
 export function createSubmitOnEnterHandler(
-  onSubmit: () => void,
+  onSubmit: (placement: 'transcript' | 'composer') => void,
   isDisabled: () => boolean,
+  /**
+   * Up from the first visual row. Returns whether it acted — `false` leaves
+   * the key to ProseMirror, so Up still moves the caret when there is nothing
+   * to take back.
+   */
+  onArrowUpAtStart?: () => boolean,
 ): (view: EditorView, event: KeyboardEvent) => boolean {
-  return (_view, event) => {
-    if (isDisabled()) return false;
-    if (event.key === 'Enter' && !event.shiftKey) {
+  return (view, event) => {
+    if (isDisabled() || event.isComposing || event.keyCode === 229) return false;
+    // ProseMirror synthesizes a plain Event for multiline DOM changes.
+    // It has no modifier fields and must not submit pasted or filled text.
+    if (event.key === 'Enter' && event.shiftKey === false) {
       event.preventDefault();
-      onSubmit();
+      onSubmit(event.metaKey || event.ctrlKey ? 'composer' : 'transcript');
+      return true;
+    }
+    if (
+      event.key === 'ArrowUp' &&
+      onArrowUpAtStart &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.isComposing &&
+      isCursorOnFirstVisualLine(view) &&
+      onArrowUpAtStart()
+    ) {
+      event.preventDefault();
       return true;
     }
     return false;
@@ -339,8 +364,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     {
       placeholder,
       disabled,
-      autoFocus,
+      autoFocus = false,
       onSubmit,
+      onArrowUpAtStart,
       onEmptyChange,
       onDocChange,
       agents,
@@ -378,6 +404,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       onSubmitRef.current = onSubmit;
     }, [onSubmit]);
+
+    const onArrowUpAtStartRef = useRef(onArrowUpAtStart);
+    useEffect(() => {
+      onArrowUpAtStartRef.current = onArrowUpAtStart;
+    }, [onArrowUpAtStart]);
 
     const disabledRef = useRef(disabled ?? false);
     useEffect(() => {
@@ -529,8 +560,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     const handleKeyDown = useMemo(
       () =>
         createSubmitOnEnterHandler(
-          () => onSubmitRef.current(),
+          (placement) => onSubmitRef.current(placement),
           () => disabledRef.current || mentionOwnsEnterRef.current || slashOwnsEnterRef.current,
+          // An open `@`/`/` menu claims arrow keys through `mentionOwnsEnterRef`
+          // / `slashOwnsEnterRef` above, so Up never reaches this while one is open.
+          () => onArrowUpAtStartRef.current?.() ?? false,
         ),
       [],
     );

@@ -171,6 +171,7 @@ Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must 
 Kortix appends this layer on top of your Dockerfile's final stage.
 
 - A system package floor with `git`, `curl`, `build-essential`, `ffmpeg`, and `tmux`.
+- A shell tool floor: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`, `sqlite3`, `wget`, `zip`/`unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, and `nano`. Every package installs on Ubuntu 22.04, Ubuntu 24.04, and Debian 12 bases.
 - pnpm-managed Node.js and npm, plus uv-managed Python 3.
 - A document-tools floor: LibreOffice, Pandoc, and OCR tools.
 - An exact uv-managed Python version exposed as `python` and `python3`. Use `uv run --with <package>` for third-party dependencies.

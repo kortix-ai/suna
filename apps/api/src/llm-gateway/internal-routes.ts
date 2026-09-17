@@ -6,6 +6,7 @@ import type {
 } from '@kortix/llm-gateway';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { logger } from '../lib/logger';
 import { checkBudget } from './budgets';
 import {
@@ -19,6 +20,7 @@ import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth
 import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { coolDownAccountSecret } from '../secrets/account-resource';
 import { resolveGatewayRoute } from './routing';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
@@ -89,11 +91,21 @@ export function createInternalGatewayRoutes() {
         logger.warn(`[gateway-internal] resolution failed for "${model}": ${err.code} — ${err.message}`);
         return c.json({
           candidates: [],
-          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion },
+          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds },
         });
       }
       throw err;
     }
+  });
+
+  app.post('/pool-rate-limit', async (c) => {
+    const parsed = z.object({
+      principal: z.object({ accountId: z.string().uuid(), sessionId: z.string().uuid() }),
+      secretId: z.string().uuid(), seconds: z.number().int().min(1).max(60),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
+    await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
+    return c.json({ ok: true });
   });
 
   app.post('/resolve-route', async (c) => {

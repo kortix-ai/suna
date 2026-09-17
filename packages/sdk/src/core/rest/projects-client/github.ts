@@ -42,6 +42,10 @@ export interface LinkRepositoryInput {
   repo_url?: string;
   repo_full_name?: string;
   installation_id?: string;
+  /** Import through the instance git backend ("Kortix managed") instead of an
+   *  account connection. Self-host operator only, and mutually exclusive with
+   *  `installation_id`. */
+  source?: 'managed';
   name?: string;
   default_branch?: string;
   manifest_path?: string;
@@ -86,6 +90,12 @@ export interface LinkableGitHubInstallation {
   permissions: Record<string, unknown>;
   installation_url: string | null;
   linked: boolean;
+  /**
+   * How many OTHER Kortix accounts already hold this installation. A count
+   * only — the API never names them, so one tenant can never read another's
+   * name out of this picker.
+   */
+  linked_to_other_accounts: number;
 }
 
 export interface LinkableGitHubInstallationsResponse {

@@ -226,7 +226,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v43: per-project warm images extract the single Git metadata archive directly
 // into /workspace without retaining it. Repo warm-up uses only canonical
 // OpenCode config while it indexes /workspace, then restores the exact checkout.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v43';
+// v44: install the shared shell tool floor (rg, fd, bat, jq, fzf, …) from
+// @kortix/shared/sandbox shell-tools.ts, with `fd`/`bat` linked to Debian's names.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v44';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

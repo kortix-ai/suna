@@ -1,4 +1,85 @@
 {
+  "pooledSecrets": {
+    "providerDisabled": "此提供商已在当前会话中禁用。",
+    "unavailableKeys": "{count, plural, other {有#个所选密钥不可用。}} 请移除不可用的密钥或恢复访问权限。",
+    "removeUnavailable": "移除不可用的密钥",
+    "selectionLimit": "每个提供商最多10个密钥",
+    "manageKeys": "管理提供商密钥",
+    "readOnlyPool": "只有会话所有者或项目管理员可以更改此池。",
+    "legacyChatGptLogin": "现有项目登录",
+    "legacyChatGptDescription": "此旧连接与整个项目共享。上方的新 ChatGPT 账户在您共享前仅供本人使用。",
+    "chatGptAccounts": "ChatGPT 账户",
+    "accountCount": "{count, plural, other {# 个账户}}",
+    "addAccount": "添加账户",
+    "deleteAccount": "删除账户",
+    "connectAccount": "连接账户",
+    "oauthWaiting": "等待授权…",
+    "oauthExpired": "授权已超时，请重试。",
+    "oauthPrivateDescription": "您的 ChatGPT 登录仅供本人使用，除非您向其他成员授予访问权限。在会话设置中选择账户。",
+    "accountLabelPlaceholder": "例如：我的 ChatGPT 账户",
+    "chooseProvider": "请选择提供商。",
+    "saved": "密钥已保存",
+    "saveError": "无法保存密钥",
+    "deleted": "秘密已删除",
+    "deleteError": "无法删除密钥",
+    "accessError": "无法更改访问权限",
+    "sharedTitle": "共享提供商密钥",
+    "sharedDescription": "添加多个提供商密钥和 ChatGPT 账户。与成员共享每个连接，并在每个会话中选择。",
+    "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
+    "keyCount": "{count, plural, one {# 个密钥} other {# 个密钥}}",
+    "providerKeysFor": "{provider} API 密钥",
+    "addKey": "添加密钥",
+    "loadError": "无法加载提供商密钥。",
+    "key": "键",
+    "provider": "提供商",
+    "access": "访问权限",
+    "actions": "操作",
+    "coolingDown": "冷却中",
+    "member": "成员",
+    "members": "位成员",
+    "actionsFor": "{label} 的操作",
+    "manageAccess": "管理访问权限",
+    "rotateKey": "轮换密钥",
+    "deleteKey": "删除密钥",
+    "empty": "尚无共享的提供商密钥。",
+    "rotateLabel": "轮换 {label}",
+    "addProviderKey": "添加提供商密钥",
+    "valueNeverShown": "只有获得授权的成员才能选择此密钥。密钥值不会再次显示。",
+    "label": "标签",
+    "primaryKey": "主密钥",
+    "apiKey": "API 密钥",
+    "cancel": "取消",
+    "saving": "正在保存…",
+    "saveKey": "保存密钥",
+    "accessTo": "{label} 的访问权限",
+    "grantedMembers": "获得授权的成员可以在此账户下的会话中使用该密钥。",
+    "oauthGrantedMembers": "获授权的成员可以在会话中使用此 ChatGPT 账户。",
+    "done": "完成",
+    "deleteConfirmTitle": "要为所有人删除此密钥吗？",
+    "deleteAccountConfirmTitle": "为所有人删除此 ChatGPT 账户？",
+    "deleteConfirmDescription": "{label} 将从所有会话密钥池中移除。其他密钥仍可使用。",
+    "deleteAccountConfirmDescription": "{label} 将从所有会话池中移除。其他账户仍可使用。",
+    "keysUpdated": "提供商密钥已更新",
+    "keysUpdateError": "无法更新提供商密钥",
+    "loadingKeys": "正在加载密钥…",
+    "keysLoadError": "无法加载密钥。",
+    "addSharedKey": "在“模型”中添加提供商密钥以创建密钥池。",
+    "selectedForSession": "此会话已选择 {count} 个密钥",
+    "projectDefault": "正在使用项目默认设置",
+    "personalChatGptDefault": "使用您的默认 ChatGPT 连接",
+    "resetPersonalChatGptDefault": "重置为您的默认账户",
+    "saveSelection": "保存密钥选择",
+    "resetDefault": "重置为项目默认值",
+    "selectedKeys": "已选择 {count} 个密钥",
+    "providerKeys": "提供商密钥",
+    "chooseSharedKeys": "选择此会话可以使用的共享密钥。",
+    "sessionKeyPool": "会话密钥池",
+    "projectDefaultShort": "项目默认值",
+    "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
+    "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
+    "selectedOneForSession": "此会话已选择 {count} 个密钥",
+    "selectedOne": "已选择 {count} 个密钥"
+  },
   "useCases": {
     "headline": "驱动公司运转的循环"
   },
@@ -80,12 +161,9 @@
       "noGitHubAccount": "此项目的账户尚未连接 GitHub 账户。",
       "connectGitHub": "连接 GitHub 账户",
       "connectGitHubSuffix": "以使用此选项。",
-      "loadingGitHubAccounts": "正在加载 GitHub 账户…",
-      "loadGitHubAccountsError": "无法加载 GitHub 账户：{error}",
-      "githubAccount": "GitHub 账户",
-      "selectGitHubAccount": "选择 GitHub 账户",
+      "loadGitHubAccountsError": "无法加载 GitHub 账户。请重试。",
       "createsPath": "创建 <path>{path}</path>",
-      "loadRepositoriesError": "无法加载代码仓库：{error}",
+      "loadRepositoriesError": "无法加载仓库。请重试。",
       "sources": {
         "managed": {
           "label": "由 Kortix 管理",
@@ -99,7 +177,17 @@
           "label": "从 GitHub 导入",
           "description": "从您的 GitHub 账户中选择现有代码仓库。"
         }
-      }
+      },
+      "repositoryLabel": "仓库",
+      "createInOwner": "在 {owner} 中创建仓库",
+      "importFromOwner": "从 {owner} 导入仓库",
+      "selectOption": "选择仓库选项",
+      "loadingOptions": "正在加载仓库选项…",
+      "managedUnavailable": "此实例无法使用由 Kortix 托管的仓库。平台管理员可在管理控制台中完成设置。",
+      "installationUnreachable": "此 GitHub 连接已失效。请重新连接以列出仓库。",
+      "reconnect": "在 Git 设置中重新连接",
+      "managedImportLabel": "导入现有的托管仓库",
+      "managedImportHint": "仅限自托管运维人员。列出托管 git 所有者已持有的仓库。"
     }
   },
   "projectHome": {
@@ -989,6 +1077,10 @@
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
         },
+        "pooled_provider_secrets": {
+          "name": "共享提供商密钥",
+          "description": "与成员共享多个提供商密钥，并为每个会话选择密钥池。"
+        },
         "pi_worker": {
           "name": "Pi 工作器运行时（已编译）",
           "description": "使用实验性 Pi 工作器运行时来运行会话。"
@@ -1233,8 +1325,6 @@
     "selectAllConversations": "全选对话",
     "deselectAllConversations": "取消全选对话",
     "loadMore": "加载更多",
-    "loadingMore": "加载中…",
-    "loadMoreSessions": "加载更多会话",
     "remaining": "剩余",
     "newSession": "新会议",
     "collapse": "折叠侧边栏",
@@ -1287,7 +1377,6 @@
       "switch": "切换项目",
       "switchMenu": "切换项目",
       "create": "创建项目…",
-      "createIn": "在 {account} 中创建项目",
       "createAccount": "创建账户…",
       "settings": "设置",
       "downloadApp": "下载应用",
@@ -1297,7 +1386,8 @@
       "noMatches": "没有匹配的项目",
       "empty": "暂无项目",
       "account": "账户",
-      "loadError": "项目加载失败"
+      "loadError": "项目加载失败",
+      "createIn": "在 {account} 中创建项目"
     },
     "manifestUpgrade": {
       "title": "升级到 v2",
@@ -1351,7 +1441,9 @@
         "mine": "我的聊天",
         "shared": "共享"
       }
-    }
+    },
+    "loadingMore": "加载中…",
+    "loadMoreSessions": "加载更多会话"
   },
   "dashboard": {
     "title": "仪表板",
@@ -1534,7 +1626,9 @@
       "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
-      "connectModel": "连接模型"
+      "connectModel": "连接模型",
+      "imagesUnsupported": "{model} 无法读取图片",
+      "imagesUnsupportedHint": "请移除图片或选择其他模型"
     },
     "providerRecovery": {
       "savedPrompt": "已保存的提示词",
@@ -1685,7 +1779,11 @@
     "hintChanged": "询问项目中发生了哪些变化",
     "hintNewLine": "按 Shift+Enter 换行",
     "hintSettings": "按 {modifier}, 打开设置",
-    "hintCompact": "会话过长时，请要求压缩会话"
+    "hintCompact": "会话过长时，请要求压缩会话",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "queued": "排队中",
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
   },
   "billing": {
     "plan": {
@@ -9334,7 +9432,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "没有问题",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "充值",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "管理计划",
+    "composerAttachments": {
+      "couldNotAttach": "无法添加文件",
+      "couldNotRetry": "无法重试附件",
+      "couldNotSend": "发送失败",
+      "failedBlocksSend": "请重试或移除上传失败的附件。",
+      "uploadFailed": "上传失败。请检查网络连接。",
+      "retryNamed": "重试上传 {name}",
+      "didNotUpload": "{name} 未上传。",
+      "billingRequired": "你的套餐或额度当前不允许上传。",
+      "budgetExceeded": "未发送的上传过多。未使用的上传会在 24 小时内过期。",
+      "tooLarge": "此文件超过 50 MiB。",
+      "expired": "此上传已过期。请移除后重新添加文件。",
+      "checkConnection": "请检查网络连接，然后重试。"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "已开始上传附件",
+      "text40078a553439": "已上传附件分块",
+      "text4c7f8000aabd": "附件上传完成",
+      "text91420d2587c2": "已移除附件上传",
+      "text3aab5b3be2b9": "已解析运行时附件描述符",
       "text0005b85debac": "为会话事件播放声音包。",
       "text000c02c11c7a": "代理按需加载的可复用指令。",
       "text0017bda47853": "URL 已复制",
@@ -12386,7 +12503,6 @@
       "text588032878324": "立即发送",
       "text5885ace14d89": "获取会话",
       "text5887e718dea1": "挑选的",
-      "text58a34c9573cf": "安装 GitHub App",
       "text58a4ba90dc79": "夺回被协调工作吞噬的一周。",
       "text58aede554b21": "连接一次，全公司使用。Agents 通过 Kortix 在服务器端代理的单个受限令牌访问工具——因此原始凭据永远不会落到模型操控的机器上。",
       "text58bf3410b028": "设置值",
@@ -18365,7 +18481,26 @@
       "textb38cb5e18525": "这个流程并展示工作过程。愿意聊二十分钟吗？",
       "textff5bd8333c4e": "你，以及可以管理此项目的人",
       "text36d8691ae566": "知道链接的任何人，以及你的团队",
-      "text4fb2abecc0a6": "知道密码的任何人，以及你的团队"
+      "text4fb2abecc0a6": "知道密码的任何人，以及你的团队",
+      "text03a01dd53ffa": "按 ↑ 编辑排队的消息",
+      "text1eb132d9d4da": "队列已暂停",
+      "textf8e64a37950a": "排队的消息",
+      "textcd5f943d5863": "未发送",
+      "text42888e8dc93e": "整个实例只有一个连接。Kortix 在所有账户中都通过它创建并推送每个项目的仓库。",
+      "textf40d94365439": "此实例的 GitHub 身份来自服务器上的环境变量，无法在此处更改。",
+      "textbd6cc9a4cf4b": "设置来源",
+      "text39481fc24bd5": "此实例中由 Kortix 托管的仓库将创建在 {value0} 下。",
+      "text89a9816ffa6f": "此实例可以使用由 Kortix 托管的仓库。",
+      "textb79bb0e54e4f": "此实例无法使用由 Kortix 托管的仓库。平台管理员可在管理控制台中完成设置。",
+      "textf7be8a17b0e7": "添加 GitHub 账户",
+      "text659d5668b62b": "将 GitHub 个人账户或组织关联到此 Kortix 账户。",
+      "textdc520b664af2": "GitHub 会列出你管理的所有个人账户和组织。选择其中一个，指定 Kortix 应用可以访问哪些仓库，该所有者便会关联到此 Kortix 账户。",
+      "text8d3f36f31348": "安装 Kortix 应用",
+      "text183bc0d276cc": "此实例没有可安装的 GitHub 应用。平台管理员可在管理控制台中完成设置。",
+      "text7f59f014cd7b": "已经安装在你想要的所有者上了吗？",
+      "text9180f7df8906": "关联你已管理的安装",
+      "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。",
+      "text7dac2ca010fe": "正在准备完整记录…"
     }
   },
   "projectOnboarding": {

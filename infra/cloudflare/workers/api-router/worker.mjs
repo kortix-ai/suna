@@ -40,6 +40,8 @@ const DEFAULT_MAINTENANCE = {
 // its status, body and headers intact; only an origin that cannot be reached
 // at all gets a synthetic response, and that one names itself.
 const WEBHOOK_RELAY_USER_AGENT = 'Kortix-Webhook-Relay/1.0';
+const SCIM_RELAY_USER_AGENT = 'Kortix-SCIM-Relay/1.0';
+const SCIM_INGRESS_PATH = /^\/scim\/v2\/accounts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:Users|Groups|ServiceProviderConfig|ResourceTypes|Schemas)(?:\/[^/]+)?\/?$/i;
 
 // The one synthetic error this worker still produces: the origin fetch threw
 // (DNS, TLS, connection refused, timeout). 503 + Retry-After marks it
@@ -314,6 +316,16 @@ export default {
       !originHeaders.has('User-Agent')
     ) {
       originHeaders.set('User-Agent', WEBHOOK_RELAY_USER_AGENT);
+    }
+    // Entra also omits User-Agent during SCIM discovery and provisioning.
+    // Identify the relay before AWS WAF; the API still validates the original
+    // account-scoped bearer token on every request, including discovery.
+    if (
+      !isGateway &&
+      SCIM_INGRESS_PATH.test(url.pathname) &&
+      !originHeaders.get('User-Agent')?.trim()
+    ) {
+      originHeaders.set('User-Agent', SCIM_RELAY_USER_AGENT);
     }
     const modifiedRequest = new Request(targetUrl, {
       method: request.method,

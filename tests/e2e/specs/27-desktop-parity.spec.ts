@@ -4,6 +4,7 @@ import {
   _electron,
   type Locator,
   type ElectronApplication,
+  type Page,
 } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -12,9 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadEnv } from "../../src/core/env";
+import { createDatabaseSession } from "../../src/fixtures/database-project";
+import { runDatabaseSql } from "../helpers/database";
 import { createApiJsonClient } from "../helpers/http";
 import {
   createManifestProject,
+  isDeployedTarget,
   type ManifestProject,
 } from "../helpers/manifest-project";
 import {
@@ -23,7 +28,11 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
+import {
+  dismissOnboarding,
+  dismissWelcomeCard,
+  selectAccountForUi,
+} from "../helpers/ui";
 
 const test = browserTest.extend<{ desktopApp: ElectronApplication | null }>({
   desktopApp: async ({ baseURL }, use) => {
@@ -81,6 +90,18 @@ const authOptions = {
 };
 
 /** Check rendered geometry: a source-string assertion cannot detect collapsed flex lists. */
+/** Stop and Thinking read one busy value: exactly one row while Stop shows, none otherwise. */
+async function expectThinkingMatchesStop(page: Page) {
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  const rows = page.getByTestId("session-busy-indicator");
+  await expect
+    .poll(async () => {
+      const stopVisible = await stop.isVisible();
+      return (await rows.count()) === (stopVisible ? 1 : 0);
+    })
+    .toBe(true);
+}
+
 async function expectSeparateRows(rows: Locator) {
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   const boxes = await rows.evaluateAll((elements) =>
@@ -145,6 +166,7 @@ for (const runtime of runtimes) {
       const user = await createAuthUser(email, authOptions);
       const session = await signIn(email, authOptions);
       let project: ManifestProject | undefined;
+      let pooledResource: { accountId: string; secretId: string } | undefined;
       try {
         const accounts = await api<{ account_id: string }[]>(
           session.access_token,
@@ -240,7 +262,9 @@ for (const runtime of runtimes) {
           );
           // Cold dev routes can load the mono font after the dialog appears.
           // Finish font loading within the journey deadline before capture.
-          await page.evaluate(async () => { await document.fonts.ready; });
+          await page.evaluate(async () => {
+            await document.fonts.ready;
+          });
           await page.screenshot({
             path: test.info().outputPath(`settings-${theme.toLowerCase()}.png`),
             scale: "css",
@@ -404,7 +428,518 @@ for (const runtime of runtimes) {
           );
           expect(denied).toContain("Unauthorized IPC sender");
         }
+        for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+          await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
+            feature, enabled: true,
+          });
+        }
+        const key = await api<{ secret_id: string }>(
+          session.access_token, 'POST', `/accounts/${accountId}/secret-resources`, {
+            label: 'Desktop pooled key', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
+            value: 'fake-desktop-key', consumer: 'llm_gateway', strategy: 'broker',
+          }, 201,
+        );
+        pooledResource = { accountId, secretId: key.secret_id };
+        await resize(720, 480);
+        await page.goto(`${baseURL}/projects/${project.id}/customize/models`);
+        const providerKeys = page.getByRole('region', { name: 'Anthropic API keys' });
+        await expect(providerKeys.getByText('Desktop pooled key')).toBeVisible();
+        const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
+        if (await welcome.isVisible().catch(() => false)) {
+          await welcome.getByRole('button', { name: 'Dismiss' }).click();
+        }
+        await providerKeys.getByRole('button', { name: 'Actions for Desktop pooled key' }).click();
+        await expect(page.getByRole('menuitem', { name: 'Manage access' })).toBeVisible();
+        await page.keyboard.press('Escape');
+        await page.goto(`${baseURL}/projects/${project.id}`);
+        await page.getByRole('button', { name: 'Session overrides' }).click();
+        await page.getByRole('button', { name: /Provider keys/ }).click();
+        await expect(page.getByRole('checkbox', { name: 'Desktop pooled key' })).toBeVisible();
       } finally {
+        if (pooledResource) {
+          await api(session.access_token, 'DELETE', `/accounts/${pooledResource.accountId}/secret-resources/${pooledResource.secretId}`).catch(() => {});
+        }
+        await project?.dispose();
+        await deleteAuthUser(user.id, authOptions);
+      }
+    });
+
+    test("Enter and Command+Enter keep distinct pending prompt placements", async ({
+      page,
+      baseURL,
+      desktopApp,
+    }) => {
+      test.setTimeout(180_000);
+      const databaseUrl =
+        process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+      if (!databaseUrl)
+        throw new Error("Queue parity requires the configured test database");
+      const user = await createAuthUser(
+        `e2e-queue-${randomUUID()}@example.test`,
+        authOptions,
+      );
+      const auth = await signIn(user.email!, authOptions);
+      let project: ManifestProject | undefined;
+      let sessionId = "";
+      let bootSessionId = "";
+      const deliveryFixtureId = randomUUID();
+      try {
+        const accounts = await api<{ account_id: string }[]>(
+          auth.access_token,
+          "GET",
+          "/accounts",
+        );
+        project = await createManifestProject({
+          api,
+          accessToken: auth.access_token,
+          accountId: accounts[0].account_id,
+          userId: user.id,
+          name: "Queue placement",
+          databaseUrl,
+        });
+        if (!isDeployedTarget()) {
+          // A saved test credential makes a real catalog model selectable.
+          // This journey verifies pending submission, not model execution.
+          const base = `/projects/${project.id}`;
+          await api(auth.access_token, "PATCH", `${base}/experimental`, {
+            feature: "llm_gateway",
+            enabled: true,
+          });
+          await api(
+            auth.access_token,
+            "POST",
+            `${base}/secrets`,
+            {
+              name: "OPENAI_API_KEY",
+              value: "sk-e2e-unused-queue-placement",
+              strategy: "broker",
+              consumer: "llm_gateway",
+            },
+            [200, 201],
+          );
+          await api(auth.access_token, "PUT", `${base}/model-access`, {
+            target: "model",
+            id: "openai/gpt-5.5",
+            enabled: true,
+          });
+          await api(auth.access_token, "PUT", `${base}/model-defaults`, {
+            scope: "project",
+            model: "openai/gpt-5.5",
+          });
+        }
+        if (!isDeployedTarget()) {
+          // A persisted conversation is the real offline submission surface.
+          // The local profile deliberately has no cloud session provisioning.
+          sessionId = await createDatabaseSession(loadEnv(), {
+            projectId: project.id,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+          });
+          const rootId = `ses_${sessionId.replaceAll("-", "")}`;
+          const now = Date.now() - 60_000;
+          await runDatabaseSql(
+            "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
+            [sessionId, rootId],
+            databaseUrl,
+          );
+          await runDatabaseSql(
+            "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
+            [sessionId, accounts[0].account_id, project.id],
+            databaseUrl,
+          );
+          await runDatabaseSql(
+            "INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)",
+            [sessionId, project.id, accounts[0].account_id, rootId],
+            databaseUrl,
+          );
+          for (const role of ["user", "assistant"] as const) {
+            const id =
+              role === "user"
+                ? "msg_000000000000000000000001"
+                : "msg_000000000000000000000002";
+            const info = {
+              id,
+              sessionID: rootId,
+              role,
+              agent: "kortix",
+              time: {
+                created: now,
+                ...(role === "assistant" ? { completed: now + 1 } : {}),
+              },
+              ...(role === "user"
+                ? { model: { providerID: "kortix", modelID: "openai/gpt-5.5" } }
+                : {
+                    parentID: "msg_000000000000000000000001",
+                    providerID: "kortix",
+                    modelID: "openai/gpt-5.5",
+                    mode: "build",
+                    cost: 0,
+                    tokens: {
+                      input: 0,
+                      output: 0,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                    },
+                    finish: "stop",
+                    path: { cwd: "/workspace", root: "/workspace" },
+                  }),
+            };
+            const parts = [
+              {
+                id: `prt_queue_${role}`,
+                sessionID: rootId,
+                messageID: id,
+                type: "text",
+                text: role === "user" ? "Previous prompt" : "Previous response",
+              },
+            ];
+            await runDatabaseSql(
+              "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+              [
+                sessionId,
+                id,
+                rootId,
+                role,
+                new Date(now),
+                JSON.stringify(info),
+                JSON.stringify(parts),
+              ],
+              databaseUrl,
+            );
+          }
+          // Keep the cached conversation mounted. The local test sandbox has
+          // no provider behind it, so a real /start eventually marks it stopped.
+          // Prompt acceptance and read-back still use the real API below.
+          await page.route(`**/sessions/${sessionId}/start?*`, async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({
+                stage: "ready",
+                agent_name: "kortix",
+                retriable: false,
+                opencode_session_id: rootId,
+                sandbox: {
+                  sandbox_id: sessionId,
+                  session_id: sessionId,
+                  project_id: project.id,
+                  account_id: accounts[0].account_id,
+                  provider: "daytona",
+                  external_id: sessionId,
+                  base_url: "http://127.0.0.1:1",
+                  status: "active",
+                  config: {},
+                  metadata: {},
+                  last_used_at: null,
+                  created_at: new Date(now).toISOString(),
+                  updated_at: new Date(now).toISOString(),
+                },
+              }),
+            });
+          });
+        }
+        await installBrowserSessionDirect(
+          page,
+          auth,
+          `${baseURL}/projects/${project.id}${sessionId ? `/sessions/${sessionId}` : ""}`,
+          authOptions,
+        );
+        await dismissOnboarding(page);
+        const input = page.getByRole("textbox", { name: "Message input" });
+        await expect(input).toBeVisible({ timeout: 60_000 });
+        if (isDeployedTarget()) {
+          await input.fill("Run sleep 45 in the terminal, then reply READY.");
+          await input.press("Enter");
+          await expect(page).toHaveURL(/\/sessions\/[^/?]+/, {
+            timeout: 60_000,
+          });
+          sessionId = new URL(page.url()).pathname.split("/").at(-1)!;
+          await expect(page.getByRole("button", { name: "Stop", exact: true }))
+            .toBeEnabled({ timeout: 60_000 });
+          await expect(input).toBeEmpty();
+        } else {
+          await expect(
+            page.getByText("Previous response", { exact: true }),
+          ).toBeVisible();
+        }
+        await runDatabaseSql(
+          `INSERT INTO kortix.session_lifecycle_commands
+           (command_id, command_type, source, status, project_id, session_id,
+            account_id, actor_user_id, payload, locked_by, locked_until)
+           VALUES ($1, 'continue_session', 'ui', 'running', $2, $3, $4, $5,
+             $6::jsonb, 'browser-queue-fixture', now() + interval '10 minutes')`,
+          [deliveryFixtureId, project.id, sessionId, accounts[0].account_id, user.id,
+            JSON.stringify({ text: "Pending delivery fixture", clientMessageId: `msg_${deliveryFixtureId.replaceAll("-", "")}` })],
+          databaseUrl,
+        );
+        const promptRequest = () => page.waitForRequest(
+          (request) =>
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith(`/sessions/${sessionId}/prompts`),
+        );
+        const verifySend = async (
+          request: Promise<import("@playwright/test").Request>,
+          text: string,
+          placement: string,
+        ) => {
+          const sent = await request;
+          const outgoing = sent.postDataJSON();
+          expect(outgoing.placement).toBe(placement);
+          expect(outgoing.parts).toContainEqual(
+            expect.objectContaining({ type: "text", text }),
+          );
+          await expect(input).toBeEmpty();
+          expect([200, 202]).toContain((await sent.response())?.status());
+        };
+        const send = async (text: string, key: string, placement: string, fill = true) => {
+          const request = promptRequest();
+          if (fill) await input.fill(text);
+          await input.press(key);
+          await verifySend(request, text, placement);
+        };
+        const transcriptText = "Enter pending placement";
+        const composerText = "Command pending placement";
+        const pending = page
+          .locator("[data-pending-prompt-id]")
+          .filter({ hasText: transcriptText });
+        // Keep the first real API acceptance in flight. A second Enter must
+        // paint at once. Its POST leaves after the first POST settles: the
+        // session's delivery chain keeps POSTs in Enter order, because an idle
+        // session admits whichever prompt lands first (`delivery-chain.ts`).
+        let releaseAcceptance!: () => void;
+        const acceptanceGate = new Promise<void>((resolve) => { releaseAcceptance = resolve; });
+        const postOrder: string[] = [];
+        const promptsUrl = `**/sessions/${sessionId}/prompts`;
+        await page.route(promptsUrl, async (route) => {
+          const request = route.request();
+          const body = request.postData() ?? "";
+          if (request.method() === "POST") {
+            postOrder.push(body.includes(transcriptText) ? "transcript" : body.includes(composerText) ? "composer" : "other");
+          }
+          if (request.method() !== "POST" || !body.includes(transcriptText)) {
+            await route.continue();
+            return;
+          }
+          const response = await route.fetch();
+          await acceptanceGate;
+          await route.fulfill({ response });
+        });
+        const firstRequest = promptRequest();
+        await input.fill(transcriptText);
+        await input.press("Enter");
+        const firstSend = verifySend(firstRequest, transcriptText, "transcript");
+        let nextRequest: Promise<import("@playwright/test").Request> | undefined;
+        try {
+          await expect(pending).toBeVisible({ timeout: 1_000 });
+          await input.fill(composerText);
+          nextRequest = page.waitForRequest((request) =>
+            request.method() === "POST" && request.url().endsWith(`/sessions/${sessionId}/prompts`) &&
+            Boolean(request.postData()?.includes(composerText)), { timeout: 30_000 });
+          await input.press("Meta+Enter");
+          await expect(page.locator("[data-queued-prompt-id]").filter({ hasText: composerText }))
+            .toBeVisible({ timeout: 1_000 });
+          // Painted, and still waiting behind the first POST.
+          expect(postOrder).toEqual(["transcript"]);
+        } finally {
+          releaseAcceptance();
+          await firstSend;
+        }
+        expect(nextRequest).toBeDefined();
+        expect((await nextRequest!).postDataJSON().placement).toBe("composer");
+        // The request event resolves `waitForRequest` before the route handler
+        // records the POST, so wait for the handler.
+        await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
+        await page.unroute(promptsUrl);
+        await expect(pending).toHaveAttribute("data-queue-tone", "pending");
+        await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
+        await expectThinkingMatchesStop(page);
+        if (!isDeployedTarget()) {
+          await expect(page.getByText(/This session is idle/)).toHaveCount(0);
+        }
+        const row = page
+          .locator("[data-queued-prompt-id]")
+          .filter({ hasText: composerText });
+        await expect(row).toBeVisible();
+        await expect(
+          page
+            .locator("[data-queued-prompt-id]")
+            .filter({ hasText: transcriptText }),
+        ).toHaveCount(0);
+        await expect(
+          row.getByRole("button", { name: "Edit", exact: true }),
+        ).toBeEnabled();
+        await dismissWelcomeCard(page);
+        await row.hover();
+        await row.getByRole("button", { name: "Edit", exact: true }).click();
+        await expect(input).toHaveText(composerText);
+        await expect(row).toHaveCount(0);
+        await input.press("End");
+        const codeLines = [
+          "```ts",
+          "const values = [1, 2, 3];",
+          "for (const value of values) {",
+          "  console.log(value);",
+          "}",
+          "```",
+        ];
+        for (const line of codeLines) {
+          await input.press("Shift+Enter");
+          await input.pressSequentially(line);
+        }
+        await expect(input).toContainText("console.log(value)");
+        const editedText = `${composerText}\n${codeLines.join("\n")}`;
+        await send(editedText, "Control+Enter", "composer", false);
+        const persisted = await api<{
+          prompts: Array<{ placement: string; full_text: string }>;
+        }>(
+          auth.access_token,
+          "GET",
+          `/projects/${project.id}/sessions/${sessionId}/prompts`,
+        );
+        expect(persisted.prompts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              placement: "transcript",
+              full_text: transcriptText,
+            }),
+            expect.objectContaining({
+              placement: "composer",
+              full_text: editedText,
+            }),
+          ]),
+        );
+        for (const theme of ["Dark", "Light"]) {
+          await page
+            .getByRole("button", { name: "Switch project", exact: true })
+            .click();
+          await page.getByRole("menuitem", { name: /^Settings/ }).click();
+          const settings = page.getByRole("dialog");
+          await settings
+            .getByRole("tab", { name: "Appearance", exact: true })
+            .click();
+          await settings
+            .getByRole("button", { name: theme, exact: true })
+            .click();
+          await settings.getByRole("button", { name: "Back to app" }).click();
+          await expect(page.locator("html")).toHaveClass(
+            new RegExp(theme.toLowerCase()),
+          );
+          await expect(row).toBeVisible();
+          await page.screenshot({
+            path: test.info().outputPath(`queue-${theme.toLowerCase()}.png`),
+            scale: "css",
+          });
+        }
+        await page.reload();
+        await expect(pending).toBeVisible({ timeout: 60_000 });
+        await expect(row).toBeVisible();
+        await row.locator("summary").click();
+        await expect(row.locator("pre")).toHaveText(editedText);
+        await row.locator("summary").click();
+        if (desktopApp) {
+          const window = await desktopApp.browserWindow(page);
+          await window.evaluate((window) =>
+            window.webContents.setZoomFactor(2),
+          );
+          await expect(input).toBeInViewport();
+          await expect(row).toBeInViewport();
+          await row.hover();
+          await row
+            .getByRole("button", { name: "Edit", exact: true })
+            .click({ trial: true });
+          await window.evaluate((window) => {
+            window.webContents.setZoomFactor(1);
+            window.setContentSize(720, 480);
+          });
+        } else {
+          await page.setViewportSize({ width: 720, height: 480 });
+        }
+        await expect(input).toBeInViewport();
+        await expect(
+          page
+            .locator("[data-queued-prompt-id]")
+            .filter({ hasText: composerText }),
+        ).toBeInViewport();
+        await page.screenshot({
+          path: test.info().outputPath("queue-placements.png"),
+          scale: "css",
+        });
+        if (!isDeployedTarget()) {
+          // Stop must persist the queue hold, including after navigation.
+          const heldRequest = page.waitForResponse((response) =>
+            response.request().method() === "POST" &&
+            new URL(response.url()).pathname.endsWith(`/sessions/${sessionId}/prompts/hold`),
+          );
+          await page.getByRole("button", { name: "Stop", exact: true }).click();
+          expect((await heldRequest).ok()).toBe(true);
+          await page.reload();
+          await expect(pending).toBeVisible({ timeout: 60_000 });
+          await expectThinkingMatchesStop(page);
+          const held = await api<{ prompts: Array<{ prompt_id: string; state: string; reason: string }> }>(
+            auth.access_token, "GET", `/projects/${project.id}/sessions/${sessionId}/prompts`,
+          );
+          expect(held.prompts.length).toBeGreaterThan(0);
+          expect(held.prompts.every((prompt) => prompt.state === "waiting" && prompt.reason === "held")).toBe(true);
+          await runDatabaseSql(
+            "UPDATE kortix.session_lifecycle_commands SET status = 'dead_lettered', last_error = 'delivery outcome: pending' WHERE command_id = $1",
+            [held.prompts[0].prompt_id], databaseUrl,
+          );
+          await page.reload();
+          await expect(page.getByText(/the session was not ready in time/)).toBeVisible({ timeout: 60_000 });
+          await expectThinkingMatchesStop(page);
+          bootSessionId = await createDatabaseSession(loadEnv(), {
+            projectId: project.id,
+            accountId: accounts[0].account_id,
+            userId: user.id,
+          });
+          await api(
+            auth.access_token,
+            "POST",
+            `/projects/${project.id}/sessions/${bootSessionId}/prompts`,
+            {
+              client_message_id: `start_${bootSessionId}`,
+              message_id: `msg_${(Date.now() * 0x1000).toString(16).slice(-12)}AbCdEfGhIjKlMn`,
+              parts: [{ type: "text", text: "First prompt still starting" }],
+              placement: "transcript",
+            },
+            202,
+          );
+          await page.goto(
+            `${baseURL}/projects/${project.id}/sessions/${bootSessionId}`,
+          );
+          await expect(input).toBeVisible({ timeout: 30_000 });
+          await expect(
+            page
+              .getByRole("paragraph")
+              .getByText("First prompt still starting", { exact: true }),
+          ).toBeVisible();
+          await expectThinkingMatchesStop(page);
+          await page.reload();
+          await expect(input).toBeVisible({ timeout: 30_000 });
+          await expectThinkingMatchesStop(page);
+          await expect(
+            page
+              .getByRole("paragraph")
+              .getByText("First prompt still starting", { exact: true }),
+          ).toBeVisible();
+        }
+      } finally {
+        if (project && bootSessionId)
+          await api(
+            auth.access_token,
+            "DELETE",
+            `/projects/${project.id}/sessions/${bootSessionId}`,
+          ).catch(() => undefined);
+        if (project && sessionId)
+          await api(
+            auth.access_token,
+            "DELETE",
+            `/projects/${project.id}/sessions/${sessionId}`,
+          ).catch(() => undefined);
+        await runDatabaseSql(
+          "DELETE FROM kortix.session_lifecycle_commands WHERE command_id = $1",
+          [deliveryFixtureId], databaseUrl,
+        );
         await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
       }

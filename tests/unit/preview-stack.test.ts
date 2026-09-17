@@ -116,6 +116,8 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"');
+    expect(overlay).toContain('kortix-migrate:\n    command: ["bun", "/app/packages/db/scripts/migrate.ts", "preview-up"]');
+    expect(overlay).toContain('KORTIX_PREVIEW_MIGRATION: "1"');
     expect(overlay).not.toContain('volumes/db/data');
   });
 
@@ -198,6 +200,8 @@ describe('ephemeral self-host preview stack', () => {
     );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
+    // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
+    expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');

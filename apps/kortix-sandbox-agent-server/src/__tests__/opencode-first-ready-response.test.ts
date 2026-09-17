@@ -55,19 +55,19 @@ describe('OpenCode supervisor first ready response', () => {
       gitUserEmail: 'agent@kortix.ai',
     } as Config
     let spawnAttempts = 0
+    let readySettled = false
     supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onStartupMark: (label) => {
         if (label === 'runtime-config-ready') spawnAttempts += 1
       },
+      onFirstReadyResponse: () => {
+        readySettled = true
+      },
     })
 
     await supervisor.start()
-    let readySettled = false
-    const ready = supervisor.waitForCurrentReadyResponse().then(() => {
-      readySettled = true
-    })
 
     await waitFor(() => spawnAttempts >= 2, 3_000)
     expect(readySettled).toBe(false)
@@ -78,11 +78,14 @@ describe('OpenCode supervisor first ready response', () => {
       `#!/usr/bin/env bun
 const port = Number(Bun.argv[Bun.argv.indexOf('--port') + 1])
 Bun.serve({ port, hostname: '127.0.0.1', fetch: () => Response.json([]) })
+// Real OpenCode announces itself once its handler is attached; the supervisor
+// sends nothing before this line (or its 10 s fallback).
+console.log('opencode server listening on http://127.0.0.1:' + port)
 `,
     )
     chmodSync(binary, 0o755)
 
-    await ready
+    await waitFor(() => readySettled)
     await waitFor(() => supervisor?.getState() === 'ok')
     expect(spawnAttempts).toBeGreaterThanOrEqual(3)
   }, 15_000)
@@ -110,6 +113,7 @@ Bun.serve({
       : new Response('starting', { status: 503 })
   },
 })
+console.log('opencode server listening on http://127.0.0.1:' + port)
 `,
     )
     chmodSync(binary, 0o755)
@@ -135,35 +139,16 @@ Bun.serve({
     await waitFor(() => existsSync(probedFile))
     expect(reports).toBe(0)
 
-    let firstReadySettled = false
-    const firstReady = supervisor.waitForCurrentReadyResponse().then(() => {
-      firstReadySettled = true
-    })
     await Bun.sleep(25)
-    expect(firstReadySettled).toBe(false)
+    expect(reports).toBe(0)
 
     writeFileSync(readyFile, 'ready')
-    await firstReady
     await waitFor(() => reports === 1)
-    expect(supervisor.getState()).toBe('ok')
-
-    let repeatedWaitSettled = false
-    await supervisor.waitForCurrentReadyResponse().then(() => {
-      repeatedWaitSettled = true
-    })
-    expect(repeatedWaitSettled).toBe(true)
+    await waitFor(() => supervisor?.getState() === 'ok')
 
     rmSync(readyFile)
     await supervisor.restart()
-    let restartedReadySettled = false
-    const restartedReady = supervisor.waitForCurrentReadyResponse().then(() => {
-      restartedReadySettled = true
-    })
-    await Bun.sleep(25)
-    expect(restartedReadySettled).toBe(false)
-
     writeFileSync(readyFile, 'ready')
-    await restartedReady
     await waitFor(() => supervisor?.getState() === 'ok')
     expect(reports).toBe(1)
 
@@ -173,15 +158,7 @@ Bun.serve({
     process.kill(livePid as number, 'SIGKILL')
     await waitFor(() => supervisor?.getPid() === null)
 
-    let respawnReadySettled = false
-    const respawnReady = supervisor.waitForCurrentReadyResponse().then(() => {
-      respawnReadySettled = true
-    })
-    await Bun.sleep(25)
-    expect(respawnReadySettled).toBe(false)
-
     writeFileSync(readyFile, 'ready')
-    await respawnReady
     await waitFor(() => supervisor?.getState() === 'ok')
     expect(reports).toBe(1)
   }, 15_000)
@@ -191,13 +168,13 @@ Bun.serve({
     const sessionRuntimeAt = MAIN.indexOf('void startSessionRuntime(', supervisorAt)
     const bootPath = MAIN.slice(supervisorAt, sessionRuntimeAt)
     const callbackAt = bootPath.indexOf('onFirstReadyResponse: () => {')
-    const fastPathAt = bootPath.indexOf('nativeBinaryFastPathEnabled:', callbackAt)
-    const callback = bootPath.slice(callbackAt, fastPathAt)
+    const nextOptionAt = bootPath.indexOf('deferDirectoryProbe:', callbackAt)
+    const callback = bootPath.slice(callbackAt, nextOptionAt)
 
     expect(supervisorAt).toBeGreaterThan(-1)
     expect(sessionRuntimeAt).toBeGreaterThan(supervisorAt)
     expect(callbackAt).toBeGreaterThan(-1)
-    expect(fastPathAt).toBeGreaterThan(callbackAt)
+    expect(nextOptionAt).toBeGreaterThan(callbackAt)
     expect(callback).toContain("mark.label === 'opencode-session-api-ready'")
     expect(callback).toContain("bootMark('opencode-session-api-ready')")
     expect(callback).not.toContain('opencode-listening')

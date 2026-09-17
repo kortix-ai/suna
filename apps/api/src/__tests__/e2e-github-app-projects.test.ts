@@ -105,7 +105,7 @@ describe('GitHub App project repository auth', () => {
     restoreEnv();
   });
 
-  test('creates a signed GitHub App JWT and install URL', () => {
+  test('creates a signed GitHub App JWT and install URL', async () => {
     const token = createGitHubAppJwt(Date.UTC(2026, 0, 1, 0, 0, 0));
     const parts = token.split('.');
     expect(parts).toHaveLength(3);
@@ -115,7 +115,10 @@ describe('GitHub App project repository auth', () => {
 
     // The install state is now a signed token (v1.<payload>.<sig>) carrying the
     // account id, not a bare account id — verify structure + decoded account.
-    const installUrl = buildGitHubAppInstallUrl('account-1');
+    // GET /app is not served by this suite's fetch mock, so the slug
+    // derivation fails and the CONFIGURED slug is used — the documented
+    // fallback.
+    const installUrl = await buildGitHubAppInstallUrl('account-1');
     expect(installUrl).toBeTruthy();
     expect(installUrl!.startsWith('https://github.com/apps/kortix-test-app/installations/new?state=')).toBe(true);
     const state = new URL(installUrl!).searchParams.get('state')!;

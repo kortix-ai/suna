@@ -1,4 +1,5 @@
 import { parseSharingIntent } from '../../connectors/share';
+import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -20,6 +21,8 @@ import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
+import { accountMembers, accountSecretGrants, accountSecretResources } from '@kortix/db';
+import { encryptAccountSecret } from '../../secrets/account-resource';
 import {
   SecretConsumerSchema,
   SecretSchema as ContractSecretSchema,
@@ -1298,6 +1301,29 @@ async function writeCodexAuthSecret(input: {
     ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
 
+/** One OAuth completion creates one private account resource. The flow's UUID
+ * makes concurrent or repeated polls idempotent without replacing another login. */
+async function writeCodexAccountResource(input: {
+  secretId: string; accountId: string; userId: string; label: string; value: string; projectId: string;
+}) {
+  const { secretId, accountId, userId, label, value, projectId } = input;
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(accountSecretResources).values({
+      secretId, accountId, label, providerId: 'codex', name: CODEX_AUTH_JSON_SECRET_NAME,
+      valueEnc: encryptAccountSecret(accountId, value), consumer: 'llm_gateway',
+      strategy: 'broker', createdBy: userId,
+    }).onConflictDoNothing().returning({ secretId: accountSecretResources.secretId });
+    if (row) await tx.insert(accountSecretGrants).values({ accountId, secretId, userId, grantedBy: userId });
+    return Boolean(row);
+  });
+  if (created) await recordAuditEvent({
+    accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
+    action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: secretId,
+    metadata: { provider_id: 'codex', consumer: 'llm_gateway' },
+  });
+  return secretId;
+}
+
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
 function authExpiresInMs(authJson: string): number | null {
   try {
@@ -1344,6 +1370,21 @@ projectsApp.openapi(
     return c.json({ error: `OAuth device flow is not available for "${provider}"` }, 400);
   }
 
+  const resourceLabel = body.resource_label === undefined ? null :
+    typeof body.resource_label === 'string' ? body.resource_label.trim() : '';
+  if (resourceLabel !== null && (resourceLabel.length < 1 || resourceLabel.length > 100 || body.sharing != null)) {
+    return c.json({ error: 'A named OAuth resource requires a 1–100 character label and no project sharing mode' }, 400);
+  }
+  if (resourceLabel !== null && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
+    !projectLlmGatewayEnabled(loaded.row.metadata))) {
+    return c.json({ error: 'Pooled OAuth connections require pooled provider secrets and the LLM gateway' }, 403);
+  }
+  if (resourceLabel !== null) {
+    const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
+      .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
+    if (!member) return c.json({ error: 'An account member must own a ChatGPT connection' }, 403);
+  }
+
   let sharing: ReturnType<typeof parseSharingIntent> | undefined;
   if (body.sharing != null) {
     sharing = parseSharingIntent(body.sharing, loaded.userId);
@@ -1358,7 +1399,7 @@ projectsApp.openapi(
   // private (owner-only) credential is the member's own, so read still suffices.
   // The poll step is reachable only with the project-key-encrypted flow handle
   // minted here, so gating start transitively protects the write on poll.
-  if (sharing?.mode !== 'private') {
+  if (resourceLabel === null && sharing?.mode !== 'private') {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
@@ -1383,6 +1424,7 @@ projectsApp.openapi(
       u: challenge.userCode,
       s: sharing ?? null,
       uid: loaded.userId,
+      ...(resourceLabel === null ? {} : { l: resourceLabel, rid: randomUUID() }),
       e: expiresAt,
     }),
   );
@@ -1427,7 +1469,7 @@ projectsApp.openapi(
 
   // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
   // another project — or a tampered one — simply won't decrypt → expired.
-  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number };
+  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number; l?: string; rid?: string };
   try {
     state = JSON.parse(decryptProjectSecret(projectId, flowId));
   } catch {
@@ -1441,6 +1483,11 @@ projectsApp.openapi(
   ) {
     return c.json({ status: 'expired' });
   }
+  if (state.l && state.rid) {
+    const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
+      .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
+    if (!member) return c.json({ status: 'failed', error: 'Account membership is required' });
+  }
 
   const result = await pollCodexDeviceAuth({ deviceAuthId: state.d, userCode: state.u });
   if (result.status === 'pending') {
@@ -1450,8 +1497,24 @@ projectsApp.openapi(
     return c.json({ status: 'failed', error: result.error });
   }
 
-  // Authorized — persist the auth.json as the project secret with the sharing
-  // chosen at start time (sealed, tamper-proof, in the flow handle).
+  // The sealed resource id makes a completed device flow idempotent. A new
+  // device flow gets a new resource; it never overwrites another user's login.
+  if (state.l && state.rid) {
+    if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
+      !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
+    }
+    const secretId = await writeCodexAccountResource({
+      secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
+      label: state.l, value: result.authJson, projectId,
+    });
+    return c.json({ status: 'success', credential: {
+      provider_id: 'codex', secret_id: secretId, label: state.l,
+      expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
+    } });
+  }
+
+  // Legacy project login remains available when no resource label was sent.
   const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
   await writeCodexAuthSecret({
     projectId,

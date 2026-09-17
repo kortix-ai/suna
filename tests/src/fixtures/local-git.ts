@@ -9,7 +9,7 @@ export interface LocalGitRepository {
   dispose(): Promise<void>;
 }
 
-export async function createLocalGitRepository(name: string): Promise<LocalGitRepository> {
+export async function createLocalGitRepository(name: string, opts?: { allowAllSecrets?: boolean }): Promise<LocalGitRepository> {
   const root = await mkdtemp(join(tmpdir(), "ke2e-git-"));
   const repoUrl = join(root, "remote.git");
   const work = join(root, "work");
@@ -21,7 +21,7 @@ export async function createLocalGitRepository(name: string): Promise<LocalGitRe
     await writeFile(join(work, "README.md"), `# ${name}\n`);
     await writeFile(
       join(work, "kortix.yaml"),
-      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix: {}\n`,
+      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${opts?.allowAllSecrets ? '\n    secrets: all' : ' {}'}\n`,
     );
     await git(["-C", work, "add", "README.md", "kortix.yaml"]);
     await git(["-C", work, "commit", "-m", "seed local e2e repository"]);

@@ -13,7 +13,7 @@
  *   bun run scripts/project-snapshot-bench.ts wait  --api … --pat <pat> --project <id> --sha <sha>
  *   bun run scripts/project-snapshot-bench.ts run   --jwt <jwt> --project <id> --rounds 30 \
  *        --arms "baseline-git=http://localhost:8008/v1|baseline,new-git=http://localhost:13608/v1|git,new-s3=http://localhost:13608/v1|prefer-s3" \
- *        --out /tmp/bench.jsonl [--api-log <path>=<label> …]
+ *        --out /tmp/bench.jsonl [--api-log <path>=<label> …] [--probe-hosts s3.us-east-2.amazonaws.com,…] [--daemon-log]
  *   bun run scripts/project-snapshot-bench.ts report --in /tmp/bench.jsonl
  *
  * Every round: set the arm's mode on the project (SQL, shared DB), POST a
@@ -205,6 +205,50 @@ interface Round {
   /** ms from create until the hydration report was observed settled (null = still pending at the poll cap). */
   hydration_settled_ms: number | null;
   s3_extractor: string | null;
+  /** On an S3 boot: `env` (presigned at create, no proxy call) or `proxy` (descriptor route). */
+  s3_descriptor: string | null;
+  /** `--probe-hosts`: after readiness, one `curl` per host from INSIDE the box (ms to TCP connect / first byte) plus the box's city — where this round's sandbox sat relative to the store. */
+  probe: { city: string | null; hosts: Record<string, { connect_ms: number; ttfb_ms: number }> } | null;
+  /** `--daemon-log`: the daemon's `s3 attempt failed; retrying` log entries for this boot (attempt, stage, reason, error). */
+  s3_retries: Array<Record<string, unknown>> | null;
+}
+
+/** The daemon's S3 retry log entries, read through the proxy before the session is deleted. Never fails a round. */
+async function readS3Retries(arm: Arm, token: string, logsPath: string): Promise<Round['s3_retries']> {
+  const r = await api<string>(arm.api, token, `${logsPath}?source=daemon&tail=600`).catch(() => null);
+  if (!r || r.status !== 200) return null;
+  const text = typeof r.body === 'string' ? r.body : JSON.stringify(r.body);
+  const entries: Array<Record<string, unknown>> = [];
+  for (const line of text.split('\n')) {
+    if (!line.includes('s3 attempt failed')) continue;
+    try {
+      const { t, msg: _msg, ...rest } = JSON.parse(line) as Record<string, unknown>;
+      entries.push({ t, ...rest });
+    } catch {
+      entries.push({ raw: line.slice(0, 300) });
+    }
+  }
+  return entries;
+}
+
+/** One `curl` per host from inside the box, through the daemon's env-rpc exec op. Never fails a round. */
+async function probeBox(arm: Arm, token: string, rpcPath: string, hosts: string[]): Promise<Round['probe']> {
+  const command =
+    `echo "city $(curl -s -m 5 https://ipinfo.io/json | tr -d '\\n' | sed -E 's/.*"city": *"([^"]*)".*/\\1/')"; ` +
+    hosts.map((h) => `curl -s -o /dev/null -w '${h} %{time_connect} %{time_starttransfer}\\n' --max-time 10 https://${h}/`).join('; ');
+  const r = await api(arm.api, token, rpcPath, {
+    method: 'POST',
+    body: JSON.stringify({ op: 'exec', args: { command, timeout: 30_000 }, cwd: '/workspace' }),
+  }).catch(() => null);
+  const out = r?.body?.ok ? String(r.body.value?.stdout ?? '') : '';
+  if (!out) return null;
+  const probe: NonNullable<Round['probe']> = { city: null, hosts: {} };
+  for (const line of out.split('\n')) {
+    if (line.startsWith('city ')) probe.city = line.slice(5).trim() || null;
+    const [host, connect, ttfb] = line.trim().split(/\s+/);
+    if (host && connect && ttfb && !line.startsWith('city ')) probe.hosts[host] = { connect_ms: Math.round(Number(connect) * 1000), ttfb_ms: Math.round(Number(ttfb) * 1000) };
+  }
+  return probe;
 }
 
 async function oneRound(arm: Arm, jwt: string, projectId: string, round: number, apiLog?: string): Promise<Round> {
@@ -240,6 +284,9 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
     hydration: null,
     hydration_settled_ms: null,
     s3_extractor: null,
+    s3_descriptor: null,
+    probe: null,
+    s3_retries: null,
   };
   if (created.status !== 201 || !sessionId) {
     result.error = `create ${created.status}: ${JSON.stringify(created.body).slice(0, 200)}`;
@@ -284,6 +331,7 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
                 ? 'branch-final'
                 : 'branch-early';
         result.s3_extractor = h.body.config_provider?.s3_extractor ?? null;
+        result.s3_descriptor = h.body.config_provider?.s3_descriptor ?? null;
         for (const m of h.body.boot_timeline ?? []) result.boot_marks[m.label] = m.atMs;
         break;
       }
@@ -310,6 +358,11 @@ async function oneRound(arm: Arm, jwt: string, projectId: string, round: number,
         await sleep(500);
       }
       if (!result.hydration) result.hydration = cp0.hydration as Round['hydration'];
+    }
+    const probeHosts = arg('probe-hosts');
+    if (probeHosts) result.probe = await probeBox(arm, jwt, healthPath.replace(/\/kortix\/health$/, '/kortix/env-rpc'), probeHosts.split(','));
+    if (process.argv.includes('--daemon-log') && (result.config_provider as { s3_attempted?: boolean } | null)?.s3_attempted) {
+      result.s3_retries = await readS3Retries(arm, jwt, healthPath.replace(/\/kortix\/health$/, '/kortix/logs'));
     }
     const row = await api(arm.api, jwt, `/projects/${projectId}/sessions/${sessionId}`);
     result.session_start_timeline = row.body?.metadata?.session_start_timeline ?? null;
@@ -482,6 +535,12 @@ function report(): void {
         if (r.s3_extractor) acc[r.s3_extractor] = (acc[r.s3_extractor] ?? 0) + 1;
         return acc;
       }, {}),
+      // Where the S3 boots got their descriptor: presigned in the env at
+      // create (no proxy call on the boot path) or fetched from the proxy.
+      descriptors: ok.reduce<Record<string, number>>((acc, r) => {
+        if (r.s3_descriptor) acc[r.s3_descriptor] = (acc[r.s3_descriptor] ?? 0) + 1;
+        return acc;
+      }, {}),
       // v2 hydration (blob-pack import after readiness): outcome counts, the
       // import's own duration, and when after create it was observed settled.
       hydration: (() => {
@@ -497,6 +556,32 @@ function report(): void {
       })(),
       sandbox_providers: ok.reduce<Record<string, number>>((acc, r) => {
         acc[r.provider ?? '?'] = (acc[r.provider ?? '?'] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // `--probe-hosts`: where the boxes sat (city histogram) and the in-box
+      // network distance to each probed host.
+      probe: (() => {
+        const rounds = ok.filter((r) => r.probe);
+        if (rounds.length === 0) return null;
+        const cities = rounds.reduce<Record<string, number>>((acc, r) => {
+          const c = r.probe!.city ?? '?';
+          acc[c] = (acc[c] ?? 0) + 1;
+          return acc;
+        }, {});
+        const hosts: Record<string, { connect_p50_ms: number; ttfb_p50_ms: number; ttfb_p95_ms: number }> = {};
+        for (const h of new Set(rounds.flatMap((r) => Object.keys(r.probe!.hosts)))) {
+          const connect = rounds.map((r) => r.probe!.hosts[h]?.connect_ms).filter((v): v is number => v !== undefined).sort((a, b) => a - b);
+          const ttfb = rounds.map((r) => r.probe!.hosts[h]?.ttfb_ms).filter((v): v is number => v !== undefined).sort((a, b) => a - b);
+          hosts[h] = { connect_p50_ms: pct(connect, 50), ttfb_p50_ms: pct(ttfb, 50), ttfb_p95_ms: pct(ttfb, 95) };
+        }
+        return { cities, hosts };
+      })(),
+      // `--daemon-log`: why S3 first attempts failed, as the daemon logged them.
+      s3_retry_reasons: ok.reduce<Record<string, number>>((acc, r) => {
+        for (const e of r.s3_retries ?? []) {
+          const key = `${e.stage ?? '?'}/${e.reason ?? '?'}`;
+          acc[key] = (acc[key] ?? 0) + 1;
+        }
         return acc;
       }, {}),
     });

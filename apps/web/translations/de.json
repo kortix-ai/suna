@@ -1,4 +1,85 @@
 {
+  "pooledSecrets": {
+    "providerDisabled": "Dieser Anbieter ist für diese Sitzung deaktiviert.",
+    "unavailableKeys": "{count, plural, one {# ausgewählter Schlüssel ist nicht verfügbar.} other {# ausgewählte Schlüssel sind nicht verfügbar.}} Entferne diese Schlüssel oder stelle den Zugriff wieder her.",
+    "removeUnavailable": "Nicht verfügbare Schlüssel entfernen",
+    "selectionLimit": "Maximal 10 Schlüssel pro Anbieter",
+    "manageKeys": "Anbieterschlüssel verwalten",
+    "readOnlyPool": "Nur der Sitzungsinhaber oder ein Projektmanager kann diesen Pool ändern.",
+    "legacyChatGptLogin": "Bestehende Projektanmeldung",
+    "legacyChatGptDescription": "Diese ältere Verbindung wird im Projekt geteilt. Neue ChatGPT-Konten oben bleiben privat, bis Sie sie freigeben.",
+    "chatGptAccounts": "ChatGPT-Konten",
+    "accountCount": "{count, plural, one {# Konto} other {# Konten}}",
+    "addAccount": "Konto hinzufügen",
+    "deleteAccount": "Konto löschen",
+    "connectAccount": "Konto verbinden",
+    "oauthWaiting": "Warte auf Autorisierung…",
+    "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
+    "oauthPrivateDescription": "Ihre ChatGPT-Anmeldung ist privat, bis Sie einem anderen Mitglied Zugriff gewähren. Wählen Sie Konten in den Sitzungseinstellungen aus.",
+    "accountLabelPlaceholder": "z. B. Mein ChatGPT-Konto",
+    "chooseProvider": "Anbieter auswählen.",
+    "saved": "Geheimnis gespeichert",
+    "saveError": "Geheimnis konnte nicht gespeichert werden",
+    "deleted": "Geheimnis gelöscht",
+    "deleteError": "Geheimnis konnte nicht gelöscht werden",
+    "accessError": "Zugriff konnte nicht geändert werden",
+    "sharedTitle": "Freigegebene Anbietergeheimnisse",
+    "sharedDescription": "Fügen Sie mehrere Anbieterschlüssel und ChatGPT-Konten hinzu. Teilen Sie jede Verbindung mit Mitgliedern und wählen Sie sie pro Sitzung aus.",
+    "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
+    "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
+    "providerKeysFor": "API-Schlüssel für {provider}",
+    "addKey": "Schlüssel hinzufügen",
+    "loadError": "Anbietergeheimnisse konnten nicht geladen werden.",
+    "key": "Schlüssel",
+    "provider": "Anbieter",
+    "access": "Zugriff",
+    "actions": "Aktionen",
+    "coolingDown": "Abklingzeit aktiv",
+    "member": "Mitglied",
+    "members": "Mitglieder",
+    "actionsFor": "Aktionen für {label}",
+    "manageAccess": "Zugriff verwalten",
+    "rotateKey": "Schlüssel erneuern",
+    "deleteKey": "Schlüssel löschen",
+    "empty": "Noch keine freigegebenen Anbieterschlüssel.",
+    "rotateLabel": "{label} erneuern",
+    "addProviderKey": "Anbieterschlüssel hinzufügen",
+    "valueNeverShown": "Nur Mitglieder mit Zugriff können diesen Schlüssel auswählen. Der Wert wird nicht erneut angezeigt.",
+    "label": "Label",
+    "primaryKey": "Primärschlüssel",
+    "apiKey": "API-Schlüssel",
+    "cancel": "Abbrechen",
+    "saving": "Speichern…",
+    "saveKey": "Schlüssel speichern",
+    "accessTo": "Zugriff auf {label}",
+    "grantedMembers": "Berechtigte Mitglieder können diesen Schlüssel in ihren Sitzungen in diesem Konto verwenden.",
+    "oauthGrantedMembers": "Berechtigte Mitglieder können dieses ChatGPT-Konto in ihren Sitzungen nutzen.",
+    "done": "Fertig",
+    "deleteConfirmTitle": "Diesen Schlüssel für alle löschen?",
+    "deleteAccountConfirmTitle": "Dieses ChatGPT-Konto für alle löschen?",
+    "deleteConfirmDescription": "{label} wird aus allen Sitzungspools entfernt. Andere Schlüssel bleiben verfügbar.",
+    "deleteAccountConfirmDescription": "{label} wird aus allen Sitzungspools entfernt. Andere Konten bleiben verfügbar.",
+    "keysUpdated": "Anbieterschlüssel aktualisiert",
+    "keysUpdateError": "Anbieterschlüssel konnten nicht aktualisiert werden",
+    "loadingKeys": "Schlüssel werden geladen…",
+    "keysLoadError": "Schlüssel konnten nicht geladen werden.",
+    "addSharedKey": "Fügen Sie unter Modelle einen Anbieterschlüssel hinzu, um einen Pool zu erstellen.",
+    "selectedForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
+    "projectDefault": "Projektstandard wird verwendet",
+    "personalChatGptDefault": "Standard-ChatGPT-Verbindung verwenden",
+    "resetPersonalChatGptDefault": "Auf eigenes Standardkonto zurücksetzen",
+    "saveSelection": "Schlüsselauswahl speichern",
+    "resetDefault": "Auf Projektstandard zurücksetzen",
+    "selectedKeys": "{count} Schlüssel ausgewählt",
+    "providerKeys": "Anbieterschlüssel",
+    "chooseSharedKeys": "Wählen Sie die freigegebenen Schlüssel aus, die diese Sitzung verwenden darf.",
+    "sessionKeyPool": "Sitzungsschlüsselpool",
+    "projectDefaultShort": "Projektstandard",
+    "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
+    "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
+    "selectedOneForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
+    "selectedOne": "{count} Schlüssel ausgewählt"
+  },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
   },
@@ -80,12 +161,9 @@
       "noGitHubAccount": "Mit dem Konto dieses Projekts ist noch kein GitHub-Konto verbunden.",
       "connectGitHub": "GitHub-Konto verbinden",
       "connectGitHubSuffix": "um diese Option zu verwenden.",
-      "loadingGitHubAccounts": "GitHub-Konten werden geladen…",
-      "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden: {error}",
-      "githubAccount": "GitHub-Konto",
-      "selectGitHubAccount": "GitHub-Konto auswählen",
+      "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden. Versuchen Sie es erneut.",
       "createsPath": "Erstellt <path>{path}</path>",
-      "loadRepositoriesError": "Repositories konnten nicht geladen werden: {error}",
+      "loadRepositoriesError": "Repositories konnten nicht geladen werden. Versuchen Sie es erneut.",
       "sources": {
         "managed": {
           "label": "Von Kortix verwaltet",
@@ -99,7 +177,17 @@
           "label": "Aus GitHub importieren",
           "description": "Wähle ein vorhandenes Repository aus deinem GitHub-Konto aus."
         }
-      }
+      },
+      "repositoryLabel": "Repository",
+      "createInOwner": "Ein Repository in {owner} erstellen",
+      "importFromOwner": "Ein Repository aus {owner} importieren",
+      "selectOption": "Repository-Option auswählen",
+      "loadingOptions": "Repository-Optionen werden geladen …",
+      "managedUnavailable": "Von Kortix verwaltete Repositories sind auf dieser Instanz nicht verfügbar. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "installationUnreachable": "Diese GitHub-Verbindung funktioniert nicht mehr. Stellen Sie sie wieder her, um Repositories aufzulisten.",
+      "reconnect": "In den Git-Einstellungen neu verbinden",
+      "managedImportLabel": "Ein vorhandenes verwaltetes Repository importieren",
+      "managedImportHint": "Nur für Self-Host-Betreiber. Listet Repositories auf, die der verwaltete Git-Inhaber bereits besitzt."
     }
   },
   "projectHome": {
@@ -989,6 +1077,10 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
+        "pooled_provider_secrets": {
+          "name": "Gemeinsam genutzte Anbieter-Schlüssel",
+          "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
+        },
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
           "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
@@ -1233,8 +1325,6 @@
     "selectAllConversations": "Alle Unterhaltungen auswählen",
     "deselectAllConversations": "Auswahl aller Unterhaltungen aufheben",
     "loadMore": "Mehr laden",
-    "loadingMore": "Wird geladen …",
-    "loadMoreSessions": "Weitere Sitzungen laden",
     "remaining": "verbleibend",
     "newSession": "Neue Sitzung",
     "collapse": "Seitenleiste einklappen",
@@ -1287,7 +1377,6 @@
       "switch": "Projekt wechseln",
       "switchMenu": "Projekt wechseln",
       "create": "Projekt erstellen…",
-      "createIn": "Projekt in {account} erstellen",
       "createAccount": "Konto erstellen…",
       "settings": "Einstellungen",
       "downloadApp": "App herunterladen",
@@ -1297,7 +1386,8 @@
       "noMatches": "Keine passenden Projekte",
       "empty": "Noch keine Projekte",
       "account": "Konto",
-      "loadError": "Projekte konnten nicht geladen werden"
+      "loadError": "Projekte konnten nicht geladen werden",
+      "createIn": "Projekt in {account} erstellen"
     },
     "manifestUpgrade": {
       "title": "Auf v2 aktualisieren",
@@ -1351,7 +1441,9 @@
         "mine": "Meine Chats",
         "shared": "Geteilt"
       }
-    }
+    },
+    "loadingMore": "Wird geladen …",
+    "loadMoreSessions": "Weitere Sitzungen laden"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1534,7 +1626,9 @@
       "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
-      "connectModel": "Modell verbinden"
+      "connectModel": "Modell verbinden",
+      "imagesUnsupported": "{model} kann keine Bilder lesen",
+      "imagesUnsupportedHint": "entferne sie oder wähle ein anderes Modell"
     },
     "providerRecovery": {
       "savedPrompt": "Gespeicherter Prompt",
@@ -1685,7 +1779,11 @@
     "hintChanged": "Frage, was sich in deinem Projekt geändert hat",
     "hintNewLine": "Drücke Shift+Enter für eine neue Zeile",
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
-    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird"
+    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
+    "queued": "In Warteschlange",
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
   },
   "billing": {
     "plan": {
@@ -9334,7 +9432,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Keine Fragen",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Auffüllen",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Plan verwalten",
+    "composerAttachments": {
+      "couldNotAttach": "Dateien konnten nicht angehängt werden",
+      "couldNotRetry": "Anhang konnte nicht erneut hochgeladen werden",
+      "couldNotSend": "Nicht gesendet",
+      "failedBlocksSend": "Wiederholen oder entfernen Sie den fehlgeschlagenen Anhang.",
+      "uploadFailed": "Upload fehlgeschlagen. Prüfen Sie Ihre Verbindung.",
+      "retryNamed": "Upload von {name} erneut versuchen",
+      "didNotUpload": "{name} wurde nicht hochgeladen.",
+      "billingRequired": "Ihr Tarif oder Guthaben erlaubt derzeit keine Uploads.",
+      "budgetExceeded": "Zu viele nicht gesendete Uploads. Nicht verwendete Uploads laufen innerhalb von 24 Stunden ab.",
+      "tooLarge": "Diese Datei ist größer als 50 MiB.",
+      "expired": "Dieser Upload ist abgelaufen. Entfernen Sie ihn und hängen Sie die Datei erneut an.",
+      "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Anhang-Upload gestartet",
+      "text40078a553439": "Anhang-Block hochgeladen",
+      "text4c7f8000aabd": "Anhang-Upload abgeschlossen",
+      "text91420d2587c2": "Anhang-Upload entfernt",
+      "text3aab5b3be2b9": "Laufzeit-Anhangsbeschreibung aufgelöst",
       "text0005b85debac": "Soundpaket, das für Session-Events gespielt wird.",
       "text000c02c11c7a": "Wiederverwendbare Anweisungen, die deine Agenten bei Bedarf laden.",
       "text0017bda47853": "URL kopiert",
@@ -12386,7 +12503,6 @@
       "text588032878324": "Jetzt senden",
       "text5885ace14d89": "Sitzung abrufen",
       "text5887e718dea1": "gepflückt",
-      "text58a34c9573cf": "GitHub-App installieren",
       "text58a4ba90dc79": "Hol dir die Woche zurück, die von Koordination verschlungen wurde.",
       "text58aede554b21": "Verbinden Sie ein Tool einmal für das gesamte Unternehmen. Agenten erreichen es über ein einzelnes, bereichsbeschränktes Token, das Kortix serverseitig vermittelt – so gelangt das echte Zugangsdaten niemals auf das Gerät, das das Modell steuert.",
       "text58bf3410b028": "Wert festlegen",
@@ -18365,7 +18481,26 @@
       "textb38cb5e18525": "diesen Kreislauf schließt und seine Arbeit zeigt. Haben Sie zwanzig Minuten?",
       "textff5bd8333c4e": "Du und alle, die dieses Projekt verwalten können",
       "text36d8691ae566": "Alle mit dem Link, sowie dein Team",
-      "text4fb2abecc0a6": "Alle mit dem Passwort, sowie dein Team"
+      "text4fb2abecc0a6": "Alle mit dem Passwort, sowie dein Team",
+      "text03a01dd53ffa": "↑ drücken, um Nachrichten in der Warteschlange zu bearbeiten",
+      "text1eb132d9d4da": "Warteschlange pausiert",
+      "textf8e64a37950a": "Nachrichten in der Warteschlange",
+      "textcd5f943d5863": "Nicht gesendet",
+      "text42888e8dc93e": "Eine Verbindung für die gesamte Instanz. Kortix erstellt und pusht jedes Projekt-Repository darüber, in jedem Konto.",
+      "textf40d94365439": "Die GitHub-Identität dieser Instanz stammt aus Umgebungsvariablen auf dem Server. Sie kann hier nicht geändert werden.",
+      "textbd6cc9a4cf4b": "Festgelegt durch",
+      "text39481fc24bd5": "Von Kortix verwaltete Repositories dieser Instanz werden unter {value0} erstellt.",
+      "text89a9816ffa6f": "Von Kortix verwaltete Repositories sind auf dieser Instanz verfügbar.",
+      "textb79bb0e54e4f": "Von Kortix verwaltete Repositories sind auf dieser Instanz nicht verfügbar. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "textf7be8a17b0e7": "GitHub-Konto hinzufügen",
+      "text659d5668b62b": "Verknüpfen Sie ein persönliches GitHub-Konto oder eine Organisation mit diesem Kortix-Konto.",
+      "textdc520b664af2": "GitHub listet jedes persönliche Konto und jede Organisation auf, die Sie verwalten. Wählen Sie eines aus, legen Sie fest, welche Repositories die Kortix-App erreichen darf, und dieser Inhaber wird mit diesem Kortix-Konto verknüpft.",
+      "text8d3f36f31348": "Kortix-App installieren",
+      "text183bc0d276cc": "Auf dieser Instanz gibt es keine GitHub-App zum Installieren. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
+      "text7f59f014cd7b": "Beim gewünschten Inhaber bereits installiert?",
+      "text9180f7df8906": "Eine bereits von Ihnen verwaltete Installation verknüpfen",
+      "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft.",
+      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…"
     }
   },
   "projectOnboarding": {

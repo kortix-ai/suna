@@ -127,7 +127,14 @@ in-process daemon.
 
 - `daemon` is always `"ok"` if the route responds.
 - `opencode` is `"ok" | "starting" | "down"`. `"starting"` covers both
-  pre-bind and between-restart states.
+  pre-bind and between-restart states. The supervisor sends OpenCode nothing —
+  no readiness probe, no root list, no `/event` subscribe — until the process
+  has printed `opencode server listening on http://…` on its (piped, forwarded)
+  stdout. OpenCode 1.18 binds its port ~100 ms before its request handler is
+  attached, and a request accepted in that window is never answered
+  (anomalyco/opencode#46437); the line is printed only after the handler
+  exists. Boot timeline mark: `opencode-listening-line`. If the line never
+  shows up, plain probing resumes 10 s after the spawn.
 - `repo`, `branch`, `commit_sha` come from `git` in `KORTIX_PROJECT_TARGET` and
   are `null` when no repo has been materialized.
 - `compiled_boot_mode` reports `off`, `shadow`, `prefer`, or `required`.
@@ -171,6 +178,7 @@ KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_COMPILED_BOOT_MODE=off
 KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/config-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
+KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
 KORTIX_COMPILED_RUNTIME_FORMAT=
 KORTIX_COMPILED_RUNTIME_SOURCE_SHA=
 KORTIX_REPO_URL=

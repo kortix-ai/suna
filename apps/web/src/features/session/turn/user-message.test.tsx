@@ -6,9 +6,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
+import { useSessionStateStore } from '@kortix/sdk/react';
 
-import { RemoveFromQueueButton } from './queued-prompt-bubbles';
-import { UserMessage, UserMessageBubble } from './user-message';
+import enMessages from '../../../../translations/en.json';
+import { adoptSentAttachmentPreviews } from '../sent-attachment-previews';
+import { buildOptimisticPromptTextWithUploads, sentAttachmentsOf } from '../uploaded-file-refs';
+import { MessageAttachments, UserMessage, UserMessageBubble } from './user-message';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -67,30 +70,6 @@ describe('UserMessage actions', () => {
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
   });
 
-  test('puts remove-from-queue in the hover actions row, not beside the bubble', () => {
-    const markup = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <TooltipProvider>
-            <UserMessage
-              message={message}
-              sessionId="session-1"
-              ownsPlan={false}
-              onRewind={() => {}}
-              leadingActions={<RemoveFromQueueButton id="prompt-1" onRemove={() => {}} />}
-            />
-          </TooltipProvider>
-        </NextIntlClientProvider>
-      </QueryClientProvider>,
-    );
-    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
-    const fadeAt = markup.indexOf(fade);
-    const removeAt = markup.indexOf('aria-label="Remove from queue"');
-    expect(removeAt).toBeGreaterThan(-1);
-    expect(fadeAt).toBeGreaterThan(-1);
-    expect(removeAt).toBeGreaterThan(fadeAt);
-    expect(markup).not.toContain('pr-7');
-  });
 });
 
 describe('UserMessage renders the composer chip, not its own treatment', () => {
@@ -417,10 +396,10 @@ describe('UserMessage persisted attachments', () => {
   });
 
   // The runtime streams the text part first and the file parts seconds later.
-  // The names the preview promised fill the gap as pending tiles, and the
+  // The names the preview promised fill the gap as stable tiles, and the
   // strip says so — instead of blinking out (review finding, 2026-09-05: the
   // earlier fix held a SECOND bubble over this one).
-  test('draws promised-but-unarrived files as pending tiles on the real message', () => {
+  test('draws promised-but-unarrived files without restarting upload progress', () => {
     const streaming = {
       info: { id: 'message-streaming', role: 'user', time: { created: Date.parse('2026-09-05T22:00:00.000Z') } },
       parts: [
@@ -440,7 +419,6 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'logo.svg', mime: 'image/svg+xml' },
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
-            uploadStatus={{ state: 'uploading' }}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -459,7 +437,7 @@ describe('UserMessage persisted attachments', () => {
       ).split('tiny.png').length - 1,
     );
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   // The store swaps the optimistic copy for the runtime's echo and the parts
@@ -486,7 +464,6 @@ describe('UserMessage persisted attachments', () => {
               { filename: 'tiny.png', mime: 'image/png' },
               { filename: 'doc.pdf', mime: 'application/pdf' },
             ]}
-            uploadStatus={{ state: 'uploading' }}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -495,7 +472,7 @@ describe('UserMessage persisted attachments', () => {
     expect(html).toContain('tiny.png');
     expect(html).toContain('doc.pdf');
     expect(html).not.toContain('Uploading');
-    expect(html).toContain('animate-spinner-orbit');
+    expect(html).not.toContain('animate-spinner-orbit');
   });
 
   test('keeps workspace references before a later native file after reload', () => {
@@ -661,5 +638,256 @@ describe('UserMessage inline edit-from-here editor', () => {
     const markup = renderText('ship the thing', { editingText: 'do it differently' });
     expect(markup).not.toContain('<textarea');
     expect(markup).toContain('ship the thing');
+  });
+});
+
+describe('sent attachment tiles', () => {
+  const tiles = (html: string) => (html.match(/<li class="contents"/g) ?? []).length;
+  const blobImages = (html: string, src: string) =>
+    (html.match(new RegExp(`<img [^>]*src="${src}"`, 'g')) ?? []).length;
+
+  function sentImage(uploadId: string, name: string, localUrl: string) {
+    return {
+      kind: 'local' as const,
+      uploadId,
+      file: new File(['x'], name, { type: 'image/png' }),
+      localUrl,
+      isImage: true,
+    };
+  }
+
+  const renderMessage = (
+    msg: MessageWithParts,
+    props: Record<string, unknown> = {},
+    messages: Record<string, unknown> = {},
+  ) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={messages} onError={() => {}}>
+          <UserMessage message={msg} sessionId="session-1" ownsPlan={false} {...props} />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  function expectFinishedTile(html: string) {
+    expect(html).not.toContain('animate-spinner-orbit');
+    expect(html).not.toContain('Uploading');
+    expect(html).not.toContain('Upload failed');
+    expect(html).not.toContain('role="status"');
+  }
+
+  test('a follow-up sent with an unfinished upload draws its picture from the first frame', () => {
+    const file = sentImage('upload-follow', 'shot.png', 'blob:follow-up');
+    adoptSentAttachmentPreviews([file]);
+    const html = renderText(buildOptimisticPromptTextWithUploads('look', [file]));
+
+    expect(tiles(html)).toBe(1);
+    expect(blobImages(html, 'blob:follow-up')).toBe(1);
+    expectFinishedTile(html);
+  });
+
+  test('the echo reference keeps the sent picture while the sandbox read is still loading', () => {
+    const file = sentImage('upload-echo', 'a.png', 'blob:echo');
+    adoptSentAttachmentPreviews([file]);
+    const html = renderMessage(
+      {
+        info: { id: 'message-echo', role: 'user' },
+        parts: [
+          { id: 'p-text', messageID: 'message-echo', type: 'text', text: 'look' },
+          {
+            id: 'p-ref',
+            messageID: 'message-echo',
+            type: 'text',
+            text: '<file path="/workspace/uploads/.kortix-inbox/0-a.png" mime="image/png" filename="a.png">\nuploaded\n</file>',
+          },
+        ],
+      } as MessageWithParts,
+      { pendingAttachments: sentAttachmentsOf([file]) },
+    );
+
+    expect(tiles(html)).toBe(1);
+    expect(blobImages(html, 'blob:echo')).toBe(1);
+    expectFinishedTile(html);
+  });
+
+  test('a reload has no local bytes: the delivered image loading is one named tile, no spinner', () => {
+    const html = renderMessage({
+      info: { id: 'message-reload', role: 'user' },
+      parts: [
+        {
+          id: 'p-ref',
+          messageID: 'message-reload',
+          type: 'text',
+          text: 'look\n\n<file path="/workspace/uploads/.kortix-inbox/k/0-reload.png" mime="image/png" filename="reload.png">\nuploaded\n</file>',
+        },
+      ],
+    } as MessageWithParts);
+
+    expect(tiles(html)).toBe(1);
+    expect(html).toContain('title="reload.png"');
+    expect(html).not.toContain('<img');
+    expectFinishedTile(html);
+  });
+
+  test('a delivered inline image with no sent picture paints on the first frame, not after a name tile', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const html = renderMessage({
+      info: { id: 'message-inline', role: 'user' },
+      parts: [
+        { id: 'p-text', messageID: 'message-inline', type: 'text', text: 'look' },
+        {
+          id: 'p-png',
+          messageID: 'message-inline',
+          type: 'file',
+          mime: 'image/png',
+          url: png,
+          filename: 'inline.png',
+        },
+        {
+          id: 'p-heic',
+          messageID: 'message-inline',
+          type: 'file',
+          mime: 'image/heic',
+          url: 'data:image/heic;base64,AAAA',
+          filename: 'shot.heic',
+        },
+      ],
+    } as MessageWithParts);
+
+    expect(tiles(html)).toBe(2);
+    // The browser already holds these bytes: the picture is the first frame (session open, remount).
+    expect(html.match(/<img [^>]*src="data:image\/png;base64,iVBORw0KGgo="/g)).toHaveLength(1);
+    // A HEIC echo may not decode in this browser: it stays the named tile until it does.
+    expect(html).not.toContain('src="data:image/heic');
+    expect(html).toContain('title="shot.heic"');
+    expectFinishedTile(html);
+  });
+
+  test('sync store: the echo text part lands before the file part; the tile count stays 1 at every step', () => {
+    const store = useSessionStateStore.getState();
+    store.reset();
+    const file = sentImage('upload-d8', 'a.png', 'blob:d8');
+    adoptSentAttachmentPreviews([file]);
+    const sent = sentAttachmentsOf([file]);
+    const session = 'ses_d8';
+    const id = 'msg_d8';
+
+    store.optimisticAdd(session, { id, sessionID: session, role: 'user', time: {} } as never, [
+      {
+        id: 'prt_client',
+        sessionID: session,
+        messageID: id,
+        type: 'text',
+        text: buildOptimisticPromptTextWithUploads('look', [file]),
+      },
+    ] as never);
+    store.markOptimisticDispatched(session, id);
+
+    const frames: string[] = [];
+    const frame = () =>
+      frames.push(
+        renderMessage(
+          {
+            info: { id, role: 'user' },
+            parts: useSessionStateStore.getState().parts[id] ?? [],
+          } as MessageWithParts,
+          { pendingAttachments: sent },
+        ),
+      );
+
+    frame();
+    store.applyEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id,
+          sessionID: session,
+          role: 'user',
+          time: { created: 1 },
+          agent: 'build',
+          model: { providerID: 'anthropic', modelID: 'claude' },
+        },
+      },
+    } as never);
+    frame();
+    store.upsertPart(
+      id,
+      { id: 'prt_server_text', sessionID: session, messageID: id, type: 'text', text: 'look' } as never,
+      session,
+    );
+    // The echo text replaced the optimistic text, refs and all.
+    expect(useSessionStateStore.getState().parts[id]?.map((p) => p.id)).toEqual(['prt_server_text']);
+    frame();
+    store.upsertPart(
+      id,
+      {
+        id: 'prt_server_file',
+        sessionID: session,
+        messageID: id,
+        type: 'file',
+        mime: 'image/png',
+        filename: 'a.png',
+        url: 'data:image/png;base64,iVBORw0KGgo=',
+      } as never,
+      session,
+    );
+    frame();
+
+    expect(frames.map(tiles)).toEqual([1, 1, 1, 1]);
+    for (const html of frames) {
+      expect(blobImages(html, 'blob:d8')).toBe(1);
+      expectFinishedTile(html);
+    }
+    store.reset();
+  });
+
+  test('a failed send with no files still reads "Couldn\'t send" with Retry; a sent message with no files draws no strip', () => {
+    const failed = { state: 'failed' as const, message: 'checkConnection', onRetry: () => {} };
+    const strip = (status?: typeof failed) =>
+      renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+            <MessageAttachments attachments={[]} status={status} />
+          </NextIntlClientProvider>
+        </QueryClientProvider>,
+      );
+
+    const kept = strip(failed);
+    expect(tiles(kept)).toBe(0);
+    expect(kept).not.toContain('<ul');
+    expect(kept).toContain('Couldn&#x27;t send');
+    expect(kept).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+    expect(strip()).toBe('');
+
+    // The text-only follow-up SessionChat keeps on screen draws it too.
+    const message = renderText('just text', { uploadStatus: failed });
+    expect(message).toContain('role="alert"');
+    expect(message).toContain('checkConnection');
+    expect(renderText('just text')).not.toContain('role="alert"');
+  });
+
+  test('a failed send keeps its tile and reads "Couldn\'t send" with Retry, never "Upload failed"', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <MessageAttachments
+            attachments={[
+              {
+                key: 'attachment:upload-f',
+                id: 'upload-f',
+                filename: 'f.pdf',
+                mime: 'application/pdf',
+              },
+            ]}
+            status={{ state: 'failed', onRetry: () => {} }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(tiles(html)).toBe(1);
+    expect(html).toContain('Couldn&#x27;t send');
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>Retry<\/button>/);
+    expect(html).not.toContain('Upload failed');
   });
 });

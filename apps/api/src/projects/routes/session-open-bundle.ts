@@ -170,6 +170,7 @@ const handleSessionSnapshot = async (c: any) => {
               userId,
               accountId,
               projectId,
+              sessionId,
               explicit: null,
               freeModelsOnly: freeTier,
             });

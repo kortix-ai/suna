@@ -1,49 +1,28 @@
 /**
- * Unit tests for the "torn config" detection added to
- * platform/routes/github-app.ts's `GET /status`: a stored App-installation
- * config can go stale when the App half (appId/privateKey) and the
- * installation half (owner/installationId) were written by two different
- * manifest-flow runs — `isConfigured()` only checks that all four fields are
- * present, not that installationId actually belongs to the CURRENT app.
+ * `GET /status`'s installation health check.
  *
- * `checkManagedGithubAppInstallationHealthy` re-proves that belongs-to-app
- * invariant via `GET /app/installations/{id}` signed with the current app's
- * JWT (same call `getGitHubAppInstallation` makes) — GitHub 404s that call
- * outright when the installation doesn't belong to the signing app.
+ * A stored App backend can go stale for a reason no write-time check can
+ * prevent: somebody uninstalls the App on github.com, or the instance identity
+ * is replaced. `GET /app/installations/{id}` signed with the CURRENT identity's
+ * JWT answers that in one call — GitHub 404s it outright when the installation
+ * does not belong to the signing App.
  *
- * Mocks `platform/services/managed-github-app` (for the appId/privateKey the
- * JWT signer reads) + global fetch. Must run in its own `bun test <file>`
- * invocation (mock.module is process-global — same caveat as
- * unit-github-app-isconfigured.test.ts / unit-github-owner-type-routing.test.ts).
+ * Seeds the stored identity (platform/services/github-app-identity.ts) for the
+ * appId/privateKey the JWT signer reads, and drives global fetch.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import type { ManagedGithubAppConfig } from '../platform/services/managed-github-app';
+import { __setStoredAppIdentityForTests } from '../platform/services/github-app-identity';
 
 const TEST_APP_PRIVATE_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
 
-let dbConfig: ManagedGithubAppConfig = { appId: '12345', privateKey: TEST_APP_PRIVATE_KEY };
-
-mock.module('../platform/services/managed-github-app', () => ({
-  managedGithubAppConfig: () => dbConfig,
-  refreshManagedGithubAppConfig: async () => {},
-  invalidateManagedGithubAppConfig: () => {},
-  updateManagedGithubAppConfig: async (patch: ManagedGithubAppConfig) => {
-    dbConfig = { ...dbConfig, ...patch };
-    return dbConfig;
-  },
-  resetManagedGithubAppConfig: async () => {
-    dbConfig = {};
-  },
-}));
-
 const { checkManagedGithubAppInstallationHealthy, resetManagedGithubAppInstallationHealthCache } =
   await import('../platform/routes/github-app');
 
-// Same `.env`-leak concern as unit-github-owner-type-routing.test.ts: clear
-// the env fallbacks so only the mocked DB config drives `createGitHubAppJwt`.
+// Clear the env identity so only the seeded stored identity drives
+// `createGitHubAppJwt` — env wins whole, by design.
 const ENV_KEYS = [
   'KORTIX_GITHUB_APP_ID',
   'GITHUB_APP_ID',
@@ -64,7 +43,7 @@ function json(body: unknown, status = 200) {
 }
 
 beforeEach(() => {
-  dbConfig = { appId: '12345', privateKey: TEST_APP_PRIVATE_KEY };
+  __setStoredAppIdentityForTests({ appId: '12345', privateKey: TEST_APP_PRIVATE_KEY });
   fetchCallCount = 0;
   resetManagedGithubAppInstallationHealthCache();
   for (const k of ENV_KEYS) delete process.env[k];

@@ -47,3 +47,13 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # ce4201bd7b that introduced the contiguous marker. Reviewed 2026-08-19.
 ce4201bd7b55ec8bdb4d1feb6c4d57530578931b:apps/web/src/features/workspace/customize/sections/view/secret-delivery.test.ts:private-key:197
 721fee087a61b4f99df9a56107d6fc37691b97dc:apps/api/src/projects/lib/legacy-runtime-bootstrap.test.ts:generic-api-key:262
+
+# git-connection-path (PR #7321) — FAKE PEM fixtures in the instance-identity
+# resolver tests. The values are `-----BEGIN RSA PRIVATE KEY-----db-----END …`
+# and `…-----env-----`: two-character bodies, not keys; they assert that
+# resolveAppIdentity() takes the whole identity from ONE source. The scanner
+# matched the span between the two fixtures as one block. HEAD assembles the
+# armor at runtime (`fakePem()` / `FAKE_ENV_PEM`) so the literal no longer
+# appears in current source; this entry covers the historical commit
+# df7eda321b that introduced it. Reviewed 2026-09-16.
+df7eda321b90e9c0b49ec9f9d15d0ea6ed4ca1d7:apps/api/src/platform/services/instance-git-config.test.ts:private-key:66

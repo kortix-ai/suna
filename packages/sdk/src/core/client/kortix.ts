@@ -17,6 +17,7 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
+import { createPromptAttachmentController } from '../attachments/prompt-attachments';
 import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
@@ -169,6 +170,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
+    secretResources: {
+      list: P.listAccountSecretResources,
+      create: P.createAccountSecretResource,
+      rotate: P.rotateAccountSecretResource,
+      remove: P.deleteAccountSecretResource,
+      grant: P.grantAccountSecretResource,
+      revoke: P.revokeAccountSecretResourceGrant,
+    },
     updateName: P.updateAccountName,
     /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
     branding: {
@@ -370,6 +379,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     deleteInstallation: P.deleteGitHubInstallation,
   };
 
+  /**
+   * The instance git backend ("Kortix managed") — one deployment-wide owner
+   * plus credential, never an account connection. `backend()` is readable by
+   * any authenticated user; `backendRepositories()` is self-host-operator only.
+   */
+  const gitBackend = {
+    get: P.getManagedGitBackend,
+    repositories: P.listManagedGitRepositories,
+  };
+
   /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
   const sandboxShares = {
     list: P.listSandboxShares,
@@ -444,6 +463,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.pipedreamFinalizeConnection(projectId, ...a),
     };
     return {
+      attachments: {
+        upload: (...args: DropFirst<Parameters<typeof P.uploadPromptAttachment>>) => P.uploadPromptAttachment(projectId, ...args),
+        delete: (...args: DropFirst<Parameters<typeof P.deletePromptAttachment>>) => P.deletePromptAttachment(projectId, ...args),
+        createController: (options?: Parameters<typeof createPromptAttachmentController>[1]) => createPromptAttachmentController(projectId, options),
+      },
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
       detail: () => P.getProjectDetail(projectId),
       /** Canonical project-scoped audit timeline. */
@@ -1188,6 +1212,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
+      providerSecretPool: {
+        list: () => P.listSessionProviderSecretPools(projectId, sessionId),
+        get: (providerId: string) => P.getSessionProviderSecretPool(projectId, sessionId, providerId),
+        set: (providerId: string, secretIds: string[] | null) =>
+          P.setSessionProviderSecretPool(projectId, sessionId, providerId, secretIds),
+      },
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>
         P.setProjectSessionScope(projectId, sessionId, scope),
@@ -1349,6 +1379,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
+    /** The instance git backend ("Kortix managed", deployment-scoped). */
+    gitBackend,
     /** Billing read surface, including unified session costs. */
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */

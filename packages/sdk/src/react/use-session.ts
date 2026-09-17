@@ -1368,9 +1368,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!runtimeActionReady) return Promise.resolve({ status: 'skipped' });
     const settlement = awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
     // `awaitAbortSettlement` never rejects — it resolves with how the abort
-    // ended (acknowledged, failed, or timed out). Any of those is the instant
-    // from which a server read can see the abort's effect, or fail to.
-    void settlement.then(() => settleAbortReceipt(sessionId, Date.now()));
+    // ended. A timeout is not an acknowledgement.
+    void settlement.then((result) => settleAbortReceipt(sessionId, Date.now(), result.status));
     return settlement;
   };
 

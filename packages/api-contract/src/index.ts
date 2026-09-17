@@ -62,6 +62,7 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
+  pooled_provider_secrets: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -815,6 +816,7 @@ export const PendingSessionPromptSchema = z
             text: z.string().optional(),
             mime: z.string().max(255).optional(),
             url: z.string().max(17_000_000).optional(),
+            attachment_id: z.string().uuid().optional(),
             filename: z.string().max(512).optional(),
             name: z.string().max(512).optional(),
             source: z.unknown().optional(),
@@ -843,6 +845,10 @@ export const SessionCreateInputSchema = z
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
+    provider_secret_pools: z.record(
+      z.string().min(1).max(100),
+      z.array(z.string().uuid()).max(10),
+    ).refine((pools) => Object.keys(pools).length <= 20, 'Too many provider pools').optional(),
     // The clean text auto-titling derives from, when `initial_prompt` is a
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
@@ -1052,6 +1058,10 @@ export const SessionStartFailureSchema = z
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
       'invalid-secret-boundary-policy',
+      // The PROJECT's custom sandbox image is over the provider's snapshot
+      // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
+      // so never retryable.
+      'snapshot-too-large',
       'sandbox-provider',
     ]),
     message: z.string(),

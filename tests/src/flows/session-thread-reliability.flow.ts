@@ -940,19 +940,8 @@ flow(
 // durable row, the idempotency key, the state projection, and the two write
 // gates. Whether the runtime then answers the prompt is SESS-23's business.
 //
-// The runtime IS booted to ready first, though, and that is load-bearing rather
-// than incidental. `holdInboxPrompts` (session-lifecycle/inbox-rows.ts) writes a
-// reader-visible `result.held` for `queued` and `forwarded` rows, but a row the
-// drain has already CLAIMED (`status = 'running'`) gets a PAYLOAD flag only —
-// `markCommandForwarded` replaces `result` wholesale, so `promptState` keeps
-// answering `delivering/null` until that claimed delivery lands. On a COLD box
-// the claim window is the whole of `continueSession`, up to
-// `READY_DEADLINE_MS = 300_000` (session-lifecycle/engine.ts). Run 32330628092
-// posted into a cold session, the drain claimed the row 6s later, and the hold
-// step then re-POSTed for 32s against a row that read `delivering/null` every
-// time and could not have read anything else. That is the documented server
-// contract, not a defect — Stop cannot unsend a POST. Booting first keeps the
-// claim window at ~1.3s, so every branch of the hold predicate is reachable.
+// Boot before delivery assertions. Stop exposes waiting/held immediately,
+// including a claimed delivery; the worker checks that hold before each POST.
 flow(
   'SESS-25',
   {
@@ -975,9 +964,6 @@ flow(
     const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: project.id, sessionId: session.id };
-    // See the header: the hold predicate is unsatisfiable while the drain holds
-    // a claim against a box that is still booting. `ctx.fixtures.session` does
-    // NOT wait for readiness, so wait here, before the first prompt exists.
     await ctx.step('the session runtime is ready before anything is queued', async () => {
       await waitForSessionReady(ctx, project.id, session.id, 540_000);
     });
@@ -997,6 +983,7 @@ flow(
           client_message_id: clientMessageId,
           message_id: wireMessageId,
           parts: [{ type: 'text', text: 'SESS-25 inbox prompt' }],
+          placement: 'transcript',
           overrides: { directory: '/workspace' },
         },
         { params },
@@ -1069,63 +1056,34 @@ flow(
       if (mine.client_message_id !== clientMessageId) {
         throw new Error(`inbox row carries the wrong client id: ${mine.client_message_id}`);
       }
+      if (mine.placement !== 'transcript' || mine.full_text !== 'SESS-25 inbox prompt') {
+        throw new Error('Inbox did not preserve placement and full accepted text');
+      }
       if (!['queued', 'waiting', 'delivering', 'failed'].includes(mine.state)) {
         throw new Error(`unexpected prompt state: ${mine.state}`);
       }
     });
 
     await ctx.step('holding the queue is a SERVER fact, not a browser one', async () => {
-      // What the Stop button writes. A client-side pause would leave the
-      // admission gate free to deliver the very message the user pressed Stop
-      // to get ahead of, one scheduler tick after the abort.
-      // A row the drain has ALREADY CLAIMED (status 'running') gets only a
-      // PAYLOAD flag from the instant hold — `stopPausedOnDelivery` — because
-      // `markCommandForwarded` replaces `result` wholesale, so `promptState`
-      // answers `delivering/null` for it. The `held` marker lands only once the
-      // claimed delivery settles, in the background (CLAIMED_SETTLE_MS = 3_000,
-      // apps/api/src/projects/session-lifecycle/inbox-hold-settle.ts). Run
-      // 32306385663 read the response one tick too early and saw exactly that.
-      // The route is idempotent, so re-POST until the row is held or gone — a
-      // hold that never lands still fails the flow. The budget is sized for a
-      // READY box (claim -> forward ~1.3s measured), which the readiness step
-      // above guarantees; 30s was sized for that too but ran against a cold box,
-      // where the claim can stand for up to READY_DEADLINE_MS = 300s.
-      let lastSeen = 'never observed';
-      const held = await waitFor(
-        async () =>
-          owner.post(
-            '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
-            { held: true },
-            { params },
-          ),
-        {
-          until: (r) => {
-            if (r.statusCode !== 200) return false;
-            const mine = (r.json<any>().prompts ?? []).find(
-              (p: any) => p.prompt_id === promptId,
-            );
-            // Absent = already delivered; it IS the transcript and cannot be held.
-            if (!mine) {
-              lastSeen = 'absent (delivered)';
-              return true;
-            }
-            lastSeen = `${mine.state}/${mine.reason ?? 'null'}`;
-            return mine.state === 'waiting' && mine.reason === 'held';
-          },
-          timeoutMs: 90_000,
-          intervalMs: 2_000,
-          description: `prompt ${promptId} to read waiting/held once the hold settles`,
-          retryOnError: isKe2eRetryableError,
-        },
-      ).catch((error) => {
-        // Name the state actually observed. A bare "timed out waiting for
-        // waiting/held" cost run 32330628092 a whole triage cycle to discover
-        // the row had read `delivering/null` for every one of its 4 polls.
-        throw error instanceof Error
-          ? Object.assign(error, { message: `${error.message}; last observed state: ${lastSeen}` })
-          : error;
-      });
+      const held = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+        { held: true },
+        { params },
+      );
       held.status(200);
+      for (const response of [
+        held,
+        await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params }),
+      ]) {
+        response.status(200);
+        const mine = (response.json<any>().prompts ?? []).find(
+          (p: any) => p.prompt_id === promptId,
+        );
+        // A consumed prompt is omitted because it belongs to the transcript.
+        if (mine && (mine.state !== 'waiting' || mine.reason !== 'held')) {
+          throw new Error(`Stop did not persist: ${mine.state}/${mine.reason}`);
+        }
+      }
 
       const bad = await owner.post(
         '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',

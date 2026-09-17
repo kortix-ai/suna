@@ -9,6 +9,18 @@ import {
 } from './session-surface';
 
 describe('isNewSessionSurface', () => {
+  test('a durable first prompt restores the shell after reload without a local hint', () => {
+    const restored = { newSessionHint: false, hasTranscript: false, hasPendingFirstPrompt: true };
+    expect(isNewSessionSurface(restored)).toBe(true);
+    expect(resolveSessionOverlay({ ...restored, shellShowsFirstPrompt: false })).toBe(
+      'new-session-shell',
+    );
+    expect(shouldMountSessionChat({ ...restored, contentAvailable: true, submitted: false })).toBe(
+      true,
+    );
+    expect(isNewSessionSurface({ ...restored, hasTranscript: true })).toBe(false);
+  });
+
   test('a session this tab just created has no transcript and gets the shell', () => {
     expect(isNewSessionSurface({ newSessionHint: true, hasTranscript: false })).toBe(true);
   });

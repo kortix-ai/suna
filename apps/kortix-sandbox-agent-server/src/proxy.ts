@@ -17,7 +17,9 @@ import { createLogsRouter } from './routes/logs'
 import { createDiagRouter } from './routes/diag'
 import { type ResourceMonitor, startResourceMonitor } from './resources'
 import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload'
-import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state'
+import { opencodeSessionInFlight, opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state'
+import { kortixEventBus } from './kortix-event-bus'
+import { QuickQueueInterrupt, quickQueueSnapshotFromPage } from './quick-queue-interrupt'
 import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
@@ -170,6 +172,7 @@ export function buildOpencodeApp(
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
   agentEnvFile?: string,
+  quickQueue?: QuickQueueInterrupt,
 ): Hono {
   const app = new Hono()
 
@@ -180,7 +183,7 @@ export function buildOpencodeApp(
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const abortRouter = createAbortRouter(cfg, opencode)
+  const abortRouter = createAbortRouter(cfg, opencode, quickQueue)
   const envRouter = projectEnv
     ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
     : null
@@ -260,6 +263,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/opencode', opencodeRuntimeRouter)
   kortixRouter.route('/opencode/', opencodeRuntimeRouter)
 
+  // Terminate daemon-owned paths before the OpenCode SPA catch-all.
+  kortixRouter.all('*', (c) => c.json({ error: 'unknown kortix route' }, 404))
   app.route('/kortix', kortixRouter)
 
   // Auth gate for everything except /kortix/*. Spec §3.5: the daemon MUST
@@ -578,6 +583,45 @@ export function startProxy(
   // memory-guard abort.
   const offloadDbPath = opencodeDbPath(OPENCODE_HOME)
   const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME)
+  const quickQueueDb = new OpencodeDb(offloadDbPath)
+  const readQuickQueueSnapshot = async (input: {
+    opencodeSessionId: string
+    messageId: string
+  }) => {
+    if (readPinnedSessionId() !== input.opencodeSessionId) {
+      return { state: 'stale' as const, runningTool: false }
+    }
+    const inFlight = await opencodeSessionInFlight(
+      opencode.getInternalUrl(), cfg.workspace, input.opencodeSessionId,
+    )
+    if (!quickQueueDb.probe().supported) return { state: 'unknown' as const, runningTool: false }
+    const page = quickQueueDb.messagePage({ sessionId: input.opencodeSessionId, limit: 12 })
+    return quickQueueSnapshotFromPage(
+      inFlight,
+      page?.messages as Parameters<typeof quickQueueSnapshotFromPage>[1] ?? null,
+      input.messageId,
+    )
+  }
+  const quickQueue = new QuickQueueInterrupt({
+    readSnapshot: readQuickQueueSnapshot,
+    abort: async (input) => {
+      // Recheck at the wire boundary: an older arm must not kill a later tool
+      // or a new turn that began while the first snapshot was in flight.
+      const snapshot = await readQuickQueueSnapshot(input)
+      if (snapshot.state !== 'active' || snapshot.runningTool) return false
+      const url =
+        `${opencode.getInternalUrl()}/session/${encodeURIComponent(input.opencodeSessionId)}/abort` +
+        `?directory=${encodeURIComponent(cfg.workspace)}`
+      const response = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
+      if (response.ok) logger.info('[quick-queue] interrupted at tool boundary', {
+        promptId: input.promptId, messageId: input.messageId,
+      })
+      return response.ok
+    },
+  })
+  const quickQueueEvents = kortixEventBus().subscribe((event) => {
+    void quickQueue.observe(event)
+  })
   let offloadRunning = false
   let stopped = false
   const runOffloadIfIdle = async (why: string): Promise<void> => {
@@ -634,7 +678,7 @@ export function startProxy(
   registerAgentSwapBlocker('pty', () =>
     ptyRegistry.list().some((entry) => entry.status === 'running'),
   )
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry, undefined, quickQueue)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -713,11 +757,13 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry, undefined, quickQueue)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {
       stopped = true
+      quickQueueEvents.unsubscribe()
+      quickQueue.stop()
       clearTimeout(offloadBootTimer)
       clearInterval(offloadTimer)
       proxyResourceMonitor.stop()

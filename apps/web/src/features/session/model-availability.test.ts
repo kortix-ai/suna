@@ -2,10 +2,69 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   isModelRequiredButUnavailable,
+  modelRejectingAttachedImages,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
 } from './model-availability';
+
+describe('an attached image the selected model cannot read', () => {
+  const textOnly = {
+    providerID: 'kortix',
+    modelID: 'deepseek-v4-flash',
+    modelName: 'DeepSeek V4 Flash',
+    capabilities: { vision: false },
+  };
+  const vision = {
+    providerID: 'kortix',
+    modelID: 'grok-4.6',
+    modelName: 'Grok 4.6',
+    capabilities: { vision: true },
+  };
+  const unknown = { providerID: 'custom', modelID: 'my-model', modelName: 'My model' };
+  const models = [textOnly, vision, unknown];
+  const image = { isImage: true };
+  const text = { isImage: false };
+  const pick = (model: { providerID: string; modelID: string }) => ({
+    providerID: model.providerID,
+    modelID: model.modelID,
+  });
+
+  test('names a model whose catalog says it has no image input', () => {
+    expect(
+      modelRejectingAttachedImages({ files: [text, image], models, selectedModel: pick(textOnly) }),
+    ).toBe('DeepSeek V4 Flash');
+  });
+
+  test('a vision model accepts the image', () => {
+    expect(
+      modelRejectingAttachedImages({ files: [image], models, selectedModel: pick(vision) }),
+    ).toBeNull();
+  });
+
+  test('a file that is not an image never refuses the send', () => {
+    expect(
+      modelRejectingAttachedImages({ files: [text], models, selectedModel: pick(textOnly) }),
+    ).toBeNull();
+  });
+
+  test('a model without capability data is not refused on a guess', () => {
+    expect(
+      modelRejectingAttachedImages({ files: [image], models, selectedModel: pick(unknown) }),
+    ).toBeNull();
+  });
+
+  test('no selected model, or one missing from the list, refuses nothing', () => {
+    expect(modelRejectingAttachedImages({ files: [image], models, selectedModel: null })).toBeNull();
+    expect(
+      modelRejectingAttachedImages({
+        files: [image],
+        models,
+        selectedModel: { providerID: 'kortix', modelID: 'gone' },
+      }),
+    ).toBeNull();
+  });
+});
 
 describe('session model availability', () => {
   test('blocks normal sends when a model is required but missing', () => {

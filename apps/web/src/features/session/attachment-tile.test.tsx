@@ -94,10 +94,44 @@ describe('AttachmentTile', () => {
     expect(isPreviewableImage('doc.pdf', 'application/pdf')).toBe(false);
   });
 
-  test('pending shows the one spinner opposite the badge', () => {
-    const html = render(<AttachmentTile filename="doc.pdf" mime="application/pdf" pending />);
-    expect(html).toContain('animate-spinner-orbit');
-    expect(html).toMatch(/>pdf</);
+  test('the corner slot sits opposite the badge, and no tile draws a spinner', () => {
+    const named = render(
+      <AttachmentTile filename="doc.pdf" mime="application/pdf" corner={<i data-corner="" />} />,
+    );
+    expect(named).toMatch(/>pdf<\/span><span class="flex shrink-0"><i data-corner=""><\/i><\/span><\/span>/);
+    const picture = render(
+      <AttachmentTile
+        filename="a.png"
+        mime="image/png"
+        imageSrc="blob:a"
+        corner={<i data-corner="" />}
+      />,
+    );
+    expect(picture).toContain(
+      '<span class="absolute right-2 bottom-2 flex"><i data-corner=""></i></span>',
+    );
+    for (const html of [named, picture, render(<AttachmentTile filename="doc.pdf" />)]) {
+      expect(html).not.toContain('animate-spinner-orbit');
+    }
+  });
+
+  test('an overlay covers the tile inside its clipped box', () => {
+    const html = render(
+      <AttachmentTile
+        filename="a.png"
+        mime="image/png"
+        imageSrc="blob:a"
+        overlay={<i data-overlay="" />}
+      />,
+    );
+    // React 19 hoists a `<link rel="preload">` for the image ahead of the tile.
+    const tile = html.slice(html.indexOf('<span'));
+    // The overlay brings its own tooltip, so the surface drops its native `title`.
+    expect(tile.startsWith(`<span class="${TILE_SURFACE}">`)).toBe(true);
+    expect(tile.endsWith('<i data-overlay=""></i></span>')).toBe(true);
+    // Without an overlay the tile keeps its name as a native tooltip.
+    const plain = render(<AttachmentTile filename="a.png" mime="image/png" imageSrc="blob:a" />);
+    expect(plain.slice(plain.indexOf('<span'))).toStartWith(`<span title="a.png" class="${TILE_SURFACE}">`);
   });
 
   test('is a button with the press affordance only when it opens something', () => {
