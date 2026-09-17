@@ -1410,3 +1410,17 @@ invented. A read-only survey of 97 remaining reviewed Platinum boxes found
 31 guest-IP conflicts, five provider HTTP 404s, 39 plain `stopped`, 15
 `archived`, four `stopping`, two other provider errors, and one `running`.
 Provider placement must recover before those affected sessions can finish.
+
+The private destination recovery worker now checks Platinum's direct error
+message before spending an import attempt on a `starting` or `failed` runtime.
+It defers a confirmed guest-IP placement conflict for one hour and keeps the
+queue row in `apply-review`. A private JSON evidence report records the exact
+sandbox IDs and provider errors for 31 affected destinations. The worker does
+not change provider, sandbox ID, or file proof to bypass this condition.
+
+The destination archive worker was increased from eight to 12 concurrent
+requests after the fresh import queue drained. At the change, eight archive
+requests occupied all eight slots; only 24 unarchived sessions had a recorded
+archive error. The supervised worker restarted cleanly. Archive confirmations
+rose from 8,198 to 8,216 during the first observed interval, with no new
+recorded archive errors. Keep checking provider errors before another increase.
