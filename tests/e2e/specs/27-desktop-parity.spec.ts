@@ -698,7 +698,9 @@ for (const runtime of runtimes) {
         }
         expect(nextRequest).toBeDefined();
         expect((await nextRequest!).postDataJSON().placement).toBe("composer");
-        expect(postOrder).toEqual(["transcript", "composer"]);
+        // The request event resolves `waitForRequest` before the route handler
+        // records the POST, so wait for the handler.
+        await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
         await page.unroute(promptsUrl);
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
         await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
