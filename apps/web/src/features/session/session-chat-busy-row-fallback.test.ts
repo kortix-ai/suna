@@ -45,9 +45,13 @@ describe('the waiting row has a fallback when no turn owns it', () => {
 
   test('it never stacks with the boot stand-in, which draws its own row', () => {
     const row = between(chat, '{isBusy &&\n                      !someTurnDrawsBusyRow', '/>\n                      )}');
+    // `queuedSyntheticMessages` replaced `queuedMessages`: queued entries left
+    // the transcript for the list above the composer, and only the first
+    // prompt's row is still drawn as a turn — the same term the stand-in reads.
     expect(row).toContain(
-      '!(showFirstPromptPreview && firstPromptSource && queuedMessages.length === 0 && turns.length === 0)',
+      '!(showFirstPromptPreview && firstPromptSource && queuedSyntheticMessages.length === 0 && turns.length === 0)',
     );
+    expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
     // The stand-in's own gate is unchanged — it is the one that decides
     // whether the boot row is on screen at all.
     expect(chat).toContain('busy={turns.length === 0}');
@@ -108,7 +112,9 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
   test('the LOCAL copy is what the stand-in and the hand-over read', () => {
     expect(chat).toContain('const firstPromptSource = firstPromptPreview ?? firstPromptKeep;');
     expect(chat).toContain('hasPreview: !!firstPromptSource,');
-    expect(chat).toContain('return { text: firstPromptSource.text, attachments };');
+    expect(chat).toContain(
+      'text: firstPromptSource.text,\n        attachments: sentAttachmentsOf(firstPromptSource.files),',
+    );
     expect(chat).toContain('firstPromptSource.text,\n                                firstPromptSource.files,');
   });
 

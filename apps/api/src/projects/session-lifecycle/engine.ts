@@ -1,3 +1,9 @@
+import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
+import {
+  assertInboxDeliveryActive,
+  InboxDeliveryPaused,
+  releasePausedInboxDelivery,
+} from './inbox-delivery-hold';
 import {
   connectorCalls,
   projectSessions,
@@ -50,7 +56,7 @@ import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
-import { type DeliveryTarget, deliverWithRetry } from './deliver';
+import { type DeliveryTarget, type SendOutcome, deliverWithRetry } from './deliver';
 import * as lifecycleStore from './store';
 import {
   MAX_RUNTIME_UNREACHABLE_RETRIES,
@@ -69,6 +75,7 @@ import {
   withNextDeliveryAttempt,
   withRemintedWireId,
 } from './store';
+import { DELIVERY_FAILURE_COPY } from './types';
 import type {
   PromptOverridesWire,
   PromptPartWire,
@@ -290,7 +297,7 @@ export async function createSession(
     };
   }
 
-  const result = await executeCreateSession(command);
+  const result = await executeCreateSession({ ...command, attachmentSourceCommandId: claimed.row.commandId });
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,
@@ -408,6 +415,7 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
+  beforeSend?: () => Promise<void>,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -494,8 +502,9 @@ export async function continueSession(
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
-  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
+  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
+    await beforeSend?.();
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
@@ -508,6 +517,8 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        accountId: session.accountId,
+        projectId: session.projectId,
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -550,6 +561,10 @@ export async function continueSession(
       // the transcript against this exact command-id XML and records the marker.
       await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
+    // Carry the reachability verdict through to `deliverWithRetry` rather than
+    // flattening it to false — a down path must not spend the dead-letter
+    // budget. See SendOutcome.
+    if (delivery === 'unreachable') return 'unreachable';
     return delivery !== 'failed';
   };
 
@@ -578,6 +593,7 @@ export async function continueSession(
 
   const loaded = { row: project, userId };
   const openOnce = async () => {
+    await beforeSend?.();
     const [fresh] = await db
       .select({
         status: projectSessions.status,
@@ -1824,6 +1840,7 @@ export async function executeQueuedContinue(
         // redelivery. See `withNextDeliveryAttempt`.
         attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId,
         tl,
+        payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined,
       );
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -1953,13 +1970,13 @@ export async function executeQueuedContinue(
     if (delivery === 'unreachable') {
       const parked = await parkPromptForUnreachableRuntime(
         row.commandId,
-        `delivery outcome: ${delivery}`,
+        DELIVERY_FAILURE_COPY[delivery],
         { sessionId: row.sessionId },
       );
       if (parked.parked) return 'queued';
       await markCommandFailed(
         row.commandId,
-        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
         { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
       );
       return 'failed';
@@ -1993,19 +2010,24 @@ export async function executeQueuedContinue(
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
-    await markCommandFailed(row.commandId, `delivery outcome: ${delivery}`, {
+    await markCommandFailed(row.commandId, DELIVERY_FAILURE_COPY[delivery], {
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
+    if (e instanceof InboxDeliveryPaused) {
+      await releasePausedInboxDelivery(row.commandId);
+      return 'queued';
+    }
+    const retryable = !(e instanceof PromptDeliveryRefused);
     await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
-      retryable: true,
+      retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
     });
-    return 'queued';
+    return retryable ? 'queued' : 'failed';
   }
 }
 
@@ -2069,6 +2091,7 @@ async function executeQueuedCreate(
     requestingPrincipalType = serviceAccount ? 'service_account' : 'human';
   }
   return executeCreateSession({
+    attachmentSourceCommandId: row.commandId,
     source: row.source as CreateSessionCommand['source'],
     project,
     userId,
@@ -2098,6 +2121,7 @@ async function executeCreateSession(
     ...(command.metadata ?? {}),
   };
   const result = await createProjectSession({
+    attachmentSourceCommandId: command.attachmentSourceCommandId,
     project: command.project,
     userId: command.userId,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -2408,8 +2432,10 @@ async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    accountId?: string;
+    projectId?: string;
   },
-): Promise<'accepted' | 'deduplicated' | 'failed'> {
+): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const deliverableParts = prompt?.materializationKey
@@ -2418,6 +2444,8 @@ async function postPrompt(
         externalId,
         sessionId: callerSessionId,
         userId,
+        accountId: prompt.accountId,
+        projectId: prompt.projectId,
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
       })
@@ -2503,14 +2531,24 @@ async function postPrompt(
       }
       return 'accepted';
     }
+    await throwIfPromptRefused(res);
     if (res.status !== 404)
       console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+    // 502/503/504 is the PROXY saying it could not reach the box (a dead
+    // ingress, a control plane refusing the forward, an attempt that timed
+    // out) — not the daemon refusing the prompt. Say so, so a spent deadline
+    // parks the message on the runtime-unreachable ladder instead of spending
+    // the dead-letter budget on a path that is simply down. See SendOutcome.
+    if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
+    if (err instanceof PromptDeliveryRefused) throw err;
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
     console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
-    return 'failed';
+    // Connection refused/reset/timed out: the box is not reachable. Same
+    // reasoning as the 502/503/504 branch above.
+    return 'unreachable';
   }
 }

@@ -238,15 +238,22 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     await projectSnapshotS3Client().send(new DeleteObjectCommand({ Bucket: projectSnapshotBucket(), Key: treeKey }));
     expect(await headObject(treeKey)).toBeNull();
 
-    // Verification re-queues the row instead of advertising a doomed download.
-    expect(await verifyReadyProjectSnapshotObjects(ready!)).toBeNull();
+    // The create path does not wait for the bucket: THIS session still gets
+    // the pin and a presigned descriptor (its daemon meets the 404 and boots
+    // from Git), while the object check runs in the background and re-queues
+    // the row for the NEXT session.
+    const stale = await resolveProjectSnapshotPinForSession({ projectId, ref: 'main', commitSha: firstSha, repoUrl: remote });
+    expect(stale.cache).toBe('hit');
+    expect(stale.pin).toMatch(new RegExp(`^${firstSha}:[0-9a-f]{64}:\\d+$`));
+    expect(stale.descriptor).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 500));
     const requeued = await readProjectSnapshot(projectId, firstSha);
     expect(requeued).toMatchObject({ status: 'queued', attempts: 0, archiveSha256: null, readyAt: null });
     expect(requeued?.lastError).toMatch(/tree object is no longer in the bucket/);
     expect(await readReadyProjectSnapshot(projectId, firstSha)).toBeNull();
-    // The session-create path sees a miss and does not pin anything.
+    // The next session sees a miss and does not pin anything.
     const miss = await resolveProjectSnapshotPinForSession({ projectId, ref: 'main', commitSha: firstSha, repoUrl: remote });
-    expect(miss).toEqual({ pin: null, cache: 'miss' });
+    expect(miss).toEqual({ pin: null, descriptor: null, cache: 'miss' });
 
     // The rebuild is deterministic: same digests, so the object is republished
     // under the immutable manifest and the row is ready again.
@@ -281,7 +288,7 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     });
     expect(await readReadyProjectSnapshot(staleProject, firstSha)).toBeNull();
     const miss = await resolveProjectSnapshotPinForSession({ projectId: staleProject, ref: 'main', commitSha: firstSha, repoUrl: remote });
-    expect(miss).toEqual({ pin: null, cache: 'miss' });
+    expect(miss).toEqual({ pin: null, descriptor: null, cache: 'miss' });
     await new Promise((r) => setTimeout(r, 200));
     const row = await readProjectSnapshot(staleProject, firstSha);
     expect(row).toMatchObject({ status: 'queued', format: 'project-snapshot-v2', attempts: 0, archiveSha256: null, readyAt: null });
@@ -293,8 +300,21 @@ describe('project snapshot producer (real DB + real bucket)', () => {
     const hit = await resolveProjectSnapshotPinForSession({ projectId, ref: 'main', commitSha: firstSha, repoUrl: remote });
     expect(hit.cache).toBe('hit');
     expect(hit.pin).toMatch(new RegExp(`^${firstSha}:[0-9a-f]{64}:\\d+$`));
+    // The descriptor presigned at create is the proxy route's body, base64:
+    // both objects signed, digests matching the pin, expiry in the future.
+    const descriptor = JSON.parse(Buffer.from(hit.descriptor!, 'base64').toString('utf8'));
+    expect(descriptor.format).toBe('project-snapshot-v2');
+    expect(descriptor.commit_sha).toBe(firstSha);
+    expect(hit.pin).toBe(`${firstSha}:${descriptor.tree.sha256}:${descriptor.tree.bytes}`);
+    expect(descriptor.tree.url).toMatch(/X-Amz-Signature=/);
+    expect(descriptor.blobs.url).toMatch(/X-Amz-Signature=/);
+    expect(Date.parse(descriptor.tree.expires_at)).toBeGreaterThan(Date.now() + 60_000);
+    // And the signed URL really answers with the boot object's bytes.
+    const signed = await fetch(descriptor.tree.url);
+    expect(signed.status).toBe(200);
+    expect((await signed.arrayBuffer()).byteLength).toBe(descriptor.tree.bytes);
     const miss = await resolveProjectSnapshotPinForSession({ projectId, ref: 'main', commitSha: secondSha, repoUrl: remote });
-    expect(miss).toEqual({ pin: null, cache: 'miss' });
+    expect(miss).toEqual({ pin: null, descriptor: null, cache: 'miss' });
     // The miss queued the build for the next session; give the fire-and-forget insert a tick.
     await new Promise((r) => setTimeout(r, 200));
     expect((await readProjectSnapshot(projectId, secondSha))?.status).toBe('queued');

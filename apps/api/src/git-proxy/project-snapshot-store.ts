@@ -129,7 +129,31 @@ export function projectSnapshotManifestKey(prefix: string): string {
 let client: S3Client | null = null;
 let presignClient: S3Client | null = null;
 
-function buildClient(endpoint: string): S3Client {
+/**
+ * Where the SANDBOX downloads from, derived from the store settings. Pure so
+ * the three cases are unit-testable without a client:
+ *   - custom public endpoint (MinIO behind a tunnel): that endpoint, path-style
+ *     as configured, never accelerated (there is no edge in front of it);
+ *   - Transfer Acceleration on AWS: the regional endpoint is swapped for
+ *     <bucket>.s3-accelerate.amazonaws.com; the SDK refuses path-style there;
+ *   - plain AWS: the API's own regional client signs the URLs.
+ */
+export function resolvePresignTarget(input: {
+  publicEndpoint: string;
+  accelerate: boolean;
+  forcePathStyle: boolean;
+}): { endpoint: string; useAccelerateEndpoint: boolean; forcePathStyle: boolean; sameAsApiClient: boolean } {
+  const publicEndpoint = input.publicEndpoint.trim();
+  if (publicEndpoint) {
+    return { endpoint: publicEndpoint, useAccelerateEndpoint: false, forcePathStyle: input.forcePathStyle, sameAsApiClient: false };
+  }
+  if (input.accelerate) {
+    return { endpoint: '', useAccelerateEndpoint: true, forcePathStyle: false, sameAsApiClient: false };
+  }
+  return { endpoint: '', useAccelerateEndpoint: false, forcePathStyle: input.forcePathStyle, sameAsApiClient: true };
+}
+
+function buildClient(endpoint: string, opts: { useAccelerateEndpoint?: boolean; forcePathStyle?: boolean } = {}): S3Client {
   const region =
     config.KORTIX_PROJECT_SNAPSHOT_S3_REGION.trim() ||
     process.env.AWS_REGION ||
@@ -137,8 +161,9 @@ function buildClient(endpoint: string): S3Client {
     'us-east-1';
   const options: S3ClientConfig = {
     region,
-    forcePathStyle: config.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+    forcePathStyle: opts.forcePathStyle ?? config.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
     ...(endpoint ? { endpoint } : {}),
+    ...(opts.useAccelerateEndpoint ? { useAccelerateEndpoint: true } : {}),
   };
   const accessKeyId = config.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID.trim();
   const secretAccessKey = config.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY.trim();
@@ -154,12 +179,23 @@ export function projectSnapshotS3Client(): S3Client {
 
 /**
  * The client that SIGNS download URLs: identical, except it targets the
- * endpoint the sandbox reaches (SigV4 signs the host). Same object on AWS.
+ * endpoint the sandbox reaches (SigV4 signs the host) — a custom public
+ * endpoint, the Transfer Acceleration endpoint, or the API's own. Same object
+ * on AWS either way.
  */
 export function projectSnapshotPresignClient(): S3Client {
-  const publicEndpoint = config.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT.trim();
-  if (!publicEndpoint) return projectSnapshotS3Client();
-  if (!presignClient) presignClient = buildClient(publicEndpoint);
+  const target = resolvePresignTarget({
+    publicEndpoint: config.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
+    accelerate: config.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
+    forcePathStyle: config.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  });
+  if (target.sameAsApiClient) return projectSnapshotS3Client();
+  if (!presignClient) {
+    presignClient = buildClient(target.endpoint, {
+      useAccelerateEndpoint: target.useAccelerateEndpoint,
+      forcePathStyle: target.forcePathStyle,
+    });
+  }
   return presignClient;
 }
 

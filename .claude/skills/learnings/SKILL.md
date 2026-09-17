@@ -21,116 +21,15 @@ linked, not inlined.
 
 ## Register
 
-<<<<<<< HEAD
-||||||| parent of 6f52904b61 (perf(sessions): the project session list is a keyset page, not the whole inventory (#7308))
-### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
+### Keep subscription picker prices distinct from session charges (2026-09-16)
 
-**When:** writing or reviewing any admission/quota gate that reserves a
-resource before doing work — a memory budget, a connection semaphore, a rate
-limiter. Three defects, one incident, each sufficient alone:
+**When:** publishing ChatGPT/Codex models to the picker. Retain the published
+model price fields. Zeroing catalog rates makes the picker call a paid ChatGPT
+subscription “Free.” Keep subscription session cost at `$0.00` in SDK accounting;
+the picker rates are reference prices, not an extra per-token subscription bill.
+*Correction to the 2026-09-15 entry below:* zero catalog rates misstate the
+subscription price. *Enforcers:* catalog model tests, `GW-5`, and browser journey 26.
 
-1. **`Number(req.headers.get('content-length'))` is `0` when the header is
-   absent, and `0` fails a `> 0` test.** Platinum's `budgetBytesFor` then fell
-   through to its fallback — `MAX_REQUEST_BODY_BYTES`, 128 MiB — so every body
-   with no declared length reserved the entire transport cap. Against a 1.25 GiB
-   pool that is TEN concurrent requests for the whole fleet.
-2. **Admission was strict FIFO** (`if (!waiters.length && inUse + want <= BUDGET)`),
-   so once one waiter existed a 32-byte request queued behind it regardless of
-   size. The mis-charge did not slow large uploads; it stopped everything.
-3. **A timed-out waiter spliced itself out and rejected without calling
-   `drain()`**, so the queue stayed stranded after the wait expired.
-
-GET and HEAD skip the budget by construction, which is exactly the shape prod
-showed and the fastest way to recognise this class: **same sandbox, same
-second, `GET /global/health` 200 in 0.84 s and `POST /file/mkdir` with a
-32-byte body 503 after 50.7 s — and the same route with NO body 400 in 0.83 s.**
-The only variable is whether a request body exists. That one probe rules out
-auth, connectors, token minting and agent resolution in three curls.
-
-*Incident:* prod 2026-09-15 18:00Z onward. Every POST to a Platinum sandbox
-failed while GETs served normally, so no prompt could reach the daemon: 9-13
-sessions/hour, ~48 queued prompts/hour dead-lettered, a paying customer
-mailing support "not getting any responses back". Defect (1) shipped in
-platinum#1007 at 20:42Z; defect (3) survived the first fix and caused a second
-episode at 08:00-09:59Z the next morning (37 undelivered, 12 dead-lettered)
-until platinum#5e8d99bc.
-
-*Enforcers:* platinum `bodyBudget.test.ts` — an undeclared body pre-charges a
-slice not the cap, `settle` returns the over-reservation and drains the waiters
-it unblocks, and 64 concurrent undeclared proxy bodies are admitted with 0
-refusals. Kortix-side, `deliver.test.ts` pins that a ready-stage runtime whose
-POSTs keep failing classifies `unreachable`, not `pending`.
-
-### A queued prompt must never spend the dead-letter budget on a path that is simply down (2026-09-16)
-
-**When:** classifying a failed delivery. `postPrompt` collapsed "nobody
-answered for the box" into the same `failed` as "the daemon answered and
-refused", so a spent deadline always reported `pending` — which
-`executeQueuedContinue` retries on `markCommandFailed`'s `attempts < 5` with a
-2 s ladder. Five attempts is about five minutes, after which the user's typed
-message is ABANDONED and their bubble reads `Not sent - delivery outcome
-pending`. The `unreachable` ladder already existed for exactly this case:
-attempts refunded, 30 s / 120 s / 480 s backoff, a fresh idempotency key, and
-instant re-arm when a wake confirms the runtime is back.
-
-**Rules.** (1) A retry class is a claim about the FAILURE, not about the call
-that returned it — 502/503/504 and a thrown fetch are the path being down, not
-the prompt being wrong. (2) `last_error` is customer-facing copy, not a log
-line: `delivery outcome: pending` told a paying customer nothing and they
-mailed support to ask what it meant. (3) The freshest verdict decides — a path
-that comes back and then refuses on its own terms is `pending` again.
-
-*Enforcer:* `deliver.test.ts` (4 cases), `DELIVERY_FAILURE_COPY` in
-`session-lifecycle/types.ts`.
-
-
-### An honest 404 catch-all changes every proxy that passed the old status through (2026-09-15)
-
-**When:** replacing a permissive fallback (SPA HTML 200) with a strict 404. Grep
-every API route that calls a daemon path the daemon does not serve, and give
-each one an explicit answer. `/v1/p/share` then leaked the daemon's 404 as
-"sandbox not found". Never pick 502 for a permanent refusal: the `index.ts`
-edge middleware sends every 502 as a retryable 503. *Near-miss:* RUN-8 failed
-twice on the #7148 preview (404, then 503). *Enforcer:* `share-upstream.test.ts`
-pins the daemon marker and the 501 mapping.
-### Preserve SCIM group changes when old SSO sessions make requests (2026-09-16)
-
-**When:** reconciling SAML group claims. Leave SCIM-managed groups to SCIM. Mark
-existing groups as SCIM-managed when the provisioning API takes ownership.
-*Incident:* Azure added Ivan to Engineering on dev; reloading his older SSO
-session deleted the membership. Pathless group attributes also returned success
-without persisting. *Enforcer:* `SCIM-8` uses real signed Supabase tokens to
-prove old claims cannot undo SCIM additions or removals, and checks read-back.
-
-### Resolve SCIM identities across the complete auth directory (2026-09-16)
-
-**When:** matching provisioned users by email. Query the normalized email in
-`auth.users` and prefer the existing account member for duplicate identities.
-Do not treat a lookup failure as a missing user and create an invitation.
-*Near-miss:* SCIM searched only the first 1,000 auth users; dev held 2,816 users.
-*Enforcer:* `scim/user-lookup.test.ts` covers the truncated directory and lookup
-failures; `SCIM-6` verifies provisioning and deactivation over HTTP.
-
-### Test Entra's actual SCIM PATCH payloads (2026-09-16)
-
-**When:** parsing SCIM user or group updates. Normalize Entra string booleans,
-case-insensitive attributes, and pathless attribute objects. A removal value
-array selects members; only an omitted value and filter mean remove all.
-*Incident:* dev investigation reproduced ignored user deactivation and removal
-of unrelated group members. *Enforcer:* HTTP flows `SCIM-6` and `SCIM-7` prove
-deactivation, last-owner protection, selective removal, and persisted read-back.
-
-### Test SCIM ingress without a User-Agent (2026-09-16)
-
-**When:** routing enterprise directory provisioning through AWS WAF. Entra omits
-`User-Agent`; supply a relay identity only on account-scoped SCIM routes when
-the header is absent or empty. Preserve the bearer, body, and sender headers.
-*Incident:* Azure's dev connection test returned HTML `403` before SCIM auth;
-the identical request with a User-Agent reached Kortix. All five local SCIM
-flows passed because their HTTP client sent a header. *Enforcer:*
-`api-router/worker.test.mjs` covers SCIM methods, discovery, and route boundaries.
-
-=======
 ### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
 
 **When:** writing or reviewing any admission/quota gate that reserves a
@@ -264,7 +163,6 @@ the identical request with a User-Agent reached Kortix. All five local SCIM
 flows passed because their HTTP client sent a header. *Enforcer:*
 `api-router/worker.test.mjs` covers SCIM methods, discovery, and route boundaries.
 
->>>>>>> 6f52904b61 (perf(sessions): the project session list is a keyset page, not the whole inventory (#7308))
 ### Refresh provider credentials before blaming sandbox authentication (2026-09-16)
 
 **When:** a resumed terminal receives an upstream authentication refusal. Daytona
@@ -276,6 +174,14 @@ Discard cached ingress after a failed WebSocket handshake as well.
 after resume while fresh Daytona credentials reached the daemon. *Enforcers:*
 `provider-auth.test.ts`, `e2e-preview-proxy.test.ts`, `ws-proxy-ingress-recovery.test.ts`.
 
+### Keep subscription usage separate from API token prices (2026-09-15)
+
+**When:** serving model rates or aggregating session/turn cost. Give ChatGPT/Codex
+subscription routes explicit zero rates. Exclude their historical runtime costs
+before applying token estimates or markup. Preserve tokens and paid API costs.
+*Incident:* a reported ChatGPT session displayed `$7.91` from inherited OpenAI
+API prices. *Enforcers:* SDK turn-cost tests, catalog tests, REST flow `GW-5`,
+and browser journey 26 cover subscription-only and mixed sessions.
 
 ### Let Docker readiness decide whether a sandbox can run the preview (2026-09-15)
 
@@ -355,6 +261,19 @@ customer project, `kortix` → `galileo-admin` rename, ~7 min window, caught bef
 any member launched. *Automation:* none — candidate: CR-merge manifest sync
 updates `metadata.default_agent` when the merged manifest no longer declares it.
 
+### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
+
+**When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
+that returns a reason string). #6698 (2026-08-21) taught both auth middlewares
+that `unsupported-alg:HS256` is inconclusive via `isInconclusiveVerifyFailure`,
+but `sandbox-proxy/preview-auth.ts` kept `reason !== 'no-keys' && reason !==
+'no-key-for-kid'`. Prod JWKS publishes an ES256 key while GoTrue still signs
+HS256, so every preview ORIGIN (and `?token=` WebSocket) answered "Sign in to
+open this preview" to a valid session while `/v1/p/...` served the same token.
+*Incident:* prod, every JWT-authenticated preview origin, v0.13.16 and earlier.
+*Enforcer:* tripwire in `unit-jwt-alg-fallback.test.ts` fails when a
+production caller skips the predicate or compares a reason literal.
+
 ### Await archive parser completion before extraction (2026-09-14)
 
 **When:** downloading an archive through parallel file and validation streams.
@@ -396,18 +315,14 @@ runtime timeouts; `SNAP-2` deleted the shared image while sessions were booting.
 *Enforcers:* `client-ci-passthrough.test.ts`, `preview-stack.test.ts`, runner sandbox
 setup, and `SNAP-2` global scheduling. Vercel analytics also mounts only on Vercel.
 
-### A verify-failure predicate exists so NO caller lists reasons by hand — grep every caller when you fix one (2026-09-15)
+### Assert settled dialog geometry before capturing a responsive screenshot (2026-09-14)
 
-**When:** adding or fixing any caller of `verifySupabaseJwt` (or any verifier
-that returns a reason string). #6698 (2026-08-21) taught both auth middlewares
-that `unsupported-alg:HS256` is inconclusive via `isInconclusiveVerifyFailure`,
-but `sandbox-proxy/preview-auth.ts` kept `reason !== 'no-keys' && reason !==
-'no-key-for-kid'`. Prod JWKS publishes an ES256 key while GoTrue still signs
-HS256, so every preview ORIGIN (and `?token=` WebSocket) answered "Sign in to
-open this preview" to a valid session while `/v1/p/...` served the same token.
-*Incident:* prod, every JWT-authenticated preview origin, v0.13.16 and earlier.
-*Enforcer:* tripwire in `unit-jwt-alg-fallback.test.ts` fails when a
-production caller skips the predicate or compares a reason literal.
+**When:** changing the viewport while a modal or select is opening or closing.
+Wait for the target geometry and for dismissed dialogs to leave the DOM.
+Disable animations for the screenshot itself. In PR #7234, a capture during
+resize showed a 208px dialog; its settled mobile width was 390px. This nearly
+triggered an unnecessary layout change. *Enforcer:* browser journey 28 asserts
+mobile dialog width, awaits dialog removal, and disables capture animations.
 
 ### Run browser SQL against the deployed target's test database (2026-09-15)
 
@@ -604,6 +519,7 @@ snapshot worker would spin forever without publishing.
 caught pre-merge by running the call shapes under `oven/bun:1.2-slim`.
 *Enforcer:* `apps/api/scripts/project-snapshot-s3-probe.ts` run inside the
 image's Bun (runbook `project-snapshot-s3.md`); nothing runs it in CI yet.
+
 ### A `workflow_run` job runs the DEFAULT BRANCH's copy of the workflow, not the branch it is deploying (2026-09-10)
 
 **When:** a workflow triggered by `workflow_run:` verifies or deploys another
@@ -881,6 +797,16 @@ reproduced the failure; `project-access-boundary.test.ts` pins the wiring.
 AuthProvider declares initial readiness only after bootstrap validation and
 cleanup finish, not from an earlier `INITIAL_SESSION` event. Keep the signed-out
 redirect above the pending gate and use the user-scoped key for admin bypass.
+
+### Daemon routes negotiate capability across mixed builds (2026-09-07)
+
+**When:** the API calls a sandbox daemon route. Never assume the API and the daemon
+share a build. A health response without `capabilities` means an older daemon: use
+a route it already serves (`/file/append`), never a stale classification.
+*Incident:* `/file/append` reached a stale daemon, fell through to OpenCode's SPA as
+`200 text/html`, and five retries dead-lettered the first prompt.
+*Enforcers:* `readRuntimeJson` non-JSON guard and `file.import` negotiation
+(`runtime-prompt-file.test.ts`); daemon `/kortix/*` and `/file/*` JSON 404 (`files-routes.test.ts`).
 
 ### Verify a rotated credential with the WRITE it exists for, and every edge worker deploys from the same pipeline as its origin (2026-09-07)
 
@@ -5566,7 +5492,42 @@ the helper fall back to a repository dotenv file for a deployed target.
 **Enforcer:** `09-admin-console.spec.ts` passes the selected database URL to both
 the role insert and cleanup delete. The preview journey must observe the grant
 through `/v1/user-roles` and render the admin overview.
+### Preserve permanent prompt refusals and persist Stop before acknowledging it (2026-09-15)
 
+**Incident.** LibreMax session `5889a055-6bad-42f2-8511-50c573946408`
+retained a binding to a disabled Gmail connector. The proxy returned `409`,
+but delivery discarded the body and retried until `delivery outcome: pending`.
+The UI displayed Thinking although the model received no prompt. Stop marked
+claimed rows only in their payload, so reload still read `delivering`.
+
+**Rule.** Validate connector requirements before enqueueing. Preserve permanent
+refusals at delivery and never retry them as readiness failures. Persist the
+public hold for claimed rows before acknowledging Stop. Check that hold before
+each delivery attempt. Inspect stored bindings when the resolved scope omits
+a disabled connector; a resolved scope is not a list of all stored bindings.
+
+**Enforcement.** `SESS-29` exercises refusal, Stop, fresh GET, and Resume through
+HTTP with PostgreSQL read-back. `r8-session-prompts.test.ts` covers admission
+refusals and reload. `queued-continue-inbox-delivery.test.ts` proves a connector
+refusal sends once and Stop prevents a second POST after a transient failure.
+Production recovery removed the stale binding through the session scope API.
+The original hello received an assistant reply, and `GET /prompts` returned `[]`.
+
+### Connector bindings do not declare mandatory prompt dependencies (2026-09-15)
+
+**Incident.** The LibreMax incident above persisted after the agent's Gmail
+requirement was removed. Prompt preflight promoted every stored binding into a
+mandatory dependency. A disabled optional connector blocked unrelated messages.
+
+**Rule.** Only explicit session `require_connectors` and running-agent
+`connectors_required` gate prompts. Bindings select connections. Check optional
+connector availability when that connector is called. Preserve connector-call
+authorization and explicit requirement gates.
+
+**Enforcement.** `prompt-connector-preflight.test.ts` rejects implicit binding
+requirements. `SESS-29` stores a disabled bound connector, admits a prompt through
+HTTP, verifies the inbox row, then explicitly requires the same connector and
+asserts a 409 refusal.
 ### Bind retained message retries to their originating runtime
 
 **Incident (2026-09-15, PR #7267):** production retried three native conversation
@@ -5583,3 +5544,79 @@ polling after `404` or `410`; preserve transcript data and allow explicit recove
 paths across a runtime switch. Controller tests assert no retries for 60 seconds
 after `404` and `410`, then successful explicit recovery. The SDK browser journey
 switches between two real sandboxes while the first message read retries.
+
+### Check Docker guest capacity when isolated Supabase startup fails
+
+**Incident (2026-09-16, PR #7295):** a new worktree exhausted Docker's disk
+while downloading Supabase images. Ten stacks then exhausted the VM's 8 GB
+memory. PostgreSQL reported `No space left on device`; Docker recorded OOM
+kills. Host disk capacity did not describe the guest's available capacity.
+
+**Rule:** inspect Docker disk usage and VM OOM logs before retrying startup.
+Remove only verified unused, downloadable image caches. Preserve database
+volumes. Stop the current task's optional Studio and metadata containers before
+starting another stack. Obtain authorization before stopping other tasks.
+
+**Enforcement:** Docker rejects removal of an image used by a container without
+force. Use ordinary `docker image rm`, never forced removal or volume pruning.
+The local runner requires working Supabase and real HTTP assertions before it
+reports success; `SEC-30` passed after this recovery.
+
+### Retain SCIM lifecycle state independently of account membership
+
+**Incident (2026-09-16, PR #7298):** SCIM deactivation deleted account membership.
+A subsequent authenticated SSO request recreated it through JIT provisioning.
+The IdP also lost the cached SCIM ID after an invited user first signed in.
+
+**Rule:** persist directory identity, active state, and deletion state separately.
+Serialize SCIM writes and SSO synchronization per account in database transactions.
+Use the stable SCIM ID for user and group read-back before and after first login.
+
+**Enforcement:** real HTTP flows `SCIM-9` and `SCIM-10` verify concurrent SSO
+requests cannot undo deactivation, explicit reactivation works, deletion is
+idempotent, and cached user IDs continue to support group membership updates.
+
+### Verify SCIM write responses against persisted directory state
+
+**Incident (2026-09-16, PR #7298):** group `Replace Members` and user
+`name.givenName` updates returned HTTP 200 while retaining the old values.
+Malformed group operations could also leave an earlier operation applied.
+
+**Rule:** validate complete SCIM changes before applying them. Apply a request
+atomically and verify GET read-back. Support case-insensitive attribute names,
+Entra subattribute paths, stable pagination, and escaped equality filters.
+
+**Enforcement:** HTTP flows `SCIM-11` and `SCIM-12` assert persisted values,
+rollback, rejection of malformed requests, and pagination. `SCIM-13` verifies
+account isolation, last-owner guards, and provisioning-token revocation.
+
+### Keep inactive directory assignments separate from effective access
+
+**Incident (2026-09-16, PR #7298 verification):** the reactivation test exposed
+loss of project access when deactivation discarded SCIM group assignments.
+Entra does not need to resend an unchanged group after re-enabling a user.
+
+**Rule:** retain directory group assignments while inactive, remove effective
+IAM memberships, and restore only current directory assignments on reactivation.
+DELETE clears both. Group updates while inactive must update directory state.
+
+**Enforcement:** `SCIM-10` and `SCIM-14` verify disable/enable without another
+group push, removals while inactive, users disabled before first login, and
+DELETE followed by explicit recreation.
+
+**Local verification recovery (2026-09-16):** Supabase user creation and password
+grants returned 504 while Docker had 402 MB free. Removing two verified unused,
+downloadable API images increased free space to 3.3 GB. The 13 SCIM flows and
+BILL-9b then passed together. Preserve volumes and local-only images; Docker must
+refuse removal of images acquired by another container during inspection.
+
+### 2026-09-16 — Exercise populated identity-provider defaults
+
+Azure's configured default mappings include phone numbers, addresses, preferred language,
+and enterprise department, employee number, and manager. Testing users with empty optional
+fields hid unsupported-attribute failures. The strict SCIM parser returned 400 as soon as
+those fields were populated, rejecting the entire provisioning request.
+
+Validate the provider's actual mappings with populated values before declaring synchronization
+healthy. Keep discovery schemas, create payloads, filtered PATCH paths, removals, and read-back
+responses consistent. SCIM-15 and user-profile.test.ts enforce this contract.

@@ -48,8 +48,8 @@ mock.module('../build-context', () => ({
   KORTIX_ENTRYPOINT: '/usr/local/bin/kortix-entrypoint',
   stageRuntimeBuildContext: async (input: { runtimeProfile?: string }) => {
     const contextDir =
-      input.runtimeProfile === 'fast'
-        ? '/tmp/kortix-e2b-fast-adapter-test'
+      input.runtimeProfile === 'meta'
+        ? '/tmp/kortix-e2b-meta-adapter-test'
         : '/tmp/kortix-e2b-adapter-test';
     return { contextDir, composedPath: `${contextDir}/Dockerfile` };
   },
@@ -69,22 +69,22 @@ afterEach(() => {
 });
 
 describe('E2B template adapter', () => {
-  test('stages the fast runtime profile through its dedicated renderer', async () => {
+  test('stages the meta runtime profile through its dedicated renderer', async () => {
     await e2bProvider.buildSnapshot({
-      snapshotName: 'kortix-fast-dev-abc',
-      slug: 'default',
-      userDockerfile: '# platform fast cold-boot runtime',
-      runtimeProfile: 'fast',
+      snapshotName: 'kortix-meta-dev-abc',
+      slug: 'meta',
+      userDockerfile: '# platform meta runtime',
+      runtimeProfile: 'meta',
       spec: {},
     });
 
     expect(builderCalls[0]).toEqual({
       method: 'Template',
-      args: [{ fileContextPath: '/tmp/kortix-e2b-fast-adapter-test' }],
+      args: [{ fileContextPath: '/tmp/kortix-e2b-meta-adapter-test' }],
     });
     expect(builderCalls[1]).toEqual({
       method: 'fromDockerfile',
-      args: ['/tmp/kortix-e2b-fast-adapter-test/Dockerfile'],
+      args: ['/tmp/kortix-e2b-meta-adapter-test/Dockerfile'],
     });
   });
 

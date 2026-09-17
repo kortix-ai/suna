@@ -123,50 +123,13 @@ export async function findFirstActiveSnapshot(
   return null;
 }
 
-const snapshotReusePreparations = new WeakMap<object, Map<string, Promise<void>>>();
-
-export async function prepareSnapshotForReuse<T>(
-  provider: Pick<SandboxProviderAdapter, 'id' | 'prepareSnapshot'>,
-  snapshotName: string,
-  result: T,
-  opts: { blocking: boolean },
-): Promise<T> {
-  if (!provider.prepareSnapshot) return result;
-  let bySnapshot = snapshotReusePreparations.get(provider);
-  if (!bySnapshot) {
-    bySnapshot = new Map();
-    snapshotReusePreparations.set(provider, bySnapshot);
-  }
-  let preparation = bySnapshot.get(snapshotName);
-  if (!preparation) {
-    const preparations = bySnapshot;
-    preparation = (async () => {
-      try {
-        await provider.prepareSnapshot?.(snapshotName);
-      } catch (err) {
-        console.warn(
-          `[snapshots] ${provider.id} preparation failed for ${snapshotName}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    })().finally(() => {
-      preparations.delete(snapshotName);
-      if (preparations.size === 0) snapshotReusePreparations.delete(provider);
-    });
-    bySnapshot.set(snapshotName, preparation);
-  }
-  if (opts.blocking) await preparation;
-  else void preparation;
-  return result;
-}
-
 export interface EnsureSandboxImageResult {
   snapshotName: string;
   slug: string;
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
+  runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
 }
 
 /**
@@ -252,7 +215,6 @@ export async function ensureSandboxImage(
   }
 
   const identity = await computeTemplateIdentity(project, template);
-  const blockingPreparation = (opts.source ?? 'session-start') !== 'session-start';
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
   // snapshot (same content hash + name) as active, boot straight off it without
@@ -267,18 +229,13 @@ export async function ensureSandboxImage(
     template.contentHash === identity.contentHash &&
     template.providerSnapshotName === identity.snapshotName
   ) {
-    return prepareSnapshotForReuse(
-      provider,
-      identity.snapshotName,
-      {
-        snapshotName: identity.snapshotName,
-        slug: template.slug,
-        contentHash: identity.contentHash,
-        built: false,
-        isDefault: !!template.isShared,
-      },
-      { blocking: blockingPreparation },
-    );
+    return {
+      snapshotName: identity.snapshotName,
+      slug: template.slug,
+      contentHash: identity.contentHash,
+      built: false,
+      isDefault: !!template.isShared,
+    };
   }
 
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
@@ -292,18 +249,13 @@ export async function ensureSandboxImage(
       provider: buildProvider,
       swapKey: identity.swapKey,
     });
-    return prepareSnapshotForReuse(
-      provider,
-      identity.snapshotName,
-      {
-        snapshotName: identity.snapshotName,
-        slug: template.slug,
-        contentHash: identity.contentHash,
-        built: false,
-        isDefault: !!template.isShared,
-      },
-      { blocking: blockingPreparation },
-    );
+    return {
+      snapshotName: identity.snapshotName,
+      slug: template.slug,
+      contentHash: identity.contentHash,
+      built: false,
+      isDefault: !!template.isShared,
+    };
   }
 
   // ─── Never block a session boot on an image build ─────────────────────────
@@ -343,18 +295,13 @@ export async function ensureSandboxImage(
         `booting last ready image ${servable.snapshotName} instead of waiting for the build ` +
         `(rebuild ${state === 'building' ? 'already in flight' : 'kicked in background'})`,
       );
-      return prepareSnapshotForReuse(
-        provider,
-        servable.snapshotName,
-        {
-          snapshotName: servable.snapshotName,
-          slug: template.slug,
-          contentHash: servable.contentHash ?? identity.contentHash,
-          built: false,
-          isDefault: !!template.isShared,
-        },
-        { blocking: blockingPreparation },
-      );
+      return {
+        snapshotName: servable.snapshotName,
+        slug: template.slug,
+        contentHash: servable.contentHash ?? identity.contentHash,
+        built: false,
+        isDefault: !!template.isShared,
+      };
     }
   }
 
@@ -368,18 +315,13 @@ export async function ensureSandboxImage(
         provider: buildProvider,
         swapKey: identity.swapKey,
       });
-      return prepareSnapshotForReuse(
-        provider,
-        identity.snapshotName,
-        {
-          snapshotName: identity.snapshotName,
-          slug: template.slug,
-          contentHash: identity.contentHash,
-          built: false,
-          isDefault: !!template.isShared,
-        },
-        { blocking: blockingPreparation },
-      );
+      return {
+        snapshotName: identity.snapshotName,
+        slug: template.slug,
+        contentHash: identity.contentHash,
+        built: false,
+        isDefault: !!template.isShared,
+      };
     }
     if (state === 'building') {
       throw new SnapshotBuildError(
@@ -1270,117 +1212,6 @@ async function reapSupersededEnvironmentRuntimeSnapshots(
   }
 }
 
-const FAST_SNAPSHOT_PREFIX = 'kortix-fast';
-const fastImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
-let fastRuntimeFingerprint: Promise<string> | null = null;
-
-function currentFastRuntimeFingerprint(): Promise<string> {
-  if (fastRuntimeFingerprint) return fastRuntimeFingerprint;
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-  fastRuntimeFingerprint = buildRuntimeArtifactFingerprint({
-    sandboxVersion: `fast-v1:opencode:${OPENCODE_VERSION}`,
-    opencodeVersion: OPENCODE_VERSION,
-    artifacts: [
-      { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
-      { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
-      { label: 'cli', path: resolve(root, 'apps/cli/src') },
-      { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
-      { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
-      { label: 'machine', path: resolve(root, 'apps/sandbox/MACHINE.fast.md') },
-      { label: 'lazy-tools', path: resolve(root, 'apps/sandbox/lazy-tools') },
-      { label: 'fast-renderer', path: resolve(root, 'packages/shared/src/sandbox/fast-dockerfile.ts') },
-      { label: 'runtime-versions', path: resolve(root, 'packages/shared/src/runtime-versions.json') },
-      { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
-      { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
-      { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
-      { label: 'registry', path: resolve(root, 'packages/registry/src') },
-      { label: 'shared', path: resolve(root, 'packages/shared/src') },
-      { label: 'starter', path: resolve(root, 'packages/starter/src') },
-      { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
-    ],
-  });
-  return fastRuntimeFingerprint;
-}
-
-export function fastSnapshotName(contentHash: string): string {
-  return `${FAST_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
-}
-
-export async function reapSupersededFastSnapshots(
-  provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
-  keepName: string,
-  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
-): Promise<void> {
-  return reapSupersededEnvironmentRuntimeSnapshots(
-    provider,
-    FAST_SNAPSHOT_PREFIX,
-    'fast',
-    keepName,
-    recentLookup,
-  );
-}
-
-export async function ensureFastSandboxImage(opts: {
-  source?: SnapshotBuildSource;
-  provider: string;
-}): Promise<EnsureSandboxImageResult> {
-  const provider = getSandboxProvider(opts.provider);
-  if (!provider.isConfigured()) {
-    throw new SnapshotBuildError(`Sandbox provider ${opts.provider} is not configured`);
-  }
-  const fingerprint = await currentFastRuntimeFingerprint();
-  const contentHash = createHash('sha256').update(`fast-runtime-v1\0${fingerprint}`).digest('hex');
-  const snapshotName = fastSnapshotName(contentHash);
-  const buildKey = `${opts.provider}:${snapshotName}`;
-  let image = fastImageBuilds.get(buildKey);
-  let ownsImage = false;
-  if (!image) {
-    ownsImage = true;
-    image = (async () => {
-      let state = await provider.getSnapshotState(snapshotName);
-      if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
-      if (state === 'active') {
-        return {
-          snapshotName,
-          slug: DEFAULT_SANDBOX_SLUG,
-          contentHash,
-          built: false,
-          isDefault: true,
-          runtimeProfile: 'fast' as const,
-        };
-      }
-      if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
-      await provider.buildSnapshot({
-        snapshotName,
-        userDockerfile: '# platform fast cold-boot runtime',
-        spec: {},
-        slug: DEFAULT_SANDBOX_SLUG,
-        isShared: true,
-        runtimeProfile: 'fast',
-      });
-      await reapSupersededFastSnapshots(provider, snapshotName);
-      return {
-        snapshotName,
-        slug: DEFAULT_SANDBOX_SLUG,
-        contentHash,
-        built: true,
-        isDefault: true,
-        runtimeProfile: 'fast' as const,
-      };
-    })();
-    fastImageBuilds.set(buildKey, image);
-  }
-  try {
-    const result = await image;
-    if (result.built) return result;
-    return await prepareSnapshotForReuse(provider, snapshotName, result, {
-      blocking: (opts.source ?? 'session-start') !== 'session-start',
-    });
-  } finally {
-    if (ownsImage) fastImageBuilds.delete(buildKey);
-  }
-}
-
 const PIWORKER_SNAPSHOT_PREFIX = 'kortix-piworker';
 
 /** Environment-namespaced like the meta image, for the same reap-scoping reason. */
@@ -1481,13 +1312,8 @@ export async function ensurePiWorkerImage(opts: {
   }
   try {
     const result = await image;
-    const prepared = result.built
-      ? result
-      : await prepareSnapshotForReuse(provider, snapshotName, result, {
-          blocking: (opts.source ?? 'session-start') !== 'session-start',
-        });
-    piWorkerImageReady.set(buildKey, { at: Date.now(), result: prepared });
-    return prepared;
+    piWorkerImageReady.set(buildKey, { at: Date.now(), result });
+    return result;
   } finally {
     if (ownsImage) piWorkerImageBuilds.delete(buildKey);
   }
@@ -1546,11 +1372,7 @@ export async function ensureMetaSandboxImage(opts: {
     metaImageBuilds.set(buildKey, image);
   }
   try {
-    const result = await image;
-    if (result.built) return result;
-    return await prepareSnapshotForReuse(provider, snapshotName, result, {
-      blocking: (opts.source ?? 'session-start') !== 'session-start',
-    });
+    return await image;
   } finally {
     if (ownsImage) metaImageBuilds.delete(buildKey);
   }
@@ -1629,10 +1451,7 @@ async function reconcileProjectTemplates(
     for (const providerId of providers) {
       const provider = getSandboxProvider(providerId);
       const state = await provider.getSnapshotState(identity.snapshotName);
-      if (state === 'active') {
-        await prepareSnapshotForReuse(provider, identity.snapshotName, undefined, { blocking: true });
-        continue;
-      }
+      if (state === 'active') continue;
       if (!shouldReconcileProviderState(state)) continue;
       kickPreBuild(project, {
         slug: t.slug,

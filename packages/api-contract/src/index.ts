@@ -815,6 +815,7 @@ export const PendingSessionPromptSchema = z
             text: z.string().optional(),
             mime: z.string().max(255).optional(),
             url: z.string().max(17_000_000).optional(),
+            attachment_id: z.string().uuid().optional(),
             filename: z.string().max(512).optional(),
             name: z.string().max(512).optional(),
             source: z.unknown().optional(),
@@ -1052,6 +1053,10 @@ export const SessionStartFailureSchema = z
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
       'invalid-secret-boundary-policy',
+      // The PROJECT's custom sandbox image is over the provider's snapshot
+      // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
+      // so never retryable.
+      'snapshot-too-large',
       'sandbox-provider',
     ]),
     message: z.string(),

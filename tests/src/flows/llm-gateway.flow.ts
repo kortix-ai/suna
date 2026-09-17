@@ -148,6 +148,7 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
+      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/llm-catalog',
       'GET /v1/projects/:projectId/llm-catalog/providers',
     ],
@@ -178,15 +179,21 @@ flow(
       });
     }
 
-    await ctx.step('OWNER → 200 on the model-level catalog', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
+    await ctx.step('enabled catalog retains published rates for ChatGPT picker rows', async () => {
+      (await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'llm_gateway', enabled: true },
+        { params },
+      )).status(200);
+      const response = await ctx.client.as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/llm-catalog', { params });
-      // /llm-catalog is gated by the project's llm_gateway flag. On a fresh
-      // fixture project the flag may be off → 404 (catalog disabled), or on
-      // → 200 with a `{models:...}` body. Either is a valid boundary; a 500
-      // is the only real failure.
-      r.status([200, 404]);
+      response.status(200);
+      const models = response.json<{ models: Record<string, { cost?: Record<string, unknown> }> }>().models;
+      const subscription = models['codex/gpt-5.6-sol']?.cost;
+      const api = models['openai/gpt-5.6-sol']?.cost;
+      if (!(Number(api?.input) > 0) || JSON.stringify(subscription) !== JSON.stringify(api)) {
+        throw new Error(`ChatGPT picker must retain published API rate context: ${JSON.stringify(subscription)}`);
+      }
     });
 
     await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {

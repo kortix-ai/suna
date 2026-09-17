@@ -242,6 +242,7 @@ export async function runProjectMaintenance(): Promise<void> {
       staleBuilds,
       snapshotGc,
       connectorAttachments,
+      promptAttachments,
       runtimeWakes,
       parkedRuntimes,
       monitorBoxes,
@@ -356,6 +357,10 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return { deleted: 0, errors: 1 };
       }),
+      import('./prompt-attachments').then(({ cleanupExpiredPromptAttachments }) => cleanupExpiredPromptAttachments()).catch((err) => {
+        console.warn('[project-maintenance] prompt-attachment cleanup failed:', err instanceof Error ? err.message : err);
+        return { deleted: 0, errors: 1 };
+      }),
       // A timed-out provider start can complete after its request owner exits.
       // Stop that late VM while the durable row remains stopped and unbilled.
       reconcileRuntimeWakeFences().catch((err) => {
@@ -421,6 +426,8 @@ export async function runProjectMaintenance(): Promise<void> {
         snapshotGc.deleted ||
         connectorAttachments.deleted ||
         connectorAttachments.errors ||
+        promptAttachments.deleted ||
+        promptAttachments.errors ||
         runtimeWakes.stopped ||
         runtimeWakes.removed ||
         runtimeWakes.errors ||
@@ -448,6 +455,7 @@ export async function runProjectMaintenance(): Promise<void> {
         staleBuilds,
         snapshotGc,
         connectorAttachments,
+        promptAttachments,
         runtimeWakes,
         monitorBoxes,
         monitorEventsPurged,

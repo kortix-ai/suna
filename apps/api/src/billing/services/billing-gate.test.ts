@@ -64,6 +64,39 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// An upload admission (a prompt attachment `begin`) spends no compute. It must
+// take the prompt path's decision without the admission hold: only an LLM
+// gateway settle reconciles that hold, so a hold per upload is never refunded.
+describe('checkBillingAdmission — the prompt path decision without a hold', () => {
+  test('a funded account is admitted and no credits are deducted', async () => {
+    const { checkBillingAdmission } = await import('./billing-gate');
+    billingEnabled = true;
+    account = creditAccount({ billingModel: 'legacy', balance: '5.00' });
+    holdCalls.length = 0;
+    expect(await checkBillingAdmission('acct-1')).toEqual({ ok: true });
+    expect(holdCalls).toEqual([]);
+  });
+
+  test('a drained account gets the same blocked result checkBillingActive returns', async () => {
+    const { checkBillingAdmission } = await import('./billing-gate');
+    billingEnabled = true;
+    account = creditAccount({ billingModel: 'legacy', balance: '0' });
+    holdCalls.length = 0;
+    const admission = await checkBillingAdmission('acct-1');
+    expect(admission.ok).toBe(false);
+    expect(admission).toEqual(await checkBillingActive('acct-1'));
+    expect(holdCalls).toEqual([]);
+  });
+
+  test('billing disabled admits every account', async () => {
+    const { checkBillingAdmission } = await import('./billing-gate');
+    billingEnabled = false;
+    account = null;
+    expect(await checkBillingAdmission('acct-1')).toEqual({ ok: true });
+    billingEnabled = true;
+  });
+});
+
 describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4)', () => {
   test('billing disabled (self-host): always ok, regardless of account state', async () => {
     billingEnabled = false;

@@ -165,6 +165,79 @@ export function applyInboxObservation(
 
 
 // ============================================================================
+// Resume and remove answer on the click
+// ============================================================================
+
+/**
+ * The rows as they read once a hold is released: `reason: 'held'` cleared,
+ * everything else as the server last reported it. Applied optimistically by
+ * `hold(false)`, so the paused state leaves the screen on the click instead of
+ * one GET later — a GET `applyInboxObservation` may legitimately discard.
+ */
+export function releaseHeldPrompts(prompts: readonly SessionPrompt[]): SessionPrompt[] {
+  return prompts.map((prompt) => (prompt.reason === 'held' ? { ...prompt, reason: null } : prompt));
+}
+
+/**
+ * How long a removed row stays filtered out of later reads.
+ *
+ * `DELETE .../prompts/:id` returns no server stamp, so a GET issued before the
+ * delete can land after it with a NEWER `observed_at` and list the row again.
+ * The tombstone only has to outlive that one in-flight read (the poll is 1s);
+ * it is not a blocklist, so it expires.
+ */
+export const REMOVED_PROMPT_TOMBSTONE_MS = 15_000;
+
+const removedPromptTombstones = new Map<string, Map<string, number>>();
+
+export function tombstoneRemovedPrompt(
+  sessionId: string,
+  promptId: string,
+  nowMs: number = Date.now(),
+): void {
+  let session = removedPromptTombstones.get(sessionId);
+  if (!session) {
+    session = new Map();
+    removedPromptTombstones.set(sessionId, session);
+  }
+  session.set(promptId, nowMs + REMOVED_PROMPT_TOMBSTONE_MS);
+}
+
+export function releaseRemovedPromptTombstone(sessionId: string, promptId: string): void {
+  const session = removedPromptTombstones.get(sessionId);
+  if (!session) return;
+  session.delete(promptId);
+  if (session.size === 0) removedPromptTombstones.delete(sessionId);
+}
+
+/** `prompts` without the rows this tab removed. Expired tombstones are pruned. */
+export function withoutRemovedPrompts(
+  sessionId: string,
+  prompts: readonly SessionPrompt[],
+  nowMs: number = Date.now(),
+): SessionPrompt[] {
+  const session = removedPromptTombstones.get(sessionId);
+  if (!session) return [...prompts];
+  for (const [promptId, expiresAtMs] of session) {
+    if (expiresAtMs <= nowMs) session.delete(promptId);
+  }
+  if (session.size === 0) {
+    removedPromptTombstones.delete(sessionId);
+    return [...prompts];
+  }
+  return prompts.filter((prompt) => !session.has(prompt.prompt_id));
+}
+
+/**
+ * Did a failed DELETE leave the row in the inbox? Only a 404 says the row is
+ * gone. A 409 means a step is already answering it (it is still listed, as
+ * delivering), and a network failure never reached the server.
+ */
+export function removeFailureKeepsRow(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status !== 404;
+}
+
+// ============================================================================
 // Optimistic queue rows — Enter paints the row in the SAME frame
 // ============================================================================
 
@@ -298,7 +371,8 @@ export async function readSessionPromptsInbox(
   const claimed = cached === undefined ? claimOpenBundle(projectId, sessionId) : null;
   if (claimed) {
     const bundle = await claimed;
-    const bundled = bundle ? openBundleQueue(bundle) : null;
+    const bundledRows = bundle ? openBundleQueue(bundle) : null;
+    const bundled = bundledRows ? withoutRemovedPrompts(sessionId, bundledRows) : null;
     if (bundled) {
       // TWO stamps, two clocks. Age is this tab's clock at receive time — the
       // bundle's `observed_at` is the API's clock, and ageing it against
@@ -326,7 +400,9 @@ export async function readSessionPromptsInbox(
   return applyInboxObservation(
     sessionId,
     cached,
-    prompts,
+    // A row this tab removed stays removed, even from a read that left before
+    // the DELETE landed — see `REMOVED_PROMPT_TOMBSTONE_MS`.
+    withoutRemovedPrompts(sessionId, prompts),
     atMs,
     Number.isFinite(serverAtMs) ? serverAtMs : undefined,
   );
@@ -458,8 +534,21 @@ export function useSessionPrompts(
   // IN ADDITION — a second, generic "Failed to perform action: …" for every
   // expected refusal (e.g. removing a prompt a step just started answering).
   const removeMutation = useMutation({
+    // The row leaves the list on the click, and a read already in flight cannot
+    // put it back (`tombstoneRemovedPrompt`).
+    onMutate: async (promptId: string) => {
+      tombstoneRemovedPrompt(sessionId!, promptId);
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        (prev ?? []).filter((prompt) => prompt.prompt_id !== promptId),
+      );
+      await queryClient.cancelQueries({ queryKey: key });
+    },
     mutationFn: (promptId: string) => deleteSessionPrompt(projectId!, sessionId!, promptId),
-    onError: () => {},
+    onError: (error, promptId) => {
+      // The row is still in the inbox (a step owns it, or the request never
+      // arrived): let the next read list it again.
+      if (removeFailureKeepsRow(error)) releaseRemovedPromptTombstone(sessionId!, promptId);
+    },
     onSettled: invalidate,
   });
   const retryMutation = useMutation({
@@ -468,7 +557,28 @@ export function useSessionPrompts(
     onSettled: invalidate,
   });
   const holdMutation = useMutation({
+    // Releasing answers on the click: the paused state leaves the screen now,
+    // not one GET later (`releaseHeldPrompts`).
+    onMutate: async (held: boolean) => {
+      if (held) return;
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) => releaseHeldPrompts(prev ?? []));
+    },
     mutationFn: (held: boolean) => holdSessionPrompts(projectId!, sessionId!, held),
+    // The response IS the queue after the change, stamped by the server — the
+    // same freshness rule as a list read, so a stale GET cannot undo it.
+    onSuccess: (result) => {
+      const serverAtMs = result.observed_at ? Date.parse(result.observed_at) : Number.NaN;
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        applyInboxObservation(
+          sessionId!,
+          prev,
+          withoutRemovedPrompts(sessionId!, result.prompts),
+          Date.now(),
+          Number.isFinite(serverAtMs) ? serverAtMs : undefined,
+        ),
+      );
+    },
     onError: () => {},
     onSettled: invalidate,
   });
@@ -522,6 +632,12 @@ export async function startSessionWithPrompt(
   input: {
     parts: SessionPromptPart[];
     overrides?: SessionPromptOverrides;
+    /**
+     * When the user pressed Send, in milliseconds since epoch. Defaults to the
+     * POST time. A caller whose POST waited (for uploads) passes the Send time,
+     * so the server orders this prompt before messages sent after it.
+     */
+    clientSentAtMs?: number;
   },
   adapters?: StartSessionWithPromptAdapters,
 ): Promise<CreateSessionPromptResult> {
@@ -538,7 +654,7 @@ export async function startSessionWithPrompt(
       clientMessageId,
       messageId: mintSessionWireMessageId(sessionId, clientMessageId),
       parts: input.parts,
-      clientSentAtMs: now(),
+      clientSentAtMs: input.clientSentAtMs ?? now(),
       ...(input.overrides ? { overrides: input.overrides } : {}),
       remintOnDelivery: true,
     });

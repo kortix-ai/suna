@@ -452,6 +452,249 @@ any earlier session create); the local API must presign for an endpoint the
 laptop reaches (`KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT`). `--scaffold
 /nonexistent` measures the clone route.
 
+## Presign at create + no HEAD on the boot path (PR #7242), 2026-09-15
+
+Same local topology and fixtures as the v2 run (Daytona, laptop API and MinIO
+behind two quick tunnels), 20 rounds per arm on the representative project,
+daemon rebuilt from the branch (fresh image), arms alternating, 1 warm-up
+discarded. The change under test: the session env carries the presigned
+descriptor (`KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR`), so an S3 boot's first
+attempt is one GET from the store; the object `HEAD` checks left the create
+and descriptor paths.
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 20 / 0 / 0 | 1,111 / 1,273 ms | 1,151 / 1,309 ms | 6,393 / 7,903 ms | — |
+| **New S3 provider v2 + presign** (`prefer-s3`) | 20 S3 attempts / 1 failed acquisition / 1 fallback (19 served by S3) | **971 / 3,340 ms** (927 / 2,731 in-guest `s3_acquire`) | 1,036 / 3,374 ms | 6,529 / 10,080 ms | env 16, proxy 3 |
+
+Against the v2 run on the same topology (30 rounds, 2026-09-13): S3
+acquisition 1,383 → **971 ms** at p50 (−30 %), Git 1,181 → 1,111 ms (noise).
+S3 is now 13 % under Git at the median on this topology; `repo-materialized`
+1,036 vs 1,151 ms. The removed leg — descriptor round trip through the tunnel
+plus the API's object checks — was worth ~400 ms here.
+
+Git proxy before readiness, S3 arm: `GET project-snapshot 200` ×7, all on the
+four retry rounds (2, 5, 8, 18 — the design: a retry asks the proxy for fresh
+URLs), `GET fast-boot-bundle` ×1 (the fallback round). The 16 clean rounds made
+**no proxy request at all** before readiness. Retries and the fallback are the
+MinIO quick-tunnel leg (`unavailable` at `download`) as in every run on this
+topology; they are the S3 arm's p95. Hydration `ok` 19/19 (import p50 534 ms,
+in-guest `hydrate:ok` at 1,617 ms vs `opencode-ready` at 2,296 ms).
+
+Compat gate on the branch (Daytona, 5,000-file project): **23/23**, the S3
+boot with `s3_acquire: 1186 ms`, stop/resume `adoptedWarm`.
+
+### Where the sandboxes are: S3 first byte from a Daytona box
+
+A plain Daytona box in the `us` target (New York, Latitude.sh) timing the
+regional S3 endpoints with `curl` (4 samples each, all within a few ms):
+
+| Region | TCP connect | TLS done | First byte |
+|---|---|---|---|
+| us-east-1 | 9 ms | 23 ms | **32 ms** |
+| us-east-2 | 21 ms | 43 ms | 65 ms |
+| us-west-2 (the dev bucket, and the API) | 62 ms | 127 ms | 189 ms |
+| us-west-1 | 66 ms | 130 ms | 193 ms |
+| eu-west-2 | 73 ms | 148 ms | 220 ms |
+| eu-central-1 | 89 ms | 178 ms | 264 ms |
+
+A bucket in us-east-1 would cut ~160 ms per request from the box — one
+request on the boot path, one for hydration — on top of the presign gain. The
+Git bundle GET crosses the same distance to the us-west-2 API behind
+Cloudflare, so moving only the bucket is a gain Git cannot match without moving
+the API. Not done in #7242 (decision pending); the shape is a second bucket via
+a provider alias plus `KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION` in the deploy
+workflow — see the main runbook's AWS section.
+
+### Real S3 (a throwaway account, bucket in eu-north-1), 2026-09-15
+
+The same run with the local API pointed at a **real** bucket built from the
+repo's module in a throwaway AWS account (`tmp` Terraform root, destroyed
+afterwards). The account's organization policy allows eu-north-1 only, so the
+objects sat in Stockholm while the Daytona boxes sat in the US (`us` target =
+New York or Los Angeles; first byte to Stockholm 510 ms from LA). The Git
+bundle still came from the laptop through the quick tunnel. Presign branch,
+20 rounds per arm, 400-file project.
+
+| Arm/build | Attempts / failures / fallbacks | Acquisition p50 / p95 | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor source |
+|---|---|---|---|---|---|
+| New Git provider (`git` mode) | 20 / 0 / 0 | 1,052 / 1,374 ms | 1,084 / 1,402 ms | 5,807 / 8,187 ms | — |
+| **New S3 provider v2 + presign** (`prefer-s3`), real S3 eu-north-1 | 20 / 0 / 0 (1 retried) | **1,195 / 26,636 ms** — the 17 ordinary rounds: 1,132 / 1,656 ms (min 950, max 2,521) | 1,226 / 26,667 ms (17 ordinary: 1,219 / 1,727) | 6,401 / 31,312 ms (17 ordinary: 6,368 / 8,833) | env 19, proxy 1 |
+
+19 of 20 S3 boots made **no Git-proxy request before readiness**; the one
+`GET project-snapshot` is round 20's retry (first transfer refused, fresh
+proxy descriptor, done in 2.5 s). Hydration `ok` 20/20, import p50 304 ms.
+Extractor `tar` ×20. A first attempt of this run (8 valid rounds before the
+test account's 15-minute exported keys expired — see the main runbook's TTL
+note) measured the same median: `s3_acquire` p50 1,178 ms.
+
+**The tail is the distance.** Three rounds (1, 17, 19) completed in one
+attempt but took 14.8, 26.6 and 29.6 s: the 1.5 MB object trickled across the
+Atlantic at well under 100 KB/s without ever pausing for the 12 s inactivity
+watchdog, and their hydration (the 1.6 MB pack) took 1.8–4.9 s the same way.
+Nothing like it happened on the Git arm, whose bundle rides a Cloudflare-fronted
+path. Fifteen percent of boots stretched to 15–30 s is not acceptable for a
+default, and it is the strongest argument for the bucket being in the boxes'
+own region.
+
+Reading: at a transatlantic distance from the sandbox — comparable to, and a
+little further than, dev's cross-country bucket — the S3 boot is level with
+the Git bundle at the median (1,132 vs 1,052 ms on the ordinary rounds)
+instead of 800 ms behind, because the descriptor round trip is gone. What
+remains is the first-byte distance: TLS + one GET to Stockholm is ~1 s of the
+1.13 s. From a bucket in the boxes' own region (32 ms first byte from New
+York to us-east-1, 101 ms from LA to us-west-2) the same request is several
+hundred milliseconds shorter and the trickling tail should disappear with the
+distance; that case could not be measured because the test account's policy
+denied US buckets, and it is where S3 would pull clearly ahead of Git.
+
+### Real S3, bucket in the boxes' region (us-east-2): plain vs Transfer Acceleration, 2026-09-15
+
+Same local topology (this branch at `fe7aee341b`, worktree API on the laptop
+behind a cloudflared quick tunnel, Daytona `us` target, 400-file fixture) with
+the object store a **real bucket in Ohio** built from the repo's module in a
+throwaway account (`transfer_acceleration = true`; API on the SDK default
+chain through `AWS_PROFILE` → `credential_process`, no static key). The
+fixture's objects were rebuilt into that bucket and verified (`tree`
+1,576,450 B / 652 entries, `blobs` 1,600,272 B). Three runs, arms alternating,
+one warm-up discarded each. Every round records where its box sat (ipinfo) and
+an in-box `curl` first-byte probe (`--probe-hosts`); runs B and C also record
+the daemon's retry log (`--daemon-log`). Bucket destroyed afterwards.
+
+| Run | Arm | Rounds / failures / fallbacks | Acquisition p50 / p95 (min / max) | `repo-materialized` p50 / p95 | Full boot p50 / p95 | Descriptor | S3 rounds retried |
+|---|---|---|---|---|---|---|---|
+| A | Git (`git` mode) | 30 / 0 / 0 | 1,055 / 1,364 ms (453 / 1,385) | 1,080 / 1,391 ms | 6,240 / 9,950 ms | — | — |
+| A | **S3 v2 + presign, accelerated** (`<bucket>.s3-accelerate`) | 30 / 0 / **1** | **275 / 2,186 ms** (218 / 2,778) | 315 / 2,221 ms | 9,862 / 14,474 ms | env 23, proxy 6 | **7 / 30** |
+| C | S3 v2 + presign, accelerated (S3 arm only) | 20 / 0 / 0 | 555 / 1,451 ms (212 / 2,343) | 590 / 1,502 ms | 9,850 / 10,588 ms | env 11, proxy 9 | **9 / 20** |
+| B | Git (`git` mode) | 30 / 0 / 0 | 976 / 1,338 ms (572 / 1,339) | 1,004 / 1,363 ms | 6,052 / 7,657 ms | — | — |
+| B | **S3 v2 + presign, plain** (`<bucket>.s3.us-east-2`) | 30 / 0 / 0 | **288 / 1,367 ms** (218 / 2,043) | 320 / 1,401 ms | 9,956 / 13,633 ms | env 28, proxy 2 | 2 / 30 |
+
+Single-attempt S3 rounds only — A: 23 rounds, 269 / 582 ms (max 1,194); C:
+11 rounds, 302 / 555 ms; B: 28 rounds, 288 / 716 ms (max 857). A retried
+round costs 1,205–1,367 ms at the median (max 2,343): the backoff (300–550 ms)
+plus a proxy descriptor round trip plus the second download. Hydration `ok`
+79/79 (import p50 95–167 ms); extractor `tar` throughout.
+
+**Where the boxes were (ipinfo, 140 boots):** New York City 103, Ashburn 27,
+Chicago 6, Los Angeles 4. In-box first byte, p50 over the rounds: accelerate
+host 69–95 ms (TCP connect 13–16 ms), regional Ohio host 77–84 ms (connect
+26–31 ms), `s3.us-east-1` ~35 ms, `s3.us-west-2` ~227 ms; the laptop's tunnel
+(the Git bundle's path) 202–245 ms; `dev-api.kortix.com` 235–351 ms. So
+acceleration shortens the handshake by ~15 ms and gains nothing at first byte
+from these boxes, and the Git arm's network distance on this topology is the
+same as to the dev API — the Git numbers are representative.
+
+**The retries are one thing.** All 13 retry events the daemon logged in runs B
+and C read `download / unavailable: transfer closed after N of 1,576,450
+bytes`, N 3.5–53.6 KB short: Bun's fetch (1.3.14, the daemon's runtime)
+delivered `close` before `end` on a `Content-Length` body of a keep-alive
+HTTP/1.1 response. The accelerate host is a CloudFront edge (`Via: …
+cloudfront.net`, `X-Cache: Miss from cloudfront`); the regional host is plain
+S3 and shows the same signature at a lower rate. The daemon's short-close guard
+catches it and the retry (a fresh proxy descriptor) succeeds; one round in run
+A failed three times and fell back to Git (859 ms). It only happens on the
+boot-time request: from a kept New York box, 30 `curl` fetches and 90 Bun
+1.3.14 fetches of the same presigned accelerate URL (warm keep-alive; under
+four busy CPU loops; `Connection: close` per request) were all 1,576,450
+bytes. Rate: 7/30 and 9/20 accelerated, 2/30 plain (the earlier plain Ohio
+run, 2026-09-15 afternoon: 2/20).
+
+**Full boot** (`runtimeReady`) is 9.9 s on S3 against 6.1 s on Git in every
+run although S3 materializes the repository 700 ms earlier: the daemon's early
+root-list poll lands in OpenCode's bind→handler window (`opencode-listening`
+6.2 s vs 2.1 s in-guest), the fix for which was reverted out of this PR
+(`14ccfd135a` → `fe7aee341b`). `repo-materialized` is the acquisition
+comparison; `runtimeReady` is not.
+
+Reading: from a bucket in the boxes' own region the S3 boot acquires the
+project **3.4–3.8× faster than the Git bundle at the median** (275–288 ms vs
+976–1,055 ms) and its floor is 218 ms against Git's 453. Transfer Acceleration
+adds nothing here (same ~270–300 ms clean median, no first-byte gain) and
+triples the boot-time retry rate, which is what puts the accelerated p95
+(2,186 ms) above Git's (1,364) — keep it off; with the plain endpoint the p95s
+are level (1,367 vs 1,338) and every boot stays on S3. The retry cost is the
+remaining lever: a short close on the env-presigned URL is transient and the
+URL is still valid, so retrying it in place (no backoff, no proxy descriptor)
+would cut an affected boot from ~1.3 s to ~0.6 s.
+
+### Gate the daemon on OpenCode's "server listening" line (branch `opencode-listening-line`), 2026-09-15
+
+Same topology as the previous section — this branch at `513ca2d476` (PR
+#7242's `af83fb1454` plus one kortixd change), worktree API on the laptop
+behind a cloudflared quick tunnel, Daytona `us` target, 400-file fixture, a
+**real bucket in us-east-2** from the repo's module in a throwaway account
+(plain endpoint, acceleration off, API on the SDK default chain through
+`AWS_PROFILE` → `credential_process`), objects rebuilt and verified (`tree`
+1,576,450 B / 652 entries, `blobs` 1,600,272 B). Image
+`kortix-default-bd425fd52ad8` (this daemon build; every round's boot timeline
+carries the new `opencode-listening-line` mark, 60/60). 30 rounds per arm,
+arms alternating, one warm-up discarded, `--probe-hosts` and `--daemon-log`
+on, the 250 ms `/event`-subscribe watcher alongside. Bucket destroyed
+afterwards.
+
+**The change.** OpenCode 1.18 binds its port ~100 ms before its request
+handler is attached (Effect `NodeHttpServer.layer` listens while the server
+layer builds; `HttpRouter.serve` attaches `on("request")` after the app layer
+builds — `server.ts` is identical from 1.18.23 through 1.18.31; upstream
+anomalyco/opencode#46437). A request accepted in that window is never
+answered. `serve.ts` prints `opencode server listening on http://…` only after
+`Server.listen` resolves, i.e. after the handler exists, and has since 1.0.0.
+kortixd now pipes OpenCode's stdout (forwarded byte for byte to its own),
+resolves a per-process listening signal on that line, and sends the process
+**nothing** before it — no readiness probe, no root list, no `/event`
+subscribe (10 s fallback to plain probing if the line never shows; 10 s
+header timeout on the subscribe). No timer-based probing.
+
+| Arm | Rounds / failures / fallbacks | Acquisition p50 / p95 (min / max) | `repo-materialized` p50 / p95 | In-guest `opencode-ready` p50 / p95 | Full boot p50 / p95 (min / max) | Descriptor | S3 rounds retried |
+|---|---|---|---|---|---|---|---|
+| Git (`git` mode) | 30 / 0 / 0 | 1,078 / 1,414 ms (610 / 1,790) | 1,111 / 1,442 ms | 2,272 / 2,566 ms | 6,593 / 10,807 ms (5,096 / 13,332) | — | — |
+| **S3 v2 + presign, plain** (`<bucket>.s3.us-east-2`) | 30 / 0 / 0 | **307 / 1,137 ms** (210 / 1,284) | 348 / 1,168 ms | **1,934 / 2,532 ms** | **5,836 / 8,518 ms** (4,586 / 11,288) | env 28, proxy 2 | 2 / 30 |
+
+Single-attempt S3 rounds (28): in-guest `s3_acquire` 276 ms p50; the two
+retried rounds (6, 15) read `download/unavailable` — the Bun short close of
+the previous section — and were answered by a proxy descriptor (1,142 and
+1,289 ms total). Hydration `ok` 30/30 (import p50 92 ms); extractor `tar`
+throughout. Boxes: New York City 47, Miami 6, Los Angeles 6, Ashburn 1; in-box
+first byte to the bucket 79–82 ms p50, to the laptop's tunnel 192–195 ms.
+
+**The listening line, in-guest (p50 / p95 / max, ms):**
+
+| | Git | S3 |
+|---|---|---|
+| `opencode-listening-line` after boot start | 1,243 / 1,438 / 1,735 | 1,323 / 1,521 / 1,756 |
+| spawn → line | 1,129 / 1,322 / 1,596 | 1,202 / 1,377 / 1,604 |
+| checkout landed **before** the line (the ordering that used to drop the first request) | 20 / 30, lead 426 ms p50 | **30 / 30**, lead 892 ms p50 |
+| line → first answered request (`opencode-http-listening`) | 62 / 628 / 810 | 570 / 684 / 757 |
+| line → root list answered (`opencode-listening`) | 980 / 1,301 / 1,843 | 573 / 1,041 / 1,102 |
+| root-list request → answer (`opencode-listening − managed-reconcile`) | 588 / 715 / 812 | 946 / 1,173 / **1,531** |
+| root-list poll started before the first answered request | 8 / 30 | 28 / 30 |
+| `/event` subscribe answered / header timeouts | 30 / 30, 0 | 30 / 30, 0 |
+| spawn → subscribed | 2,146 / 2,403 / 2,968 | 1,804 / 2,357 / 2,425 |
+
+The line → first-answer gap differs by arm for a known reason: on an S3 boot
+the workspace is complete when the line arrives, so the first probe is the
+directory-scoped one and pays OpenCode's Instance init (~500 ms) up front; on
+most Git boots the checkout is still landing, so the first probe is the
+instance-free liveness route (62 ms) and the Instance init is paid by the root
+list instead (`opencode-listening − opencode-http-listening` 941 ms on Git,
+−1 ms on S3). Either way no request waits for a timeout: a request dropped in
+the window read ≥ 5,000 ms in the root-list row before; the maximum here is
+1,531 ms. The four full-boot rounds above 10 s (Git 13,332 / 10,807 / 10,121,
+S3 11,288) all have in-guest `opencode-ready` at 2.1–3.1 s — sandbox
+create/start on the provider side, not the daemon.
+
+Reading: with the daemon gated on OpenCode's own announcement the S3 boot
+keeps its acquisition lead (307 vs 1,078 ms, 3.5×) **and** turns it into an
+earlier runtime: in-guest `opencode-ready` 1,934 vs 2,272 ms, `runtimeReady`
+5,836 vs 6,593 ms at the median (before any fix, previous section: 9.9 s vs
+6.1 s). Against the 300 ms liveness-probe variant of the same fix
+(DimitrijeGlibic/suna#2, same bucket region, 30 rounds/arm: full boot 6,263 vs
+6,249 ms, root-list request → answer 1,056 ms p50 / 1,402 max on S3) the
+in-guest picture is the same with no timer, no probe sent into the window and
+no wasted 300 ms: the first request follows the announcement by 62–570 ms at
+the median depending on which probe goes first. Raw rows: job `e2725831`'s
+`tmp/bench-main.jsonl` (+ `.subscribe.jsonl`, `.report.json`).
+
 ## Compatibility gate (gate 6, v1 run)
 
 `apps/api/scripts/project-snapshot-compat.ts` on the 5,000-file project, S3-booted

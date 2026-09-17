@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
-import { FLOATING_PANEL } from '@/components/ui/menu-recipe';
+import { FLOATING_PANEL_SURFACE } from '@/components/ui/menu-recipe';
 
 import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
 
@@ -361,9 +361,9 @@ describe('ProjectIconField popover geometry', () => {
   test('the width allows for the popover border on each side', () => {
     // PopoverContent is border-box, so its 1px border eats into the declared
     // width. Without the correction the grid is 2px short and the cells shrink.
-    // The surface comes from the shared FLOATING_PANEL recipe, not a literal
+    // The surface comes from the shared FLOATING_PANEL_SURFACE recipe, not a literal
     // in popover.tsx.
-    const classes = FLOATING_PANEL.split(/\s+/);
+    const classes = FLOATING_PANEL_SURFACE.split(/\s+/);
 
     expect(classes).toContain('border');
     expect(classes.filter((c) => /^border-\d/.test(c))).toEqual([]);

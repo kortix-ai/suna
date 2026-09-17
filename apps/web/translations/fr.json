@@ -1534,7 +1534,9 @@
       "bringKey": "Utiliser votre propre clé",
       "barTitle": "Aucun modèle connecté",
       "barDescription": "connectez-en un pour commencer à discuter",
-      "connectModel": "Connecter un modèle"
+      "connectModel": "Connecter un modèle",
+      "imagesUnsupported": "{model} ne peut pas lire les images",
+      "imagesUnsupportedHint": "retirez-les ou choisissez un autre modèle"
     },
     "providerRecovery": {
       "savedPrompt": "Prompt enregistré",
@@ -9334,7 +9336,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "Aucune question",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "Recharger",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "Gérer le forfait",
+    "composerAttachments": {
+      "couldNotAttach": "Impossible de joindre les fichiers",
+      "couldNotRetry": "Impossible de réessayer la pièce jointe",
+      "couldNotSend": "Échec de l’envoi",
+      "failedBlocksSend": "Réessayez ou supprimez la pièce jointe en échec.",
+      "uploadFailed": "Échec du téléversement. Vérifiez votre connexion.",
+      "retryNamed": "Réessayer le téléversement de {name}",
+      "didNotUpload": "{name} n’a pas été téléversé.",
+      "billingRequired": "Votre forfait ou vos crédits ne permettent pas de téléverser pour le moment.",
+      "budgetExceeded": "Trop de téléversements non envoyés. Les téléversements inutilisés expirent sous 24 heures.",
+      "tooLarge": "Ce fichier dépasse 50 Mio.",
+      "expired": "Ce téléversement a expiré. Supprimez-le, puis joignez de nouveau le fichier.",
+      "checkConnection": "Vérifiez votre connexion, puis réessayez."
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "Téléversement de la pièce jointe démarré",
+      "text40078a553439": "Bloc de la pièce jointe téléversé",
+      "text4c7f8000aabd": "Téléversement de la pièce jointe terminé",
+      "text91420d2587c2": "Téléversement de la pièce jointe supprimé",
+      "text3aab5b3be2b9": "Descripteur de pièce jointe d’exécution résolu",
       "text0005b85debac": "Pack de sons joué pour les événements de session.",
       "text000c02c11c7a": "Instructions réutilisables que vos agents chargent à la demande.",
       "text0017bda47853": "URL copiée",
@@ -18365,7 +18386,11 @@
       "textb38cb5e18525": "ce processus et montre son travail. Vous avez vingt minutes ?",
       "textff5bd8333c4e": "Vous et toute personne pouvant gérer ce projet",
       "text36d8691ae566": "Toute personne disposant du lien, ainsi que votre équipe",
-      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe"
+      "text4fb2abecc0a6": "Toute personne disposant du mot de passe, ainsi que votre équipe",
+      "text03a01dd53ffa": "Appuyez sur ↑ pour modifier les messages en attente",
+      "text1eb132d9d4da": "File d’attente en pause",
+      "textf8e64a37950a": "Messages en attente",
+      "textcd5f943d5863": "Non envoyé"
     }
   },
   "projectOnboarding": {

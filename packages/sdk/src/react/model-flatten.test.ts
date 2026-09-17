@@ -170,6 +170,72 @@ describe('flattenModels — native mode (llm_gateway off)', () => {
 // Every consumer that asks "may this key be offered/resolved?" must go through
 // isOfferedModel — a second, client-local visibility heuristic is exactly what
 // made the picker and "Manage models" disagree (#5932 half-revert).
+// `vision` decides whether the composer REFUSES to send an attached image, so
+// "the catalog said nothing" and "the catalog said no" must stay distinct. A
+// catalog entry with no modality signal at all (a custom/self-hosted provider)
+// carries no verdict, and flattening it to `false` would silently block images
+// on a model that may well read them.
+describe('flattenModels — vision is reported, never guessed', () => {
+  test('gateway: `modalities.input` containing image reports vision true', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'kortix/seer': { name: 'Seer', modalities: { input: ['text', 'image'] } },
+      }),
+    );
+    expect(flat?.capabilities?.vision).toBe(true);
+  });
+
+  test('gateway: `modalities.input` without image reports vision false', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'kortix/textonly': { name: 'Text Only', modalities: { input: ['text'] } },
+      }),
+    );
+    expect(flat?.capabilities?.vision).toBe(false);
+  });
+
+  test('gateway: an explicit `attachment: false` reports vision false', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({ 'kortix/noattach': { name: 'No Attach', attachment: false } }),
+    );
+    expect(flat?.capabilities?.vision).toBe(false);
+  });
+
+  test('gateway: a catalog entry with no modality signal leaves vision undefined', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({ 'custom/mystery': { name: 'Mystery' } }),
+    );
+    expect(flat?.capabilities?.vision).toBeUndefined();
+  });
+
+  test('capabilities shape: `input.image` true reports vision true', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'custom/sighted': { name: 'Sighted', capabilities: { input: { image: true } } },
+      }),
+    );
+    expect(flat?.capabilities?.vision).toBe(true);
+  });
+
+  test('capabilities shape: `input` present without image reports vision false', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'custom/blind': { name: 'Blind', capabilities: { input: { image: false } } },
+      }),
+    );
+    expect(flat?.capabilities?.vision).toBe(false);
+  });
+
+  test('capabilities shape: no `input` block leaves vision undefined', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'custom/silent': { name: 'Silent', capabilities: { reasoning: true } },
+      }),
+    );
+    expect(flat?.capabilities?.vision).toBeUndefined();
+  });
+});
+
 describe('isOfferedModel', () => {
   const models = [
     { providerID: 'kortix', modelID: 'anthropic/claude-fable-5', enabled: true },

@@ -853,6 +853,7 @@ export function sessionStartFailureFromSandbox(
     rawCategory === 'git-auth' ||
     rawCategory === 'unsupported-secret-delivery' ||
     rawCategory === 'invalid-secret-boundary-policy' ||
+    rawCategory === 'snapshot-too-large' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
@@ -875,13 +876,19 @@ export function sessionStartFailureFromSandbox(
     (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
       ? metadata.errorMessage
       : 'The sandbox provider could not start this session. Try again.');
-  // Both secret-delivery categories are configuration states, not transient faults: the identical
-  // input produces the identical failure every time, so offering a retry only wastes the user's time.
+  // These are configuration states, not transient faults: the identical input
+  // produces the identical failure every time, so offering a retry only wastes
+  // the user's time. `snapshot-too-large` joins them — an image over the
+  // provider's ceiling is over it on every attempt.
+  const PERMANENT: ReadonlySet<string> = new Set([
+    'unsupported-secret-delivery',
+    'invalid-secret-boundary-policy',
+    'snapshot-too-large',
+  ]);
   return {
     category,
     message,
-    retryable:
-      category !== 'unsupported-secret-delivery' && category !== 'invalid-secret-boundary-policy',
+    retryable: !PERMANENT.has(category),
   };
 }
 

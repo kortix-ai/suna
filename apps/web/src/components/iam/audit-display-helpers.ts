@@ -128,6 +128,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream': 'Reloaded session agent config',
   'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
   'POST /v1/projects/:projectId/turn-question': 'Submitted session question',
+  'POST /v1/projects/:projectId/attachments': 'Started attachment upload',
+  'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index':
+    'Uploaded attachment chunk',
+  'POST /v1/projects/:projectId/attachments/:attachmentId/complete': 'Completed attachment upload',
+  'DELETE /v1/projects/:projectId/attachments/:attachmentId': 'Removed attachment upload',
+  'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId':
+    'Resolved runtime attachment descriptor',
   'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
   'POST /v1/projects/:projectId/sessions/warm/claim': 'Claimed warm session sandbox',
   'GET /v1/projects/:projectId/files/content': 'Viewed file content',

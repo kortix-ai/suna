@@ -65,6 +65,12 @@ export async function deleteSession(input: {
     )
     .limit(1);
 
+  // Release the session's prompt attachments before the tombstone, so a failed
+  // release fails a delete that can still be retried. The cleanup sweep then
+  // removes each unreferenced object before its metadata.
+  const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
+  await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
+
   const deletedAt = new Date();
   const [row] = await db
     .update(projectSessions)

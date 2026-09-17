@@ -12,6 +12,36 @@ export function resolveAvailableSelectedModel(
   return isSelectableModel(selectedModel) ? selectedModel : null;
 }
 
+/**
+ * The name of the selected model when it cannot read an attached image, else null.
+ *
+ * Refuses only on an explicit `vision: false`. A model without capability data
+ * (a custom provider) is never refused on a guess. Only images are checked: every
+ * other file lands in the sandbox, where the agent reads it with tools.
+ */
+export function modelRejectingAttachedImages({
+  files,
+  models,
+  selectedModel,
+}: {
+  files: ReadonlyArray<{ isImage: boolean }>;
+  models: ReadonlyArray<{
+    providerID: string;
+    modelID: string;
+    modelName: string;
+    capabilities?: { vision?: boolean };
+  }>;
+  selectedModel: ModelKey | null | undefined;
+}): string | null {
+  if (!selectedModel || !files.some((file) => file.isImage)) return null;
+  const model = models.find(
+    (candidate) =>
+      candidate.providerID === selectedModel.providerID &&
+      candidate.modelID === selectedModel.modelID,
+  );
+  return model?.capabilities?.vision === false ? model.modelName : null;
+}
+
 export function isModelRequiredButUnavailable({
   modelRequired,
   selectedModel,

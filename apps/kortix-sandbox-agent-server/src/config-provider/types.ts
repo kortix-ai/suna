@@ -92,6 +92,8 @@ export interface S3AcquisitionMetrics {
   verifyMs: number
   /** Which extractor unpacked the tree: the system `tar` or the in-process fallback. */
   extractor: 'tar' | 'node-tar'
+  /** Where the descriptor that succeeded came from: the session env (presigned at create) or the Git proxy. */
+  descriptorSource: 'env' | 'proxy'
 }
 
 /**
@@ -145,6 +147,8 @@ export interface ConfigProviderSummary {
   s3_reason: S3FailureReason | null
   /** Which extractor unpacked the boot object on an S3 start. */
   s3_extractor: 'tar' | 'node-tar' | null
+  /** On an S3 start: whether the descriptor came presigned in the env or was fetched from the proxy. */
+  s3_descriptor: 'env' | 'proxy' | null
   fallback: boolean
   total_ms: number
   timings: Record<string, number>

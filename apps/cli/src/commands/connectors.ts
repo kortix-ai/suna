@@ -154,8 +154,10 @@ Subcommands:
   connect-finalize <slug>           Confirm authorization completed. Accepts
        [--connection-id <uuid>]     the IDs returned by \`connect\`.
        [--request-id <id>]
-  apps [<query>] [--category <c>]   Browse the legacy Pipedream app catalog.
-       [--cursor <c>] [--json]
+  apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
+       [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
+       [--pipedream] [--json]        accepts. Alias: toolkits. Use --pipedream
+                                     for the legacy Pipedream catalog.
   catalog [<query>] [--cursor <c>]  Browse the direct-connector catalogue.
           [--json]                  Needs the \`connectors_api_discover\` flag.
   catalog show <id> [--json]        Show one catalogue record's surfaces.
@@ -334,6 +336,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.successRedirect = takeFlagValue(rest, ['--success-redirect']);
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     f.category = takeFlagValue(rest, ['--category']);
+    f.limit = takeFlagValue(rest, ['--limit']);
+    if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     addIds = takeFlagValues(rest, ['--add']);
     rmIds = takeFlagValues(rest, ['--rm']);
@@ -750,42 +754,87 @@ export async function runConnectors(argv: string[]): Promise<number> {
         );
         return 0;
       }
+      // `apps` searches the COMPOSIO toolkit catalog by default: those slugs are
+      // what `add --provider composio --app <slug>` accepts, and the connector
+      // sync rejects anything else (`Invalid toolkit slugs`). The Pipedream
+      // catalog is legacy rollback-only, so it needs `--pipedream`.
+      case 'toolkits':
       case 'apps': {
         const q = positional[0];
+        const legacy = f.pipedream === 'true';
         const qs = [
           q ? `q=${encodeURIComponent(q)}` : '',
           f.category ? `category=${encodeURIComponent(f.category)}` : '',
           f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+          !legacy && f.limit ? `limit=${encodeURIComponent(f.limit)}` : '',
         ]
           .filter(Boolean)
           .join('&');
+
+        if (legacy) {
+          const resp = await ctx.client.get<{
+            apps: {
+              slug: string;
+              name: string;
+              description: string | null;
+              categories: string[];
+            }[];
+            nextCursor?: string;
+            hasMore: boolean;
+          }>(`${ex}/pipedream/apps${qs ? `?${qs}` : ''}`);
+          if (json) {
+            emitJson(resp);
+            return 0;
+          }
+          if (resp.apps.length === 0) {
+            process.stdout.write(`  ${C.dim}No apps${q ? ` matching "${q}"` : ''}.${C.reset}\n`);
+            return 0;
+          }
+          const slugW = Math.max(...resp.apps.map((a) => a.slug.length), 4);
+          process.stdout.write('\n');
+          for (const a of resp.apps) {
+            process.stdout.write(
+              `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`,
+            );
+          }
+          process.stdout.write(
+            `\n  ${C.dim}${resp.apps.length} legacy Pipedream app${resp.apps.length === 1 ? '' : 's'}${resp.hasMore ? ` · more: --cursor ${resp.nextCursor}` : ''}${C.reset}\n\n`,
+          );
+          return 0;
+        }
+
         const resp = await ctx.client.get<{
-          apps: {
+          items: {
             slug: string;
             name: string;
-            description: string | null;
-            categories: string[];
+            description?: string | null;
+            categories?: string[];
+            connection?: { isActive?: boolean } | null;
           }[];
-          nextCursor?: string;
-          hasMore: boolean;
-        }>(`${ex}/pipedream/apps${qs ? `?${qs}` : ''}`);
+          cursor?: string | null;
+          totalPages?: number;
+        }>(`${ex}/connect/toolkits${qs ? `?${qs}` : ''}`);
+        const items = resp.items ?? [];
         if (json) {
           emitJson(resp);
           return 0;
         }
-        if (resp.apps.length === 0) {
-          process.stdout.write(`  ${C.dim}No apps${q ? ` matching "${q}"` : ''}.${C.reset}\n`);
+        if (items.length === 0) {
+          process.stdout.write(
+            `  ${C.dim}No Composio toolkits${q ? ` matching "${q}"` : ''}. Try another word, or --pipedream for the legacy catalog.${C.reset}\n`,
+          );
           return 0;
         }
-        const slugW = Math.max(...resp.apps.map((a) => a.slug.length), 4);
+        const slugW = Math.max(...items.map((a) => a.slug.length), 4);
         process.stdout.write('\n');
-        for (const a of resp.apps) {
+        for (const a of items) {
+          const connected = a.connection?.isActive ? `  ${C.green}connected${C.reset}` : '';
           process.stdout.write(
-            `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`,
+            `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}${connected}\n`,
           );
         }
         process.stdout.write(
-          `\n  ${C.dim}${resp.apps.length} app${resp.apps.length === 1 ? '' : 's'}${resp.hasMore ? ` · more: --cursor ${resp.nextCursor}` : ''}${C.reset}\n\n`,
+          `\n  ${C.dim}${items.length} toolkit${items.length === 1 ? '' : 's'}${resp.cursor ? ` · more: --cursor ${resp.cursor}` : ''} · add one: kortix connectors add <slug> --provider composio --app <slug> --apply${C.reset}\n\n`,
         );
         return 0;
       }

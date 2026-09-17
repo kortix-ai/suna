@@ -137,6 +137,16 @@ const envSchema = z.object({
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
+  // ── Prompt attachment uploads (optional, non-secret) ────────────────────
+  // `direct` (default): the client PUTs each file once to a signed Storage URL.
+  // `chunked`: the client PUTs bounded chunks through the API. Only for a
+  // deployment whose public edge drops large request bodies (the PR preview).
+  PROMPT_ATTACHMENT_UPLOAD_MODE: z.enum(['direct', 'chunked']).optional().default('direct'),
+  // Bytes per chunk. Read only in `chunked` mode.
+  PROMPT_ATTACHMENT_CHUNK_BYTES: optInt(65536).refine((bytes) => bytes > 0, {
+    message: 'PROMPT_ATTACHMENT_CHUNK_BYTES must be a positive integer',
+  }),
+
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
   API_KEY_SECRET: z.string().min(1, 'API_KEY_SECRET is required — API key hashing will fail'),
 
@@ -523,16 +533,6 @@ const envSchema = z.object({
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
-  // Additive cold-boot accelerators that keep the standard runtime image and
-  // every tool: Platinum rootfs materialization and the native OpenCode binary
-  // prefetch. It never keeps a sandbox or an OpenCode process running.
-  //
-  // NOT gated here: the fresh-session Git fast path has its own switch,
-  // KORTIX_FAST_GIT_BOOT_ENABLED below (deploy-dev injects an explicit `false`
-  // for THIS flag on every push, so it can never double as that path's kill
-  // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
-  // push). The per-project warm-image system it also used to gate is gone.
-  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -573,6 +573,13 @@ const envSchema = z.object({
    */
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  // S3 Transfer Acceleration for the SANDBOX downloads only: presigned URLs
+  // target <bucket>.s3-accelerate.amazonaws.com, so a box's connection ends at
+  // the nearest AWS edge and the distance to the bucket rides AWS's backbone.
+  // Needs `transfer_acceleration = true` on the bucket (Terraform module).
+  // Ignored when a custom public endpoint (MinIO) is set. The API's own calls
+  // stay on the regional endpoint.
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: optBoolFalse,
   /** Optional key prefix inside the bucket (e.g. `dev/`), namespacing environments that share one bucket. */
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: optStr,
@@ -1091,6 +1098,8 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
+  PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
@@ -1203,7 +1212,6 @@ export const config = {
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
-  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
@@ -1212,6 +1220,7 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,

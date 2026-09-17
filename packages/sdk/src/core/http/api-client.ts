@@ -3,6 +3,7 @@ import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
+import { abortable, abortableDelay, createAbortError } from './abort';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -36,6 +37,12 @@ export interface ApiClientOptions {
   showErrors?: boolean;
   errorContext?: ErrorContext;
   timeout?: number;
+  /**
+   * Keep `timeout` running until the response body is read. By default the
+   * deadline stops when headers arrive, so a large body is never cut off.
+   * Set it for requests whose server may stall after sending headers.
+   */
+  deadlineCoversBody?: boolean;
   /**
    * Override for the `fetch` implementation `backendApi.postStream` issues
    * the request with. Exists as an explicit injection point — not a global
@@ -127,8 +134,6 @@ const isRequestDeadlineResponse = (
   return code === REQUEST_DEADLINE_CODE || LEGACY_REQUEST_DEADLINE_MESSAGE.test(message);
 };
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * HTTP statuses that represent a transient gateway / overload condition rather
  * than a deterministic server-side failure: 502 (Bad Gateway), 503 (Service
@@ -176,9 +181,18 @@ async function makeRequest<T = any>(
   url: string,
   options: RequestInit & ApiClientOptions = {},
 ): Promise<ApiResponse<T>> {
-  const { showErrors = true, errorContext, timeout = 30000, ...fetchOptions } = options;
+  const {
+    showErrors = true,
+    errorContext,
+    timeout = 30000,
+    deadlineCoversBody = false,
+    ...fetchOptions
+  } = options;
 
   const controller = new AbortController();
+  let activeController = controller;
+  const abortFromCaller = () => activeController.abort();
+  fetchOptions.signal?.addEventListener('abort', abortFromCaller, { once: true });
   let timeoutId: NodeJS.Timeout | null = null;
   let isAborted = false;
   // Tracks whether *our* timer fired the abort, vs. an external abort
@@ -187,6 +201,7 @@ async function makeRequest<T = any>(
   let didTimeout = false;
 
   try {
+    if (fetchOptions.signal?.aborted) throw createAbortError();
     timeoutId = setTimeout(() => {
       if (!isAborted && !controller.signal.aborted) {
         isAborted = true;
@@ -195,7 +210,7 @@ async function makeRequest<T = any>(
       }
     }, timeout);
 
-    const token = await getSupabaseAccessTokenWithRetry();
+    const token = await abortable(getSupabaseAccessTokenWithRetry(), controller.signal);
 
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
@@ -248,10 +263,12 @@ async function makeRequest<T = any>(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
-        await sleep(250 * 2 ** (attempt - 1));
+        await abortableDelay(250 * 2 ** (attempt - 1), fetchOptions.signal ?? undefined);
       }
 
       const attemptController = attempt === 0 ? controller : new AbortController();
+      activeController = attemptController;
+      if (fetchOptions.signal?.aborted) attemptController.abort();
       if (attempt > 0) {
         timeoutId = setTimeout(() => {
           didTimeout = true;
@@ -261,12 +278,15 @@ async function makeRequest<T = any>(
 
       try {
         const fetchImpl = platformConfig().fetch ?? fetch;
-        response = await fetchImpl(url, {
-          ...fetchOptions,
-          headers,
-          signal: attemptController.signal,
-          credentials: fetchOptions.credentials ?? 'omit',
-        });
+        response = await abortable(
+          fetchImpl(url, {
+            ...fetchOptions,
+            headers,
+            signal: attemptController.signal,
+            credentials: fetchOptions.credentials ?? 'omit',
+          }),
+          attemptController.signal,
+        );
       } catch (error) {
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -278,20 +298,31 @@ async function makeRequest<T = any>(
         continue;
       }
 
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-
       const retryableResponse =
         retryableRead && isTransientGatewayStatus(response.status) && attempt < maxAttempts - 1;
       if (!retryableResponse) {
+        // By default the deadline covers the wait for headers only, so a large
+        // body is never cut off. `deadlineCoversBody` keeps it running through
+        // final response parsing; the outer finally clears it.
+        if (!deadlineCoversBody && timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
         break;
       }
 
       try {
-        await response.arrayBuffer();
-      } catch {}
+        await abortable(response.arrayBuffer(), attemptController.signal);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+      } finally {
+        // A retry gets a fresh attempt deadline after its backoff. The body
+        // being discarded remains bounded by the current attempt until now.
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      }
     }
 
     if (!response.ok) {
@@ -299,7 +330,7 @@ async function makeRequest<T = any>(
       let errorData: any = null;
 
       try {
-        errorData = await response.json();
+        errorData = await abortable(response.json(), activeController.signal);
         // ORDER MATTERS, and `reason` is LAST on purpose.
         //
         // A Kortix error body pairs a machine slug with the sentence written for
@@ -328,6 +359,7 @@ async function makeRequest<T = any>(
         }
       } catch {}
 
+      if (activeController.signal.aborted) throw createAbortError();
       const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
@@ -437,11 +469,11 @@ async function makeRequest<T = any>(
     const contentType = response.headers.get('content-type');
 
     if (contentType?.includes('application/json')) {
-      data = await response.json();
+      data = await abortable(response.json(), activeController.signal);
     } else if (contentType?.includes('text/')) {
-      data = (await response.text()) as T;
+      data = (await abortable(response.text(), activeController.signal)) as T;
     } else {
-      data = (await response.blob()) as T;
+      data = (await abortable(response.blob(), activeController.signal)) as T;
     }
 
     return {
@@ -518,6 +550,9 @@ async function makeRequest<T = any>(
       error: apiError,
       success: false,
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    fetchOptions.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -623,6 +658,18 @@ async function postStream(
 }
 
 export const backendApi = {
+  /** Send bytes through the same auth, impersonation, cancellation and error seam. */
+  putRaw: <T = any>(
+    endpoint: string,
+    body: BodyInit,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) =>
+    makeRequest<T>(`${getApiUrl()}${endpoint}`, {
+      ...options,
+      method: 'PUT',
+      body,
+      headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    }),
   get: <T = any>(
     endpoint: string,
     options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,

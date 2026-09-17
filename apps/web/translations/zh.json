@@ -1534,7 +1534,9 @@
       "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
-      "connectModel": "连接模型"
+      "connectModel": "连接模型",
+      "imagesUnsupported": "{model} 无法读取图片",
+      "imagesUnsupportedHint": "请移除图片或选择其他模型"
     },
     "providerRecovery": {
       "savedPrompt": "已保存的提示词",
@@ -9334,7 +9336,26 @@
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoQuestions511286a8": "没有问题",
     "autoLibErrorHandlerJsxTextTopUp3587309b": "充值",
     "autoLibErrorHandlerJsxTextManagePlan6ec7a5f9": "管理计划",
+    "composerAttachments": {
+      "couldNotAttach": "无法添加文件",
+      "couldNotRetry": "无法重试附件",
+      "couldNotSend": "发送失败",
+      "failedBlocksSend": "请重试或移除上传失败的附件。",
+      "uploadFailed": "上传失败。请检查网络连接。",
+      "retryNamed": "重试上传 {name}",
+      "didNotUpload": "{name} 未上传。",
+      "billingRequired": "你的套餐或额度当前不允许上传。",
+      "budgetExceeded": "未发送的上传过多。未使用的上传会在 24 小时内过期。",
+      "tooLarge": "此文件超过 50 MiB。",
+      "expired": "此上传已过期。请移除后重新添加文件。",
+      "checkConnection": "请检查网络连接，然后重试。"
+    },
     "i18nComplete": {
+      "text25ab55af92b1": "已开始上传附件",
+      "text40078a553439": "已上传附件分块",
+      "text4c7f8000aabd": "附件上传完成",
+      "text91420d2587c2": "已移除附件上传",
+      "text3aab5b3be2b9": "已解析运行时附件描述符",
       "text0005b85debac": "为会话事件播放声音包。",
       "text000c02c11c7a": "代理按需加载的可复用指令。",
       "text0017bda47853": "URL 已复制",
@@ -18365,7 +18386,11 @@
       "textb38cb5e18525": "这个流程并展示工作过程。愿意聊二十分钟吗？",
       "textff5bd8333c4e": "你，以及可以管理此项目的人",
       "text36d8691ae566": "知道链接的任何人，以及你的团队",
-      "text4fb2abecc0a6": "知道密码的任何人，以及你的团队"
+      "text4fb2abecc0a6": "知道密码的任何人，以及你的团队",
+      "text03a01dd53ffa": "按 ↑ 编辑排队的消息",
+      "text1eb132d9d4da": "队列已暂停",
+      "textf8e64a37950a": "排队的消息",
+      "textcd5f943d5863": "未发送"
     }
   },
   "projectOnboarding": {

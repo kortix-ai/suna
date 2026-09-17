@@ -19,8 +19,9 @@
  * system's `Badge` at `size="xs"`, uppercase — the note at the badge says why.
  */
 
+import type { ReactNode } from 'react';
+
 import { Badge } from '@/components/ui/badge';
-import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 
@@ -94,8 +95,10 @@ export interface AttachmentTileProps {
   /** A resolved image source (`data:`, `blob:`, `https:`). When present the
    *  tile is the picture; the badge sits over its corner. */
   imageSrc?: string | null;
-  /** Bytes still on their way — a spinner takes the corner opposite the badge. */
-  pending?: boolean;
+  /** A status mark in the corner opposite the badge (the composer's upload ring). No tile draws a spinner. */
+  corner?: ReactNode;
+  /** Covers the tile inside its clipped box (the composer's failure scrim). Inert tiles only: never with `onOpen`. */
+  overlay?: ReactNode;
   /** Pressing the tile does this. Without it the tile is inert and says so. */
   onOpen?: () => void;
   className?: string;
@@ -106,7 +109,8 @@ export function AttachmentTile({
   filename,
   mime,
   imageSrc,
-  pending = false,
+  corner,
+  overlay,
   onOpen,
   className,
   title,
@@ -137,7 +141,7 @@ export function AttachmentTile({
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={picture} alt={filename} className="size-full object-cover" draggable={false} />
-      {pending && <Loading className="text-muted-foreground absolute right-2 bottom-2 size-4" />}
+      {corner && <span className="absolute right-2 bottom-2 flex">{corner}</span>}
     </>
   ) : (
     <>
@@ -156,7 +160,7 @@ export function AttachmentTile({
         )}
         <span className="flex items-end justify-between gap-1">
           {badge ?? <span />}
-          {pending && <Loading className="text-muted-foreground size-4 shrink-0" />}
+          {corner && <span className="flex shrink-0">{corner}</span>}
         </span>
       </span>
     </>
@@ -177,9 +181,12 @@ export function AttachmentTile({
       </button>
     );
   }
+  // An overlay carries its own tooltip (the composer's failure reason). A native
+  // `title` over the same spot would open a second one.
   return (
-    <span title={tileTitle} className={surface}>
+    <span title={overlay ? undefined : tileTitle} className={surface}>
       {body}
+      {overlay}
     </span>
   );
 }
