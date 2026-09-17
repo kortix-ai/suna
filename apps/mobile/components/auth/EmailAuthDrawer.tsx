@@ -1,23 +1,24 @@
 import * as React from 'react';
 import { View, TextInput, Keyboard, Platform } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView, BottomSheetBackdrop, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { Pressable as BottomSheetTouchable } from 'react-native-gesture-handler';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Mail, ArrowRight, X, Check } from 'lucide-react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EnvelopeIcon as Mail, ArrowRightIcon as ArrowRight, XIcon as X, CheckIcon as Check } from '@/lib/icons';
+import { GmailIcon } from '@/components/icons/auth-icons';
 import { openInbox } from 'react-native-email-link';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME } from '@/lib/utils/theme';
 
 export interface EmailAuthDrawerRef {
   open: () => void;
@@ -33,6 +34,7 @@ export interface EmailAuthDrawerRef {
 export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   onSuccess?: () => void;
 }>(({ onSuccess }, ref) => {
+  const sheetBg = useSheetBackground();
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -45,7 +47,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   const [email, setEmail] = React.useState('');
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   const [isInputFocused, setIsInputFocused] = React.useState(false);
-  const emailInputRef = React.useRef<TextInput | null>(null);
 
   const isDark = colorScheme === 'dark';
 
@@ -54,9 +55,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
     open: () => {
       bottomSheetRef.current?.present();
       setIsInputFocused(true);
-      setTimeout(() => {
-        emailInputRef.current?.focus();
-      }, 400);
     },
     close: () => {
       bottomSheetRef.current?.dismiss();
@@ -68,19 +66,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
     return ['90%'];
   }, []);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-        onPress={() => Keyboard.dismiss()}
-      />
-    ),
-    []
-  );
 
   const handleSendMagicLink = async () => {
     if (!email || !email.includes('@')) {
@@ -101,7 +86,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       setEmailSent(true);
       setIsInputFocused(false);
       Keyboard.dismiss();
-      emailInputRef.current?.blur();
     } else {
       toast.error(result.error?.message || t('auth.magicLinkFailed'));
     }
@@ -130,7 +114,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       index={0}
       snapPoints={snapPoints}
       onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       enablePanDownToClose
       onDismiss={handleDismiss}
       enableDynamicSizing={false}
@@ -139,11 +123,9 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{
@@ -199,7 +181,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       }}
                       className="flex-row items-center justify-center gap-2"
                     >
-                      <Icon as={Mail} size={20} className="text-foreground" strokeWidth={2.5} />
+                      <Icon as={Mail} size={20} className="text-foreground" />
                       <Text className="text-foreground text-[16px] font-roobert-medium">
                         {t('auth.openEmailAppBtn')}
                       </Text>
@@ -219,10 +201,9 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                     }}
                     className="flex-row items-center justify-center gap-2"
                   >
-                    <MaterialCommunityIcons 
-                      name="gmail" 
-                      size={22} 
-                      color={isDark ? '#FFFFFF' : '#000000'} 
+                    <GmailIcon
+                      size={20}
+                      color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                     />
                     <Text className="text-foreground text-[16px] font-roobert-medium">
                       {t('auth.openGmailBtn')}
@@ -263,7 +244,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                 </View>
 
                 <Input
-                  ref={emailInputRef}
                   value={email}
                   onChangeText={(text) => setEmail(text.trim().toLowerCase())}
                   onFocus={() => setIsInputFocused(true)}
@@ -278,8 +258,8 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                   keyboardType="email-address"
                   returnKeyType="go"
                   onSubmitEditing={handleSendMagicLink}
-                  size="lg"
-                  wrapperClassName="bg-muted/10 dark:bg-muted/30"
+                  autoFocus
+                  className={isDark ? 'h-14 bg-muted/30' : 'h-14 bg-muted/10'}
                 />
 
                 <View className="flex-row items-start">
@@ -291,19 +271,18 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                     style={{ marginRight: 12, marginTop: 2 }}
                   >
                     <View
+                      className={acceptedTerms ? 'bg-foreground border-foreground' : 'border-border'}
                       style={{
                         width: 20,
                         height: 20,
                         borderRadius: 6,
                         borderWidth: 1,
-                        borderColor: acceptedTerms ? (isDark ? '#FFFFFF' : '#000000') : isDark ? '#454444' : '#c2c2c2',
-                        backgroundColor: acceptedTerms ? (isDark ? '#FFFFFF' : '#000000') : 'transparent',
                         justifyContent: 'center',
                         alignItems: 'center',
                       }}
                     >
                       {acceptedTerms && (
-                        <Icon as={Check} size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+                        <Icon as={Check} size={16} className="text-background" />
                       )}
                     </View>
                   </BottomSheetTouchable>
@@ -317,7 +296,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       const WebBrowser = await import('expo-web-browser');
                       await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms', {
                         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-                        controlsColor: isDark ? '#FFFFFF' : '#000000',
+                        controlsColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       });
                     }}>
                       <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
@@ -332,7 +311,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       const WebBrowser = await import('expo-web-browser');
                       await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy', {
                         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-                        controlsColor: isDark ? '#FFFFFF' : '#000000',
+                        controlsColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       });
                     }}>
                       <Text className="text-[14px] font-roobert text-foreground leading-5 underline">

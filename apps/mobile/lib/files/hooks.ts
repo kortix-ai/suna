@@ -173,8 +173,39 @@ export function useOpenCodeFileBlob(
     },
     enabled: !!sandboxUrl && !!filePath,
     staleTime: 10 * 60_000,
+    // A blob can hold a whole preview-sized file; release it soon after the viewer closes.
+    gcTime: 60_000,
     ...options,
   });
+}
+
+/**
+ * Download a file straight to the cache directory with GET {sandboxUrl}/file/raw.
+ * The bytes stream to disk natively and never enter the JS heap, so this works
+ * for files too large to preview. Returns the local file:// URI.
+ */
+export async function downloadOpenCodeFileToCache(
+  sandboxUrl: string,
+  filePath: string,
+  fileName: string,
+): Promise<string> {
+  const token = await getAuthToken();
+  const target = `${FileSystem.cacheDirectory}${fileName}`;
+  const result = await FileSystem.downloadAsync(
+    `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`,
+    target,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  const contentType = Object.entries(result.headers).find(
+    ([name]) => name.toLowerCase() === 'content-type',
+  )?.[1];
+  // A text/html body for a non-HTML file is the SPA shell of a stale proxy, not the file.
+  const isSpaShell = (contentType ?? '').includes('text/html') && !/\.html?$/i.test(filePath);
+  if (result.status !== 200 || isSpaShell) {
+    FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
+    throw new Error(`Failed to download file: ${result.status}`);
+  }
+  return result.uri;
 }
 
 /**

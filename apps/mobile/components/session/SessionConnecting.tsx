@@ -3,7 +3,7 @@
  *
  * Shown while a project session provisions its sandbox + resolves its OpenCode
  * root. Uses the brand Lottie loader (KortixLoader) and a shimmering status
- * label (ShimmerText) so the wait reads as alive and on-brand, matching the
+ * label (TextShimmer) so the wait reads as alive and on-brand, matching the
  * provisioning screen's aesthetic rather than a bare ActivityIndicator.
  *
  * When the runtime fails to boot (e.g. a repo-materialization / git-clone
@@ -14,12 +14,15 @@
  */
 
 import React from 'react';
-import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { RotateCcw } from 'lucide-react-native';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { ShimmerText } from '@/components/ui/ShimmerText';
+import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { TextShimmer } from '@/components/kortix/text-shimmer';
+import { TURN_TYPE } from '@/components/session/tool/shared/styles';
+import { THEME } from '@/lib/utils/theme';
 
 export interface SessionConnectError {
   title: string;
@@ -61,22 +64,21 @@ export function SessionConnecting({
             </View>
           ) : null}
           {onRestart ? (
-            <TouchableOpacity
+            <Button
+              variant="outline"
               onPress={onRestart}
               disabled={restarting}
-              activeOpacity={0.7}
-              className="mt-1 flex-row items-center rounded-full border border-border px-4 py-2.5"
-              style={{ gap: 8, opacity: restarting ? 0.5 : 1 }}
+              className="mt-1 rounded-full"
             >
               {restarting ? (
-                <ActivityIndicator size="small" color={isDark ? '#F8F8F8' : '#121215'} />
+                <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               ) : (
-                <RotateCcw size={15} color={isDark ? '#F8F8F8' : '#121215'} />
+                <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               )}
-              <Text className="text-[13px] font-roobert-medium text-foreground">
+              <Text>
                 {restarting ? 'Restarting…' : 'Restart session'}
               </Text>
-            </TouchableOpacity>
+            </Button>
           ) : null}
         </View>
       </View>
@@ -95,7 +97,9 @@ export function SessionConnecting({
 
       {/* Live status — shimmers while the sandbox warms up */}
       <View className="mt-1.5">
-        <ShimmerText text={statusLabel} size="sm" />
+        <TextShimmer style={TURN_TYPE.sm} numberOfLines={1}>
+          {statusLabel}
+        </TextShimmer>
       </View>
     </View>
   );

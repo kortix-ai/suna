@@ -9,33 +9,86 @@
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import {
+  AppState,
   View,
   FlatList,
   ScrollView,
-  StyleSheet,
   TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
   Animated,
+  Easing,
   Platform,
+  type LayoutChangeEvent,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate } from 'react-native-reanimated';
+import Reanimated, {
+  Easing as ReanimatedEasing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { ListIcon as MenuIcon, XIcon as CloseIcon, ListIcon, XIcon, PaperPlaneTiltIcon, ArrowUpIcon, ArrowDownIcon, CaretUpIcon, CaretDownIcon, DotsThreeIcon } from '@/lib/icons';
+import { MenuButton } from '@/components/kortix/menu-button';
+import { PlatformButton } from '@/components/kortix/platform-button';
+import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { haptics } from '@/lib/haptics';
+import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
+import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
-import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
-import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
+import { compactionTurnInfo, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
+import {
+  reuseStableTurns,
+  shouldFollowNewTurn,
+  shouldReleaseStickOnTouch,
+} from '@/lib/session/stable-turns';
+import {
+  GLIDE_MAX_MS,
+  GLIDE_QUIET_MS,
+  OWN_SCROLL_MS,
+  SEND_GLIDE_ARM_MS,
+  TURN_TOP_OFFSET,
+  anchorSpan,
+  chevronVisible,
+  distanceFromEnd,
+  isAtEnd,
+  momentumFollows,
+  nextFollow,
+  pickAnchorIndex,
+  roomUnderNewestTurn,
+  scrollEnd,
+  settleMotion,
+  turnTopGap,
+} from '@/lib/session/auto-scroll';
+import { mintWireMessageId } from '@/lib/session/wire-message-id';
+import { interruptedTurnIds, rewindHiddenMessageIds, webSpace } from '@/lib/session/user-message';
+import {
+  hasCompactionTurn as findCompactionTurn,
+  isSuppressedFailedCompaction,
+  lastCompactionTurnIndex as findLastCompactionTurnIndex,
+  suppressWorkingTurnBusy as findSuppressWorkingTurnBusy,
+  transcriptBusyRowVisible,
+  type TurnBodyTurn,
+} from '@/lib/session/turn-body';
+import { revertSession } from '@/lib/opencode/session-rewind';
+import { useToast } from '@/components/kortix/toast-provider';
+import {
+  hasRunningQuestionTool as findRunningQuestionTool,
+  nextQuestionPollDelay,
+  shouldPollQuestions as shouldPollQuestionsFor,
+} from '@/lib/session/question-poll';
+import { useSession, replyToQuestion, rejectQuestion, replyToPermission, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
@@ -43,10 +96,14 @@ import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeAgents,
-  useOpenCodeModels,
+  useOpenCodeProviders,
   useOpenCodeConfig,
   useOpenCodeCommands,
+  flattenModels,
+  filterToLatestModels,
+  type Agent,
   type Command,
+  type FlatModel,
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { getAuthToken } from '@/api/config';
@@ -56,19 +113,26 @@ import { SessionChatInput, type PromptOptions, type TrackedMention } from './Ses
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
 import { SessionTurn } from './SessionTurn';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
+import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
+import { ToolFilePreviewHost } from '@/components/session/tool/shared/navigation';
+import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { SandboxFile } from '@/api/types';
-import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
-import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import type { Session } from '@/lib/platform/types';
+import { ProjectGreeting } from '@/components/session/ProjectGreeting';
 
-// AnimatedToggleIcon was extracted to components/ui/animated-toggle-icon.tsx
+// AnimatedToggleIcon was extracted to components/kortix/animated-toggle-icon.tsx
 // so it can be shared with PageHeader and page-level headers across the app.
-import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
+import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
+  /** Project name for the fresh-session hero — "Give {name} something real to work on." */
+  projectName?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -76,40 +140,83 @@ interface SessionPageProps {
   isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
+  /**
+   * 'header'   — the legacy top bar (back/title/drawer buttons). Default, so
+   *              ProjectScreenLegacy is unaffected.
+   * 'floating' — no header; a floating menu button, and bottom padding for the dock.
+   */
+  chrome?: 'header' | 'floating';
   /** Hides drawer buttons, model/variant selectors — used for onboarding */
   onboardingMode?: boolean;
   /** Skip callback shown in header during onboarding */
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+// Module-level empty values: a `?? []` default creates a new array on every
+// render and defeats every memo downstream.
+function frozenEmpty<T>(): T[] {
+  return Object.freeze([]) as unknown as T[];
+}
+const EMPTY_MESSAGES = frozenEmpty<MessageWithParts>();
+const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
+const EMPTY_PERMISSIONS = frozenEmpty<PermissionRequest>();
+const EMPTY_TURNS = frozenEmpty<Turn>();
+const EMPTY_SESSIONS = frozenEmpty<Session>();
+const EMPTY_AGENTS = frozenEmpty<Agent>();
+const EMPTY_COMMANDS = frozenEmpty<Command>();
+const EMPTY_MODELS = frozenEmpty<FlatModel>();
+const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
+const EMPTY_IDS = frozenEmpty<string>();
+
+/** Returns the previous array while its elements are reference-equal to `next`. */
+function useShallowStableArray<T>(next: T[]): T[] {
+  const ref = useRef(next);
+  const prev = ref.current;
+  if (prev !== next && (prev.length !== next.length || prev.some((item, i) => item !== next[i]))) {
+    ref.current = next;
+  }
+  return ref.current;
+}
+
+// FlatList window. The render unit is a whole turn, so the window is kept
+// small. The first `INITIAL_TURNS_TO_RENDER` cells stay mounted for the life
+// of the list (VirtualizedList keeps its initial region), so that count stays
+// low; opening a thread jumps to the end instead of rendering every turn.
+const INITIAL_TURNS_TO_RENDER = 4;
+
+function readSavedScrollOffset(sessionId: string): number {
+  const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
+  return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
+}
+
+function SessionPageImpl({ sessionId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Onboarding always uses header chrome (no dock, no floating menu). Explicit guard against any call site
+  // that might accidentally pass both onboardingMode and chrome="floating".
+  const effectiveChrome = onboardingMode ? 'header' : chrome;
+  // Top inset for the message list. Floating chrome has no header, so the
+  // list would start under the status bar and the floating menu button —
+  // inset it below them (insets.top + 8 button offset + 40 button + 12 gap).
+  // Header chrome keeps the original 16pt breathing room below the header.
+  const listTopInset = effectiveChrome === 'floating' ? insets.top + 60 : 16;
   const { sandboxUrl } = useSandboxContext();
   const flatListRef = useRef<FlatList>(null);
-  const setTabState = useTabStore((s) => s.setTabState);
-  const savedSessionState = useTabStore((s) => s.tabStateById[sessionId] as { scrollOffset?: number } | undefined);
-  const savedScrollOffset = typeof savedSessionState?.scrollOffset === 'number'
-    ? savedSessionState.scrollOffset
-    : 0;
+  // Saved scroll offset: read once per session, not subscribed. Subscribing
+  // re-rendered the whole thread on every persisted offset write.
+  const savedScrollOffset = useMemo(() => readSavedScrollOffset(sessionId), [sessionId]);
   const lastSavedOffsetRef = useRef(savedScrollOffset);
-  const didRestoreScrollRef = useRef(false);
+  const currentOffsetRef = useRef(savedScrollOffset);
+  const restoredSessionIdRef = useRef<string | null>(null);
 
-  // Auto-scroll tracking
-  const isFollowingRef = useRef(true);       // true = scroll with AI output
-  const isAutoScrollingRef = useRef(false);  // suppress follow-disable during programmatic scrolls
-  const listHeightRef = useRef(0);           // visible list viewport height
-  const contentHeightRef = useRef(0);        // total scrollable content height
-  const AT_BOTTOM_THRESHOLD = 80;            // px from bottom considered "at bottom"
 
 
 
   // Session metadata
   const { data: session } = useSession(sandboxUrl, sessionId);
-  const { data: allSessions = [] } = useSessions(sandboxUrl);
+  const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
 
   // Hydrate messages from REST on mount; SSE keeps store updated after
   useSessionSync(sandboxUrl, sessionId);
@@ -117,8 +224,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   // Read messages from sync store
   const messages = useSyncStore((s) => s.messages[sessionId]);
   const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? [];
-  const safeMessages = useMemo(() => messages ?? [], [messages]);
+  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? EMPTY_QUESTIONS;
+  const pendingPermissions = useSyncStore((s) => s.permissions[sessionId]) ?? EMPTY_PERMISSIONS;
+  const safeMessages = messages ?? EMPTY_MESSAGES;
 
   const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
   const isCompacting = useCompactionStore((s) => Boolean(s.compactingBySession[sessionId]));
@@ -130,31 +238,51 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   // server processes the reply.
   const suppressedQuestionIds = useRef(new Set<string>());
 
-  const hasRunningQuestionTool = useMemo(() => {
-    if (!safeMessages || safeMessages.length === 0) return false;
-    return safeMessages.some((m) => {
-      if (m.info.role !== 'assistant') return false;
-      return m.parts.some((p) => {
-        if (p.type !== 'tool') return false;
-        const tool = p as ToolPart;
-        return tool.tool === 'question' && (tool.state.status === 'running' || tool.state.status === 'pending');
-      });
-    });
-  }, [safeMessages]);
+  // Scans only the newest assistant message: a running question tool always
+  // belongs to the newest turn.
+  const hasRunningQuestionTool = useMemo(() => findRunningQuestionTool(safeMessages), [safeMessages]);
 
-  // Poll for pending questions when:
-  // - A question tool part is running/pending in messages, OR session is busy
-  // - AND no pending questions in the store
-  const shouldPollQuestions = (hasRunningQuestionTool || isBusy) && pendingQuestions.length === 0 && !!sandboxUrl;
+  // Poll GET /question only while a question tool part runs and the store has
+  // no pending question (the `question.asked` event was missed). The stream
+  // layer hydrates /question after reconnects, so a busy session alone is not
+  // a trigger.
+  const shouldPollQuestions = shouldPollQuestionsFor({
+    hasRunningQuestionTool,
+    pendingCount: pendingQuestions.length,
+    hasSandboxUrl: !!sandboxUrl,
+  });
+
+  // A status change (idle → busy, busy → idle) restarts the poll with a fresh
+  // failure count, so a 401/403 stop or a long backoff is re-evaluated.
+  const sessionStatusType = sessionStatus?.type;
 
   useEffect(() => {
     if (!shouldPollQuestions || !sandboxUrl) return;
     let cancelled = false;
     let inFlight = false;
+    let consecutiveFailures = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    // `null` stops the poll until the status changes or the app returns to
+    // the foreground.
+    const schedule = (delayMs: number | null) => {
+      clearTimer();
+      if (cancelled || delayMs === null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void hydrateQuestions();
+      }, delayMs);
+    };
 
     const hydrateQuestions = async () => {
       if (inFlight || cancelled) return;
       inFlight = true;
+      let status: number | null = null;
       try {
         const token = await getAuthToken();
         const res = await fetch(`${sandboxUrl}/question`, {
@@ -163,8 +291,14 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-        if (!res.ok || cancelled) return;
+        status = res.status;
+        if (cancelled) return;
+        if (!res.ok) {
+          consecutiveFailures += 1;
+          return;
+        }
         const questions = await res.json();
+        consecutiveFailures = 0;
         if (!Array.isArray(questions) || cancelled) return;
         const store = useSyncStore.getState();
         const existingIds = new Set((store.questions[sessionId] || []).map((q) => q.id));
@@ -174,19 +308,30 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             log.log('🔄 [SessionPage] Self-healed pending question:', q.id);
           }
         }
-      } catch {} finally {
+      } catch {
+        consecutiveFailures += 1;
+      } finally {
         inFlight = false;
+        schedule(nextQuestionPollDelay(status, consecutiveFailures));
       }
     };
 
-    hydrateQuestions();
-    const timer = setInterval(hydrateQuestions, 1500);
+    // Back in the foreground: poll now instead of waiting out a backoff.
+    const appStateSubscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || cancelled) return;
+      consecutiveFailures = 0;
+      clearTimer();
+      void hydrateQuestions();
+    });
+
+    void hydrateQuestions();
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimer();
+      appStateSubscription.remove();
     };
-  }, [shouldPollQuestions, sandboxUrl, sessionId]);
+  }, [shouldPollQuestions, sandboxUrl, sessionId, sessionStatusType]);
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const queueHydrated = useMessageQueueStore((s) => s.hydrated);
@@ -242,6 +387,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   // Mirrors the frontend's drainNextWhenSettled pattern.
 
   const drainScheduledRef = useRef(false);
+  // Set by a user send; the next new turn scrolls into view animated. Turns
+  // that appear from hydration jump without an animation.
+  const userSentRef = useRef(false);
   const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
 
 
@@ -253,8 +401,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
-      // Re-enable auto-scroll follow when user sends a new message
-      isFollowingRef.current = true;
+      // The turn this send creates scrolls into view with an animation; the
+      // thread then sticks to its end again.
+      userSentRef.current = true;
 
       // Process session mentions — append XML refs (same as frontend)
       let finalText = text;
@@ -267,7 +416,12 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       }
 
       // Optimistic user message
-      const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // Wire-format id: the thread sorts messages by id as a string, so the
+      // optimistic message must sort after the real ones already present.
+      const messageId = mintWireMessageId({
+        nowMs: Date.now(),
+        knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+      });
       const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       useSyncStore.getState().addOptimisticMessage(sessionId, {
@@ -303,12 +457,14 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         if (!res.ok) {
           const errorText = await res.text().catch(() => '');
           log.error('[SessionPage] Prompt failed:', res.status, errorText);
+          userSentRef.current = false;
           useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
         } else {
           log.log('[SessionPage] Prompt sent (async)');
         }
       } catch (err: any) {
         log.error('[SessionPage] Prompt error:', err?.message || err);
+        userSentRef.current = false;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
@@ -405,13 +561,48 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   );
 
   // Agent/model/variant config
-  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
-  const { data: visibleModels = [], allModels = [], defaults } = useOpenCodeModels(sandboxUrl);
+  const { data: agents = EMPTY_AGENTS } = useOpenCodeAgents(sandboxUrl);
+  // Models are derived here from the providers query (the same query
+  // useOpenCodeModels reads) so the arrays keep their identity between
+  // renders and the memoized composer can skip stream renders.
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
+  const allModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
+  const visibleModels = useMemo(() => filterToLatestModels(allModels), [allModels]);
+  const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
-  const { data: commands = [] } = useOpenCodeCommands(sandboxUrl);
+  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
 
   // Resolution uses ALL models (fallback chain); selector shows only visible
   const resolved = useResolvedConfig(agents, allModels, config, defaults);
+
+  // useResolvedConfig returns new arrays, objects, and setters on every
+  // render. Stabilize what the composer receives: arrays by content, setters
+  // through a ref that always calls the latest resolved config.
+  const resolvedRef = useRef(resolved);
+  resolvedRef.current = resolved;
+  const resolvedAgents = useShallowStableArray(resolved.agents);
+  const resolvedVariants = useShallowStableArray(resolved.variants);
+  const resolvedModel = resolved.model;
+  const resolvedProviderID = resolved.modelKey?.providerID;
+  const resolvedModelID = resolved.modelKey?.modelID;
+  const resolvedModelKey = useMemo(
+    () =>
+      resolvedProviderID && resolvedModelID
+        ? { providerID: resolvedProviderID, modelID: resolvedModelID }
+        : null,
+    [resolvedProviderID, resolvedModelID],
+  );
+  const handleAgentChange = useCallback((name: string) => resolvedRef.current.setAgent(name), []);
+  const handleModelChange = useCallback(
+    (providerID: string, modelID: string) =>
+      resolvedRef.current.setModel(providerID, modelID, { explicit: true }),
+    [],
+  );
+  const handleVariantCycle = useCallback(() => resolvedRef.current.cycleVariant(), []);
+  const handleVariantSet = useCallback((v: string | null) => resolvedRef.current.setVariant(v), []);
+  const handleTextChange = useCallback((t: string) => {
+    inputTextRef.current = t;
+  }, []);
 
   // Agent names for mention highlighting in user bubbles
   const agentNames = useMemo(() => agents.map((a) => a.name), [agents]);
@@ -432,9 +623,78 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     setMentionFileViewerVisible(true);
   }, []);
 
-  // Group messages into turns
-  const turns = useMemo(() => groupMessagesIntoTurns(safeMessages), [safeMessages]);
+  // ── Edit a sent message ────────────────────────────────────────────────
+  // Same mechanism as apps/web `session-chat.tsx` `handleEditSend`: rewind the
+  // session to the message (`POST /session/:id/revert`, what the SDK's
+  // `useSession().rewind` calls), then send the edited text. The server
+  // stages the revert; that send commits it and deletes the reverted messages.
+  const toast = useToast();
+  const [rewindTarget, setRewindTarget] = useState<{ messageId: string; text: string } | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const editPendingRef = useRef(false);
+
+  const handleEditStart = useCallback((messageId: string, text: string) => {
+    setRewindTarget({ messageId, text });
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    if (editPendingRef.current) return;
+    setRewindTarget(null);
+  }, []);
+
+  const handleEditSend = useCallback(
+    async (messageId: string, text: string) => {
+      if (!sandboxUrl || editPendingRef.current) return;
+      editPendingRef.current = true;
+      setEditPending(true);
+      try {
+        const token = await getAuthToken();
+        await revertSession({ sandboxUrl, sessionId, messageId, token });
+      } catch (err: any) {
+        // The editor stays open with the draft, so Send can be tried again.
+        log.error('[SessionPage] Rewind failed:', err?.message || err);
+        toast.error("Couldn't edit the message. Try again.");
+        editPendingRef.current = false;
+        setEditPending(false);
+        return;
+      }
+      // Hide the abandoned messages now; the resend below commits the revert
+      // server-side.
+      const store = useSyncStore.getState();
+      for (const id of rewindHiddenMessageIds(store.messages[sessionId] ?? EMPTY_MESSAGES, messageId)) {
+        store.removeMessage(sessionId, id);
+      }
+      editPendingRef.current = false;
+      setEditPending(false);
+      setRewindTarget(null);
+      const { agent, modelKey, variant } = resolvedRef.current;
+      const options: PromptOptions = {};
+      if (agent?.name) options.agent = agent.name;
+      if (modelKey) options.model = modelKey;
+      if (variant) options.variant = variant;
+      await handleSend(text, options);
+    },
+    [sandboxUrl, sessionId, handleSend, toast],
+  );
+
+  // Group messages into turns. Turns whose messages did not change keep their
+  // previous object, so memoized SessionTurn rows skip stream renders.
+  const prevTurnsRef = useRef<Turn[]>(EMPTY_TURNS);
+  const turns = useMemo(
+    () => reuseStableTurns(prevTurnsRef.current, groupMessagesIntoTurns(safeMessages)),
+    [safeMessages],
+  );
+  useEffect(() => {
+    prevTurnsRef.current = turns;
+  }, [turns]);
+  // The last turn as displayed. Turns are sorted for display, and store order
+  // can differ, so the spacer and pending questions follow this id.
+  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
   const isFreshSession = turns.length === 0;
+  // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
+  const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
+  // Web refuses a rewind while the runtime is busy or prompts are still queued.
+  const rewindDisabled = isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
 
@@ -446,91 +706,575 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     }).start();
   }, [showFreshHero, heroOpacity]);
 
-  // When a new turn appears, scroll so the latest user bubble is at the top
-  const prevTurnCount = useRef(turns.length);
-  useEffect(() => {
-    if (turns.length > prevTurnCount.current) {
-      // New turn added — scroll it to the top of the viewport
-      const targetIndex = turns.length - 1;
-      setTimeout(() => {
-        try {
-          flatListRef.current?.scrollToIndex({
-            index: targetIndex,
-            viewPosition: 0,
-            viewOffset: 0,
-            animated: true,
-          });
-        } catch {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }
-      }, 150);
-    }
-    prevTurnCount.current = turns.length;
-  }, [turns.length]);
+  // ── Transcript scroll physics ──────────────────────────────────────────
+  // A port of apps/web `use-auto-scroll.ts`. The decisions are pure and tested
+  // in `lib/session/auto-scroll.ts`; this block only feeds them geometry and
+  // applies the result to the FlatList.
+  //
+  // FACT 1 — the room: the footer spacer under the newest reached turn is
+  //   max(24, viewport − span(anchor turn → content end) − topOffset), so that
+  //   turn can sit `topOffset` below the top of the list.
+  // FACT 2 — the end: because of the room, `content − viewport` IS that turn
+  //   at the top while the answer fits, and the answer's tail once it does not.
+  // THE RULE — follow: while on, every layout change puts the list at the end.
+  //   Off: a drag; a foreign scroll away from the end (iOS status-bar tap); a
+  //   touch on an idle thread (so a card the reader expands opens in place).
+  //   On: coming to rest at the end; momentum arriving at the end; a send; the
+  //   scroll-to-bottom button; a new turn while the thread was effectively at
+  //   its end.
+  // THE MOTION — a send or a newly reached turn moves the list in ONE animated
+  //   scroll (≤ GLIDE_MAX_MS), re-aimed if the end moves in flight.
+  const followRef = useRef(true);
+  const draggingRef = useRef(false);
+  // True while follow was released only by a touch on the idle thread (no
+  // drag since). A new turn not sent by the reader then still scrolls into view.
+  const releasedByTouchRef = useRef(false);
+  // Whether the last user scroll came to rest at the end.
+  const settledAtEndRef = useRef(false);
 
-  // Restore scroll position when reopening this tab/session.
+  // Scroll events inside this window are our own writes, not reader intent.
+  const ownScrollUntilRef = useRef(0);
+  const markOwnScroll = useCallback((durationMs: number) => {
+    ownScrollUntilRef.current = Math.max(ownScrollUntilRef.current, Date.now() + durationMs);
+  }, []);
+  const isOwnScroll = useCallback(() => Date.now() < ownScrollUntilRef.current, []);
+
+  // Geometry. Heights come from layout events; the offset from scroll events.
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const scrollGeometryRef = useRef({ contentHeight: 0, viewportHeight: 0 });
+  const turnHeightsRef = useRef(new Map<string, number>());
+  const footerContentHeightRef = useRef(0);
+  // The spacer: `room` is the committed value, `roomRef` the latest computed
+  // one, `renderedRoomRef` the height the spacer was last laid out at.
+  const [room, setRoom] = useState(0);
+  const roomRef = useRef(0);
+  const renderedRoomRef = useRef(0);
+  const lastAnchorRef = useRef<{ id: string; reached: boolean } | null>(null);
+
+  const glideRef = useRef<{
+    target: number;
+    quiet: ReturnType<typeof setTimeout> | null;
+    cap: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const sendGlideUntilRef = useRef(0);
+
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const showScrollButtonRef = useRef(false);
+  const setScrollButton = useCallback((visible: boolean) => {
+    if (showScrollButtonRef.current === visible) return;
+    showScrollButtonRef.current = visible;
+    setShowScrollButton(visible);
+  }, []);
+
+  const reduceMotion = useReducedMotion();
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
+
+  // The working turn and the prompts the agent has not reached yet (web
+  // `resolveWorkingTurn`). Only the working turn reads the session status.
+  const workingTurn = useMemo(
+    () => (isBusy ? resolveWorkingTurn({ turns, hintMessageId: null }) : null),
+    [isBusy, turns],
+  );
+  const workingTurnId = workingTurn?.workingTurnId ?? null;
+  // Stable by content, so rows do not re-render on every stream delta.
+  const pendingTurnIdList = useShallowStableArray(workingTurn?.pendingTurnIds ?? EMPTY_IDS);
+  const pendingTurnIds = useMemo(() => new Set(pendingTurnIdList), [pendingTurnIdList]);
+  // Web `suppressWorkingTurnBusy` / `someTurnDrawsBusyRow`: when no turn draws
+  // the busy row, the transcript end draws it.
+  const suppressWorkingBusy = useMemo(
+    () => (workingTurn ? findSuppressWorkingTurnBusy(turns as unknown as TurnBodyTurn[], workingTurn) : false),
+    [turns, workingTurn],
+  );
+  const showTranscriptBusyRow = transcriptBusyRowVisible({
+    isBusy,
+    workingTurnId,
+    suppressWorkingTurnBusy: suppressWorkingBusy,
+  });
+  // Web `hasCompactionTurn` / `lastCompactionTurnIndex`: a real compaction turn
+  // replaces the optimistic marker; failed attempts before the last compaction
+  // turn render nothing.
+  const hasCompactionTurn = useMemo(() => findCompactionTurn(turns as unknown as TurnBodyTurn[]), [turns]);
+  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns as unknown as TurnBodyTurn[]), [turns]);
+
+  // Web `TurnViewport` spacing: mt-12 between turns, mt-3 between back-to-back
+  // pending turns while the session works.
+  const turnGapAt = useCallback(
+    (list: readonly Turn[], index: number) =>
+      turnTopGap({
+        index,
+        working: isBusy,
+        pending: pendingTurnIds.has(list[index].userMessage.info.id),
+        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].userMessage.info.id),
+      }),
+    [isBusy, pendingTurnIds],
+  );
+
+  // Read by the layout callbacks, which must not re-create on every delta.
+  const layoutInputsRef = useRef({ turns, turnGapAt, pendingTurnIds, interruptedIds, isBusy, topOffset: 0 });
+  layoutInputsRef.current = {
+    turns,
+    turnGapAt,
+    pendingTurnIds,
+    interruptedIds,
+    isBusy,
+    // Floating chrome has no header: the list runs under the status bar and
+    // the menu button, so the newest turn pins below them, where the first
+    // turn sits.
+    topOffset: Math.max(TURN_TOP_OFFSET, listTopInset),
+  };
+
+  /** FACT 1: size the room. `measured` is false while the anchor span is unknown. */
+  const sizeRoom = useCallback((): { measured: boolean; anchorChanged: boolean } => {
+    const { turns: list, turnGapAt: gapAt, pendingTurnIds: pending, interruptedIds: interrupted, isBusy: busy, topOffset } =
+      layoutInputsRef.current;
+    const viewportHeight = viewportHeightRef.current;
+    if (viewportHeight <= 0) return { measured: false, anchorChanged: false };
+
+    let next = 0;
+    let anchorChanged = false;
+    if (list.length > 0) {
+      // Web marks a queued or never-run prompt `data-turn-pending`; the anchor skips those.
+      const isPending = (i: number) => {
+        const id = list[i].userMessage.info.id;
+        return (busy && pending.has(id)) || interrupted.has(id);
+      };
+      const previous = lastAnchorRef.current;
+      const index = pickAnchorIndex(
+        list.length,
+        isPending,
+        previous
+          ? { index: list.findIndex((t) => t.userMessage.info.id === previous.id), reached: previous.reached }
+          : null,
+      );
+      const span = anchorSpan({
+        anchorIndex: index,
+        count: list.length,
+        heightAt: (i) => turnHeightsRef.current.get(list[i].userMessage.info.id),
+        gapAt: (i) => gapAt(list, i),
+        footerHeight: footerContentHeightRef.current,
+      });
+      // A turn in the span has not laid out yet: keep the room until it has.
+      if (span === null) return { measured: false, anchorChanged: false };
+      next = Math.round(roomUnderNewestTurn(viewportHeight, span, topOffset));
+      const anchorId = list[index].userMessage.info.id;
+      anchorChanged = previous !== null && previous.id !== anchorId;
+      lastAnchorRef.current = {
+        id: anchorId,
+        // Reached once, reached for good.
+        reached: (previous?.id === anchorId && previous.reached) || !isPending(index),
+      };
+    } else {
+      lastAnchorRef.current = null;
+    }
+    if (next !== roomRef.current) {
+      roomRef.current = next;
+      setRoom(next);
+    }
+    return { measured: true, anchorChanged };
+  }, []);
+
+  /** The end the list settles at once the latest room is laid out. */
+  const settledEnd = useCallback(
+    () =>
+      scrollEnd(
+        contentHeightRef.current - renderedRoomRef.current + roomRef.current,
+        viewportHeightRef.current,
+      ),
+    [],
+  );
+
+  const updateScrollButton = useCallback(
+    (distance: number) => {
+      setScrollButton(
+        chevronVisible({ following: followRef.current, distanceFromEnd: distance, room: renderedRoomRef.current }),
+      );
+    },
+    [setScrollButton],
+  );
+
+  const setFollow = useCallback(
+    (next: boolean) => {
+      followRef.current = next;
+      if (next) {
+        releasedByTouchRef.current = false;
+        setScrollButton(false);
+      }
+    },
+    [setScrollButton],
+  );
+
+  const settleRef = useRef<() => void>(() => {});
+  const settleFrameRef = useRef<number | null>(null);
+  // Layout and content-size events of one native layout pass arrive together;
+  // one frame lets them all land before the list is moved.
+  const scheduleSettle = useCallback(() => {
+    if (settleFrameRef.current !== null) return;
+    settleFrameRef.current = requestAnimationFrame(() => {
+      settleFrameRef.current = null;
+      settleRef.current();
+    });
+  }, []);
+
+  const cancelGlide = useCallback(() => {
+    const glide = glideRef.current;
+    if (!glide) return;
+    if (glide.quiet) clearTimeout(glide.quiet);
+    clearTimeout(glide.cap);
+    glideRef.current = null;
+    // The glide's own-scroll window was sized for its cap; give it back.
+    ownScrollUntilRef.current = Date.now() + OWN_SCROLL_MS;
+  }, []);
+
+  /** The glide landed: one settle for whatever changed meanwhile. */
+  const endGlide = useCallback(() => {
+    if (!glideRef.current) return;
+    cancelGlide();
+    scheduleSettle();
+  }, [cancelGlide, scheduleSettle]);
+
+  /** Start a glide to `target`, or re-aim the one in flight (it keeps its cap). */
+  const glideTo = useCallback(
+    (target: number) => {
+      const inFlight = glideRef.current;
+      if (Math.abs(currentOffsetRef.current - target) <= 1) {
+        if (inFlight) endGlide();
+        return;
+      }
+      if (inFlight?.quiet) clearTimeout(inFlight.quiet);
+      glideRef.current = {
+        target,
+        quiet: null,
+        cap: inFlight ? inFlight.cap : setTimeout(endGlide, GLIDE_MAX_MS),
+      };
+      markOwnScroll(GLIDE_MAX_MS + OWN_SCROLL_MS);
+      flatListRef.current?.scrollToOffset({ offset: target, animated: true });
+    },
+    [endGlide, markOwnScroll],
+  );
+
+  /** FACT 2 + THE RULE: after any layout change, a following list is at the end. */
+  const settle = useCallback(() => {
+    const { measured, anchorChanged } = sizeRoom();
+    if (!followRef.current || viewportHeightRef.current <= 0) return;
+    const glideArmed = Date.now() < sendGlideUntilRef.current;
+    // A send's glide waits for its turn's own layout, so it starts once, at
+    // the right target, instead of starting short and re-aiming.
+    if (glideArmed && !measured) return;
+    const end = settledEnd();
+    const motion = settleMotion({
+      distance: Math.abs(currentOffsetRef.current - end),
+      end,
+      anchorChanged,
+      glideArmed,
+      glideTarget: glideRef.current?.target ?? null,
+      reduceMotion: reduceMotionRef.current,
+    });
+    if (motion === 'none' || motion === 'wait') return;
+    // The armed glide is spent by the first move it could shape.
+    sendGlideUntilRef.current = 0;
+    if (motion === 'glide') {
+      glideTo(end);
+      return;
+    }
+    markOwnScroll(OWN_SCROLL_MS);
+    flatListRef.current?.scrollToOffset({ offset: end, animated: false });
+  }, [sizeRoom, settledEnd, glideTo, markOwnScroll]);
+  settleRef.current = settle;
+
+  useEffect(
+    () => () => {
+      if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
+      cancelGlide();
+    },
+    [cancelGlide],
+  );
+
+  /** Follow from here and go to the end without animation (thread open, a command). */
+  const stickToEnd = useCallback(() => {
+    setFollow(true);
+    cancelGlide();
+    scheduleSettle();
+  }, [setFollow, cancelGlide, scheduleSettle]);
+
+  /** The scroll-to-bottom button: glide to the end and follow from here. */
+  const jumpToEnd = useCallback(() => {
+    setFollow(nextFollow(followRef.current, { type: 'jump-to-end' }));
+    sizeRoom();
+    const end = settledEnd();
+    if (reduceMotionRef.current) {
+      cancelGlide();
+      markOwnScroll(OWN_SCROLL_MS);
+      flatListRef.current?.scrollToOffset({ offset: end, animated: false });
+      return;
+    }
+    glideTo(end);
+  }, [setFollow, sizeRoom, settledEnd, cancelGlide, markOwnScroll, glideTo]);
+
+  // When turns appear:
+  // - a turn the reader just sent glides to the top of the list in one motion;
+  // - an opened session follows its end, unless a saved offset is restored;
+  // - any other new turn (another client, a trigger) is followed when the
+  //   thread was effectively at its end.
+  // Later growth is followed by `settle` itself.
+  const prevTurnCount = useRef(turns.length);
+  const openedSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (didRestoreScrollRef.current) return;
+    const grew = turns.length > prevTurnCount.current;
+    prevTurnCount.current = turns.length;
+    if (turns.length === 0) return;
+    const firstOpen = openedSessionIdRef.current !== sessionId;
+    openedSessionIdRef.current = sessionId;
+
+    if (grew && userSentRef.current) {
+      userSentRef.current = false;
+      setFollow(nextFollow(followRef.current, { type: 'send' }));
+      sendGlideUntilRef.current = Date.now() + SEND_GLIDE_ARM_MS;
+      scheduleSettle();
+      return;
+    }
+
+    if (firstOpen) {
+      releasedByTouchRef.current = false;
+      settledAtEndRef.current = false;
+      lastAnchorRef.current = null;
+      turnHeightsRef.current.clear();
+      cancelGlide();
+      if (savedScrollOffset > 0) {
+        followRef.current = false;
+        return;
+      }
+      stickToEnd();
+      return;
+    }
+
+    if (
+      !followRef.current &&
+      shouldFollowNewTurn({
+        grew,
+        releasedByTouch: releasedByTouchRef.current,
+        settledNearEnd: settledAtEndRef.current,
+      })
+    ) {
+      stickToEnd();
+    }
+  }, [turns.length, sessionId, savedScrollOffset, setFollow, scheduleSettle, cancelGlide, stickToEnd]);
+
+  const handleScrollToIndexFailed = useCallback(() => {
+    stickToEnd();
+  }, [stickToEnd]);
+
+  // Restore scroll position when reopening this tab/session. A restored
+  // position does not follow the end.
+  useEffect(() => {
+    if (restoredSessionIdRef.current === sessionId) return;
     if (savedScrollOffset <= 0) {
-      didRestoreScrollRef.current = true;
+      restoredSessionIdRef.current = sessionId;
       return;
     }
     if (turns.length === 0) return;
     const timer = setTimeout(() => {
-      flatListRef.current?.scrollToOffset({
-        offset: savedScrollOffset,
-        animated: false,
-      });
-      didRestoreScrollRef.current = true;
+      followRef.current = false;
+      cancelGlide();
+      try {
+        markOwnScroll(OWN_SCROLL_MS);
+        flatListRef.current?.scrollToOffset({
+          offset: savedScrollOffset,
+          animated: false,
+        });
+      } finally {
+        restoredSessionIdRef.current = sessionId;
+      }
     }, 60);
     return () => clearTimeout(timer);
-  }, [savedScrollOffset, turns.length]);
+  }, [sessionId, savedScrollOffset, turns.length, cancelGlide, markOwnScroll]);
+
+  // Persist the scroll offset when a user scroll settles and when leaving the
+  // session. A thread left while following its end saves 0 (no position), so
+  // it reopens at its end, not at an old offset.
+  const persistScrollOffset = useCallback(
+    (targetSessionId: string, offset: number) => {
+      const following = followRef.current;
+      if (!following && isOwnScroll()) return;
+      const value = following ? 0 : offset;
+      if (value === lastSavedOffsetRef.current) return;
+      if (value !== 0 && Math.abs(value - lastSavedOffsetRef.current) < 24) return;
+      lastSavedOffsetRef.current = value;
+      useTabStore.getState().setTabState(targetSessionId, { scrollOffset: value });
+    },
+    [isOwnScroll],
+  );
+
+  useEffect(() => {
+    lastSavedOffsetRef.current = savedScrollOffset;
+    currentOffsetRef.current = savedScrollOffset;
+    return () => {
+      persistScrollOffset(sessionId, currentOffsetRef.current);
+    };
+  }, [sessionId, savedScrollOffset, persistScrollOffset]);
+
+  /** A user scroll came to rest: at the end, follow resumes. */
+  const handleScrollRest = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const offset = Math.max(0, contentOffset.y || 0);
+      currentOffsetRef.current = offset;
+      const distance = distanceFromEnd({
+        offset,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+      });
+      if (!isOwnScroll()) settledAtEndRef.current = isAtEnd(distance);
+      const next = nextFollow(followRef.current, { type: 'rest', distanceFromEnd: distance });
+      if (next !== followRef.current) setFollow(next);
+      updateScrollButton(distance);
+      persistScrollOffset(sessionId, offset);
+    },
+    [sessionId, persistScrollOffset, isOwnScroll, setFollow, updateScrollButton],
+  );
+
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      draggingRef.current = false;
+      const offset = Math.max(0, event.nativeEvent.contentOffset.y || 0);
+      // iOS only: where the scroll comes to rest after finger lift.
+      const target = event.nativeEvent.targetContentOffset;
+      if (
+        momentumFollows({
+          offset,
+          velocityY: event.nativeEvent.velocity?.y ?? 0,
+          targetOffsetY: target ? Math.max(0, target.y || 0) : undefined,
+        })
+      ) {
+        return; // onMomentumScrollEnd decides.
+      }
+      handleScrollRest(event);
+    },
+    [handleScrollRest],
+  );
+
+  const handleMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // iOS reports the end of our own animated scroll here too.
+      if (glideRef.current) {
+        endGlide();
+        return;
+      }
+      handleScrollRest(event);
+    },
+    [endGlide, handleScrollRest],
+  );
+
+  // A drag is reader intent: follow off, any glide or armed glide dropped.
+  const handleScrollBeginDrag = useCallback(() => {
+    draggingRef.current = true;
+    setFollow(nextFollow(followRef.current, { type: 'drag-begin' }));
+    releasedByTouchRef.current = false;
+    sendGlideUntilRef.current = 0;
+    cancelGlide();
+    ownScrollUntilRef.current = 0;
+  }, [setFollow, cancelGlide]);
+
+  // A touch on an idle thread releases follow, so a card the reader expands
+  // opens in place. While busy, touches keep following the stream.
+  const handleListTouchStart = useCallback(() => {
+    if (followRef.current && shouldReleaseStickOnTouch({ isBusy })) {
+      followRef.current = false;
+      releasedByTouchRef.current = true;
+    }
+  }, [isBusy]);
 
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offset = Math.max(0, event.nativeEvent.contentOffset.y || 0);
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const offset = Math.max(0, contentOffset.y || 0);
+      const prevOffset = currentOffsetRef.current;
+      currentOffsetRef.current = offset;
+      const last = scrollGeometryRef.current;
+      const geometryChanged =
+        contentSize.height !== last.contentHeight || layoutMeasurement.height !== last.viewportHeight;
+      scrollGeometryRef.current = { contentHeight: contentSize.height, viewportHeight: layoutMeasurement.height };
+      const distance = distanceFromEnd({
+        offset,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+      });
 
-      // Determine if user is near the bottom
-      const distanceFromBottom = contentHeightRef.current - offset - listHeightRef.current;
-      const atBottom = distanceFromBottom <= AT_BOTTOM_THRESHOLD;
-
-      if (isAutoScrollingRef.current) {
-        // This scroll event was triggered programmatically — don't touch follow state
-      } else if (atBottom) {
-        // User scrolled back to the bottom — resume following
-        isFollowingRef.current = true;
-      } else {
-        // User scrolled up manually — stop following
-        isFollowingRef.current = false;
+      const wasFollowing = followRef.current;
+      const next = nextFollow(wasFollowing, {
+        type: 'scroll',
+        ours: isOwnScroll(),
+        geometryChanged,
+        movedTowardEnd: offset >= prevOffset,
+        dragging: draggingRef.current,
+        distanceFromEnd: distance,
+      });
+      if (next !== wasFollowing) {
+        setFollow(next);
+        if (!next) {
+          releasedByTouchRef.current = false;
+          settledAtEndRef.current = false;
+        }
       }
+      updateScrollButton(distance);
 
-      if (Math.abs(offset - lastSavedOffsetRef.current) < 24) return;
-      lastSavedOffsetRef.current = offset;
-      setTabState(sessionId, { scrollOffset: offset });
+      // A glide lands when it reaches its target or its events go quiet.
+      const glide = glideRef.current;
+      if (glide) {
+        if (Math.abs(offset - glide.target) <= 1) {
+          endGlide();
+        } else {
+          if (glide.quiet) clearTimeout(glide.quiet);
+          glide.quiet = setTimeout(endGlide, GLIDE_QUIET_MS);
+        }
+      }
     },
-    [sessionId, setTabState],
+    [isOwnScroll, setFollow, updateScrollButton, endGlide],
   );
 
-  // Auto-scroll to bottom while AI is typing, if user hasn't scrolled up
   const handleContentSizeChange = useCallback(
-    (_w: number, h: number) => {
-      contentHeightRef.current = h;
-      if (isBusy && isFollowingRef.current) {
-        isAutoScrollingRef.current = true;
-        flatListRef.current?.scrollToEnd({ animated: false });
-        // Reset flag after scroll event propagates
-        setTimeout(() => { isAutoScrollingRef.current = false; }, 80);
-      }
+    (_width: number, height: number) => {
+      contentHeightRef.current = height;
+      scheduleSettle();
     },
-    [isBusy],
+    [scheduleSettle],
   );
 
+  // The viewport shrinks when the keyboard opens or the composer grows.
   const handleListLayout = useCallback(
-    (event: { nativeEvent: { layout: { height: number } } }) => {
-      listHeightRef.current = event.nativeEvent.layout.height;
+    (e: LayoutChangeEvent) => {
+      viewportHeightRef.current = e.nativeEvent.layout.height;
+      scheduleSettle();
     },
-    [],
+    [scheduleSettle],
   );
+
+  const handleTurnLayout = useCallback(
+    (id: string, height: number) => {
+      const prev = turnHeightsRef.current.get(id);
+      if (prev !== undefined && Math.abs(prev - height) < 0.5) return;
+      turnHeightsRef.current.set(id, height);
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
+
+  // Footer content above the spacer (compaction marker, busy row) is part of
+  // the span. The wrapper always mounts, so an emptied footer reports 0.
+  const handleFooterContentLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const height = e.nativeEvent.layout.height;
+      if (Math.abs(footerContentHeightRef.current - height) < 0.5) return;
+      footerContentHeightRef.current = height;
+      scheduleSettle();
+    },
+    [scheduleSettle],
+  );
+
+  const handleSpacerLayout = useCallback((e: LayoutChangeEvent) => {
+    renderedRoomRef.current = e.nativeEvent.layout.height;
+  }, []);
 
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
@@ -550,6 +1294,27 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     },
     [sandboxUrl, sessionId],
   );
+
+  // Permission reply — the Deny / Allow always / Allow once prompt under a
+  // tool row. Same as apps/web `handlePermissionReply`: no optimistic remove;
+  // the prompt leaves the store only once the runtime accepted the reply, so
+  // a failed reply stays visible.
+  const handlePermissionReply = useCallback(
+    async (requestId: string, reply: PermissionReply) => {
+      if (!sandboxUrl) return;
+      try {
+        await replyToPermission(sandboxUrl, requestId, reply);
+        useSyncStore.getState().removePermission(sessionId, requestId);
+      } catch (err: any) {
+        log.error('[SessionPage] Permission reply failed:', err?.message || err);
+        toast.error("Couldn't send the permission reply. Try again.");
+      }
+    },
+    [sandboxUrl, sessionId, toast],
+  );
+
+  // Inline-code file paths in the transcript open the file viewer.
+  const markdownActions = useMemo(() => ({ onOpenFile: handleFileMention }), [handleFileMention]);
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
@@ -573,6 +1338,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const handleCommand = useCallback(
     async (cmd: Command, args?: string) => {
       if (!sandboxUrl) return;
+      // A command creates its turn through the stream, not optimistically, so
+      // it has no send scroll: show the result by sticking to the end.
+      stickToEnd();
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       try {
         const token = await getAuthToken();
@@ -580,9 +1348,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           command: cmd.name,
           arguments: args || '',
         };
-        if (resolved.agent?.name) payload.agent = resolved.agent.name;
-        if (resolved.modelKey) payload.model = `${resolved.modelKey.providerID}/${resolved.modelKey.modelID}`;
-        if (resolved.variant) payload.variant = resolved.variant;
+        const current = resolvedRef.current;
+        if (current.agent?.name) payload.agent = current.agent.name;
+        if (current.modelKey) payload.model = `${current.modelKey.providerID}/${current.modelKey.modelID}`;
+        if (current.variant) payload.variant = current.variant;
 
         const res = await fetch(`${sandboxUrl}/session/${sessionId}/command`, {
           method: 'POST',
@@ -602,39 +1371,85 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
-    [sandboxUrl, sessionId, resolved.agent, resolved.modelKey, resolved.variant],
+    [sandboxUrl, sessionId, stickToEnd],
   );
 
-  // Track last turn height for footer sizing
-  const turnHeights = useRef<Record<string, number>>({});
-  const [lastTurnHeight, setLastTurnHeight] = useState(80);
-
+  // Only the working turn (web `resolveWorkingTurn`) receives status and busy;
+  // other turns get stable values, so their memoized rows skip stream renders.
+  // The room follows the displayed order. Every turn gets `pendingQuestions`
+  // (one stable store array) so a pending question tool part is hidden in
+  // whichever turn holds it.
   const renderTurn = useCallback(
-    ({ item, index }: { item: Turn; index: number }) => (
-      <View
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          turnHeights.current[item.userMessage.info.id] = h;
-          // Update footer when the last turn's height changes
-          if (index === turns.length - 1) {
-            setLastTurnHeight(h);
-          }
-        }}
-      >
-        <SessionTurn
-          turn={item}
-          allMessages={safeMessages}
-          sessionStatus={sessionStatus}
-          isBusy={isBusy}
-          pendingQuestions={pendingQuestions}
-          agentNames={agentNames}
-          onFileMention={handleFileMention}
-          onSessionMention={handleSessionMention}
-          commands={commands}
+    ({ item, index }: { item: Turn; index: number }) => {
+      const id = item.userMessage.info.id;
+      const isWorkingTurn = id === workingTurnId;
+      // Web: a failed compaction attempt with a later compaction turn is
+      // history — it keeps its row (stable keys, layout) but renders nothing.
+      const suppressed =
+        lastCompactionTurnIndex > index &&
+        isSuppressedFailedCompaction({
+          info: compactionTurnInfo(item as never),
+          isTurnWorking: isWorkingTurn,
+          turnIndex: index,
+          lastCompactionTurnIndex,
+        });
+      // The turn list is read through the ref: depending on `turns` would
+      // re-render every row on each stream delta.
+      const gap = suppressed ? 0 : turnGapAt(layoutInputsRef.current.turns, index);
+      return (
+        <View
+          style={gap > 0 ? { marginTop: gap } : undefined}
+          onLayout={(e) => handleTurnLayout(id, e.nativeEvent.layout.height)}>
+          {suppressed ? null : (
+          <SessionTurn
+            turn={item}
+            isWorkingTurn={isWorkingTurn}
+            sessionStatus={isWorkingTurn ? sessionStatus : undefined}
+            isBusy={isWorkingTurn ? isBusy : false}
+            suppressBusyIndicator={isWorkingTurn && suppressWorkingBusy}
+            sessionId={sessionId}
+            permissions={pendingPermissions}
+            pendingQuestions={pendingQuestions}
+            onPermissionReply={handlePermissionReply}
+            agentNames={agentNames}
+            onFileMention={handleFileMention}
+            onSessionMention={handleSessionMention}
+            commands={commands}
+            editingText={rewindTarget?.messageId === id ? rewindTarget.text : null}
+            editPending={rewindTarget?.messageId === id ? editPending : false}
+            onEditStart={handleEditStart}
+            onEditCancel={handleEditCancel}
+            onEditSend={handleEditSend}
+            rewindDisabled={rewindDisabled}
+            queueState={interruptedIds.has(id) ? 'interrupted' : null}
+          />
+          )}
+        </View>
+      );
+    },
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds],
+  );
+
+  const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
+
+  const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
+  const handleClearQueue = useCallback(() => queueClearSession(sessionId), [queueClearSession, sessionId]);
+  const inputSlot = useMemo(
+    () =>
+      queuedMessages.length > 0 ? (
+        <QueuePanel
+          messages={queuedMessages}
+          expanded={queueExpanded}
+          onToggle={handleToggleQueue}
+          onRemove={queueRemove}
+          onMoveUp={queueMoveUp}
+          onMoveDown={queueMoveDown}
+          onClear={handleClearQueue}
+          onSendNow={handleQueueSendNow}
+          isDark={isDark}
         />
-      </View>
-    ),
-    [safeMessages, sessionStatus, isBusy, turns.length, pendingQuestions, agentNames, handleFileMention, handleSessionMention, commands],
+      ) : undefined,
+    [queuedMessages, queueExpanded, handleToggleQueue, queueRemove, queueMoveUp, queueMoveDown, handleClearQueue, handleQueueSendNow, isDark],
   );
 
   const title = session?.title || 'New Session';
@@ -684,121 +1499,122 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       behavior="padding"
       className="bg-background"
     >
-      {/* Header — matches dashboard layout exactly */}
-      <View
-        style={{ paddingTop: insets.top, paddingBottom: 36 }}
-        className="px-4 bg-chrome-background"
-      >
-        <View className="flex-row items-center">
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onOpenDrawer}
-              className="mr-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
-            </TouchableOpacity>
-          )}
-          <View className="flex-1 flex-row items-center">
-            {/* Status dot before the title (matches web session-list):
-                amber when a question is waiting, green while working,
-                hidden otherwise. */}
-            {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
-              <View
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
-                  marginRight: 8,
-                }}
-              />
+      {effectiveChrome === 'header' ? (
+        /* Header — flat bar on the page surface, matches PageHeader */
+        <View
+          style={{ paddingTop: insets.top, paddingBottom: 12 }}
+          className="px-4 bg-background"
+        >
+          <View className="flex-row items-center">
+            {!onboardingMode && (
+              <View className="mr-3">
+                <MenuButton onPress={onOpenDrawer} />
+              </View>
             )}
-            {isEditingTitle ? (
-              <TextInput
-                ref={titleInputRef}
-                value={titleDraft}
-                onChangeText={setTitleDraft}
-                onBlur={commitTitleEdit}
-                onSubmitEditing={commitTitleEdit}
-                returnKeyType="done"
-                blurOnSubmit
-                maxLength={200}
-                placeholder="Session title"
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)'}
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  fontFamily: 'Roobert-Medium',
-                  color: isDark ? '#F8F8F8' : '#121215',
-                  padding: 0,
-                  margin: 0,
-                }}
-              />
-            ) : (
-              <TouchableOpacity
-                onPress={beginTitleEdit}
-                disabled={onboardingMode}
-                activeOpacity={onboardingMode ? 1 : 0.7}
-                className="flex-1"
-                hitSlop={{ top: 8, bottom: 8 }}
-              >
-                <Text
-                  className="text-base font-medium text-muted-foreground"
-                  numberOfLines={1}
+            <View className="flex-1 flex-row items-center">
+              {/* Status dot before the title (matches web session-list):
+                  amber when a question is waiting, green while working,
+                  hidden otherwise. */}
+              {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
+                <View
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: pendingQuestions.length > 0 ? THEME.accent.orange : THEME.accent.green,
+                    marginRight: 8,
+                  }}
+                />
+              )}
+              {isEditingTitle ? (
+                <TextInput
+                  ref={titleInputRef}
+                  value={titleDraft}
+                  onChangeText={setTitleDraft}
+                  onBlur={commitTitleEdit}
+                  onSubmitEditing={commitTitleEdit}
+                  returnKeyType="done"
+                  blurOnSubmit
+                  maxLength={200}
+                  placeholder="Session title"
+                  placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    fontFamily: 'Roobert-Medium',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
+                    padding: 0,
+                    margin: 0,
+                  }}
+                />
+              ) : (
+                <Button
+                  variant="ghost"
+                  onPress={beginTitleEdit}
+                  disabled={onboardingMode}
+                  className={`h-auto w-auto flex-1 justify-start p-0 active:bg-transparent ${onboardingMode ? 'active:opacity-100' : 'active:opacity-70'}`}
+                  hitSlop={{ top: 8, bottom: 8 }}
                 >
-                  {title}
+                  <Text
+                    className="text-base font-medium text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {title}
+                  </Text>
+                </Button>
+              )}
+            </View>
+            {!onboardingMode && (
+              <Button
+                variant="ghost"
+                onPress={onOpenRightDrawer}
+                className="h-auto w-auto ml-3 p-1 active:bg-transparent active:opacity-70"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon={DotsThreeIcon} size={20} />
+              </Button>
+            )}
+            {onboardingMode && onSkipOnboarding && (
+              <Button
+                variant="ghost"
+                onPress={onSkipOnboarding}
+                className="h-auto w-auto ml-3 py-1 px-3 active:bg-transparent active:opacity-70"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.4) }}>
+                  Skip
                 </Text>
-              </TouchableOpacity>
+              </Button>
             )}
           </View>
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onOpenRightDrawer}
-              className="ml-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="apps-outline" size={20} />
-            </TouchableOpacity>
-          )}
-          {onboardingMode && onSkipOnboarding && (
-            <TouchableOpacity
-              onPress={onSkipOnboarding}
-              className="ml-3 py-1 px-3"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
-                Skip
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
+      ) : (
+        /* Floating menu button — opens the project drawer (every project page
+           shows it, Jay 2026-09-16). */
+        <FloatingMenuButton onPress={onOpenDrawer} />
+      )}
 
-      {/* Messages + Fresh Session Hero */}
-      <View
-        style={{
-          flex: 1,
-          marginTop: -24,
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
-          overflow: 'hidden',
-          borderTopWidth: 2,
-          borderLeftWidth: 2,
-          borderRightWidth: 2,
-          borderColor: isDark ? '#222222' : '#e6e6e5',
-        }}
-        className="bg-background"
-      >
+      {/* Messages + Fresh Session Hero — flat continuation of the page
+          surface (the rounded "sheet" card treatment was removed app-wide). */}
+      <View style={{ flex: 1 }} className="bg-background">
+        <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
           data={turns}
           renderItem={renderTurn}
-          keyExtractor={(item, index) => `${item.userMessage.info.id}:${index}`}
-          contentContainerStyle={{ paddingTop: 16 }}
+          keyExtractor={keyExtractor}
+          initialNumToRender={INITIAL_TURNS_TO_RENDER}
+          maxToRenderPerBatch={5}
+          windowSize={11}
+          updateCellsBatchingPeriod={32}
+          contentContainerStyle={{ paddingTop: listTopInset }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
+          onScrollEndDrag={handleScrollEndDrag}
+          onTouchStart={handleListTouchStart}
           onContentSizeChange={handleContentSizeChange}
           onLayout={handleListLayout}
           // WhatsApp-style: drag the message list down to dismiss the keyboard.
@@ -808,73 +1624,44 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           keyboardShouldPersistTaps="handled"
           ListFooterComponent={
             <View>
-              {isCompacting && (
-                <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
-                  {/* Divider with Compaction badge */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }} />
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 6,
-                      paddingHorizontal: 10, paddingVertical: 4,
-                      borderRadius: 6,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                      borderWidth: 1,
-                      borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    }}>
-                      <Ionicons name="layers-outline" size={12} color={isDark ? '#888' : '#666'} />
-                      <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: isDark ? '#888' : '#666', letterSpacing: 0.3 }}>
-                        Compaction
-                      </RNText>
-                    </View>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }} />
+              {/* Footer content above the spacer — part of the anchor span. */}
+              <View onLayout={handleFooterContentLayout} className="px-4">
+                {/* Web: the optimistic compaction marker, where the real
+                    compaction turn will mount, until that turn exists. */}
+                {isCompacting && !hasCompactionTurn ? (
+                  <View style={{ marginTop: turns.length > 0 ? webSpace(12) : webSpace(2) }}>
+                    <CompactionMarker running />
                   </View>
-                  {/* Compacting indicator */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    {isDark ? (
-                      <KortixSymbolWhite width={14} height={14} />
-                    ) : (
-                      <KortixSymbolBlack width={14} height={14} />
-                    )}
-                    <RNText style={{ fontSize: 14, fontFamily: 'Roobert', color: isDark ? '#888' : '#666' }}>
-                      Compacting session...
-                    </RNText>
-                  </View>
-                </View>
-              )}
-              <View
-                style={{
-                  // Fill remaining viewport so the last turn's user bubble
-                  // sits at the top. Subtract: header (~60+insets), input (~90+insets),
-                  // footer bar (~50), and the actual measured last turn height.
-                  height: Math.max(0, windowHeight - insets.top - insets.bottom - 195 - lastTurnHeight),
-                }}
-              />
+                ) : null}
+                {/* Web: busy with no turn to attach the row to. */}
+                {showTranscriptBusyRow ? (
+                  <SessionBusyIndicator
+                    sessionId={sessionId}
+                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
+                  />
+                ) : null}
+              </View>
+              {/* The room (FACT 1): lets the newest turn pin near the top. */}
+              <View onLayout={handleSpacerLayout} style={{ height: room }} />
             </View>
           }
-          onScrollToIndexFailed={(info) => {
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({
-                index: info.index,
-                viewPosition: 0,
-                viewOffset: 0,
-                animated: true,
-              });
-            }, 200);
-          }}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
         />
+        </MarkdownActionsProvider>
+
+        <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
         <FreshSessionHero
-          isDark={isDark}
+          projectName={projectName}
           opacity={heroOpacity}
           visible={showFreshHero}
-          windowWidth={windowWidth}
         />
       </View>
 
       {/* Fade gradient above input — only when textarea is shown */}
       {!hasQuestion && (
         <LinearGradient
-          colors={isDark ? ['rgba(13,13,13,0)', 'rgba(13,13,13,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
+          colors={isDark ? [withAlpha(THEME.dark.background, 0), withAlpha(THEME.dark.background, 1)] : [withAlpha(THEME.light.background, 0), withAlpha(THEME.light.background, 1)]}
           style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
         />
@@ -890,7 +1677,15 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       )}
 
       {/* Bottom area — question prompt OR chat input */}
-      <View style={onboardingMode ? { paddingBottom: insets.bottom } : undefined}>
+      <View
+        style={
+          onboardingMode
+            ? { paddingBottom: insets.bottom }
+            : effectiveChrome === 'floating'
+              ? { paddingBottom: insets.bottom + 64 }
+              : undefined
+        }
+      >
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
@@ -905,39 +1700,25 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             isBusy={isBusy}
             onboardingMode={onboardingMode}
             initialText={savedInputText}
-            onTextChange={(t) => { inputTextRef.current = t; }}
+            onTextChange={handleTextChange}
             agent={resolved.agent}
-            agents={resolved.agents}
-            model={resolved.model}
+            agents={resolvedAgents}
+            model={resolvedModel}
             models={visibleModels}
-            modelKey={resolved.modelKey}
+            modelKey={resolvedModelKey}
             variant={resolved.variant}
-            variants={resolved.variants}
-            onAgentChange={resolved.setAgent}
-            onModelChange={(pid, mid) => resolved.setModel(pid, mid, { explicit: true })}
-            onVariantCycle={resolved.cycleVariant}
-            onVariantSet={resolved.setVariant}
+            variants={resolvedVariants}
+            onAgentChange={handleAgentChange}
+            onModelChange={handleModelChange}
+            onVariantCycle={handleVariantCycle}
+            onVariantSet={handleVariantSet}
             sessions={allSessions}
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}
-            inputSlot={
-              queuedMessages.length > 0 ? (
-                <QueuePanel
-                  messages={queuedMessages}
-                  expanded={queueExpanded}
-                  onToggle={() => setQueueExpanded((v) => !v)}
-                  onRemove={queueRemove}
-                  onMoveUp={queueMoveUp}
-                  onMoveDown={queueMoveDown}
-                  onClear={() => queueClearSession(sessionId)}
-                  onSendNow={handleQueueSendNow}
-                  isDark={isDark}
-                />
-              ) : undefined
-            }
+            inputSlot={inputSlot}
           />
         )}
       </View>
@@ -953,63 +1734,93 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         sandboxId=""
         sandboxUrl={sandboxUrl}
       />
+
+      {/* File taps inside tool rows (ToolNavigation.openFile) */}
+      <ToolFilePreviewHost />
     </KeyboardAvoidingView>
   );
 }
 
-function getGreetingLabel(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+/**
+ * Memoized so a parent render with unchanged props does not re-render the
+ * thread. Callers pass stable callbacks.
+ */
+export const SessionPage = React.memo(SessionPageImpl);
+
+/** Web: `ease-[cubic-bezier(0.23,1,0.32,1)]` on the scroll-to-bottom button. */
+const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
+
+/**
+ * ScrollToBottomButton — apps/web `session-chat.tsx`'s chevron: a round glass
+ * button centred above the composer, shown once the reader is more than 120pt
+ * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
+ * in, `duration-fast` out. Tapping glides to the end and follows from there.
+ *
+ * iOS 26+ draws native Liquid Glass (web `liquid-glass`); elsewhere the
+ * `secondary` round button, the closest token to web's 45% `secondary` glass.
+ */
+function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
+  const progress = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? MOTION.duration.normal : MOTION.duration.fast,
+      easing: SCROLL_BUTTON_EASING,
+    });
+  }, [visible, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.97 + 0.03 * progress.value }],
+  }));
+
+  return (
+    <Reanimated.View
+      pointerEvents={visible ? 'box-none' : 'none'}
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      // 16pt above the 24pt fade that overlaps the bottom of the list.
+      style={[{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center', zIndex: 20 }, style]}
+    >
+      <PlatformButton
+        glass
+        systemImage="chevron.down"
+        icon={CaretDownIcon}
+        fallbackVariant="secondary"
+        accessibilityLabel="Scroll to bottom"
+        onPress={onPress}
+      />
+    </Reanimated.View>
+  );
 }
 
+/**
+ * FreshSessionHero — the project greeting centred in the message area of a
+ * chat with no messages yet. Same `ProjectGreeting` as ProjectHome, so a new
+ * chat opens onto the surface the project home showed.
+ */
 function FreshSessionHero({
-  isDark,
+  projectName,
   opacity,
   visible,
-  windowWidth,
 }: {
-  isDark: boolean;
+  projectName?: string;
   opacity: Animated.Value;
   visible: boolean;
-  windowWidth: number;
 }) {
-  const Symbol = isDark ? KortixSymbolWhite : KortixSymbolBlack;
-  const greeting = useMemo(() => getGreetingLabel(), []);
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslateY = useRef(new Animated.Value(14)).current;
-  const leftOffset = (windowWidth - 393) / 2;
+  const translateY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
     if (visible) {
-      logoOpacity.setValue(0);
-      textOpacity.setValue(0);
-      textTranslateY.setValue(14);
-
-      // Logo: fade-in only
-      Animated.timing(logoOpacity, {
-        toValue: 1,
-        duration: 520,
+      translateY.setValue(10);
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
-
-      // Greeting: fade + gentle rise
-      Animated.parallel([
-        Animated.timing(textOpacity, {
-          toValue: 1,
-          duration: 620,
-          useNativeDriver: true,
-        }),
-        Animated.timing(textTranslateY, {
-          toValue: 0,
-          duration: 760,
-          useNativeDriver: true,
-        }),
-      ]).start();
     }
-  }, [visible, logoOpacity, textOpacity, textTranslateY]);
+  }, [visible, translateY]);
 
   return (
     <Animated.View
@@ -1020,50 +1831,15 @@ function FreshSessionHero({
         left: 0,
         right: 0,
         bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
         opacity,
       }}
     >
-      {/* Logo + greeting share the same absolutely-positioned box so the
-          text stays centered in the logo regardless of screen height. */}
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: -80 + leftOffset,
-          width: 554,
-          height: 462,
-        }}
-      >
-        <Animated.View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            opacity: Animated.multiply(logoOpacity, 0.4),
-          }}
-        >
-          <Symbol width={554} height={462} />
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: textOpacity,
-            transform: [{ translateY: textTranslateY }],
-          }}
-        >
-          <RNText
-            style={{
-              fontSize: 14,
-              fontFamily: 'Roobert',
-              color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
-              letterSpacing: 0.28,
-            }}
-          >
-            {greeting}
-          </RNText>
-        </Animated.View>
-      </View>
+      <Animated.View style={{ transform: [{ translateY }] }}>
+        <ProjectGreeting projectName={projectName} />
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -1093,10 +1869,12 @@ function QueuePanel({
   onSendNow: (id: string) => void;
   isDark: boolean;
 }) {
-  const bgColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const mutedText = isDark ? '#888' : '#999';
-  const fgText = isDark ? '#ccc' : '#444';
+  const bgColor = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  // Original literals (`#888`/`#999`) had their light/dark branches swapped
+  // relative to their own lightness.
+  const mutedText = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
+  const fgText = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   return (
     <View
@@ -1110,22 +1888,16 @@ function QueuePanel({
       }}
     >
       {/* Header — tap to expand/collapse */}
-      <TouchableOpacity
+      <Button
+        variant="ghost"
         onPress={onToggle}
-        activeOpacity={0.7}
+        className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
       >
-        <Ionicons
-          name="list-outline"
-          size={14}
-          color={mutedText}
-          style={{ marginRight: 6 }}
-        />
+        <ListIcon size={14} color={mutedText} style={{ marginRight: 6 }} />
         <RNText
           style={{
             flex: 1,
@@ -1141,20 +1913,22 @@ function QueuePanel({
             : ''}
         </RNText>
         {/* Clear all */}
-        <TouchableOpacity
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={() => onClear()}
           hitSlop={8}
-          style={{ marginRight: 8 }}
+          className="h-auto w-auto mr-2 p-0 active:bg-transparent active:opacity-70"
         >
-          <Ionicons name="close" size={14} color={mutedText} />
-        </TouchableOpacity>
+          <XIcon size={14} color={mutedText} />
+        </Button>
         {/* Expand/collapse chevron */}
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={14}
-          color={mutedText}
-        />
-      </TouchableOpacity>
+        {expanded ? (
+          <CaretUpIcon size={14} color={mutedText} />
+        ) : (
+          <CaretDownIcon size={14} color={mutedText} />
+        )}
+      </Button>
 
       {/* Expanded list */}
       {expanded && messages.length > 0 && (
@@ -1204,41 +1978,49 @@ function QueuePanel({
                 {/* Action buttons */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   {/* Send now */}
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => onSendNow(qm.id)}
                     hitSlop={6}
-                    style={{ padding: 4 }}
+                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
-                    <Ionicons name="send" size={12} color={isDark ? '#60a5fa' : '#3b82f6'} />
-                  </TouchableOpacity>
+                    <PaperPlaneTiltIcon size={12} color={THEME.accent.blue} weight="fill" />
+                  </Button>
                   {/* Move up */}
                   {idx > 0 && (
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onPress={() => onMoveUp(qm.id)}
                       hitSlop={6}
-                      style={{ padding: 4 }}
+                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
-                      <Ionicons name="arrow-up" size={12} color={mutedText} />
-                    </TouchableOpacity>
+                      <ArrowUpIcon size={12} color={mutedText} />
+                    </Button>
                   )}
                   {/* Move down */}
                   {idx < messages.length - 1 && (
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onPress={() => onMoveDown(qm.id)}
                       hitSlop={6}
-                      style={{ padding: 4 }}
+                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
-                      <Ionicons name="arrow-down" size={12} color={mutedText} />
-                    </TouchableOpacity>
+                      <ArrowDownIcon size={12} color={mutedText} />
+                    </Button>
                   )}
                   {/* Remove */}
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => onRemove(qm.id)}
                     hitSlop={6}
-                    style={{ padding: 4 }}
+                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
-                    <Ionicons name="close" size={12} color={mutedText} />
-                  </TouchableOpacity>
+                    <XIcon size={12} color={mutedText} />
+                  </Button>
                 </View>
               </View>
             ))}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 
@@ -69,12 +69,15 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
     return setEnabled(!isEnabled);
   }, [isEnabled, setEnabled]);
 
-  const value: AdvancedFeaturesContextType = {
-    isEnabled,
-    isLoading,
-    setEnabled,
-    toggle,
-  };
+  const value = useMemo<AdvancedFeaturesContextType>(
+    () => ({
+      isEnabled,
+      isLoading,
+      setEnabled,
+      toggle,
+    }),
+    [isEnabled, isLoading, setEnabled, toggle]
+  );
 
   return (
     <AdvancedFeaturesContext.Provider value={value}>

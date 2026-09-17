@@ -11,37 +11,33 @@
 import React, { useMemo, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
-import {
-  Key,
-  User,
-  Lock,
-  Users,
-  Globe,
-  Check,
-  ChevronRight,
-  Trash2,
-  X,
-  ShieldAlert,
-  type LucideIcon,
-} from 'lucide-react-native';
+  KeyIcon as Key,
+  UserIcon as User,
+  LockIcon as Lock,
+  UsersIcon as Users,
+  GlobeIcon as Globe,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  TrashIcon as Trash2,
+  XIcon as X,
+  ShieldWarningIcon as ShieldAlert,
+  type AppIcon,
+} from '@/lib/icons';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { SearchListHeader } from '@/components/ui/search-list-header';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProjectSecrets,
   useUpsertProjectSecret,
@@ -52,11 +48,11 @@ import {
 } from '@/lib/projects/hooks';
 import type { ProjectSecret, ConnectorSharing } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
   label: string;
-  icon: string;
 }
 
 interface SecretsNavPageProps {
@@ -72,9 +68,21 @@ const MONO = 'Menlo';
 const SECRET_NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const sanitizeName = (t: string) => t.toUpperCase().replace(/[^A-Z0-9_]/g, '');
 
+/**
+ * `usable_by_me` and `sharing` are legacy per-secret sharing fields the
+ * current `ProjectSecret` SDK type no longer declares — its own doc comment
+ * says every project member with read access sees every secret now, with no
+ * per-secret member/group sharing. Read them defensively rather than widen
+ * the SDK contract from this app.
+ */
+type SecretWithLegacySharing = ProjectSecret & {
+  usable_by_me?: boolean;
+  sharing?: ConnectorSharing | null;
+};
+
 interface Row {
   name: string;
-  secret: ProjectSecret | null;
+  secret: SecretWithLegacySharing | null;
   required: boolean;
   optional: boolean;
 }
@@ -103,7 +111,7 @@ function buildRows(
   return rows;
 }
 
-function statusText(s: ProjectSecret | null): string {
+function statusText(s: SecretWithLegacySharing | null): string {
   if (!s) return 'Not set';
   if (s.effective_source === 'mine') return 'Using your own value';
   if (s.effective_source === 'shared') return 'Using the shared value';
@@ -119,7 +127,7 @@ function sharingScopeLabel(sharing: ConnectorSharing | null | undefined): string
 
 // ─── Sharing field (project / private / members) ──────────────────────────────
 
-const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; icon: LucideIcon }[] = [
+const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; icon: AppIcon }[] = [
   { mode: 'project', label: 'Everyone', icon: Globe },
   { mode: 'private', label: 'Only me', icon: Lock },
   { mode: 'members', label: 'Members', icon: Users },
@@ -138,9 +146,9 @@ function SharingField({
 }) {
   const theme = useThemeColors();
   const access = useProjectAccess(value.mode === 'members' ? projectId : null);
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1);
 
   const memberIds = value.mode === 'members' ? (value.memberIds ?? []) : [];
   const selectedSet = useMemo(() => new Set(memberIds), [memberIds]);
@@ -158,7 +166,7 @@ function SharingField({
           const on = value.mode === opt.mode;
           const Icon = opt.icon;
           return (
-            <TouchableOpacity
+            <Pressable
               key={opt.mode}
               onPress={() => {
                 haptics.selection();
@@ -166,7 +174,6 @@ function SharingField({
                 else if (opt.mode === 'private') onChange({ mode: 'private', ownerId: '' });
                 else onChange({ mode: 'members', memberIds });
               }}
-              activeOpacity={0.7}
               style={{
                 flex: 1, alignItems: 'center', gap: 5, paddingVertical: 11, borderRadius: 12,
                 borderWidth: 1.5, borderColor: on ? theme.primary : border,
@@ -175,7 +182,7 @@ function SharingField({
             >
               <Icon size={17} color={on ? theme.primary : muted} />
               <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: on ? theme.primary : muted }}>{opt.label}</Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -190,10 +197,9 @@ function SharingField({
             members.map((m, i) => {
               const on = selectedSet.has(m.user_id);
               return (
-                <TouchableOpacity
+                <Pressable
                   key={m.user_id}
                   onPress={() => { haptics.selection(); toggleMember(m.user_id); }}
-                  activeOpacity={0.6}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
                 >
                   <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
@@ -201,9 +207,9 @@ function SharingField({
                   </View>
                   <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
                   <View style={{ width: 20, height: 20, borderRadius: 6, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {on && <Check size={13} color="#fff" strokeWidth={3} />}
+                    {on && <Check size={13} color={theme.primaryForeground} />}
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             })
           )}
@@ -240,10 +246,10 @@ function SharedSecretForm({
   const [value, setValue] = useState('');
   const [sharing, setSharing] = useState<ConnectorSharing>(initialSharing);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
 
   const nameValid = SECRET_NAME_RE.test(name) && !name.startsWith('KORTIX_');
   const requiresValue = !configured;
@@ -268,9 +274,9 @@ function SharedSecretForm({
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>
           {nameEditable ? 'Add a secret' : configured ? 'Edit shared value' : 'Set shared value'}
         </Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -286,7 +292,7 @@ function SharedSecretForm({
           style={{ height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: nameEditable ? fg : muted, fontFamily: MONO, marginBottom: 4 }}
         />
         {nameEditable && name.length > 0 && !nameValid && (
-          <Text style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>
+          <Text style={{ fontSize: 12, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), marginBottom: 8 }}>
             Use A–Z, 0–9 and _, starting with a letter. KORTIX_ is reserved.
           </Text>
         )}
@@ -310,16 +316,15 @@ function SharedSecretForm({
         <SharingField projectId={projectId} value={sharing} onChange={setSharing} isDark={isDark} />
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={handleSave}
           disabled={!canSave}
-          activeOpacity={0.85}
           style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {upsert.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save shared value</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -347,10 +352,10 @@ function PersonalSecretForm({
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState('');
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
 
   const nameValid = SECRET_NAME_RE.test(name) && !name.startsWith('KORTIX_');
   const canSave = nameValid && value.trim().length > 0 && !setPersonal.isPending;
@@ -373,9 +378,9 @@ function PersonalSecretForm({
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>
           {nameEditable ? 'Add your value' : 'Your value'}
         </Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: inputBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -407,16 +412,15 @@ function PersonalSecretForm({
         </Text>
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={handleSave}
           disabled={!canSave}
-          activeOpacity={0.85}
           style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {setPersonal.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Use my own value</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -437,20 +441,19 @@ function ActionRow({
   isDark: boolean;
   busy?: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const color = destructive ? '#ef4444' : fg;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const color = destructive ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : fg;
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
       disabled={busy}
-      activeOpacity={0.7}
       style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border, opacity: busy ? 0.5 : 1 }}
     >
       {destructive && <Trash2 size={16} color={color} style={{ marginRight: 10 }} />}
       <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color }}>{label}</Text>
-      {busy ? <ActivityIndicator size="small" color={color} /> : !destructive && <ChevronRight size={18} color={isDark ? '#9b9b9b' : '#6e6e6e'} />}
-    </TouchableOpacity>
+      {busy ? <ActivityIndicator size="small" color={color} /> : !destructive && <ChevronRight size={18} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
+    </Pressable>
   );
 }
 
@@ -475,11 +478,11 @@ function SecretDetailSheet({
   const deleteShared = useDeleteProjectSecret(projectId);
 
   const s = row.secret;
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const iconBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   if (view === 'shared') {
     return (
@@ -561,12 +564,12 @@ function SecretDetailSheet({
           <Text style={{ fontSize: 16, fontFamily: MONO, color: fg }} numberOfLines={1}>{row.name}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert', color: muted }}>{statusText(s)}</Text>
-            {row.required && <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: '#d97706' }}>· Required</Text>}
+            {row.required && <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>· Required</Text>}
           </View>
         </View>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
@@ -574,20 +577,19 @@ function SecretDetailSheet({
         {(s?.mine || sharedSelectable) && (
           <>
             <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Use in my sessions</Text>
-            <View style={{ flexDirection: 'row', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderRadius: 9999, padding: 3, marginBottom: 18 }}>
+            <View style={{ flexDirection: 'row', backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 9999, padding: 3, marginBottom: 18 }}>
               {([
                 { key: 'shared', label: 'Shared', on: s?.effective_source === 'shared', enabled: sharedSelectable, onPress: chooseShared },
                 { key: 'mine', label: 'Mine', on: mineActive, enabled: true, onPress: chooseMine },
               ] as const).map((opt) => (
-                <TouchableOpacity
+                <Pressable
                   key={opt.key}
                   onPress={opt.enabled ? opt.onPress : undefined}
                   disabled={!opt.enabled}
-                  activeOpacity={0.7}
-                  style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: opt.on ? (isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent', opacity: opt.enabled ? 1 : 0.4 }}
+                  style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: opt.on ? (isDark ? withAlpha(THEME.dark.foreground, 0.12) : THEME.light.background) : 'transparent', opacity: opt.enabled ? 1 : 0.4 }}
                 >
                   <Text style={{ fontSize: 13, fontFamily: opt.on ? 'Roobert-Medium' : 'Roobert', color: opt.on ? fg : muted }}>{opt.label}</Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </View>
           </>
@@ -621,11 +623,11 @@ function SecretDetailSheet({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ManifestBanner({ status, path, error, isDark }: { status?: string; path?: string; error?: string; isDark: boolean }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   if (!status || status === 'loaded') return null;
   const warn = status === 'error';
-  const color = warn ? '#d97706' : muted;
-  const bg = warn ? 'rgba(217,119,6,0.08)' : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)');
+  const color = warn ? THEME.accent.orange : muted;
+  const bg = warn ? withAlpha(THEME.accent.orange, 0.08) : (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03));
   const text =
     status === 'missing'
       ? 'No kortix.yaml manifest — declare required env keys to track them here.'
@@ -646,6 +648,7 @@ export function SecretsNavPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: SecretsNavPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -656,10 +659,10 @@ export function SecretsNavPage({
 
   const { data, isLoading, isError, error, refetch } = useProjectSecrets(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
 
   const canManage = !!data?.can_manage;
   const rows = useMemo(
@@ -701,9 +704,9 @@ export function SecretsNavPage({
         <ManifestBanner status={data?.manifest_status} path={data?.manifest_path} error={data?.manifest_error} isDark={isDark} />
 
         {missingRequired > 0 && (
-          <View style={{ marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: 'rgba(217,119,6,0.08)', flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            <ShieldAlert size={16} color="#d97706" />
-            <Text style={{ flex: 1, fontSize: 12.5, color: '#d97706' }}>
+          <View style={{ marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: withAlpha(THEME.accent.orange, 0.08), flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <ShieldAlert size={16} color={THEME.accent.orange} />
+            <Text style={{ flex: 1, fontSize: 12.5, color: THEME.accent.orange }}>
               {missingRequired} required {missingRequired === 1 ? 'secret is' : 'secrets are'} not set.
             </Text>
           </View>
@@ -717,7 +720,7 @@ export function SecretsNavPage({
         />
 
         <ScrollView
-          style={{ flex: 1 }}
+        style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -729,9 +732,9 @@ export function SecretsNavPage({
           ) : isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load secrets'}</Text>
-              <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+              <Pressable onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : filtered.length === 0 ? (
             <View style={{ padding: 40, alignItems: 'center', gap: 10 }}>
@@ -748,18 +751,17 @@ export function SecretsNavPage({
               const scope = sharingScopeLabel(s?.sharing);
               return (
                 <View key={row.name}>
-                  <TouchableOpacity
+                  <Pressable
                     onPress={() => openRow(row.name)}
-                    activeOpacity={0.6}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, backgroundColor: amber ? 'rgba(217,119,6,0.05)' : 'transparent' }}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, backgroundColor: amber ? withAlpha(THEME.accent.orange, 0.05) : 'transparent' }}
                   >
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center' }}>
                       <Icon size={18} color={muted} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={{ fontSize: 14.5, fontFamily: MONO, color: fg }} numberOfLines={1}>{row.name}</Text>
-                        {row.required && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: '#d97706' }}>REQUIRED</Text>}
+                        {row.required && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>REQUIRED</Text>}
                         {row.optional && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>OPTIONAL</Text>}
                       </View>
                       <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>
@@ -767,7 +769,7 @@ export function SecretsNavPage({
                       </Text>
                     </View>
                     <ChevronRight size={18} color={muted} />
-                  </TouchableOpacity>
+                  </Pressable>
                   {i < filtered.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
                 </View>
               );
@@ -781,11 +783,11 @@ export function SecretsNavPage({
         ref={addSheetRef}
         snapPoints={['92%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {canManage ? (
           <SharedSecretForm
@@ -814,11 +816,11 @@ export function SecretsNavPage({
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedName(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {selectedRow ? (
           <SecretDetailSheet

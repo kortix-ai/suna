@@ -16,8 +16,8 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
-import { X, Download, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react-native';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { XIcon as X, DownloadIcon as Download, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, PencilIcon as Pencil, CheckIcon as Check } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -31,10 +31,19 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCodeWriteFile } from '@/lib/files/hooks';
+import {
+  useOpenCodeFileContent,
+  useOpenCodeFileBlob,
+  blobToDataURL,
+  useOpenCodeWriteFile,
+  downloadOpenCodeFileToCache,
+} from '@/lib/files/hooks';
+import { previewDecision } from '@/lib/files/preview-limits';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -84,8 +93,16 @@ export function FileViewer({
                        previewType === FilePreviewType.XLSX ||
                        previewType === FilePreviewType.DOCX ||
                        previewType === FilePreviewType.BINARY;
-  const shouldFetchText = file && !isBinaryFile;
-  const shouldFetchBlob = file && isBinaryFile;
+  // Size from the directory listing, when it reports one. Files over the
+  // preview limits are not fetched; Download streams them to disk instead.
+  const listingDecision = file ? previewDecision({ size: file.size, previewType }) : 'preview';
+  // Only image, PDF, and DOCX renderers read the blob. Spreadsheets and
+  // archives show a download prompt, so their bytes are not loaded into JS.
+  const rendersBlob = previewType === FilePreviewType.IMAGE ||
+                      previewType === FilePreviewType.PDF ||
+                      previewType === FilePreviewType.DOCX;
+  const shouldFetchText = file && !isBinaryFile && listingDecision !== 'too-large';
+  const shouldFetchBlob = file && rendersBlob && listingDecision !== 'too-large';
   
   // Can show raw view for non-binary files
   const canShowRaw =
@@ -111,10 +128,15 @@ export function FileViewer({
     shouldFetchBlob ? file?.path : undefined
   );
 
-  // Convert blob to data URL for binary files (images, PDFs, etc.)
+  // The listing may not report a size; the fetched blob always does.
+  const blobTooLarge =
+    !!imageBlob && previewDecision({ size: imageBlob.size, previewType }) === 'too-large';
+
+  // Convert blob to data URL for binary files (images, PDFs, etc.). A blob over
+  // the limit is never converted: the data URL is a second, larger copy in JS.
   useEffect(() => {
     let cancelled = false;
-    if (imageBlob && file?.path) {
+    if (imageBlob && file?.path && !blobTooLarge) {
       blobToDataURL(imageBlob, file.path).then((url) => {
         if (!cancelled) setBlobUrl(url);
       });
@@ -124,7 +146,7 @@ export function FileViewer({
     return () => {
       cancelled = true;
     };
-  }, [imageBlob, file?.path]);
+  }, [imageBlob, file?.path, blobTooLarge]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -142,7 +164,7 @@ export function FileViewer({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // For binary files (images, PDFs, etc.) write to file and share
-      if (imageBlob && isBinaryFile) {
+      if (imageBlob && isBinaryFile && !blobTooLarge) {
         // Convert blob to base64
         const reader = new FileReader();
         const base64Data = await new Promise<string>((resolve, reject) => {
@@ -188,6 +210,18 @@ export function FileViewer({
           });
         }
         return;
+      }
+
+      // Nothing loaded (over the preview limit, not previewable, or still
+      // loading): stream the file to disk natively and share it.
+      if (sandboxUrl) {
+        const fileUri = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        }
       }
     } catch (error) {
       log.error('Download failed:', error);
@@ -277,31 +311,24 @@ export function FileViewer({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleCloseGuarded}>
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         {/* Drag handle indicator (visible on iOS pageSheet) */}
         <View
           style={{
             alignItems: 'center',
             paddingTop: 8,
             paddingBottom: 4,
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-            }}
-          />
+          <View style={sheetHandleIndicatorStyle(isDark)} />
         </View>
         {/* Header */}
         <View
           style={{
-            backgroundColor: isDark ? '#121215' : '#ffffff',
+            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
             borderBottomWidth: 1,
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+            borderBottomColor: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.1),
           }}>
           <Animated.View
             entering={FadeIn.duration(200)}
@@ -309,14 +336,14 @@ export function FileViewer({
             className="flex-row items-center justify-between px-4 py-4">
             <View className="mr-4 min-w-0 flex-1">
               <Text
-                style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+                style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
                 className="font-roobert-medium text-base"
                 numberOfLines={1}>
                 {file.name}
               </Text>
               {canNavigate && (
                 <Text
-                  style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                  style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.5) }}
                   className="mt-0.5 font-roobert text-xs">
                   {currentIndex + 1} of {fileList?.length}
                 </Text>
@@ -328,7 +355,7 @@ export function FileViewer({
               <View className="flex-row items-center gap-2">
                 <Pressable onPress={handleCancelEdit} className="px-2 py-2" hitSlop={8}>
                   <Text
-                    style={{ color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}
+                    style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.6 : 0.5) }}
                     className="font-roobert-medium text-sm">
                     Cancel
                   </Text>
@@ -339,17 +366,17 @@ export function FileViewer({
                   hitSlop={6}
                   className="flex-row items-center rounded-full px-3.5 py-2"
                   style={{
-                    backgroundColor: isDark ? '#f8f8f8' : '#121215',
+                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     opacity: writeMutation.isPending || !dirty ? 0.5 : 1,
                     gap: 6,
                   }}>
                   {writeMutation.isPending ? (
                     <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                   ) : (
-                    <Icon as={Check} size={16} color={isDark ? '#121215' : '#f8f8f8'} strokeWidth={2.4} />
+                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} />
                   )}
                   <Text
-                    style={{ color: isDark ? '#121215' : '#f8f8f8' }}
+                    style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
                     className="font-roobert-medium text-sm">
                     {writeMutation.isPending ? 'Saving…' : 'Save'}
                   </Text>
@@ -367,8 +394,7 @@ export function FileViewer({
                       <Icon
                         as={ChevronLeft}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
-                        strokeWidth={2}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                       />
                     </AnimatedPressable>
                     <AnimatedPressable
@@ -379,15 +405,14 @@ export function FileViewer({
                       <Icon
                         as={ChevronRight}
                         size={24}
-                        color={isDark ? '#f8f8f8' : '#121215'}
-                        strokeWidth={2}
+                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                       />
                     </AnimatedPressable>
                   </>
                 )}
                 {canEdit && (
                   <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
-                    <Icon as={Pencil} size={20} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
                 <AnimatedPressable
@@ -401,8 +426,7 @@ export function FileViewer({
                     <Icon
                       as={Download}
                       size={22}
-                      color={isDark ? '#f8f8f8' : '#121215'}
-                      strokeWidth={2}
+                      color={isDark ? THEME.dark.foreground : THEME.light.foreground}
                     />
                   )}
                 </AnimatedPressable>
@@ -416,7 +440,7 @@ export function FileViewer({
                   onPress={handleCloseGuarded}
                   style={closeAnimatedStyle}
                   className="p-2">
-                  <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                 </AnimatedPressable>
               </View>
             )}
@@ -448,7 +472,7 @@ export function FileViewer({
                   fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                   fontSize: 13,
                   lineHeight: 19,
-                  color: isDark ? '#f8f8f8' : '#121215',
+                  color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                 }}
               />
             </KeyboardAvoidingView>
@@ -472,6 +496,7 @@ export function FileViewer({
               blobUrl={blobUrl}
               filePath={file.path}
               sandboxUrl={sandboxUrl}
+              size={imageBlob?.size ?? file.size}
             />
           )}
         </View>

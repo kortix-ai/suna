@@ -15,7 +15,7 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
-import { createApiRequestError, getUpgradeGate } from '@/lib/billing/upgrade-gate';
+import { createApiRequestError } from '@/lib/billing/upgrade-gate';
 import { backendApi } from '@kortix/sdk';
 import * as sdk from '@kortix/sdk';
 
@@ -120,6 +120,7 @@ export {
   updateProjectSession,
   deleteProjectSession,
   setProjectSessionSharing,
+  stopProjectSession,
 } from '@kortix/sdk';
 
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
@@ -128,30 +129,21 @@ export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
  * THE session-open call — kept MOBILE-NATIVE rather than re-exporting
  * `@kortix/sdk`'s `startProjectSession`.
  *
- * Mismatch found: the SDK's version NEVER throws — on any failure (including
- * a 402 billing gate) it just returns `null` and expects the *page* to have
- * already gated billing before polling (its own comment: "402 (billing) is
- * handled by the page's plan gate before polling"). Mobile's flow instead
- * discovers the billing gate BY catching this call's thrown error — see
- * `getUpgradeGate` below and its use in app/projects/[id].tsx /
- * components/billing/GlobalUpgradeSheet.tsx. Swapping to the SDK's
- * swallow-everything version would silently turn a billing paywall into an
- * infinite "provisioning" retry loop. Kept native; still hits the same
- * `/start` endpoint via `apiFetch` so behavior elsewhere is unchanged.
+ * The SDK's version NEVER throws: it turns every failure (including a 402
+ * billing gate) into `null`. Mobile's session-open loop needs the error:
+ * - a 402 opens the upgrade sheet (`getUpgradeGate`, ProjectScreen);
+ * - any other failure goes to `connectStepFromRequestError`
+ *   (lib/session/connect-step.ts), which shows ONE error. A `null` here made
+ *   the loop poll a broken request every 1.5 s for 4 min with no message.
  */
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
-): Promise<sdk.SessionStartResult | null> {
-  try {
-    return await apiFetch<sdk.SessionStartResult>(
-      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
-      { method: 'POST', body: JSON.stringify({}) },
-    );
-  } catch (error) {
-    if (getUpgradeGate(error)) throw error;
-    return null;
-  }
+): Promise<sdk.SessionStartResult> {
+  return apiFetch<sdk.SessionStartResult>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
 }
 
 export type { ProjectSessionSandbox } from '@kortix/sdk';
@@ -169,7 +161,7 @@ export type { ProjectConfigSummary, ProjectDetail, ProjectLlmCatalogResponse } f
 export type ProjectConfigEntry = sdk.ProjectConfigSummary['skills'][number];
 export type ProjectAgentEntry = sdk.ProjectConfigSummary['agents'][number];
 
-export { getProjectDetail, getProjectLlmCatalog } from '@kortix/sdk';
+export { getProjectDetail, getProjectLlmCatalog, getProjectModelPicker } from '@kortix/sdk';
 
 // ── Connectors (web parity: connectors-view) ──────────────────────────────────
 

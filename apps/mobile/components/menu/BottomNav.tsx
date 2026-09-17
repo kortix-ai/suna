@@ -10,7 +10,7 @@ import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, Briefcase, Zap } from 'lucide-react-native';
+import { ChatCircleIcon as MessageCircle, BriefcaseIcon as Briefcase, LightningIcon as Zap } from '@/lib/icons';
 import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -157,7 +157,6 @@ function NavButton({ icon, label, isActive = false, onPress }: NavButtonProps) {
           as={icon}
           size={24}
           className={isActive ? 'text-foreground' : 'text-foreground/60'}
-          strokeWidth={2}
         />
         <Text 
           className={`text-[15px] font-roobert-medium ${

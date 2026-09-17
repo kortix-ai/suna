@@ -17,43 +17,42 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface PageTab {
   id: string;       // e.g. "page:files"
   label: string;    // e.g. "Files"
-  icon: string;     // Ionicons name
 }
 
 /** All known page tabs */
 export const PAGE_TABS: Record<string, PageTab> = {
-  'page:files':             { id: 'page:files',             label: 'Files',             icon: 'folder-open-outline' },
-  'page:terminal':          { id: 'page:terminal',          label: 'Terminal',          icon: 'terminal-outline' },
-  'page:memory':            { id: 'page:memory',            label: 'Memory',            icon: 'hardware-chip-outline' },
-  'page:workspace':         { id: 'page:workspace',         label: 'Workspace',         icon: 'grid-outline' },
-  'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager',   icon: 'key-outline' },
-  'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers',     icon: 'cube-outline' },
-  'page:ssh':               { id: 'page:ssh',               label: 'SSH',               icon: 'link-outline' },
-  'page:api':               { id: 'page:api',               label: 'API',               icon: 'code-slash-outline' },
-  'page:triggers':          { id: 'page:triggers',          label: 'Triggers',          icon: 'calendar-outline' },
-  'page:channels':          { id: 'page:channels',          label: 'Channels',          icon: 'chatbox-outline' },
-  'page:tunnel':            { id: 'page:tunnel',            label: 'Tunnel',            icon: 'swap-horizontal-outline' },
-  'page:connections':      { id: 'page:connections',      label: 'Connections',      icon: 'git-branch-outline' },
-  'page:running-services':  { id: 'page:running-services',  label: 'Service Manager',  icon: 'pulse-outline' },
-  'page:browser':           { id: 'page:browser',           label: 'Browser',           icon: 'compass-outline' },
-  'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser',     icon: 'globe-outline' },
-  'page:updates':           { id: 'page:updates',           label: 'Updates',           icon: 'arrow-down-circle-outline' },
-  'page:projects':          { id: 'page:projects',          label: 'Projects',          icon: 'folder-outline' },
+  'page:files':             { id: 'page:files',             label: 'Files' },
+  'page:terminal':          { id: 'page:terminal',          label: 'Terminal' },
+  'page:memory':            { id: 'page:memory',            label: 'Memory' },
+  'page:workspace':         { id: 'page:workspace',         label: 'Workspace' },
+  'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager' },
+  'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers' },
+  'page:ssh':               { id: 'page:ssh',               label: 'SSH' },
+  'page:api':               { id: 'page:api',               label: 'API' },
+  'page:triggers':          { id: 'page:triggers',          label: 'Triggers' },
+  'page:channels':          { id: 'page:channels',          label: 'Channels' },
+  'page:tunnel':            { id: 'page:tunnel',            label: 'Tunnel' },
+  'page:connections':      { id: 'page:connections',      label: 'Connections' },
+  'page:running-services':  { id: 'page:running-services',  label: 'Service Manager' },
+  'page:browser':           { id: 'page:browser',           label: 'Browser' },
+  'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser' },
+  'page:updates':           { id: 'page:updates',           label: 'Updates' },
+  'page:projects':          { id: 'page:projects',          label: 'Projects' },
   // ── Right-drawer navigation (web sidebar parity) — placeholder pages for now ──
-  'page:agents':            { id: 'page:agents',            label: 'Agents',            icon: 'hardware-chip-outline' },
-  'page:skills':            { id: 'page:skills',            label: 'Skills',            icon: 'sparkles-outline' },
-  'page:commands':          { id: 'page:commands',          label: 'Commands',          icon: 'code-slash-outline' },
-  'page:connectors':        { id: 'page:connectors',        label: 'Connectors',        icon: 'extension-puzzle-outline' },
-  'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets',           icon: 'key-outline' },
-  'page:channels-nav':      { id: 'page:channels-nav',      label: 'Channels',          icon: 'chatbox-outline' },
-  'page:schedules':         { id: 'page:schedules',         label: 'Schedules',         icon: 'time-outline' },
-  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks',          icon: 'git-network-outline' },
-  'page:changes':           { id: 'page:changes',           label: 'Changes',           icon: 'git-pull-request-outline' },
-  'page:files-nav':         { id: 'page:files-nav',         label: 'Files',             icon: 'folder-outline' },
-  'page:sandbox':           { id: 'page:sandbox',           label: 'Sandbox',           icon: 'cube-outline' },
-  'page:dev':               { id: 'page:dev',               label: 'Dev',               icon: 'terminal-outline' },
-  'page:members':           { id: 'page:members',           label: 'Members',           icon: 'people-outline' },
-  'page:settings':          { id: 'page:settings',          label: 'Settings',          icon: 'settings-outline' },
+  'page:agents':            { id: 'page:agents',            label: 'Agents' },
+  'page:skills':            { id: 'page:skills',            label: 'Skills' },
+  'page:commands':          { id: 'page:commands',          label: 'Commands' },
+  'page:connectors':        { id: 'page:connectors',        label: 'Connectors' },
+  'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
+  'page:channels-nav':      { id: 'page:channels-nav',      label: 'Channels' },
+  'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
+  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks' },
+  'page:changes':           { id: 'page:changes',           label: 'Changes' },
+  'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
+  'page:sandbox':           { id: 'page:sandbox',           label: 'Sandbox' },
+  'page:dev':               { id: 'page:dev',               label: 'Dev' },
+  'page:members':           { id: 'page:members',           label: 'Members' },
+  'page:settings':          { id: 'page:settings',          label: 'Settings' },
 };
 
 // ---------------------------------------------------------------------------
@@ -117,17 +116,20 @@ interface TabState {
   setTabState: (tabId: string, patch: Record<string, unknown>) => void;
   clearTabState: (tabId: string) => void;
   /**
-   * Switch the store to a project's tab scope: snapshots the current flat
-   * state under the old scope key and hydrates the flat state from the new
-   * scope (empty for a never-visited project). Tabs are remembered PER
-   * PROJECT, not globally. No-op when already on the scope.
+   * Open a project's tab scope on its home: snapshots the current flat state
+   * under the old scope key and hydrates the flat state from the new scope
+   * (empty for a never-visited project). Open tabs and history are remembered
+   * PER PROJECT; the active page or thread is not. Opening a project, again
+   * or after a restart, always shows project home.
    */
   setScope: (key: string) => void;
+  /** Sign-out: drop every scope, tab, history entry, and tab state. */
+  reset: () => void;
 }
 
 export const useTabStore = create<TabState>()(
   persist(
-    (set, get) => ({
+    (set, get, api) => ({
       activeSessionId: null,
       activePageId: null,
       openTabIds: [],
@@ -142,12 +144,18 @@ export const useTabStore = create<TabState>()(
 
       setScope: (key) => {
         const s = get();
-        if (s.scopeKey === key) return;
+        const home = { activeSessionId: null, activePageId: null, showTabsOverview: false };
+
+        // Reopening the same project: only drop the active page or thread.
+        if (s.scopeKey === key) {
+          set(home);
+          return;
+        }
 
         // Migration / first run: no scope owned the flat state yet — adopt it
         // as this scope's state so pre-scoping tabs aren't lost.
         if (!s.scopeKey) {
-          set({ scopeKey: key, showTabsOverview: false });
+          set({ scopeKey: key, ...home });
           return;
         }
 
@@ -155,8 +163,8 @@ export const useTabStore = create<TabState>()(
         const scopes: Record<string, TabScopeSnapshot> = {
           ...s.scopes,
           [s.scopeKey]: {
-            activeSessionId: s.activeSessionId,
-            activePageId: s.activePageId,
+            activeSessionId: null,
+            activePageId: null,
             openTabIds: s.openTabIds,
             openPageIds: s.openPageIds,
             openTabOrder: s.openTabOrder,
@@ -169,15 +177,13 @@ export const useTabStore = create<TabState>()(
         set({
           scopeKey: key,
           scopes,
-          activeSessionId: next.activeSessionId,
-          activePageId: next.activePageId,
           openTabIds: next.openTabIds,
           openPageIds: next.openPageIds,
           openTabOrder: next.openTabOrder,
           sessionHistory: next.sessionHistory,
           historyIndex: next.historyIndex,
           tabStateById: next.tabStateById,
-          showTabsOverview: false,
+          ...home,
         });
       },
 
@@ -414,13 +420,17 @@ export const useTabStore = create<TabState>()(
           return { tabStateById: rest };
         });
       },
+
+      reset: () => {
+        set(api.getInitialState());
+      },
     }),
     {
       name: 'kortix-tab-state',
       storage: createJSONStorage(() => AsyncStorage),
+      // The active page or thread is not persisted: a restart opens project
+      // home. ProjectScreen's route stack owns where back goes.
       partialize: (state) => ({
-        activeSessionId: state.activeSessionId,
-        activePageId: state.activePageId,
         openTabIds: state.openTabIds,
         openPageIds: state.openPageIds,
         openTabOrder: state.openTabOrder,
@@ -443,12 +453,10 @@ export const useTabStore = create<TabState>()(
         state.tabStateById = state.tabStateById && typeof state.tabStateById === 'object'
           ? state.tabStateById
           : {};
-        if (state.activeSessionId !== null && typeof state.activeSessionId !== 'string') {
-          state.activeSessionId = null;
-        }
-        if (state.activePageId !== null && typeof state.activePageId !== 'string') {
-          state.activePageId = null;
-        }
+        // Storage written by older builds still holds the last active page or
+        // thread. Drop it so a restart opens project home.
+        state.activeSessionId = null;
+        state.activePageId = null;
         if (state.scopeKey != null && typeof state.scopeKey !== 'string') {
           state.scopeKey = null;
         }

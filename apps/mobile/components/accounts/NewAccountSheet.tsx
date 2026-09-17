@@ -7,24 +7,18 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, TouchableOpacity, Alert, Keyboard } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { View, Alert, Keyboard } from 'react-native';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { SheetTextInput } from '@/components/ui/SheetInput';
-import { useToast } from '@/components/ui/toast-provider';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetTextInput } from '@/components/kortix/SheetInput';
+import { useToast } from '@/components/kortix/toast-provider';
 import { useCreateAccount } from '@/lib/projects/hooks';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
-import { InitialsAvatar, PrimaryButton, accountColors } from './account-shared';
+import { InitialsAvatar, PrimaryButton, SheetCloseButton, accountColors } from './account-shared';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface NewAccountSheetProps {
   open: boolean;
@@ -33,6 +27,7 @@ interface NewAccountSheetProps {
 }
 
 export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetProps) {
+  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -51,12 +46,6 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
     }
   }, [open]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   const submit = useCallback(async () => {
     const trimmed = name.trim();
@@ -84,16 +73,14 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
       onDismiss={onClose}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: insets.bottom + 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
           <Text style={{ flex: 1, fontSize: 20, fontFamily: 'Roobert-Semibold', color: c.fg }}>New account</Text>
-          <TouchableOpacity onPress={() => { haptics.tap(); sheetRef.current?.dismiss(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={17} color={c.muted} />
-          </TouchableOpacity>
+          <SheetCloseButton onPress={() => { haptics.tap(); sheetRef.current?.dismiss(); }} isDark={isDark} />
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>

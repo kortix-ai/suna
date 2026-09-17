@@ -11,13 +11,14 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Save, Mail, AlertTriangle } from 'lucide-react-native';
+import { FloppyDiskIcon as Save, EnvelopeIcon as Mail, WarningIcon as AlertTriangle } from '@/lib/icons';
 import { supabase } from '@/api/supabase';
 import { haptics } from '@/lib/haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -122,7 +123,7 @@ export default function NameEditScreen() {
                 setError(null);
               }}
               placeholder={t('nameEdit.yourNamePlaceholder')}
-              placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+              placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
               className="text-[34px] font-roobert-semibold text-foreground text-center tracking-tight"
               editable={!isLoading}
               maxLength={100}
@@ -140,7 +141,7 @@ export default function NameEditScreen() {
         {error && (
           <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 mb-6">
             <View className="flex-row items-start gap-2">
-              <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+              <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" />
               <Text className="text-sm font-roobert-medium text-destructive flex-1">{error}</Text>
             </View>
           </View>
@@ -149,7 +150,7 @@ export default function NameEditScreen() {
         <View className="mb-6">
           <View className="bg-card/70 rounded-3xl border border-border/40 p-4">
             <View className="flex-row items-center gap-3">
-              <Icon as={Mail} size={18} className="text-foreground/70" strokeWidth={2.3} />
+              <Icon as={Mail} size={18} className="text-foreground/70" />
               <View className="flex-1">
                 <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
                   {t('nameEdit.emailAddress')}
@@ -219,7 +220,7 @@ function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
         </>
       ) : (
         <>
-          <Icon as={Save} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+          <Icon as={Save} size={16} className="text-primary-foreground" />
           <Text className="text-primary-foreground text-sm font-roobert-medium">
             {t('nameEdit.saveChanges')}
           </Text>

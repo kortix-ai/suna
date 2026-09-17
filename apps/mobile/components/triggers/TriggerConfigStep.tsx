@@ -10,9 +10,9 @@ import React from 'react';
 import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
+import { InfoIcon as Info, PlusIcon as Plus, CheckIcon as Check, CheckCircleIcon as CheckCircle2 } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { DynamicConfigForm } from './DynamicConfigForm';
 import { ModelToggle } from '../models/ModelToggle';
 import { useAvailableModels } from '@/lib/models/hooks';
@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp, Model } from '@/api/types';
 import type { ComposioConnection } from '@/hooks/useComposio';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -127,7 +128,6 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
           as={CheckCircle2}
           size={20}
           className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
-          strokeWidth={2.5}
         />
       </View>
       <View className="ml-3 flex-1">
@@ -136,8 +136,8 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
         </Text>
         {connection.is_connected && (
           <View className="mt-1 flex-row items-center gap-2">
-            <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
+            <View className="h-1.5 w-1.5 rounded-full bg-kortix-green" />
+            <Text className="font-roobert-medium text-xs text-kortix-green">
               {t('triggers.connected')}
             </Text>
           </View>
@@ -145,7 +145,7 @@ function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListI
       </View>
       {isSelected && (
         <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+          <Icon as={Check} size={14} className="text-primary-foreground" />
         </View>
       )}
     </AnimatedPressable>
@@ -195,18 +195,13 @@ export function TriggerConfigStep({
     <View className="space-y-1">
       {/* Instructions */}
       {trigger.instructions && (
-        <View
-          className="rounded-xl bg-muted p-4"
-          style={{
-            backgroundColor: isDark ? '#27272A' : '#F4F4F5',
-            borderWidth: 0,
-          }}>
+        <View className="rounded-xl bg-muted p-4" style={{ borderWidth: 0 }}>
           <SelectableMarkdownText
             isDark={isDark}
             style={{
               fontSize: 14,
               lineHeight: 20,
-              color: isDark ? '#A1A1AA' : '#71717A',
+              color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
             }}>
             {normalizeInstructions(trigger.instructions)}
           </SelectableMarkdownText>
@@ -216,7 +211,7 @@ export function TriggerConfigStep({
       {/* Loading connections */}
       {isLoadingConnections && (
         <View className="items-center justify-center py-12">
-          <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
+          <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
           <Text className="mt-4 font-roobert text-sm text-muted-foreground">
             {t('triggers.loadingConnections')}
           </Text>
@@ -297,7 +292,6 @@ export function TriggerConfigStep({
                           as={Plus}
                           size={20}
                           className="text-primary-foreground"
-                          strokeWidth={2.5}
                         />
                       </View>
                       <View className="ml-3 flex-1">
@@ -316,7 +310,7 @@ export function TriggerConfigStep({
                   style={{
                     fontSize: 14,
                     fontWeight: '600',
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     marginBottom: 8,
                     marginTop: 16,
                   }}>
@@ -326,15 +320,15 @@ export function TriggerConfigStep({
                   value={triggerName}
                   onChangeText={onTriggerNameChange}
                   placeholder={`${app.name} → Worker`}
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                  placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                   style={{
                     padding: 12,
                     borderRadius: 12,
                     borderWidth: 1.5,
-                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                    borderColor: isDark ? THEME.dark.border : THEME.light.border,
+                    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
                     fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                   }}
                 />
               </View>
@@ -345,7 +339,7 @@ export function TriggerConfigStep({
                   style={{
                     fontSize: 14,
                     fontWeight: '600',
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     marginBottom: 8,
                   }}>
                   {t('triggers.agentInstructions')} *
@@ -357,8 +351,8 @@ export function TriggerConfigStep({
                   style={{
                     borderRadius: 12,
                     borderWidth: 1.5,
-                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                    borderColor: isDark ? THEME.dark.border : THEME.light.border,
+                    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
                     maxHeight: 200,
                   }}
                   contentContainerStyle={{
@@ -368,13 +362,13 @@ export function TriggerConfigStep({
                     value={agentPrompt}
                     onChangeText={onAgentPromptChange}
                     placeholder={t('triggers.instructionsPlaceholder')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    placeholderTextColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                     multiline
                     scrollEnabled={false}
                     style={{
                       minHeight: 120,
                       fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       textAlignVertical: 'top',
                     }}
                   />

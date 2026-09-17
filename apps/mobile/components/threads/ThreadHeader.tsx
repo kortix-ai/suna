@@ -1,16 +1,16 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import {
-  ChevronLeft,
-  MoreHorizontal,
-  Check,
-} from 'lucide-react-native';
+  CaretLeftIcon as ChevronLeft,
+  DotsThreeIcon as MoreHorizontal,
+  CheckIcon as Check,
+} from '@/lib/icons';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -19,6 +19,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { ThreadActionsDrawer } from './ThreadActionsDrawer';
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -144,7 +145,6 @@ export function ThreadHeader({
             as={ChevronLeft}
             size={24}
             className="text-foreground"
-            strokeWidth={2}
           />
         </AnimatedPressable>
 
@@ -160,7 +160,7 @@ export function ThreadHeader({
                 onSubmitEditing={handleTitleBlur}
                 className="flex-1 text-xl font-roobert-medium text-foreground tracking-tight"
                 placeholder={t('threadHeader.enterTitle')}
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)'}
+                placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4)}
                 selectTextOnFocus
                 maxLength={50}
                 returnKeyType="done"
@@ -173,7 +173,7 @@ export function ThreadHeader({
                 className="w-7 h-7 items-center justify-center rounded-full bg-primary/15"
                 hitSlop={8}
               >
-                <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
+                <Icon as={Check} size={14} className="text-primary" />
               </Pressable>
             </View>
           ) : (
@@ -219,7 +219,6 @@ export function ThreadHeader({
               as={MoreHorizontal}
               size={20}
               className="text-foreground"
-              strokeWidth={2}
             />
           </AnimatedPressable>
         )}
