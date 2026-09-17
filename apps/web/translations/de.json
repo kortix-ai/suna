@@ -1687,7 +1687,11 @@
     "hintChanged": "Frage, was sich in deinem Projekt geändert hat",
     "hintNewLine": "Drücke Shift+Enter für eine neue Zeile",
     "hintSettings": "Drücke {modifier}, um die Einstellungen zu öffnen",
-    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird"
+    "hintCompact": "Bitte darum, die Sitzung zu komprimieren, wenn sie lang wird",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
+    "queued": "In Warteschlange",
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
   },
   "billing": {
     "plan": {

@@ -1687,7 +1687,11 @@
     "hintChanged": "Pergunte o que mudou no projeto",
     "hintNewLine": "Pressione Shift+Enter para uma nova linha",
     "hintSettings": "Pressione {modifier}, para abrir as configurações",
-    "hintCompact": "Peça para compactar a sessão quando ela ficar longa"
+    "hintCompact": "Peça para compactar a sessão quando ela ficar longa",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
+    "queued": "Na fila",
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
   },
   "billing": {
     "plan": {

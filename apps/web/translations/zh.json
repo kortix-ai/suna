@@ -1687,7 +1687,11 @@
     "hintChanged": "询问项目中发生了哪些变化",
     "hintNewLine": "按 Shift+Enter 换行",
     "hintSettings": "按 {modifier}, 打开设置",
-    "hintCompact": "会话过长时，请要求压缩会话"
+    "hintCompact": "会话过长时，请要求压缩会话",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
+    "queued": "排队中",
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
   },
   "billing": {
     "plan": {

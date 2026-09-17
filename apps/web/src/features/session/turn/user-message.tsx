@@ -442,6 +442,12 @@ export const BUBBLE_TEXT = cn(
 
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
+  // Queue tone comes from the nearest `data-queue-tone` wrapper. The ring is
+  // inset so the transcript's overflow clip never cuts its right edge.
+  'ring-inset transition-[box-shadow] duration-(--duration-moderate) ease-(--ease-out)',
+  ' in-data-[queue-tone=pending]:bg-kortix-yellow/40!',
+  ' in-data-[queue-tone=held]:bg-kortix-orange/40!',
+  ' in-data-[queue-tone=failed]:bg-kortix-red/40!',
 );
 
 export interface NormalizedAttachment {
@@ -932,7 +938,7 @@ export function UserMessageBubble({
         BUBBLE_SURFACE,
         'relative overflow-hidden',
         fullWidth ? 'w-full' : 'w-fit',
-        canExpand && 'cursor-pointer transition-colors',
+        canExpand && 'cursor-pointer',
       )}
       onClick={() => canExpand && onToggle()}
     >
@@ -1051,9 +1057,9 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered before `leading` and ALWAYS visible — a queued prompt's status
-   * word (`QueuedPromptStatus`). The dim is what marks a bubble as queued;
-   * the word is what makes the dim legible, so it does not wait for a hover.
+   * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
+   * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
+   * sending prompts render no words; the bubble's queue tone carries them.
    */
   leadingStatus?: React.ReactNode;
 }) {

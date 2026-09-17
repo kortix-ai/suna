@@ -58,6 +58,41 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
+  test('only the head Quick Queue prompt requests a tool-boundary interrupt', async () => {
+    const box = { status: 'active', metadata: { activeTurns: activeTurn('t1') } };
+    const readSandbox = async () => box;
+    const hasInFlightPrompt = async () => false;
+    const first = await admitInboxPrompt(row({ payload: { text: 'quick', placement: 'transcript' } }), {
+      readSandbox,
+      hasInFlightPrompt,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(first).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_1' },
+    });
+
+    const composer = await admitInboxPrompt(row({ payload: { text: 'later', placement: 'composer' } }), {
+      readSandbox,
+      hasInFlightPrompt,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(composer).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+
+    const behind = await admitInboxPrompt(row({ payload: { text: 'behind', placement: 'transcript' } }), {
+      readSandbox,
+      hasInFlightPrompt,
+      hasOlderPendingPrompt: async () => true,
+    });
+    expect(behind).not.toHaveProperty('interruptAtBoundary');
+  });
+
   test('a LIVE TURN holds the prompt back — one queued message runs at a time', async () => {
     // THE RULE THIS GATE EXISTS FOR. OpenCode picks up new user messages at
     // STEP boundaries inside a running turn, and it "parents each step on the
@@ -243,5 +278,39 @@ describe('admitInboxPrompt', () => {
       },
     });
     expect(admission).toEqual({ admit: true });
+  });
+});
+
+describe('missed turn-end recovery', () => {
+  test('the queue head rechecks terminal authority and proceeds in the same claim', async () => {
+    let ended = false;
+    const result = await admitInboxPrompt(row(), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: ended ? {} : activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      reconcileTurn: async () => { ended = true; },
+    });
+    expect(ended).toBe(true);
+    expect(result).toEqual({ admit: true });
+  });
+  test('later rows do not probe or bypass the head', async () => {
+    let probes = 0;
+    const result = await admitInboxPrompt(row(), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => true,
+      reconcileTurn: async () => { probes++; },
+    });
+    expect(probes).toBe(0);
+    expect(result.admit).toBe(false);
+  });
+  test('a still-active or unreadable turn holds the head after the probe', async () => {
+    const result = await admitInboxPrompt(row(), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      reconcileTurn: async () => {},
+    });
+    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
   });
 });

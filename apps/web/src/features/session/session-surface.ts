@@ -35,6 +35,8 @@ export interface SessionSurfaceInput {
    * describes, so it is never trusted on its own.
    */
   newSessionHint: boolean;
+  /** The durable first prompt exists, even after this tab loses its local hint. */
+  hasPendingFirstPrompt?: boolean;
   /** Any transcript content is known for this session (live runtime OR cache). */
   hasTranscript: boolean;
 }
@@ -50,7 +52,7 @@ export interface SessionSurfaceInput {
  * the box is still booting, and does not depend on the chat having mounted.
  */
 export function isNewSessionSurface(input: SessionSurfaceInput): boolean {
-  return input.newSessionHint && !input.hasTranscript;
+  return (input.newSessionHint || !!input.hasPendingFirstPrompt) && !input.hasTranscript;
 }
 
 export interface MountSessionChatInput extends SessionSurfaceInput {
@@ -71,7 +73,7 @@ export interface MountSessionChatInput extends SessionSurfaceInput {
  */
 export function shouldMountSessionChat(input: MountSessionChatInput): boolean {
   if (!input.contentAvailable) return false;
-  return !isNewSessionSurface(input) || input.submitted;
+  return !isNewSessionSurface(input) || input.submitted || !!input.hasPendingFirstPrompt;
 }
 
 /** The pre-chat overlay: the typeable new-session shell, or the boot loader. */

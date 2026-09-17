@@ -1687,7 +1687,11 @@
     "hintChanged": "Chiedi cosa è cambiato nel progetto",
     "hintNewLine": "Premi Shift+Enter per una nuova riga",
     "hintSettings": "Premi {modifier}, per aprire le impostazioni",
-    "hintCompact": "Chiedi di compattare la sessione quando diventa lunga"
+    "hintCompact": "Chiedi di compattare la sessione quando diventa lunga",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
+    "queued": "In coda",
+    "queuedFiles": "{count, plural, one {# file} other {# file}}"
   },
   "billing": {
     "plan": {

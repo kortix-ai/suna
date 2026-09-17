@@ -940,3 +940,16 @@ describe('stopWithReceipt', () => {
     expect(runAbort).toHaveBeenCalledTimes(1);
   });
 });
+
+
+test('stopping a queued prompt cannot mark a completed answer interrupted', () => {
+  const store = useSyncStore.getState();
+  store.upsertMessage('stop-queued', {
+    id: 'completed', sessionID: 'stop-queued', role: 'assistant',
+    time: { created: 100, completed: 200 },
+  } as any);
+  store.upsertMessage('stop-queued', { id: 'queued', sessionID: 'stop-queued', role: 'user' } as any);
+  applyOptimisticAbort('stop-queued');
+  const answer = useSyncStore.getState().messages['stop-queued']?.find((message) => message.id === 'completed');
+  expect(answer).not.toHaveProperty('error');
+});

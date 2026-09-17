@@ -1687,7 +1687,11 @@
     "hintChanged": "Demande ce qui a changé dans ton projet",
     "hintNewLine": "Appuie sur Shift+Enter pour une nouvelle ligne",
     "hintSettings": "Appuie sur {modifier}, pour ouvrir les paramètres",
-    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue"
+    "hintCompact": "Demande à compacter la session lorsqu'elle devient longue",
+    "queueList": "Queue List",
+    "stopUnconfirmed": "L’arrêt n’a pas pu être confirmé. L’agent fonctionne peut-être encore. Réessayez de l’arrêter.",
+    "queued": "En attente",
+    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"
   },
   "billing": {
     "plan": {

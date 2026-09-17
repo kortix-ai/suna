@@ -30,6 +30,37 @@ the picker rates are reference prices, not an extra per-token subscription bill.
 *Correction to the 2026-09-15 entry below:* zero catalog rates misstate the
 subscription price. *Enforcers:* catalog model tests, `GW-5`, and browser journey 26.
 
+### Ship the same change to `main` and `staging` ONCE, through the promote — never twice (2026-09-16)
+
+**When:** a fix is wanted on staging before the next promote. Land it on `main`,
+then promote. A second PR that re-implements it against `staging` gives git two
+unrelated edits to the same lines, and the next `main -> staging` PR goes DIRTY.
+*Incident:* "the project session list is a keyset page" shipped as #7308 (main,
+`6f52904b61`) AND #7314 (staging, `a5290753fa`). Promote #7292 blocked on a
+4-file conflict for hours. Worse, the two were NOT equivalent: #7314 also
+pinned the session cursor's GCM nonce and auth-tag lengths, so `main` ran for a
+day accepting a client-supplied 4-byte auth tag — ~2^32 to forge a cursor
+instead of ~2^128. Resolving such a conflict by `--ours`/`--theirs` reflex
+silently picks one; diff the two sides and take the superset.
+*Enforcer:* none for the duplicate itself — the conflict IS the signal. Read it
+as "two branches disagree", never as "git being annoying".
+
+### A committed conflict marker passes every lane — grep for it (2026-09-16)
+
+**When:** resolving any merge, especially in a file no build step reads.
+`a5290753fa` (#7314) committed `<<<<<<< HEAD` / `=======` / `>>>>>>> 6f52904b61`
+straight into `.claude/skills/learnings/SKILL.md` and shipped it to `staging`.
+Every CI lane stayed green: nothing compiles, lints or imports that file. It
+surfaced only when the next promote produced a NESTED conflict. Note the rule
+can only key on `<<<<<<< ` and `>>>>>>> ` at line start — a Setext heading
+underlines its title with exactly `=======`, so flagging the middle marker
+rejects ordinary markdown. *Enforcer:* `tests/unit/conflict-markers.test.ts`
+scans every `git ls-files` path and fails with `path:line`; proven against the
+real corruption replanted in the same file, and against the naive rule.
+
+
+||||||| 88cb598b14
+
 ### Bounding a list API strands every OLDER client that shipped before the paging UI (2026-09-16)
 
 **When:** adding a default `limit` to a collection endpoint an existing frontend
@@ -64,6 +95,8 @@ the run list was checked, not assumed. *Automation:* none — candidate: a
 scheduled reconcile that alerts when `prod` HEAD has no deploy-prod run.
 
 ||||||| b4f7678034
+
+||||||| 709fbc4681
 
 ### A shared admission budget must charge what a request COSTS, and strict FIFO turns one mis-charged waiter into a fleet-wide outage (2026-09-16)
 
@@ -5597,6 +5630,173 @@ force. Use ordinary `docker image rm`, never forced removal or volume pruning.
 The local runner requires working Supabase and real HTTP assertions before it
 reports success; `SEC-30` passed after this recovery.
 
+### Do not submit editor-generated Enter events (2026-09-16)
+
+**Incident.** The session queue browser regression inserted multiline text. ProseMirror
+synthesized a plain Enter event during DOM reconciliation. The composer submitted it
+before the user's modified Enter, choosing transcript placement and consuming the draft.
+
+**Rule.** Submission requires an explicit keyboard modifier state (`shiftKey === false`).
+ProseMirror's plain events have no modifier fields. They must not invoke submission.
+Exercise modified Enter with real typed line breaks, not only callback unit tests.
+
+**Enforcer.** `composer-editor.test.ts` rejects the synthetic event. The queue journey
+in `27-desktop-parity.spec.ts` types code with Shift+Enter, submits with Control+Enter,
+and asserts the request, persisted text, reload, and visible composer placement.
+
+### Restore the startup composer from the durable first prompt (2026-09-16)
+
+**Incident.** Reloading a preview session during its first sandbox startup lost the
+tab's local handoff. The full-screen loader hid accepted prompts and queue editing.
+
+**Rule.** A durable first prompt is sufficient evidence to restore the startup
+composer. Existing transcript content still takes precedence. Local navigation
+hints cannot be the only source of startup presentation state.
+
+**Enforcer.** `session-surface.test.ts` covers durable-first-prompt restoration and
+the transcript veto. The queue journey in `27-desktop-parity.spec.ts` reloads a
+starting session and asserts that its accepted prompt and composer remain visible.
+
+### A lazy editor must acknowledge a restored queue entry (2026-09-16)
+
+**Incident.** The deployed queue journey selected Edit during startup handoff.
+SessionChat cleared the shared prefill in a parent effect before its lazy editor
+could apply it. The outgoing and incoming composers were also both accessible.
+
+**Rule.** Clear a prefill only after the editor reports application of that ID.
+An older acknowledgement must not clear a newer edit. Mark the inactive startup
+layer inert and hidden from assistive technology during the transition.
+
+**Enforcer.** `session-composer-prefill-store.test.ts` protects newer edits from
+stale acknowledgements. The deployed queue journey edits during startup and
+asserts the restored text through the one accessible Message input.
+
+### Waiting for prompt delivery is not model execution (2026-09-16)
+
+**Incident.** Waiting inbox rows and reserved delivery turns rendered Thinking before the runtime received a prompt. Two cancel consumers stamped timeouts as acknowledgements. Older failed rows still exposed internal delivery outcome labels.
+
+**Rule.** Preserve a separate pending-delivery projection while keeping Stop available. Only an active turn or runtime activity can claim an agent response. A timeout or skipped cancel cannot acknowledge Stop. Apply the abort acknowledgement boundary to stream activity, busy frames, and inbox reads as well as turn reads. Stopping queued work cannot mark an already completed answer interrupted. Render the actual failure cause, including legacy persisted rows.
+
+**Enforcement.** SDK working-projection and abort-receipt tests cover delivery, active turns, and timeout settlement. Prompt serializer tests cover legacy failures. Browser journey 27 checks no Thinking while queued or booting, persistent Stop holds, and reload.
+
+
+### 2026-09-16 — Queue recovery cannot depend on a live daemon subscription
+
+A local session subscribed to daemon events five minutes after boot. Thirteen
+prompts reached the runtime in order, but periodic reconciliation added up to
+16 seconds after each reply. The queue head must verify exact active-turn
+completion when the relay is missing. Clear only the observed token, only on
+`completed` or `failed` evidence. Unknown, active, and unanswered prompts keep
+authority. Never forward another prompt into the active turn.
+
+Client-minted wire IDs do not prove delivery. Group pending transcript entries
+after delivered turns using durable inbox order. Otherwise a re-minted active
+prompt jumps below older-looking waiting entries.
+
+Enforcement: `inbox-turn-recovery.test.ts`, `inbox-admission.test.ts`, and SDK
+`display-order.test.ts` cover terminal recovery, refusal, and display order.
+
+Prompt delivery retries must run independently of singleton cron leadership.
+With shared local databases, the elected API rejected another worktree's rows,
+while the owning API ran no retry worker. Filter ownership before claiming and
+keep the existing claim CAS. `worker.test.ts` covers retry startup without
+leadership, restart, shutdown, and explicitly disabled background work.
+
+
+### 2026-09-16 — Queue integration tests must claim only fixture rows
+
+The inbox integration suite used global ten-row claims against the shared local
+database. One assertion failed because unrelated rows filled the batch. Those
+claims were released by their exact test worker IDs. Every test claim now uses
+its fixture's idempotency key. Never claim, update, or delete an unscoped work
+queue in a test against a developer database.
+
+Enforcement: `integration-prompt-inbox.test.ts` targets each fixture claim and
+verifies peer-owned rows remain queued before claiming the owning instance.
+
+
+### Queue acceptance must not delay another prompt's first paint (2026-09-16)
+
+A submit latch cleared later drafts but postponed their dispatch until the first
+POST returned. Users saw an empty composer and no queue entry for several seconds.
+Dispatch each distinct draft immediately; guard only duplicate submits from a
+cleared editor. The inbox owns execution order. Track concurrent acceptances so
+an out-of-order response does not release duplicate protection prematurely.
+
+The working hook also omitted `pendingDelivery` from its memo identity. A turn
+could become active without changing its ID or start time, leaving the sending
+state cached. Include every visible projection field in the memo identity.
+
+Enforced by `composer/submit-latch.test.ts`, SDK
+`react/session-queue-transitions.test.ts`, and the held-acceptance browser case in
+`tests/e2e/specs/27-desktop-parity.spec.ts`.
+
+
+### Queue handoffs must preserve execution evidence (2026-09-17)
+
+A worker claim is not delivery. Mapping every running inbox row to Sending made
+waiting prompts flash Sending on each admission retry. Stamp delivery only after
+admission succeeds and clear that evidence on the next claim.
+
+A terminal relay can inspect the queue while its head is claimed. Recheck turn
+authority after an admission refusal is requeued; if the turn ended, promote and
+drain the head immediately. Completion wakes must skip the new-submission burst
+delay. Exact terminal recovery must also wake the queue after clearing authority;
+a read cooldown must not suppress the completion read. Never promote on accepted
+delivery while the previous response is active.
+
+Runtime activity must preserve the confirmed active message ID. An older inbox
+snapshot cannot keep that same turn pending after execution starts.
+
+Enforcement: `session-prompt-view.test.ts`, `queued-continue-inbox-delivery.test.ts`,
+`integration-prompt-inbox.test.ts`, SDK `working.test.ts`, and
+`session-chat-busy-row-fallback.test.ts`.
+
+### 2026-09-17 — A waiting prompt cannot be claimed by another user message
+
+An SSE update to a running user message arrived after its optimistic copy was
+confirmed. The sync store treated the sole remaining optimistic message as that
+update's echo. The waiting Quick Queue bubble vanished while its durable inbox
+row remained `waiting`, then returned after reload.
+
+Check whether a user message ID is already in the transcript before matching
+optimistic sends. An inbox-backed prompt can be superseded only by its own ID,
+part ID, or the inbox row's explicit re-mint alias. Do not use ordinal fallback
+for an inbox-backed prompt. `sync-store.test.ts` covers repeated updates,
+unrelated echoes, runtime reads, and delayed aliases.
+
+An active turn can finish one assistant step while it continues to work. A
+completed assistant message alone does not make that turn idle. Keep the busy
+indicator on the turn named by the working projection. Otherwise a trailing
+Thinking row appears below a waiting Quick Queue prompt. `working-turn.test.ts`
+covers that boundary.
+
+### 2026-09-17 — Queue placement controls when the active response ends
+
+The inbox treated Quick Queue and Queue List as presentation variants. Quick
+Queue could not stop a long response, while Queue List and Quick Queue both
+waited for natural completion. Keep both placements behind the same durable
+FIFO admission gate. Only the FIFO head with `placement: transcript` may arm a
+signed daemon interrupt. The daemon must identify the active root message and
+wait until its running tool finishes before aborting that response. Queue List
+must never arm this interrupt. A removed prompt or explicit Stop disarms it.
+
+Enforcement: `inbox-admission.test.ts`, `queued-continue-inbox-delivery.test.ts`,
+`quick-queue-control.test.ts`, and daemon `quick-queue-interrupt.test.ts` and
+`abort-after-tool.test.ts`.
+
+### 2026-09-17 — Reconstruct OpenCode identities from SQLite columns
+
+Live OpenCode 1.18 rows keep message and part IDs in SQLite columns and omit
+them from the JSON `data` payload. The daemon's transcript reader passed that
+JSON through unchanged. Quick Queue then mistook the active user message for a
+different turn and disarmed its interrupt. The same projection also omitted IDs
+from client transcript pages. Hydrate `id`, `sessionID`, and `messageID` from
+their authoritative columns before serving a page or checking a tool boundary.
+
+Enforcement: `opencode-db.test.ts` seeds live-shaped rows without JSON IDs and
+checks both message and part identities.
+
 ### Retain SCIM lifecycle state independently of account membership
 
 **Incident (2026-09-16, PR #7298):** SCIM deactivation deleted account membership.
@@ -5655,3 +5855,78 @@ those fields were populated, rejecting the entire provisioning request.
 Validate the provider's actual mappings with populated values before declaring synchronization
 healthy. Keep discovery schemas, create payloads, filtered PATCH paths, removals, and read-back
 responses consistent. SCIM-15 and user-profile.test.ts enforce this contract.
+
+### 2026-09-17 — Quick Queue must not wait behind Queue List to interrupt
+
+A local session had an older Queue List entry and a newer Quick Queue entry
+waiting on one active response. Admission armed the tool-boundary interrupt
+only for the FIFO head, and the head was the Queue List entry. The Quick Queue
+entry recorded 72 `turn_active` refusals while the response kept working.
+
+Quick Queue is a lane ahead of Queue List. The inbox order key is
+`(lane, clientSentAtMs, wireMessageId, commandId)`, with lane 1 only for an
+explicit `placement: 'composer'`. A first prompt, an automation row, or an older
+producer has no placement and keeps its send-order place ahead of Queue List.
+Every listing, admission, batch, strand repair, promotion, and claim uses this key.
+
+Enforcement: `inbox-order.test.ts` covers lane order and rows without placement.
+`integration-prompt-inbox.test.ts` proves listing, interrupt arming, refusal of
+the older Queue List row, and terminal promotion against real PostgreSQL.
+
+### 2026-09-17 — A live runtime's handoff is visible work
+
+A Quick Queue interrupt ended one turn. The next prompt's five attachments took
+9.6s to reach the running runtime. Stop showed and the tinted bubble waited, but
+Thinking was hidden because the projection reported pending delivery.
+
+Pending delivery hides Thinking only while a queued status is visible and no
+runtime is ready (boot, parked, unreachable). With `runtimeReady` true, a busy
+session always shows Thinking, placed above the queued bubbles.
+
+Enforcement: `working-turn.test.ts` covers the live-runtime handoff and keeps the
+boot and no-runtime cases hidden.
+
+### 2026-09-17 — A redelivery must not re-send when its answered check cannot read
+
+A local session settled a running turn `runtime_gone` at 23:08:58 and redelivered
+its prompt. The daemon was still running that turn and interrupted it 12s later.
+OpenCode's transcript held two replies to the first delivery, so the drain's
+already-answered guard would have dropped the redelivery. The guard read the
+full transcript with a 5s timeout and failed open, so the prompt ran twice.
+
+A prompt already POSTed once (`deliveryAttempt` or `redeliveries` above zero)
+never re-sends on an unreadable transcript. It waits 5s, 10s, then 20s and
+counts `answer_check_failures`; after three failures it sends, so an unreadable
+box cannot strand it. First deliveries keep the fail-open read. The full read
+gets 15s. The daemon's turn-end relay was also failing on a stale tunnel URL,
+which leaves the API to infer turn ends by polling.
+
+Enforcement: `queued-continue-inbox-delivery.test.ts` covers the blocked blind
+re-send and the bound; `integration-prompt-inbox.test.ts` covers the requeue SQL.
+
+### 2026-09-17 — Stop visible means exactly one Thinking row
+
+Three reports in one day showed Stop with no Thinking row. Each gate added to the
+row reopened the gap: pending delivery with a visible queued bubble, and a working
+turn chosen from an aborted reply. With a stalled live stream the tab held a Quick
+Queue interrupt's aborted reply without its completion stamp, so the working-turn
+fallback picked that turn, and a turn with an error never draws Thinking.
+
+The row reads the same `isBusy` value as Stop, with no extra gate. An errored reply
+finishes its turn when choosing the working turn. When the working turn cannot draw
+its row (no id, suppressed, or an unretried error), the fallback row draws above
+any queued bubbles. The boot shell's first prompt draws the row while it is busy.
+
+Enforcement: `working-turn.test.ts` (aborted reply, fallback hand-off),
+`session-chat-busy-row-fallback.test.ts` (one busy value), and journey 27's
+`expectThinkingMatchesStop` at every queue checkpoint.
+
+### 2026-09-17 — Thinking follows the prompt being delivered
+
+With the previous answer finished and the next Quick Queue prompt mid-delivery
+(`delivery_started_at` set, 9 attachments, no turn yet), Thinking sat under the
+finished answer, above the prompt the agent was about to run. A prompt whose inbox
+state is `delivering` is the work in progress: the fallback row renders directly
+under its bubble, and a finished answer above it yields its own row.
+
+Enforcement: `working-turn.test.ts` covers the delivering anchor and the yield.

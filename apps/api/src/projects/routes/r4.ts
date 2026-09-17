@@ -2756,7 +2756,7 @@ projectsApp.openapi(
         if (turnCompletionAllowsQueuePromotion(turnCompletion)) {
           promotedPromptId = await promoteNextInboxRow(sessionId);
           if (promotedPromptId) {
-            void drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId }).catch((error) =>
+            void drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId, coalesce: false }).catch((error) =>
               console.warn('[turn-stream] targeted queue drain failed', {
                 sessionId,
                 promptId: promotedPromptId,

@@ -153,6 +153,26 @@ describe('probe', () => {
 })
 
 describe('reads', () => {
+  test('hydrates message and part identities from SQLite columns when data omits them', () => {
+    build((db) => {
+      seedSession(db, 'ses_a')
+      seedMessage(db, 'ses_a', 1, 'user')
+      db.query('UPDATE message SET data = ? WHERE id = ?').run(
+        JSON.stringify({ role: 'user', time: { created: 10 } }),
+        'msg_ses_a_001',
+      )
+      db.query('UPDATE part SET data = ? WHERE id = ?').run(
+        JSON.stringify({ type: 'text', text: 'body 1' }),
+        'prt_msg_ses_a_001_a',
+      )
+    })
+    const page = new OpencodeDb(dbPath).messagePage({ sessionId: 'ses_a', limit: 10 })!
+    expect(page.messages[0]!.info).toMatchObject({ id: 'msg_ses_a_001', sessionID: 'ses_a' })
+    expect(page.messages[0]!.parts[0]).toMatchObject({
+      id: 'prt_msg_ses_a_001_a', messageID: 'msg_ses_a_001', sessionID: 'ses_a',
+    })
+  })
+
   test('sessions come back newest-updated first', () => {
     build((db) => {
       seedSession(db, 'ses_old', 'older', 10)
