@@ -1298,3 +1298,36 @@ stops it, and returns its queue row to `prepared`. A failed recovery remains
 in review for at least 30 minutes before another attempt. The existing batch
 runner performs capture and destination import after recovery. The dashboard
 reports this worker as `sourceRecovery`.
+
+At 23:54 UTC, Trimaran reached 613/613 verified sessions. The final source
+box was still `archiving` after more than 48 hours. The user approved a
+history-only import for that session. Its destination session
+`3d4bd209-708b-4020-be8b-8148c4f13ff6` has four private history artifacts,
+verified owner/share/history, a read-back unavailable-files notice, and a
+stop receipt. The ledger records `stuck-archiving`, the direct provider state,
+the source box ID, the user authorization, and `files_status=unavailable`.
+
+The user also approved history-only imports for 47 Suna source boxes that
+could not be captured. Before applying an exception, the private preflight
+checks the exact source project-to-sandbox mapping, source account owner,
+destination owner, direct Daytona state, and absence of a prior file capture.
+The exception verifier accepts `error` with `recoverable=false` or `archiving`
+with `recoverable=false` and a provider update older than 48 hours. A box that
+returns to `stopped` is requeued for real file capture instead. At 23:55 UTC,
+42 Suna sessions met the exception criteria: 21 stuck archiving, 19 other
+unrecoverable provider errors, and two missing-volume errors. Four archiving
+boxes had recent provider updates and one was restoring; they remained in
+source review. The additional stopped box was requeued for capture.
+
+The first Suna history-only pilot,
+`c595bb35-43e7-4752-8398-41d77f319f66`, reached `verified` on Platinum.
+Its four history artifacts, owner, operator share, native history, notice
+readback, and stop receipt passed. `ai.kortix.legacy-unavailable-imports`
+then started four parallel approved imports using the shared create and file
+write budgets. Failed imports return to `prepared` with a retry timestamp.
+`ai.kortix.legacy-unavailable-reconciler` rechecks remaining source boxes every
+five minutes. Its approver requires direct provider and source mapping proof;
+it captures a recovered box or marks files unavailable only under the user's
+scoped authorization. Both LaunchAgents use the production dotenvx file and
+the primary checkout's machine-local source credentials. Remove both with
+`launchctl bootout` after all exceptions close.
