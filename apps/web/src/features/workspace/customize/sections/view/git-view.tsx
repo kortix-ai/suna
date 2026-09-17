@@ -500,12 +500,12 @@ function RepositoryGroup({
         setChangeOpen(open);
         if (!open) { setGithubProof(''); setInstallations([]); setInstallationId(''); setTargetRepo(''); }
       }}>
-        <ModalContent className="sm:max-w-md">
-          <ModalHeader>
+        <ModalContent className="flex flex-col overflow-hidden sm:max-w-md">
+          <ModalHeader className="shrink-0">
             <ModalTitle>Change repository</ModalTitle>
             <ModalDescription>New sessions will use the new repository. Existing sessions cannot restart after the change.</ModalDescription>
           </ModalHeader>
-          <ModalBody className="space-y-4">
+          <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
             <div className="space-y-1 text-sm">
               <p className="text-muted-foreground">Current repository</p>
               <p className="break-all font-mono text-xs">{project.repo_url}</p>
@@ -528,11 +528,11 @@ function RepositoryGroup({
                 </Select>
               ) : null}
             </div>
-            <InfoBanner tone="warning" icon={WarningIcon} title="Check before changing">
-              The new repository must contain {project.manifest_path} on its default branch. Stop active sessions and close open change requests first. The current repository remains unchanged if validation fails.
-            </InfoBanner>
+            <p className="text-muted-foreground text-xs">
+              The new repository needs {project.manifest_path} on its default branch. Stop active sessions and close open change requests first.
+            </p>
           </ModalBody>
-          <ModalFooter>
+          <ModalFooter className="shrink-0 bg-sidebar py-3">
             <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changeRepository.isPending}>Cancel</Button>
             <Button onClick={() => changeRepository.mutate()} disabled={!targetOwner || targetRepo.trim() === project.repo_url || !availableInstallations.some((installation) => installation.installation_id === installationId) || !githubProof || changeRepository.isPending}>
               {changeRepository.isPending ? 'Changing…' : 'Change repository'}

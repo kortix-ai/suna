@@ -343,6 +343,15 @@ test.describe("30 — Git connections", () => {
       await page.getByRole('button', { name: 'Change', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Change repository' });
       await expect(dialog).toBeVisible();
+      await expect.poll(() => dialog.getByRole('button', { name: 'Change repository', exact: true }).evaluate((button) => {
+        const bounds = button.getBoundingClientRect();
+        return bounds.bottom <= window.innerHeight;
+      })).toBe(true);
+      await expect.poll(() => dialog.getByRole('button', { name: 'Cancel' }).evaluate((button) => {
+        const bounds = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+        return hit === button || button.contains(hit);
+      })).toBe(true);
       await expect(dialog.getByText('Current repository', { exact: true })).toBeVisible();
       await expect(dialog.getByText('New sessions will use the new repository.', { exact: false })).toBeVisible();
       await dialog.getByRole('textbox', { name: 'New GitHub repository URL' }).fill('https://github.com/example-org/shared-repository');
