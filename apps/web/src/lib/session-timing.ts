@@ -30,6 +30,18 @@ interface SessionTiming {
 /** The first assistant part for the session reached the browser. */
 export const FIRST_OUTPUT_MARK = 'first-output';
 
+/**
+ * The devtools `%c` style for every line this module prints.
+ *
+ * A raw colour literal, and it stays one: `%c` takes plain CSS text that the
+ * console parses outside the document, so a `var(--…)` token resolves to
+ * nothing there. Nothing in this file reaches the product UI — the whole
+ * module is off in production unless `kortix_session_timing` is set.
+ */
+const LOG_STYLE = 'color:#06b6d4;font-weight:600';
+/** The same style, bold, for a line that reports a total. */
+const LOG_STYLE_TOTAL = 'color:#06b6d4;font-weight:700';
+
 const timings = new Map<string, SessionTiming>();
 let pendingClickAt: number | null = null;
 
@@ -87,7 +99,7 @@ export function sessionMark(sessionId: string, label: string): void {
   // eslint-disable-next-line no-console
   console.log(
     `%c[session-timing] ${sessionId.slice(0, 8)} ${label} +${Math.round(at - prev)}ms (@${Math.round(at - t.start)}ms)`,
-    'color:#06b6d4;font-weight:600',
+    LOG_STYLE,
   );
 }
 
@@ -124,7 +136,7 @@ export function markSessionFirstOutput(sessionId: string): void {
   // eslint-disable-next-line no-console
   console.log(
     `%c[session-timing] ${sessionId.slice(0, 8)} sendToFirstOutputMs ${total}ms (send → first output)`,
-    'color:#06b6d4;font-weight:700',
+    LOG_STYLE_TOTAL,
   );
 }
 
@@ -139,7 +151,7 @@ export function finishSessionTiming(sessionId: string, backendTimeline?: unknown
   // eslint-disable-next-line no-console
   console.group(
     `%c[session-timing] ${sessionId.slice(0, 8)} READY in ${total}ms (click → usable)`,
-    'color:#06b6d4;font-weight:700',
+    LOG_STYLE_TOTAL,
   );
   let prev = t.start;
   for (const e of t.entries) {
