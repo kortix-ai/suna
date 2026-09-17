@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
 import { createOpenCodeGlobWatchdog, GLOB_DEADLINE_MS, isOpenCodeGlobArgv, procStartTicks } from '../opencode-glob-watchdog'
 
 const roots: string[] = []
@@ -76,4 +77,31 @@ test('PID reuse starts a new deadline', async () => {
   at += 1
   await watchdog.poll()
   expect(signals).toEqual([])
+})
+
+test.skipIf(process.platform !== 'linux')('terminates an actual overdue child without ending its parent', async () => {
+  const child = spawn(process.execPath, [
+    '-e', 'setInterval(() => {}, 1000)', '--', '--no-config', '--files', '--glob=**/*.pdf', '.',
+  ], { argv0: 'rg', stdio: 'ignore' })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once('spawn', () => resolve())
+      child.once('error', reject)
+    })
+    const watchdog = createOpenCodeGlobWatchdog({
+      opencodePid: () => process.pid,
+      deadlineMs: 100,
+      log: () => {},
+    })
+    await watchdog.poll()
+    await Bun.sleep(150)
+    await watchdog.poll()
+    const exit = await Promise.race([
+      new Promise<string | null>((resolve) => child.once('exit', (_code, signal) => resolve(signal))),
+      Bun.sleep(2_000).then(() => 'timeout'),
+    ])
+    expect(exit).toBe('SIGTERM')
+  } finally {
+    child.kill('SIGKILL')
+  }
 })
