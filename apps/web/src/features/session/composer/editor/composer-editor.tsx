@@ -364,7 +364,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     {
       placeholder,
       disabled,
-      autoFocus,
+      autoFocus = false,
       onSubmit,
       onArrowUpAtStart,
       onEmptyChange,

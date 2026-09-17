@@ -205,6 +205,12 @@ export async function createSession(
         },
       };
     }
+    if (JSON.stringify(existingBody.provider_secret_pools ?? null) !== JSON.stringify(command.body.provider_secret_pools ?? null)) {
+      return {
+        status: 'failed', commandId: claimed.row.commandId, retryable: false,
+        error: { status: 409, body: { error: 'Idempotency key was already used with different provider secret pools', code: 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT' } },
+      };
+    }
     if (
       secretsAllowlistPayloadConflicts(
         existingBody.secrets as string[] | null | undefined,

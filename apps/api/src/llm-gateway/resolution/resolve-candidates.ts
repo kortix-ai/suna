@@ -1,4 +1,6 @@
 import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { resolveDefaultCodexAccountSecret, resolveSessionProviderSecrets } from '../../secrets/account-resource';
 import { modelAccessAllows, modelAccessProvider, type ProjectModelAccess } from '../model-access';
 import { toWireModel } from './effective';
 import {
@@ -13,7 +15,7 @@ import {
   getProjectSecretValueForConsumer,
   resolveProjectSecretsForConsumer,
 } from '../../projects/secrets';
-import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
+import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -115,6 +117,7 @@ export function noManagedModelsError(model: string, tierIsPaid: boolean): Gatewa
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
+  options?: { providerSecretPools?: Record<string, string[]>; probe?: boolean },
 ): Promise<UpstreamDescriptor[]> {
   const effectiveModel = toWireModel(model);
   const access = principal.projectId
@@ -129,6 +132,7 @@ export async function resolveCandidates(
     );
   }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
+  const prospectiveIds = options?.providerSecretPools?.[provider];
 
   if (provider === 'codex') {
     if (!principal.projectId) {
@@ -137,6 +141,76 @@ export async function resolveCandidates(
         'Connect Codex to use this model.',
         'Connect your ChatGPT/Codex account in project settings, then retry.',
       );
+    }
+    const pooledEnabled = await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
+    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId && pooledEnabled
+      ? await resolveSessionProviderSecrets({
+          accountId: principal.accountId, projectId: principal.projectId,
+          ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
+          ...(options?.probe ? { advanceIndex: false } : {}),
+          userId: principal.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON',
+        })
+      : null;
+    if (selectedPool?.configured) {
+      if (Array.isArray(principal.agentGrant?.env) &&
+        !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
+        throw new GatewayResolutionError('provider_not_connected',
+          'The running agent cannot use ChatGPT connections.',
+          'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
+      }
+      if (!selectedPool.secrets.length) {
+        throw new GatewayResolutionError(
+          selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
+          selectedPool.coolingDown ? 'All selected ChatGPT connections are cooling down.' :
+            'No usable ChatGPT connection is selected for this session.',
+          'Select a granted ChatGPT connection in session settings.', selectedPool.retryAfterSeconds,
+        );
+      }
+      const candidates = [];
+      let expired = false;
+      for (const secret of selectedPool.secrets) {
+        try {
+          const accountCredential = await resolveCodexAccountCredential({
+            projectId: principal.projectId, accountId: principal.accountId,
+            sessionId: principal.sessionId ?? null, userId: principal.userId,
+            secretId: secret.secretId, value: secret.value,
+          });
+          if (!accountCredential) { expired = true; continue; }
+          candidates.push({ ...codexDescriptor(accountCredential, effectiveModel),
+            credentialRef: secret.secretId, poolSecretId: secret.secretId });
+        } catch (err) {
+          if (!(err instanceof CodexRefreshError)) throw err;
+          expired = true;
+        }
+      }
+      if (candidates.length) return candidates;
+      throw new GatewayResolutionError(expired ? 'provider_reauth_required' : 'provider_not_connected',
+        expired ? 'The selected ChatGPT connections need reconnection.' : 'No ChatGPT connection is available.',
+        'Reconnect a selected ChatGPT account or select another granted connection.');
+    }
+    if (pooledEnabled && principal.userId && !principal.keyId) {
+      const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, principal.userId);
+      if (personal) {
+        if (Array.isArray(principal.agentGrant?.env) &&
+          !principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON')) {
+          throw new GatewayResolutionError('provider_not_connected',
+            'The running agent cannot use ChatGPT connections.',
+            'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
+        }
+        try {
+          const credential = await resolveCodexAccountCredential({
+            projectId: principal.projectId, accountId: principal.accountId,
+            sessionId: principal.sessionId ?? null, userId: principal.userId,
+            secretId: personal.secretId, value: personal.value,
+          });
+          if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
+        } catch (err) {
+          if (!(err instanceof CodexRefreshError)) throw err;
+        }
+        throw new GatewayResolutionError('provider_reauth_required',
+          'Your ChatGPT connection needs reconnection.',
+          'Reconnect your ChatGPT account in Models, then retry.');
+      }
     }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
     try {
@@ -176,8 +250,6 @@ export async function resolveCandidates(
   let byokFailure: GatewayResolutionError | null = null;
 
   if (byok && principal.projectId) {
-    // Provider keys are always project-wide (shared) — there is no
-    // per-user/private key concept. See getProjectSecretValue.
     const readGatewaySecret = (name: string) =>
       getProjectSecretValueForConsumer({
         projectId: principal.projectId!,
@@ -187,14 +259,46 @@ export async function resolveCandidates(
         name,
         consumer: 'llm_gateway',
       });
-    const keys = await resolveProjectSecretsForConsumer({
-      projectId: principal.projectId,
-      accountId: principal.accountId,
-      sessionId: principal.sessionId,
-      actorUserId: principal.userId,
-      name: byok.envVar,
-      consumer: 'llm_gateway',
-    });
+    const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId &&
+      await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets')
+      ? await resolveSessionProviderSecrets({
+          accountId: principal.accountId,
+          projectId: principal.projectId,
+          ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
+          ...(options?.probe ? { advanceIndex: false } : {}),
+          userId: principal.userId,
+          providerId: provider,
+          name: byok.envVar,
+        })
+      : null;
+    if (selectedPool?.configured && Array.isArray(principal.agentGrant?.env) &&
+      !principal.agentGrant.env.some((identifier) => identifier.toUpperCase() === byok.envVar.toUpperCase())) {
+      throw new GatewayResolutionError('provider_not_connected',
+        `The running agent cannot use ${provider} keys.`,
+        `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
+    }
+    const keys = selectedPool?.configured
+      ? selectedPool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value }))
+      : await resolveProjectSecretsForConsumer({
+          projectId: principal.projectId,
+          accountId: principal.accountId,
+          sessionId: principal.sessionId,
+          actorUserId: principal.userId,
+          name: byok.envVar,
+          consumer: 'llm_gateway',
+        });
+    if (selectedPool?.configured && keys.length === 0) {
+      throw new GatewayResolutionError(
+        selectedPool.coolingDown ? 'provider_pool_rate_limited' : 'provider_not_connected',
+        selectedPool.coolingDown
+          ? `All selected ${provider} keys are cooling down after rate limits.`
+          : `No usable ${provider} key is selected for this session.`,
+        selectedPool.coolingDown
+          ? 'Retry after the provider cooldown, or select another granted key.'
+          : 'Select a granted key in session settings.',
+        selectedPool.retryAfterSeconds,
+      );
+    }
     if (keys.length > 0) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
@@ -251,6 +355,7 @@ export async function resolveCandidates(
         ...(bedrockRegion ? { region: bedrockRegion } : {}),
         apiKey: value,
         credentialRef: identifier,
+        ...(selectedPool?.configured ? { poolSecretId: identifier } : {}),
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
@@ -278,7 +383,7 @@ export async function resolveCandidates(
       // serving managed tokens the plan forbids, and skipping the wallet
       // admission gate on the way, since that gate is bypassed for exactly the
       // tiers this fallback would be serving.
-      return mayUseManagedModels
+      return mayUseManagedModels && !selectedPool?.configured
         ? [...byokDescriptors, ...byokFallbackCandidates(access)]
         : byokDescriptors;
     }

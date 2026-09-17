@@ -666,9 +666,10 @@ projectsApp.openapi(
     } else {
       const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
       const servable = await isModelServableForAccount({
-        userId: loaded.userId,
+        userId: visible.row.createdBy ?? loaded.userId,
         accountId: loaded.row.accountId,
         projectId,
+        sessionId,
         freeModelsOnly,
         model: trimmed,
       });

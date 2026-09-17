@@ -6024,6 +6024,7 @@ export function SessionChat({
                   canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
                 }
                 draftScope={composerDraftScope}
+                draftActive={!deferComposerFocus}
                 attachRequestId={attachRequestId}
                 isBusy={isBusy}
                 // The ONE projection, not the 300 ms busy fade: it is what

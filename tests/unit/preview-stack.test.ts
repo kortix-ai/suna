@@ -116,6 +116,8 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"');
+    expect(overlay).toContain('kortix-migrate:\n    command: ["bun", "/app/packages/db/scripts/migrate.ts", "preview-up"]');
+    expect(overlay).toContain('KORTIX_PREVIEW_MIGRATION: "1"');
     expect(overlay).not.toContain('volumes/db/data');
   });
 

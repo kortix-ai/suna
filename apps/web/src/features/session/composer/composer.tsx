@@ -210,6 +210,7 @@ export interface SessionChatInputProps {
    * marketing-demo composers rely on.
    */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -460,6 +461,7 @@ function ComposerImpl({
   sessionId,
   projectId,
   draftScope = null,
+  draftActive = true,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -566,6 +568,7 @@ function ComposerImpl({
   }, []);
 
   const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    active: draftActive,
     scope: draftScope,
     editorRef,
     editorReady: editorElement != null,

@@ -12,6 +12,7 @@ import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
@@ -206,7 +207,7 @@ function GitHubSetup() {
         installation_id: installationId,
         github_user_token: userToken,
       });
-      finishConnection(status.owner_login);
+      finishConnection(status.owner_login, status.account_id ?? null);
     } catch (error) {
       setState('verify');
       setMessage((error as Error).message || 'GitHub verification failed. Try again.');
@@ -227,22 +228,27 @@ function GitHubSetup() {
         installation_id: installation.installation_id,
         github_user_token: githubUserToken,
       });
-      finishConnection(status.owner_login);
+      finishConnection(status.owner_login, status.account_id ?? null);
     } catch (error) {
       setState('select');
       setMessage((error as Error).message || 'GitHub verification failed. Try again.');
     }
   }
 
-  function finishConnection(ownerLogin: string | null) {
+  function finishConnection(ownerLogin: string | null, linkedAccountId: string | null) {
     setState('done');
     setMessage(
       ownerLogin
         ? `Connected to ${ownerLogin}. Redirecting you back now.`
         : 'GitHub connected. Redirecting you back now.',
     );
+    // The remembered return path first (the hub or /new, as the user left
+    // it). Without one, `/new` — but SCOPED to the account that was just
+    // linked: a bare `/new` resolves to the personal account and shows the
+    // connection as missing (dev, 2026-09-17).
+    const fallback = linkedAccountId ? newWorkspacePathForAccount(linkedAccountId) : '/new';
     redirectTimer.current = window.setTimeout(
-      () => router.replace(consumeGitHubSetupReturn() ?? '/new'),
+      () => router.replace(consumeGitHubSetupReturn() ?? fallback),
       900,
     );
   }

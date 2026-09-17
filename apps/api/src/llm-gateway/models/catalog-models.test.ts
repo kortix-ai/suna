@@ -114,6 +114,12 @@ describe('gatewayModelCatalog — served catalog', () => {
   });
 
   test('project catalog advertises the GPT-5.6 Codex family', () => {
+    expect(full['codex/gpt-6-astra']).toMatchObject({
+      name: 'GPT-6 Astra (ChatGPT)',
+      provider: 'codex',
+      reasoning: true,
+      tool_call: true,
+    });
     expect(full['codex/gpt-5.6-sol']).toMatchObject({
       name: 'GPT-5.6 Sol (ChatGPT)',
       reasoning: true,

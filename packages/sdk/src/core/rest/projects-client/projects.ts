@@ -44,7 +44,8 @@ export type FeatureFlagKey =
   | 'monitors'
   | 'warm_sessions'
   | 'secrets_egress'
-  | 'pi_worker';
+  | 'pi_worker'
+  | 'pooled_provider_secrets';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -64,6 +65,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'pooled_provider_secrets',
 ] as const;
 
 /**

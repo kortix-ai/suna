@@ -93,6 +93,11 @@ export CI=1
 export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
 
 mkdir -p "$STATE" "$ROOT/tests/test-results"
+# A cancelled workflow can leave its remote bootstrap running. Hold this lock
+# through checkout, redeploy, and tests so the next run cannot replace the API
+# while the first run is still testing it.
+exec 9>"$STATE/deploy.lock"
+flock -x 9
 rm -f "$STATUS" "$PHASE"
 exec > >(tee -a "$LOG") 2>&1
 

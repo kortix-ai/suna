@@ -3,10 +3,89 @@ import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
-import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
+import {
+  saveTeamsInstall,
+  setTeamsCatalogAppId,
+  setTeamsOrgInstalled,
+  setTeamsPublishState,
+} from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * How long the callback waits for the org-catalog publish before redirecting
+ * anyway. The publish itself runs to completion in the background either way
+ * (its outcome lands on the install via setTeamsPublishState); this only decides
+ * whether the browser sees the final status or `?teams=publishing` and polls.
+ * A first publish measured 21 s (2026-09-17), which is longer than a load
+ * balancer should hold a redirect, so the browser is never held past this.
+ */
+const TEAMS_PUBLISH_REDIRECT_WAIT_MS = 8_000;
+let publishRedirectWaitMs: number | null = null;
+
+export function setTeamsPublishRedirectWaitForTest(ms: number | null): void {
+  publishRedirectWaitMs = ms;
+}
+
+export type TeamsInstallRedirectStatus =
+  | 'connected'
+  | 'review'
+  | 'failed'
+  | 'publishing'
+  | 'declined'
+  | 'disabled'
+  | 'unconfigured';
+
+/**
+ * Run the catalog publish and persist its outcome. Never throws: a thrown
+ * publish is a `failed` outcome with the message as the reason.
+ */
+async function runCatalogPublish(input: {
+  projectId: string;
+  accessToken: string;
+  baseUrl: string;
+  appId: string;
+  tenantId: string;
+}): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'disabled' | 'unconfigured'>> {
+  const { projectId } = input;
+  await setTeamsPublishState(projectId, 'publishing').catch(() => {});
+  let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
+  try {
+    published = await publishTeamsAppToCatalog({
+      accessToken: input.accessToken,
+      baseUrl: input.baseUrl,
+      appId: input.appId,
+      appName: config.TEAMS_APP_NAME,
+    });
+  } catch (err) {
+    published = { ok: false, published: false, error: (err as Error)?.message ?? 'publish failed' };
+  }
+
+  let status: 'connected' | 'review' | 'failed';
+  if (published.published) {
+    status = 'connected';
+    await setTeamsOrgInstalled(projectId, true).catch(() => {});
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
+    await setTeamsPublishState(projectId, 'published').catch(() => {});
+  } else if (published.pendingReview) {
+    status = 'review';
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
+    await setTeamsPublishState(projectId, 'review').catch(() => {});
+  } else {
+    status = 'failed';
+    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(() => {});
+  }
+
+  console.info('[teams-oauth] install complete', {
+    projectId,
+    tenantId: input.tenantId,
+    status,
+    teamsAppId: published.teamsAppId ?? null,
+    error: published.error ?? null,
+  });
+  return status;
+}
 const GRAPH_PUBLISH_SCOPE = 'https://graph.microsoft.com/AppCatalog.ReadWrite.All offline_access openid';
 const AUTHORITY = 'https://login.microsoftonline.com/organizations/oauth2/v2.0';
 
@@ -132,7 +211,11 @@ teamsOauthApp.get('/callback', async (c: any) => {
   const state = verifyState(c.req.query('state'));
   if (!state) return c.redirect(`${frontend}/?teams_error=expired`, 302);
 
-  const dest = (status: string) => `${frontend}/projects/${state.projectId}?teams=${status}`;
+  // Land on the Channels surface (a scope of Connectors), where the Teams row
+  // renders the persisted publish state — not the project home, which reads
+  // nothing from the query.
+  const dest = (status: TeamsInstallRedirectStatus) =>
+    `${frontend}/projects/${state.projectId}/customize/connectors?scope=channels&teams=${status}`;
 
   // The flag is per project, so it can only be read once the signed state
   // tells us which project this consent belongs to.
@@ -160,26 +243,27 @@ teamsOauthApp.get('/callback', async (c: any) => {
   await saveTeamsInstall({ projectId: state.projectId, tenantId }).catch((err) =>
     console.error('[teams-oauth] saveTeamsInstall failed', err),
   );
-  const published = await publishTeamsAppToCatalog({
+  void reconcileChannelConnectors(state.projectId);
+
+  // The publish runs to completion regardless of the redirect; the browser
+  // only waits a bounded time for it.
+  const publish = runCatalogPublish({
+    projectId: state.projectId,
     accessToken: token.accessToken,
     baseUrl: state.baseUrl,
     appId,
-    appName: config.TEAMS_APP_NAME,
-  }).catch(() => ({ ok: false, published: false }) as Awaited<ReturnType<typeof publishTeamsAppToCatalog>>);
-
-  if (published.published) {
-    await setTeamsOrgInstalled(state.projectId, true).catch(() => {});
-    if (published.teamsAppId) await setTeamsCatalogAppId(state.projectId, published.teamsAppId).catch(() => {});
-  }
-  void reconcileChannelConnectors(state.projectId);
-
-  const status = published.published ? 'connected' : published.pendingReview ? 'review' : 'consented';
-  console.info('[teams-oauth] install complete', {
-    projectId: state.projectId,
     tenantId,
-    status,
-    teamsAppId: published.teamsAppId ?? null,
-    error: published.error ?? null,
   });
+  publish.catch((err) => console.error('[teams-oauth] catalog publish crashed', err));
+
+  const waitMs = publishRedirectWaitMs ?? TEAMS_PUBLISH_REDIRECT_WAIT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const status = await Promise.race<TeamsInstallRedirectStatus>([
+    publish,
+    new Promise<TeamsInstallRedirectStatus>((resolve) => {
+      timer = setTimeout(() => resolve('publishing'), waitMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
   return c.redirect(dest(status), 302);
 });

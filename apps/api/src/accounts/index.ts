@@ -13,6 +13,7 @@ import { registerTokenRoutes } from './core/tokens';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
 import { registerBrandingRoutes } from './branding';
+import { registerSecretResourceRoutes } from './secret-resources';
 import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
@@ -48,5 +49,6 @@ registerAccountRoutes();
 registerMemberRoutes();
 // Organization branding (Enterprise): /:accountId/branding + /assets/:kind.
 registerBrandingRoutes();
+registerSecretResourceRoutes();
 
 export { accountsRouter };

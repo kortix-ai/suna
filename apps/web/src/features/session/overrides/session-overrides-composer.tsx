@@ -11,6 +11,8 @@ export interface SessionOverridesComposerProps {
   projectId: string;
   sessionId?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
+  providerSecretPools?: Record<string, string[]>;
+  onProviderSecretPoolsChange?: (selection: Record<string, string[]>) => void;
 
   /**
    * The agent this session runs as. NOT rendered as a row — it is the key the
@@ -53,6 +55,8 @@ export function SessionOverridesComposer({
   projectId,
   sessionId,
   onCommittedDraft,
+  providerSecretPools,
+  onProviderSecretPoolsChange,
   selectedAgent,
   sandboxSlot,
 }: SessionOverridesComposerProps) {
@@ -72,6 +76,8 @@ export function SessionOverridesComposer({
       sessionId={sessionId}
       agentName={selectedAgent ?? undefined}
       onCommittedDraft={onCommittedDraft}
+      providerSecretPools={providerSecretPools}
+      onProviderSecretPoolsChange={onProviderSecretPoolsChange}
       sandbox={sandbox}
       sandboxSlot={sandboxSlot}
     />

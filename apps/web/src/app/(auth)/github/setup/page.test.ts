@@ -73,6 +73,17 @@ describe('GitHub installation setup', () => {
     // gets the proof from the GitHub App's own OAuth client instead.
     expect(popupSource.toLowerCase()).not.toContain('supabase');
     expect(popupSource).toContain('platform/github-app/oauth/authorize');
-    expect(popupSource).toContain('access_token');
+    // The token comes back as `#github_token=`. NOT `#access_token=`: that is
+    // the fragment the app's auth client reads as an implicit-flow session on
+    // every load; a GitHub token under it failed validation and cleared the
+    // opener's session mid-link ("verify with GitHub logs me out", dev,
+    // 2026-09-17). Pinned on both sides — the API writes the same key.
+    expect(popupSource).toContain("hashParams.get('github_token')");
+    expect(popupSource).not.toContain("get('access_token')");
+    const apiSource = readFileSync(
+      new URL('../../../../../../api/src/platform/routes/github-app.ts', import.meta.url),
+      'utf8',
+    );
+    expect(apiSource).toContain('new URLSearchParams({ github_token: accessToken })');
   });
 });

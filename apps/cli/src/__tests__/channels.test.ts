@@ -30,7 +30,14 @@ const INSTALLATION = {
   botUserId: 'U0BOT',
   installedAt: '2026-07-08T00:00:00.000Z',
 };
-const TEAMS_INSTALLATION = {
+const TEAMS_INSTALLATION: {
+  tenantId: string;
+  catalogAppId: string | null;
+  orgInstalled: boolean;
+  publishState?: 'publishing' | 'published' | 'review' | 'failed' | null;
+  publishError?: string | null;
+  installedAt: string;
+} = {
   tenantId: 'tid-1',
   catalogAppId: 'cat-1',
   orgInstalled: true,
@@ -309,6 +316,56 @@ describe('kortix channels --platform teams', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('tid-1');
     expect(out).toContain('cat-1');
+  });
+
+  // The one-click install binds the tenant FIRST and publishes the app to the
+  // org catalog in the background. A bound-but-unpublished install is
+  // connected — printing "not connected" for it (the old `!orgInstalled`
+  // shortcut) sent users back to a consent flow that had already succeeded.
+  test('status: tenant bound, catalog publish still running → connected + "publishing"', async () => {
+    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'publishing', publishError: null };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('tid-1');
+    expect(out).not.toContain('not connected');
+    expect(out).toContain('publishing');
+  });
+
+  test('status: catalog publish failed → connected + the Graph reason + how to retry', async () => {
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: null,
+      publishState: 'failed',
+      publishError: 'Graph app-catalog publish failed (400): Invalid manifest',
+    };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('tid-1');
+    expect(out).not.toContain('not connected');
+    expect(out).toContain('Graph app-catalog publish failed (400): Invalid manifest');
+    expect(out).toContain('kortix channels connect --platform teams');
+  });
+
+  test('status: submitted for admin review → connected + "review"', async () => {
+    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: 'sub-9', publishState: 'review', publishError: null };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('tid-1');
+    expect(out).toContain('review');
+  });
+
+  test('status --json exposes publishState and publishError verbatim', async () => {
+    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'failed', publishError: 'boom' };
+    const code = await runChannels(['status', '--platform', 'teams', '--json']);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.connected).toBe(true);
+    expect(parsed.installation.publishState).toBe('failed');
+    expect(parsed.installation.publishError).toBe('boom');
   });
 
   test('connect → prints the Microsoft admin-consent URL', async () => {
