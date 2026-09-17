@@ -1344,7 +1344,7 @@
     "upgradePlan": "Tarif upgraden",
     "sessionList": {
       "loadError": "Sitzungen konnten nicht geladen werden",
-      "empty": "Noch keine Sitzungen",
+      "empty": "Sitzungen, die Sie starten, erscheinen hier",
       "noMatches": "Keine Sitzung entspricht den aktiven Filtern.",
       "actions": "Sitzungsaktionen",
       "actionsFor": "Aktionen für {title}",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "Keine Richtlinie bedeutet eine verschlossene Tür: Cloudflare verweigert allen den Zugriff, bis mindestens eine Allow-Richtlinie vorhanden ist. Dies ist der häufigste Grund für „SSO leitet weiter, aber Zugriff wird verweigert“.",
       "text93d6de7104f0": "Symbol entfernen",
       "text93dcf1d1d25e": "Wochenenden",
-      "text93e404732659": "Starte eine Sitzung, um diesem Projekt die erste Aufgabe zu geben.",
       "text93f4b14c9e2b": "Keine aktiven Benachrichtigungen",
       "text93f5222a6e5c": "- Nur eskalieren, was einen Menschen benötigt",
       "text93fbaf02beca": "01 · Isolation",
@@ -18513,11 +18512,6 @@
       "title": "Buchen Sie ein 20-minütiges Setup-Gespräch",
       "description": "Ein paar konzentrierte Minuten mit dem Team, um Ihre Kommandozentrale anzuwählen."
     },
-    "kickoff": {
-      "tools": "Ich habe auch diese Tools angeschlossen: {count}. Benutzen Sie sie, wenn sie helfen.",
-      "noDomain": "Ich habe meinen Projekt fertig eingerichtet.{toolsClause} Stellen Sie sich vor, erklären Sie, was Sie tun können, und fragen Sie zuerst, wobei ich Hilfe benötige.",
-      "withDomain": "Ich habe die Einrichtung meines Projekts für {domain} abgeschlossen. Informieren Sie sich über das Unternehmen und teilen Sie mir mit, was Sie herausgefunden haben.{toolsClause} Fragen Sie dann zuerst, wobei ich Hilfe benötige."
-    },
     "company": {
       "title": "Erzählen Sie uns von Ihrem Unternehmen",
       "description": "Ihr Agent nutzt die Domain, um Ihr eigenes Unternehmen zu recherchieren. Nichts wird öffentlich geteilt.",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "{count} Tools verbunden. Beim Öffnen beginnt Ihr erstes Gespräch mit Kortix.",
       "description": "Beim Öffnen beginnt Ihr erstes Gespräch mit Kortix.",
       "openProject": "Projekt öffnen",
-      "firstMessage": "Ihre erste Nachricht",
       "bookCall": "Buchen Sie ein 20-minütiges Setup-Gespräch mit Marko"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "Der Modellzugriff konnte nicht aktualisiert werden.",
     "hiddenShort": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt.",
     "resetError": "Die Modellliste konnte nicht zurückgesetzt werden."
+  },
+  "firstChat": {
+    "title": "Ihr erster Chat mit Kortix",
+    "greeting": "Willkommen, {name}. Ich bin Kortix.",
+    "greetingNoName": "Willkommen. Ich bin Kortix.",
+    "intro": "Bringen Sie mir alles: eine Aufgabe, einen Workflow oder eine halbfertige Idee. Wir finden es gemeinsam heraus.",
+    "question": "Wo möchten Sie anfangen?",
+    "recommendTools": "Tools für meinen Workflow empfehlen",
+    "updateMemory": "Projektspeicher aktualisieren",
+    "placeholder": "Sagen Sie Kortix, woran Sie arbeiten",
+    "toolsPrompt": "Empfehlen Sie mir Tools und Connectoren, die zu meinem Workflow passen. Fragen Sie mich bei Bedarf zuerst, woran ich arbeite.",
+    "memoryPrompt": "Lernen Sie, wie ich arbeite. Stellen Sie mir jeweils eine kurze Frage zu meiner Rolle, woran ich arbeite, welche Tools ich nutze und wie ich gerne arbeite. Speichern Sie meine Antworten im Projektspeicher, damit künftige Sitzungen direkt darauf aufbauen."
   }
 }

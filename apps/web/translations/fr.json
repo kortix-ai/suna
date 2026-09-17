@@ -1344,7 +1344,7 @@
     "upgradePlan": "Mettre le forfait à niveau",
     "sessionList": {
       "loadError": "Impossible de charger les sessions",
-      "empty": "Aucune session pour le moment",
+      "empty": "Les sessions que vous démarrez s’affichent ici",
       "noMatches": "Aucune session ne correspond aux filtres actifs.",
       "actions": "Actions de la session",
       "actionsFor": "Actions pour {title}",
@@ -14568,7 +14568,6 @@
       "text93d6bb239aae": "Aucune règle, aucune entrée : Cloudflare refuse l’accès à tout le monde tant qu’au moins une règle Allow n’existe pas. C’est la cause la plus fréquente de « SSO redirige mais l’accès est refusé ».",
       "text93d6de7104f0": "Supprimer l’icône",
       "text93dcf1d1d25e": "Week-ends",
-      "text93e404732659": "Démarrez une session pour donner sa première tâche à ce projet.",
       "text93f4b14c9e2b": "Aucune notification active",
       "text93f5222a6e5c": "- N’escalader que ce qui nécessite une intervention humaine",
       "text93fbaf02beca": "01 · Isolation",
@@ -18513,11 +18512,6 @@
       "title": "Réservez un appel de configuration de 20 minutes",
       "description": "Quelques minutes concentrées avec l'équipe pour que votre centre de commande soit connecté."
     },
-    "kickoff": {
-      "tools": "J'ai également connecté ces outils : {count}. Utilisez-les s’ils vous aident.",
-      "noDomain": "J'ai fini de configurer mon projet. {toolsClause} Présentez-vous, expliquez ce que vous pouvez faire et demandez d'abord pour quoi j'ai besoin d'aide.",
-      "withDomain": "J'ai terminé de configurer mon projet pour {domain}. Recherchez l'entreprise et dites-moi ce que vous trouvez. {toolsClause} Demandez-moi ensuite pour quoi j'ai besoin d'aide en premier."
-    },
     "company": {
       "title": "Parlez-nous de votre entreprise",
       "description": "Votre agent utilise le domaine pour rechercher votre propre entreprise. Rien n'est partagé publiquement.",
@@ -18609,7 +18603,6 @@
       "descriptionWithTools": "{count} outils connectés. L’ouverture commence votre première conversation avec Kortix.",
       "description": "L’ouverture commence votre première conversation avec Kortix.",
       "openProject": "Projet ouvert",
-      "firstMessage": "Votre premier message",
       "bookCall": "Réservez un appel de configuration de 20 minutes avec Marko"
     }
   },
@@ -19388,5 +19381,17 @@
     "modelError": "Impossible de modifier l’accès au modèle.",
     "hiddenShort": "Masqué dans le sélecteur. Les requêtes directes restent autorisées.",
     "resetError": "Impossible de réinitialiser la liste des modèles."
+  },
+  "firstChat": {
+    "title": "Votre première discussion avec Kortix",
+    "greeting": "Bienvenue, {name}. Je suis Kortix.",
+    "greetingNoName": "Bienvenue. Je suis Kortix.",
+    "intro": "Apportez-moi tout : une tâche, un workflow ou une idée encore floue. Nous y verrons clair ensemble.",
+    "question": "Par où voulez-vous commencer ?",
+    "recommendTools": "Recommander des outils pour mon workflow",
+    "updateMemory": "Mettre à jour la mémoire du projet",
+    "placeholder": "Dites à Kortix sur quoi vous travaillez",
+    "toolsPrompt": "Recommandez-moi des outils et connecteurs adaptés à mon workflow. Demandez-moi d’abord sur quoi je travaille si besoin.",
+    "memoryPrompt": "Apprenez à connaître ma façon de travailler. Posez-moi une question courte à la fois sur mon rôle, sur quoi je travaille, les outils que j’utilise et comment j’aime travailler. Enregistrez mes réponses dans la mémoire du projet pour que les prochaines sessions démarrent avec elles."
   }
 }

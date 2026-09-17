@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  buildOnboardingKickoffPrompt,
   buildSteps,
   deriveCompanyDomain,
   firstStepAfterSurvey,
@@ -170,38 +169,6 @@ describe('starterPromptsFor', () => {
   test('gives each use case a distinct lead prompt', () => {
     const leads = USE_CASE_OPTIONS.map((o) => starterPromptsFor(o.value)[0]?.template);
     expect(new Set(leads).size).toBe(USE_CASE_OPTIONS.length);
-  });
-});
-
-describe('buildOnboardingKickoffPrompt', () => {
-  test('references the real domain value, not a placeholder', () => {
-    const prompt = buildOnboardingKickoffPrompt('acme.com', 0);
-    expect(prompt).toContain('acme.com');
-  });
-
-  test('falls back to a domain-agnostic opener when the survey was skipped', () => {
-    const prompt = buildOnboardingKickoffPrompt('', 0);
-    expect(prompt).not.toContain('undefined');
-    expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test('trims the domain before embedding it', () => {
-    expect(buildOnboardingKickoffPrompt('  acme.com  ', 0)).toContain('acme.com');
-    expect(buildOnboardingKickoffPrompt('  acme.com  ', 0)).not.toContain(' acme.com  ');
-  });
-
-  test('mentions connected tools only when there are any, and pluralizes correctly', () => {
-    const none = buildOnboardingKickoffPrompt('acme.com', 0);
-    const one = buildOnboardingKickoffPrompt('acme.com', 1);
-    const many = buildOnboardingKickoffPrompt('acme.com', 3);
-    expect(none).not.toContain('tool');
-    expect(one).toContain('1 tool ');
-    expect(many).toContain('3 tools');
-  });
-
-  test('is a first-person request the agent can act on, not marketing copy', () => {
-    const prompt = buildOnboardingKickoffPrompt('acme.com', 0);
-    expect(prompt.startsWith('I ')).toBe(true);
   });
 });
 

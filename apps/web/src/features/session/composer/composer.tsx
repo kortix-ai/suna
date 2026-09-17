@@ -81,6 +81,7 @@ import {
   resolveEditorPlaceholder,
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
+  shouldSubmitPrefill,
   textToDocument,
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
@@ -249,6 +250,13 @@ export interface SessionChatInputProps {
     id: number;
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
+    /**
+     * Submit the prefill once it has landed, exactly as if the person pressed
+     * Enter. For one-click starters (the first chat's "Update memory"): the
+     * send still carries the composer's agent and model and still hits every
+     * refusal (no agent, no model, blocked images) a typed message would.
+     */
+    submit?: boolean;
   } | null;
   /**
    * Called with `prefill.id` the moment that prefill has actually landed in the
@@ -959,6 +967,11 @@ function ComposerImpl({
   const prefillText = prefill?.text ?? '';
   const prefillFiles = prefill?.files;
   const prefillMode = prefill?.mode;
+  const prefillSubmit = prefill?.submit === true;
+  // `handleSubmit` is declared further down; the prefill effect reaches it
+  // through this ref, bound in an effect right after that declaration.
+  const handleSubmitRef = useRef<() => void>(() => undefined);
+  const submittedPrefillIdRef = useRef<number | null>(null);
   const onPrefillAppliedRef = useRef(onPrefillApplied);
   useEffect(() => {
     onPrefillAppliedRef.current = onPrefillApplied;
@@ -1039,11 +1052,24 @@ function ComposerImpl({
     // re-run the effect whenever the caller re-created it, and a `merge` prefill
     // applied twice appends its text twice.
     onPrefillAppliedRef.current?.(prefillId as number);
+    // Last, so the prefill is fully applied and reported before the submit
+    // takes the draft out of the editor.
+    if (
+      shouldSubmitPrefill({
+        prefillId,
+        prefillSubmit,
+        submittedPrefillId: submittedPrefillIdRef.current,
+      })
+    ) {
+      submittedPrefillIdRef.current = prefillId as number;
+      handleSubmitRef.current();
+    }
   }, [
     prefillId,
     prefillText,
     prefillFiles,
     prefillMode,
+    prefillSubmit,
     editorElement,
     addPromptAttachments,
     removePromptAttachment,
@@ -1503,6 +1529,9 @@ function ComposerImpl({
     );
     return submitLatchRef.current();
   }, []);
+  useEffect(() => {
+    handleSubmitRef.current = () => void handleSubmit();
+  }, [handleSubmit]);
 
   // A question lock owns the editor: Up there is a caret move, never a take-back.
   const handleArrowUpAtStart = useCallback(

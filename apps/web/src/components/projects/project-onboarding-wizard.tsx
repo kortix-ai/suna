@@ -17,14 +17,13 @@ import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
-import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { useFirstChatStore } from '@/stores/first-chat-store';
 import { listConnectors } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import { completeThenNotify } from './onboarding/complete-then';
 import { slideVariants } from './onboarding/motion';
 import {
-  buildOnboardingKickoffPrompt,
   buildSteps,
   deriveCompanyDomain,
   firstStepAfterSurvey,
@@ -213,8 +212,8 @@ export function ProjectOnboardingWizard({
     [goTo, steps.length],
   );
   const back = useCallback(() => goTo((i) => Math.max(i - 1, 0)), [goTo]);
-  // ONE exit for the whole wizard: `startWithPrompt` and `DoneStep`'s `onStart`
-  // both come through here, so `onCompleted` needs exactly one wrapping site.
+  // ONE exit for the whole wizard: `DoneStep`'s `onStart` (`openProject`) comes
+  // through here, so `onCompleted` needs exactly one wrapping site.
   // `skipSurvey` below is NOT an exit — it moves between steps.
   const complete = useCallback(
     () => completeThenNotify(() => onboarding.complete(), onCompleted),
@@ -229,32 +228,19 @@ export function ProjectOnboardingWizard({
   // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
   // worse than not skipping. Stamping is what makes "Skip for now" mean what it
   // says.
-  const skip = useCallback(
-    () => completeThenNotify(() => onboarding.complete(), onSkip),
-    [onboarding, onSkip],
-  );
+  //
+  // Both exits open the project on its first chat (`first-chat-store.ts`): a
+  // calm welcome and an idle composer. Nothing is sent for the person. They
+  // did not ask for a turn yet, and they do not know what Kortix can do yet.
+  const skip = useCallback(() => {
+    useFirstChatStore.getState().start(projectId);
+    return completeThenNotify(() => onboarding.complete(), onSkip);
+  }, [projectId, onboarding, onSkip]);
 
-  // "Open project" both completes onboarding AND auto-starts the first
-  // conversation — `composer-prefill-store`'s `autoSend` flag (added for
-  // exactly this hand-off) makes project-home fire the kickoff prompt the
-  // moment it mounts, instead of leaving it sitting in the composer for a
-  // second click. Same one-shot channel the `?q=` deep link and command
-  // palette use for prefill-only handoffs; this is the only `autoSend: true`
-  // caller.
-  const kickoffPrompt = useMemo(
-    () =>
-      buildOnboardingKickoffPrompt(domain, connectorSlugs.length, {
-        noDomain: (toolsClause) => t('kickoff.noDomain', { toolsClause }),
-        withDomain: (companyDomain, toolsClause) =>
-          t('kickoff.withDomain', { domain: companyDomain, toolsClause }),
-        tools: (count) => t('kickoff.tools', { count }),
-      }),
-    [domain, connectorSlugs.length, t],
-  );
   const openProject = useCallback(() => {
-    useComposerPrefillStore.getState().setPrefill(projectId, kickoffPrompt, { autoSend: true });
+    useFirstChatStore.getState().start(projectId);
     void complete();
-  }, [projectId, kickoffPrompt, complete]);
+  }, [projectId, complete]);
 
   // Skipping the survey jumps past BOTH questions to whatever comes next —
   // `tools` normally, `slack` when connectors are disabled.
@@ -395,7 +381,6 @@ export function ProjectOnboardingWizard({
                     {stepId === 'done' && (
                       <DoneStep
                         projectId={projectId}
-                        domain={domain}
                         connectedCount={connectorSlugs.length}
                         showFounderCall={showFounderStep}
                         onBookCall={() => setCalOpen(true)}
