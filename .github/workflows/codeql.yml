@@ -4,10 +4,16 @@ name: CodeQL
 # Findings appear under the repo's Security > Code scanning tab.
 
 on:
+  # `push` on all three refs is what publishes the alert BASELINE each branch is
+  # diffed against — see the `promote-pr-scanner-baselines` learning; never
+  # narrow it. The PR scan only needs to run where humans propose code: `main`.
+  # On a `main -> staging` or a release PR the same tree was already analysed on
+  # the PR into main AND on main's push, so two of the three analyses were pure
+  # duplicate cost (measured 4m14s / 5m51s / 6m49s on PR #7340).
   push:
     branches: [main, staging, prod]
   pull_request:
-    branches: [main, staging, prod]
+    branches: [main]
   schedule:
     - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
 

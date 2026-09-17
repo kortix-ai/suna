@@ -41,9 +41,9 @@ on:
         required: false
         type: string
       ref:
-        description: 'Source ref to promote (default staging)'
+        description: 'Source ref/SHA to promote (default: the SHA staging is SERVING)'
         required: false
-        default: staging
+        default: ''
         type: string
       skip_green:
         description: 'Fast-track: skip the staging QA-green wait (still requires the staging images to be built). Also enabled standingly via the RELEASE_FAST_TRACK repo variable.'
@@ -58,17 +58,83 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  # Approving the release PR's own gate run (see the last step).
+  actions: write
 
 jobs:
   open-release-pr:
     name: Open review-gated release PR
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
-      - name: Checkout ${{ inputs.ref }} (full history)
+      # The release gate asserts that DEPLOYED staging serves RELEASE_SOURCE_SHA
+      # (`tests/src/core/target-smoke.ts` throws on a mismatch for the api AND
+      # the gateway). `origin/staging` is not that SHA: it moves the moment a PR
+      # merges, and it can sit AHEAD of what is deployed for as long as a build
+      # or a deploy takes. Cutting a release from the branch tip therefore
+      # produces a PR whose required check can never pass.
+      #
+      # 2026-09-17, v0.13.21: cut from tip `8cfb6d43`; #7340 merged into staging
+      # 44 min later and staging redeployed to `9025ab3dbf`, so every shard then
+      # died in preflight on `SHA mismatch`. The PR was unmergeable by anyone —
+      # no approval and no re-run could fix it — and had to be re-cut by hand at
+      # the deployed SHA.
+      #
+      # So the default source is what the two deployed halves AGREE they are
+      # serving. An explicit `ref` (a branch, a tag, a SHA) still wins, for a
+      # deliberate selective release.
+      - name: Resolve the promote source (default = what staging SERVES)
+        id: src
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_REF:-}" ]; then
+            echo "ref=$INPUT_REF" >> "$GITHUB_OUTPUT"
+            echo "Explicit source ref: $INPUT_REF"
+            exit 0
+          fi
+          commit_of() {
+            curl -fsS --max-time 20 "$1" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "")'
+          }
+          api="$(commit_of https://staging-api.kortix.com/v1/health || true)"
+          gw="$(commit_of https://gateway-staging.kortix.com/health || true)"
+          echo "deployed staging api=$api gateway=$gw"
+          for sha in "$api" "$gw"; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "::error::Could not read a 40-hex commit from deployed staging (api='$api' gateway='$gw'). Pass an explicit ref= to override."
+              exit 1
+            }
+          done
+          [ "$api" = "$gw" ] || {
+            echo "::error::Deployed staging is split-brain (api=$api gateway=$gw). Let the staging deploy finish, then re-run."
+            exit 1
+          }
+          echo "ref=$api" >> "$GITHUB_OUTPUT"
+          echo "Promoting the SHA staging is serving: $api"
+
+      - name: Checkout ${{ steps.src.outputs.ref }} (full history)
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ steps.src.outputs.ref }}
           fetch-depth: 0
+
+      # Production ships only from staging (kortix-release skill, rule 0). A
+      # resolved SHA must therefore be reachable from `origin/staging` — this
+      # also catches a deployed staging that is serving something which was
+      # force-pushed away.
+      - name: Require the source to be reachable from staging
+        env:
+          SRC_REF: ${{ steps.src.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin staging:refs/remotes/origin/staging --quiet
+          sha="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$sha" origin/staging || {
+            echo "::error::$sha ($SRC_REF) is not reachable from origin/staging; prod ships only from staging."
+            exit 1
+          }
+          echo "✓ $sha is an ancestor of origin/staging"
 
       - name: Compute next version (from what's live on prod)
         id: ver
@@ -115,7 +181,7 @@ jobs:
           # staging image-build checks to be green — deploy-prod retags those exact
           # images, so they must exist — but we DON'T wait on the slow QA/e2e lanes.
           FAST: ${{ (vars.RELEASE_FAST_TRACK == 'true' || inputs.skip_green) && 'true' || 'false' }}
-          INPUT_REF: ${{ inputs.ref }}
+          INPUT_REF: ${{ steps.src.outputs.ref }}
           RUN_ID: ${{ github.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -226,12 +292,49 @@ jobs:
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
           fi
 
+      # A release PR is authored by `github-actions[bot]`, and GitHub holds the
+      # workflow runs of a bot-authored PR in `action_required` even with
+      # `fork-pr-contributor-approval: first_time_contributors` (measured
+      # 2026-09-17: the repo was already on that policy and gate run
+      # 35242868705 still landed `action_required`). So the ONLY required check
+      # on `prod` does not start until a human notices and clicks Approve.
+      # v0.13.18 and v0.13.21 both sat there.
+      #
+      # Approve it here. Best-effort: a failure leaves the run waiting exactly
+      # as before, and the human click still works.
+      - name: Approve the release gate run
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          branch="release/$RELEASE_TAG"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&event=pull_request&per_page=20" \
+              --jq '[.workflow_runs[] | select(.name == "Tests - release")] | sort_by(.created_at) | last | .id // empty' || true)"
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&event=pull_request&per_page=20" \
+              --jq '[.workflow_runs[] | select(.name == "Tests - release")] | sort_by(.created_at) | last | .conclusion // .status // empty' || true)"
+            if [ -n "$run_id" ] && [ "$status" = "action_required" ]; then
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve"
+              echo "Approved release gate run $run_id."
+              exit 0
+            fi
+            if [ -n "$run_id" ] && [ "$status" != "action_required" ]; then
+              echo "Release gate run $run_id is '$status' — no approval needed."
+              exit 0
+            fi
+            echo "waiting for the gate run to register (attempt $attempt)…"
+            sleep 15
+          done
+          echo "::warning::No release gate run found awaiting approval; approve it by hand if it is held."
+
       - name: Summary
         env:
           RELEASE_TAG: ${{ steps.ver.outputs.tag }}
           RELEASE_BASE: ${{ steps.ver.outputs.base }}
           RELEASE_NEW: ${{ steps.ver.outputs.new }}
-          INPUT_REF: ${{ inputs.ref }}
+          INPUT_REF: ${{ steps.src.outputs.ref }}
         run: |
           {
             echo "### Release PR opened — \`$RELEASE_TAG\`"

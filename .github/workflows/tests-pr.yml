@@ -10,11 +10,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every PR a human opens against `main`: the complete suite, unchanged.
   full:
     name: all local tests
+    if: github.base_ref == 'main' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/tests.yml
     with:
       mode: full
       artifact-name: tests-pr-results
+      retention-days: 14
+    secrets: inherit
+
+  # A `main -> staging` promote PR: integration lanes only (see note above).
+  integration-core:
+    name: staging integration
+    if: github.base_ref == 'staging'
+    uses: ./.github/workflows/tests.yml
+    with:
+      mode: core
+      artifact-name: tests-staging-core
+      retention-days: 14
+    secrets: inherit
+
+  integration-packages:
+    name: staging integration
+    if: github.base_ref == 'staging'
+    uses: ./.github/workflows/tests.yml
+    with:
+      mode: packages
+      artifact-name: tests-staging-packages
       retention-days: 14
     secrets: inherit
