@@ -1438,6 +1438,11 @@ child timeout now increases with the largest manifest file, capped at four
 hours. A focused test interrupted chunk two, resumed without downloading
 chunk one, and verified the full file hash. A live retry of the 778 MiB file
 has not completed yet; the session remains in review until it does.
+The subsequent live retry reset its Platinum `/files` connection after about
+11 MiB of the first 64 MiB chunk. New reads now use 8 MiB chunks. A retry
+keeps the chunk size from any existing verified prefix, so this adjustment
+does not discard a previous 64 MiB receipt. The next live retry remains the
+completion gate for this session.
 
 ### Historical session dates and sidebar order (2026-09-17)
 

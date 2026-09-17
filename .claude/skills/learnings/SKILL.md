@@ -21,6 +21,10 @@ linked, not inlined.
 
 ## Register
 
+### Keep read-back chunks below the observed provider reset size (2026-09-17)
+
+**Rule:** When a provider resets a file download before the first chunk completes, reduce new chunk size below the observed failure point. Preserve the size of any already verified chunk series so retries do not discard its prefix. **Incident:** Platinum reset the 778 MiB migration file read-back after about 11 MiB of a 64 MiB first chunk. The session stayed in review. **Enforcement:** the private verifier now starts new large-file reads at 8 MiB, resumes the chunk size stored in the first verified receipt, and still requires the full source SHA-256. Its interruption test changes configured chunk size between attempts and proves the first chunk is reused.
+
 ### Restore legacy activity dates without changing housekeeping timestamps (2026-09-17)
 
 **Rule:** For imported sessions, restore source `created_at` and a separate activity stamp. Keep `updated_at` as bookkeeping when cleanup jobs use it. Check the list cursor's sort key before claiming the sidebar is fixed. **Incident:** all 16,685 Suna/Trimaran imports had import-time creation dates; 16,683 lacked `last_activity_at`. Production pages by `updated_at`, so stamping activity alone did not reorder the first page. **Enforcement:** the private backfill verifies each source/destination identity and preserves newer activity, then reads all 16,685 rows back. The opt-in activity-order list uses a cursor sealed to that ordering; its unit test rejects a cursor from the other mode. The API rejects client writes to the activity stamp.
