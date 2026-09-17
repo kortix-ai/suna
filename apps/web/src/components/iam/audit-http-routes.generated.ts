@@ -138,6 +138,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|accounts|:accountId|secret-resources",
   "POST|v1|accounts|:accountId|secret-resources",
   "DELETE|v1|accounts|:accountId|secret-resources|:secretId",
+  "PUT|v1|accounts|:accountId|secret-resources|:secretId|access",
   "DELETE|v1|accounts|:accountId|secret-resources|:secretId|grants|:userId",
   "PUT|v1|accounts|:accountId|secret-resources|:secretId|grants|:userId",
   "PUT|v1|accounts|:accountId|secret-resources|:secretId|value",

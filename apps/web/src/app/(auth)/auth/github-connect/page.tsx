@@ -35,7 +35,13 @@ export default function GitHubConnectPopup() {
       try {
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
         const queryParams = new URLSearchParams(window.location.search);
-        const accessToken = hashParams.get('access_token');
+        // `github_token`, and not the fragment key the app's own auth client
+        // treats as an implicit-flow login on every page load: this popup runs
+        // inside the web app, so a GitHub token under THAT name is picked up
+        // as a session, fails to validate, and the client clears the session
+        // the opener is signed in with — the "verify with GitHub logs me out"
+        // report (dev, 2026-09-17).
+        const accessToken = hashParams.get('github_token');
         const error = queryParams.get('error') || hashParams.get('error');
 
         if (error) {

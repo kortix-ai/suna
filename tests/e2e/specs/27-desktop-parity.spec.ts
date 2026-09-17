@@ -967,6 +967,8 @@ for (const runtime of runtimes) {
             name: "Invalid authorization request",
           });
         await installBrowserSessionDirect(page, session, deadEnd, authOptions);
+        await page.goto(`${baseURL}/dashboard`, { waitUntil: "domcontentloaded" });
+        await page.goto(deadEnd, { waitUntil: "domcontentloaded" });
         await expect(heading(page)).toBeVisible({ timeout: 60_000 });
         const back = page.getByRole("button", { name: "Back", exact: true });
         if (!desktop) {
@@ -984,8 +986,8 @@ for (const runtime of runtimes) {
           box!.y + box!.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // installBrowserSessionDirect lands on /favicon.png first, so an
-        // in-app entry is behind the dead end and Back is history.back().
+        // The dashboard is a real in-app history entry behind this frame.
+        // Back returns there without relying on the favicon bootstrap.
         await back.click();
         await expect(page).not.toHaveURL(/\/oauth\/authorize/);
         if (desktopApp) return;

@@ -604,6 +604,11 @@ export const MS_TEAMS_APP_ID = 'MS_TEAMS_APP_ID';
 export const MS_TEAMS_APP_PASSWORD = 'MS_TEAMS_APP_PASSWORD';
 export const MS_TEAMS_ORG_INSTALLED = 'MS_TEAMS_ORG_INSTALLED';
 export const MS_TEAMS_CATALOG_APP_ID = 'MS_TEAMS_CATALOG_APP_ID';
+// Outcome of the one-click org-catalog publish (teams-oauth.ts), so the
+// dashboard can show "publishing…", "pending review", or the Graph rejection
+// instead of a redirect status nothing reads.
+export const MS_TEAMS_PUBLISH_STATE = 'MS_TEAMS_PUBLISH_STATE';
+export const MS_TEAMS_PUBLISH_ERROR = 'MS_TEAMS_PUBLISH_ERROR';
 
 const TEAMS_KEYS = [
   MS_TEAMS_TENANT_ID,
@@ -615,7 +620,17 @@ const TEAMS_KEYS = [
   MS_TEAMS_APP_PASSWORD,
   MS_TEAMS_ORG_INSTALLED,
   MS_TEAMS_CATALOG_APP_ID,
+  MS_TEAMS_PUBLISH_STATE,
+  MS_TEAMS_PUBLISH_ERROR,
 ] as const;
+
+export type TeamsPublishState = 'publishing' | 'published' | 'review' | 'failed';
+
+const TEAMS_PUBLISH_STATES: ReadonlySet<string> = new Set(['publishing', 'published', 'review', 'failed']);
+
+function parsePublishState(value: string | undefined): TeamsPublishState | null {
+  return value && TEAMS_PUBLISH_STATES.has(value) ? (value as TeamsPublishState) : null;
+}
 
 export interface TeamsInstallSummary {
   tenantId: string;
@@ -626,6 +641,10 @@ export interface TeamsInstallSummary {
   byo: boolean;
   orgInstalled: boolean;
   catalogAppId: string | null;
+  /** Null until a one-click install has run (manual + BYO installs never publish). */
+  publishState: TeamsPublishState | null;
+  /** The Graph rejection when `publishState === 'failed'`; null otherwise. */
+  publishError: string | null;
   installedAt: string;
 }
 
@@ -669,8 +688,19 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
     byo: Boolean(input.appId),
     orgInstalled: false,
     catalogAppId: null,
+    publishState: null,
+    publishError: null,
     installedAt: new Date().toISOString(),
   };
+}
+
+export async function setTeamsPublishState(
+  projectId: string,
+  state: TeamsPublishState,
+  error?: string | null,
+): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_PUBLISH_STATE, state);
+  await upsertSecret(projectId, MS_TEAMS_PUBLISH_ERROR, state === 'failed' ? (error ?? '').slice(0, 500) : '');
 }
 
 export async function setTeamsOrgInstalled(projectId: string, installed: boolean): Promise<void> {
@@ -717,6 +747,8 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
     byo: Boolean(secrets[MS_TEAMS_APP_ID]),
     orgInstalled: Boolean(secrets[MS_TEAMS_ORG_INSTALLED]),
     catalogAppId: secrets[MS_TEAMS_CATALOG_APP_ID] || null,
+    publishState: parsePublishState(secrets[MS_TEAMS_PUBLISH_STATE]),
+    publishError: secrets[MS_TEAMS_PUBLISH_ERROR] || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
 }

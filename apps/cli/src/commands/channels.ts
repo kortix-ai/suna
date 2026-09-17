@@ -111,6 +111,9 @@ interface TeamsInstallation {
   tenantId: string | null;
   catalogAppId: string | null;
   orgInstalled: boolean;
+  /** Outcome of the one-click org-catalog publish; null for manual/BYO installs. */
+  publishState?: 'publishing' | 'published' | 'review' | 'failed' | null;
+  publishError?: string | null;
   installedAt: string | null;
 }
 
@@ -627,22 +630,45 @@ async function teamsStatus(
       emitJson({ connected: Boolean(install), installation: install ?? null });
       return 0;
     }
-    if (!install || !install.orgInstalled) {
+    if (!install) {
       process.stdout.write(
         `${C.dim}teams${C.reset}  not connected\n` +
           `       Run ${C.cyan}kortix channels connect --platform teams${C.reset} — it prints the Microsoft admin-consent URL.\n`,
       );
       return 0;
     }
+    // A bound tenant is a connection. The org-catalog publish is a SEPARATE
+    // outcome that finishes in the background after consent, so report it on
+    // its own line instead of folding it into "connected".
     process.stdout.write(
       `${status.ok('teams')}  tenant ${install.tenantId ?? '?'}${install.catalogAppId ? `  catalog app ${install.catalogAppId}` : ''}  (installed ${install.installedAt ?? '?'})\n`,
     );
-    if (install.catalogAppId) {
-      process.stdout.write(`       Deep link: ${install.catalogAppId}\n`);
-    }
+    const publishLine = teamsPublishLine(install);
+    if (publishLine) process.stdout.write(`       ${publishLine}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);
+  }
+}
+
+function teamsPublishLine(install: TeamsInstallation): string | null {
+  const retry = `${C.cyan}kortix channels connect --platform teams${C.reset}`;
+  switch (install.publishState) {
+    case 'publishing':
+      return `${C.dim}Catalog: publishing the app to the org Teams catalog… (re-run status in a minute)${C.reset}`;
+    case 'review':
+      return `${C.dim}Catalog: submitted for review — a Teams admin must approve the app in the Teams admin center${C.reset}`;
+    case 'failed':
+      return (
+        `${status.err('Catalog publish failed')} ${install.publishError ?? 'no reason recorded'}\n` +
+        `       Fix the cause, then re-run ${retry} to publish again.`
+      );
+    case 'published':
+      return install.orgInstalled ? `${C.dim}Catalog: published to the org Teams catalog${C.reset}` : null;
+    default:
+      return install.orgInstalled
+        ? null
+        : `${C.dim}Catalog: app not published to the org catalog (manual upload, or re-run ${retry})${C.reset}`;
   }
 }
 

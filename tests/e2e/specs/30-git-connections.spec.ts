@@ -127,6 +127,51 @@ test.describe("30 — Git connections", () => {
       ).toBeVisible();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(dialog).toBeHidden();
+
+      // `/new` is a git ACCOUNT manager, not a repository menu: the first
+      // question is whose account, with "Kortix managed" one option at the
+      // end and "Add a GitHub account…" reachable from the same list. A
+      // multi-account user arrives scoped to the account they chose
+      // (`?account=`), and the page has a way out that is not Log out.
+      await page.goto(`/new?account=${account.account_id}`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("link", { name: "Back to projects" })).toBeVisible({
+        timeout: 60_000,
+      });
+      // Name the project first. Leaving the name empty and clicking elsewhere
+      // blurs the field, the "Name is required" line inserts above the
+      // repository controls, and a click that started above the shift lands
+      // beside its target.
+      await page.getByRole("textbox", { name: "Project name" }).fill(`Git smoke ${runId}`);
+      // Two honest states for an account with no connection. With managed git
+      // configured (dev, staging, prod): the select, defaulting to "Kortix
+      // managed", with "Add a GitHub account…" in the same list. Without it
+      // (the local test profile excludes managed GitHub): no select at all —
+      // the line saying so, and the add-account button as the only action.
+      const gitAccount = page.getByRole("combobox", { name: "Git account" });
+      const addGitHubAccount = page.getByRole("button", { name: /Add a GitHub account/ });
+      await expect(gitAccount.or(addGitHubAccount).first()).toBeVisible({ timeout: 60_000 });
+      if (await gitAccount.isVisible().catch(() => false)) {
+        await expect(gitAccount).toHaveText(/Kortix managed/);
+        await gitAccount.click();
+        const listbox = page.getByRole("listbox");
+        await expect(listbox.getByRole("option", { name: /Kortix managed/ })).toBeVisible();
+        await expect(
+          listbox.getByRole("option", { name: /Add a GitHub account/ }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+      } else {
+        await expect(
+          page.getByText("Kortix-managed repositories are not available on this instance", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        await addGitHubAccount.click();
+        await expect(page.getByRole("dialog", { name: "Add a GitHub account" })).toBeVisible();
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
+      // Nothing under "create" asks for a branch — neither a managed default
+      // nor an empty account.
+      await expect(page.getByLabel("Default branch")).toHaveCount(0);
     } finally {
       if (projectId) {
         await runDatabaseSql(

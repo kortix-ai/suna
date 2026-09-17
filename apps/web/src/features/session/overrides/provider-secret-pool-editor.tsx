@@ -19,7 +19,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 function useResources(projectId: string) {
   const project = useQuery({ queryKey: ['provider-pool-project', projectId], queryFn: () => getProjectDetail(projectId) });
   const accountId = project.data?.project?.account_id;
-  const resources = useAccountSecretResources(accountId);
+  const resources = useAccountSecretResources(accountId, projectId);
   return { project, resources };
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { publishTeamsAppToCatalog } from '../channels/teams/catalog';
+import { publishTeamsAppToCatalog, TEAMS_CATALOG_PUBLISH_TIMEOUT_MS } from '../channels/teams/catalog';
 
 const realFetch = globalThis.fetch;
 
@@ -59,5 +59,48 @@ describe('publishTeamsAppToCatalog — delegated org-catalog publish', () => {
 
     expect(r.ok).toBe(false);
     expect(r.published).toBe(false);
+  });
+});
+
+describe('publishTeamsAppToCatalog — failure detail and timeout (one-click install on dev returned ?teams=consented with no reason)', () => {
+  test('a rejected publish carries the Graph status AND the response body in error', async () => {
+    globalThis.fetch = (async () =>
+      jsonRes(400, { error: { code: 'BadRequest', message: 'Invalid manifest: validDomains' } })) as any;
+
+    const r = await publishTeamsAppToCatalog({ accessToken: 'tok', baseUrl: 'https://dev-api', appId: 'app-1' });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('400');
+    expect(r.error).toContain('Invalid manifest: validDomains');
+  });
+
+  test('a failed review submit carries the review status and body in error', async () => {
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (!u.includes('requiresReview')) return jsonRes(403, { error: { code: 'Forbidden' } });
+      return jsonRes(400, { error: { message: 'review disabled by policy' } });
+    }) as any;
+
+    const r = await publishTeamsAppToCatalog({ accessToken: 'tok', baseUrl: 'https://dev-api', appId: 'app-1' });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('400');
+    expect(r.error).toContain('review disabled by policy');
+  });
+
+  test('an aborted fetch is reported as a timeout, naming the budget', async () => {
+    globalThis.fetch = (async () => {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }) as any;
+
+    const r = await publishTeamsAppToCatalog({ accessToken: 'tok', baseUrl: 'https://dev-api', appId: 'app-1' });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/timed out/i);
+    expect(r.error).toContain(String(TEAMS_CATALOG_PUBLISH_TIMEOUT_MS / 1000));
+  });
+
+  test('the publish budget is at least 90 s — a first-time org-catalog publish measured 21 s from a laptop, and the old 30 s abort is the prime suspect for the dev failure', () => {
+    expect(TEAMS_CATALOG_PUBLISH_TIMEOUT_MS).toBeGreaterThanOrEqual(90_000);
   });
 });

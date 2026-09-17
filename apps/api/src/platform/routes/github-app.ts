@@ -880,7 +880,14 @@ githubAppSetupRouter.openapi(
       // header, or proxy/CDN access logs), so it's the right place for a
       // short-lived credential in a same-tab redirect chain that has no
       // durable server-side session to stash it in.
-      const fragment = new URLSearchParams({ access_token: accessToken });
+      // `github_token`, NOT `access_token`: the popup is a page of the web
+      // app, whose Supabase browser client watches every load for an
+      // implicit-flow `#access_token=` fragment. A GitHub token under that
+      // name is not a Supabase session, the recovery fails, and the client
+      // drops the session cookie the OPENER is signed in with — the setup
+      // page then sees no user and bounces to /auth mid-link (reported on dev
+      // 2026-09-17).
+      const fragment = new URLSearchParams({ github_token: accessToken });
       return c.redirect(`${landingOrigin}/auth/github-connect#${fragment.toString()}`, 302);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

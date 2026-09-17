@@ -232,8 +232,9 @@ await kortix.project(pid).secrets.upsert({
   consumer: "llm_gateway",
 });
 // When pooled_provider_secrets and llm_gateway are enabled for the project,
-// an account secret can be shared with members and selected per session.
+// a new account secret is available to this project's members by default.
 const shared = await kortix.accounts.secretResources.create(accountId, {
+  project_id: pid,
   label: "Anthropic backup",
   provider_id: "anthropic",
   name: "ANTHROPIC_API_KEY",
@@ -241,7 +242,8 @@ const shared = await kortix.accounts.secretResources.create(accountId, {
   consumer: "llm_gateway",
   strategy: "broker",
 });
-await kortix.accounts.secretResources.grant(accountId, shared.secret_id, memberUserId);
+// Restrict it to selected members when needed. The creator keeps access.
+await kortix.accounts.secretResources.setAccess(accountId, shared.secret_id, "members", [memberUserId]);
 await kortix.session(pid, sid).providerSecretPool.set("anthropic", [shared.secret_id]);
 const { pools, can_edit } = await kortix.session(pid, sid).providerSecretPool.list();
 // Passing null to set() resets the session to the project default.
@@ -339,7 +341,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) |
@@ -811,9 +813,10 @@ const result = await kortix.project(projectId).secrets.pollProviderOAuth('openai
 ```
 
 Poll until `result.status` is `success`, `failed`, or `expired`. A successful
-named flow returns `credential.secret_id`. It creates a separate private
-account resource; reconnecting does not replace another account. The owner can
-grant members access to that resource. A session can select one or more granted
+named flow returns `credential.secret_id`. It creates a separate project-scoped
+account resource; reconnecting does not replace another account. Every project
+member can use it by default. The owner can restrict access to selected members.
+A session can select one or more available
 ChatGPT resources through its provider secret pool (`providerId: 'codex'`).
 Without an explicit session selection, the caller's newest personal ChatGPT
 resource is used. The legacy project login remains the fallback when that

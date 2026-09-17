@@ -44,9 +44,10 @@ ID, and the branch name are the same value. See
 :::
 
 With `pooled_provider_secrets` and `llm_gateway` enabled, a session can select
-several granted account secrets for one provider. Create resources through
-`kortix.accounts.secretResources.create(accountId, input)` and grant use with
-`.grant(accountId, secretId, userId)`. Reads return metadata and grants, never
+several available account secrets for one provider. Create a project-scoped resource through
+`kortix.accounts.secretResources.create(accountId, { project_id: projectId, ...input })`.
+Every project member can use it by default. Restrict it with
+`.setAccess(accountId, secretId, 'members', userIds)`. Reads return metadata and grants, never
 the secret value. After a provider `429` before output starts, the gateway
 tries another selected key.
 

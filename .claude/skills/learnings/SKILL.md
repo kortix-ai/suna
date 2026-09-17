@@ -6082,6 +6082,23 @@ the real gateway process with a control plane whose first
 5017 ms with one authorize call; the fix answered `400 provider_disabled` in
 5104 ms with two.
 
+### A resolved merge has four marker kinds, not three (2026-09-17)
+
+**Incident (main core lane red 2026-09-17 00:29–~01:10Z):** the #7321 merge
+`549ea2ac01` resolved a conflict in this file by deleting the `<<<<<<<`,
+`=======` and `>>>>>>>` lines and left the diff3 base line
+`||||||| 709fbc4681` behind. `tests/unit/conflict-markers.test.ts` (added the
+same day by #7318) failed on `main` until #7324 removed the line.
+
+**Rule:** a conflict resolved by hand is checked for all four markers —
+`<<<<<<<`, `|||||||`, `=======` alone on a line, `>>>>>>>` — and the merge
+commit is not pushed until `cd tests && npx vitest run
+unit/conflict-markers.test.ts` passes. A resolver script that asserts must
+never be followed by an unconditional `git commit`.
+
+**Enforcement:** `tests/unit/conflict-markers.test.ts` in the core lane; this
+entry names the fourth marker so the next hand-resolution looks for it.
+
 ### 2026-09-17 — A cancelled preview workflow can leave its remote tests running
 
 **Incident.** PR #7319's persistent Platinum preview kept running `target-full`

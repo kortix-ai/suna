@@ -8,7 +8,7 @@ import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provide
 function render(input: { resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]> } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(['provider-pool-project', 'project'], { project: { account_id: 'account' } });
-  client.setQueryData(['account-secret-resources', 'account'], { secrets: input.resources ?? [] });
+  client.setQueryData(['account-secret-resources', 'account', 'project'], { secrets: input.resources ?? [] });
   const listKey = ['session-provider-secret-pools', 'project', 'session'];
   const singleKey = ['session-provider-secret-pool', 'project', 'session', 'anthropic'];
   const pool = { provider_id: 'anthropic', configured: true, secret_ids: [] };

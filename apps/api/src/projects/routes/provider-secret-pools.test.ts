@@ -43,12 +43,16 @@ mock.module('../agents', () => ({ DEFAULT_AGENT_SENTINEL: 'default' }));
 mock.module('../../shared/db', () => ({ db: {
   select: () => ({ from: (table: unknown) => {
     let rows: unknown[] = [];
+    let selectingOwner = false;
     const query: any = {
       innerJoin: () => query,
-      where: (condition: any) => {
-        const params = dialect.sqlToQuery(condition).params;
+      leftJoin: (_joined: unknown, condition: any) => {
+        selectingOwner = dialect.sqlToQuery(condition).params.includes(ownerId);
+        return query;
+      },
+      where: () => {
         rows = table === accountSecretResources
-          ? params.includes(ownerId) && !ownerHasGrant ? [] : [{ id: secretId }]
+          ? [{ id: secretId, projectId: null, accessMode: 'members', grantUserId: selectingOwner ? (ownerHasGrant ? ownerId : null) : managerId }]
           : [{ provider_id: 'anthropic', configured: true, secret_ids: [], ids: [] }];
         return query;
       },
