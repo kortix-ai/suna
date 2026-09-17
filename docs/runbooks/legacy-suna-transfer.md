@@ -1343,6 +1343,14 @@ plist remains on disk; do not bootstrap it while the normal batch is working
 on the same prepared sessions. The unavailable-source reconciler remains
 running for provider-state changes.
 
+The final direct source-state check changed one of the 47 Suna exception
+candidates to a recoverable box. Its real workspace contained 53 files and
+32,451,807 bytes. The migration captured and verified those files on the
+destination. The other 46 candidates reached
+`verified-approved-unrecoverable-file-skip`. Each has an explicit
+files-unavailable notice and verified history, owner, title, and sharing.
+Do not count the recovered box as a files-unavailable exception.
+
 At 00:07 UTC, three more Suna boxes had remained `archiving` for over two
 hours and entered the approved history-only queue. One `archiving` box had
 not reached two hours; one `restoring` box had not reached one hour. Both stay
