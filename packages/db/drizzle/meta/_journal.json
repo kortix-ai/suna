@@ -512,6 +512,13 @@
       "when": 1789563642253,
       "tag": "20260916130042_prompt_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789588154428,
+      "tag": "20260916194914_pooled_provider_secrets",
+      "breakpoints": true
     }
   ]
 }

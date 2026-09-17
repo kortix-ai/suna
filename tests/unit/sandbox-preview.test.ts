@@ -26,6 +26,20 @@ describe('provider-neutral preview lifecycle', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
   });
 
+  it('serializes remote deployments before checkout and test status reset', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: input.repository,
+      ref: 'refs/pull/6337/head',
+      sha: input.sha,
+      prNumber: input.prNumber,
+      origin: 'https://preview.example.com/',
+    });
+    const lock = script.indexOf('flock -x 9');
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
+    expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+  });
+
   it('gives a pull request preview a disposable identity and a branch environment a standing one', () => {
     expect(previewSandboxIdentity({ prNumber: 6337 })).toEqual({
       name: 'kortix-preview-pr-6337',

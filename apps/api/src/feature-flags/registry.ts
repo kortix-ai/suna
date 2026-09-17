@@ -268,6 +268,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'off never strands an existing enforced secret.',
   },
   {
+    key: 'pooled_provider_secrets',
+    name: 'Pooled Provider Secrets',
+    description: 'Share secret resources with members and select multiple provider keys for a session.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
+  },
+  {
     key: 'pi_worker',
     name: 'Pi Worker Runtime (compiled)',
     description:

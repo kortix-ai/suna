@@ -34,11 +34,27 @@ ID, and the branch name are the same value. See
 | `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
+| `s.providerSecretPool.get(providerId)` | `GET …/provider-secret-pools/:providerId` | Reads selected account secret IDs |
+| `s.providerSecretPool.list()` | `GET …/provider-secret-pools` | Lists configured pools, including empty pools, and reports `can_edit` |
+| `s.providerSecretPool.set(providerId, secretIds)` | `PUT …/provider-secret-pools/:providerId` | Replaces the selection; `null` restores the project default |
 
 :::warning
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 :::
+
+With `pooled_provider_secrets` and `llm_gateway` enabled, a session can select
+several granted account secrets for one provider. Create resources through
+`kortix.accounts.secretResources.create(accountId, input)` and grant use with
+`.grant(accountId, secretId, userId)`. Reads return metadata and grants, never
+the secret value. After a provider `429` before output starts, the gateway
+tries another selected key.
+
+```ts
+await s.providerSecretPool.set('anthropic', [primarySecretId, backupSecretId]);
+const selected = await s.providerSecretPool.get('anthropic');
+await s.providerSecretPool.set('anthropic', null); // inherit project default
+```
 
 Use the streamed method when the caller displays reload progress:
 

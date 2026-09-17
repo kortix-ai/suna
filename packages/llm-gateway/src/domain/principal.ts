@@ -3,6 +3,8 @@ export interface AuthedPrincipal {
   accountId: string;
   projectId?: string;
   sessionId?: string;
+  /** Current session token grant. Account resources are filtered again at use time. */
+  agentGrant?: { env?: string[] | 'all' } | null;
   keyId?: string;
   // Resolved billing tier (e.g. 'free', 'pro', 'per_seat'). Attached once at
   // authentication so it travels with the principal — including across the RPC

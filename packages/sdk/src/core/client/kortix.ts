@@ -170,6 +170,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
+    secretResources: {
+      list: P.listAccountSecretResources,
+      create: P.createAccountSecretResource,
+      rotate: P.rotateAccountSecretResource,
+      remove: P.deleteAccountSecretResource,
+      grant: P.grantAccountSecretResource,
+      revoke: P.revokeAccountSecretResourceGrant,
+    },
     updateName: P.updateAccountName,
     /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
     branding: {
@@ -1204,6 +1212,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
+      providerSecretPool: {
+        list: () => P.listSessionProviderSecretPools(projectId, sessionId),
+        get: (providerId: string) => P.getSessionProviderSecretPool(projectId, sessionId, providerId),
+        set: (providerId: string, secretIds: string[] | null) =>
+          P.setSessionProviderSecretPool(projectId, sessionId, providerId, secretIds),
+      },
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>
         P.setProjectSessionScope(projectId, sessionId, scope),

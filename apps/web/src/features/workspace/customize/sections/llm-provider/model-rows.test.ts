@@ -22,6 +22,17 @@ describe('buildModelGroups', () => {
     expect(groups.map((g) => g.providerName)).toEqual(['Anthropic', 'OpenAI']);
   });
 
+  test('keeps Astra in both paid routes with distinct labels', () => {
+    const groups = buildModelGroups([
+      model('gpt-6-astra', { provider: 'kortix', modelName: 'GPT-6 Astra' }),
+      model('codex/gpt-6-astra', { provider: 'codex', modelName: 'GPT-6 Astra (ChatGPT)' }),
+    ]);
+    expect(groups.map((group) => [group.providerID, group.providerName])).toEqual([
+      ['kortix', 'Kortix'],
+      ['codex', 'ChatGPT subscription'],
+    ]);
+  });
+
   test('orders each group newest release first', () => {
     const [group] = buildModelGroups([
       model('anthropic/old', { provider: 'anthropic', releaseDate: '2025-01-01' }),

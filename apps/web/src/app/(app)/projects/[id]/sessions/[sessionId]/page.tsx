@@ -1037,6 +1037,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 // The chat underneath owns the prompt from here; the shell's
                 // copy would otherwise dissolve over it for the whole fade.
                 hasTranscript={hasTranscript}
+                draftActive={!overlayDismissed}
               />
             ) : (
               <HeaderlessSessionSurface>

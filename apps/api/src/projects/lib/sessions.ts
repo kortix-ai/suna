@@ -5,6 +5,7 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
   sessionLifecycleCommands,
+  sessionProviderSecretPools,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -1071,6 +1072,10 @@ export async function createProjectSession(input: {
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
+  if (body.provider_secret_pools !== undefined &&
+    (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets') || !llmGatewayEnabled)) {
+    return { error: { status: 403, body: { error: 'Provider secret pools are unavailable' } } };
+  }
 
   // Model: normalize + fail-fast at create. Two paths, forked on the project's
   // `llm_gateway` flag:
@@ -1122,6 +1127,7 @@ export async function createProjectSession(input: {
         projectId,
         freeModelsOnly,
         model: requestedModel,
+        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
       });
       if (!servable) {
         return {
@@ -1146,6 +1152,7 @@ export async function createProjectSession(input: {
         agentName,
         explicit: null,
         freeModelsOnly,
+        providerSecretPools: body.provider_secret_pools as Record<string, string[]> | undefined,
       });
       const concreteModel =
         resolved.model ??
@@ -1608,6 +1615,12 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
+    const requestedPools = body.provider_secret_pools as Record<string, string[]> | undefined;
+    if (requestedPools && Object.keys(requestedPools).length > 0) {
+      await tx.insert(sessionProviderSecretPools).values(
+        Object.entries(requestedPools).map(([providerId, secretIds]) => ({ sessionId, providerId, secretIds })),
+      );
+    }
     if (parsedRuntimeContext.context !== undefined) {
         await tx
           .insert(projectSessionRuntimeContexts)

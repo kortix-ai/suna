@@ -119,6 +119,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
+      pooled_provider_secrets: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -691,6 +692,7 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
+      'pooled_provider_secrets',
     ]);
   });
 
@@ -1260,6 +1262,11 @@ describe('removed usage-attribution fields', () => {
 });
 
 describe('SessionCreateInputSchema backend secret bounds', () => {
+  test('bounds create-time provider pools', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(SessionCreateInputSchema.safeParse({ provider_secret_pools: { anthropic: [id] } }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ provider_secret_pools: { anthropic: Array(11).fill(id) } }).success).toBe(false);
+  });
   test('secrets: accepts an identifier list and [] (narrow to zero), rejects an over-long list', () => {
     expect(
       SessionCreateInputSchema.safeParse({ secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'] }).success,

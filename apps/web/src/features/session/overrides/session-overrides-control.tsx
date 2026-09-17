@@ -83,6 +83,7 @@ export function SessionOverridesControlContent({
 }: SessionOverridesControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
+  const tPooled = useTranslations('pooledSecrets');
   const [focusedId, setFocusedId] = useState<string | null>(rows[0]?.id ?? null);
   const focused = rows.find((row) => row.id === focusedId) ?? rows[0];
   const controlsDisabled = disabled || saving;
@@ -92,7 +93,7 @@ export function SessionOverridesControlContent({
       // Radix reports how much room it actually has; without this the panel is
       // taller than the gap above the composer on a short or narrow viewport and
       // its first row slides off the top of the screen.
-      className="flex h-96 max-h-96 flex-col overflow-hidden"
+      className="flex h-[28rem] max-h-[var(--radix-popover-content-available-height,28rem)] flex-col overflow-hidden"
     >
       <div className="border-border flex min-h-0 flex-1 flex-col sm:flex-row">
         <ul
@@ -121,7 +122,7 @@ export function SessionOverridesControlContent({
                     )}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-sm font-medium">
+                    <span className="text-foreground block text-sm leading-tight font-medium text-pretty">
                       {row.name}
                     </span>
                     <span className="text-muted-foreground block truncate text-xs">
@@ -171,7 +172,7 @@ export function SessionOverridesControlContent({
           size="sm"
         >
           {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-          {tI18nComplete.raw('text1509f561f241')}
+          {focused?.id === 'provider-keys' ? tPooled('done') : tI18nComplete.raw('text1509f561f241')}
         </Button>
       </div>
     </div>

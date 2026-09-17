@@ -211,6 +211,9 @@ export interface ProviderOAuthStart {
 
 export interface ProviderOAuthCredential {
   provider_id: string;
+  /** Present when the OAuth flow created a named account resource. */
+  secret_id?: string;
+  label?: string;
   expires_in_ms: number | null;
   updated_at: string;
 }
@@ -224,11 +227,12 @@ export type ProviderOAuthPoll =
 export async function startProjectProviderOAuth(
   projectId: string,
   provider: string,
-  input?: { sharing?: ConnectorSharing },
+  input?: { sharing?: ConnectorSharing; resourceLabel?: string },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
     await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
+      ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
     }),
   );
 }

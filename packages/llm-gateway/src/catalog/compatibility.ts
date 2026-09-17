@@ -24,14 +24,11 @@ export const OPENAI_COMPATIBLE_NPM = new Set([
 const ANTHROPIC_NPM = '@ai-sdk/anthropic';
 const AMAZON_BEDROCK_NPM = '@ai-sdk/amazon-bedrock';
 
-// Providers with a genuinely DIFFERENT wire protocol from OpenAI's — Google's
-// Gemini API (direct or via Vertex) is not OpenAI-compatible, and Kortix has
-// no `google` transport yet (would also need Vertex's service-account OAuth,
-// a different auth shape than the simple bearer-key BYOK model everything
-// else here uses — a separate, unstarted piece of work). Explicitly
-// unroutable rather than silently mis-dispatched to openai-compat, which
-// would produce confidently-wrong requests instead of a clear
-// "can't connect this provider yet."
+// Google's native Gemini wire protocol and Vertex service-account OAuth are
+// not implemented here. The API maps direct Gemini BYOK to Google's separate
+// OpenAI-compatible endpoint in provider-registry.ts. Keep the native npm
+// package unroutable here so another caller cannot silently send it to an
+// OpenAI-compatible endpoint without that explicit registry mapping.
 const NO_TRANSPORT_YET_NPM = new Set([
   '@ai-sdk/google',
   '@ai-sdk/google-vertex',
@@ -69,7 +66,7 @@ const NO_TRANSPORT_YET_NPM = new Set([
 //    region/bearer-token wiring, and memory: managed-provider-vs-standalone-byok.
 //    (The bedrock transport builds an Anthropic Messages payload, so the
 //    served Bedrock models are the Claude-on-Bedrock lineup.)
-//  - Google / Google Vertex → `NO_TRANSPORT_YET_NPM` (see its doc comment).
+//  - Google's native package / Google Vertex → `NO_TRANSPORT_YET_NPM`.
 export function providerKindForNpm(npm: string | null | undefined): ProviderKind | null {
   if (!npm) return null;
   if (npm === ANTHROPIC_NPM) return 'anthropic';

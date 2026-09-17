@@ -32,6 +32,7 @@ export interface ComposerOptions {
   model?: ModelKey;
   variant?: string;
   scope?: SessionScopeCommit;
+  providerSecretPools?: Record<string, string[]>;
 }
 
 /**
@@ -69,6 +70,7 @@ export function ComposerChatInput({
   onAgentSelectionChange,
   sandboxSlot,
   draftScope,
+  draftActive,
   promptAttachments,
 }: {
   onSend: (
@@ -120,6 +122,7 @@ export function ComposerChatInput({
   sandboxSlot?: SessionOverrideSlot;
   /** Persist the unsent draft under this scope — see `composer/draft/`. */
   draftScope?: DraftScope | null;
+  draftActive?: boolean;
   /** Host-owned upload controller. See `SessionChatInputProps.promptAttachments`. */
   promptAttachments?: SessionChatInputProps['promptAttachments'];
 }) {
@@ -181,6 +184,7 @@ export function ComposerChatInput({
     agentName: string | null;
     commit: SessionScopeCommit;
   } | null>(null);
+  const [newProviderSecretPools, setNewProviderSecretPools] = useState<Record<string, string[]>>({});
   const handleCommittedScope = useCallback(
     (commit: SessionScopeCommit | undefined) => {
       setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
@@ -198,11 +202,13 @@ export function ComposerChatInput({
           projectId={projectId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          providerSecretPools={newProviderSecretPools}
+          onProviderSecretPoolsChange={setNewProviderSecretPools}
           selectedAgent={selectedAgentName}
           sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [handleCommittedScope, projectId, sandboxSlot, selectedAgentName, sessionId],
+    [handleCommittedScope, newProviderSecretPools, projectId, sandboxSlot, selectedAgentName, sessionId],
   );
 
   const combinedToolbarSlot = useMemo(
@@ -228,6 +234,7 @@ export function ComposerChatInput({
     if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
       o.scope = newSessionScope.commit;
     }
+    if (!sessionId && Object.keys(newProviderSecretPools).length > 0) o.providerSecretPools = newProviderSecretPools;
     return o;
   };
 
@@ -276,6 +283,7 @@ export function ComposerChatInput({
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
       draftScope={draftScope}
+      draftActive={draftActive}
     />
   );
 }

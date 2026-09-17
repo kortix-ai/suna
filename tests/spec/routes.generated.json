@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 647,
+  "count": 657,
   "routes": [
     {
       "method": "GET",
@@ -37,6 +37,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/pool-rate-limit"
     },
     {
       "method": "POST",
@@ -529,6 +533,30 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/secret-resources"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
       "method": "GET",
@@ -2109,6 +2137,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/hold"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId"
     },
     {
       "method": "GET",
