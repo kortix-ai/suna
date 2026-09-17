@@ -21,6 +21,10 @@ linked, not inlined.
 
 ## Register
 
+### Recheck a provider 404 before declaring a session permanently lost (2026-09-17)
+
+**Rule:** On a stopped or archiving session, do not treat one provider 404 as permanent data loss. Recheck provider state and keep the session identity while the result is uncertain. **Incident:** Suna import `0ae2a972` showed "computer lost" after a Platinum 404 at 16:03 UTC; Platinum returned the same sandbox as `archived` with a completed backup at 17:44 UTC. A guarded production repair cleared the false loss flag. **Enforcement:** the parked-runtime verifier already heals a settled runtime, but its batch can delay repair. A durable missing-state confirmation before the loss card remains to be implemented.
+
 ### Revalidate archived files after a sandbox restart (2026-09-17)
 
 **Rule:** When retrying a workspace import, check every required archive file in the live sandbox before invoking the native importer. Restore missing files from the captured local archive and verify their hashes. Interrupt a runtime start that has produced no output for six minutes. **Incident:** Four Suna retries retained a workspace restore receipt but their live sandboxes lacked `manifest.json` and `workspace.tar.gz`; another start remained in `starting` without progress. **Enforcement:** the private importer checks and restores missing archive copies; the recovery worker retries this exact diagnostic and watches start-stage inactivity.
