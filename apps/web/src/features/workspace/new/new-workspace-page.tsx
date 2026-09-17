@@ -5,8 +5,10 @@ import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -294,17 +296,23 @@ export function NewWorkspacePage() {
           desktop, clear of the macOS traffic lights and the Win/Linux window
           controls. */}
       <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* Create-into account lives here — not in the form body. One account
-            collapses to muted identity text (email when none); two or more
-            opens the Select on click. */}
-        <AccountPicker
-          accounts={creatableAccounts}
-          value={effectiveAccountId}
-          onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-          fallbackLabel={user?.email}
-          showAccountLine={showAccountLine}
-          className="min-w-0"
-        />
+        {/* The way OUT. `/new` is also where `/projects` sends an account with
+            zero workspaces, so a user must never be trapped here: this link
+            sits ahead of the <form>, reachable regardless of form state, and
+            goes to the landing door (the latest project, or create/sign-out
+            for an account with none). Log out alone was the only exit on the
+            web and read as "you can't leave" (reported on dev, 2026-09-17). */}
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+        >
+          <Link href={PROJECT_LANDING_PATH}>
+            <ArrowLeftIcon className="size-4" />
+            {t('actions.back')}
+          </Link>
+        </Button>
         {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
             default) so this reads as one quiet secondary row at rest, same
             treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
@@ -547,7 +555,26 @@ export function NewWorkspacePage() {
                       picker hides itself below two accounts). Passing the raw
                       value would leave those queries permanently disabled for
                       exactly the users who have nothing to pick. */}
-                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
+                {/* Create-into account, as a field IN the form — it decides where
+                  the project lands and which GitHub connections the Git
+                  account below can offer, so it belongs next to them, not in
+                  the page's far corner. One account collapses to the muted
+                  identity line (`AccountPicker` owns that rule); two or more
+                  open a Select. */}
+              {showAccountLine ? (
+                <div className="flex flex-col space-y-3">
+                  <Label htmlFor="workspace-account">{t('account.label')}</Label>
+                  <AccountPicker
+                    accounts={creatableAccounts}
+                    value={effectiveAccountId}
+                    onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+                    fallbackLabel={user?.email}
+                    showAccountLine={showAccountLine}
+                    className="w-full"
+                  />
+                </div>
+              ) : null}
+              <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">

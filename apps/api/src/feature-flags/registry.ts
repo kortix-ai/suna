@@ -270,7 +270,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Share secret resources with members and select multiple provider keys for a session.',
+    description: 'Use multiple project credentials per provider, with optional member restrictions and session selection.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

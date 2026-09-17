@@ -519,6 +519,13 @@
       "when": 1789588154428,
       "tag": "20260916194914_pooled_provider_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789623252436,
+      "tag": "20260917053412_account_secret_project_access",
+      "breakpoints": true
     }
   ]
 }

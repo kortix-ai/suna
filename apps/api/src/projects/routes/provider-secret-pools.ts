@@ -8,6 +8,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveCatalogUpstream } from '../../llm-gateway/models/provider-registry';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
+import { secretUsableInProject } from '../../secrets/account-resource';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
@@ -43,18 +44,20 @@ export async function validateProviderSecretPool(input: {
     return { status: 409, error: 'Agent grant unavailable' };
   }
   if (!agentMayUseEnv(grant, provider.envVar)) return { status: 403, error: 'Agent cannot use this provider secret' };
-  const rows = await db.select({ id: accountSecretResources.secretId }).from(accountSecretResources)
-    .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountSecretResources.accountId)))
+  const rows = await db.select({ id: accountSecretResources.secretId,
+    projectId: accountSecretResources.projectId, accessMode: accountSecretResources.accessMode,
+    grantUserId: accountSecretGrants.userId }).from(accountSecretResources)
+    .leftJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.userId, input.userId)))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.providerId, input.providerId),
       eq(accountSecretResources.name, provider.envVar),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
-      eq(accountSecretGrants.userId, input.userId),
       inArray(accountSecretResources.secretId, input.ids),
     ));
-  return rows.length === input.ids.length ? null : { status: 403, error: 'Secret unavailable or not granted' };
+  return rows.filter((row) => secretUsableInProject(row, input.projectId, row.grantUserId === input.userId)).length === input.ids.length
+    ? null : { status: 403, error: 'Secret unavailable or not granted' };
 }
 
 projectsApp.openapi(createRoute({

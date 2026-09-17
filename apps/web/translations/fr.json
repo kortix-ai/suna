@@ -1,5 +1,13 @@
 {
   "pooledSecrets": {
+    "creationDescription": "La valeur reste chiffrée. Choisissez qui peut utiliser cette connexion avant de l’enregistrer.",
+    "whoCanUse": "Qui peut utiliser cette connexion ?",
+    "everyoneInProject": "Tous les membres de ce projet",
+    "everyoneDescription": "Tout membre du projet peut la sélectionner dans une session.",
+    "specificMembers": "Membres sélectionnés",
+    "specificDescription": "Seuls les membres sélectionnés et le propriétaire peuvent l’utiliser.",
+    "accessDescription": "Choisissez un accès pour tout le projet ou limitez-le à certains membres.",
+    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
     "providerDisabled": "Ce fournisseur est désactivé pour cette session.",
     "unavailableKeys": "{count, plural, one {# clé sélectionnée est indisponible.} other {# clés sélectionnées sont indisponibles.}} Retirez ces clés ou rétablissez leur accès.",
     "removeUnavailable": "Retirer les clés indisponibles",
@@ -7,7 +15,7 @@
     "manageKeys": "Gérer les clés des fournisseurs",
     "readOnlyPool": "Seul le propriétaire de la session ou un responsable du projet peut modifier ce groupe.",
     "legacyChatGptLogin": "Connexion de projet existante",
-    "legacyChatGptDescription": "Cette ancienne connexion est partagée avec le projet. Les nouveaux comptes ChatGPT ci-dessus restent privés tant que vous ne les partagez pas.",
+    "legacyChatGptDescription": "Cette ancienne connexion est partagée avec le projet. Gérez séparément l’accès aux nouveaux comptes ci-dessus.",
     "chatGptAccounts": "Comptes ChatGPT",
     "accountCount": "{count, plural, one {# compte} other {# comptes}}",
     "addAccount": "Ajouter un compte",
@@ -15,7 +23,7 @@
     "connectAccount": "Connecter le compte",
     "oauthWaiting": "En attente d’autorisation…",
     "oauthExpired": "L’autorisation a expiré. Réessayez.",
-    "oauthPrivateDescription": "Votre connexion ChatGPT reste privée tant que vous ne donnez pas accès à un autre membre. Sélectionnez des comptes dans les paramètres de session.",
+    "oauthPrivateDescription": "Les nouveaux comptes ChatGPT sont accessibles à ce projet par défaut. Vous pouvez limiter chaque compte à certains membres.",
     "accountLabelPlaceholder": "p. ex. Mon compte ChatGPT",
     "chooseProvider": "Choisissez un fournisseur.",
     "saved": "Secret enregistré",
@@ -23,8 +31,8 @@
     "deleted": "Secret supprimé",
     "deleteError": "Impossible de supprimer le secret",
     "accessError": "Impossible de modifier l’accès",
-    "sharedTitle": "Secrets de fournisseur partagés",
-    "sharedDescription": "Ajoutez plusieurs clés de fournisseur et comptes ChatGPT. Partagez chaque connexion avec les membres et sélectionnez-la par session.",
+    "sharedTitle": "Connexions aux fournisseurs",
+    "sharedDescription": "Ajoutez plusieurs clés API et comptes ChatGPT. Par défaut, tous les membres du projet peuvent les utiliser. Limitez l’accès par connexion et choisissez les clés par session.",
     "legacyProjectKey": "Clé de projet existante · Utilisée si aucune clé n’est sélectionnée pour cette session",
     "keyCount": "{count, plural, one {# clé} other {# clés}}",
     "providerKeysFor": "Clés API de {provider}",
@@ -153,14 +161,12 @@
       "create": "Créer le projet",
       "tryAgain": "Réessayer",
       "logOut": "Se déconnecter",
-      "signingOut": "Déconnexion"
+      "signingOut": "Déconnexion",
+      "back": "Retour aux projets"
     },
     "repository": {
       "label": "Dépôt",
       "defaultBranch": "Branche par défaut",
-      "noGitHubAccount": "Aucun compte GitHub n’est encore connecté au compte de cet projet.",
-      "connectGitHub": "Connecter un compte GitHub",
-      "connectGitHubSuffix": "pour utiliser cette option.",
       "loadGitHubAccountsError": "Impossible de charger les comptes GitHub. Réessayez.",
       "createsPath": "Crée <path>{path}</path>",
       "loadRepositoriesError": "Impossible de charger les dépôts. Réessayez.",
@@ -170,24 +176,23 @@
           "description": "Kortix crée et gère un dépôt privé pour cet projet."
         },
         "githubCreate": {
-          "label": "Créer dans GitHub",
           "description": "Kortix crée un dépôt privé dans votre compte GitHub."
-        },
-        "githubImport": {
-          "label": "Importer depuis GitHub",
-          "description": "Sélectionnez un dépôt existant dans votre compte GitHub."
         }
       },
       "repositoryLabel": "Dépôt",
-      "createInOwner": "Créer un dépôt dans {owner}",
-      "importFromOwner": "Importer un dépôt depuis {owner}",
-      "selectOption": "Sélectionnez une option de dépôt",
       "loadingOptions": "Chargement des options de dépôt…",
       "managedUnavailable": "Les dépôts gérés par Kortix ne sont pas disponibles sur cette instance. Un administrateur de la plateforme les configure dans la console d'administration.",
       "installationUnreachable": "Cette connexion GitHub ne fonctionne plus. Reconnectez-la pour lister les dépôts.",
       "reconnect": "Reconnecter dans les réglages Git",
       "managedImportLabel": "Importer un dépôt géré existant",
-      "managedImportHint": "Réservé aux opérateurs auto-hébergés. Liste les dépôts que le propriétaire git géré possède déjà."
+      "managedImportHint": "Réservé aux opérateurs auto-hébergés. Liste les dépôts que le propriétaire git géré possède déjà.",
+      "gitAccountLabel": "Compte Git",
+      "selectGitAccount": "Sélectionner un compte Git",
+      "addGitHubAccount": "Ajouter un compte GitHub…",
+      "actionCreate": "Créer un nouveau dépôt",
+      "actionImport": "Importer un dépôt existant",
+      "ownerTypePersonal": "Compte personnel",
+      "ownerTypeOrg": "Organisation"
     }
   },
   "projectHome": {
@@ -14517,6 +14522,17 @@
       "text922315177668": "Tout ce que le lanceur peut voir",
       "text9224d9e82502": "De retour dans « Provisioning » → « Settings », définissez « Scope » sur « Sync only assigned users and groups » — cette option n’apparaît ici qu’après l’enregistrement des identifiants. Cliquez ensuite sur « Start provisioning » en haut de la page d’aperçu Provisioning (ou sur « Provision on demand » pour transmettre immédiatement un utilisateur affecté au lieu d’attendre le cycle d’environ 40 minutes).",
       "text9225e456b795": "Mentionnez votre agent dans un canal ou une conversation Teams.",
+      "text8ccfe10f2f2d": "Publier dans votre catalogue Teams",
+      "text36f6474748b3": "Publication de l'application dans votre catalogue Teams…",
+      "text45b9df5730ac": "En attente de l'approbation de l'application par un administrateur Teams",
+      "textdf5e72815836": "Échec de la publication dans le catalogue",
+      "textbfd886d0029b": "Microsoft Teams connecté. L'application Kortix est dans le catalogue Teams de votre organisation.",
+      "text65228e6e414d": "Microsoft Teams connecté. L'application attend l'approbation d'un administrateur Teams.",
+      "textf5262c55d1be": "Microsoft Teams connecté, mais la publication de l'application dans votre catalogue Teams a échoué.",
+      "text76930360e909": "Microsoft Teams connecté. Publication de l'application dans votre catalogue Teams…",
+      "textb8d155eea2ab": "Le consentement Microsoft a été refusé.",
+      "textd4b32aea5c4a": "Microsoft Teams est désactivé pour ce projet.",
+      "text57ef9e5e8110": "L'installation Teams en un clic n'est pas configurée sur ce serveur.",
       "text9233263288f5": "Invitez des personnes à travailler dans ce compte.",
       "text92340695899b": "Actif",
       "text9241c5f73c2c": "{value0} applications correspondent",

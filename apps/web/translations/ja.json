@@ -1,5 +1,13 @@
 {
   "pooledSecrets": {
+    "creationDescription": "値は暗号化されます。保存する前に、この接続を使用できる人を選んでください。",
+    "whoCanUse": "この接続を使用できる人",
+    "everyoneInProject": "このプロジェクトの全員",
+    "everyoneDescription": "プロジェクトのメンバーはセッションで選択できます。",
+    "specificMembers": "特定のメンバー",
+    "specificDescription": "選択したプロジェクトメンバーと接続の所有者のみが使用できます。",
+    "accessDescription": "プロジェクト全体に共有するか、特定のメンバーに制限してください。",
+    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
     "providerDisabled": "このセッションではこのプロバイダーは無効です。",
     "unavailableKeys": "{count, plural, other {選択したキーのうち#個が利用できません。}} 利用できないキーを削除するか、アクセス権を復元してください。",
     "removeUnavailable": "利用できないキーを削除",
@@ -7,7 +15,7 @@
     "manageKeys": "プロバイダーのキーを管理",
     "readOnlyPool": "このプールを変更できるのは、セッションの所有者またはプロジェクト管理者のみです。",
     "legacyChatGptLogin": "既存のプロジェクトログイン",
-    "legacyChatGptDescription": "この従来の接続はプロジェクト全体で共有されます。上の新しい ChatGPT アカウントは共有するまで非公開です。",
+    "legacyChatGptDescription": "この従来の接続はプロジェクト全体で共有されます。上の新しいアカウントのアクセスは個別に管理してください。",
     "chatGptAccounts": "ChatGPT アカウント",
     "accountCount": "{count, plural, other {# アカウント}}",
     "addAccount": "アカウントを追加",
@@ -15,7 +23,7 @@
     "connectAccount": "アカウントを接続",
     "oauthWaiting": "認証を待機中…",
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
-    "oauthPrivateDescription": "ChatGPT ログインは、他のメンバーにアクセスを許可するまで非公開です。セッション設定で使用するアカウントを選択してください。",
+    "oauthPrivateDescription": "新しい ChatGPT アカウントは、既定でこのプロジェクトの全員が利用できます。アカウントごとに特定のメンバーに制限できます。",
     "accountLabelPlaceholder": "例: 自分の ChatGPT アカウント",
     "chooseProvider": "プロバイダーを選択してください。",
     "saved": "シークレットを保存しました",
@@ -23,8 +31,8 @@
     "deleted": "シークレットが削除されました",
     "deleteError": "シークレットを削除できませんでした",
     "accessError": "アクセス権を変更できませんでした",
-    "sharedTitle": "共有プロバイダーシークレット",
-    "sharedDescription": "複数のプロバイダーキーと ChatGPT アカウントを追加できます。各接続をメンバーと共有し、セッションごとに選択してください。",
+    "sharedTitle": "プロバイダー接続",
+    "sharedDescription": "複数の API キーと ChatGPT アカウントを追加できます。既定ではこのプロジェクトの全員が使用できます。接続ごとにアクセスを制限し、セッションごとにキーを選択できます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
     "keyCount": "{count, plural, one {# 個のキー} other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
@@ -153,14 +161,12 @@
       "create": "プロジェクトを作成",
       "tryAgain": "もう一度試す",
       "logOut": "ログアウト",
-      "signingOut": "ログアウト中"
+      "signingOut": "ログアウト中",
+      "back": "プロジェクトに戻る"
     },
     "repository": {
       "label": "リポジトリ",
       "defaultBranch": "デフォルトブランチ",
-      "noGitHubAccount": "このプロジェクトのアカウントには、まだ GitHub アカウントが接続されていません。",
-      "connectGitHub": "GitHub アカウントを接続",
-      "connectGitHubSuffix": "すると、このオプションを使用できます。",
       "loadGitHubAccountsError": "GitHub アカウントを読み込めませんでした。もう一度お試しください。",
       "createsPath": "<path>{path}</path> を作成します",
       "loadRepositoriesError": "リポジトリを読み込めませんでした。もう一度お試しください。",
@@ -170,24 +176,23 @@
           "description": "Kortix がこのプロジェクト用のプライベートリポジトリを作成して管理します。"
         },
         "githubCreate": {
-          "label": "GitHub に作成",
           "description": "Kortix が GitHub アカウントにプライベートリポジトリを作成します。"
-        },
-        "githubImport": {
-          "label": "GitHub からインポート",
-          "description": "GitHub アカウントから既存のリポジトリを選択します。"
         }
       },
       "repositoryLabel": "リポジトリ",
-      "createInOwner": "{owner} にリポジトリを作成",
-      "importFromOwner": "{owner} からリポジトリをインポート",
-      "selectOption": "リポジトリの選択肢を選ぶ",
       "loadingOptions": "リポジトリの選択肢を読み込んでいます…",
       "managedUnavailable": "このインスタンスでは Kortix 管理リポジトリを利用できません。プラットフォーム管理者が管理コンソールで設定します。",
       "installationUnreachable": "この GitHub 接続は使えなくなりました。リポジトリを一覧表示するには接続し直してください。",
       "reconnect": "Git 設定で接続し直す",
       "managedImportLabel": "既存の管理リポジトリをインポート",
-      "managedImportHint": "セルフホスト運用者のみ。管理 git の所有者がすでに保有しているリポジトリを一覧表示します。"
+      "managedImportHint": "セルフホスト運用者のみ。管理 git の所有者がすでに保有しているリポジトリを一覧表示します。",
+      "gitAccountLabel": "Git アカウント",
+      "selectGitAccount": "Git アカウントを選択",
+      "addGitHubAccount": "GitHub アカウントを追加…",
+      "actionCreate": "新しいリポジトリを作成",
+      "actionImport": "既存のリポジトリをインポート",
+      "ownerTypePersonal": "個人アカウント",
+      "ownerTypeOrg": "組織"
     }
   },
   "projectHome": {
@@ -14517,6 +14522,17 @@
       "text922315177668": "ランチャーが確認できるすべて",
       "text9224d9e82502": "「Provisioning」→「Settings」に戻り、「Scope」を「Sync only assigned users and groups」に設定します。認証情報を保存した後にのみ、ここに表示されます。その後、Provisioning概要ページ上部の「Start provisioning」をクリックします（または「Provision on demand」で、約40分のサイクルを待たずに割り当て済みユーザーを1人だけ即時プッシュできます）。",
       "text9225e456b795": "Teamsのチャンネルまたはチャットでエージェントをメンションできます。",
+      "text8ccfe10f2f2d": "Teams カタログに公開",
+      "text36f6474748b3": "Teams カタログにアプリを公開しています…",
+      "text45b9df5730ac": "Teams 管理者によるアプリの承認を待っています",
+      "textdf5e72815836": "カタログへの公開に失敗しました",
+      "textbfd886d0029b": "Microsoft Teams に接続しました。Kortix アプリは組織の Teams カタログにあります。",
+      "text65228e6e414d": "Microsoft Teams に接続しました。アプリは Teams 管理者の承認待ちです。",
+      "textf5262c55d1be": "Microsoft Teams に接続しましたが、Teams カタログへのアプリの公開に失敗しました。",
+      "text76930360e909": "Microsoft Teams に接続しました。Teams カタログにアプリを公開しています…",
+      "textb8d155eea2ab": "Microsoft の同意が拒否されました。",
+      "textd4b32aea5c4a": "このプロジェクトでは Microsoft Teams が無効です。",
+      "text57ef9e5e8110": "このサーバーでは Teams のワンクリックインストールが設定されていません。",
       "text9233263288f5": "このアカウントで作業するユーザーを招待します。",
       "text92340695899b": "アクティブ",
       "text9241c5f73c2c": "{value0} 個のアプリが一致",

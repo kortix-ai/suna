@@ -821,6 +821,10 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   secretId: uuid('secret_id').defaultRandom().primaryKey(),
   accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
   label: varchar('label', { length: 100 }).notNull(),
+  /** NULL preserves restricted account resources created before project scoping. */
+  projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+  /** New project resources default to project access; old rows remain members-only. */
+  accessMode: varchar('access_mode', { length: 16 }).default('members').notNull(),
   /** Provider id for model credentials; NULL for other secret resources. */
   providerId: varchar('provider_id', { length: 100 }),
   name: varchar('name', { length: 64 }).notNull(),

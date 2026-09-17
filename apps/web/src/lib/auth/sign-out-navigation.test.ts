@@ -90,7 +90,11 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   {
     name: "/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
-    from: 'fallbackLabel={user?.email}',
+    // Anchored on the control's own `disabled`, not on the AccountPicker: the
+    // picker moved into the form (2026-09-17) and a Back link now precedes
+    // Log out in the top row, so "the next </Button> after the picker" is no
+    // longer this button.
+    from: 'disabled={signingOut}',
     to: '</Button>',
   },
   {
@@ -439,8 +443,8 @@ describe('the three bare logout controls now say something is happening', () => 
     {
       name: "/new's Log out",
       file: 'features/workspace/new/new-workspace-page.tsx',
-      handler: ['<AccountPicker', 'Log out'],
-      control: ['<AccountPicker', '</Button>'],
+      handler: ['disabled={signingOut}', 'Log out'],
+      control: ['disabled={signingOut}', '</Button>'],
       holdsDialog: false,
     },
   ];

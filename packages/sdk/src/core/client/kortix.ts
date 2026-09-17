@@ -177,6 +177,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       remove: P.deleteAccountSecretResource,
       grant: P.grantAccountSecretResource,
       revoke: P.revokeAccountSecretResourceGrant,
+      setAccess: P.setAccountSecretResourceAccess,
     },
     updateName: P.updateAccountName,
     /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */

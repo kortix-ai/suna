@@ -839,7 +839,7 @@ export function ProviderConnect({
     enabled: enabled && pooledSecretsEnabled,
   });
   const accountId = project.data?.project?.account_id;
-  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null);
+  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null, projectId);
   const pooledProviderIds = useMemo(
     () => new Set((pooledResources.data?.secrets ?? []).filter((secret) => secret.can_use && secret.active).map((secret) => secret.provider_id)),
     [pooledResources.data],

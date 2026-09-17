@@ -46,6 +46,16 @@ test('account resources are queried through the public REST contract without val
   expect(await (useAccountSecretResources('account') as any).queryFn()).toEqual(expected);
 });
 
+test('project resource hook scopes requests and cache identity', async () => {
+  globalThis.fetch = mock(async (url: unknown) => {
+    expect(String(url)).toBe('http://provider-secrets.test/accounts/account/secret-resources?project_id=project');
+    return Response.json({ secrets: [] });
+  }) as unknown as typeof fetch;
+  const scoped = useAccountSecretResources('account', 'project') as any;
+  expect(scoped.queryKey).toEqual(['account-secret-resources', 'account', 'project']);
+  expect(await scoped.queryFn()).toEqual({ secrets: [] });
+});
+
 test('resource metadata refreshes when the nearest cooldown expires, then stops polling', () => {
   const now = new Date('2026-09-17T07:00:00Z');
   setSystemTime(now);
