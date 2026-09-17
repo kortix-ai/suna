@@ -172,6 +172,7 @@ export {
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
+  classifyPromptActionError,
   sessionPromptsPollMs,
   startSessionWithPrompt,
   isOptimisticSessionPrompt,

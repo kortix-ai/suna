@@ -1382,3 +1382,749 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
     expect(olderBefore[readsAfterFailure]).toBe('cursor-5');
   });
 });
+
+/**
+ * A turn-end read must reflect the finished turn.
+ *
+ * `reconcile` used to hand every caller the read already in flight. A turn-end
+ * reconcile therefore joined a poll read issued BEFORE the runtime completed
+ * the turn, hydrated that stale page, and the poll switched off behind it: the
+ * transcript kept a truncated answer until a reload. A read can also park for
+ * the full fetch ceiling (120 s), so every reason joined one stale read for
+ * that long, and it held one of the six HTTP/1.1 connections of the origin.
+ */
+describe('SessionSyncController — a turn-end read reflects the finished turn', () => {
+  const PARTIAL = '1. alpha\n2. be';
+  const FULL = '1. alpha\n2. beta\n3. gamma\n';
+
+  function turnPage(text: string, completed?: number): SessionSyncPage {
+    return {
+      messages: [
+        {
+          info: {
+            id: 'user-1',
+            sessionID: 'session-1',
+            role: 'user',
+            time: { created: 1 },
+          } as Message,
+          parts: [],
+        },
+        {
+          info: {
+            id: 'assistant-1',
+            sessionID: 'session-1',
+            role: 'assistant',
+            parentID: 'user-1',
+            time: { created: 2, ...(completed ? { completed } : {}) },
+          } as Message,
+          parts: [
+            {
+              id: 'part-1',
+              sessionID: 'session-1',
+              messageID: 'assistant-1',
+              type: 'text',
+              text,
+            } as Part,
+          ],
+        },
+      ],
+    };
+  }
+
+  function tailOf(messages: MessageWithParts[]) {
+    const tail = messages.at(-1);
+    return {
+      text: (tail?.parts[0] as { text?: string } | undefined)?.text,
+      completed: (tail?.info.time as { completed?: number } | undefined)?.completed,
+    };
+  }
+
+  interface PendingRead {
+    signal: AbortSignal | undefined;
+    snapshot: SessionSyncPage;
+    resolve: (page: SessionSyncPage) => void;
+    reject: (error: unknown) => void;
+  }
+
+  /** A runtime whose reads stay open until the test settles them. Each read
+   *  captures the runtime's transcript at the moment it was issued. */
+  function deferredRuntime(initial: SessionSyncPage) {
+    let runtime = initial;
+    const reads: PendingRead[] = [];
+    const loadPage: SessionSyncControllerOptions['loadPage'] = (_request, signal) => {
+      const snapshot = runtime;
+      return new Promise<SessionSyncPage>((resolve, reject) => {
+        reads.push({ signal, snapshot, resolve, reject });
+      });
+    };
+    return {
+      reads,
+      loadPage,
+      complete(page: SessionSyncPage) {
+        runtime = page;
+      },
+    };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test('a turn-end read issued while a poll read is in flight reads again and hydrates the finished turn', async () => {
+    const clock = createScheduler();
+    const runtime = deferredRuntime(turnPage(PARTIAL));
+    const hydrated: MessageWithParts[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (messages) => hydrated.push(messages),
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    expect(runtime.reads).toHaveLength(1);
+
+    // The runtime finishes the turn while the poll read is still on the wire.
+    runtime.complete(turnPage(FULL, 99));
+    controller.setBusy(false);
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    expect(tailOf(hydrated.at(-1)!)).toEqual({ text: FULL, completed: 99 });
+
+    // A closed tail ends the turn-end reads.
+    for (let step = 0; step < 60; step++) {
+      clock.advance(1_000);
+      await flush();
+    }
+    expect(runtime.reads).toHaveLength(2);
+    controller.destroy();
+  });
+
+  test('a poll read that never resolves does not block a turn-end read', async () => {
+    const clock = createScheduler();
+    const runtime = deferredRuntime(turnPage(PARTIAL));
+    const hydrated: MessageWithParts[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (messages) => hydrated.push(messages),
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    expect(runtime.reads).toHaveLength(1);
+
+    runtime.complete(turnPage(FULL, 99));
+    controller.setBusy(false);
+    // Issued at once, not behind the parked read — and the parked read is
+    // cancelled so it frees its connection.
+    expect(runtime.reads).toHaveLength(2);
+    expect(runtime.reads[0].signal?.aborted).toBe(true);
+    expect(runtime.reads[1].signal?.aborted).toBe(false);
+
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await flush();
+    expect(tailOf(hydrated.at(-1)!)).toEqual({ text: FULL, completed: 99 });
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+
+    // The cancelled read settles late. It never hydrates, never paints an
+    // error, and never schedules a retry.
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    runtime.reads[0].reject(new Error('socket closed'));
+    await flush();
+    expect(hydrated).toHaveLength(1);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+    for (let step = 0; step < 60; step++) {
+      clock.advance(1_000);
+      await flush();
+    }
+    expect(runtime.reads).toHaveLength(2);
+    controller.destroy();
+  });
+
+  test('a poll read older than the poll read deadline is aborted', async () => {
+    const clock = createScheduler();
+    const runtime = deferredRuntime(turnPage(PARTIAL));
+    const hydrated: MessageWithParts[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (messages) => hydrated.push(messages),
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    expect(runtime.reads).toHaveLength(1);
+
+    // Deadline = 3 liveness intervals = 30 s after the read was issued.
+    clock.advance(29_999);
+    await flush();
+    expect(runtime.reads[0].signal?.aborted).toBe(false);
+
+    clock.advance(1);
+    await flush();
+    expect(runtime.reads[0].signal?.aborted).toBe(true);
+
+    // The abort released the slot even though the parked read has not settled
+    // (a loader can ignore its signal): the poll reads again instead of
+    // joining it.
+    clock.advance(10_000);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    expect(runtime.reads[1].signal?.aborted).toBe(false);
+
+    // The aborted read is not a failure and never hydrates.
+    runtime.reads[0].reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+    await flush();
+    expect(hydrated).toEqual([]);
+    expect(controller.getSnapshot().freshness).not.toBe('error');
+    controller.destroy();
+  });
+
+  test('a turn-end that joins a pending follow-up makes the shared read a repair read', async () => {
+    const runtime = deferredRuntime(page(['message-1']));
+    const reasons: SessionSyncReason[] = [];
+    const hydrateOptions: Array<{ stampActivity?: boolean } | undefined> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (_messages, options) => hydrateOptions.push(options),
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+    });
+
+    void controller.reconcile('initial');
+    void controller.reconcile('visible');
+    void controller.reconcile('turn-end');
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await flush();
+
+    expect(reasons).toEqual(['initial', 'turn-end']);
+    expect(hydrateOptions).toEqual([undefined, { stampActivity: false }]);
+    controller.destroy();
+  });
+
+  test('a caller that joined a superseded poll read waits for its successor', async () => {
+    const runtime = deferredRuntime(page(['message-1']));
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    let pollSettled = false;
+    void controller.reconcile('poll').then(() => {
+      pollSettled = true;
+    });
+    void controller.reconcile('sse-gap');
+    expect(runtime.reads).toHaveLength(2);
+
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    expect(pollSettled).toBe(false);
+
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await flush();
+    expect(pollSettled).toBe(true);
+    controller.destroy();
+  });
+
+  test('destroy settles every caller still waiting, the follow-up included', async () => {
+    const runtime = deferredRuntime(page(['message-1']));
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    const waiting = Promise.all([
+      controller.reconcile('initial'),
+      controller.reconcile('turn-end'),
+    ]).then(() => 'settled');
+    controller.destroy();
+    const outcome = await Promise.race([
+      waiting,
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 20)),
+    ]);
+
+    expect(outcome).toBe('settled');
+    expect(runtime.reads).toHaveLength(1);
+    expect(runtime.reads[0].signal?.aborted).toBe(true);
+  });
+
+  test('a freshness reconcile during a non-poll read issues exactly one follow-up read when it settles', async () => {
+    const runtime = deferredRuntime(page(['message-1']));
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+    });
+
+    const initial = controller.reconcile('initial');
+    const turnEnd = controller.reconcile('turn-end');
+    const visible = controller.reconcile('visible');
+    const gap = controller.reconcile('sse-gap');
+    expect(runtime.reads).toHaveLength(1);
+    // Only a poll read is superseded. Any other read runs to completion.
+    expect(runtime.reads[0].signal?.aborted).toBe(false);
+
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await flush();
+    // One pending slot: three freshness calls share one follow-up read.
+    expect(runtime.reads).toHaveLength(2);
+
+    runtime.reads[1].resolve(runtime.reads[1].snapshot);
+    await Promise.all([initial, turnEnd, visible, gap]);
+    await flush();
+    expect(runtime.reads).toHaveLength(2);
+    // The shared follow-up is a turn-end read once a turn-end joined it.
+    expect(reasons).toEqual(['initial', 'turn-end']);
+    controller.destroy();
+  });
+
+  test('poll, initial and manual reconciles join the read already in flight (guard)', async () => {
+    const runtime = deferredRuntime(page(['message-1']));
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    const first = controller.reconcile('initial');
+    const polled = controller.reconcile('poll');
+    const manual = controller.reconcile('manual');
+    const again = controller.reconcile('initial');
+    expect(runtime.reads).toHaveLength(1);
+
+    runtime.reads[0].resolve(runtime.reads[0].snapshot);
+    await Promise.all([first, polled, manual, again]);
+    await flush();
+    expect(runtime.reads).toHaveLength(1);
+    controller.destroy();
+  });
+});
+
+/**
+ * OpenCode persists `time.completed` after the idle frame (measured 1.765 s),
+ * so the first turn-end read can still see an OPEN assistant tail. One read
+ * then left the turn looking unfinished. The controller re-reads with backoff
+ * until the tail closes, a bounded number of times.
+ */
+describe('SessionSyncController — turn-end settle', () => {
+  function openOrClosedPage(completed?: number): SessionSyncPage {
+    return {
+      messages: [
+        {
+          info: { id: 'user-1', sessionID: 'session-1', role: 'user', time: { created: 1 } } as Message,
+          parts: [],
+        },
+        {
+          info: {
+            id: 'assistant-1',
+            sessionID: 'session-1',
+            role: 'assistant',
+            parentID: 'user-1',
+            time: { created: 2, ...(completed ? { completed } : {}) },
+          } as Message,
+          parts: [],
+        },
+      ],
+    };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function scriptedRuntime(clock: ReturnType<typeof createScheduler>, script: SessionSyncPage[]) {
+    const issuedAt: number[] = [];
+    const loadPage: SessionSyncControllerOptions['loadPage'] = async () => {
+      issuedAt.push(clock.scheduler.now());
+      return script[Math.min(issuedAt.length - 1, script.length - 1)];
+    };
+    return { issuedAt, loadPage };
+  }
+
+  async function advanceBy(clock: ReturnType<typeof createScheduler>, totalMs: number) {
+    for (let elapsed = 0; elapsed < totalMs; elapsed += 1_000) {
+      clock.advance(1_000);
+      await flush();
+    }
+  }
+
+  test('turn end with an open tail re-reads with backoff until the tail closes', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [
+      openOrClosedPage(),
+      openOrClosedPage(),
+      openOrClosedPage(99),
+    ]);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    expect(runtime.issuedAt).toEqual([0]);
+
+    clock.advance(999);
+    await flush();
+    expect(runtime.issuedAt).toEqual([0]);
+    clock.advance(1);
+    await flush();
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+
+    clock.advance(1_999);
+    await flush();
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+    clock.advance(1);
+    await flush();
+    expect(runtime.issuedAt).toEqual([0, 1_000, 3_000]);
+
+    await advanceBy(clock, 60_000);
+    expect(runtime.issuedAt).toEqual([0, 1_000, 3_000]);
+    controller.destroy();
+  });
+
+  test('a tail that never closes stops after five turn-end reads', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [openOrClosedPage()]);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 120_000);
+
+    expect(runtime.issuedAt).toEqual([0, 1_000, 3_000, 7_000, 15_000]);
+    controller.destroy();
+  });
+
+  test('settle stops when the session turns busy between reads', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [openOrClosedPage()]);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 1_000);
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+
+    // A new turn starts before the next settle read (due at 3_000).
+    await advanceBy(clock, 1_000);
+    controller.setBusy(true);
+    // Settle reads would land at 3_000 and 7_000. The liveness poll's first
+    // quiet read is due only after 12_000.
+    await advanceBy(clock, 9_000);
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+    controller.destroy();
+  });
+
+  test('a failed turn-end read retries inside its settle cycle and spends the same read budget', async () => {
+    const clock = createScheduler();
+    const issuedAt: number[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        issuedAt.push(clock.scheduler.now());
+        if (issuedAt.length === 1) throw new Error('proxy reset');
+        return openOrClosedPage();
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 120_000);
+
+    // Failed read at 0, its retry at 1_000, settle reads after that.
+    expect(issuedAt).toEqual([0, 1_000, 3_000, 7_000, 15_000]);
+    controller.destroy();
+  });
+
+  test('a turn-end read that fails while an earlier read waits to retry takes over that retry and keeps settling', async () => {
+    const clock = createScheduler();
+    const reads: Array<{ at: number; reason: SessionSyncReason; succeeded: boolean }> = [];
+    const hydrateOptions: Array<{ stampActivity?: boolean } | undefined> = [];
+    let failures = 2;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error('proxy reset');
+        }
+        return openOrClosedPage();
+      },
+      hydrate: (_messages, options?: { stampActivity?: boolean }) => hydrateOptions.push(options),
+      markLoaded: () => {},
+      onTelemetry: (event) =>
+        reads.push({ at: clock.scheduler.now(), reason: event.reason, succeeded: event.succeeded }),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await flush();
+    // The poll read failed. Its retry is due at 11_001.
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 120_000);
+
+    // The retry re-issues the turn-end read, not the poll read, and the settle
+    // cycle continues from it: 5 cycle reads, the failed one included.
+    expect(reads).toEqual([
+      { at: 10_001, reason: 'poll', succeeded: false },
+      { at: 10_001, reason: 'turn-end', succeeded: false },
+      { at: 11_001, reason: 'turn-end', succeeded: true },
+      { at: 13_001, reason: 'turn-end', succeeded: true },
+      { at: 17_001, reason: 'turn-end', succeeded: true },
+      { at: 25_001, reason: 'turn-end', succeeded: true },
+    ]);
+    expect(hydrateOptions).toEqual([
+      { stampActivity: false },
+      { stampActivity: false },
+      { stampActivity: false },
+      { stampActivity: false },
+    ]);
+    controller.destroy();
+  });
+
+  test('the read budget caps reads that land; a failed read past it retries until one lands (guard)', async () => {
+    const clock = createScheduler();
+    const issuedAt: number[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        issuedAt.push(clock.scheduler.now());
+        // Reads 1-4 land with an open tail, reads 5-7 fail, read 8 lands open.
+        if (issuedAt.length >= 5 && issuedAt.length <= 7) throw new Error('proxy reset');
+        return openOrClosedPage();
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 120_000);
+
+    // Failures retry on the tail retry backoff (1, 2, 4 s). The first read to
+    // land past the budget ends the cycle, although its tail is still open.
+    expect(issuedAt).toEqual([0, 1_000, 3_000, 7_000, 15_000, 16_000, 18_000, 22_000]);
+    controller.destroy();
+  });
+
+  /** Turn A's reply, then queued turn B's prompt and its still-open reply. */
+  function queuedTurnPage(endedTurnCompleted?: number): SessionSyncPage {
+    const turnA = openOrClosedPage(endedTurnCompleted).messages;
+    return {
+      messages: [
+        ...turnA,
+        {
+          info: { id: 'user-2', sessionID: 'session-1', role: 'user', time: { created: 3 } } as Message,
+          parts: [],
+        },
+        {
+          info: {
+            id: 'assistant-2',
+            sessionID: 'session-1',
+            role: 'assistant',
+            parentID: 'user-2',
+            time: { created: 4 },
+          } as Message,
+          parts: [],
+        },
+      ],
+    };
+  }
+
+  function turnEndReadTimes(clock: ReturnType<typeof createScheduler>) {
+    const times: number[] = [];
+    return {
+      times,
+      onTelemetry: (event: { reason: SessionSyncReason }) => {
+        if (event.reason === 'turn-end') times.push(clock.scheduler.now());
+      },
+    };
+  }
+
+  test('a turn-end read while the session stays busy settles the turn that ended; a repeated busy signal does not stop it', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [queuedTurnPage(), queuedTurnPage(99)]);
+    const turnEndReads = turnEndReadTimes(clock);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: turnEndReads.onTelemetry,
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    void controller.reconcile('turn-end');
+    await flush();
+    // A repeated busy signal is not a new turn.
+    controller.setBusy(true);
+    await advanceBy(clock, 60_000);
+    // Read 1: turn A's reply is still open. Read 2: it closed, so the cycle
+    // ends while turn B's reply stays open.
+    expect(turnEndReads.times).toEqual([0, 1_000]);
+    controller.destroy();
+  });
+
+  test('while busy, a turn-end read whose ended turn is closed issues no settle read, although the running turn is open', async () => {
+    const clock = createScheduler();
+    // An older turn left a husk: a reply nothing ever closed. It is not the
+    // turn that ended and must not keep the cycle going.
+    const husk: SessionSyncPage['messages'] = [
+      {
+        info: { id: 'user-0', sessionID: 'session-1', role: 'user', time: { created: 0 } } as Message,
+        parts: [],
+      },
+      {
+        info: {
+          id: 'assistant-0',
+          sessionID: 'session-1',
+          role: 'assistant',
+          parentID: 'user-0',
+          time: { created: 0 },
+        } as Message,
+        parts: [],
+      },
+    ];
+    const runtime = scriptedRuntime(clock, [
+      { messages: [...husk, ...queuedTurnPage(99).messages] },
+    ]);
+    const turnEndReads = turnEndReadTimes(clock);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: turnEndReads.onTelemetry,
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    void controller.reconcile('turn-end');
+    await flush();
+    await advanceBy(clock, 60_000);
+    expect(turnEndReads.times).toEqual([0]);
+    controller.destroy();
+  });
+
+  test('settle stops on destroy', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [openOrClosedPage()]);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await flush();
+    await advanceBy(clock, 1_000);
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+
+    controller.destroy();
+    await advanceBy(clock, 60_000);
+    expect(runtime.issuedAt).toEqual([0, 1_000]);
+  });
+
+  /**
+   * An early turn-end read sees an open tail with more text than the tab
+   * holds. The sync store stamps runtime activity for exactly that, and the
+   * working projection then answers 'working' for up to 45 s: Stop came back
+   * on a finished turn. Repair reads must not stamp.
+   */
+  test('turn-end and settle reads hydrate without stamping runtime activity; other reasons keep stamping', async () => {
+    const clock = createScheduler();
+    const runtime = scriptedRuntime(clock, [openOrClosedPage()]);
+    const calls: Array<{ options: { stampActivity?: boolean } | undefined }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: runtime.loadPage,
+      hydrate: (_messages, options?: { stampActivity?: boolean }) => calls.push({ options }),
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.reconcile('initial');
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await flush();
+    await controller.reconcile('visible');
+    expect(calls).toHaveLength(3);
+    expect(calls.every((call) => call.options?.stampActivity !== false)).toBe(true);
+
+    controller.setBusy(false);
+    await flush();
+    expect(calls).toHaveLength(4);
+    expect(calls[3]).toEqual({ options: { stampActivity: false } });
+
+    // The settle read after it is a repair read too.
+    await advanceBy(clock, 1_000);
+    expect(calls).toHaveLength(5);
+    expect(calls[4]).toEqual({ options: { stampActivity: false } });
+    controller.destroy();
+  });
+});

@@ -25,7 +25,6 @@ import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import {
-  releaseMessageRehydrate,
   reserveMessageRehydrate,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
@@ -185,8 +184,9 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
     // ---- CONSOLIDATED hydration function ----
     // Single function for hydrating permissions, questions, and session statuses.
-    // Called both on initial connect and on SSE reconnect (gap > 5s).
-    // Previously this logic was duplicated in two places.
+    // Called on initial connect, and on the stream's resync after a reconnect
+    // (`onGapRehydrate`: after the new subscription's first frame, at most once
+    // per 5 s per stream). Previously this logic was duplicated in two places.
     const hydrateCore = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) => {
       client.permission
         .list()
@@ -307,11 +307,14 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
         // so a gap wide enough to lose message frames is wide enough to lose
         // the frame that would have marked the session busy.
+        //
+        // Only a floor below the stream's 5 s floor gates each read
+        // (`reserveMessageRehydrate`), never a read still in flight: this
+        // resync postdates it, and the controller turns an overlapping
+        // `sse-gap` read into one follow-up read.
         for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
           if (!reserveMessageRehydrate(sid)) continue;
-          reconcileSessionTail(sid, 'sse-gap')
-            .catch(() => {})
-            .finally(() => releaseMessageRehydrate(sid));
+          reconcileSessionTail(sid, 'sse-gap').catch(() => {});
         }
       }
     };
@@ -322,7 +325,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
     // coalescing all live in `openEventStream` — this wrapper only supplies
-    // the QueryClient-dependent event handler and the gap-rehydrate hook.
+    // the QueryClient-dependent event handler and the resync hook.
     const handle = openEventStream({
       client,
       // A park is not a verdict about the sandbox — only about the last few

@@ -11,6 +11,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
 
+import { isOpenAssistantTail } from "../../core/session-sync/session-sync-controller";
 import {
 	commitSessionRewind,
 	isWithinRewindWindow,
@@ -504,8 +505,13 @@ interface SyncState {
 		 * paints messages PROVISIONALLY: the next runtime hydrate whose tail
 		 * covers their position drops any it does not contain. Default:
 		 * the runtime.
+		 *
+		 * `stampActivity: false` marks a runtime read that is not evidence of
+		 * output in progress: a repair read issued after the turn ended. Its
+		 * content lands; it never stamps `sessionActivityAt`. Default: a moved,
+		 * still-open runtime tail stamps.
 		 */
-		opts?: { source?: "cache" | "runtime" },
+		opts?: { source?: "cache" | "runtime"; stampActivity?: boolean },
 	) => void;
 	reset: () => void;
 
@@ -1888,15 +1894,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// each load-bearing (asserted in the test file): an initial fill is
 			// history, not movement; a completed tail is a finished turn and must
 			// not paint busy on a returning tab; a cache repaint is this tab's own
-			// disk, not the runtime speaking.
-			if (!fromCache && existingAll.length > 0) {
+			// disk, not the runtime speaking; a repair read after the turn ended
+			// (`stampActivity: false`) can see an open tail only because
+			// OpenCode persists `time.completed` ~1.8 s after the idle frame.
+			if (!fromCache && opts?.stampActivity !== false && existingAll.length > 0) {
 				const tail = incoming[incoming.length - 1];
-				const tailOpen =
-					!!tail &&
-					tail.role === "assistant" &&
-					!(tail as { time?: { completed?: number } }).time?.completed &&
-					!(tail as { error?: unknown }).error;
-				if (tailOpen) {
+				if (isOpenAssistantTail(tail)) {
 					stampRuntimeActivity =
 						incoming.some((m) => !existingIds.has(m.id)) ||
 						msgs.some((entry) => {

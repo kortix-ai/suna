@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   refetchKortixSessionMirrors,
+  reserveMessageRehydrate,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
   WIRE_STATUS_FILL_FRESHNESS_MS,
@@ -202,5 +203,47 @@ describe('resolveClientEvictionUrl', () => {
         activeServerUrl: 'https://api.example/p/ext-1/8000',
       }),
     ).toBeNull();
+  });
+});
+
+/**
+ * The transcript re-read a stream resync asks for, per session.
+ *
+ * Every resync now comes from `openEventStream` after a reconnect, and the
+ * stream already dispatches at most one per 5 s. The old 30 s cooldown and
+ * in-flight lock swallowed the second resync of a flapping busy stream: the
+ * frames lost in that reconnect were never re-read, and the final
+ * `message.part.updated` then failed the prefix guard. The session sync
+ * controller coalesces reads that overlap, so the only bound needed here is
+ * a floor for streams that remount, shorter than the stream's own 5 s floor.
+ */
+describe('reserveMessageRehydrate', () => {
+  test('a post-reconnect resync bypasses the 30 s cooldown but respects the floor', () => {
+    const sessionId = 'ses_resync_floor';
+    expect(reserveMessageRehydrate(sessionId, 100_000)).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, 103_999)).toBe(false);
+    expect(reserveMessageRehydrate(sessionId, 104_000)).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, 112_000)).toBe(true);
+  });
+
+  /**
+   * The stream stamps its 5 s floor before any subscriber runs. `hydrateCore`
+   * reserves after its own setup and after earlier subscribers, so its first
+   * reservation lands a few ms late. The stream's next resync can come exactly
+   * 5 s after its stamp, and that resync must still re-read the transcript.
+   */
+  test('a reservation 2 ms late still leaves the stream resync 5 s later its read', () => {
+    const sessionId = 'ses_resync_late_reservation';
+    expect(reserveMessageRehydrate(sessionId, 400_002)).toBe(true);
+    expect(reserveMessageRehydrate(sessionId, 405_000)).toBe(true);
+  });
+
+  test('guard: each session has its own floor', () => {
+    expect(reserveMessageRehydrate('ses_floor_a', 200_000)).toBe(true);
+    expect(reserveMessageRehydrate('ses_floor_b', 200_001)).toBe(true);
+  });
+
+  test('guard: an empty session id reserves nothing', () => {
+    expect(reserveMessageRehydrate('', 300_000)).toBe(false);
   });
 });

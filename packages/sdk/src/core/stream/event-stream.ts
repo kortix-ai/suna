@@ -10,16 +10,17 @@
  * injected `onEvent` / `onGapRehydrate` callbacks.
  *
  * Owns: connecting to the opencode SSE endpoint (with a connect timeout), the
- * idle heartbeat watchdog, event coalescing + 16ms flush batching, gap
- * detection on reconnect, the exponential-backoff reconnect loop (fast 250ms
- * resume after an eventful stream, capped exponential backoff otherwise), and
- * the give-up "parked" terminal state for streams pointed at dead sandboxes
- * (see `maxConsecutiveHardFailures`/`onParked`).
+ * idle heartbeat watchdog, event coalescing + 16ms flush batching, the resync
+ * signal after a reconnect (see `onGapRehydrate`), the exponential-backoff
+ * reconnect loop (fast 250ms resume after an eventful stream, capped
+ * exponential backoff otherwise), and the give-up "parked" terminal state for
+ * streams pointed at dead sandboxes (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
+import { isStreamContentEvent } from './keepalive';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
@@ -72,10 +73,23 @@ export interface OpenEventStreamOptions {
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
   onEvent: (event: OpenCodeEvent) => void;
-  /** Called when a reconnect follows a stream gap > 5s, with the gap size in
-   *  ms. Lets the host re-hydrate anything it fears went stale (e.g. replay
-   *  messages for busy sessions) — the machine itself holds no host state to
-   *  re-hydrate. */
+  /**
+   * Called after a reconnect, once the NEW subscription delivers its first
+   * frame, when frames may have been lost: the dropped subscription delivered
+   * content, or no content arrived for more than 5 s. `gapMs` is the time from
+   * the last content frame to that first frame, so it can be under 5 s.
+   * Connection-only frames (daemon keepalive, `server.connected`,
+   * `server.heartbeat`) never count as content.
+   *
+   * At most one call per 5 s per stream. A resync that comes due inside that
+   * window is called once the window ends, on the live subscription (or on the
+   * next subscription's first frame if none is live then).
+   *
+   * Lets the host re-read anything it fears went stale (e.g. the transcript
+   * tail) — the machine itself holds no host state to re-hydrate. A read issued
+   * here postdates the new subscription, so every frame is covered by either
+   * the read or the stream.
+   */
   onGapRehydrate?: (gapMs: number) => void;
   /** External signal that also stops the stream when aborted (in addition to
    *  calling `close()` on the returned handle). Optional — most hosts just use
@@ -152,6 +166,9 @@ const YIELD_INTERVAL_MS = 8;
  * `OpenEventStreamOptions.heartbeatTimeoutMs`.
  */
 const HEARTBEAT_MS = 60_000;
+/** A reconnect with no content for longer than this resyncs, and resyncs are
+ *  at least this far apart per stream: a flapping busy stream reconnects every
+ *  ~250 ms, and each resync costs the host several reads. */
 const GAP_REHYDRATE_MS = 5_000;
 const FAST_RECONNECT_DELAY_MS = 250;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -282,10 +299,24 @@ function createLiveStream(
     }
   }
 
-  // Track last stream activity (connect or event) to gate reconnect hydration.
-  // Using only "last event" causes hydrate storms when the server rotates
-  // idle SSE connections that carried no events.
+  // When CONTENT last reached the subscribers (`isStreamContentEvent`), or
+  // when the stream opened. Connect and connection-only frames do not move it:
+  // the daemon keepalive kept a content-silent stream "active" forever, so a
+  // reconnect after one measured a gap under 5 s and re-read nothing. A resync
+  // storm on idle connections is bounded instead: a resync needs a first frame
+  // on a NEW subscription, and resyncs are GAP_REHYDRATE_MS apart.
   let lastStreamActivityTime = t.now();
+
+  // ---- Resync after resubscribe (see `onGapRehydrate`) ----
+  // A content frame arrived since the current subscription was established.
+  // An attempt that never yields a frame leaves it set for the next one.
+  let contentSinceSubscribe = false;
+  // The current attempt has yielded a frame and has not ended.
+  let subscribed = false;
+  let lastResyncAt: number | undefined;
+  // A resync the floor held back, with the largest gap it was due for.
+  let pendingResyncGapMs: number | undefined;
+  let resyncTimer: EventStreamTimerHandle | undefined;
 
   // Event coalescing queue (like the SolidJS reference)
   let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
@@ -304,7 +335,9 @@ function createLiveStream(
     queue = [];
     coalesced.clear();
     lastFlush = t.now();
-    lastStreamActivityTime = t.now();
+    if (events.some((item) => item !== undefined && isStreamContentEvent(item.event))) {
+      lastStreamActivityTime = t.now();
+    }
 
     for (const item of events) {
       if (!item) continue;
@@ -324,6 +357,50 @@ function createLiveStream(
     flushTimer = t.setTimeout(flush, Math.max(0, COALESCE_FLUSH_MS - elapsed));
   };
 
+  const dispatchResync = (gapMs: number) => {
+    lastResyncAt = t.now();
+    pendingResyncGapMs = undefined;
+    if (resyncTimer !== undefined) {
+      t.clearTimeout(resyncTimer);
+      resyncTimer = undefined;
+    }
+    dispatchToSubscribers((sub) => sub.onGapRehydrate, gapMs);
+  };
+
+  /** Dispatch a due resync now, or once the per-stream floor ends. */
+  const requestResync = (gapMs: number) => {
+    const now = t.now();
+    if (lastResyncAt === undefined || now - lastResyncAt >= GAP_REHYDRATE_MS) {
+      dispatchResync(gapMs);
+      return;
+    }
+    pendingResyncGapMs = Math.max(pendingResyncGapMs ?? 0, gapMs);
+    if (resyncTimer !== undefined) return;
+    resyncTimer = t.setTimeout(() => {
+      resyncTimer = undefined;
+      if (abortController.signal.aborted || pendingResyncGapMs === undefined) return;
+      // Between attempts, a read would predate the next subscription. That
+      // subscription's first frame dispatches the pending resync instead.
+      if (!subscribed) return;
+      dispatchResync(pendingResyncGapMs);
+    }, lastResyncAt + GAP_REHYDRATE_MS - now);
+  };
+
+  /**
+   * The resync gap owed when an attempt yields its first frame, or undefined.
+   * Due on a reconnect whose dropped subscription delivered content (any gap),
+   * on a reconnect with no content for more than GAP_REHYDRATE_MS, and for a
+   * resync the floor held back.
+   */
+  const resyncGapOnSubscribe = (isReconnect: boolean): number | undefined => {
+    const gapMs = t.now() - lastStreamActivityTime;
+    const contentBefore = contentSinceSubscribe;
+    contentSinceSubscribe = false;
+    if (pendingResyncGapMs !== undefined) return Math.max(pendingResyncGapMs, gapMs);
+    if (isReconnect && (contentBefore || gapMs > GAP_REHYDRATE_MS)) return gapMs;
+    return undefined;
+  };
+
   // Consume the stream in the background with automatic retry
   (async () => {
     let retryCount = 0;
@@ -331,7 +408,10 @@ function createLiveStream(
     // Survives across attempts; reset by any attempt that delivered events
     // or that failed slowly without an HTTP status.
     let consecutiveHardFailures = 0;
+    let attempts = 0;
     while (!abortController.signal.aborted) {
+      attempts += 1;
+      const isReconnect = attempts > 1;
       let streamHadEvents = false;
       let stableConnection = false;
       let heartbeatTimer: EventStreamTimerHandle | undefined;
@@ -417,7 +497,6 @@ function createLiveStream(
             );
         });
         const { stream } = result;
-        lastStreamActivityTime = t.now();
 
         // Heartbeat timeout — if no events arrive within the idle budget
         // (default 60s, see HEARTBEAT_MS for why), abort and reconnect. This
@@ -458,24 +537,38 @@ function createLiveStream(
           if (outcome.kind === 'error') throw outcome.error;
           if (outcome.result.done) break;
 
+          // Every frame, connection-only ones included, proves the socket is
+          // alive: the watchdog resets on all of them.
           streamHadEvents = true;
           resetHeartbeat();
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
           ) as OpenCodeEvent;
-          if (!e?.type) continue;
-
-          const ck = getCoalesceKey(e);
-          if (ck) {
-            const existing = coalesced.get(ck);
-            if (existing !== undefined) {
-              queue[existing] = undefined;
+          // The first frame proves the new subscription exists. Decide the
+          // resync before this frame counts as the new attempt's content.
+          const resyncGapMs = subscribed ? undefined : resyncGapOnSubscribe(isReconnect);
+          subscribed = true;
+          if (isStreamContentEvent(e)) contentSinceSubscribe = true;
+          if (e?.type) {
+            const ck = getCoalesceKey(e);
+            if (ck) {
+              const existing = coalesced.get(ck);
+              if (existing !== undefined) {
+                queue[existing] = undefined;
+              }
+              coalesced.set(ck, queue.length);
             }
-            coalesced.set(ck, queue.length);
+            queue.push({ type: (e as any).type, event: e });
+            schedule();
           }
-          queue.push({ type: (e as any).type, event: e });
-          schedule();
+          if (resyncGapMs !== undefined) {
+            // Hand this frame over first, so subscribers see the resync after
+            // the frame that proves the subscription.
+            flush();
+            requestResync(resyncGapMs);
+          }
+          if (!e?.type) continue;
 
           if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
           yieldedAt = t.now();
@@ -493,7 +586,7 @@ function createLiveStream(
         // exponential backoff (1s → 30s cap) instead; the moment a
         // reconnected stream delivers a real event, backoff resets and the
         // fast path returns. Missed-while-waiting events are covered by the
-        // gap-rehydrate signal below.
+        // resync on the next subscription's first frame.
         stableConnection = streamHadEvents;
       } catch (err) {
         if (abortController.signal.aborted) break;
@@ -525,6 +618,7 @@ function createLiveStream(
           }
         }
       } finally {
+        subscribed = false;
         t.clearTimeout(heartbeatTimer);
         t.clearTimeout(connectTimer);
         // Release the reader/connection if we left the loop for any reason
@@ -579,14 +673,9 @@ function createLiveStream(
         break;
       }
 
-      // Re-hydrate messages for loaded sessions when the SSE gap was
-      // significant (>5s). Events missed during the gap (e.g. streaming
-      // assistant response) would never arrive, leaving the UI stale until
-      // the user manually refreshes.
-      const gap = t.now() - lastStreamActivityTime;
-      if (gap > GAP_REHYDRATE_MS) {
-        dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
-      }
+      // No resync here. A read issued before the next subscription exists
+      // leaves every frame between that read and the resubscribe covered by
+      // neither; the next attempt's first frame dispatches it.
 
       if (stableConnection) {
         // Fast reconnect after healthy streams so live streaming resumes
@@ -620,16 +709,17 @@ function createLiveStream(
     teardown: () => {
       abortController.abort();
       if (flushTimer) t.clearTimeout(flushTimer);
+      if (resyncTimer !== undefined) t.clearTimeout(resyncTimer);
     },
   };
 }
 
 /**
  * Connects to the opencode SSE event stream and keeps it alive: heartbeat
- * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
- * and exponential-backoff reconnect. Framework-free — safe to call from any
- * host (the React wrapper calls this once per effect run; a non-React host can
- * call it directly).
+ * watchdog, event coalescing + batched flush, the resync signal after a
+ * reconnect, and exponential-backoff reconnect. Framework-free — safe to call
+ * from any host (the React wrapper calls this once per effect run; a non-React
+ * host can call it directly).
  *
  * **Shared-stream fan-out.** A second concurrent open for a client that
  * already has a live stream (see `liveStreamsByClient`) does NOT tear the

@@ -21,7 +21,15 @@
 
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
@@ -53,6 +61,7 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
+import { qk } from './query-keys';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
@@ -83,7 +92,7 @@ import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionWorking } from './use-session-working';
+import { type SessionTurnObservation, useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
@@ -794,6 +803,48 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   loadOlder: async () => {},
 };
 
+/**
+ * Every `turn_token` the cached `/turn` read lists as open, for
+ * `useSessionSync`'s turn boundary read. `undefined` while disabled or before
+ * the first read lands: unknown, never "no turns".
+ *
+ * Read from the `/turn` cache entry `useSessionWorking` owns, never fetched
+ * here. `serverOpenTurnToken` names only `turns[0]`, and the ledger's list is
+ * not ordered newest-first, so the boundary check needs the whole set. The
+ * array keeps its identity while the read's `turns` do.
+ */
+export function useSessionOpenTurnTokens(
+  projectId: string,
+  sessionId: string,
+  enabled: boolean,
+): readonly string[] | undefined {
+  const queryClient = useQueryClient();
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const { queryHash } = queryClient.defaultQueryOptions({
+        queryKey: qk.project.sessionTurn(projectId, sessionId),
+      });
+      return queryClient.getQueryCache().subscribe((event) => {
+        if (event.query.queryHash === queryHash) onChange();
+      });
+    },
+    [queryClient, projectId, sessionId],
+  );
+  const readTurns = useCallback(
+    () =>
+      queryClient.getQueryData<SessionTurnObservation>(qk.project.sessionTurn(projectId, sessionId))
+        ?.turns,
+    [queryClient, projectId, sessionId],
+  );
+  const turns = useSyncExternalStore(subscribe, readTurns, readTurns);
+  // The same gate `useSessionWorking` reads the entry under.
+  const readable = enabled && !!projectId && !!sessionId;
+  return useMemo(
+    () => (readable && turns ? turns.map((turn) => turn.turn_token) : undefined),
+    [readable, turns],
+  );
+}
+
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
   const queryClient = useQueryClient();
   const titleRefreshAbortRef = useRef<AbortController | null>(null);
@@ -998,6 +1049,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled,
     runtimeSessionId: ocSessionId,
   });
+  const openTurnTokens = useSessionOpenTurnTokens(projectId, sessionId, enabled);
   // The receipt lives in a per-session store, not in this component: the
   // composer mounts its own `useSessionWorking` for the same session and they
   // share one `/turn` cache entry. Two private receipts meant the observer
@@ -1024,6 +1076,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // answer switched off the only read that could disprove it, and the
     // transcript froze mid-turn until a reload.
     serverHoldsTurn: working.serverOpenTurnToken !== null,
+    // A token that leaves this set is a turn boundary. A queued prompt keeps
+    // `working` true across it, so the turn-end transcript read is keyed on
+    // the set (see UseSessionSyncOptions.openTurnTokens).
+    openTurnTokens,
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();

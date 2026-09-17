@@ -182,6 +182,10 @@ export interface OpenBundleTurnObservation {
   turns: SessionTurn[];
   last_ended: SessionTurnEnded | undefined;
   atMs: number;
+  /** `atMs` is the API's clock. The working projection never lets a bundle
+   *  read retire a drain floor or rank against a tab-clock stamp — see
+   *  `WorkingServerInput.source`. */
+  source: 'bundle';
 }
 
 /**
@@ -196,6 +200,7 @@ export function openBundleTurn(bundle: SessionOpenBundle): OpenBundleTurnObserva
     turns: turn.turns ?? [],
     last_ended: turn.last_ended,
     atMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
+    source: 'bundle',
   };
 }
 

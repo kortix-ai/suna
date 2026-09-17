@@ -1,6 +1,7 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { platformConfig } from '../../http/config';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 import type { AuditEvent } from './audit';
@@ -919,6 +920,11 @@ export interface SessionPrompt {
   client_sent_at_ms?: number | null;
   attempts: number;
   last_error: string | null;
+  /** Why delivery gave up, as a stable code a host maps to its own words
+   *  (`last_error` is the server's prose). `null` unless `state` is `failed`.
+   *  A failed row written before the server recorded codes reads `unknown`.
+   *  Absent from servers older than this field. */
+  failure_code?: string | null;
   /** This prompt's files, by NAME and TYPE only — never their bytes.
    *
    *  A reload discards the composer's optimistic bubble, so without this a
@@ -973,31 +979,58 @@ export interface CreateSessionPromptInput {
    * their POSTs finish in either order). Milliseconds since epoch.
    */
   clientSentAtMs?: number;
+  /**
+   * This POST puts back a prompt `deleteSessionPrompt` removed (Undo). Every
+   * other new prompt releases the session's hold; a restore does not, so Undo
+   * after Stop does not resume the queue. Leave it unset for a new send.
+   */
+  restore?: boolean;
+  /**
+   * With `restore`: create the row held, as the removed row was
+   * (`RemovedSessionPrompt.held`).
+   */
+  held?: boolean;
 }
 
-/** Put one prompt in the session's server-side inbox (`POST .../prompts`).
- *  Resolving means the prompt is DURABLE, not that it has been delivered. */
+/**
+ * Put one prompt in the session's server-side inbox (`POST .../prompts`).
+ * Resolving means the prompt is DURABLE, not that it has been delivered.
+ *
+ * A send keeps the transport's error sink: its 402 opens the host's upgrade
+ * dialog. A restore (`input.restore`) reaches the sink ONLY with a 402. The
+ * Undo that sends it toasts every other refusal itself, and the sink would add
+ * a second toast in the server's own words.
+ */
 export async function createSessionPrompt(
   projectId: string,
   sessionId: string,
   input: CreateSessionPromptInput,
 ): Promise<CreateSessionPromptResult> {
-  return unwrap(
-    await backendApi.post<CreateSessionPromptResult>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
-      {
-        client_message_id: input.clientMessageId,
-        message_id: input.messageId,
-        parts: input.parts,
-        ...(input.placement ? { placement: input.placement } : {}),
-        ...(input.overrides ? { overrides: input.overrides } : {}),
-        ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
-        ...(typeof input.clientSentAtMs === 'number'
-          ? { client_sent_at_ms: Math.trunc(input.clientSentAtMs) }
-          : {}),
-      },
-    ),
+  const restore = input.restore === true;
+  const response = await backendApi.post<CreateSessionPromptResult>(
+    `/projects/${projectId}/sessions/${sessionId}/prompts`,
+    {
+      client_message_id: input.clientMessageId,
+      message_id: input.messageId,
+      parts: input.parts,
+      ...(input.placement ? { placement: input.placement } : {}),
+      ...(input.overrides ? { overrides: input.overrides } : {}),
+      ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
+      ...(typeof input.clientSentAtMs === 'number'
+        ? { client_sent_at_ms: Math.trunc(input.clientSentAtMs) }
+        : {}),
+      ...(typeof input.restore === 'boolean' ? { restore: input.restore } : {}),
+      ...(typeof input.held === 'boolean' ? { held: input.held } : {}),
+    },
+    restore ? { showErrors: false } : undefined,
   );
+  // `makeRequest` has no status filter for its sink, so the restore path routes
+  // the one status the host must still see itself.
+  const status = (response.error as { status?: number } | undefined)?.status;
+  if (restore && !response.success && status === 402) {
+    platformConfig().onError?.(response.error);
+  }
+  return unwrap(response);
 }
 
 /** Every prompt this session still owes the user, oldest first. Delivered
@@ -1033,6 +1066,10 @@ export interface RemovedSessionPrompt {
   removed_message_ids?: string[];
   parts: SessionPromptPart[];
   overrides: SessionPromptOverrides | null;
+  /** The row was held (Stop) or stop-paused when it was removed. Undo sends it
+   *  back as `CreateSessionPromptInput.held`, so the restored row stays held.
+   *  Absent from servers older than this field. */
+  held?: boolean;
 }
 
 /**
@@ -1064,17 +1101,23 @@ export async function deleteSessionPrompt(
  *
  * They are one intent: the user pointed at a row and asked for that message.
  * The row is re-queued, put ahead of the ordering rule, and the session's hold
- * is released so the rest drains at the next boundary. Its wire id is
- * UNCHANGED, so a delivery that actually landed is still absorbed by the proxy
- * instead of running twice.
+ * is released so the rest drains at the next boundary.
+ *
+ * The row is marked `remintOnDelivery`: delivery re-mints its wire id against
+ * the live transcript, so the `message_id` returned here is not the id it runs
+ * under. A delivery that already landed is not run twice because the delivery
+ * idempotency key dedupes it, not because the id is unchanged.
+ *
+ * `observed_at` is the SERVER's clock after the write. A list read stamped
+ * before it predates the retry. Absent from servers older than the field.
  */
 export async function retrySessionPrompt(
   projectId: string,
   sessionId: string,
   promptId: string,
-): Promise<SessionPrompt> {
+): Promise<SessionPrompt & { observed_at?: string }> {
   return unwrap(
-    await backendApi.post<SessionPrompt>(
+    await backendApi.post<SessionPrompt & { observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
       // The caller toasts its own message; the host sink would add a second.
@@ -1094,7 +1137,8 @@ export async function retrySessionPrompt(
  *
  * A hold is released by an ACTION, never by a timer: sending anything new, or
  * `retrySessionPrompt` on a row, releases it — the same rule the browser queue
- * always had.
+ * always had. A restore (`CreateSessionPromptInput.restore`) is not a new send
+ * and releases nothing.
  */
 export async function holdSessionPrompts(
   projectId: string,

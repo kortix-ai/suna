@@ -10,6 +10,11 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
+import {
+	SessionSyncController,
+	type SessionSyncPage,
+	type SessionSyncScheduler,
+} from "../../core/session-sync/session-sync-controller";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -206,6 +211,60 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 			},
 		]);
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+
+	/**
+	 * A turn-end repair read. OpenCode persists `time.completed` ~1.8 s after
+	 * the idle frame, so an early repair read sees an open tail with more text
+	 * than the tab holds. Stamping that made the working projection answer
+	 * 'working' for up to 45 s after the turn ended.
+	 */
+	test("a repair read with stampActivity false never stamps, even when the open tail grew", () => {
+		const sid = "ses_act_repair";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hel", sid)],
+			},
+		]);
+
+		store.hydrate(
+			sid,
+			[
+				{ info: userMessage("msg_u1", sid), parts: [] },
+				{
+					info: openAssistant("msg_a1", sid),
+					parts: [textPart("prt_a1", "msg_a1", "hello world", sid)],
+				},
+			],
+			{ stampActivity: false },
+		);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+		// The content still lands.
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("hello world");
+	});
+
+	test("the same grown open tail without the option still stamps (guard)", () => {
+		const sid = "ses_act_repair_guard";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hel", sid)],
+			},
+		]);
+
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hello world", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
 	});
 
 	test("a cache-sourced repaint never stamps — disk is not the runtime", () => {
@@ -4066,5 +4125,134 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		// The echo landed under the id we painted, so nothing is outstanding.
 		useSyncStore.getState().applyEvent(partFrame("msg_assistant0002") as never);
 		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
+	});
+});
+
+/**
+ * The whole repair, store and controller together.
+ *
+ * The stream loses a delta mid-turn, so the final `message.part.updated` fails
+ * the prefix guard and the tab holds a garbled answer. The turn ends while a
+ * poll read issued BEFORE completion is still on the wire. That stale read
+ * used to answer the turn-end reconcile, and the poll switched off behind it:
+ * the garbled answer stayed until a reload.
+ */
+describe("a stream that lost frames mid-turn renders the whole answer after the turn ends", () => {
+	const SID = "ses_stall";
+	const PARTIAL = "1. alpha\n2. be";
+	const FULL = "1. alpha\n2. beta\n3. gamma\n";
+
+	function assistant(completed?: number): AssistantMessage {
+		const message = assistantMessage("msg_a1", SID);
+		return { ...message, parentID: "msg_u1", time: { created: 2, ...(completed ? { completed } : {}) } };
+	}
+
+	function snapshot(text: string, completed?: number): SessionSyncPage {
+		return {
+			messages: [
+				{ info: userMessage("msg_u1", SID), parts: [] },
+				{ info: assistant(completed), parts: [textPart("prt_1", "msg_a1", text, SID)] },
+			],
+		};
+	}
+
+	function fakeScheduler() {
+		let now = 0;
+		let interval: (() => void) | undefined;
+		let nextId = 2;
+		const timeouts = new Map<number, { dueAt: number; run: () => void }>();
+		const scheduler: SessionSyncScheduler = {
+			now: () => now,
+			setInterval: (run) => {
+				interval = run;
+				return 1;
+			},
+			clearInterval: () => {
+				interval = undefined;
+			},
+			setTimeout: (run, ms) => {
+				const id = nextId++;
+				timeouts.set(id, { dueAt: now + ms, run });
+				return id;
+			},
+			clearTimeout: (handle) => {
+				timeouts.delete(handle as number);
+			},
+		};
+		return {
+			scheduler,
+			advance(ms: number) {
+				now += ms;
+				for (const [id, timer] of [...timeouts]) {
+					if (timer.dueAt > now) continue;
+					timeouts.delete(id);
+					timer.run();
+				}
+				interval?.();
+			},
+		};
+	}
+
+	test("the turn-end read hydrates the finished turn over the garbled stream text", async () => {
+		const store = useSyncStore.getState();
+		store.hydrate(SID, [
+			{ info: userMessage("msg_u1", SID), parts: [] },
+			{ info: assistant(), parts: [] },
+		]);
+		store.applyEvent({
+			type: "message.part.updated",
+			properties: { part: textPart("prt_1", "msg_a1", "", SID) },
+		} as never);
+		store.applyEvent({
+			type: "message.part.delta",
+			properties: { sessionID: SID, messageID: "msg_a1", partID: "prt_1", field: "text", delta: "1. alpha\n" },
+		} as never);
+		// "2. beta\n" is lost in a reconnect gap.
+		store.applyEvent({
+			type: "message.part.delta",
+			properties: { sessionID: SID, messageID: "msg_a1", partID: "prt_1", field: "text", delta: "3. gamma\n" },
+		} as never);
+		store.applyEvent({
+			type: "message.part.updated",
+			properties: { part: textPart("prt_1", "msg_a1", FULL, SID) },
+		} as never);
+		const text = () => (useSyncStore.getState().parts.msg_a1?.[0] as TextPart | undefined)?.text;
+		const completed = () =>
+			(useSyncStore.getState().messages[SID]?.find((m) => m.id === "msg_a1")?.time as { completed?: number })
+				.completed;
+		// Precondition: the prefix guard rejected the full text.
+		expect(text()).toBe("1. alpha\n3. gamma\n");
+
+		let runtime = snapshot(PARTIAL);
+		const reads: Array<{ snapshot: SessionSyncPage; resolve: (page: SessionSyncPage) => void }> = [];
+		const clock = fakeScheduler();
+		const controller = new SessionSyncController({
+			sessionId: SID,
+			loadPage: () => {
+				const captured = runtime;
+				return new Promise<SessionSyncPage>((resolve) => reads.push({ snapshot: captured, resolve }));
+			},
+			hydrate: (messages, options) => useSyncStore.getState().hydrate(SID, messages, options),
+			markLoaded: () => {},
+			scheduler: clock.scheduler,
+			livenessIntervalMs: 10_000,
+		});
+		const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+		controller.setBusy(true);
+		clock.advance(10_001);
+		expect(reads).toHaveLength(1);
+
+		runtime = snapshot(FULL, 99);
+		controller.setBusy(false);
+		reads[0].resolve(reads[0].snapshot);
+		await flush();
+		reads[1]?.resolve(reads[1].snapshot);
+		await flush();
+
+		expect(text()).toBe(FULL);
+		expect(completed()).toBe(99);
+		expect(reads).toHaveLength(2);
+		controller.destroy();
 	});
 });

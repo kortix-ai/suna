@@ -48,9 +48,19 @@ export function shouldSkipStatusFill(input: {
   return input.nowMs - input.stampedAtMs <= WIRE_STATUS_FILL_FRESHNESS_MS;
 }
 
-const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
+/**
+ * Minimum spacing of two stream-resync transcript re-reads of one session.
+ * The stream already spaces its resyncs `GAP_REHYDRATE_MS` (5_000,
+ * `core/stream/event-stream.ts`) apart. This floor bounds a stream that
+ * remounts and starts a new floor, and subscribers that share one stream.
+ *
+ * Must stay below `GAP_REHYDRATE_MS`. The stream stamps its floor before any
+ * subscriber runs, and `hydrateCore` reserves after its own setup and after
+ * earlier subscribers. An equal floor dropped the read of a resync the stream
+ * dispatched exactly when its floor ended.
+ */
+const MESSAGE_REHYDRATE_FLOOR_MS = 4_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
-const messageRehydrateInFlight = new Set<string>();
 const messageRehydrateLastAt = new Map<string, number>();
 let projectMetadataRefetchLastAt = 0;
 let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,18 +125,22 @@ export function asStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-export function reserveMessageRehydrate(sessionID: string): boolean {
-  if (!sessionID || messageRehydrateInFlight.has(sessionID)) return false;
-  const now = Date.now();
-  const last = messageRehydrateLastAt.get(sessionID) ?? 0;
-  if (now - last < MESSAGE_REHYDRATE_COOLDOWN_MS) return false;
-  messageRehydrateInFlight.add(sessionID);
-  messageRehydrateLastAt.set(sessionID, now);
+/**
+ * May a stream resync re-read this session's transcript now?
+ *
+ * Only `MESSAGE_REHYDRATE_FLOOR_MS` since the last reservation for the session.
+ * A 30 s cooldown and an in-flight lock used to sit here, and both swallowed
+ * the resync of a second reconnect: the frames that reconnect lost were never
+ * re-read, and the final `message.part.updated` then failed the store's prefix
+ * guard. Overlapping reads need no lock here: the session sync controller
+ * gives an `sse-gap` read that arrives during another read one follow-up read.
+ */
+export function reserveMessageRehydrate(sessionID: string, nowMs: number = Date.now()): boolean {
+  if (!sessionID) return false;
+  const last = messageRehydrateLastAt.get(sessionID);
+  if (last !== undefined && nowMs - last < MESSAGE_REHYDRATE_FLOOR_MS) return false;
+  messageRehydrateLastAt.set(sessionID, nowMs);
   return true;
-}
-
-export function releaseMessageRehydrate(sessionID: string): void {
-  messageRehydrateInFlight.delete(sessionID);
 }
 
 export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {

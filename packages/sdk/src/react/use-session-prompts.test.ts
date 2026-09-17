@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
+import { ApiError } from '../core/http/api-client';
 import { configureKortix } from '../core/http/config';
 import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
-import type { SessionPrompt } from '../core/rest/projects-client/sessions';
+import { deleteSessionPrompt, type SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
   applyInboxObservation,
+  classifyPromptActionError,
   inboxDrained,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
@@ -744,6 +746,42 @@ describe('inboxDrained', () => {
   test('a row that is still there has not drained', () => {
     expect(inboxDrained([prompt()], [prompt()])).toBe(false);
   });
+
+  test('a waiting row the admission gate held that is simply gone is a drain', () => {
+    // A prompt POSTed while a turn runs is refused by the admission gate and
+    // lists as `waiting`. The drain claims it, marks it `delivering` for one
+    // delivery POST, and the list drops it once the runtime accepts the turn. A
+    // 1 s poll that misses that window sees `waiting` go straight to absent.
+    // The projection already counts the row as live (`countLiveInboxPrompts`),
+    // so its disappearance is the same hand-off as a `queued` row leaving.
+    expect(inboxDrained([prompt({ state: 'waiting', reason: 'turn_active' })], [])).toBe(true);
+    expect(inboxDrained([prompt({ state: 'waiting', reason: 'older_prompt_pending' })], [])).toBe(
+      true,
+    );
+  });
+
+  test('a held row that is gone is not a drain', () => {
+    // Guard: `held` is the Stop button's own state and never counts as live, so
+    // its absence says nothing about a turn opening.
+    expect(inboxDrained([prompt({ state: 'waiting', reason: 'held' })], [])).toBe(false);
+  });
+
+  test('a row this tab removed is never a drain', () => {
+    // A read issued before the remove can settle after it: `previous` still
+    // holds the row and `next` has it filtered out by the tombstone. That is
+    // the user deleting a prompt, not the server running it.
+    tombstoneRemovedPrompt('sess_drain', 'p1');
+    try {
+      expect(inboxDrained([prompt()], [], 'sess_drain')).toBe(false);
+      expect(
+        inboxDrained([prompt({ state: 'waiting', reason: 'turn_active' })], [], 'sess_drain'),
+      ).toBe(false);
+      // Another session's tombstone does not hide this session's drain.
+      expect(inboxDrained([prompt()], [], 'sess_other')).toBe(true);
+    } finally {
+      releaseRemovedPromptTombstone('sess_drain', 'p1');
+    }
+  });
 });
 
 describe('the drain stamp survives the readings that follow it', () => {
@@ -777,6 +815,20 @@ describe('the drain stamp survives the readings that follow it', () => {
     });
   });
 
+  test('a row this tab removed does not arm the drain stamp', () => {
+    // The remove prunes the cache and tombstones the row. A read that captured
+    // the cache before the prune still reports the row as leaving.
+    useSessionWorkingStore.getState().reset();
+    applyInboxObservation('sess_rm', undefined, [prompt()], 500);
+    tombstoneRemovedPrompt('sess_rm', 'p1');
+    try {
+      applyInboxObservation('sess_rm', [prompt()], [], 600);
+      expect(useSessionWorkingStore.getState().inbox.sess_rm).toEqual({ pending: 0, atMs: 600 });
+    } finally {
+      releaseRemovedPromptTombstone('sess_rm', 'p1');
+    }
+  });
+
   test('a new pending row drops it — this is a fact about an empty queue', () => {
     useSessionWorkingStore.getState().reset();
     applyInboxObservation('sess_1', undefined, [prompt()], 500);
@@ -784,5 +836,86 @@ describe('the drain stamp survives the readings that follow it', () => {
     applyInboxObservation('sess_1', [], [prompt({ prompt_id: 'p2' })], 700);
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 700 });
+  });
+});
+
+/**
+ * One classifier for every Remove and Retry refusal, so a host maps outcomes
+ * to its own words. It reads `status` and `code` only: the server's English
+ * `error` text is not a contract, and "Not found" once reached a toast raw.
+ */
+describe('classifyPromptActionError', () => {
+  const api = (status: number | undefined, code?: string, message = 'server text') =>
+    new ApiError(message, { status, code });
+
+  test('a prompt the server no longer has is gone; a bare 404 is not', () => {
+    expect(classifyPromptActionError(api(404, 'prompt_not_found'))).toBe('gone');
+    // `makeRequest` fills `code` with the status when the body has none.
+    expect(classifyPromptActionError(api(404, '404', 'Not found'))).toBe('failed');
+    expect(classifyPromptActionError({ status: 404 })).toBe('failed');
+  });
+
+  test('a 409 says which refusal it is by its code', () => {
+    expect(classifyPromptActionError(api(409, 'prompt_already_sent'))).toBe('already_sent');
+    expect(classifyPromptActionError(api(409, 'prompt_cancel_unreachable'))).toBe('unreachable');
+    expect(classifyPromptActionError(api(409, '409', 'Prompt is already being answered'))).toBe(
+      'failed',
+    );
+  });
+
+  test('a request that got no answer is unreachable', () => {
+    expect(classifyPromptActionError(api(undefined, 'TIMEOUT', 'Request timed out after 30s'))).toBe(
+      'unreachable',
+    );
+    expect(classifyPromptActionError(new TypeError('fetch failed'))).toBe('unreachable');
+    // `makeRequest` wraps a thrown fetch in an ApiError with no status.
+    expect(classifyPromptActionError(new ApiError('fetch failed', { name: 'TypeError' }))).toBe(
+      'unreachable',
+    );
+    expect(classifyPromptActionError(api(undefined))).toBe('unreachable');
+  });
+
+  test('hosts import it from the react entry', async () => {
+    const react = await import('./index');
+    expect(react.classifyPromptActionError).toBe(classifyPromptActionError);
+  });
+
+  test('another action on the same row still running is pending', () => {
+    const pending = Object.assign(new Error('busy'), { code: 'prompt_action_pending' });
+    expect(classifyPromptActionError(pending)).toBe('pending');
+  });
+
+  test('everything else is failed, whatever its message says', () => {
+    expect(classifyPromptActionError(new Error('Not found'))).toBe('failed');
+    expect(classifyPromptActionError(api(500, '500', 'prompt_not_found'))).toBe('failed');
+    expect(classifyPromptActionError(api(403, 'forbidden'))).toBe('failed');
+    expect(classifyPromptActionError(null)).toBe('failed');
+    expect(classifyPromptActionError(undefined)).toBe('failed');
+    expect(classifyPromptActionError('prompt_not_found')).toBe('failed');
+  });
+
+  test('the real client produces errors the classifier reads', async () => {
+    const original = globalThis.fetch;
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    try {
+      globalThis.fetch = (async () =>
+        Response.json({ error: 'Not found', code: 'prompt_not_found' }, { status: 404 })) as unknown as typeof fetch;
+      const gone = await deleteSessionPrompt('P1', 'S1', 'cmd-1').catch((error: unknown) => error);
+      expect(classifyPromptActionError(gone)).toBe('gone');
+
+      globalThis.fetch = (async () =>
+        Response.json({ error: 'Not found' }, { status: 404 })) as unknown as typeof fetch;
+      const bare = await deleteSessionPrompt('P1', 'S1', 'cmd-1').catch((error: unknown) => error);
+      expect(classifyPromptActionError(bare)).toBe('failed');
+
+      globalThis.fetch = (async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+      const offline = await deleteSessionPrompt('P1', 'S1', 'cmd-1').catch((error: unknown) => error);
+      expect(classifyPromptActionError(offline)).toBe('unreachable');
+    } finally {
+      globalThis.fetch = original;
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
   });
 });

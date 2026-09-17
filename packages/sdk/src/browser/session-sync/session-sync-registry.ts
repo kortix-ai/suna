@@ -228,8 +228,12 @@ function createController(sessionId: string, key: string): SessionSyncController
     // projection (`livenessBusy`). `loadSessionRuntimeStatus` stays — it is a
     // published export of `@kortix/sdk/react` — but this controller no longer
     // calls it.
-    hydrate: (messages) => {
-      useSyncStore.getState().hydrate(sessionId, messages);
+    //
+    // `options` carries the controller's no-stamp flag for turn-end repair
+    // reads into the store, so a finished turn's page never brings "working"
+    // back.
+    hydrate: (messages, options) => {
+      useSyncStore.getState().hydrate(sessionId, messages, options);
     },
     markLoaded: () => {
       const state = useSyncStore.getState();
