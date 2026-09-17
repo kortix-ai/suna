@@ -26,6 +26,7 @@ import {
   FilePlusIcon as FilePlus,
   FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
+  MoonIcon,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -39,6 +40,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
+import { EXPLORER_WAKE_POLL_MS, explorerReadinessState } from '../explorer-readiness';
 import { buildGitStatusMap } from '../hooks';
 import {
   beginUploadBatch,
@@ -116,7 +118,14 @@ export function DriveExplorer({
   // Plain <div> unless a tabbed host claims the listing as its panel.
   const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
-  const { capabilities } = source;
+  // Asleep vs. merely not-ready-yet. Only the sandbox source can answer.
+  // While asleep the listing comes from the git mirror: real files, read-only.
+  // Writing and search both run inside the box, so they are off until a send
+  // wakes it rather than failing against something that is not running.
+  const parked = source.useReadinessParked();
+  const capabilities = parked
+    ? { ...source.capabilities, write: false, search: false }
+    : source.capabilities;
   const canWrite = capabilities.write;
 
   const currentPath = useFilesStore((s) => s.currentPath);
@@ -144,13 +153,21 @@ export function DriveExplorer({
     refetch: refetchFiles,
   } = source.useFileList(currentPath);
 
-  // A readiness 503 means the sandbox is parked or booting — a pending state,
-  // never a failure. Keep polling until the box is up so the listing appears
-  // on its own.
-  const sandboxWaking = !!error && isSandboxNotReadyError(error);
+  // A readiness 503 means the sandbox is parked OR booting. Those are opposite
+  // states and this used to treat them as one: it polled both every 3s forever
+  // and told the user the sandbox was starting. A booting box does arrive on
+  // its own; a PARKED box resumes only on the next send, and the API refuses
+  // every read meant to wake it — so that loop could not end and its copy was
+  // false. Split them and let the parked case rest.
+  const readiness = explorerReadinessState({
+    hasReadinessError: !!error && isSandboxNotReadyError(error),
+    parked,
+  });
+  const sandboxWaking = readiness.kind === 'waking';
+  const sandboxAsleep = readiness.kind === 'asleep';
   useEffect(() => {
     if (!sandboxWaking) return;
-    const interval = window.setInterval(() => void refetchFiles(), 3_000);
+    const interval = window.setInterval(() => void refetchFiles(), EXPLORER_WAKE_POLL_MS);
     return () => window.clearInterval(interval);
   }, [sandboxWaking, refetchFiles]);
 
@@ -867,7 +884,16 @@ export function DriveExplorer({
 
           {!!error &&
             !isLoading &&
-            (sandboxWaking ? (
+            (sandboxAsleep ? (
+              // Not a spinner. Nothing is happening, and the one thing that
+              // would change that is a message the user sends in the chat —
+              // the same fact the composer states a panel away.
+              <EmptyState
+                icon={MoonIcon}
+                title="This session is idle"
+                description="Its workspace stopped after a spell of inactivity. Send a message in the chat and it starts again automatically, then the files reappear here."
+              />
+            ) : sandboxWaking ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <Loading className="text-muted-foreground/40 h-4 w-4" />
                 <p className="text-muted-foreground text-sm font-medium">
@@ -895,7 +921,19 @@ export function DriveExplorer({
               />
             ))}
 
-          {isEmpty && (
+          {/* An asleep box whose mirror had nothing to give. The remote branch
+              push is best-effort background work, so "empty" here is the one
+              thing we cannot state as fact — the files may well exist and
+              simply be unreachable. Say what IS known: the session is idle. */}
+          {isEmpty && parked && (
+            <EmptyState
+              icon={MoonIcon}
+              title="This session is idle"
+              description="Its workspace stopped after a spell of inactivity. Send a message in the chat and it starts again automatically."
+            />
+          )}
+
+          {isEmpty && !parked && (
             <EmptyState
               icon={FolderOpen}
               title={tHardcodedUi.raw(

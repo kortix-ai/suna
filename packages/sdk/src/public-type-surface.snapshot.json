@@ -3325,6 +3325,7 @@
     "OpsOverview",
     "POLL_CONNECTED",
     "POLL_FAILING",
+    "POLL_PARKED",
     "POLL_UNREACHABLE",
     "Part",
     "PartRenderers",

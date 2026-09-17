@@ -46,6 +46,23 @@ interface SandboxConnectionStore {
 	 * `react/use-runtime-boot-stalled`.
 	 */
 	bootingSinceAt: number | null;
+	/**
+	 * The box is PARKED, not booting: the platform answered the health probe
+	 * from the session row (`hop === 'control_plane'`) without dialling the box.
+	 *
+	 * The distinction is the difference between a wait and a dead end. A booting
+	 * box becomes healthy on its own, so a surface should keep polling and say
+	 * so. A parked box resumes ONLY on the next send, so polling it is an
+	 * unbounded loop against a request the API deliberately refuses, and any
+	 * "starting…" copy over it is false.
+	 *
+	 * `use-runtime-reconnect` has always known which one it was looking at; it
+	 * used the fact to keep the stall clock off and then dropped it. Keeping it
+	 * lets every other surface tell the two apart too — see
+	 * `explorerReadinessState` in apps/web, and `nextPtyAttachStep`'s
+	 * `pause: 'asleep'`, which solved this same problem for the terminal.
+	 */
+	parked: boolean;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -109,10 +126,14 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	manualRetryNonce: 0,
 	lastRuntimeEvidenceAt: null,
 	bootingSinceAt: null,
+	parked: false,
 }));
 
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
+		// A manual retry is a fresh look: whatever we concluded about the box
+		// being parked is now a stale claim, not evidence.
+		parked: false,
 		status: "connecting", healthy: null, failCount: 0, runtimeError: null,
 		disconnectedAt: state.disconnectedAt ?? Date.now(), manualRetryNonce: state.manualRetryNonce + 1,
 		// A manual retry is the user's own reset — give the stall clock a fresh
@@ -225,6 +246,7 @@ export function resetForServerSwitch() {
 			manualRetryNonce: 0,
 			lastRuntimeEvidenceAt: null,
 			bootingSinceAt: null,
+			parked: false,
 		});
 		saveWasConnected(true);
 		return;
@@ -243,6 +265,9 @@ export function resetForServerSwitch() {
 		manualRetryNonce: 0,
 		lastRuntimeEvidenceAt: null,
 		bootingSinceAt: Date.now(),
+		// A different box. Whatever the previous one was doing says nothing
+		// about this one.
+		parked: false,
 	});
 	saveWasConnected(false);
 }
@@ -293,6 +318,11 @@ export function setOpenCodeHealth(
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
 	if (state.healthy !== healthy) updates.healthy = healthy;
+	// Every probe restates this, so a box that parks and later boots (or a boot
+	// that turns out to be a parked row) converges on the next tick rather than
+	// leaving a stale claim behind. A healthy box is never parked.
+	const nextParked = healthy ? false : options?.parked === true;
+	if (state.parked !== nextParked) updates.parked = nextParked;
 	if (version !== undefined && state.openCodeVersion !== version) updates.openCodeVersion = version;
 	const nextRuntimeError = healthy ? null : runtimeError;
 	if (runtimeError !== undefined && state.runtimeError !== nextRuntimeError) {

@@ -907,6 +907,7 @@
     "OpenCodeEventStreamProvider",
     "POLL_CONNECTED",
     "POLL_FAILING",
+    "POLL_PARKED",
     "POLL_UNREACHABLE",
     "RUNTIME_BOOT_STALL_MS",
     "RUNTIME_EVIDENCE_FRESH_MS",

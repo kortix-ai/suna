@@ -171,6 +171,14 @@ function SessionFilesExplorerInner({
           shareContext={
             projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
           }
+          // Where the listing comes from once this session's box parks. The
+          // session's git branch IS the route session id — the same fact the
+          // Changes tab is built on — so an idle session still shows its files.
+          mirrorRef={
+            routeProjectId && gitSessionId
+              ? { projectId: routeProjectId, ref: gitSessionId }
+              : undefined
+          }
         />
       ) : (
         <>
