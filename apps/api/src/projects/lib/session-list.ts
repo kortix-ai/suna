@@ -191,9 +191,9 @@ export async function loadProjectSessionInventory(input: {
           // opted-in imports use their historical conversation activity.
           cursor
             ? or(
-                lt(sortAt, cursor.updatedAt),
+                lt(sortAt, cursor.updatedAt.toISOString()),
                 and(
-                  eq(sortAt, cursor.updatedAt),
+                  eq(sortAt, cursor.updatedAt.toISOString()),
                   lt(projectSessions.sessionId, cursor.sessionId),
                 ),
               )
