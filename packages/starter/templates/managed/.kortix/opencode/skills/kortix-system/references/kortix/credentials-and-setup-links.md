@@ -116,6 +116,14 @@ expired or was abandoned.
 Use `kortix connectors connect-finalize <slug>` when the flow requires an
 explicit completion check.
 
+**A connector can hold more than one account.** `connect` doesn't replace an
+existing account, it adds one — `owner: "me"` (default) authorizes the human
+you're talking to as a NEW private account beside any that already exist;
+`owner: "project"` shares it with everyone. If the connector already has
+accounts and the human just wants to USE one of them (not add another), do
+not mint a new `connect` link — list them with `accounts` instead and pass
+`account` on the call.
+
 ---
 
 ## After you surface the link
@@ -165,9 +173,11 @@ This beats the alternatives you might be tempted by:
 | Goal | MCP tool | `kortix` CLI |
 | --- | --- | --- |
 | Ask the human for a secret value | `request_secret` | `kortix secrets request <NAME…>` |
-| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug>` |
+| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
 | Verify a secret arrived | — | `kortix secrets ls` |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |
+| Which/how many accounts are connected | `accounts` | `kortix connectors accounts <slug>` |
+| Pin the default account for unnamed calls | — | `kortix connectors accounts <slug> --default <label>` |
 
 Both surfaces hit the same endpoints and return the same kind of link — use
 whichever fits your flow. The MCP tools are always loaded. The

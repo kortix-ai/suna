@@ -63,7 +63,7 @@ export interface SessionRuntimeEnvInput {
 
 /**
  * The sandbox audit relay's emission contract
- * (apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts) is read from
+ * (apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-audit-relay.ts) is read from
  * the SANDBOX environment. A self-host operator can set these in compose; a
  * hosted sandbox has no such file, so the API forwards its own values when an
  * operator sets them. Only these four names cross, and only when non-empty —
@@ -176,7 +176,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on
-    // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
+    // top — see apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). Per-call
     // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig

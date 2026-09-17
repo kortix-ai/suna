@@ -1,32 +1,15 @@
 import { Hono } from 'hono'
-
-import { resolveOpencodeConfigDirRelative, type Config } from '../config'
-import { refreshRepo, syncOpencodeConfigDirToBase, syncWorkspaceToBase } from '../git'
-import { scheduleRuntimeAssetsReconcile } from '../runtime-assets'
-import {
-  KORTIX_SERVICE_CALL_HEADER,
-  KORTIX_USER_CONTEXT_HEADER,
-  verifyKortixUserContext,
-} from '../kortix-user-context'
+import type { Config } from '../config'
+import type { HarnessControlOperations } from '../harness/control'
+import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
 import { logger } from '../logger'
-import type { Opencode } from '../opencode'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
   return header.slice('Bearer '.length).trim() || null
 }
 
-/**
- * A refresh may kick a runtime-assets pass only once OpenCode is serving. The
- * API refreshes on session open, i.e. during a resume's boot; a pass then can
- * install a new OpenCode pin and restart it under the boot in progress
- * (Essentia 2026-08-25 17:23). main.ts runs the post-boot pass itself.
- */
-export function refreshMayConvergeRuntime(opencodeState: string): boolean {
-  return opencodeState === 'ok'
-}
-
-export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
+export function createRefreshRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
 
@@ -108,78 +91,13 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
 
     refreshInFlight = (async () => {
       try {
-        const repo = syncBase
-          ? await syncWorkspaceToBase(cfg, baseSha)
-          : await refreshRepo(cfg)
-        // After the repo op, so a successful pull is reflected before we compare
-        // the config dir against base.
-        const configDir = syncConfigDir
-          ? await syncOpencodeConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
-          : undefined
-        // Verified swap, not a kill-then-hope restart: boot the new opencode,
-        // prove it serves, and only then retire the running one. A config that
-        // cannot boot leaves the session on the opencode it already had.
-        // `?verify_fail=1` — fault injection for the reload's SAFETY path.
-        //
-        // The decline branch (candidate does not boot → keep the running
-        // opencode, report why) cannot otherwise be reached on a real box: the
-        // API validates agent configs against opencode's schema before they
-        // reach a sandbox, so no supported input produces one that fails to
-        // start. Without this the branch is provable only in unit tests.
-        //
-        // Safe to expose. Its entire effect is the reload DECLINING — the same
-        // outcome the mechanism produces on a genuine failure. The session
-        // keeps the opencode it already had, nothing is destroyed, and the
-        // response says plainly that the config did not take.
-        const reload = skipRestart
-          ? null
-          : await opencode.reloadVerified({ forceFail: c.req.query('verify_fail') === '1' })
-        // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
-        // API. This route is what the platform already calls on warm reuse and
-        // reload, and (since this change) after a restart and a resume — the
-        // three moments a long-lived box comes back up without re-running its
-        // image build. Detached on purpose: the route's callers await its
-        // latency, and a ~100 MB download must never enter that budget. The
-        // reconcile is single-flighted, so a burst of refreshes runs one pass.
-        //
-        // NEVER while OpenCode is still booting. The API calls this route from
-        // the session-open path (env-sync) — on a resume that is BEFORE the
-        // runtime is ready — and a pass that finds a stale pin installs the
-        // new OpenCode and restarts it underneath the boot in progress
-        // (Essentia 2026-08-25 17:23: install at +9 s, spawn at +13 s, the
-        // API's start budget expired on both boxes). main.ts schedules the
-        // post-boot pass itself once `opencode-ready` is marked; this call is
-        // for a box that is already up.
-        if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
-        return c.json({
-          // The repo work succeeded either way; `reload.outcome` carries whether
-          // the new config actually took. Reporting ok:false here would hide a
-          // successful pull behind a reload that safely declined to swap.
-          ok: true,
-          repo: {
-            before: repo.before,
-            after: repo.after,
-          },
-          ...(configDir ? { config_dir: configDir } : {}),
-          ...(reload
-            ? {
-                reload: {
-                  outcome: reload.outcome,
-                  ...(reload.outcome === 'swapped'
-                    ? {
-                        port: reload.port,
-                        pid: reload.pid,
-                        // Whether the swap interrupted work someone was waiting
-                        // on. null = could not tell; never report that as false.
-                        turn_ended: reload.turnEnded,
-                      }
-                    : { reason: reload.reason }),
-                },
-              }
-            : {}),
-          opencode: opencode.getState(),
-          opencode_pid: opencode.getPid(),
-        })
+        return c.json(await control.refresh({
+          syncBase,
+          skipRestart,
+          syncConfigDir,
+          baseSha,
+          forceFail: c.req.query('verify_fail') === '1',
+        }))
       } catch (err) {
         const message = (err as Error).message || 'refresh failed'
         logger.error('[refresh] failed', err)

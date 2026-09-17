@@ -2,7 +2,7 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { setupLinkApiBase } from '@/components/setup-links/util';
 import { KortixLogo } from '@/components/ui/kortix-logo';
@@ -17,10 +17,30 @@ export default function GitHubConnectPopup() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [status, setStatus] = useState<'loading' | 'processing' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  // What the first run of the effect decided, so a second run (React
+  // StrictMode unmounts and remounts effects once in development) does not
+  // decide again. The first run strips the token from the URL; a second read
+  // finds no token, takes the fresh-open branch and sends the popup off to
+  // GitHub instead of closing it. The cleanup also cancels the pending close,
+  // so the re-run re-arms it.
+  const outcomeRef = useRef<{ closeAfterMs: number } | 'redirecting' | null>(null);
 
   useEffect(() => {
     let disposed = false;
     let closeTimer: ReturnType<typeof setTimeout> | null = null;
+    const armClose = (ms: number) => {
+      outcomeRef.current = { closeAfterMs: ms };
+      closeTimer = setTimeout(() => window.close(), ms);
+    };
+    const settled = outcomeRef.current;
+    if (settled === 'redirecting') return undefined;
+    if (settled) {
+      armClose(settled.closeAfterMs);
+      return () => {
+        disposed = true;
+        if (closeTimer) clearTimeout(closeTimer);
+      };
+    }
     const post = (message: ConnectMessage) => {
       try {
         if (window.opener && !window.opener.closed) {
@@ -53,7 +73,7 @@ export default function GitHubConnectPopup() {
           if (disposed) return;
           post({ type: 'github-connect-success', provider_token: accessToken });
           history.replaceState(null, '', window.location.pathname);
-          closeTimer = setTimeout(() => window.close(), 200);
+          armClose(200);
           return;
         }
 
@@ -65,6 +85,7 @@ export default function GitHubConnectPopup() {
         // configured FRONTEND_URL — passing a caller-chosen origin let any
         // attacker HTTPS origin receive the exchanged GitHub token (CWE-601).
         const apiBase = setupLinkApiBase();
+        outcomeRef.current = 'redirecting';
         window.location.replace(`${apiBase}/platform/github-app/oauth/authorize`);
       } catch (err) {
         if (disposed) return;
@@ -72,7 +93,7 @@ export default function GitHubConnectPopup() {
         setStatus('error');
         setErrorMessage(message);
         post({ type: 'github-connect-error', message });
-        closeTimer = setTimeout(() => window.close(), 2200);
+        armClose(2200);
       }
     };
 

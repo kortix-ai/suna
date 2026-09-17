@@ -20,11 +20,14 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { __resetEgressShimForTests, egressShimEnv, stopEgressShim } from '../egress-shim'
-import type { Opencode } from '../opencode'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../project-env'
-import { buildOpencodeApp } from '../proxy'
+import { Hono } from 'hono'
+import { createEnvRouter } from '../routes/env'
+import { createOpenCodeControlService } from '../harness/open-code/control'
+import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 
 const TEST_TOKEN = 'egress-shim-test-kortix-token-32ch'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-shim-'))
@@ -140,28 +143,21 @@ function catalog(rules: Array<{ identifier: string; hosts: string[] }>): string 
   })
 }
 
-function buildTestApp(opencode: Opencode): { app: ReturnType<typeof buildOpencodeApp>; envFile: string } {
+function buildTestApp(opencode: Opencode): { app: Hono; envFile: string } {
   const envFile = join(TEST_ENV_DIR, `agent-env-${testEnvFileSequence++}.sh`)
   const store = createProjectEnvStore({
     KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
     KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
     API_KEY: 'v1',
   } as NodeJS.ProcessEnv)
-  const app = buildOpencodeApp(
-    baseConfig(),
-    opencode,
-    Date.now(),
-    { repoMaterializationError: null, timeline: [] },
-    store,
-    null,
-    undefined,
-    envFile,
-  )
+  const cfg = baseConfig()
+  const control = createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg)).bind({ cfg, projectEnv: store, agentEnvFile: envFile })
+  const app = new Hono().route('/kortix/env', createEnvRouter(cfg, control))
   return { app, envFile }
 }
 
 async function postEnv(
-  app: ReturnType<typeof buildOpencodeApp>,
+  app: Hono,
   body: Record<string, unknown>,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await app.request('/kortix/env', {

@@ -160,6 +160,7 @@
     "actions": {
       "create": "Crea progetto",
       "tryAgain": "Riprova",
+      "upgrade": "Aggiorna il piano",
       "logOut": "Esci",
       "signingOut": "Disconnessione",
       "back": "Torna ai progetti"
@@ -18516,7 +18517,13 @@
       "text7f59f014cd7b": "È già installata sul proprietario che ti serve?",
       "text9180f7df8906": "Collega un'installazione che amministri già",
       "text0b0e4c425624": "Già collegata a {value0, plural, one {# altro account Kortix} other {# altri account Kortix}}.",
-      "text7dac2ca010fe": "Preparazione della trascrizione completa…"
+      "text7dac2ca010fe": "Preparazione della trascrizione completa…",
+      "textc6309c452031": "Collega account condiviso",
+      "textded4b88e52f7": "Nessun account condiviso finora",
+      "textc3bafa5156b4": "Non hai ancora un account personale",
+      "textea5d0ffa0962": "Un responsabile del progetto collega l’account condiviso.",
+      "text3d6627454174": "Imposta credenziale",
+      "text929505ef815a": "Nessun account è ancora collegato. Aggiungi il tuo qui sotto, oppure chiedi a un responsabile del progetto di collegare un account condiviso."
     }
   },
   "projectOnboarding": {

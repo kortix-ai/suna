@@ -7,21 +7,16 @@ import type { SessionScope } from '@kortix/sdk';
 import {
   CpuIcon as Cpu,
   KeyIcon as KeyRound,
-  PlugIcon as PlugZap,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
-  SessionConnectorsEditor,
   SessionSecretsEditor,
 } from '@/features/session/scope/session-scope-control';
 import {
   createSessionScopeDraft,
-  resetSessionConnectorBindings,
   resetSessionSecrets,
-  sessionConnectorsAreOverridden,
-  sessionConnectorsSummary,
   sessionSecretsAreOverridden,
   sessionSecretsSummary,
   type SessionScopeCommit,
@@ -244,28 +239,12 @@ export function SessionOverridesToolbar({
       ),
       onReset: () => onChange(resetSessionSecrets(draft)),
     });
-    list.push({
-      id: 'connectors',
-      name: 'Connectors',
-      icon: PlugZap,
-      hint: tI18nComplete.raw('textaea537d63c8c'),
-      summary:
-        activeCatalog.connector_connections.status === 'ready'
-          ? sessionConnectorsSummary(draft)
-          : 'Unavailable',
-      overridden: sessionConnectorsAreOverridden(draft),
-      description: tI18nComplete.raw('text11022f38d525'),
-      resetLabel: 'Reset to agent default',
-      editor: (
-        <SessionConnectorsEditor
-          draft={draft}
-          catalog={activeCatalog}
-          disabled={controlsDisabled || saveScope.isPending}
-          onChange={onChange}
-        />
-      ),
-      onReset: () => onChange(resetSessionConnectorBindings(draft, activeCatalog)),
-    });
+    // NO Connectors axis. A session used to pin one connection per connector
+    // here, and check a connector that had nothing connected — which recorded a
+    // requirement the next turn refused on, with no way to authorize from the
+    // card it showed. Credentials are not a session-minting decision: the agent
+    // may use every account it is entitled to and names one at call time
+    // (`kortix connectors call --account`, `accounts` to see them).
     if (pooledSecretsEnabled) {
       list.push({
         id: 'provider-keys',

@@ -4,10 +4,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
-  connectionOwnerTypeForStrategy,
-  connectorAuthorizationStrategyForProvider,
-  connectorAuthorizationStrategyIsEditable,
-  connectorAuthorizationUpdateIsPending,
   connectorConnectionQueryKeys,
   connectorConnectionSlugAfterNameChange,
   connectorSetupStatus,
@@ -89,13 +85,16 @@ describe('connector slug proposal', () => {
 
 describe('Easy Connect connection draft', () => {
   test('keeps the provider app and sends the selected connection fields', () => {
+    // Ownership is an ACCOUNT property now (`owner_type` on the connection),
+    // not a connector-level authorization strategy — the draft carries no
+    // strategy at all. See the connector-credentials incident: a `user`-mode
+    // connector had no connect flow anywhere.
     expect(
       buildEasyConnectConnectorDraft(
         { slug: 'google_drive', name: 'Google Drive' },
         {
           name: 'Finance Drive',
           slug: 'google_drive-finance',
-          authorizationStrategy: 'user',
         },
       ),
     ).toEqual({
@@ -104,26 +103,23 @@ describe('Easy Connect connection draft', () => {
       provider: 'pipedream',
       app: 'google_drive',
       account: 'default',
-      authorization_strategy: 'user',
       create_only: true,
     });
   });
 });
 
 describe('connector creation contract', () => {
-  test('forces create-only mode and the provider-compatible authorization strategy', () => {
+  test('forces create-only mode; leaves the deprecated-inert strategy field untouched', () => {
     expect(
       createOnlyConnectorDraft({
         slug: 'inbox',
         provider: 'channel',
         platform: 'email',
-        authorization_strategy: 'user',
       }),
     ).toEqual({
       slug: 'inbox',
       provider: 'channel',
       platform: 'email',
-      authorization_strategy: 'project',
       create_only: true,
     });
   });
@@ -202,33 +198,14 @@ describe('connector setup status', () => {
   });
 });
 
-describe('connector authorization strategy controls', () => {
-  test('maps each strategy to its only valid connection owner', () => {
-    expect(connectionOwnerTypeForStrategy('project')).toBe('project');
-    expect(connectionOwnerTypeForStrategy('user')).toBe('member');
-  });
-
-  test('forces managed providers to project authorization', () => {
-    expect(connectorAuthorizationStrategyForProvider('channel', 'user')).toBe('project');
-    expect(connectorAuthorizationStrategyForProvider('computer', 'user')).toBe('project');
-    expect(connectorAuthorizationStrategyForProvider('pipedream', 'user')).toBe('user');
-    expect(connectorAuthorizationStrategyForProvider('openapi', 'user')).toBe('user');
-  });
-
-  test('locks every channel and computer connection regardless of slug', () => {
-    expect(connectorAuthorizationStrategyIsEditable('channel')).toBe(false);
-    expect(connectorAuthorizationStrategyIsEditable('computer')).toBe(false);
-    expect(connectorAuthorizationStrategyIsEditable('pipedream')).toBe(true);
-    expect(connectorAuthorizationStrategyIsEditable('http')).toBe(true);
-  });
-
-  test('keeps controls locked until the refreshed strategy matches the submission', () => {
-    expect(connectorAuthorizationUpdateIsPending('project', 'user', false)).toBe(true);
-    expect(connectorAuthorizationUpdateIsPending('user', 'user', false)).toBe(false);
-    expect(connectorAuthorizationUpdateIsPending('user', null, true)).toBe(true);
-    expect(connectorAuthorizationUpdateIsPending('user', null, false)).toBe(false);
-  });
-
+// The connector-level authorization-strategy controls
+// (`connectionOwnerTypeForStrategy`, `connectorAuthorizationStrategyForProvider`,
+// `connectorAuthorizationStrategyIsEditable`, `connectorAuthorizationUpdateIsPending`)
+// are gone — `connectors.authorization_strategy` no longer gates which owner
+// type a connection can be. Ownership lives on the account (`owner_type`);
+// see `connectors-view.tsx`'s `ConnectionsList` (two owner groups) and
+// `use-tool-connect.ts` (always the shared account).
+describe('connector connection query keys', () => {
   test('returns every cache affected by connection changes', () => {
     expect(connectorConnectionQueryKeys('project-1')).toEqual([
       qk.project.connectors('project-1'),

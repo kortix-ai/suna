@@ -7,7 +7,6 @@ import { join } from 'node:path'
 import {
   AGENT_SWAP_EXIT_CODE,
   reconcileRuntimeAssets,
-  refreshOpencodePluginPin,
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
@@ -16,7 +15,14 @@ import {
   runtimeConvergenceReport,
   resetRuntimeConvergenceReportForTests,
   overlayHash,
+  type RuntimeAssetsOptions,
 } from '../runtime-assets'
+import {
+  createOpenCodeAssetsService,
+  refreshOpencodePluginPin,
+  type OpenCodeAssetsOptions,
+  type OpenCodeAssetsRuntime,
+} from '../harness/open-code/assets'
 
 /**
  * Convergent runtime — the v2 half of `reconcileRuntimeAssets`.
@@ -126,8 +132,18 @@ function stubFetch(opts: ManifestOptions & { agentBody?: string; agentStatus?: n
 async function run(
   ws: Awaited<ReturnType<typeof workspace>>,
   stub: ReturnType<typeof stubFetch>,
-  extra: Record<string, unknown> = {},
+  extra: RuntimeAssetsOptions & OpenCodeAssetsOptions & { runtime?: OpenCodeAssetsRuntime } = {},
 ) {
+  const {
+    runtime,
+    installOpencode,
+    readOpencodeVersion,
+    opencodeBinaryExists,
+    turnProbe,
+    opencodeDepsDir,
+    installPluginDeps,
+    ...shared
+  } = extra
   return reconcileRuntimeAssets({
     apiUrl: API_URL,
     token: TOKEN,
@@ -137,17 +153,25 @@ async function run(
     agentStateDir: ws.stateDir,
     agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
-    ...extra,
+    ...shared,
+    assets: shared.assets ?? createOpenCodeAssetsService(runtime, {
+      installOpencode,
+      readOpencodeVersion,
+      opencodeBinaryExists,
+      turnProbe,
+      opencodeDepsDir,
+      installPluginDeps,
+    }),
   })
 }
 
 /** A seam whose opencode is reachable and idle unless a test says otherwise. */
 function opencodeSeam(restarts: string[] = []) {
   return {
-    seam: {
-      opencodeBaseUrl: () => 'http://127.0.0.1:4096',
-      workspace: '/workspace',
-      restartOpencode: async () => {
+    runtime: {
+      getInternalUrl: () => 'http://127.0.0.1:4096',
+      workspace: () => '/workspace',
+      restart: async () => {
         restarts.push('restart')
       },
     },

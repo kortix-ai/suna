@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test'
 
 describe('initial OpenCode session ordering', () => {
   test('boot keeps subscribe-before-root ordering and resolves the live URL before root lookup', async () => {
-    const src = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+    const src = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
     const runtimeStart = src.indexOf('async function startSessionRuntime(')
     const runtimeEnd = src.indexOf('\n// Establish the session', runtimeStart)
     const runtime = src.slice(runtimeStart, runtimeEnd)
-    const eventLoopAt = runtime.indexOf('startOpencodeEventLoop(opencode, cfg, eventHandlers)')
+    const eventLoopAt = runtime.indexOf('harness.events.subscribe(cfg, eventHandlers)')
     const initialSessionAt = runtime.indexOf('await maybeCreateInitialOpencodeSession(', eventLoopAt)
 
     expect(eventLoopAt).toBeGreaterThan(-1)
     expect(initialSessionAt).toBeGreaterThan(eventLoopAt)
-    expect(runtime.slice(eventLoopAt, initialSessionAt)).not.toContain('await startOpencodeEventLoop')
+    expect(runtime.slice(eventLoopAt, initialSessionAt)).not.toContain('await harness.events.subscribe')
 
     const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
     const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)
@@ -32,7 +32,7 @@ describe('initial OpenCode session ordering', () => {
   })
 
   test('initial prompt delivery never waits for the event stream handshake', async () => {
-    const src = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+    const src = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
     const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
     const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)
     const initial = src.slice(initialStart, initialEnd)

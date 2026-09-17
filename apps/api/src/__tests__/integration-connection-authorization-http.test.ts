@@ -246,13 +246,20 @@ beforeAll(async () => {
       label: 'Forged service-account OAuth connection',
     },
     {
+      // Historically seeded to prove this row was UNREACHABLE, because the
+      // connector's (retired) strategy was 'user'. Reachability is a property
+      // of the ROW now (connection-access.ts): `ownerType: 'project'` is
+      // unconditionally reachable, so this is a perfectly normal shared
+      // connection that happens to live on a connector some old kortix.yaml
+      // once called 'user'. Kept as USER_STRATEGY_PROJECT_CONNECTION so the
+      // name still documents what makes this fixture worth having.
       connectionId: USER_STRATEGY_PROJECT_CONNECTION,
       accountId: ACCOUNT,
       projectId: PROJECT,
       connectorId: PIPEDREAM_CONNECTOR,
       ownerType: 'project',
       ownerId: null,
-      label: 'Invalid shared OAuth connection',
+      label: 'Shared Google Sheets (on a formerly user-strategy connector)',
     },
   ]);
   await db.insert(projectSessions).values([
@@ -333,7 +340,7 @@ function request(method: string, path: string, token: string, body?: unknown) {
 }
 
 describe('connection owner authorization over HTTP', () => {
-  test('members list the project default and only their own personal connection', async () => {
+  test('members list every shared connection plus only their own personal connection', async () => {
     const response = await request(
       'GET',
       `/v1/projects/${PROJECT}/connections`,
@@ -343,7 +350,12 @@ describe('connection owner authorization over HTTP', () => {
     const ids = (
       (await response.json()) as { connections: Array<{ connection_id: string }> }
     ).connections.map((connection) => connection.connection_id);
-    expect(new Set(ids)).toEqual(new Set([DEFAULT_CONNECTION, ALICE_CONNECTION]));
+    // A project-owned connection is unconditionally reachable (connection-access.ts),
+    // so USER_STRATEGY_PROJECT_CONNECTION is listed too — its connector's
+    // (retired) strategy no longer hides it.
+    expect(new Set(ids)).toEqual(
+      new Set([DEFAULT_CONNECTION, USER_STRATEGY_PROJECT_CONNECTION, ALICE_CONNECTION]),
+    );
   });
 
   test('managers administer system connections but cannot enumerate personal connections', async () => {
@@ -356,7 +368,7 @@ describe('connection owner authorization over HTTP', () => {
     const ids = (
       (await response.json()) as { connections: Array<{ connection_id: string }> }
     ).connections.map((connection) => connection.connection_id);
-    expect(new Set(ids)).toEqual(new Set([DEFAULT_CONNECTION]));
+    expect(new Set(ids)).toEqual(new Set([DEFAULT_CONNECTION, USER_STRATEGY_PROJECT_CONNECTION]));
   });
 
   test('managers see EVERY member connection via the read-only roster (/all)', async () => {
@@ -452,7 +464,7 @@ describe('connection owner authorization over HTTP', () => {
     const ids = (
       (await listed.json()) as { connections: Array<{ connection_id: string }> }
     ).connections.map((connection) => connection.connection_id);
-    expect(new Set(ids)).toEqual(new Set([DEFAULT_CONNECTION]));
+    expect(new Set(ids)).toEqual(new Set([DEFAULT_CONNECTION, USER_STRATEGY_PROJECT_CONNECTION]));
 
     for (const [operation, body] of [
       ['credential', { value: 'service-account-capability' }],
@@ -545,15 +557,23 @@ describe('connection owner authorization over HTTP', () => {
     expect(mismatched.status).toBe(404);
   });
 
-  test('project strategy rejects member authorization reconciliation', async () => {
+  // A `project`-owned account and a `member`-owned account now coexist on
+  // the SAME connector without restriction — the exclusive connector-level
+  // strategy that used to refuse this is retired (connection-access.ts).
+  test('a member can hold their own private connection on a connector that also has a shared one', async () => {
     const token = await mint(MANAGER);
     const self = await request(
       'POST',
       `/v1/projects/${PROJECT}/connections/me`,
       token,
-      { connector_alias: 'customer_data', label: 'Rejected member authorization' },
+      { connector_alias: 'customer_data', label: 'Manager private authorization' },
     );
-    expect(self.status).toBe(409);
+    expect(self.status).toBe(201);
+    expect(await self.json()).toMatchObject({
+      connector_alias: 'customer_data',
+      owner_type: 'member',
+      owner_id: MANAGER,
+    });
 
     const managed = await request(
       'POST',
@@ -563,13 +583,14 @@ describe('connection owner authorization over HTTP', () => {
         connector_alias: 'customer_data',
         owner_type: 'member',
         owner_id: MANAGER,
-        label: 'Rejected managed member authorization',
+        label: 'Manager private authorization, take two',
       },
     );
-    expect(managed.status).toBe(409);
+    expect(managed.status).toBe(201);
+    expect(await managed.json()).toMatchObject({ owner_type: 'member', owner_id: MANAGER });
   });
 
-  test('user strategy rejects project authorization reconciliation', async () => {
+  test('a project can hold a shared connection on a connector that also has private ones', async () => {
     const response = await request(
       'POST',
       `/v1/projects/${PROJECT}/connections`,
@@ -577,10 +598,15 @@ describe('connection owner authorization over HTTP', () => {
       {
         connector_alias: 'personal_data',
         owner_type: 'project',
-        label: 'Rejected project authorization',
+        label: 'Shared authorization alongside private ones',
       },
     );
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      connector_alias: 'personal_data',
+      owner_type: 'project',
+      owner_id: null,
+    });
   });
 
   test('project strategy accepts project authorization reconciliation', async () => {
@@ -602,17 +628,28 @@ describe('connection owner authorization over HTTP', () => {
     });
   });
 
-  test('project OAuth bootstrap rejects a user authorization strategy', async () => {
+  // No connector-level gate (oauth2-connectors.ts): the connections-manage
+  // capability asserted by the route is the whole check now, regardless of
+  // the connector's (retired) authorization strategy.
+  test('project OAuth bootstrap works on any connector for a connections manager', async () => {
     const response = await request(
       'POST',
       `/v1/projects/${PROJECT}/connectors/google_sheets/oauth2/connection`,
       await mint(MANAGER),
       {},
     );
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ connection_id: expect.any(String) });
   });
 
-  test('shared account-link routes reject a user authorization strategy', async () => {
+  // The connector-level strategy no longer gates shared account-link routes —
+  // storing/clearing a shared credential and minting a connect-request link
+  // work on any connector now. The two genuinely-remaining 404s below are a
+  // DIFFERENT, still-real limitation: the legacy Pipedream connect flow
+  // (db-deps.ts connectorConnect) only ever authorized the ONE shared project
+  // account, so `owner: 'me'` (the default on both routes) is refused for it —
+  // that has nothing to do with the retired strategy flag.
+  test('shared account-link routes work regardless of the connector\'s (retired) authorization strategy', async () => {
     const manager = await mint(MANAGER);
     const connectRequest = await request(
       'POST',
@@ -620,22 +657,23 @@ describe('connection owner authorization over HTTP', () => {
       manager,
       { slug: 'google_sheets' },
     );
-    expect(connectRequest.status).toBe(409);
+    expect(connectRequest.status).toBe(200);
 
     const sharedCredential = await request(
       'PUT',
       `/v1/connectors/projects/${PROJECT}/connectors/google_sheets/credential`,
       manager,
-      { value: 'shared-user-strategy-credential' },
+      { value: 'shared-credential' },
     );
-    expect(sharedCredential.status).toBe(409);
+    expect(sharedCredential.status).toBe(200);
     const sharedDisconnect = await request(
       'DELETE',
       `/v1/connectors/projects/${PROJECT}/connectors/google_sheets/credential`,
       manager,
     );
-    expect(sharedDisconnect.status).toBe(409);
+    expect(sharedDisconnect.status).toBe(200);
 
+    // Legacy Pipedream `me` limitation — unrelated to strategy, see comment above.
     for (const operation of ['connect', 'connect/finalize'] as const) {
       const response = await request(
         'POST',
@@ -655,10 +693,11 @@ describe('connection owner authorization over HTTP', () => {
     const publicStart = await app.request(`/v1/setup-links/connectors/${token}/start`, {
       method: 'POST',
     });
-    expect(publicStart.status).toBe(409);
+    // Same Pipedream `me` limitation — the minted link defaults to `owner: 'me'`.
+    expect(publicStart.status).toBe(404);
   });
 
-  test('native OAuth routes enforce strategy and owner identity', async () => {
+  test('native OAuth routes enforce connection reachability and owner identity', async () => {
     const manager = await mint(MANAGER);
     const alice = await mint(ALICE);
 
@@ -676,12 +715,16 @@ describe('connection owner authorization over HTTP', () => {
     );
     expect(personal.status).toBe(200);
 
-    const mismatchedProject = await request(
+    // A project-owned connection is unconditionally reachable now
+    // (connection-access.ts) — the connector's (retired) 'user' strategy no
+    // longer makes this row a mismatch. Any manager can read it, same as any
+    // other project-owned connection.
+    const sharedOnAFormerlyUserStrategyConnector = await request(
       'GET',
       `/v1/projects/${PROJECT}/connections/${USER_STRATEGY_PROJECT_CONNECTION}/oauth2/status`,
       manager,
     );
-    expect(mismatchedProject.status).toBe(404);
+    expect(sharedOnAFormerlyUserStrategyConnector.status).toBe(200);
 
     const mismatchedExternal = await request(
       'GET',
@@ -691,7 +734,15 @@ describe('connection owner authorization over HTTP', () => {
     expect(mismatchedExternal.status).toBe(404);
   });
 
-  test('native OAuth callback rejects a strategy changed after authorization starts', async () => {
+  // Reachability is a property of the CONNECTION row now (connection-access.ts),
+  // not a connector-level strategy flag — the flag is retired and unread. The
+  // realistic version of "changed after authorization starts" is the row's
+  // owner changing out from under the flow: Alice starts it on her own
+  // member-owned connection, the account gets reassigned to Bob mid-flight,
+  // and the callback must refuse to hand Alice's finished authorization to a
+  // connection she no longer owns. The wire error code is kept verbatim
+  // (oauth2-store.ts) — only what it means has changed.
+  test('native OAuth callback rejects a connection reassigned to a different owner after authorization starts', async () => {
     const alice = await mint(ALICE);
     const saved = await request(
       'PUT',
@@ -720,9 +771,9 @@ describe('connection owner authorization over HTTP', () => {
     if (!state) throw new Error('OAuth authorization state is missing');
 
     await db
-      .update(connectors)
-      .set({ authorizationStrategy: 'project' })
-      .where(eq(connectors.connectorId, USER_CONNECTOR));
+      .update(connectorConnections)
+      .set({ ownerId: BOB })
+      .where(eq(connectorConnections.connectionId, ALICE_CONNECTION));
     try {
       const result = await completeAuthorizationCodeSession({
         stateHash: createHash('sha256').update(state).digest('hex'),
@@ -735,9 +786,9 @@ describe('connection owner authorization over HTTP', () => {
       });
     } finally {
       await db
-        .update(connectors)
-        .set({ authorizationStrategy: 'user' })
-        .where(eq(connectors.connectorId, USER_CONNECTOR));
+        .update(connectorConnections)
+        .set({ ownerId: ALICE })
+        .where(eq(connectorConnections.connectionId, ALICE_CONNECTION));
     }
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { applyManagedOpencodeEnv } from '../managed-opencode-env'
+import { applyManagedOpencodeEnv } from '../harness/open-code/managed-opencode-env'
 
 describe('managed OpenCode environment', () => {
   test('disables passive continuation over a conflicting project value', () => {

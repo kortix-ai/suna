@@ -167,9 +167,6 @@ export function connectorBindingOptions(
     if (!connector.authSecret || connector.provider === 'channel') {
       disabled = true;
       description = 'This connector manages authentication through its platform connection.';
-    } else if (connector.authorizationStrategy !== 'project') {
-      disabled = true;
-      description = 'Change authorization ownership to Project before binding a project secret.';
     } else if (connector.credentialSource === 'stored') {
       disabled = true;
       description = 'Disconnect the stored connector credential before using a project secret.';

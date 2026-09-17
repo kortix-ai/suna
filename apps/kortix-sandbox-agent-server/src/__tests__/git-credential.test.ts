@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import {
   configureGitCredentialHelper,
   configureRepoCredentialHelper,

@@ -16,7 +16,7 @@ import { OPENCODE_PRIMARY_PORT, OPENCODE_STANDBY_PORT, isOpencodePort } from '..
 
 const SRC = await Bun.file(new URL('./ws-proxy.ts', import.meta.url).pathname).text();
 const HEALTH = await Bun.file(
-  new URL('../../../kortix-sandbox-agent-server/src/routes/health.ts', import.meta.url).pathname,
+  new URL('../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts', import.meta.url).pathname,
 ).text();
 
 function code(): string {

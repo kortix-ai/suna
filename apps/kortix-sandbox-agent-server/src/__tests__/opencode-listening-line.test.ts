@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeLifecycle } from '../harness/open-code/lifecycle'
 
 // OpenCode 1.18 binds its port ~100 ms before its request handler exists
 // (Effect NodeHttpServer: listen() in `make`, on("request") in `serve`). A
@@ -16,7 +16,7 @@ import { createOpencodeSupervisor } from '../opencode'
 // the window has closed.
 
 let root: string
-let supervisor: ReturnType<typeof createOpencodeSupervisor> | null
+let lifecycle: ReturnType<typeof createOpencodeLifecycle> | null
 
 function reservePort(): number {
   const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
@@ -77,11 +77,11 @@ function heldCount(heldFile: string): number {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-listening-line-'))
-  supervisor = null
+  lifecycle = null
 })
 
 afterEach(async () => {
-  await supervisor?.stop()
+  await lifecycle?.stop()
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -98,7 +98,7 @@ function makeCfg(): Config {
   } as Config
 }
 
-describe('OpenCode supervisor listening announcement', () => {
+describe('OpenCode lifecycle listening announcement', () => {
   test('nothing is sent before the announcement; the first probe lands after the window', async () => {
     const configDir = join(root, 'config')
     const binary = join(root, 'opencode')
@@ -116,7 +116,7 @@ describe('OpenCode supervisor listening announcement', () => {
     }) as typeof process.stdout.write
     try {
       const ready = deferred()
-      supervisor = createOpencodeSupervisor(makeCfg(), configDir, undefined, {
+      lifecycle = createOpencodeLifecycle(makeCfg(), configDir, undefined, {
         binaryPathOverride: binary,
         configPathOverride: join(root, 'runtime-config.json'),
         onStartupMark: (label) => marks.push(label),
@@ -124,8 +124,8 @@ describe('OpenCode supervisor listening announcement', () => {
       })
 
       const started = Date.now()
-      await supervisor.start()
-      await supervisor.waitForCurrentListening()
+      await lifecycle.start()
+      await lifecycle.waitForCurrentListening()
       const listeningAfterMs = Date.now() - started
       await ready.promise
       const readyAfterMs = Date.now() - started
@@ -151,7 +151,7 @@ describe('OpenCode supervisor listening announcement', () => {
     writeDeadWindowBinary(binary, 300, false, heldFile)
 
     const ready = deferred()
-    supervisor = createOpencodeSupervisor(makeCfg(), configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(makeCfg(), configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       // The real value is 10 s; the point here is only that probing resumes.
@@ -160,13 +160,13 @@ describe('OpenCode supervisor listening announcement', () => {
     })
 
     const started = Date.now()
-    await supervisor.start()
+    await lifecycle.start()
     await ready.promise
     const readyAfterMs = Date.now() - started
 
     // The fallback pays for the window (a probe dropped in it waits its 2 s
     // timeout), but the process is found and the listening waiter resolves.
     expect(readyAfterMs).toBeLessThan(6_000)
-    await supervisor.waitForCurrentListening()
+    await lifecycle.waitForCurrentListening()
   }, 15_000)
 })

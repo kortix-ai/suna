@@ -46,7 +46,6 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { isConnectorsEnabled } from '@/lib/config';
 
 import {
-  connectorAuthorizationStrategyIsEditable,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
   proposeConnectorConnectionSlug,
@@ -161,7 +160,6 @@ export function DiscoverCatalogue({
           provider: 'pipedream',
           app: target.app.slug,
           account: 'default',
-          authorization_strategy: connection.authorizationStrategy,
         };
       } else {
         if (!target.variant.connector) {
@@ -180,7 +178,6 @@ export function DiscoverCatalogue({
           slug: connection.slug,
           name: connection.name.trim(),
           provider: template.provider,
-          authorization_strategy: connection.authorizationStrategy,
           ...(template.spec ? { spec: template.spec } : {}),
           ...(template.url ? { url: template.url } : {}),
           ...(template.transport ? { transport: template.transport } : {}),
@@ -474,11 +471,6 @@ export function DiscoverCatalogue({
         }
         existingSlugs={existingSlugs}
         pending={addConnector.isPending}
-        authorizationStrategyDisabled={
-          connectorTarget?.source === 'connector' && connectorTarget.variant.connector
-            ? !connectorAuthorizationStrategyIsEditable(connectorTarget.variant.connector.provider)
-            : false
-        }
         onOpenChange={(open) => !open && setConnectorTarget(null)}
         onSubmit={(connection) => {
           if (!connectorTarget) return;

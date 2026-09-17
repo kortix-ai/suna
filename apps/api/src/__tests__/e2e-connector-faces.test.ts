@@ -526,6 +526,9 @@ describe('MCP face', () => {
         'discover',
         'describe',
         'call',
+        // Lists an account's `me`/`project`/named accounts (connector-gateway/mcp.ts)
+        // so a caller can choose WHICH connection a call runs as before calling.
+        'accounts',
         'connect',
         'finalize_connection',
         'request_secret',

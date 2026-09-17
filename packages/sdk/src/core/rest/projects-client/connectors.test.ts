@@ -51,6 +51,11 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   syncConnectors,
   updateConnectionCredential,
+  callConnector,
+  listConnectorAccounts,
+  type ConnectorCallResult,
+  type ConnectorConnectOptions,
+  type ConnectorConnectOwner,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -1072,4 +1077,116 @@ test('connect surfaces the already-connected verdict the popup flow branches on'
   };
   expect(noAuth.connected).toBe(true);
   expect(needsAuth.connected).toBe(false);
+});
+
+/**
+ * Account selection. One connector can hold the project's shared account and
+ * each member's own, and the agent may use any of them — so a call has to be
+ * able to say WHICH, and a caller has to be able to find out what the choices
+ * are. Before this, resolution silently took the first entitled account and
+ * the only way to influence it was a per-session dropdown in the composer.
+ */
+test('callConnector sends no account key when the caller names none', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' });
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/call');
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+  });
+});
+
+test('callConnector forwards the chosen account so the gateway runs as it', async () => {
+  nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
+  await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' }, { account: 'Personal' });
+  expect(calls[0].body).toEqual({
+    connector: 'gmail',
+    action: 'send_email',
+    args: { to: 'a@b.c' },
+    account: 'Personal',
+  });
+});
+
+test('listConnectorAccounts reads the accounts a call may run as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connector: 'gmail',
+      accounts: [
+        { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
+        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+      ],
+    },
+  };
+  const accounts = await listConnectorAccounts('P1', 'gmail');
+  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
+  expect(calls[0].method).toBe('GET');
+  expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
+  // Default first, because that is the one an unselected call resolves to.
+  expect(accounts[0].is_default).toBe(true);
+});
+
+/**
+ * Owner is a choice made at connect time, not a connector-wide mode.
+ *
+ * `authorization_strategy` made the two owner types mutually exclusive per
+ * connector, and a `user`-strategy connector reached no connect flow at all —
+ * the refusal that had no remedy. The caller now states who the new account
+ * belongs to: `me` (the signed-in human's own) or `project` (shared).
+ */
+test('connectorConnect sends no owner when the caller names none', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(last().method).toBe('POST');
+  // Omitted rather than null: the API reads the key's presence to pick its default.
+  expect(last().body).toEqual({});
+});
+
+test('connectorConnect forwards the owner the new account is created under', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  await connectorConnect('P1', 'gmail', { owner: 'project' });
+  expect(last().body).toEqual({ owner: 'project' });
+
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/y' } };
+  await connectorConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('pipedreamConnect, the published alias, carries the owner too', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/z' } };
+  await pipedreamConnect('P1', 'gmail', { owner: 'me' });
+  expect(last().body).toEqual({ owner: 'me' });
+});
+
+test('a call result echoes the account it ran as', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      ok: true,
+      data: { id: 1 },
+      account: { connection_id: 'c-2', label: 'Personal', owner_type: 'member' },
+    },
+  };
+  // A transcript has to be able to show WHICH identity sent the mail, including
+  // when the caller named no account and resolution picked one.
+  const result: ConnectorCallResult<{ id: number }> = await callConnector(
+    'P1',
+    'gmail.send_email',
+    { to: 'a@b.c' },
+  );
+  expect(result.account).toEqual({
+    connection_id: 'c-2',
+    label: 'Personal',
+    owner_type: 'member',
+  });
+  expect(result.account?.owner_type).toBe('member');
+});
+
+test('ConnectorConnectOwner is the two words every connect surface accepts', () => {
+  const owners: ConnectorConnectOwner[] = ['project', 'me'];
+  const options: ConnectorConnectOptions = { owner: 'project' };
+  expect(owners).toEqual(['project', 'me']);
+  expect(options.owner).toBe('project');
 });

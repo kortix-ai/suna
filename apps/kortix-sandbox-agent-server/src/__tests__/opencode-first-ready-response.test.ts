@@ -3,13 +3,13 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { createOpencodeSupervisor } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpencodeLifecycle } from '../harness/open-code/lifecycle'
 
-const MAIN = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+const MAIN = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text()
 
 let root: string
-let supervisor: ReturnType<typeof createOpencodeSupervisor> | null
+let lifecycle: ReturnType<typeof createOpencodeLifecycle> | null
 
 function reservePort(): number {
   const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
@@ -30,15 +30,15 @@ async function waitFor(check: () => boolean, timeoutMs = 5_000): Promise<void> {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-first-ready-response-'))
-  supervisor = null
+  lifecycle = null
 })
 
 afterEach(async () => {
-  await supervisor?.stop()
+  await lifecycle?.stop()
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('OpenCode supervisor first ready response', () => {
+describe('OpenCode lifecycle first ready response', () => {
   test('keeps readiness pending across asynchronous spawn errors and later recovery', async () => {
     const workspace = join(root, 'workspace')
     const configDir = join(root, 'config')
@@ -56,7 +56,7 @@ describe('OpenCode supervisor first ready response', () => {
     } as Config
     let spawnAttempts = 0
     let readySettled = false
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onStartupMark: (label) => {
@@ -67,11 +67,11 @@ describe('OpenCode supervisor first ready response', () => {
       },
     })
 
-    await supervisor.start()
+    await lifecycle.start()
 
     await waitFor(() => spawnAttempts >= 2, 3_000)
     expect(readySettled).toBe(false)
-    expect(supervisor.getPid()).toBeNull()
+    expect(lifecycle.getPid()).toBeNull()
 
     writeFileSync(
       binary,
@@ -86,7 +86,7 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
     chmodSync(binary, 0o755)
 
     await waitFor(() => readySettled)
-    await waitFor(() => supervisor?.getState() === 'ok')
+    await waitFor(() => lifecycle?.getState() === 'ok')
     expect(spawnAttempts).toBeGreaterThanOrEqual(3)
   }, 15_000)
 
@@ -127,7 +127,7 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
       gitUserEmail: 'agent@kortix.ai',
     } as Config
     let reports = 0
-    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+    lifecycle = createOpencodeLifecycle(cfg, configDir, undefined, {
       binaryPathOverride: binary,
       configPathOverride: join(root, 'runtime-config.json'),
       onFirstReadyResponse: () => {
@@ -135,7 +135,7 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
       },
     })
 
-    await supervisor.start()
+    await lifecycle.start()
     await waitFor(() => existsSync(probedFile))
     expect(reports).toBe(0)
 
@@ -144,35 +144,35 @@ console.log('opencode server listening on http://127.0.0.1:' + port)
 
     writeFileSync(readyFile, 'ready')
     await waitFor(() => reports === 1)
-    await waitFor(() => supervisor?.getState() === 'ok')
+    await waitFor(() => lifecycle?.getState() === 'ok')
 
     rmSync(readyFile)
-    await supervisor.restart()
+    await lifecycle.restart()
     writeFileSync(readyFile, 'ready')
-    await waitFor(() => supervisor?.getState() === 'ok')
+    await waitFor(() => lifecycle?.getState() === 'ok')
     expect(reports).toBe(1)
 
     rmSync(readyFile)
-    const livePid = supervisor.getPid()
+    const livePid = lifecycle.getPid()
     expect(livePid).not.toBeNull()
     process.kill(livePid as number, 'SIGKILL')
-    await waitFor(() => supervisor?.getPid() === null)
+    await waitFor(() => lifecycle?.getPid() === null)
 
     writeFileSync(readyFile, 'ready')
-    await waitFor(() => supervisor?.getState() === 'ok')
+    await waitFor(() => lifecycle?.getState() === 'ok')
     expect(reports).toBe(1)
   }, 15_000)
 
   test('wires the first ready response to its own de-duplicated boot mark', () => {
-    const supervisorAt = MAIN.indexOf('const opencode = createOpencodeSupervisor(')
-    const sessionRuntimeAt = MAIN.indexOf('void startSessionRuntime(', supervisorAt)
-    const bootPath = MAIN.slice(supervisorAt, sessionRuntimeAt)
+    const harnessAt = MAIN.indexOf('const harness = createOpenCodeHarnessService(')
+    const sessionRuntimeAt = MAIN.indexOf('void startSessionRuntime(', harnessAt)
+    const bootPath = MAIN.slice(harnessAt, sessionRuntimeAt)
     const callbackAt = bootPath.indexOf('onFirstReadyResponse: () => {')
     const nextOptionAt = bootPath.indexOf('deferDirectoryProbe:', callbackAt)
     const callback = bootPath.slice(callbackAt, nextOptionAt)
 
-    expect(supervisorAt).toBeGreaterThan(-1)
-    expect(sessionRuntimeAt).toBeGreaterThan(supervisorAt)
+    expect(harnessAt).toBeGreaterThan(-1)
+    expect(sessionRuntimeAt).toBeGreaterThan(harnessAt)
     expect(callbackAt).toBeGreaterThan(-1)
     expect(nextOptionAt).toBeGreaterThan(callbackAt)
     expect(callback).toContain("mark.label === 'opencode-session-api-ready'")

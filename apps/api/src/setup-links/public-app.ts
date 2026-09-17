@@ -16,6 +16,7 @@ import { credentialExists } from '../connectors/credentials';
 import {
   pipedreamConfigured,
 } from '../connectors/pipedream';
+import type { ConnectorConnectOwner } from '../projects/lib/connection-access';
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
@@ -187,6 +188,7 @@ async function resolveConnectorLink(c: Context): Promise<
       sid: string | null;
       uid: string | null;
       connectorId: string;
+      owner: ConnectorConnectOwner;
     }
 > {
   const resolved = resolveSetupLink(c.req.param('token'));
@@ -209,7 +211,6 @@ async function resolveConnectorLink(c: Context): Promise<
     .select({
       connectorId: connectors.connectorId,
       providerType: connectors.providerType,
-      authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
     .where(
@@ -226,12 +227,20 @@ async function resolveConnectorLink(c: Context): Promise<
   if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
   }
-  if (connector.authorizationStrategy !== 'project') {
+  // Links minted before `owner` existed decode without it. Every one of them
+  // authorized the caller's own account, so `me` is the faithful default.
+  const owner: ConnectorConnectOwner =
+    resolved.payload.owner === 'project' ? 'project' : 'me';
+  // An `me` link authorizes the member the token was minted for, so it must
+  // carry a `uid`. Without one there is nobody to own the resulting connection.
+  // The old blanket refusal of every non-`project` STRATEGY is what made private
+  // accounts unauthorizable from a session at all.
+  if (owner === 'me' && !resolved.payload.uid) {
     return {
       error: c.json(
         {
-          error: 'Shared connect links require a project authorization strategy',
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+          error: 'This private connector link names no member to authorize',
+          code: 'CONNECTOR_AUTHORIZATION_REQUIRES_MEMBER',
         },
         409,
       ),
@@ -246,6 +255,7 @@ async function resolveConnectorLink(c: Context): Promise<
     sid: resolved.payload.sid ?? null,
     uid: resolved.payload.uid ?? null,
     connectorId: connector.connectorId,
+    owner,
   };
 }
 
@@ -277,6 +287,7 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
       link.uid ?? '',
       undefined,
       null,
+      link.owner,
     );
     if (!started) return c.json({ error: 'This connector has no hosted authorization' }, 404);
     // A no-auth toolkit is authorized the moment it is asked for. Say so instead
@@ -295,6 +306,7 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
       app: link.app,
       sid: link.sid,
       uid: link.uid,
+      owner: link.owner,
     });
     return c.json({ connect_url: started.connectUrl });
   } catch (err) {
@@ -314,7 +326,12 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   const link = await resolveConnectorLink(c);
   if ('error' in link) return link.error;
 
-  if (await credentialExists(link.connectorId, null)) return c.json({ connected: true });
+  // A `project`-owned link's credential is scoped to the shared row (userId
+  // null). A `me`-owned link's is scoped to the member's own row — reusing the
+  // shared-row check here would make a private link report "connected" off a
+  // completely different account's credential.
+  const credentialOwnerId = link.owner === 'project' ? null : link.uid;
+  if (await credentialExists(link.connectorId, credentialOwnerId)) return c.json({ connected: true });
 
   let connected = false;
   try {
@@ -324,6 +341,7 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
       link.slug,
       link.uid ?? '',
       undefined,
+      link.owner,
     );
     if (!result) return c.json({ error: 'This connector has no hosted authorization' }, 404);
     connected = result.connected;

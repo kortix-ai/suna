@@ -253,6 +253,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|connectors|projects|:projectId|connectors",
   "POST|v1|connectors|projects|:projectId|connectors",
   "DELETE|v1|connectors|projects|:projectId|connectors|:slug",
+  "GET|v1|connectors|projects|:projectId|connectors|:slug|accounts",
   "PUT|v1|connectors|projects|:projectId|connectors|:slug|authorization-strategy",
   "GET|v1|connectors|projects|:projectId|connectors|:slug|config",
   "POST|v1|connectors|projects|:projectId|connectors|:slug|connect",

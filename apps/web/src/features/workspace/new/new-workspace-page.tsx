@@ -4,10 +4,10 @@ import { readAccountParam } from '@/features/workspace/new/account-param';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
+import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -43,6 +43,7 @@ import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -166,7 +167,15 @@ export function NewWorkspacePage() {
   // One source for "is the icon column open" — the animation, the a11y
   // attributes and the inert gate all read the same value.
   const showIcon = state.name.trim().length > 0;
-  const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();
+  const {
+    create,
+    status,
+    error: createError,
+    retry,
+    canRetry,
+    limitReached,
+  } = useCreateWorkspace();
+  const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
   /**
    * The form is gone and `WorkspaceHandoff` holds the page.
@@ -561,20 +570,20 @@ export function NewWorkspacePage() {
                   the page's far corner. One account collapses to the muted
                   identity line (`AccountPicker` owns that rule); two or more
                   open a Select. */}
-              {showAccountLine ? (
-                <div className="flex flex-col space-y-3">
-                  <Label htmlFor="workspace-account">{t('account.label')}</Label>
-                  <AccountPicker
-                    accounts={creatableAccounts}
-                    value={effectiveAccountId}
-                    onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-                    fallbackLabel={user?.email}
-                    showAccountLine={showAccountLine}
-                    className="w-full"
-                  />
-                </div>
-              ) : null}
-              <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
+                {showAccountLine ? (
+                  <div className="flex flex-col space-y-3">
+                    <Label htmlFor="workspace-account">{t('account.label')}</Label>
+                    <AccountPicker
+                      accounts={creatableAccounts}
+                      value={effectiveAccountId}
+                      onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+                      fallbackLabel={user?.email}
+                      showAccountLine={showAccountLine}
+                      className="w-full"
+                    />
+                  </div>
+                ) : null}
+                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
@@ -614,6 +623,29 @@ export function NewWorkspacePage() {
                       onClick={retry}
                     >
                       {t('actions.tryAgain')}
+                    </Button>
+                  ) : null}
+                  {/* The plan cap (403 `project_limit_reached`) is the one
+                      failure the user can resolve on the spot, so it gets the
+                      way out the message promises: the upgrade dialog, opened
+                      for the account the create targeted. Never rendered next
+                      to the retry control — `canRetry` is false for this
+                      error — so it stays the only secondary action on screen.
+                      Gated on billing like the `GlobalUpgradeModal` mount
+                      below, which is what answers this click. */}
+                  {limitReached && isBillingEnabled() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        openUpgradeDialog({
+                          reason: 'subscription_required',
+                          accountId: effectiveAccountId ?? undefined,
+                        })
+                      }
+                    >
+                      {t('actions.upgrade')}
                     </Button>
                   ) : null}
                 </div>

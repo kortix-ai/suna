@@ -1597,3 +1597,19 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
 });
+
+test('the facade carries the connect owner through to both connect surfaces', async () => {
+  // The web host and the CLI both pick the owner in the UI and hand it to the
+  // facade; if the facade dropped it, every account would be created under the
+  // API's default and the "Connect shared account" button would be a lie.
+  await kortix.project('PID123').connectors.pipedream.connect('slack-1', { owner: 'project' });
+  expect(last().url).toBe(
+    'http://test.local/connectors/projects/PID123/connectors/slack-1/connect',
+  );
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ owner: 'project' });
+
+  await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
+  expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
+  expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
+});
