@@ -1398,3 +1398,15 @@ reached 665/665 file receipts, verified 359 native messages and 2,313 source
 rows, and recorded a destination stop receipt. Its queue row is `verified`.
 The remaining review set contained 55 sessions with 59 files above 256 MiB;
 their retries use the same chunked path.
+
+The largest pending large-file pilot,
+`fc3ce4af-56d7-49c2-a246-8cff1dd8b49b`, retained 40 of 42 file receipts
+but could not enter read-back. Its runtime stayed `starting` for the full
+three-minute import window, then Platinum stopped its sandbox. An in-place
+`/restart` preserved the sandbox ID but did not make it ready. Direct Platinum
+GET reported `guest IP ... is already reserved on this host ... refusing to
+double-allocate`. The session remains `apply-review`; no file proof was
+invented. A read-only survey of 97 remaining reviewed Platinum boxes found
+31 guest-IP conflicts, five provider HTTP 404s, 39 plain `stopped`, 15
+`archived`, four `stopping`, two other provider errors, and one `running`.
+Provider placement must recover before those affected sessions can finish.
