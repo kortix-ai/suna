@@ -9,10 +9,11 @@
  * here. The real SQL runs against real Postgres in
  * `src/__tests__/integration-prompt-inbox.test.ts`.
  */
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
+import * as realEngine from '../session-lifecycle/engine';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -71,6 +72,23 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
 let dbReadDelayMs = 0;
 const afterReadDelay = <T>(value: () => T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
+// The same for UPDATEs, plus the instant the last one settled, so a test can
+// prove a handler stamps `observed_at` after its writes rather than before.
+let dbWriteDelayMs = 0;
+let writeSettledAtMs = 0;
+function afterWriteDelay<T>(apply: () => T): Promise<T> {
+  const settle = () => {
+    const value = apply();
+    writeSettledAtMs = Date.now();
+    return value;
+  };
+  if (dbWriteDelayMs <= 0) return Promise.resolve().then(settle);
+  return new Promise((resolve) => setTimeout(() => resolve(settle()), dbWriteDelayMs));
+}
+/** Runs once, inside the next UPDATE, after its WHERE matched and before its
+ *  SET applies. A throw fails that statement; a row edit lands between that
+ *  statement's match and the next statement's. */
+let onCommandUpdate: (() => void) | null = null;
 
 const queryMock = {
   select: () => ({
@@ -95,19 +113,21 @@ const queryMock = {
   }),
   update: () => ({
     set: (values: Record<string, unknown>) => ({
-      where: (predicate: unknown) => ({
-        returning: async () => {
+      where: (predicate: unknown) => {
+        const apply = () => {
           const hit = commandTable.filter((r) => predicateOf(predicate)(r));
+          const hook = onCommandUpdate;
+          onCommandUpdate = null;
+          hook?.();
           for (const r of hit) applyValues(r, values);
           return hit;
-        },
-        // biome-ignore lint/suspicious/noThenProperty: awaitable query builder.
-        then: (resolve: (v: unknown) => unknown) => {
-          const hit = commandTable.filter((r) => predicateOf(predicate)(r));
-          for (const r of hit) applyValues(r, values);
-          return Promise.resolve(hit).then(resolve);
-        },
-      }),
+        };
+        return {
+          returning: () => afterWriteDelay(apply),
+          // biome-ignore lint/suspicious/noThenProperty: awaitable query builder.
+          then: (resolve: (v: unknown) => unknown) => afterWriteDelay(apply).then(resolve),
+        };
+      },
     }),
   }),
   delete: () => ({
@@ -324,6 +344,53 @@ mock.module('../lib/agent-access', () => ({
   canUseAnyAgent: async () => true,
 }));
 
+// The DELETE cancel arm reads and edits the RUNTIME's transcript. `null` is an
+// unresolvable box (the cancel answers `unreachable`); a test that needs the
+// cancel to reach a verdict points it at `runtimeFetch` below, whose message
+// list the cancel's own DELETEs mutate.
+let opencodeEndpoint: { endpoint: { url: string; headers: Record<string, string> }; opencodeSessionId: string } | null =
+  null;
+/** Runs once, inside the cancel's endpoint lookup — after it read the row
+ *  forwarded, before it reaches a verdict. */
+let onResolveEndpoint: (() => void) | null = null;
+mock.module('../session-lifecycle/engine', () => ({
+  ...realEngine,
+  resolveSessionOpencodeEndpoint: async () => {
+    const hook = onResolveEndpoint;
+    onResolveEndpoint = null;
+    hook?.();
+    return opencodeEndpoint;
+  },
+}));
+
+type RuntimeMessage = {
+  info: { id: string; role: string; parentID?: string };
+  parts: Array<{ id: string }>;
+};
+let runtimeMessages: RuntimeMessage[] = [];
+/** Runs inside a runtime message DELETE, before it answers — the seam a test
+ *  uses to start a second request at an exact point of the first. */
+let onRuntimeMessageDelete: (() => Promise<void>) | null = null;
+const realFetch = globalThis.fetch;
+const runtimeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  const method = init?.method ?? 'GET';
+  if (method === 'GET' && url.pathname.endsWith('/message')) {
+    return Response.json(runtimeMessages);
+  }
+  const whole = url.pathname.match(/\/message\/([^/]+)$/);
+  if (method === 'DELETE' && whole) {
+    const id = decodeURIComponent(whole[1]);
+    const held = runtimeMessages.some((m) => m.info.id === id);
+    runtimeMessages = runtimeMessages.filter((m) => m.info.id !== id);
+    const hook = onRuntimeMessageDelete;
+    onRuntimeMessageDelete = null;
+    if (hook) await hook();
+    return new Response(null, { status: held ? 200 : 404 });
+  }
+  return new Response(null, { status: 404 });
+}) as typeof fetch;
+
 const { projectsApp } = await import('../lib/app');
 await import('./r8');
 
@@ -365,6 +432,14 @@ beforeEach(() => {
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
+  dbWriteDelayMs = 0;
+  writeSettledAtMs = 0;
+  onCommandUpdate = null;
+  opencodeEndpoint = null;
+  onResolveEndpoint = null;
+  runtimeMessages = [];
+  onRuntimeMessageDelete = null;
+  globalThis.fetch = runtimeFetch;
   enqueueDelayMs = 0;
   enqueueSettledAtMs = 0;
   loadProjectCalls = [];
@@ -372,6 +447,10 @@ beforeEach(() => {
   agentAccessCalls.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
 describe('POST .../prompts', () => {
@@ -545,6 +624,117 @@ describe('POST .../prompts', () => {
     expect((await post(validBody, 'not-a-uuid')).status).toBe(400);
     expect(loadProjectCalls).toEqual([]);
   });
+
+  // Guard: passes before `restore` existed. A new send is the documented way
+  // out of a Stop hold, and `restore` must not change that for every other POST.
+  test('a plain send releases the session hold', async () => {
+    const other = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ commandId: other, result: { held: true } })];
+    const response = await post(validBody);
+    expect(response.status).toBe(202);
+    expect(commandTable.find((r) => r.commandId === other)?.result.held).toBeUndefined();
+  });
+
+  // Guard: `held` means something only on a restore.
+  test('`held` without `restore` is ignored — the send still releases the hold and is due', async () => {
+    const other = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ commandId: other, result: { held: true } })];
+    await post({ ...validBody, held: true });
+    expect(commandTable.find((r) => r.commandId === other)?.result.held).toBeUndefined();
+    expect(commandTable.find((r) => r.commandId === PROMPT_ID)?.result.held).toBeUndefined();
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  /**
+   * Undo of a removed row. The row was deleted, so the undo is a fresh POST
+   * under the same client id — and a fresh POST released the whole session's
+   * Stop hold, so Stop → remove → Undo resumed the queue. A restore puts back
+   * ONE row with the held bit it was removed with, and touches nothing else.
+   */
+  test('restore of a HELD row re-creates it held, with no other held row to inherit from', async () => {
+    const sibling = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ commandId: sibling, result: {} })];
+    const before = Date.now();
+    const response = await post({ ...validBody, restore: true, held: true });
+    expect(response.status).toBe(202);
+    const restored = commandTable.find((r) => r.commandId === PROMPT_ID);
+    // The same markers the Stop hold writes on a queued row.
+    expect(restored?.result.held).toBe(true);
+    expect(restored?.payload.remintOnDelivery).toBe(true);
+    expect(restored?.availableAt.getTime()).toBeGreaterThan(before + 60_000);
+    // Born not due: the enqueue itself carries the hold horizon, so no drain
+    // can claim the row before the held marker lands.
+    expect((enqueued[0].availableAt as Date).getTime()).toBeGreaterThan(before + 60_000);
+    // Scoped to the restored row: the sibling is neither held nor moved.
+    expect(commandTable.find((r) => r.commandId === sibling)?.result).toEqual({});
+    // A held row is not due, so nothing is kicked.
+    expect(drains).toEqual([]);
+  });
+
+  test('a held restore answers the state its hold wrote, stamped after that write', async () => {
+    // The response is the client's first read of the restored row. Stamped
+    // before the hold, it would name the row `queued` at an instant a list
+    // read could already show it held.
+    dbWriteDelayMs = 20;
+    const response = await post({ ...validBody, restore: true, held: true });
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.state).toBe('waiting');
+    expect(writeSettledAtMs).toBeGreaterThan(0);
+    expect(Date.parse(String(body.observed_at))).toBeGreaterThanOrEqual(writeSettledAtMs);
+  });
+
+  test('restore of an unheld row leaves the rest of a held queue held, and is due now', async () => {
+    const other = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ commandId: other, result: { held: true } })];
+    const response = await post({ ...validBody, restore: true, held: false });
+    expect(response.status).toBe(202);
+    expect(commandTable.find((r) => r.commandId === other)?.result.held).toBe(true);
+    const restored = commandTable.find((r) => r.commandId === PROMPT_ID);
+    expect(restored?.result.held).toBeUndefined();
+    expect(enqueued[0].availableAt).toBeUndefined();
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  /**
+   * A held restore is two statements: the insert at the hold horizon, then the
+   * held marker. When the marker failed, the row stayed neither held (a release
+   * does not free it) nor due (nothing delivers it), and every later prompt of
+   * the session waited behind it as `older_prompt_pending`. A retried undo
+   * deduped onto that row before the hold branch, so it never healed.
+   */
+  test('a held restore whose hold write fails takes its row back out, so a retried undo re-creates it held', async () => {
+    onCommandUpdate = () => {
+      throw new Error('hold write failed');
+    };
+    const failed = await post({ ...validBody, restore: true, held: true });
+    expect(failed.status).toBe(500);
+    expect(commandTable.filter((r) => r.commandId === PROMPT_ID)).toEqual([]);
+    expect(drains).toEqual([]);
+
+    const retried = await post({ ...validBody, restore: true, held: true });
+    expect(retried.status).toBe(202);
+    const restored = commandTable.filter((r) => r.commandId === PROMPT_ID);
+    expect(restored).toHaveLength(1);
+    expect(restored[0].result.held).toBe(true);
+  });
+
+  // Guard: dedupe answers before either hold decision runs.
+  test('a restore that dedupes onto an existing row changes no hold', async () => {
+    const other = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ commandId: other, result: { held: true } })];
+    enqueueResult = { deduped: true, row: row({ commandId: other, result: { held: true } }) };
+    const response = await post({ ...validBody, restore: true, held: false });
+    expect(response.status).toBe(200);
+    expect(commandTable.find((r) => r.commandId === other)?.result.held).toBe(true);
+    expect(drains).toEqual([]);
+  });
+
+  test('restore and held must be booleans', async () => {
+    expect((await post({ ...validBody, restore: 'yes' })).status).toBe(400);
+    expect((await post({ ...validBody, restore: true, held: 1 })).status).toBe(400);
+    expect(enqueued).toEqual([]);
+  });
 });
 
 describe('GET .../prompts', () => {
@@ -586,6 +776,8 @@ describe('GET .../prompts', () => {
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
+        // Only a failed row names a cause.
+        failure_code: null,
         // A text-only prompt names no files. The list is always present so a
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
@@ -640,6 +832,29 @@ describe('GET .../prompts', () => {
     const body = await list();
     expect(body.prompts[0].state).toBe('failed');
     expect(body.prompts[0].last_error).toBe('the session refused it');
+  });
+
+  test('a failed row names its cause by the code its producer persisted; a live row names none', async () => {
+    commandTable = [
+      row({
+        status: 'dead_lettered',
+        lastError: 'Create the required connections before continuing this session.',
+        result: { failure_code: 'connector_required' },
+      }),
+      row({
+        commandId: '77777777-7777-4777-8777-777777777777',
+        status: 'dead_lettered',
+        lastError: 'delivery outcome: failed',
+      }),
+      row({ commandId: '88888888-8888-4888-8888-888888888888', status: 'queued' }),
+    ];
+    const body = await list();
+    expect(body.prompts.map((p) => [p.state, p.failure_code])).toEqual([
+      ['failed', 'connector_required'],
+      // Written before codes were persisted.
+      ['failed', 'unknown'],
+      ['queued', null],
+    ]);
   });
 
   test('a FORWARDED row is still listed, as `delivering`', async () => {
@@ -736,9 +951,18 @@ describe('DELETE .../prompts/:promptId', () => {
           { type: 'file', mime: 'image/png', url: 'https://files.test/a.png' },
         ],
         overrides: { model: { providerID: 'anthropic', modelID: 'claude-x' } },
+        held: false,
       },
     });
     expect(commandTable).toEqual([]);
+  });
+
+  test('the removed prompt says whether it was HELD, so an undo can put it back held', async () => {
+    commandTable = [row({ result: { held: true } })];
+    const response = await remove();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { removed: Record<string, unknown> };
+    expect(body.removed.held).toBe(true);
   });
 
   test('refuses to remove a prompt that is already on the wire', async () => {
@@ -746,7 +970,169 @@ describe('DELETE .../prompts/:promptId', () => {
     commandTable = [row({ status: 'running' })];
     const response = await remove();
     expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Prompt is being delivered and the runtime could not be reached to cancel it',
+      code: 'prompt_cancel_unreachable',
+    });
     expect(commandTable).toHaveLength(1);
+  });
+
+  test('a prompt the drain already sent or skipped is 409 already sent, not 404', async () => {
+    // The row EXISTS, closed by the drain. "Not found" told the user the
+    // prompt was gone when it had in fact been sent.
+    for (const result of [
+      { status: 'skipped', reason: 'consumed_in_band' },
+      { status: 'skipped', reason: 'already_answered' },
+      {},
+    ]) {
+      commandTable = [row({ status: 'succeeded', result })];
+      const response = await remove();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: 'Prompt was already sent',
+        code: 'prompt_already_sent',
+      });
+      expect(commandTable).toHaveLength(1);
+    }
+  });
+
+  test('a forwarded prompt the runtime already answered is 409 already sent', async () => {
+    opencodeEndpoint = { endpoint: { url: 'http://box.test', headers: {} }, opencodeSessionId: 'ses_1' };
+    runtimeMessages = [
+      { info: { id: WIRE_ID, role: 'user' }, parts: [{ id: 'prt_1' }] },
+      { info: { id: 'msg_0198f3a1b2d0AbCdEfGhIjKlMn', role: 'assistant', parentID: WIRE_ID }, parts: [] },
+    ];
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
+    ];
+    const response = await remove();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Prompt is already being answered',
+      code: 'prompt_already_sent',
+    });
+    expect(commandTable).toHaveLength(1);
+  });
+
+  test('a running prompt that disappears while the cancel watches it is 404, not a 409', async () => {
+    // Another tab removed it, or the drain requeued and a second DELETE took
+    // it, while this request polled for the delivery to settle.
+    commandTable = [row({ status: 'running' })];
+    setTimeout(() => {
+      commandTable = [];
+    }, 50);
+    const response = await remove();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found', code: 'prompt_not_found' });
+  });
+
+  test('a running prompt the drain closes as skipped while the cancel watches is 409 already sent', async () => {
+    commandTable = [row({ status: 'running' })];
+    setTimeout(() => {
+      commandTable[0].status = 'succeeded';
+      commandTable[0].result = { status: 'skipped', reason: 'already_answered' };
+    }, 50);
+    const response = await remove();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Prompt was already sent',
+      code: 'prompt_already_sent',
+    });
+  });
+
+  describe('two DELETEs of one delivering prompt', () => {
+    const forwarded = () =>
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } });
+
+    type Outcome = { status: number; body: Record<string, unknown> };
+
+    function expectOneRemovalAndOneTruthfulRefusal(outcomes: Outcome[]) {
+      expect(outcomes).toHaveLength(2);
+      expect(outcomes.filter((o) => o.status === 200)).toHaveLength(1);
+      const loser = outcomes.find((o) => o.status !== 200);
+      // Never "the runtime could not be reached", and never "being answered":
+      // the other request reached the runtime and removed the prompt. These
+      // tips hold no assistant message, so no step read it. The loser's own
+      // view (`answered` from an empty guarded delete, or a poll that found no
+      // row) is stale, and the row it re-reads is gone.
+      expect(loser).toEqual({ status: 404, body: { error: 'Not found', code: 'prompt_not_found' } });
+      expect(commandTable).toEqual([]);
+    }
+
+    const read = async (pending: Response | Promise<Response>): Promise<Outcome> => {
+      const response = await pending;
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    };
+
+    test('in lockstep: one removes it, the other answers without a false refusal', async () => {
+      opencodeEndpoint = { endpoint: { url: 'http://box.test', headers: {} }, opencodeSessionId: 'ses_1' };
+      runtimeMessages = [{ info: { id: WIRE_ID, role: 'user' }, parts: [{ id: 'prt_1' }] }];
+      commandTable = [forwarded()];
+      const outcomes = await Promise.all([read(remove()), read(remove())]);
+      expectOneRemovalAndOneTruthfulRefusal(outcomes);
+    });
+
+    test('the second request runs to completion inside the first one’s runtime delete', async () => {
+      // The first request has taken the runtime copy out and not yet deleted
+      // its row; the second finds no runtime copy, deletes the row, and wins.
+      // The first then finds nothing to delete.
+      opencodeEndpoint = { endpoint: { url: 'http://box.test', headers: {} }, opencodeSessionId: 'ses_1' };
+      runtimeMessages = [{ info: { id: WIRE_ID, role: 'user' }, parts: [{ id: 'prt_1' }] }];
+      commandTable = [forwarded()];
+      const outcomes: Outcome[] = [];
+      onRuntimeMessageDelete = async () => {
+        outcomes.push(await read(remove()));
+      };
+      outcomes.push(await read(remove()));
+      expectOneRemovalAndOneTruthfulRefusal(outcomes);
+    });
+  });
+
+  /**
+   * The reaper hands a forwarded prompt back to the queue while the cancel
+   * acts on it. A queued row is the plain delete's to remove, so neither
+   * "could not be reached" nor "being answered" is true of it.
+   */
+  describe('a prompt that falls back into line while the cancel acts on it', () => {
+    const forwarded = () =>
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } });
+    const requeue = () => {
+      commandTable[0].status = 'queued';
+      commandTable[0].result = {};
+    };
+
+    async function expectRemoved(response: Response) {
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { removed: Record<string, unknown> };
+      expect(body.removed.prompt_id).toBe(PROMPT_ID);
+      expect(commandTable).toEqual([]);
+    }
+
+    // Guard: the cancel's `not_forwarded` exit removed this row before the arm
+    // settled every exit through one delete.
+    test('while the cancel watches its delivery, it is removed', async () => {
+      commandTable = [row({ status: 'running' })];
+      setTimeout(() => {
+        commandTable[0].status = 'queued';
+      }, 50);
+      await expectRemoved(await remove());
+    });
+
+    test('after the runtime could not be reached, it is removed', async () => {
+      commandTable = [forwarded()];
+      // No endpoint: the cancel answers `unreachable`.
+      onResolveEndpoint = requeue;
+      await expectRemoved(await remove());
+    });
+
+    test('after its runtime copy was taken out, it is removed', async () => {
+      opencodeEndpoint = { endpoint: { url: 'http://box.test', headers: {} }, opencodeSessionId: 'ses_1' };
+      runtimeMessages = [{ info: { id: WIRE_ID, role: 'user' }, parts: [{ id: 'prt_1' }] }];
+      commandTable = [forwarded()];
+      // The cancel's guarded delete then finds no `succeeded` row: `answered`.
+      onRuntimeMessageDelete = async () => requeue();
+      await expectRemoved(await remove());
+    });
   });
 
   test('refuses to remove a prompt OpenCode already has', async () => {
@@ -771,11 +1157,33 @@ describe('DELETE .../prompts/:promptId', () => {
     const response = await remove();
     expect(response.status).toBe(200);
     expect(commandTable).toHaveLength(0);
+    const body = (await response.json()) as { removed: Record<string, unknown> };
+    expect(body.removed.held).toBe(true);
   });
 
   test('404s a prompt id this session does not own', async () => {
     commandTable = [];
-    expect((await remove()).status).toBe(404);
+    const response = await remove();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found', code: 'prompt_not_found' });
+  });
+
+  test('a wire message id no inbox row carries is 404 not found', async () => {
+    // The bubble's handle once the row left the list. No row under it is the
+    // same outcome as no row under a prompt id.
+    commandTable = [];
+    const response = await remove(WIRE_ID);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found', code: 'prompt_not_found' });
+  });
+
+  // Guard: a session the caller cannot see is not a prompt outcome.
+  test('a session that is not visible keeps its plain 404, with no prompt code', async () => {
+    visibleSession = null;
+    commandTable = [row()];
+    const response = await remove();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
   });
 });
 
@@ -784,9 +1192,11 @@ describe('POST .../prompts/:promptId/retry', () => {
     return app().request(`${base()}/${promptId}/retry`, { method: 'POST' });
   }
 
-  test('puts a failed prompt back with a clean slate and the SAME wire id', async () => {
-    // The wire id must not change: the proxy's dedupe still absorbs a retry of
-    // a delivery that actually landed.
+  test('puts a failed prompt back with a clean slate, its recorded wire id kept and placed again on delivery', async () => {
+    // The ROW keeps the id the client painted under (`payload.wireMessageId`,
+    // the undo and bubble handle). The DELIVERY does not promise it:
+    // `remintOnDelivery` makes the drain re-read the transcript, drop the
+    // prompt if a reply already answers it, and otherwise place the id again.
     commandTable = [
       row({
         status: 'dead_lettered',
@@ -814,9 +1224,78 @@ describe('POST .../prompts/:promptId/retry', () => {
     expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
   });
 
-  test('404s a prompt that is not retryable', async () => {
+  test('clears the persisted failure code with the error, so the re-queued row names no cause', async () => {
+    commandTable = [
+      row({
+        status: 'dead_lettered',
+        attempts: 1,
+        lastError: 'Out of credits. Top up to continue.',
+        result: { failure_code: 'out_of_credits' },
+      }),
+    ];
+    const response = await retry();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect([body.state, body.last_error, body.failure_code]).toEqual(['queued', null, null]);
+    expect(commandTable[0].lastError).toBeNull();
+    expect(commandTable[0].result).not.toHaveProperty('failure_code');
+  });
+
+  test('stamps observed_at AFTER the write, on the server clock', async () => {
+    // Same convention as POST .../prompts: a list read issued before the retry
+    // carries an older stamp, so it cannot repaint the row `failed`.
+    commandTable = [row({ status: 'dead_lettered', lastError: 'delivery outcome: failed' })];
+    dbWriteDelayMs = 20;
+    const response = await retry();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    const observed = Date.parse(String(body.observed_at));
+    expect(Number.isFinite(observed)).toBe(true);
+    expect(writeSettledAtMs).toBeGreaterThan(0);
+    expect(observed).toBeGreaterThanOrEqual(writeSettledAtMs);
+    // The row body is unchanged beside the stamp.
+    expect(body.prompt_id).toBe(PROMPT_ID);
+    expect(body.state).toBe('queued');
+  });
+
+  test('a prompt that is not there is 404 not found', async () => {
+    commandTable = [];
+    const response = await retry();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found', code: 'prompt_not_found' });
+  });
+
+  test('a prompt that is already on the wire is 409 already sent, not 404', async () => {
     commandTable = [row({ status: 'running' })];
-    expect((await retry()).status).toBe(404);
+    const response = await retry();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Prompt was already sent',
+      code: 'prompt_already_sent',
+    });
+  });
+
+  test('a prompt a failed claim puts back in line during the retry is re-queued, not refused as sent', async () => {
+    // The retry's update finds the row claimed. Before the route reads why,
+    // the claim fails and puts the row back in line. It never went out, so
+    // "already sent" is false, and the row is retryable.
+    commandTable = [row({ status: 'running' })];
+    onCommandUpdate = () => {
+      commandTable[0].status = 'failed';
+      commandTable[0].lastError = 'delivery outcome: failed';
+    };
+    const response = await retry();
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as Record<string, unknown>).prompt_id).toBe(PROMPT_ID);
+    expect(commandTable[0].status).toBe('queued');
+    expect(commandTable[0].result).toEqual({ promoted: true });
+  });
+
+  test('a prompt the drain already closed is 409 already sent', async () => {
+    commandTable = [row({ status: 'succeeded', result: { status: 'skipped', reason: 'consumed_in_band' } })];
+    const response = await retry();
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as Record<string, unknown>).code).toBe('prompt_already_sent');
   });
 
   test('refuses a FORWARDED row — re-sending it would post the message twice', async () => {
@@ -825,8 +1304,27 @@ describe('POST .../prompts/:promptId/retry', () => {
     commandTable = [
       row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
     ];
-    expect((await retry()).status).toBe(404);
+    const response = await retry();
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as Record<string, unknown>).code).toBe('prompt_already_sent');
     expect(commandTable[0].status).toBe('succeeded');
+  });
+
+  // Guard: a session the caller cannot see is not a prompt outcome.
+  test('a session that is not visible keeps its plain 404, with no prompt code', async () => {
+    visibleSession = null;
+    commandTable = [row({ status: 'failed' })];
+    const response = await retry();
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
+  });
+
+  // Guard: retry is "send now", and send now releases the Stop hold.
+  test('retry still releases the session hold', async () => {
+    const other = '77777777-7777-4777-8777-777777777777';
+    commandTable = [row({ status: 'failed' }), row({ commandId: other, result: { held: true } })];
+    expect((await retry()).status).toBe(200);
+    expect(commandTable.find((r) => r.commandId === other)?.result.held).toBeUndefined();
   });
 
   test('"send now" on a STOP-PAUSED row puts that row back on the queue', async () => {
@@ -918,5 +1416,29 @@ describe('POST .../prompts/hold', () => {
     await hold({ held: false });
     expect(commandTable[0].status).toBe('queued');
     expect(commandTable[0].result).toEqual({});
+  });
+});
+
+describe('the prompt wire schema', () => {
+  test('documents failure_code as an optional, nullable string on every prompt row', () => {
+    const doc = projectsApp.getOpenAPI31Document({
+      openapi: '3.1.0',
+      info: { title: 'projects', version: 'test' },
+    });
+    const pick = (value: unknown, ...keys: string[]): unknown =>
+      keys.reduce<unknown>(
+        (node, key) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined),
+        value,
+      );
+    const row = pick(
+      doc,
+      'paths', '/{projectId}/sessions/{sessionId}/prompts', 'get', 'responses', '200',
+      'content', 'application/json', 'schema', 'properties', 'prompts', 'items',
+    );
+    // The lookup reaches the row schema: its sibling field is there.
+    expect(pick(row, 'properties', 'last_error')).toBeDefined();
+    expect(pick(row, 'properties', 'failure_code')).toMatchObject({ type: ['string', 'null'] });
+    expect(String(pick(row, 'properties', 'failure_code', 'description'))).toContain('`out_of_credits`');
+    expect((pick(row, 'required') as string[] | undefined) ?? []).not.toContain('failure_code');
   });
 });

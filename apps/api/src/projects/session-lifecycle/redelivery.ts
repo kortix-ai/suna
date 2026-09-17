@@ -9,6 +9,7 @@ import {
   type SessionLifecycleCommandRow,
   withNextDeliveryAttempt,
 } from './store';
+import type { PromptFailureCode } from './types';
 import { wireMessageIdMatches } from './wire-id-match';
 
 /**
@@ -69,6 +70,8 @@ export interface RedeliveryDeps {
     commandId: string;
     redeliveries: number;
     lastError: string;
+    /** Persisted as `result.failure_code` — see `PROMPT_FAILURE_CODES`. */
+    failureCode: PromptFailureCode;
   }) => Promise<void>;
 }
 
@@ -132,7 +135,7 @@ const liveDeps: RedeliveryDeps = {
         ),
       );
   },
-  async deadLetter({ commandId, redeliveries, lastError }) {
+  async deadLetter({ commandId, redeliveries, lastError, failureCode }) {
     await db
       .update(sessionLifecycleCommands)
       .set({
@@ -144,8 +147,9 @@ const liveDeps: RedeliveryDeps = {
         // outside `reconcileForwardedPrompts`' scan — no retry, no remove, and
         // nothing that could ever close it. `- 'status'` rather than a replaced
         // result, because `forwarded_at`/`forwarded_message_id` are still the
-        // only record of what this row did.
-        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'status'`,
+        // only record of what this row did. The same statement records WHY it
+        // was given up on, as a code.
+        result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'status') || ${JSON.stringify({ failure_code: failureCode })}::jsonb`,
         lockedBy: null,
         lockedUntil: null,
         lastError,
@@ -219,6 +223,7 @@ export async function requeueAbandonedPrompt(
       commandId: row.commandId,
       redeliveries: redeliveries - 1,
       lastError: `prompt redelivery exhausted after ${input.endReason}`,
+      failureCode: 'redelivery_exhausted',
     });
     // Same alerting posture as the drain's dead-letter: a prompt being
     // abandoned is a user-visible loss, so it is an error, not a warn.

@@ -76,7 +76,8 @@ import {
   withNextDeliveryAttempt,
   withRemintedWireId,
 } from './store';
-import { DELIVERY_FAILURE_COPY } from './types';
+import { DELIVERY_FAILURE_CODE, DELIVERY_FAILURE_COPY } from './types';
+import { promptFailureCodeForError } from './dead-letter-cause';
 import type {
   PromptOverridesWire,
   PromptPartWire,
@@ -1737,7 +1738,7 @@ export async function executeQueuedContinue(
       await markCommandFailed(
         row.commandId,
         'queued before the session was rewound — send it again to run it',
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId, failureCode: 'rewound' },
       );
       return 'failed';
     }
@@ -2079,7 +2080,12 @@ export async function executeQueuedContinue(
       await markCommandFailed(
         row.commandId,
         `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+        {
+          retryable: false,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          failureCode: DELIVERY_FAILURE_CODE.unreachable,
+        },
       );
       return 'failed';
     }
@@ -2106,6 +2112,7 @@ export async function executeQueuedContinue(
         retryable: false,
         attempts: row.attempts,
         sessionId: row.sessionId,
+        failureCode: DELIVERY_FAILURE_CODE['not-landed'],
       });
       return 'failed';
     }
@@ -2116,6 +2123,7 @@ export async function executeQueuedContinue(
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
+      failureCode: DELIVERY_FAILURE_CODE[delivery],
     });
     return retryable ? 'queued' : 'failed';
   } catch (e) {
@@ -2128,6 +2136,7 @@ export async function executeQueuedContinue(
       retryable,
       attempts: row.attempts,
       sessionId: row.sessionId,
+      failureCode: promptFailureCodeForError(e),
     });
     return retryable ? 'queued' : 'failed';
   }

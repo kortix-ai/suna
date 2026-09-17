@@ -1,3 +1,9 @@
+/** The 409 codes of a connector the prompt needs and the account has not connected. */
+export const CONNECTOR_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  'CONNECTOR_CONNECTION_REQUIRED',
+  'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
+]);
+
 /** A permanent prompt refusal must escape the transient readiness retry loop. */
 export class PromptDeliveryRefused extends Error {
   constructor(
@@ -19,10 +25,7 @@ export async function throwIfPromptRefused(response: Response): Promise<void> {
     .json()
     .catch(() => null);
   const code = typeof body?.code === 'string' ? body.code : null;
-  const terminalConflict =
-    response.status === 409 &&
-    (code === 'CONNECTOR_CONNECTION_REQUIRED' ||
-      code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
+  const terminalConflict = response.status === 409 && code !== null && CONNECTOR_REFUSAL_CODES.has(code);
   const terminalClientError =
     response.status >= 400 &&
     response.status < 500 &&

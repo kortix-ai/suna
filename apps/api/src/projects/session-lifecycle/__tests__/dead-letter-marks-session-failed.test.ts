@@ -16,6 +16,8 @@
 // invocation (as CI does), same caveat as ../../sandbox-reaper.test.ts.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projectTriggerRuntime, sessionLifecycleCommands } from '@kortix/db';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 let commandRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
@@ -180,5 +182,74 @@ describe('markCommandFailed — dead-letter is loud and parks the session', () =
     expect(errorLogs).toHaveLength(1);
     expect(errorLogs[0].context).toMatchObject({ command_type: 'create_session' });
     expect(updateCalls.filter((u) => u.table === projectSessions)).toHaveLength(0);
+  });
+});
+
+describe('markCommandFailed — a dead-letter records WHY as a stable code', () => {
+  const commandUpdate = () => {
+    const updates = updateCalls.filter((u) => u.table === sessionLifecycleCommands);
+    expect(updates).toHaveLength(1);
+    return updates[0].updates;
+  };
+  const compiled = (value: unknown) => {
+    expect(value).toBeDefined();
+    const q = new PgDialect().sqlToQuery(value as SQL);
+    return { sql: q.sql.replace(/\s+/g, ' ').trim(), params: q.params };
+  };
+
+  test('the producer\'s code is MERGED into result, so the row keeps its other markers', async () => {
+    commandRow = baseCommandRow({ source: 'ui', payload: { text: 'hi', clientMessageId: 'q_1' } });
+
+    await markCommandFailed('cmd-1', 'prompt accepted by the runtime but never became a message', {
+      retryable: false,
+      attempts: 1,
+      sessionId: 'sess-1',
+      failureCode: 'not_landed',
+    });
+
+    const { sql, params } = compiled(commandUpdate().result);
+    expect(sql).toBe(
+      'COALESCE("kortix"."session_lifecycle_commands"."result", \'{}\'::jsonb) || $1::jsonb',
+    );
+    expect(params).toEqual(['{"failure_code":"not_landed"}']);
+    expect(commandUpdate().status).toBe('dead_lettered');
+    expect(errorLogs[0].context).toMatchObject({ failure_code: 'not_landed' });
+  });
+
+  test('a producer that does not know the cause records `unknown`', async () => {
+    commandRow = baseCommandRow({ payload: { text: 'hi', clientMessageId: 'q_1' } });
+
+    await markCommandFailed('cmd-1', 'continue_session command missing sessionId or body', {
+      retryable: false,
+      attempts: 0,
+    });
+
+    expect(compiled(commandUpdate().result).params).toEqual(['{"failure_code":"unknown"}']);
+  });
+
+  test('a dead-letter that REPLACES result carries the code in the replacement', async () => {
+    commandRow = baseCommandRow({ commandType: 'create_session', sessionId: 'sess-1', payload: {} });
+    const result = { status: 'created', session_id: 'sess-1', source: 'ui', post_create_error: 'boom' };
+
+    await markCommandFailed('cmd-1', 'boom', { retryable: true, attempts: 5, sessionId: 'sess-1', result });
+
+    expect(commandUpdate().result).toEqual({ ...result, failure_code: 'unknown' });
+  });
+
+  test('a failure that is only re-queued records no code', async () => {
+    commandRow = baseCommandRow({ status: 'queued', attempts: 2 });
+
+    await markCommandFailed('cmd-1', 'the session was not ready in time', {
+      retryable: true,
+      attempts: 2,
+      sessionId: 'sess-1',
+      failureCode: 'runtime_unreachable',
+    });
+    expect(commandUpdate()).not.toHaveProperty('result');
+
+    updateCalls = [];
+    const result = { status: 'created', session_id: 'sess-1' };
+    await markCommandFailed('cmd-1', 'boom', { retryable: true, attempts: 2, result, failureCode: 'refused' });
+    expect(commandUpdate().result).toEqual(result);
   });
 });

@@ -149,6 +149,30 @@ describe('requeueAbandonedPrompt', () => {
     expect(deadLettered).toEqual(['cmd-1']);
   });
 
+  test('an exhausted prompt is given up on with the code `redelivery_exhausted`', async () => {
+    const inputs: Array<Parameters<RedeliveryDeps['deadLetter']>[0]> = [];
+    const { deps } = harness(
+      succeededRow({ text: 'hi', wireMessageId: 'msg_a', redeliveries: MAX_PROMPT_REDELIVERIES }),
+    );
+    deps.deadLetter = async (input) => {
+      inputs.push(input);
+    };
+
+    await requeueAbandonedPrompt(
+      { sessionId: 'sess-1', wireMessageId: 'msg_a', turnToken: 't', endReason: 'runtime_gone' },
+      deps,
+    );
+
+    expect(inputs).toEqual([
+      {
+        commandId: 'cmd-1',
+        redeliveries: MAX_PROMPT_REDELIVERIES,
+        lastError: 'prompt redelivery exhausted after runtime_gone',
+        failureCode: 'redelivery_exhausted',
+      },
+    ]);
+  });
+
   test('a turn the daemon says COMPLETED is never redelivered — it RAN', async () => {
     // The delivery record only proves the ACCEPTANCE write never landed (the
     // documented `[turn-lifecycle] acceptance persistence failed` path). The
