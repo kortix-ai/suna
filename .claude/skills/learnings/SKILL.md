@@ -21,6 +21,40 @@ linked, not inlined.
 
 ## Register
 
+### In a shared provider org, "not in MY database" is not authorization to delete (2026-09-18)
+
+**When:** reclaiming provider-side artifacts — Daytona snapshots, Platinum
+templates — in the one org that dev, staging, prod and every laptop share on a
+single API key. A `kortix-app-<deploymentId>` name carries no environment, so a
+name absent from your DB means *another environment owns it*, not *it is dead*;
+idle time is a heuristic, never authorization. App snapshots are also the boot
+target of `POST /apps/{appId}/rollback` (`apps/api/src/apps/routes.ts:861`),
+which has no rebuild fallback and 503s on a missing image. Namespace by
+`INTERNAL_KORTIX_ENV` or verify against the owning environment's DB before any
+cross-env delete; for anything a rollback reads use bounded retention (active +
+N recent), never supersession or idleness alone. Load this register BEFORE the
+reclaim. Two provider facts that invalidate the obvious verification: `DELETE
+/snapshots/:id` returns 200 and does nothing while the snapshot is
+`pending`/`building` (re-read the state; 200 is not "deleted"), and a
+`POST /snapshots` that returns 200 `pending` proves only acceptance — a
+`from-Dockerfile` build can still fail the quota later, so a probe is only
+evidence once it reaches `active`.
+*Incident:* dev builds failed `Snapshot quota exceeded. Maximum allowed: 200`
+with the org holding 430 snapshots (213 `active`, 213 `inactive`), 364 of them
+in region `us`. The quota GC freed nothing: `kortix-app-` (165), `kortix-ci-`
+(60) and `kortix-meta-` (58) sit outside `MANAGED_PREFIXES`
+(`snapshots/quota-gc-select.ts:76`), all 116 `kortix-tpl-` were younger than
+`QUOTA_GC_MIN_IDLE_MS` (7d) at ~19/day, and `DAYTONA_ORG_SNAPSHOT_LIMIT`
+(:57) still reads 100 against a real cap of 200. A manual reclaim of 62
+snapshots took `active` 213→155 and **did not fix it** — the next
+`kortix-default-` build failed identically at 323s, so `active` count is not
+what the provider meters; the org/usage endpoints answer 401/403 for the
+service key, so the real dimension was never established from outside. Cost of
+acting on the inferred model: 56 foreign `kortix-app-` images destroyed, owner
+unverifiable from dev, rollback to those versions now 503s (recovery is a
+redeploy from `app_artifacts.object_path`). **No enforcer yet** — the GC still
+cannot see three of its four debt namespaces, and nothing asserts the real cap.
+
 ### A branch migration's timestamp is re-checked at MERGE time, not at write time (2026-09-17)
 
 **Rule:** before merging a branch that adds a migration, confirm its file sorts
