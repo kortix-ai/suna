@@ -313,4 +313,58 @@ test.describe("30 — Git connections", () => {
       await deleteAuthUser(owner.id, authOptions);
     }
   });
+  test('repository settings confirm the target and send a scoped App grant', async ({ page }) => {
+    const runId = randomUUID().slice(0, 8);
+    const email = `e2e-repository-change-${runId}@example.test`;
+    const owner = await createAuthUser(email, authOptions);
+    let projectId: string | null = null;
+    try {
+      const session = await signIn(email, authOptions);
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find((item) => item.personal_account) ?? accounts[0];
+      expect(account?.account_id).toBeTruthy();
+      projectId = await seedDatabaseProject({ accountId: account.account_id, userId: owner.id, name: `Repository change ${runId}` });
+
+      const requestBodies: Record<string, unknown>[] = [];
+      await page.route('**/v1/projects/github/installations/linkable', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          account_id: account.account_id, github_login: 'example-admin', configured: true,
+          install_url: null, installations: [{ installation_id: '12345', owner_login: 'example-org', owner_type: 'Organization', repository_selection: 'selected', permissions: {}, installation_url: null, linked: false, linked_to_other_accounts: 0 }],
+        }) });
+      });
+      await page.route(`**/v1/projects/${projectId}/git/repository`, async (route) => {
+        requestBodies.push(route.request().postDataJSON());
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ project: {}, git_connection: {} }) });
+      });
+
+      await installBrowserSessionDirect(page, session, `/projects/${projectId}/settings/repositories`, authOptions);
+      await page.setViewportSize({ width: 720, height: 480 });
+      await expect(page.getByRole('button', { name: 'Change', exact: true })).toBeVisible({ timeout: 60_000 });
+      await page.getByRole('button', { name: 'Change', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Change repository' });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText('Current repository', { exact: true })).toBeVisible();
+      await expect(dialog.getByText('New sessions will use the new repository.', { exact: false })).toBeVisible();
+      await dialog.getByRole('textbox', { name: 'New GitHub repository URL' }).fill('https://github.com/example-org/shared-repository');
+      await expect(dialog.getByRole('button', { name: 'Change repository', exact: true })).toBeDisabled();
+
+      await page.evaluate(() => {
+        window.open = (() => ({ closed: false, focus() {} })) as unknown as typeof window.open;
+      });
+      await dialog.getByRole('button', { name: 'Verify GitHub access' }).click();
+      await page.evaluate(() => window.postMessage({ type: 'github-connect-success', provider_token: 'temporary-proof' }, window.location.origin));
+      await expect(dialog.getByRole('combobox', { name: 'GitHub App installation' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Change repository', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      expect(requestBodies).toHaveLength(1);
+      expect(requestBodies[0]).toMatchObject({
+        repo_url: 'https://github.com/example-org/shared-repository',
+        installation_id: '12345', github_user_token: 'temporary-proof',
+      });
+      expect(requestBodies[0]).toHaveProperty('expected_repo_url');
+    } finally {
+      if (projectId) await runDatabaseSql('delete from kortix.projects where project_id = $1::uuid', [projectId]);
+      await deleteAuthUser(owner.id, authOptions);
+    }
+  });
 });
