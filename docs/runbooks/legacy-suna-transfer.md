@@ -1375,3 +1375,13 @@ concurrent sessions during the observed API connection-error period. The
 supervisor starts the revised worker after the current pass exits. The local
 dashboard treats that destination recovery worker as active transfer work;
 its browser badge and archive backlog counts were verified at 05:24 UTC.
+
+Five `created` Suna reviews had `last_start_stage=failed` and a destination
+sandbox ID but no native session ID. The old recovery identity guard excluded
+that valid partial state. The private worker now permits only that partial
+state and calls the API's in-place `/restart` route. The first live pilot,
+`34c800ac-f977-4205-9da1-7cec4c91c762`, returned `restart_started` and
+preserved its Platinum sandbox ID. The runtime then failed to become ready;
+the provider's `/exec` returned `409 sandbox_not_running`. The pilot remains
+`apply-review` with a retry timestamp. Do not mark this case verified without
+the normal history and file read-back proofs.
