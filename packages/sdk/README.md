@@ -747,31 +747,6 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
 REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
 per-release changes.
-### Personal provider connections
-
-Connect a ChatGPT subscription or provider API key once, then enable it in each project. Personal connections belong to the signed-in user. Management requires a Supabase user JWT; account PATs and sandbox tokens cannot manage global credentials.
-
-```ts
-const providers = kortix.providerConnections;
-await providers.saveApiKey('openai', apiKey);
-await providers.setProject(projectId, 'openai', true);
-// Reuse the same encrypted connection in another project.
-await providers.setProject(otherProjectId, 'openai', true);
-// Disconnect everywhere, including all project bindings.
-await providers.remove('openai');
-```
-
-Each provider supports up to ten named personal connections. Add another connection with `saveApiKey('openai', apiKey, { create: true, label: 'Work' })` or `startOAuth('codex', { create: true, label: 'Work' })`. Reconnecting the same provider account updates its saved connection.
-
-Select one connection with `setProject(projectId, 'codex', true, { connection_id })`, or explicitly enable your private pool with `setProject(projectId, 'codex', true, { pool: true })`. A pool contains only your connections. Each session selects one member and retains it across requests and API replicas. Removing that member permits a new selection. Requests without a session select a member per request. Provider limits and authentication errors propagate without retrying another pool member.
-
-`remove(provider, connectionId)` disconnects one connection. Other pool members remain available. `remove(provider)` disconnects all of that provider's connections and project bindings.
-
-For ChatGPT, call `startOAuth('codex')`, show `verification_url` and `user_code`, then call `pollOAuth('codex', flow_id)` at `interval_ms` until success, failure, or expiry. Enable the connection with `setProject(projectId, 'codex', true)` after success.
-
-The gateway selects the connection belonging to its authenticated user. A session uses the launching user recorded in its token. Other participants in that session retain this session identity. Project bindings authorize this use explicitly. Project credentials remain the fallback when no personal binding exists. Native-runtime projects do not support personal provider bindings.
-
-Manage saved accounts in **Preferences → My providers**. Under **Project → Models → Providers**, each row shows its connection status and a **Connect** or **Manage** action. The dialog defaults new connections to **Use my account** when supported. Choose **Share with this project** explicitly for shared credentials. Changes apply only after submission; cancelling preserves the current connection. Metadata endpoints never return credential values. Disconnect removes all project bindings; it does not revoke the upstream provider account itself.
 
 
 ### Agent repository access
@@ -805,3 +780,42 @@ await kortix.projects.setModelAccess(projectId, {
 subscription messages. This also corrects historical runtime costs. Token
 counts remain available. Mixed sessions retain paid API costs; OpenAI API
 models remain billable. Subscription coverage does not include sandbox compute.
+
+### Durable prompt placement
+
+`createSessionPrompt` and `useSessionPrompts().enqueue` accept an optional
+`placement: 'transcript' | 'composer'`. `transcript` (Quick Queue) runs before
+every `composer` (Queue List) entry and ends the active response after its
+current tool call. `composer` waits for the active response to finish. Each
+placement keeps submission order. A row without placement keeps its submission
+order ahead of `composer` entries and is presented as `composer`.
+
+`SessionPrompt.full_text` preserves complete text for rendering after reload;
+`text` remains the bounded preview. List responses expose attachment names and
+MIME types without attachment bytes. Removal responses retain the complete
+parts and captured model options for undo.
+
+Queued work keeps `useSessionWorking().state` at `working` so it can be stopped.
+`pendingDelivery: true` distinguishes a send waiting for runtime delivery from an
+active agent response. The web app still shows one working indicator whenever the
+session is `working`, so Stop is never the only sign of work.
+A timed-out or skipped cancel does not acknowledge an abort receipt.
+
+A worker claim only checks admission and keeps the prompt waiting. Delivery starts
+after admission succeeds. A confirmed active turn clears the pending presentation
+even if the previous inbox snapshot still lists that prompt. Runtime activity
+preserves the active turn's message ID during this handoff.
+
+Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
+advance automatically; Quick Queue entries run first. Queue List entries stay editable
+until delivery begins. Stop pauses pending entries; Resume releases that hold.
+
+Pass the inbox IDs, in queue order, as `pendingMessageIds` to
+`groupMessagesIntoTurns(messages, { pendingMessageIds })`. Client-minted wire
+IDs still represent waiting prompts. The renderer keeps them after delivered
+turns until the inbox releases them.
+
+Queue acceptance and runtime execution are separate states. Each distinct submission
+appears immediately, including while a previous POST is pending. The working hook
+updates `pendingDelivery` when the same turn becomes active, without waiting for
+a different turn ID or timestamp.

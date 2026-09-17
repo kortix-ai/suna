@@ -57,7 +57,6 @@ export type SettingsTab =
   // automation's. Marko, 2026-08-18:
   // "the personal tokens should be in the personal settings and visible there.
   // the automation tokens should be in the actual account settings."
-  | 'provider-connections'
   | 'tokens'
   // The account's plan — subscription, credits, billing portal. The SAME
   // `BillingTab` `/accounts/[id]?tab=billing` renders, mounted a second time
@@ -142,7 +141,6 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'appearance',
   'sessions',
   'preferences',
-  'provider-connections',
   'tokens',
   // `connected` is still in the type but NOT here: it listed the ACCOUNT's
   // GitHub App installations — the account page's Git tab — under a

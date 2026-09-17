@@ -12,10 +12,11 @@
  * holds no live turn whatever its ledger rows still say. The ledger DECORATES
  * (accepted_at, message identity) and owns HISTORY (`last_ended`).
  *
- * Reads only. No auth, no visibility gate — the CALLER owns both, exactly as
+ * No auth or visibility gate — the CALLER owns both, exactly as
  * the route does before it reaches this function.
  */
 
+import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-recovery';
 import { db } from '../../shared/db';
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -48,12 +49,22 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
   // every ledger row left open on a stopped box. Served by
   // idx_session_sandboxes_session (plain Index Scan; measured, see below).
   const [box] = await db
-    .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+    .select({
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+      sandboxId: sessionSandboxes.sandboxId,
+      externalId: sessionSandboxes.externalId,
+      provider: sessionSandboxes.provider,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sessionId, sessionId))
     .limit(1);
   const authority =
     box && RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [];
+
+  // Recovery stays off the response path. A reload can miss the runtime's
+  // idle frame too; the next read must not keep serving a completed turn.
+  if (box && authority.length > 0) scheduleSessionTurnRecovery({ ...box, sessionId });
 
   // Decoration only, keyed by the tokens the authority already named: the
   // ledger owns `accepted_at`, and it fills in an identity the authority may

@@ -233,6 +233,32 @@ describe('createSubmitOnEnterHandler', () => {
     expect(handled).toBe(true);
   });
 
+  test('Enter and modified Enter keep distinct submission intents; composition never submits', () => {
+    const placements: string[] = [];
+    const handler = createSubmitOnEnterHandler(
+      (placement) => placements.push(placement),
+      () => false,
+    );
+    const fire = (extra: Partial<KeyboardEvent>) =>
+      handler(
+        null as unknown as EditorView,
+        {
+          key: 'Enter',
+          shiftKey: false,
+          preventDefault() {},
+          ...extra,
+        } as KeyboardEvent,
+      );
+    expect(fire({ shiftKey: undefined })).toBe(false);
+    fire({});
+    fire({ metaKey: true });
+    fire({ ctrlKey: true });
+    expect(fire({ isComposing: true })).toBe(false);
+    expect(fire({ keyCode: 229 })).toBe(false);
+    expect(fire({ shiftKey: true })).toBe(false);
+    expect(placements).toEqual(['transcript', 'composer', 'composer']);
+  });
+
   test('Enter while disabled does NOT call onSubmit, and reports unhandled', () => {
     // This is the bug: editable=false alone does not stop this handler from
     // firing, because it's not a document edit — it's an imperative
@@ -317,14 +343,34 @@ describe('createSubmitOnEnterHandler', () => {
     test('below the first row, with a modifier, or while disabled, the host is never asked', () => {
       let calls = 0;
       const onUp = () => (++calls, true);
-      expect(createSubmitOnEnterHandler(() => {}, () => false, onUp)(belowFirstRow, arrowUp().event)).toBe(false);
       expect(
-        createSubmitOnEnterHandler(() => {}, () => false, onUp)(atFirstRow, arrowUp({ shiftKey: true }).event),
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(belowFirstRow, arrowUp().event),
       ).toBe(false);
       expect(
-        createSubmitOnEnterHandler(() => {}, () => false, onUp)(atFirstRow, arrowUp({ isComposing: true }).event),
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ shiftKey: true }).event),
       ).toBe(false);
-      expect(createSubmitOnEnterHandler(() => {}, () => true, onUp)(atFirstRow, arrowUp().event)).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => false,
+          onUp,
+        )(atFirstRow, arrowUp({ isComposing: true }).event),
+      ).toBe(false);
+      expect(
+        createSubmitOnEnterHandler(
+          () => {},
+          () => true,
+          onUp,
+        )(atFirstRow, arrowUp().event),
+      ).toBe(false);
       expect(calls).toBe(0);
     });
   });

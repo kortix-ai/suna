@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type {
@@ -17,7 +18,6 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
-import { useTranslations } from '@/i18n/use-translations';
 import type { RefObject } from 'react';
 import {
   lazy,
@@ -96,6 +96,7 @@ import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
 interface StashedDraft {
+  placement: 'transcript' | 'composer';
   content: ReturnType<ComposerEditorHandle['getContent']>;
   doc: JSONContent | null;
   files: AttachedFile[];
@@ -108,6 +109,7 @@ export interface SessionChatInputProps {
     files?: AttachedFile[],
     mentions?: TrackedMention[],
     attachments?: AttachmentSubmission,
+    placement?: 'transcript' | 'composer',
   ) => void | Promise<void>;
   /**
    * A host-owned upload controller. Pass one when this composer can remount
@@ -1182,8 +1184,10 @@ function ComposerImpl({
     [cycleAgent, onCompactClick, onContextClick],
   );
 
+  const submitPlacementRef = useRef<'transcript' | 'composer'>('transcript');
   const dispatchSubmission = useCallback(
     async (stash?: StashedDraft): Promise<DispatchOutcome> => {
+      const placement = stash?.placement ?? submitPlacementRef.current;
       // Ahead of the model check: with no agent to run it, the model this prompt
       // would have used is not the user's problem.
       if (agentUnavailable) {
@@ -1351,7 +1355,8 @@ function ComposerImpl({
         submission: attachmentSubmission,
         controller: promptAttachments,
         active: activeSubmissionIdsRef.current,
-        send: () => onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission),
+        send: () =>
+          onSend(trimmed, filesToSend, mentionsToSend, attachmentSubmission, placement),
         onSent: () => {
           for (const url of reset.urlsToRevoke) revokeUnsentPreview(url);
         },
@@ -1424,7 +1429,7 @@ function ComposerImpl({
    *
    * Created ONCE and dispatching through a ref: the latch's in-flight state
    * must survive re-renders (a fresh latch mid-send would reopen the
-   * double-fire window), while the deferred re-run must read the CURRENT
+   * double-fire window), while each later submit must read the CURRENT
    * dispatch closure, not the one from the render that created the latch.
    */
   const dispatchSubmissionRef = useRef(dispatchSubmission);
@@ -1432,7 +1437,8 @@ function ComposerImpl({
     dispatchSubmissionRef.current = dispatchSubmission;
   });
   const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback((placement: 'transcript' | 'composer' = 'transcript') => {
+    submitPlacementRef.current = placement;
     // A stash whose dispatch no host took comes back as it left: merged into
     // whatever the user typed since, with its files back in the tray.
     const restoreStashedDraft = (stash: StashedDraft, withText: boolean) => {
@@ -1467,7 +1473,7 @@ function ComposerImpl({
       // worth stashing; a double-fire arrives with the editor already
       // cleared. The stash takes the draft OUT of the editor right now — the
       // user sees the message leave on Enter, exactly as a direct send — and
-      // submits it unchanged once the in-flight send settles. Files ride
+      // submits it immediately, even while another acceptance is pending. Files ride
       // along from the synchronous mirror, not from React state that may not
       // have flushed.
       () => {
@@ -1483,7 +1489,13 @@ function ComposerImpl({
         editor.clear();
         attachedFilesRef.current = [];
         setAttachedFiles([]);
-        return { content, doc, files, attachmentSubmission };
+        return {
+          content,
+          doc,
+          files,
+          attachmentSubmission,
+          placement: submitPlacementRef.current,
+        };
       },
     );
     return submitLatchRef.current();
@@ -1869,7 +1881,7 @@ function ComposerImpl({
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               agentUnavailable={agentUnavailable}
-              onSubmit={handleSubmit}
+              onSubmit={() => handleSubmit()}
             />
           </div>
         </div>

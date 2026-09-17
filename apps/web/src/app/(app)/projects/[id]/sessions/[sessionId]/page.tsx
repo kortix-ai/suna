@@ -22,6 +22,7 @@ import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
 } from '@/features/session/provisioning-failure';
+import { isFirstPromptRow } from '@/features/session/queue-projection';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
@@ -86,7 +87,6 @@ import {
   formatRuntimeError,
   getProjectDetail,
   isSessionFresh,
-  listProjectSessions,
   sessionStartKey,
   setActiveInstanceCookie,
   updateProjectSession,
@@ -101,7 +101,9 @@ import {
   readStartStash,
   startSessionWithPrompt,
   useRuntimeConnectionStore,
+  useProjectSession,
   useSession,
+  useSessionPrompts,
   useWakeEscalation,
 } from '@kortix/sdk/react';
 
@@ -192,19 +194,19 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+  // This page needs exactly ONE session — its own. It used to find that row by
+  // scanning the project's whole session list, which was never the right read
+  // and became a wrong one once that list became a bounded page: a session
+  // older than the first page is absent from it, so the page would have opened
+  // with no pin, no agent name and no recovery metadata. `useProjectSession`
+  // reads the row by id, which is exact at any age, costs one indexed lookup
+  // instead of a page scan, and returns `metadata` WHOLE where the list
+  // deliberately trims its heavy write-only keys (`trimListMetadata`).
+  const { data: currentProjectSession } = useProjectSession(projectId, sessionId, {
     enabled: !!user && !!projectId,
-    // The always-mounted sidebar owns title/status polling for this shared key.
-    // A second observer timer here produced independent list requests between
-    // the sidebar's polls during long turns.
-    refetchOnWindowFocus: false,
-    ...contract('inventory'),
   });
-  const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
-  const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
+  const initialOpenCodeSessionId = findInitialSessionPin(currentProjectSession);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -488,6 +490,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     return { pending, firstPrompt, newSessionHint: pending || isSessionFresh(sessionId) };
   });
   const [submittedOnShell, setSubmittedOnShell] = useState(false);
+  const [restoredFirstPrompt, setRestoredFirstPrompt] = useState(false);
+  // A reload has no local handoff. Restore the typing surface from the same
+  // durable inbox the shell reads, then let the shell own further polling.
+  const restoreInbox = useSessionPrompts(projectId, sessionId, {
+    enabled: !!user && !chatReady && !handoff.newSessionHint && !restoredFirstPrompt,
+  });
+  const hasPendingFirstPrompt = restoreInbox.prompts.some(isFirstPromptRow);
+  useEffect(() => {
+    if (hasPendingFirstPrompt && session.messages.length === 0) setRestoredFirstPrompt(true);
+  }, [hasPendingFirstPrompt, session.messages.length]);
   // "The shell is painting this session's first prompt right now." TWO producers
   // put a prompt on that surface and only one of them is a send made here:
   //
@@ -511,7 +523,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const hasFirstPromptPreview = useFirstPromptPreviewStore(
     (state) => !!state.previewBySession[sessionId],
   );
-  const shellShowsFirstPrompt = submittedOnShell || hasFirstPromptPreview || handoff.firstPrompt;
+  const shellShowsFirstPrompt =
+    submittedOnShell || hasFirstPromptPreview || handoff.firstPrompt || restoredFirstPrompt;
   // Mounting the chat takes the same evidence plus one weaker source: a stashed
   // prompt means the message is committed and needs a runtime, so the chat
   // should be warming up. It does NOT pin the shell — a stash can outlive the
@@ -530,7 +543,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (session.messages.length > 0) setSawTranscript(true);
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
-  const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
+  const surface = { newSessionHint: handoff.newSessionHint, hasTranscript, hasPendingFirstPrompt };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
   //
@@ -978,6 +991,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               // overlay anyway.
               loaderMounted && 'isolate',
             )}
+            aria-hidden={!overlayDismissed}
+            inert={!overlayDismissed}
           >
             <ProjectSessionRuntimeConnection>
               {mountChat && (
@@ -996,6 +1011,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
 
         {loaderMounted && (
           <div
+            aria-hidden={overlayDismissed}
+            inert={overlayDismissed}
             onTransitionEnd={() => {
               if (chatReady) setLoaderMounted(false);
             }}
@@ -1006,7 +1023,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               // (SessionLayout), but the boot loader is a transparent centred
               // block — under it you would see the chat's own compact loader
               // through the gaps, two spinners deep.
-              'bg-background absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
+              'bg-background absolute inset-0 flex flex-col transition-opacity duration-slow ease-out',
               overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >

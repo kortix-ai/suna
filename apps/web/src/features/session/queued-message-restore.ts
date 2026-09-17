@@ -46,6 +46,7 @@ export function restoreQueuedMessage(
     clientMessageId: removed.client_message_id,
     messageId: mintMessageId(),
     parts: removed.parts,
+    ...(removed.placement ? { placement: removed.placement } : {}),
     ...(removed.overrides ? { overrides: removed.overrides } : {}),
   };
 }

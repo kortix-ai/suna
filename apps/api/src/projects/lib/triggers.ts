@@ -1321,16 +1321,6 @@ export function startProjectTriggerScheduler(): void {
       );
     }
 
-    drainSessionLifecycleQueue({ limit: 10 })
-      .then((result) => {
-        if (result.claimed || result.failed) {
-          console.log('[session-lifecycle] queue drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[session-lifecycle] queue drain failed:', error);
-      });
-
     runProjectTriggerSweep()
       .then(() => drainTriggerExecutionQueue())
       .then((result) => {

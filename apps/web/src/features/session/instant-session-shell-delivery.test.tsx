@@ -20,7 +20,13 @@ const posted: string[] = [];
 // Every state update the shell makes. The static render ignores them, so they are recorded here.
 const stateUpdates: unknown[] = [];
 let inboxPrompts: Array<Record<string, unknown>> = [
-  { prompt_id: 'row-1', text: 'first prompt', attachments: [], state: 'queued' },
+  {
+    prompt_id: 'row-1',
+    client_message_id: 'start_row-1',
+    text: 'first prompt',
+    attachments: [],
+    state: 'queued',
+  },
 ];
 const startSessionWithPrompt = mock(
   async (_projectId: string, _sessionId: string, input: { parts: Array<{ text?: string }> }) => {
@@ -28,7 +34,15 @@ const startSessionWithPrompt = mock(
     return { state: 'queued' };
   },
 );
+// Sends after the first are inbox rows, so they carry their queue placement.
+const enqueue = mock(
+  async (input: { parts: Array<{ text?: string }>; placement?: string }) => {
+    posted.push(input.parts[0]?.text ?? '');
+    return { state: 'queued' };
+  },
+);
 const realSdkReact = await import('@kortix/sdk/react');
+const realQueuedBubbles = await import('@/features/session/turn/queued-prompt-bubbles');
 const realToast = await import('@/components/ui/toast');
 const realReact = await import('react');
 // Read before the mock: `mock.module` patches this namespace in place.
@@ -61,9 +75,7 @@ mock.module('@/features/session/header/session-site-header', () => ({
   SessionSiteHeader: () => null,
 }));
 mock.module('@/features/session/optimistic-turn', () => ({ OptimisticTurn: () => null }));
-mock.module('@/features/session/turn/queued-prompt-bubbles', () => ({
-  QueuedPromptBubbles: () => null,
-}));
+mock.module('@/features/session/turn/queued-prompt-bubbles', () => ({ ...realQueuedBubbles }));
 mock.module('@/features/session/session-wallpaper-layer', () => ({
   useSessionWallpaperLayer: () => null,
 }));
@@ -86,7 +98,7 @@ mock.module('@kortix/sdk/react', () => ({
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
-  useSessionPrompts: () => ({ prompts: inboxPrompts }),
+  useSessionPrompts: () => ({ prompts: inboxPrompts, enqueue }),
   readStartStash: () => null,
   writeStartStash: () => {},
 }));
@@ -118,6 +130,7 @@ const noUploads = (): AttachmentSubmission => ({
 beforeEach(() => {
   posted.length = 0;
   startSessionWithPrompt.mockClear();
+  enqueue.mockClear();
   renderToStaticMarkup(
     createElement(InstantSessionShell, {
       projectId: 'project-1',
@@ -158,6 +171,11 @@ test('boot-shell extra sends POST in Enter order', async () => {
   finishUpload();
   await settle();
   expect(posted).toEqual(['with image', 'text two', 'text three']);
+  expect(enqueue.mock.calls.map(([input]) => input.placement)).toEqual([
+    'transcript',
+    'transcript',
+    'transcript',
+  ]);
 });
 
 function renderFirstSend(onSubmit: () => void) {
@@ -172,7 +190,15 @@ function renderFirstSend(onSubmit: () => void) {
       }),
     );
   } finally {
-    inboxPrompts = [{ prompt_id: 'row-1', text: 'first prompt', attachments: [], state: 'queued' }];
+    inboxPrompts = [
+      {
+        prompt_id: 'row-1',
+        client_message_id: 'start_row-1',
+        text: 'first prompt',
+        attachments: [],
+        state: 'queued',
+      },
+    ];
   }
   stateUpdates.length = 0;
 }
@@ -218,7 +244,7 @@ test('a send made while a boot-shell text-only POST is in flight POSTs after tha
   const answered = new Promise<void>((resolve) => {
     answerPost = resolve;
   });
-  startSessionWithPrompt.mockImplementationOnce(async (_projectId, _sessionId, input) => {
+  enqueue.mockImplementationOnce(async (input) => {
     posted.push(input.parts[0]?.text ?? '');
     await answered;
     return { state: 'queued' };

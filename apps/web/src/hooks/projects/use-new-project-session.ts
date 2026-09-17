@@ -44,7 +44,7 @@ import {
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
-import { prefetchSessionStart, qk } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sdk/react';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -286,9 +286,18 @@ export function useNewProjectSession(projectId: string | undefined) {
           // taken but never made it this far (a scope-replacement failure,
           // say) never seeds a phantom row here — see warm-session-seed.ts.
           if (adoptedWarmSession) {
-            queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
-              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
+            // Every cached shape, not just the flat key. The sidebar caches
+            // PAGES now (`useProjectSessions`), so a write aimed at the flat
+            // list left a brand-new session invisible there until the next
+            // refetch — the one surface the user is watching when they start
+            // one. `seedAdoptedWarmSession` still owns what an adopted row
+            // looks like; the cache write is the only part that moved.
+            const [adopted] = seedAdoptedWarmSession(
+              undefined,
+              adoptedWarmSession!,
+              new Date().toISOString(),
             );
+            if (adopted) upsertCachedProjectSession(queryClient, projectId, adopted);
           }
           // The row exists — kick provisioning so it overlaps the navigation.
           // For an adopted warm session this is also the call that drops the

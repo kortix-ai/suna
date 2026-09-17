@@ -449,8 +449,11 @@ export class OpencodeDb {
             continue
           }
           const list = partsByMessage.get(row.message_id)
-          if (list) list.push(parsed)
-          else partsByMessage.set(row.message_id, [parsed])
+          // OpenCode stores identity in columns; its JSON payload omits these
+          // fields on live 1.18 databases. The column values are authoritative.
+          const part = { ...parsed, id: row.id, messageID: row.message_id, sessionID: row.session_id }
+          if (list) list.push(part)
+          else partsByMessage.set(row.message_id, [part])
         }
 
         const messages: MessagePage['messages'] = []
@@ -463,7 +466,10 @@ export class OpencodeDb {
             dropped++
             continue
           }
-          messages.push({ info, parts: partsByMessage.get(row.id) ?? [] })
+          messages.push({
+            info: { ...info, id: row.id, sessionID: row.session_id },
+            parts: partsByMessage.get(row.id) ?? [],
+          })
         }
         return { messages, dropped, hasMore }
       })

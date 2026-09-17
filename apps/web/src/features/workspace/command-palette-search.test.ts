@@ -223,7 +223,7 @@ describe('queries return the rows they name', () => {
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" matches the four rows whose visible text contains the word', () => {
+  test('"project" returns the three rows that say the word, not every project-scoped row', () => {
     // `account-access-projects` is the account hub's "Projects" pane — the
     // word is its own label, which is exactly the bar this file sets. Ten
     // `proj-*` rows used to answer this by their ids.
@@ -236,17 +236,17 @@ describe('queries return the rows they name', () => {
       'nav:account-access-projects',
       'nav:nav-projects',
       'nav:proj-members',
-      'settings:provider-connections',
     ]);
   });
 
   test('"proj" matches nothing by id', () => {
-    // Every match contains the query in visible text, not only in an id.
+    // Ten `proj-*` rows used to answer this. The three that survive all carry
+    // the word as visible label text — "Projects" for two, "Project members"
+    // for `proj-members` — so the `proj-*` id itself still matches nothing.
     expect(hits('proj').sort()).toEqual([
       'nav:account-access-projects',
       'nav:nav-projects',
       'nav:proj-members',
-      'settings:provider-connections',
     ]);
   });
 

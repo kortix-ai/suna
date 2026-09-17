@@ -24,7 +24,7 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
+import { type ReviewVerdict, listProjectSessions, PROJECT_SESSION_NAME_LOOKUP_LIMIT } from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -75,7 +75,7 @@ export function ReviewCenterConnected({
   // Also names the originating session in each approval's description.
   const { data: sessions } = useQuery({
     queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: !!projectId,
     ...contract('inventory'),
   });

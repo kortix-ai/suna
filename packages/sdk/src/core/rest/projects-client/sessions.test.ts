@@ -26,6 +26,7 @@ import {
   getSessionTranscript,
   getSessionTurn,
   listProjectSessions,
+  listProjectSessionsPage,
   listSessionPrompts,
   listSessionPublicShares,
   reloadProjectSessionConfig,
@@ -41,7 +42,10 @@ import {
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
-let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
+let nextResponse: { status: number; body: unknown; headers?: Record<string, string> } = {
+  status: 200,
+  body: {},
+};
 
 beforeEach(() => {
   calls = [];
@@ -54,7 +58,7 @@ beforeEach(() => {
     });
     return new Response(JSON.stringify(nextResponse.body), {
       status: nextResponse.status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(nextResponse.headers ?? {}) },
     });
   }) as unknown as typeof fetch;
 });
@@ -101,6 +105,59 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   const [session] = await listProjectSessions('P1');
   expect(session.can_manage_sharing).toBe(false);
   expect(session.can_manage_lifecycle).toBe(true);
+});
+
+// ─── Paging ────────────────────────────────────────────────────────────────
+// The list is a bounded keyset PAGE. It used to return every session row the
+// viewer could see: a 12,617-session project shipped a multi-megabyte body on a
+// list the sidebar re-polls every 5s. See `listProjectSessionsPage`.
+
+test('listProjectSessions forwards limit and cursor as query parameters', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { limit: 25, cursor: 'CURSOR1' });
+  const url = new URL(last().url);
+  expect(url.pathname).toBe('/projects/P1/sessions');
+  expect(url.searchParams.get('limit')).toBe('25');
+  expect(url.searchParams.get('cursor')).toBe('CURSOR1');
+});
+
+test('listProjectSessions sends no paging parameters when none are asked for', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1');
+  expect(last().url).not.toContain('limit=');
+  expect(last().url).not.toContain('cursor=');
+});
+
+test('listProjectSessionsPage reads the continuation token from X-Next-Cursor', async () => {
+  nextResponse = {
+    status: 200,
+    body: [{ session_id: 'S1' }],
+    headers: { 'x-next-cursor': 'NEXT1' },
+  };
+  const page = await listProjectSessionsPage('P1', { limit: 1 });
+  expect(page.items).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
+  expect(page.next_cursor).toBe('NEXT1');
+});
+
+test('listProjectSessionsPage reports the last page as next_cursor null', async () => {
+  // No header means the server folded the list to its end. A client that
+  // treated "missing" as "unknown" and kept asking would loop forever.
+  nextResponse = { status: 200, body: [{ session_id: 'S1' }] };
+  const page = await listProjectSessionsPage('P1');
+  expect(page.next_cursor).toBeNull();
+});
+
+test('listProjectSessions returns the page body unchanged for existing callers', async () => {
+  // Back-compat: the 200 body stays the bare array. Paging rides a header
+  // precisely so no existing consumer has to learn an envelope.
+  nextResponse = {
+    status: 200,
+    body: [{ session_id: 'S1' }],
+    headers: { 'x-next-cursor': 'NEXT1' },
+  };
+  const result = await listProjectSessions('P1');
+  expect(Array.isArray(result)).toBe(true);
+  expect(result).toEqual([{ session_id: 'S1' }] as unknown as ProjectSession[]);
 });
 
 test('listProjectSessions throws when the response is unsuccessful', async () => {
@@ -869,6 +926,22 @@ test('createSessionPrompt POSTs the submission name, the wire id, the parts and 
     message_id: 'msg_a',
     deduped: false,
   });
+});
+
+test('createSessionPrompt preserves explicit queue placement on the wire', async () => {
+  for (const placement of ['transcript', 'composer'] as const) {
+    nextResponse = {
+      status: 202,
+      body: { prompt_id: 'cmd-placement', state: 'queued', message_id: 'msg_a', deduped: false },
+    };
+    await createSessionPrompt('P1', 'S1', {
+      clientMessageId: `placement-${placement}`,
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'follow up' }],
+      placement,
+    });
+    expect(last().body).toMatchObject({ placement });
+  }
 });
 
 test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
