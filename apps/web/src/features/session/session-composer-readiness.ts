@@ -110,6 +110,7 @@ const RUNTIME_UNREACHABLE_NOTICE =
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  pendingPrompt?: boolean;
   /** A queued status already describes this send; do not ask for another. */
   pendingDelivery?: boolean;
   /**
@@ -195,6 +196,13 @@ export function sessionComposerReadiness(input: {
       notice:
         'Still waking this session up — taking longer than usual. Messages you send will be queued.',
       retryable: true,
+    };
+  }
+  if (input.pendingPrompt) {
+    return {
+      ready: false,
+      notice: 'Starting your computer… your message will send automatically.',
+      retryable: false,
     };
   }
   if (input.connection === 'waking') {

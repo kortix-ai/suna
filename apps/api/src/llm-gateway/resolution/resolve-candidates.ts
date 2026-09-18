@@ -430,8 +430,7 @@ export async function resolveCandidates(
     if (candidates.length) return candidates;
     // managed=true and every gate passed, but managedCandidates() itself found
     // no usable transport credential (an operator-side misconfiguration, e.g.
-    // KORTIX_MANAGED_PROVIDER_ENABLED on without AWS_BEDROCK_API_KEY/
-    // OPENROUTER_API_KEY set) — falls through to the deployment-disabled
+    // KORTIX_MANAGED_PROVIDER_ENABLED on without OPENROUTER_API_KEY set) — falls through to the deployment-disabled
     // message below, which is the closest accurate reason a caller can act on.
   }
 

@@ -22,24 +22,40 @@ export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSess
   return opencodeSessions.find((item) => !item.parent_id) ?? null;
 }
 
-/** Direct, non-archived children of the root opencode session, newest first. */
+/**
+ * Direct, non-archived children of the root opencode session, newest first.
+ *
+ * Ties break on id. A child with no `updated_at` collapses to `0`, so whole
+ * groups of them tie — and a stable sort then preserves ARRIVAL order, which is
+ * whatever order the sandbox listing came back in. That order is re-derived on
+ * every refetch, and the snapshot writer persists a pure reorder as a change,
+ * so the churn reached every client as sub-sessions visibly swapping places in
+ * the sidebar. Ids are stable and unique; the rendered order now is too.
+ */
 export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
   const root = rootOpenCodeSession(session);
   if (!root) return [];
   return (session.opencode_sessions ?? [])
     .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
 }
 
 /**
  * Where a session came from, derived from the creation metadata stamped by
  * the API: channel sessions carry `metadata.source` ('slack' | 'telegram' |
- * 'email'),
+ * 'teams' | 'email'),
  * trigger fires carry `metadata.trigger_source` ('cron' | 'webhook' |
  * 'manual') + `trigger_type`/`trigger_slug`. Everything else is a regular
  * chat the user started.
  */
-export type SessionSourceKind = 'chat' | 'slack' | 'telegram' | 'email' | 'schedule' | 'webhook';
+export type SessionSourceKind =
+  | 'chat'
+  | 'slack'
+  | 'telegram'
+  | 'teams'
+  | 'email'
+  | 'schedule'
+  | 'webhook';
 
 export interface SessionSource {
   kind: SessionSourceKind;
@@ -79,6 +95,8 @@ export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslat
     return { kind: 'slack', label: tI18nComplete.raw('textb27fb38ba323'), triggerSlug: null };
   if (source === 'telegram')
     return { kind: 'telegram', label: tI18nComplete.raw('textacdd1e734125'), triggerSlug: null };
+  if (source === 'teams')
+    return { kind: 'teams', label: tI18nComplete.raw('texta7b52b269a23'), triggerSlug: null };
   if (source === 'email')
     return { kind: 'email', label: tI18nComplete.raw('text969ccbd3cf63'), triggerSlug: null };
   if (typeof meta.trigger_source === 'string') {
@@ -107,7 +125,25 @@ export function sessionDisplayLabel(session: ProjectSession): string {
   const fallback = session.branch_name
     ? session.branch_name.slice(0, 14)
     : session.session_id.slice(0, 8);
-  return session.custom_name?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
+  return (
+    stripChatMentionMarkup(session.custom_name ?? '') ||
+    stripChatMentionMarkup(session.name ?? '') ||
+    stripChatMentionMarkup(metadataName ?? '') ||
+    fallback
+  );
+}
+
+/**
+ * Teams wraps a channel @-mention of the bot in `<at>…</at>`. Sessions titled
+ * from such a message before the API stripped it (#7388) still carry the tag
+ * in `name`; nothing a person reads should show it.
+ */
+export function stripChatMentionMarkup(value: string): string {
+  return value
+    .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -193,7 +229,14 @@ export function sessionDisplayStatus(
  * alongside arrays would allow `['all', 'running']`, which has no meaning.
  */
 export type SessionSourceFilter =
-  'mine' | 'shared' | 'slack' | 'telegram' | 'email' | 'schedule' | 'webhook';
+  | 'mine'
+  | 'shared'
+  | 'slack'
+  | 'telegram'
+  | 'teams'
+  | 'email'
+  | 'schedule'
+  | 'webhook';
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
@@ -201,6 +244,7 @@ export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: 
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
   { value: 'telegram', label: 'Telegram' },
+  { value: 'teams', label: 'Teams' },
   { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },

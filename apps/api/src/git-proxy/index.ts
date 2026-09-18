@@ -162,7 +162,8 @@ async function resolveProjectUpstreamMemo(
   project: ProjectRow,
   scope: GitScope,
 ): Promise<UpstreamGit | null> {
-  const key = `${project.projectId}|${scope}`;
+  const generation = (project.metadata as Record<string, unknown> | null)?.repository_generation ?? '';
+  const key = `${project.projectId}|${scope}|${project.repoUrl}|${generation}`;
   const now = Date.now();
   const hit = upstreamMemo.get(key);
   if (hit && hit.expiresAt > now) return hit.value;

@@ -5,14 +5,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import messages from '../../../../translations/en.json';
 import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
 
-function render(input: { resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]> } = {}) {
+function render(input: { resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]>; canEdit?: boolean; saving?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(['provider-pool-project', 'project'], { project: { account_id: 'account' } });
   client.setQueryData(['account-secret-resources', 'account', 'project'], { secrets: input.resources ?? [] });
   const listKey = ['session-provider-secret-pools', 'project', 'session'];
   const singleKey = ['session-provider-secret-pool', 'project', 'session', 'anthropic'];
   const pool = { provider_id: 'anthropic', configured: true, secret_ids: [] };
-  client.setQueryData(listKey, { pools: [pool], can_edit: true });
+  client.setQueryData(listKey, { pools: [pool], can_edit: input.canEdit ?? true });
   client.setQueryData(singleKey, pool);
   if (input.failed) {
     for (const key of [listKey, singleKey]) {
@@ -24,7 +24,7 @@ function render(input: { resources?: unknown[]; failed?: boolean; selection?: Re
       <QueryClientProvider client={client}>
         {input.selection
           ? <NewProviderSecretPoolEditor projectId="project" selection={input.selection} onChange={() => {}} />
-          : <ProviderSecretPoolEditor projectId="project" sessionId="session" />}
+          : <ProviderSecretPoolEditor projectId="project" sessionId="session" drafts={{}} onChange={() => {}} saving={input.saving} />}
       </QueryClientProvider>
     </NextIntlClientProvider>,
   );
@@ -58,4 +58,20 @@ test('the selection limit is visible before the API rejects an eleventh key', ()
   const html = render({ resources: [...ids, 'extra'].map(key), selection: { anthropic: ids } });
   expect(html).toContain('Maximum 10 keys per provider');
   expect(html).toMatch(/data-state="unchecked"[^>]*disabled/);
+});
+
+test('read-only viewers can switch providers while selection controls stay locked', () => {
+  const html = render({ resources: [key('Primary'), { ...key('Other'), provider_id: 'openai' }], canEdit: false });
+  const select = html.match(/<button[^>]*role="combobox"[^>]*>/)?.[0];
+  expect(select).toBeDefined();
+  expect(select).not.toContain('disabled=');
+  expect(html).toMatch(/role="checkbox"[^>]*disabled/);
+  expect(html).toContain('Only the session owner or a project manager');
+  expect(html).not.toContain('Reset to project default');
+});
+
+test('saving prevents navigation away from the pending selection', () => {
+  const html = render({ resources: [key('Primary')], saving: true });
+  expect(html).not.toContain('href="/projects/project/customize/models"');
+  expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
 });

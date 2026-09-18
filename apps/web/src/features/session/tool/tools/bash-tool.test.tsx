@@ -801,3 +801,46 @@ describe('BashTool indent is surface-aware', () => {
     expect(html).not.toContain('mt-1.5');
   });
 });
+
+describe('BashTool renders a channel send as the outgoing message', () => {
+  test('`teams send` shows the text the person received, badge first, command underneath', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <BashTool part={makePart("teams send 'Anything else I can help with?'", '{"ok":true,"delivered":"stream"}')} />,
+      ),
+    );
+    // The reply text is visible without opening anything: the row opens by default.
+    expect(html).toContain('Anything else I can help with?');
+    // The row title is the "Replied in …" catalog entry, not "Ran command".
+    expect(triggerTitle(html)).not.toContain('Ran command');
+    expect(triggerTitle(html)).toContain('Replied in Microsoft Teams');
+    // The raw command stays available for the record.
+    expect(cardText(html)).toContain('teams send');
+  });
+
+  test('a file send names the attachment', () => {
+    const html = renderToStaticMarkup(
+      withProviders(<BashTool part={makePart('slack send --file /out/report.pdf --text "Here it is"', '{"ok":true}')} />),
+    );
+    expect(html).toContain('report.pdf');
+    expect(html).toContain('Here it is');
+    expect(triggerTitle(html)).toContain('Replied in Slack');
+  });
+
+  test('`teams step` and a failed send are ordinary commands', () => {
+    const step = renderToStaticMarkup(
+      withProviders(<BashTool part={makePart('teams step "Reading the README"', '{"ok":true}')} defaultOpen />),
+    );
+    expect(triggerTitle(step)).toContain('Ran command');
+
+    const failed = renderToStaticMarkup(
+      withProviders(
+        <BashTool
+          part={makePart('teams send "hi"', 'No active Teams turn to answer.\n<exit_code>1</exit_code>')}
+          defaultOpen
+        />,
+      ),
+    );
+    expect(triggerTitle(failed)).toContain('Command failed');
+  });
+});

@@ -97,6 +97,15 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
+    key: 'session_transcript_history',
+    name: 'Session Transcript History',
+    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+  },
+  {
     key: 'marketplace',
     name: 'Marketplace',
     description:

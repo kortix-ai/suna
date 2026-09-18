@@ -92,7 +92,6 @@ mock.module('../shared/account-limits', () => ({
     source: 'tier',
   }),
   resolveAccountTier: async () => 'free',
-  accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   clearAccountLimitCache: () => {},
 }));

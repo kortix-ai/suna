@@ -85,7 +85,7 @@ kortix.yaml on the project's default branch.
 Subcommands:
   ls [--json]                     Show every agent's pinned model + the fallback
                                   default. (Alias: \`models\`.)
-  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.3-flash).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
   default --show [--json]         Print the current default agent.

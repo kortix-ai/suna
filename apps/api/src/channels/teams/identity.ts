@@ -6,7 +6,7 @@ import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { sendCard } from '../teams-api';
+import { sendCard, updateCard } from '../teams-api';
 import { buildConnectAccountCard, buildRequestAccessCard } from './cards';
 import { buildTeamsLoginUrl } from './login';
 import { createPendingTeamsAuthMessage } from './auth-resume';
@@ -139,11 +139,18 @@ export async function postTeamsIdentityPrompt(input: {
   tenantId: string;
   activity: TeamsActivity;
   reason: 'unlinked' | 'not_member';
+  /** The live "Working on it…" card to replace, when one was already posted. */
+  replaceActivityId?: string;
 }): Promise<void> {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return;
   const userId = teamsUserId(input.activity);
   if (!userId) return;
+
+  const post = async (card: Record<string, unknown>) => {
+    if (input.replaceActivityId && (await updateCard(ref, input.replaceActivityId, card))) return;
+    await sendCard(ref, card);
+  };
 
   if (input.reason === 'unlinked') {
     const pendingId = await createPendingTeamsAuthMessage({
@@ -157,10 +164,10 @@ export async function postTeamsIdentityPrompt(input: {
       teamsUserId: userId,
       ...(pendingId ? { pendingId } : {}),
     });
-    await sendCard(ref, buildConnectAccountCard(loginUrl));
+    await post(buildConnectAccountCard(loginUrl));
     return;
   }
-  await sendCard(ref, buildRequestAccessCard(input.projectId));
+  await post(buildRequestAccessCard(input.projectId));
 }
 
 export type TeamsAccessRequestOutcome =

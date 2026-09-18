@@ -12,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // access surface renders. Only `CreateGroupDialog` stays local: it DEFINES a
 // group, it does not grant access, so it is not an `AccessDialog` mode.
 
-import { invalidatePermissionProbes } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   ArrowRightIcon,
   MagnifyingGlassIcon,
@@ -139,7 +139,7 @@ function GroupsList({
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
     queryFn: () => listGroups(accountId),
-    staleTime: 30_000,
+    ...contract('directory'),
   });
 
   const deleteMutation = useMutation({

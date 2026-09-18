@@ -23,13 +23,24 @@ export function useServerHealth(options?: { enabled?: boolean }) {
   const status = useRuntimeConnectionStore((s) => s.status);
   const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy);
   const version = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  // The control plane answered the probe from the session row: the box is
+  // asleep, not merely un-ready. `status` does not carry this — nothing clears
+  // it when a box parks — so without reading it here the gate opens over a box
+  // that cannot serve anything. See `fileServerHealthState`.
+  const parked = useRuntimeConnectionStore((s) => s.parked);
 
   // Return a shape compatible with the old UseQueryResult<ServerHealth>
   // so consumers don't need to change their destructuring pattern.
-  const data: ServerHealth | undefined = fileServerHealthState(status, runtimeHealthy, version);
+  const data: ServerHealth | undefined = fileServerHealthState(
+    status,
+    runtimeHealthy,
+    version,
+    parked,
+  );
 
   return {
     data,
+    parked,
     isLoading: status === 'connecting' && runtimeHealthy === null,
     isError: status === 'unreachable',
     error: status === 'unreachable' ? new Error('Server unreachable') : null,

@@ -13,10 +13,22 @@
  * rules the writer enforces — lives in `session-transcript-mirror.ts`'s header.
  */
 
-import { projectSessions, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import {
+  projects,
+  projectSessions,
+  sessionTranscriptMessages,
+  sessionTranscriptMirrors,
+} from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { readTranscriptPages, retryTranscriptCapture } from './session-transcript-pages';
+import {
+  readTranscriptAttachmentBytes,
+  recoverTranscriptAttachments,
+} from './session-transcript-attachments';
+import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/engine';
 import {
@@ -38,27 +50,91 @@ export interface CaptureResult {
 export interface CaptureDeps {
   readMessages: (
     sessionId: string,
-  ) => Promise<{ opencodeSessionId: string; payload: unknown } | null>;
+    options?: {
+      fullHistory: boolean;
+      projectId?: string;
+      retainHistory?: boolean;
+    },
+  ) => Promise<{
+    opencodeSessionId: string;
+    payload: unknown;
+    headComplete?: boolean;
+  } | null>;
 }
 
 const liveCaptureDeps: CaptureDeps = {
-  async readMessages(sessionId) {
+  async readMessages(sessionId, options) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return null;
-    const url = new URL(
-      `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message`,
+    const deadline = AbortSignal.timeout(options?.fullHistory ? 60_000 : CAPTURE_TIMEOUT_MS);
+    const previous = options?.retainHistory
+      ? await db
+          .select({
+            messageId: sessionTranscriptMessages.messageId,
+            parts: sessionTranscriptMessages.parts,
+          })
+          .from(sessionTranscriptMessages)
+          .where(
+            and(
+              eq(sessionTranscriptMessages.sessionId, sessionId),
+              eq(sessionTranscriptMessages.opencodeSessionId, resolved.opencodeSessionId),
+            ),
+          )
+      : [];
+    const savedParts = new Map(
+      previous.map((row) => [row.messageId, row.parts as Record<string, unknown>[]]),
     );
-    url.searchParams.set('directory', WORKSPACE_DIRECTORY);
-    url.searchParams.set('limit', String(MIRROR_CAPTURE_LIMIT));
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
+    const result = await readTranscriptPages(
+      async (cursor) => {
+        const url = new URL(
+          `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message`,
+        );
+        url.searchParams.set('directory', WORKSPACE_DIRECTORY);
+        url.searchParams.set('limit', String(MIRROR_CAPTURE_LIMIT));
+        if (cursor) url.searchParams.set('cursor', cursor);
+        return fetch(url, {
+          headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+          signal: AbortSignal.any([deadline, AbortSignal.timeout(CAPTURE_TIMEOUT_MS)]),
+        });
+      },
+      options?.fullHistory === true,
+      options?.projectId && options.retainHistory
+        ? (messages) =>
+            recoverTranscriptAttachments({
+              messages,
+              previous: savedParts,
+              projectId: options.projectId!,
+              sessionId,
+              recover: options.fullHistory,
+              signal: deadline,
+              readFile: async (path) => {
+                const response = await fetch(
+                  `${resolved.endpoint.url}/file/raw?path=${encodeURIComponent(path)}`,
+                  {
+                    headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+                    signal: AbortSignal.any([deadline, AbortSignal.timeout(CAPTURE_TIMEOUT_MS)]),
+                  },
+                );
+                if (response.status === 404) {
+                  await response.body?.cancel();
+                  return null;
+                }
+                return readTranscriptAttachmentBytes(response);
+              },
+              saveFile: (file) => sessionAttachmentStore().put(file),
+              onFailure: (filename, error) =>
+                console.warn('[transcript-attachments] recovery failed', {
+                  sessionId,
+                  filename,
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+            })
+        : undefined,
+    );
     return {
       opencodeSessionId: resolved.opencodeSessionId,
-      payload: await res.json().catch(() => null),
+      payload: result.rows,
+      headComplete: result.headComplete,
     };
   },
 };
@@ -72,12 +148,13 @@ function timeField(info: Record<string, unknown>, key: 'created' | 'completed'):
 }
 
 /**
- * Read the box once and upsert what it said into the mirror.
+ * Capture the runtime transcript at turn end. The project flag enables full
+ * pagination and bounded retries; legacy projects keep the existing tail read.
  *
  * NEVER THROWS. Turn-end reports start capture asynchronously. Manual stop
  * awaits capture before powering off; a mirror failure must not prevent stop.
  */
-export async function captureSessionTranscriptMirror(
+async function captureSessionTranscript(
   sessionId: string,
   deps: CaptureDeps = liveCaptureDeps,
 ): Promise<CaptureResult | null> {
@@ -86,69 +163,94 @@ export async function captureSessionTranscriptMirror(
       .select({
         projectId: projectSessions.projectId,
         accountId: projectSessions.accountId,
+        metadata: projects.metadata,
       })
       .from(projectSessions)
+      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!session) return null;
 
-    const read = await deps.readMessages(sessionId);
-    if (!read) return null;
-    const rows = mirrorRowsFromOpencodePayload(read.payload);
-    if (rows.length === 0) return null;
+    const fullHistory = resolveFeatureFlag(session.metadata, 'session_transcript_history');
+    const retainHistory =
+      fullHistory || session.metadata?.session_transcript_history_retained === true;
+    const capture = async (): Promise<CaptureResult | null> => {
+      const startedAt = new Date();
+      const read = await deps.readMessages(sessionId, {
+        fullHistory,
+        projectId: session.projectId,
+        retainHistory,
+      });
+      if (!read) return null;
+      const rows = mirrorRowsFromOpencodePayload(read.payload);
+      if (rows.length === 0 && !fullHistory) return null;
+      if (fullHistory && read.headComplete !== true) return null;
 
-    const [existing] = await db
-      .select({
-        headComplete: sessionTranscriptMirrors.headComplete,
-        opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-      })
-      .from(sessionTranscriptMirrors)
-      .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
-      .limit(1);
-
-    // A re-pinned root (a restarted box adopting a different OpenCode session)
-    // makes every previously mirrored id unreachable from the new thread.
-    // Keeping them would serve a transcript the live read can never settle
-    // against — the ghost case. Drop them and start the head bit over.
-    const rootChanged =
-      !!existing?.opencodeSessionId && existing.opencodeSessionId !== read.opencodeSessionId;
-    const headComplete = headCompleteAfterCapture({
-      returned: rows.length,
-      limit: MIRROR_CAPTURE_LIMIT,
-      previous: rootChanged ? false : (existing?.headComplete ?? false),
-    });
-
-    const now = new Date();
-    await db.transaction(async (tx) => {
-      await tx
-        .insert(sessionTranscriptMirrors)
-        .values({
-          sessionId,
-          projectId: session.projectId,
-          accountId: session.accountId,
-          opencodeSessionId: read.opencodeSessionId,
-          headComplete,
-          capturedAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: sessionTranscriptMirrors.sessionId,
-          set: {
+      const now = startedAt;
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${sessionId}))`);
+        const [existing] = await tx
+          .select({
+            headComplete: sessionTranscriptMirrors.headComplete,
+            opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+            capturedAt: sessionTranscriptMirrors.capturedAt,
+          })
+          .from(sessionTranscriptMirrors)
+          .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
+          .limit(1);
+        if (existing && new Date(existing.capturedAt) > startedAt) return null;
+        const [current] = await tx
+          .select({ root: projectSessions.opencodeSessionId })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sessionId))
+          .limit(1);
+        if (!current || (current.root && current.root !== read.opencodeSessionId)) return null;
+        const rootChanged =
+          !!existing?.opencodeSessionId && existing.opencodeSessionId !== read.opencodeSessionId;
+        const headComplete = fullHistory
+          ? read.headComplete === true
+          : headCompleteAfterCapture({
+              returned: rows.length,
+              limit: MIRROR_CAPTURE_LIMIT,
+              previous: rootChanged ? false : (existing?.headComplete ?? false),
+            });
+        await tx
+          .insert(sessionTranscriptMirrors)
+          .values({
+            sessionId,
+            projectId: session.projectId,
+            accountId: session.accountId,
             opencodeSessionId: read.opencodeSessionId,
             headComplete,
             capturedAt: now,
             updatedAt: now,
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: sessionTranscriptMirrors.sessionId,
+            set: {
+              opencodeSessionId: read.opencodeSessionId,
+              headComplete,
+              capturedAt: now,
+              updatedAt: now,
+            },
+          });
 
-      if (rootChanged) {
-        await tx
-          .delete(sessionTranscriptMessages)
-          .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-      }
+        if (fullHistory && !session.metadata?.session_transcript_history_retained) {
+          await tx
+            .update(projects)
+            .set({
+              metadata: sql`jsonb_set(COALESCE(${projects.metadata}, '{}'::jsonb), '{session_transcript_history_retained}', 'true'::jsonb)`,
+            })
+            .where(eq(projects.projectId, session.projectId));
+        }
 
-      for (const row of rows) {
-        const values = {
+        if (rootChanged || fullHistory) {
+          await tx
+            .delete(sessionTranscriptMessages)
+            .where(eq(sessionTranscriptMessages.sessionId, sessionId));
+        }
+
+        const values = rows.map((row) => ({
           sessionId,
           messageId: String(row.info.id),
           parentMessageId:
@@ -160,28 +262,34 @@ export async function captureSessionTranscriptMirror(
           info: row.info,
           parts: row.parts as unknown[],
           capturedAt: now,
+        }));
+        for (let index = 0; index < values.length; index += 100) {
+          await tx
+            .insert(sessionTranscriptMessages)
+            .values(values.slice(index, index + 100))
+            .onConflictDoUpdate({
+              target: [sessionTranscriptMessages.sessionId, sessionTranscriptMessages.messageId],
+              set: {
+                parentMessageId: sql`excluded.parent_message_id`,
+                opencodeSessionId: sql`excluded.opencode_session_id`,
+                role: sql`excluded.role`,
+                messageCreatedAt: sql`excluded.message_created_at`,
+                messageCompletedAt: sql`excluded.message_completed_at`,
+                info: sql`excluded.info`,
+                parts: sql`excluded.parts`,
+                capturedAt: sql`excluded.captured_at`,
+              },
+            });
+        }
+        const pruned = retainHistory ? 0 : await pruneSessionTranscriptMirror(sessionId, tx);
+        return {
+          captured: rows.length,
+          head_complete: headComplete && pruned === 0,
+          pruned,
         };
-        await tx
-          .insert(sessionTranscriptMessages)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [sessionTranscriptMessages.sessionId, sessionTranscriptMessages.messageId],
-            set: {
-              parentMessageId: values.parentMessageId,
-              opencodeSessionId: values.opencodeSessionId,
-              role: values.role,
-              messageCreatedAt: values.messageCreatedAt,
-              messageCompletedAt: values.messageCompletedAt,
-              info: values.info,
-              parts: values.parts,
-              capturedAt: values.capturedAt,
-            },
-          });
-      }
-    });
-
-    const pruned = await pruneSessionTranscriptMirror(sessionId);
-    return { captured: rows.length, head_complete: headComplete && pruned === 0, pruned };
+      });
+    };
+    return fullHistory ? await retryTranscriptCapture(capture) : await capture();
   } catch (err) {
     console.warn(
       `[transcript-mirror] capture failed for session ${sessionId}:`,
@@ -191,10 +299,28 @@ export async function captureSessionTranscriptMirror(
   }
 }
 
+const captures = new Map<string, Promise<CaptureResult | null>>();
+
+export function captureSessionTranscriptMirror(
+  sessionId: string,
+  deps: CaptureDeps = liveCaptureDeps,
+): Promise<CaptureResult | null> {
+  const previous = captures.get(sessionId) ?? Promise.resolve(null);
+  const pending = previous.then(() => captureSessionTranscript(sessionId, deps));
+  captures.set(sessionId, pending);
+  void pending.finally(() => {
+    if (captures.get(sessionId) === pending) captures.delete(sessionId);
+  });
+  return pending;
+}
+
 /** Retention. Deleting the head is exactly what `head_complete` records, so
  *  a prune that removes anything clears it. */
-async function pruneSessionTranscriptMirror(sessionId: string): Promise<number> {
-  const deleted = await db.execute(sql`
+async function pruneSessionTranscriptMirror(
+  sessionId: string,
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+): Promise<number> {
+  const deleted = await tx.execute(sql`
     DELETE FROM kortix.session_transcript_messages
     WHERE session_id = ${sessionId}
       AND message_id NOT IN (
@@ -207,7 +333,7 @@ async function pruneSessionTranscriptMirror(sessionId: string): Promise<number> 
   `);
   const rows = Array.isArray(deleted) ? deleted : ((deleted as { rows?: unknown[] }).rows ?? []);
   if (rows.length > 0) {
-    await db
+    await tx
       .update(sessionTranscriptMirrors)
       .set({ headComplete: false, updatedAt: new Date() })
       .where(eq(sessionTranscriptMirrors.sessionId, sessionId));

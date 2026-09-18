@@ -2,6 +2,7 @@
  * Session transcript reads.
  */
 
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -42,11 +43,12 @@ projectsApp.openapi(
         limit: z.string().optional(),
         chars: z.string().optional(),
         shape: z.enum(['compact', 'sync']).optional(),
+        history: z.enum(['true', 'false']).optional(),
       }),
     },
     responses: {
       200: json(AnyObject, 'Compact session transcript'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -77,9 +79,15 @@ projectsApp.openapi(
     );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
+    const history = c.req.query('history') === 'true';
+    if (history) {
+      const gate = requireFeatureFlag(c, loaded.row.metadata, 'session_transcript_history');
+      if (gate) return gate;
+    }
+
     if (c.req.query('shape') === 'sync') {
       return c.json(
-        await buildSessionTranscriptSyncEnvelope({ session: visible.row, limit: limit.value }),
+        await buildSessionTranscriptSyncEnvelope({ session: visible.row, limit: limit.value, requireCurrentRoot: history }),
       );
     }
 

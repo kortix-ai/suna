@@ -1,0 +1,93 @@
+---
+title: Microsoft Teams
+description: Connect a Microsoft Teams bot so chats and channels start and continue Kortix sessions.
+---
+
+Microsoft Teams is a channel: an `@`-mention in a Teams chat or channel starts
+a [session](/docs/work/sessions), and the agent replies right there with live
+progress. It follows the same session, identity, and credential rules as
+[Slack](/docs/connect/slack); this page covers what is specific to Teams.
+
+Teams is experimental — enable **Microsoft Teams** under
+[Settings → Feature flags](/docs/feature-flags) on the project first.
+
+## Connect
+
+Two ways, both from **Settings → Channels**:
+
+- **One click (managed).** A Teams **tenant admin** clicks **Add to Teams**,
+  signs in, and consents. Kortix publishes the app to your org's Teams catalog
+  automatically — there is nothing to build or paste. The row then offers
+  **Add to Teams** (a deep link into the Teams client) so anyone can add the
+  bot to a chat or channel. If a later version of the app changes, click
+  **Publish to your Teams catalog** again to push the update.
+- **Bring your own bot.** Expand the panel, toggle it on, and supply your Azure
+  Bot's app id and client secret plus the tenant id. Use this on self-hosted
+  deployments or when you run your own registration.
+
+The CLI mirrors the dashboard:
+
+```bash
+kortix channels connect --platform teams      # prints the admin-consent URL
+kortix channels status --platform teams        # tenant + catalog + publish state
+kortix channels disconnect --platform teams
+```
+
+## Chats, channels, and mentions
+
+- **Personal chat:** every message reaches the bot.
+- **Team channel / group chat:** Teams delivers a message only when the bot is
+  `@`-mentioned. With the app's `ChannelMessage.Read.Group` permission (the
+  tenant admin consents when adding the app to a team), a reply in a thread the
+  bot already owns continues the session **without** a mention. A new channel
+  post still needs the mention.
+
+Each chat or channel conversation is its own session. The first message creates
+it; later messages continue it, even after the sandbox stops and resumes. A
+tenant connected to more than one project shows a **project picker** on the
+first unrouted message, and remembers the choice.
+
+## Who may join a session
+
+Each conversation has a join policy, set with `/policy` in Teams or from the
+bindings table on the Channels page:
+
+- **open** (default) — any linked project member may join a session started here.
+- **approval** — the session owner gets an Approve / Deny card for each new person.
+- **owner** — only the person who started the session.
+
+## Identity linking
+
+The sender links their Kortix account once with `/login`; the agent then runs
+as them, with their own credentials, secrets, and connected apps. An unlinked
+sender, or one without access to the project, gets a card to connect or request
+access instead of a session.
+
+## Commands
+
+Type these in a chat with the bot (in a channel, `@`-mention it first):
+
+| Command | What it does |
+| --- | --- |
+| `/help` | List the commands |
+| `/login`, `/logout`, `/whoami` | Link, unlink, or show your Kortix account |
+| `/status` | The effective project, agent, and model here |
+| `/models`, `/model <ref>` | Pick the model for this conversation |
+| `/agents`, `/agent <name>` | Pick the agent for this conversation |
+| `/projects`, `/use <name>` | List connected projects, or point this one at another |
+| `/policy [open\|approval\|owner]` | Who may join sessions started here |
+
+## Files
+
+The agent sends files with `teams send --file`, and Kortix picks the delivery
+for the conversation: a **consent card** in a personal chat (the recipient
+accepts, then it lands in their OneDrive), an **inline image** in a channel, or
+a **SharePoint link** for any other file shared to the team. Inbound files and
+pasted images are available to the agent to download and work with.
+
+## Limits
+
+Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
+search messages — those Slack affordances have no Teams equivalent. Reading a
+channel's message history needs Microsoft's protected `ChannelMessage.Read.All`
+permission, which a tenant admin must approve.

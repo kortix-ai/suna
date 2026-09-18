@@ -56,7 +56,6 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -478,7 +477,7 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sessionToken] = await Promise.all([
     createOrClaimSandboxRow(),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
@@ -491,15 +490,6 @@ export async function provisionSessionSandbox(opts: {
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    llmGatewayEnabled
-      ? accountEntitledToLlmGateway(accountId).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-            err instanceof Error ? err.message : String(err),
-          );
-          return false;
-        })
-      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
@@ -525,13 +515,13 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is a three-part gate: operator availability, per-project
-  // experimental opt-in, and account entitlement. If any part is off we inject
-  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
-  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
-  // so legacy paying customers are no longer wrongly stripped to the Zen-only
-  // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
+  // Enablement is the project's `llm_gateway` flag alone (operator
+  // availability + per-project opt-in), the same rule prompt-time env-sync
+  // applies (sandbox-env-sync.ts). The account's plan is NOT a boot gate: the
+  // gateway limits a free account to free/BYOK models per request
+  // (principal.freeModelsOnly, resolve-candidates.ts). Gating boot on the plan
+  // booted free accounts without the gateway; OpenCode recovered on the first
+  // prompt's env-sync, but pi has no native path and never started.
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -550,7 +540,7 @@ export async function provisionSessionSandbox(opts: {
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
       KORTIX_TOKEN: sessionToken,
-      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      ...(llmGatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -926,7 +916,7 @@ export async function provisionSessionSandbox(opts: {
           attempts,
           lastProvisionMaxAttempts,
         ),
-        config: { serviceKey: sessionToken, llmGatewayEnabled: gatewayEnabled },
+        config: { serviceKey: sessionToken, llmGatewayEnabled },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };

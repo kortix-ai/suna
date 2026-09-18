@@ -20,6 +20,7 @@ import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHea
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { DotsThreeIcon } from '@phosphor-icons/react';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { PrincipalPicker, type PrincipalSelection } from '@/features/workspace/shared/access/principal-picker';
 
@@ -34,6 +35,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   oauth?: { projectId: string; onConnected: (providerId: string) => void };
 }) {
   const t = useTranslations('pooledSecrets');
+  const common = useTranslations('common');
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const queryKey = ['account-secret-resources', accountId, projectId] as const;
@@ -146,25 +148,25 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     <section className="min-w-0 space-y-2" aria-label={oauth ? t('chatGptAccounts') : t('providerKeysFor', { provider: providerName })}>
       <div className="flex items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">{oauth ? t('accountCount', { count: keys.length }) : t('keyCount', { count: keys.length })}</p>
-        {canWrite && <Button size="sm" variant="secondary" onClick={() => { setCreateMode('project'); setSelectedMembers({ memberIds: [], groupIds: [], inviteEmails: [] }); setCreating(true); }}>{oauth ? t('addAccount') : t('addKey')}</Button>}
+        {canWrite && <Button size="sm" variant="secondary" onClick={() => { setCreateMode('project'); setSelectedMembers({ memberIds: [], groupIds: [], inviteEmails: [] }); setLabel(''); save.reset(); setCreating(true); }}>{oauth ? t('addAccount') : t('addKey')}</Button>}
       </div>
-      {resources.isLoading ? <Loading /> : resources.isError ? (
-        <p className="text-muted-foreground text-xs">{t('loadError')}</p>
+      {resources.isLoading ? <div role="status" aria-label={t('loadingKeys')}><Loading /></div> : resources.isError ? (
+        <ErrorState size="sm" title={t('loadError')} action={<Button size="sm" variant="secondary" disabled={resources.isFetching} onClick={() => void resources.refetch()}>{common('retry')}</Button>} />
       ) : keys.length ? (
         <ul className="space-y-1">{keys.map((secret) => (
             <li key={secret.secret_id} className="border-border flex min-w-0 items-center gap-3 rounded-md border px-3 py-1.5">
-              <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-                <span>{secret.label}</span>
+              <span className="text-foreground min-w-0 flex-1 text-sm font-medium">
+                <span className="block break-words">{secret.label}</span>
+                <span className="text-muted-foreground block text-xs font-normal">{secret.access_mode === 'project' ? t('everyoneInProject') : t('selectedMembersCount', { count: secret.granted_user_ids.length })}</span>
                 {secret.cooldown_until && Date.parse(secret.cooldown_until) > resources.dataUpdatedAt && (
                   <span className="text-muted-foreground block text-xs font-normal">{t('coolingDown')}</span>
                 )}
               </span>
-              <span className="text-muted-foreground shrink-0 text-xs">{secret.access_mode === 'project' ? t('everyoneInProject') : t('selectedMembersCount', { count: secret.granted_user_ids.length })}</span>
               {canWrite && (secret.created_by === user?.id || actorRole === 'owner' || actorRole === 'admin') && <DropdownMenu>
                 <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={t('actionsFor', { label: secret.label })}><DotsThreeIcon className="size-4" /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => { changeGrant.reset(); setSharingMode(secret.access_mode); setSelectedMembers({ memberIds: secret.granted_user_ids, groupIds: [], inviteEmails: [] }); setSharing(secret); }}>{t('manageAccess')}</DropdownMenuItem>
-                  {!oauth && <DropdownMenuItem onSelect={() => { setValue(''); setRotating(secret); }}>{t('rotateKey')}</DropdownMenuItem>}
+                  {!oauth && <DropdownMenuItem onSelect={() => { setValue(''); save.reset(); setRotating(secret); }}>{t('rotateKey')}</DropdownMenuItem>}
                   <DropdownMenuItem onSelect={() => setDeleting(secret)}>{oauth ? t('deleteAccount') : t('deleteKey')}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>}
@@ -177,6 +179,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
           <ModalHeader><ModalTitle>{rotating ? t('rotateLabel', { label: rotating.label }) : `${oauth ? t('addAccount') : t('addKey')} · ${providerName}`}</ModalTitle>
             <ModalDescription>{t(rotating ? 'valueNeverShown' : 'creationDescription')}</ModalDescription></ModalHeader>
           <ModalBody className="space-y-3">
+            {save.isError && <p role="alert" className="text-destructive text-sm">{save.error instanceof Error ? save.error.message : t('saveError')}</p>}
             {!rotating && <>
               <Field><FieldLabel htmlFor={`provider-key-label-${providerId}`}>{t('label')}</FieldLabel><Input id={`provider-key-label-${providerId}`} value={label} disabled={oauthWaiting || save.isPending} onChange={(event) => setLabel(event.target.value)} placeholder={oauth ? t('accountLabelPlaceholder') : t('primaryKey')} maxLength={100} /></Field>
             </>}
@@ -185,11 +188,11 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
             {!rotating && !oauthChallenge && <div className="space-y-2">
               <FieldLabel>{t('whoCanUse')}</FieldLabel>
               <RadioGroup value={createMode} onValueChange={(value) => setCreateMode(value as 'project' | 'members')} className="space-y-2">
-                <RadioGroupItem value="project" id={`create-${providerId}-project`} label={t('everyoneInProject')} description={t('everyoneDescription')} size="lg" variant="outline" />
-                <RadioGroupItem value="members" id={`create-${providerId}-members`} label={t('specificMembers')} description={t('specificDescription')} size="lg" variant="outline" />
+                <RadioGroupItem value="project" id={`create-${providerId}-project`} label={t('everyoneInProject')} description={t('everyoneDescription')} size="lg" variant="outline" disabled={save.isPending || oauthWaiting} />
+                <RadioGroupItem value="members" id={`create-${providerId}-members`} label={t('specificMembers')} description={t('specificDescription')} size="lg" variant="outline" disabled={save.isPending || oauthWaiting} />
               </RadioGroup>
               {createMode === 'members' && <PrincipalPicker scope={{ kind: 'project', projectId }} selection="multi" kinds={['member']}
-                value={selectedMembers} onChange={setSelectedMembers} autoFocus={false} />}
+                value={selectedMembers} onChange={setSelectedMembers} disabled={save.isPending || oauthWaiting} autoFocus={false} />}
             </div>}
           </ModalBody>
           <ModalFooter><Button variant="secondary" disabled={save.isPending} onClick={() => { oauthGeneration.current++; setCreating(false); setRotating(null); setValue(''); setOauthWaiting(false); setOauthChallenge(null); }}>{t('cancel')}</Button>

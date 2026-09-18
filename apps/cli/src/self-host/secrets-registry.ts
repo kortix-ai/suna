@@ -150,8 +150,7 @@ export const SECRET_DEFS: SecretDef[] = [
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
   { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'AWS_BEDROCK_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'AWS_BEDROCK_REGION', category: 'llm', kind: 'operator', required: false },
+  { key: 'MORPH_API_KEY', category: 'llm', kind: 'operator', required: false },
 
   // Connectors
   { key: 'COMPOSIO_API_KEY', category: 'connectors', kind: 'operator', required: false },
@@ -290,8 +289,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
 
   // LLM
   OPENROUTER_API_KEY: ['kortix-api'],
-  AWS_BEDROCK_API_KEY: ['kortix-api'],
-  AWS_BEDROCK_REGION: ['kortix-api'],
+  MORPH_API_KEY: ['kortix-api'],
 
   // Connectors
   COMPOSIO_API_KEY: ['kortix-api'],

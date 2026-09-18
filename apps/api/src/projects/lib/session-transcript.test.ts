@@ -148,3 +148,23 @@ describe('the sync envelope is the mirror and says so', () => {
     expect(envelope.messages).toEqual([]);
   });
 });
+
+describe('early history requires the current server-owned root', () => {
+  test('a replaced root cannot seed a stale transcript before the runtime starts', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, requireCurrentRoot: true },
+      { readMirror: async () => snapshot() },
+    );
+    expect(envelope.available).toBe(false);
+    expect(envelope.messages).toEqual([]);
+    expect(envelope.opencode_session_id).toBe('ses_pin');
+  });
+  test('a matching root serves completed messages without reading the runtime', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, requireCurrentRoot: true },
+      { readMirror: async () => snapshot({ opencode_session_id: 'ses_pin' }) },
+    );
+    expect(envelope.available).toBe(true);
+    expect(envelope.messages[1].info.time).toEqual({ created: 1100, completed: 1200 });
+  });
+});

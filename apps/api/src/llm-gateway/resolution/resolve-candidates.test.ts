@@ -169,7 +169,9 @@ mock.module('../routing', () => ({
 
 let runtimeManagedModel: { id: string } | undefined;
 let knownManagedModelId: string | null = null;
+const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
+  ...managedModels,
   RUNTIME_MANAGED_MODELS: [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
@@ -327,17 +329,15 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
   // endpoint), NOT the cloud-only managed/credits path. A project that connects
   // its own AWS_BEARER_TOKEN_BEDROCK resolves to a `kind:'bedrock'` descriptor
   // carrying that key and the bare Bedrock model id — routed through the bedrock
-  // transport exactly like the managed Bedrock path, just with the user's own
-  // credentials. KORTIX_MANAGED_PROVIDER_ENABLED is irrelevant here.
+  // transport with the user's own credentials.
+  // KORTIX_MANAGED_PROVIDER_ENABLED is irrelevant here.
   //
   // Regression coverage: the region MUST come from the project's OWN
   // AWS_REGION secret, never from deployment/operator config — an earlier
   // version of this fix baked resolveCatalogUpstream's baseUrl from
-  // config.AWS_BEDROCK_REGION (the MANAGED path's operator setting), which
-  // would have silently routed every BYOK Bedrock project to the operator's
-  // region regardless of which region the project's own bearer token was
-  // actually issued for. This test pins a project region that differs from
-  // both the managed default (us-west-2) and the BYOK default (us-east-1) to
+  // an operator-wide region, which would have silently routed every BYOK
+  // Bedrock project away from its own region. This test pins a project region
+  // that differs from the BYOK default (us-east-1) to
   // prove it's genuinely read from the project secret.
   test('BYOK Bedrock: standalone provider, builds a kind:bedrock descriptor from the PROJECT-OWNED bearer token + region', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
@@ -373,7 +373,7 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
     );
   });
 
-  test('BYOK Bedrock with no AWS_REGION set: falls back to the BYOK default (us-east-1), not the managed AWS_BEDROCK_REGION default', async () => {
+  test('BYOK Bedrock with no AWS_REGION set: falls back to us-east-1', async () => {
     catalogUpstream = { envVar: 'AWS_BEARER_TOKEN_BEDROCK', kind: 'bedrock' };
     secretsByName = { AWS_BEARER_TOKEN_BEDROCK: 'bedrock-bearer-key', AWS_REGION: null };
     const p = principal();

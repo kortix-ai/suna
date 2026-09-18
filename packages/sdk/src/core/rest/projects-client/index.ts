@@ -55,3 +55,4 @@ export type {
 } from './shared';
 
 export * from './model-access';
+export * from './session-attachments';

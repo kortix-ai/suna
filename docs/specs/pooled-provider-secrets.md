@@ -80,3 +80,17 @@ failure paths, which must be covered before the feature is ready:
 5. Local HTTP and browser regressions pass. SDK export, type, test, and install
    gates pass. The updated preview proves selection and gateway behavior through
    an actual session. Human OAuth approval remains a separate explicit check.
+
+## UI follow-up, 2026-09-18
+
+- One session footer saves every staged provider selection and default reset.
+  Switching sections, closing the panel, or crossing a responsive breakpoint preserves drafts for that session.
+  Page reload discards unsaved drafts. Session navigation never transfers them.
+- Pending saves block dismissal and repeat submissions. A failed provider save
+  leaves its draft and subsequent drafts available for retry. Successful provider
+  writes remain persisted; this is not a transaction across providers.
+- Read-only members can inspect every provider. They cannot edit selections.
+- Narrow viewports use horizontal section navigation. Labels wrap instead of
+  truncating key names or forcing access summaries outside a row.
+- Models load errors include a retry action. Creation errors remain visible in
+  the dialog, and pending writes lock the access options.
