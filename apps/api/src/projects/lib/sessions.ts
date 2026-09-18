@@ -4,6 +4,7 @@ import {
   projectSessionGrants,
   projectSessionRuntimeContexts,
   projectSessions,
+  projects,
   sessionLifecycleCommands,
   sessionProviderSecretPools,
 } from '@kortix/db';
@@ -46,7 +47,6 @@ import {
   grantFromLoadedAgents,
   loadProjectAgents,
   projectRequiresDeclaredAgents,
-  requiredConnectorsForAgent,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
   repositoryAccessFromLoadedAgents,
@@ -66,9 +66,11 @@ import {
 } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
+  manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveManifestRuntime,
   resolveSelectedAgentConfigForSession,
+  selectSessionHarness,
 } from './compile-agent-config';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
@@ -88,7 +90,6 @@ import {
 import {
   canonicalConnectorAlias,
   parseSessionConnectorBindings,
-  resolveRequiredConnectorConnections,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
 } from './session-connector-bindings';
@@ -485,6 +486,16 @@ export async function buildSessionSandboxEnvVars(input: {
   let compiledAgentConfig: string | null = input.platformMetaAgent
     ? buildPlatformMetaOpenCodeConfig()
     : null;
+  // The harness the daemon boots — `selectSessionHarness`: the project's
+  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`. The manifest
+  // is read off the SAME fetch that compiles the agent config, so selecting
+  // pi costs no extra git round trip. Every provisioning path (create,
+  // restart, resume, open/ensure) builds its env here, so a pi project stays
+  // on pi across the session's whole life. The `pi_worker` feature flag is
+  // the one exception: it routes `runtime: pi` to the split worker topology
+  // BEFORE this builder runs (createSession), and never reaches it.
+  let manifestHarness: 'opencode' | 'pi' | null = null;
+  let harness: 'opencode' | 'pi' = 'opencode';
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -493,16 +504,21 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
+    const onManifest = (raw: Record<string, unknown>) => {
+      manifestHarness = manifestRuntime(raw);
+    };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
             input.baseRef,
+            { onManifest },
           )
           : await resolveCompiledAgentConfigForSession(
               gitProject,
               input.baseRef,
+              { onManifest },
             ).catch(() => null);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
@@ -524,6 +540,20 @@ export async function buildSessionSandboxEnvVars(input: {
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath,
       sessionAgent: input.agentName,
+    });
+  }
+  if (!input.platformMetaAgent) {
+    // One indexed read for the flag: the callers hold the project row in
+    // different shapes (or not at all on the reload paths), and the flag must
+    // apply on every provisioning path, not only create.
+    const [projectRow] = await db
+      .select({ metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, input.projectId))
+      .limit(1);
+    harness = selectSessionHarness({
+      piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
+      runtime: manifestHarness,
     });
   }
 
@@ -666,6 +696,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
+      harness,
       repositoryAccess: input.repositoryAccess,
       compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
@@ -927,9 +958,6 @@ export async function createProjectSession(input: {
   // / `kortix connectors call` — the whole catalog went empty.
   let inheritUnbound = body.inherit_unbound !== false;
   const connectorBindingsConfigured = body.connector_bindings !== undefined;
-  const requireConnectors: string[] = Array.isArray(body.require_connectors)
-    ? body.require_connectors.filter((a): a is string => typeof a === 'string' && a.length > 0)
-    : [];
 
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
@@ -1175,19 +1203,12 @@ export async function createProjectSession(input: {
     }
   }
 
-  const agentRequiredConnectors = platformMetaAgent
-    ? []
-    : requiredConnectorsForAgent(agentName, loadedAgents);
-  const effectiveRequireConnectors = Array.from(
-    new Set<string>([...requireConnectors, ...agentRequiredConnectors]),
+  // Every connector this session binds explicitly must be granted to the
+  // session's agent. Nothing is required any more: an unconnected connector no
+  // longer refuses the create, it denies at the call with a connect link.
+  const grantCheckAliases = new Set<string>(
+    parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : [],
   );
-
-  // Every connector this session touches — whether the caller bound it explicitly
-  // or the agent requires it — must be granted to the session's agent.
-  const grantCheckAliases = new Set<string>([
-    ...(parsedConnectorBindings.bindings ? Object.keys(parsedConnectorBindings.bindings) : []),
-    ...effectiveRequireConnectors,
-  ]);
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
   if (grantCheckAliases.size > 0) {
     loadedAgentGrant = grantFromLoadedAgents(agentName, loadedAgents);
@@ -1223,49 +1244,6 @@ export async function createProjectSession(input: {
         },
       },
     };
-  }
-  if (effectiveRequireConnectors.length > 0) {
-    const required = await resolveRequiredConnectorConnections({
-      accountId,
-      projectId,
-      actingUserId: userId,
-      actingPrincipalIsServiceAccount: input.requestingPrincipalType === 'service_account',
-      aliases: effectiveRequireConnectors,
-      explicitBindings: validatedConnectorBindings.bindings,
-    });
-    if (!required.ok) {
-      if (required.code === 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE') {
-        return {
-          error: {
-            status: 409,
-            body: {
-              error: `Required ${required.aliases.length === 1 ? 'connection' : 'connections'} ${required.aliases
-                .map((alias) => `"${alias}"`)
-                .join(', ')} ${required.aliases.length === 1 ? 'is' : 'are'} unavailable`,
-              code: required.code,
-              // The prose names the aliases too, but a client that wants to list
-              // them (or diff them across retries) must not have to parse it.
-              connectors: required.aliases,
-            },
-          },
-        };
-      }
-      return {
-        error: {
-          status: 409,
-          body: {
-            code: required.code,
-            message: 'Create the required connections before starting this session.',
-            connector_connections: required.connectorConnections,
-          },
-        },
-      };
-    }
-    const boundAliases = new Set(validatedConnectorBindings.bindings.map((b) => b.alias));
-    for (const binding of required.bindings) {
-      if (!boundAliases.has(binding.alias)) validatedConnectorBindings.bindings.push(binding);
-    }
-    if (!connectorBindingsConfigured) inheritUnbound = true;
   }
   if (
     visibility !== 'private' &&
@@ -1601,13 +1579,6 @@ export async function createProjectSession(input: {
         visibility,
         origin,
         secretsAllowlist,
-        // What the CALLER declared for this session, stored so every later check
-        // can see it. It used to be read once at create and dropped, which left
-        // both the warm-claim re-check and every subsequent prompt blind to it —
-        // and left an unconnected connector with nowhere to be recorded at all.
-        // Only the caller's own list: the agent's manifest half is re-derived per
-        // prompt so a manifest change takes effect without a new session.
-        requiredConnectors: requireConnectors.length > 0 ? requireConnectors : null,
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,

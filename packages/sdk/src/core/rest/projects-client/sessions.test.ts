@@ -831,6 +831,10 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   // client can stop calling an inherited default "nothing selected".
   expect(result.connector_bindings_configured).toBe(false);
   expect(result.connector_bindings_inherit_unbound).toBe(true);
+  // A session cannot require a connector any more. The field survives as a
+  // published-type compatibility shim and is always null — a consumer that
+  // branches on it must see "nothing required", never a stale alias list.
+  expect(result.required_connectors).toBeNull();
 });
 
 test('setProjectSessionScope clears a connector override with null', async () => {

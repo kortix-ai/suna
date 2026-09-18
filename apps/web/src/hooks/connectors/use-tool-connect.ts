@@ -4,14 +4,10 @@ import { useMutation } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 
 import {
-  type ConnectorAuthorizationStrategy,
   type ConnectorConnectResult,
   createConnector,
   pipedreamConnect,
-  pipedreamConnectConnection,
   pipedreamFinalize,
-  pipedreamFinalizeConnection,
-  reconcileMemberConnection,
 } from '@kortix/sdk';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -27,39 +23,30 @@ export interface ToolConnectInput {
   provider?: 'composio' | 'pipedream';
   connectorName: string;
   connectorSlug: string;
-  authorizationStrategy: ConnectorAuthorizationStrategy;
 }
 
 export function buildToolConnectorDraft(input: ToolConnectInput) {
   return buildEasyConnectConnectorDraft(
     { slug: input.appSlug, name: input.appName, provider: input.provider },
-    {
-      name: input.connectorName,
-      slug: input.connectorSlug,
-      authorizationStrategy: input.authorizationStrategy,
-    },
+    { name: input.connectorName, slug: input.connectorSlug },
   );
 }
 
+/**
+ * Authorize the connector the catalogue just added, as the PROJECT's shared
+ * account.
+ *
+ * Adding a tool here is a project act — everyone who may use the connector gets
+ * the account. Personal accounts are added afterwards, per person, from the
+ * connector's Accounts tab ("Add my own", `usePipedreamConnectMember`); they are
+ * no longer an exclusive alternative that has to be chosen up front.
+ */
 export async function requestToolAuthorization(
   projectId: string,
   input: ToolConnectInput,
-  deps: {
-    connectProject: typeof pipedreamConnect;
-    reconcileMember: typeof reconcileMemberConnection;
-    connectMember: typeof pipedreamConnectConnection;
-  },
-): Promise<Omit<ConnectorConnectResult, 'connectionId'> & { connectionId: string | null }> {
-  if (input.authorizationStrategy === 'user') {
-    const connection = await deps.reconcileMember(projectId, {
-      connector_alias: input.connectorSlug,
-      label: input.connectorName.trim(),
-    });
-    const connect = await deps.connectMember(projectId, connection.connection_id);
-    return { ...connect, connectionId: connection.connection_id };
-  }
-  const connect = await deps.connectProject(projectId, input.connectorSlug);
-  return { ...connect, connectionId: null };
+  deps: { connectProject: typeof pipedreamConnect },
+): Promise<ConnectorConnectResult> {
+  return deps.connectProject(projectId, input.connectorSlug);
 }
 
 export function useToolConnect(projectId: string, onConnected: () => void) {
@@ -79,22 +66,10 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
       }
 
       try {
-        let connectionId: string | null = null;
         const connected = await runConnectLinkFlow(
-          async () => {
-            const authorization = await requestToolAuthorization(projectId, input, {
-              connectProject: pipedreamConnect,
-              reconcileMember: reconcileMemberConnection,
-              connectMember: pipedreamConnectConnection,
-            });
-            connectionId = authorization.connectionId;
-            const { connectionId: _connectionId, ...connect } = authorization;
-            return connect;
-          },
           () =>
-            connectionId
-              ? pipedreamFinalizeConnection(projectId, connectionId)
-              : pipedreamFinalize(projectId, draft.slug),
+            requestToolAuthorization(projectId, input, { connectProject: pipedreamConnect }),
+          () => pipedreamFinalize(projectId, draft.slug),
         );
 
         if (!connected.connected) {

@@ -289,6 +289,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
+  {
+    key: 'pi_harness',
+    name: 'Pi Harness (in-sandbox)',
+    description:
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
+      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

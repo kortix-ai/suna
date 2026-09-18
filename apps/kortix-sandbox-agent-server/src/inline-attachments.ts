@@ -1,4 +1,15 @@
-import { isOffloadPlaceholder } from './attachment-offload';
+/**
+ * The 1×1 PNG an offloaded attachment keeps inline (attachment-offload.ts moves
+ * the real bytes to a sidecar). Host-level: every transcript reader treats it
+ * as "hand out a ref", whichever harness produced the row.
+ */
+export const OFFLOAD_PLACEHOLDER_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+export function isOffloadPlaceholder(url: unknown): boolean {
+  return url === OFFLOAD_PLACEHOLDER_URL;
+}
+
 /**
  * Take the file BYTES out of a session's message list.
  *

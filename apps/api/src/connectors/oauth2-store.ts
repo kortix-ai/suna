@@ -13,14 +13,14 @@ import {
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import {
-  connectorAuthorizationMatchesStrategy,
+  connectionIsReachable,
   isTrustedManagedChannelAuthorization,
-} from '../projects/lib/connector-authorization-strategy';
+} from '../projects/lib/connection-access';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { config } from '../config';
-import { upsertConnectionCredential } from './credentials';
+import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
 import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {
   createStoredDelegatedCredential,
@@ -59,7 +59,6 @@ async function authorizationCanCompleteOAuth(
       ownerType: connectorConnections.ownerType,
       ownerId: connectorConnections.ownerId,
       metadata: connectorConnections.metadata,
-      authorizationStrategy: connectors.authorizationStrategy,
       providerType: connectors.providerType,
       connectorConfig: connectors.config,
     })
@@ -75,8 +74,7 @@ async function authorizationCanCompleteOAuth(
     .where(eq(connectorConnections.connectionId, connectionId))
     .limit(1);
   if (!authorization) return false;
-  return connectorAuthorizationMatchesStrategy({
-    strategy: authorization.authorizationStrategy,
+  return connectionIsReachable({
     ownerType: authorization.ownerType,
     ownerId: authorization.ownerId,
     actingUserId: initiatedBy,
@@ -116,7 +114,16 @@ async function rematerializeAfterOAuthCompletion(connectionId: string): Promise<
       .where(eq(connectorConnections.connectionId, connectionId))
       .limit(1);
     if (!row) return;
-    const input = oauthCompletionRematerializeInput(row);
+    // INVARIANT (2026-09-16, account_required rule): `row.isDefault` is the
+    // raw (possibly unpinned) flag; the project-wide MCP catalog rematerialize
+    // must key on the EFFECTIVE default — pinned, or the connector's sole
+    // active project-owned connection — so a never-pinned solo MCP connector
+    // still rematerializes on OAuth completion exactly as before this rule.
+    const isEffectiveDefault =
+      row.ownerType === 'project'
+        ? await connectionIsEffectiveProjectDefault(row.connectorId, connectionId)
+        : row.isDefault;
+    const input = oauthCompletionRematerializeInput({ ...row, isDefault: isEffectiveDefault });
     if (!input) return;
     // Imported lazily: sync.ts pulls in the whole materialization graph, and
     // this module is on the OAuth request path.
@@ -376,6 +383,10 @@ export async function completeAuthorizationCodeSession(input: {
     return {
       redirectUri: claimed.errorRedirectUri,
       ok: false,
+      // Kept verbatim: the public callback contract has carried this code since
+      // the strategy flag existed, and a redirect that renames its reason breaks
+      // every page that reads it. What it now means is "the account stopped
+      // being reachable by the person who started the flow".
       errorCode: 'authorization_strategy_changed',
     };
   }

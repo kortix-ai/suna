@@ -1,5 +1,7 @@
 {
   "pooledSecrets": {
+    "saveChanges": "Guardar cambios",
+    "unsavedChanges": "Cambios de claves sin guardar",
     "creationDescription": "El valor permanece cifrado. Elige quién puede usar esta conexión antes de guardarla.",
     "whoCanUse": "¿Quién puede usar esta conexión?",
     "everyoneInProject": "Todos en este proyecto",
@@ -160,6 +162,7 @@
     "actions": {
       "create": "Crear proyecto",
       "tryAgain": "Intentar de nuevo",
+      "upgrade": "Mejorar plan",
       "logOut": "Cerrar sesión",
       "signingOut": "Cerrando sesión",
       "back": "Volver a los proyectos"
@@ -1089,6 +1092,10 @@
         "pi_worker": {
           "name": "Entorno del worker Pi (compilado)",
           "description": "Ejecuta sesiones con el entorno experimental del worker Pi."
+        },
+        "pi_harness": {
+          "name": "Harness Pi (en el sandbox)",
+          "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
         }
       }
     },
@@ -18527,7 +18534,13 @@
       "text7f59f014cd7b": "¿Ya está instalada en el propietario que quieres?",
       "text9180f7df8906": "Vincular una instalación que ya administras",
       "text0b0e4c425624": "Ya está vinculada a {value0, plural, one {# otra cuenta de Kortix} other {# otras cuentas de Kortix}}.",
-      "text7dac2ca010fe": "Preparando la transcripción completa…"
+      "text7dac2ca010fe": "Preparando la transcripción completa…",
+      "textc6309c452031": "Conectar cuenta compartida",
+      "textded4b88e52f7": "Todavía no hay cuenta compartida",
+      "textc3bafa5156b4": "Todavía no tienes una cuenta propia",
+      "textea5d0ffa0962": "Un responsable del proyecto conecta la cuenta compartida.",
+      "text3d6627454174": "Establecer credencial",
+      "text929505ef815a": "Todavía no hay ninguna cuenta conectada. Añade la tuya a continuación o pide a un responsable del proyecto que conecte una compartida."
     }
   },
   "projectOnboarding": {

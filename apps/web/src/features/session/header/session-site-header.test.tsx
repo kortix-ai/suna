@@ -235,11 +235,12 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
  * The stale-config chip, wired.
  *
  * These are wiring assertions, not rendering ones, and they exist because of a
- * specific near-miss: `ConnectorRequiredNotice` shipped correct, passed every
- * unit test, and rendered nothing for weeks — it was mounted with a value the
- * app never populates. Its unit tests all covered the pure copy helper, which
- * was fine the whole time. The lesson is that for this component family the
- * bug lives at the mount, so the mount is what gets pinned.
+ * specific near-miss: a sibling inline card (`ConnectorRequiredNotice`, since
+ * removed — connector-credentials rework) shipped correct, passed every unit
+ * test, and rendered nothing for weeks — it was mounted with a value the app
+ * never populates. Its unit tests all covered the pure copy helper, which was
+ * fine the whole time. The lesson is that for this component family the bug
+ * lives at the mount, so the mount is what gets pinned.
  */
 describe('SessionConfigIndicator wiring', () => {
   test('the chip gets the Kortix session id, never the OpenCode one', () => {

@@ -244,20 +244,23 @@ describe('sessions new CLI flow', () => {
   });
 
   test('creates a session with explicit connector scope', async () => {
-    const code = await runSessions([
-      'new',
-      '--no-connectors',
-      '--require-connector',
-      'gmail',
-      '--require-connector',
-      'gmail',
-    ]);
+    const code = await runSessions(['new', '--no-connectors']);
 
     expect(code).toBe(0);
-    expect(sessionCreateBody).toMatchObject({
-      connector_bindings: {},
-      require_connectors: ['gmail'],
-    });
+    expect(sessionCreateBody).toMatchObject({ connector_bindings: {} });
+    // A session cannot REQUIRE a connector any more: the gate refused the next
+    // turn with nothing in the product that could clear it (2026-09-16). Scope
+    // is what a session MAY use; which account a call runs as is chosen at call
+    // time (`kortix connectors call … --account`).
+    expect(sessionCreateBody).not.toHaveProperty('require_connectors');
+  });
+
+  test('the removed --require-connector option exits before an API request', async () => {
+    const code = await runSessions(['new', '--require-connector', 'gmail']);
+
+    expect(code).toBe(2);
+    expect(apiRequests).toEqual([]);
+    expect(sessionCreateBody).toBeNull();
   });
 
   test('a removed session attribution option exits before an API request', async () => {

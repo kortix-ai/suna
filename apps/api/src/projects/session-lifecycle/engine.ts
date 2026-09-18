@@ -45,10 +45,7 @@ import { db } from '../../shared/db';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import {
-  requireConnectorsConflicts,
-  runtimeContextConflicts,
-} from './idempotency-conflicts';
+import { runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
@@ -272,25 +269,6 @@ export async function createSession(
           body: {
             error: 'Idempotency key was already used with a different runtime_context',
             code: 'IDEMPOTENCY_CONTEXT_CONFLICT',
-          },
-        },
-      };
-    }
-    // require_connectors resolves to member bindings at create; a replay with a
-    // different required set would otherwise return the first session, which was
-    // resolved against a different set of the user's own connections.
-    if (
-      requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)
-    ) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used with a different require_connectors',
-            code: 'IDEMPOTENCY_REQUIRE_CONNECTORS_CONFLICT',
           },
         },
       };

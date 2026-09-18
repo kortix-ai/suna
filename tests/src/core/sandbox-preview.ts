@@ -30,6 +30,13 @@ export function previewLockfileHash(value: string): string {
   return hash;
 }
 
+export function previewDeploymentStatusPath(runId: string, runAttempt: string): string {
+  if (![runId, runAttempt].every((value) => /^[a-z0-9_-]+$/i.test(value))) {
+    throw new Error('invalid preview workflow run identity');
+  }
+  return `/workspace/kortix-preview/run-${runId}-${runAttempt}.exit`;
+}
+
 export interface PreviewSandboxRecord {
   id: string;
   /** Present on Platinum records; teardown matches on it as well as ownership. */
@@ -64,6 +71,7 @@ export function buildPreviewBootstrapScript(input: {
    * has not already proved. Run it there on demand instead.
    */
   runTests?: boolean;
+  statusPath?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -85,7 +93,7 @@ set -euo pipefail
 ROOT=/workspace/suna
 STATE=${state}
 LOG="$STATE/kortix-preview.log"
-STATUS="$STATE/kortix-preview.exit"
+STATUS=${shellQuote(input.statusPath ?? `${state}/kortix-preview.exit`)}
 PHASE="$STATE/kortix-preview.phase"
 SECRETS="$STATE/runtime-secrets.json"
 export HOME=/root
@@ -146,7 +154,7 @@ for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; 
 done
 if ! docker info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid /var/run/docker.sock
-  nohup dockerd --host=unix:///var/run/docker.sock > "$STATE/dockerd.log" 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock 9>&- > "$STATE/dockerd.log" 2>&1 &
   timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 fi
 docker info >/dev/null

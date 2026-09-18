@@ -1,9 +1,3 @@
-import { promptConnectorRefusalBody } from '../lib/prompt-connector-refusal';
-import {
-  missingPromptConnectorConnections,
-  PromptConnectorPreflightUnresolved,
-} from '../lib/prompt-connector-preflight';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
@@ -695,25 +689,16 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Refuse before enqueueing: callers must see the actionable connector
-    // contract rather than a queue that looks like an active model turn.
-    try {
-      const refusal = promptConnectorRefusalBody(
-        await missingPromptConnectorConnections({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-          requestedAgent: overrides.agent,
-        }),
-      );
-      if (refusal) return c.json(refusal, 409);
-    } catch (error) {
-      if (error instanceof PromptConnectorPreflightUnresolved) {
-        return c.json({ error: error.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' }, 503);
-      }
-      throw error;
-    }
+    // NO connector pre-flight here. A prompt used to be refused 409
+    // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
+    // nothing connected. That gate could not be cleared from the product: a
+    // `user`-strategy connector has no project account to offer, so the web
+    // card had no button, and the warm-session path swallowed the 409 and left
+    // the composer on "Thinking" forever.
+    //
+    // The connector CALL denies instead (`connector_not_connected`), naming the
+    // connector and carrying a connect link. The turn runs, the agent reports
+    // what is missing, and the human fixes it in one click.
 
     // Same gate as start/wake: a prompt spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);

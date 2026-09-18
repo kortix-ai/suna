@@ -91,8 +91,11 @@ import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sd
  * agent; the API re-scopes its grants before forwarding the prompt.
  * `connector_bindings` binds specific connections; `inherit_unbound`
  * keeps the project-default fallback for every OTHER connector so binding one
- * doesn't null the rest. `require_connectors` names connectors that must resolve
- * to the acting user's OWN connection — a missing one opens the connect gate.
+ * doesn't null the rest.
+ *
+ * No `require_connectors` — a session no longer declares connectors it
+ * requires up front (connector-credentials rework). A connector CALL denies
+ * instead, with `connect_url`; see `SetupLinkButton`.
  */
 export type NewProjectSessionOpts = {
   onNavigate?: (sessionId: string) => void;
@@ -104,7 +107,6 @@ export type NewProjectSessionOpts = {
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
-    require_connectors?: string[];
   };
 };
 

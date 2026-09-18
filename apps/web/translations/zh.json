@@ -1,5 +1,7 @@
 {
   "pooledSecrets": {
+    "saveChanges": "保存更改",
+    "unsavedChanges": "密钥更改尚未保存",
     "creationDescription": "值会保持加密。保存前请选择谁可以使用此连接。",
     "whoCanUse": "谁可以使用此连接？",
     "everyoneInProject": "此项目中的所有成员",
@@ -160,6 +162,7 @@
     "actions": {
       "create": "创建项目",
       "tryAgain": "重试",
+      "upgrade": "升级方案",
       "logOut": "退出登录",
       "signingOut": "正在退出",
       "back": "返回项目"
@@ -1089,6 +1092,10 @@
         "pi_worker": {
           "name": "Pi 工作器运行时（已编译）",
           "description": "使用实验性 Pi 工作器运行时来运行会话。"
+        },
+        "pi_harness": {
+          "name": "Pi 运行框架（沙箱内）",
+          "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         }
       }
     },
@@ -18527,7 +18534,13 @@
       "text7f59f014cd7b": "已经安装在你想要的所有者上了吗？",
       "text9180f7df8906": "关联你已管理的安装",
       "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。",
-      "text7dac2ca010fe": "正在准备完整记录…"
+      "text7dac2ca010fe": "正在准备完整记录…",
+      "textc6309c452031": "连接共享账户",
+      "textded4b88e52f7": "尚无共享账户",
+      "textc3bafa5156b4": "你还没有自己的账户",
+      "textea5d0ffa0962": "共享账户由项目管理员连接。",
+      "text3d6627454174": "设置凭据",
+      "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。"
     }
   },
   "projectOnboarding": {

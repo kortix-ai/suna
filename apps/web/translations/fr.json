@@ -1,5 +1,7 @@
 {
   "pooledSecrets": {
+    "saveChanges": "Enregistrer les modifications",
+    "unsavedChanges": "Modifications de clés non enregistrées",
     "creationDescription": "La valeur reste chiffrée. Choisissez qui peut utiliser cette connexion avant de l’enregistrer.",
     "whoCanUse": "Qui peut utiliser cette connexion ?",
     "everyoneInProject": "Tous les membres de ce projet",
@@ -160,6 +162,7 @@
     "actions": {
       "create": "Créer le projet",
       "tryAgain": "Réessayer",
+      "upgrade": "Mettre le forfait à niveau",
       "logOut": "Se déconnecter",
       "signingOut": "Déconnexion",
       "back": "Retour aux projets"
@@ -1089,6 +1092,10 @@
         "pi_worker": {
           "name": "Environnement du worker Pi (compilé)",
           "description": "Exécutez les sessions avec l’environnement expérimental du worker Pi."
+        },
+        "pi_harness": {
+          "name": "Harness Pi (dans le bac à sable)",
+          "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
         }
       }
     },
@@ -18527,7 +18534,13 @@
       "text7f59f014cd7b": "Déjà installée sur le propriétaire souhaité ?",
       "text9180f7df8906": "Lier une installation que vous administrez déjà",
       "text0b0e4c425624": "Déjà liée à {value0, plural, one {# autre compte Kortix} other {# autres comptes Kortix}}.",
-      "text7dac2ca010fe": "Préparation de la transcription complète…"
+      "text7dac2ca010fe": "Préparation de la transcription complète…",
+      "textc6309c452031": "Connecter un compte partagé",
+      "textded4b88e52f7": "Aucun compte partagé pour l’instant",
+      "textc3bafa5156b4": "Vous n’avez pas encore de compte personnel",
+      "textea5d0ffa0962": "Un responsable du projet connecte le compte partagé.",
+      "text3d6627454174": "Définir l’identifiant",
+      "text929505ef815a": "Aucun compte n’est encore connecté. Ajoutez le vôtre ci-dessous, ou demandez à un responsable du projet de connecter un compte partagé."
     }
   },
   "projectOnboarding": {

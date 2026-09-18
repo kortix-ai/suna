@@ -1,8 +1,8 @@
 import { createHmac } from 'crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
+import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { INLINE_ATTACHMENT_MAX_BYTES } from '../inline-attachments'
 
@@ -36,13 +36,14 @@ function signCtx(secret: string): string {
 
 function config(): Config {
   return {
+    ...loadOpenCodeConfig({}),
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     sandboxToken: SECRET,
-  } as unknown as Config
+  }
 }
 
 function fakeOpencode(internalUrl: string): Opencode {
@@ -91,7 +92,7 @@ afterAll(() => {
 })
 
 function app() {
-  return buildOpencodeApp(config(), fakeOpencode(`http://127.0.0.1:${upstream.port}`), Date.now())
+  return buildOpenCodeTestApp(config(), fakeOpencode(`http://127.0.0.1:${upstream.port}`), Date.now())
 }
 
 describe('attachment bytes leave the daemon on demand, never in the list', () => {

@@ -5,8 +5,8 @@ import { describe, expect, test } from 'bun:test'
 // Shape assertions over the boot sequence (a unit suite cannot boot OpenCode).
 // They keep the sub-marks that decompose `opencode-ready` — and the early
 // initial-turn claim — from being quietly dropped.
-const MAIN = readFileSync(join(import.meta.dir, '..', 'main.ts'), 'utf8')
-const OPENCODE = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
+const MAIN = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
+const OPENCODE = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
 
 describe('boot instrumentation', () => {
   test('the initial-turn claim is prefetched at proxy-up, before the clone is awaited', () => {
@@ -53,19 +53,19 @@ describe('boot instrumentation', () => {
     const check = OPENCODE.indexOf('async function checkReady(')
     expect(OPENCODE.slice(check, check + 220)).toContain('if (!directoryProbeOpen) return false')
 
-    // main.ts: gate requested exactly when the early spawn can happen, and
+    // Native boot: gate requested exactly when the early spawn can happen, and
     // opened only after config deps + injected skills.
     expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
     const deps = MAIN.indexOf("bootMark('config-deps')")
     const open = MAIN.indexOf('opencode.markWorkspaceReady()', deps)
-    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
     expect(deps).toBeGreaterThan(-1)
     expect(open).toBeGreaterThan(deps)
     expect(reload).toBeGreaterThan(open)
   })
 
   test('the proxy holds every caller off until the workspace is complete', () => {
-    const PROXY = readFileSync(join(import.meta.dir, '..', 'proxy.ts'), 'utf8')
+    const PROXY = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'proxy.ts'), 'utf8')
     expect(PROXY).toContain("bootState.workspaceReady === false")
     expect(PROXY).toContain("'workspace_not_ready'")
     // set false only on the early-spawn path, true once deps + skills are in
@@ -82,9 +82,9 @@ describe('boot instrumentation', () => {
 
     const deps = MAIN.indexOf('await ensureOpencodeConfigDeps(opencodeConfigDir)')
     const skills = MAIN.indexOf('await ensureInjectedManagedSkills(opencodeConfigDir)', deps)
-    const reconfigure = MAIN.indexOf('opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
+    const reconfigure = MAIN.indexOf('harness.configuration.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
     const open = MAIN.indexOf('opencode.markWorkspaceReady()', reconfigure)
-    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    const reload = MAIN.indexOf('harness.configuration.reloadForWorkspace()', open)
     expect(deps).toBeGreaterThan(-1)
     expect(skills).toBeGreaterThan(deps)
     expect(open).toBeGreaterThan(reconfigure)
@@ -96,11 +96,11 @@ describe('boot instrumentation', () => {
     const body = OPENCODE.slice(fn, OPENCODE.indexOf('async reloadConfig(', fn))
     expect(body).toContain('restarting instead of disposing')
     expect(body).not.toContain('return disposeInstances()')
-    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await opencode.reloadForWorkspace()'))
+    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await harness.configuration.reloadForWorkspace()'))
     expect(restart).toBeGreaterThan(-1)
   })
 
-  test('the supervisor reports the first HTTP response separately from the first 200', () => {
+  test('the lifecycle reports the first HTTP response separately from the first 200', () => {
     expect(OPENCODE).toContain('onFirstListeningResponse?: () => void')
     const probe = OPENCODE.indexOf('const probe = directoryProbeOpen')
     const report = OPENCODE.indexOf('options.onFirstListeningResponse?.()', probe)
@@ -111,7 +111,7 @@ describe('boot instrumentation', () => {
 
   test('no boot-time request is sent before OpenCode announces its handler on stdout', () => {
     // OpenCode's port is bound ~100 ms before its request handler exists; a
-    // request sent then is never answered. The supervisor pipes stdout, waits
+    // request sent then is never answered. The lifecycle pipes stdout, waits
     // for `opencode server listening on`, and every boot-time caller — the
     // readiness probe, the root list, the /event subscribe — gates on it.
     expect(OPENCODE).toContain("const OPENCODE_LISTENING_LINE = 'opencode server listening on'")
@@ -123,7 +123,7 @@ describe('boot instrumentation', () => {
     expect(gate).toBeGreaterThan(-1)
     expect(probe).toBeGreaterThan(gate)
     expect(MAIN).toContain('firstListening: opencode.waitForCurrentListening()')
-    const EVENTS = readFileSync(new URL('../opencode-events.ts', import.meta.url), 'utf8')
+    const EVENTS = readFileSync(new URL('../harness/open-code/events.ts', import.meta.url), 'utf8')
     const wait = EVENTS.indexOf('await waitForListeningOrTimeout(opencode')
     const connect = EVENTS.indexOf('await connectOnce()', wait)
     expect(wait).toBeGreaterThan(-1)

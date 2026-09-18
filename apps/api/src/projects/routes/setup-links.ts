@@ -19,8 +19,9 @@ import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
 
@@ -193,14 +194,35 @@ projectsApp.openapi(
       );
     }
     const conn = eligibility;
-    if (conn.authorizationStrategy !== 'project') {
+    // WHOSE account the link authorizes is the caller's explicit choice, never
+    // derived from the connector (see projects/lib/connection-access.ts) — the
+    // old `authorizationStrategy==='user'` branch this replaced is what left a
+    // private-only connector with no connect flow anywhere in the product.
+    const owner = parseConnectorConnectOwner(body.owner);
+    if (!owner) return c.json({ error: 'owner must be "me" or "project"' }, 400);
+    // `me` authorizes the caller themselves and needs no member id beyond the
+    // signed-in caller already asserted above (loaded.userId).
+    if (owner === 'me' && !loaded.userId) {
       return c.json(
         {
-          error: 'Shared connect links require a project authorization strategy',
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+          error: 'A private connector link can only be minted for a signed-in member',
+          code: 'CONNECTOR_AUTHORIZATION_REQUIRES_MEMBER',
         },
         409,
       );
+    }
+    // Minting a link that authorizes the SHARED account is administration —
+    // the same capability r4's project-owned connection create asserts
+    // (PROJECT_CONNECTOR_CONNECTIONS_MANAGE), not just connector.write.
+    if (owner === 'project') {
+      const mayManage = await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      );
+      if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
     }
 
     const { token, expiresAt } = mintSetupLink(
@@ -211,6 +233,7 @@ projectsApp.openapi(
         app: conn.app,
         uid: loaded.userId,
         sid: (c.get('sessionId') as string | undefined) ?? null,
+        owner,
       },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
@@ -220,6 +243,7 @@ projectsApp.openapi(
       url: `${frontendBase()}/connect/${token}`,
       slug,
       app: conn.app,
+      owner,
       expires_at: new Date(expiresAt).toISOString(),
     });
   },

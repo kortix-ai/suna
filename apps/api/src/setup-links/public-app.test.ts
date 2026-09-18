@@ -285,14 +285,21 @@ describe('POST /connectors/:token/finalize', () => {
     expect((await finalize(mintConnectorToken())).status).toBe(404);
   });
 
-  test('a per-user authorization strategy → 409', async () => {
+  // This used to 409 unconditionally on a 'user'-strategy connector — exactly
+  // the bug connection-access.ts retires the flag over (see its file doc): a
+  // private-only connector had no connect flow anywhere. The link's `owner`
+  // (default 'me') is what decides now, and mintConnectorToken's link carries
+  // a uid, so it finalizes like any other.
+  test('a (retired) per-user-strategy connector finalizes normally for the member the link names', async () => {
     pipedreamOn = true;
     connectorRows = [
       { connectorId: CONNECTOR_ID, providerType: 'pipedream', authorizationStrategy: 'user' },
     ];
+    finalizeResult = { connected: true };
     const res = await finalize(mintConnectorToken());
-    expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe('CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ connected: true });
+    expect(finalizeCalls.at(-1)).toMatchObject({ projectId: PROJECT_ID, slug: 'smartlead' });
   });
 
   test('already connected → {connected:true}, no finalize, no notification', async () => {

@@ -1,27 +1,22 @@
 'use client';
 
 import { InfoBanner } from '@/components/ui/info-banner';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SessionScope } from '@kortix/sdk';
 import {
   CpuIcon as Cpu,
   KeyIcon as KeyRound,
-  PlugIcon as PlugZap,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
-  SessionConnectorsEditor,
   SessionSecretsEditor,
 } from '@/features/session/scope/session-scope-control';
 import {
   createSessionScopeDraft,
-  resetSessionConnectorBindings,
   resetSessionSecrets,
-  sessionConnectorsAreOverridden,
-  sessionConnectorsSummary,
   sessionSecretsAreOverridden,
   sessionSecretsSummary,
   type SessionScopeCommit,
@@ -38,6 +33,8 @@ import { useFeatureFlag, useSessionProviderSecretPools } from '@kortix/sdk/react
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
 import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
+import { useProviderPoolEditingState } from './provider-pool-draft-context';
+import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {
   secrets: { status: 'unavailable' },
@@ -157,7 +154,15 @@ export function SessionOverridesToolbar({
     draft: {},
   });
   const [retroactive, setRetroactive] = useState<boolean | undefined>();
-  const providerPoolDraft = useMemo(() => providerSecretPools ?? {}, [providerSecretPools]);
+  const { providerDrafts, setProviderDrafts, saveError, setSaveError, saving, setSaving, savingRef } = useProviderPoolEditingState();
+  const providerPoolDraft = useMemo(() => sessionId
+    ? effectiveProviderPools(providerPools.data?.pools ?? [], providerDrafts)
+    : providerSecretPools ?? {}, [sessionId, providerPools.data?.pools, providerDrafts, providerSecretPools]);
+  const hasProviderChanges = Object.keys(providerDrafts).length > 0;
+  const onProviderDraftChange = useCallback((provider: string, selection: string[] | null) => {
+    setSaveError(null);
+    setProviderDrafts((current) => updateProviderPoolDraft(current, provider, selection, providerPools.data?.pools ?? []));
+  }, [providerPools.data?.pools, setProviderDrafts, setSaveError]);
 
   useEffect(() => {
     if (!catalog || !initializationKey) return;
@@ -176,11 +181,24 @@ export function SessionOverridesToolbar({
   const saveDisabled =
     !initialized ||
     !hasAvailableScopeAxis(activeCatalog) ||
-    (Boolean(sessionId) && (!scope || isScopeLoading));
+    (Boolean(sessionId) && (!scope || isScopeLoading)) ||
+    (hasProviderChanges && (providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit));
 
   const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!catalog || !initialized) return false;
+    if (!catalog || !initialized || savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
     try {
+      for (const [providerId, secretIds] of Object.entries(providerDrafts)) {
+        await providerPools.setPool.mutateAsync({ providerId, secretIds });
+        setProviderDrafts((current) => {
+          if (current[providerId] !== secretIds) return current;
+          const next = { ...current };
+          delete next[providerId];
+          return next;
+        });
+      }
       const result = await commitSessionScopeDraft({
         sessionId,
         draft: draftState.draft,
@@ -198,11 +216,21 @@ export function SessionOverridesToolbar({
       }
       return true;
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1'));
+      const message = error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1');
+      setSaveError(message);
       return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }, [
     catalog,
+    providerDrafts,
+    providerPools.setPool,
+    setProviderDrafts,
+    setSaveError,
+    setSaving,
+    savingRef,
     draftState.draft,
     initializationKey,
     initialized,
@@ -217,10 +245,8 @@ export function SessionOverridesToolbar({
     (next: SessionScopeDraft) => setDraftState((current) => ({ ...current, draft: next })),
     [],
   );
-  const controlsDisabled = isLoading || (Boolean(sessionId) && !scope);
-  const selectedProviderKeyCount = sessionId
-    ? (providerPools.data?.pools ?? []).reduce((count, pool) => count + pool.secret_ids.length, 0)
-    : Object.values(providerPoolDraft).reduce((count, ids) => count + ids.length, 0);
+  const controlsDisabled = saving || isLoading || (Boolean(sessionId) && !scope);
+  const selectedProviderKeyCount = Object.values(providerPoolDraft).reduce((count, ids) => count + ids.length, 0);
 
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
@@ -244,28 +270,12 @@ export function SessionOverridesToolbar({
       ),
       onReset: () => onChange(resetSessionSecrets(draft)),
     });
-    list.push({
-      id: 'connectors',
-      name: 'Connectors',
-      icon: PlugZap,
-      hint: tI18nComplete.raw('textaea537d63c8c'),
-      summary:
-        activeCatalog.connector_connections.status === 'ready'
-          ? sessionConnectorsSummary(draft)
-          : 'Unavailable',
-      overridden: sessionConnectorsAreOverridden(draft),
-      description: tI18nComplete.raw('text11022f38d525'),
-      resetLabel: 'Reset to agent default',
-      editor: (
-        <SessionConnectorsEditor
-          draft={draft}
-          catalog={activeCatalog}
-          disabled={controlsDisabled || saveScope.isPending}
-          onChange={onChange}
-        />
-      ),
-      onReset: () => onChange(resetSessionConnectorBindings(draft, activeCatalog)),
-    });
+    // NO Connectors axis. A session used to pin one connection per connector
+    // here, and check a connector that had nothing connected — which recorded a
+    // requirement the next turn refused on, with no way to authorize from the
+    // card it showed. Credentials are not a session-minting decision: the agent
+    // may use every account it is entitled to and names one at call time
+    // (`kortix connectors call --account`, `accounts` to see them).
     if (pooledSecretsEnabled) {
       list.push({
         id: 'provider-keys',
@@ -274,17 +284,17 @@ export function SessionOverridesToolbar({
         hint: tPooled('chooseSharedKeys'),
         summary: sessionId ? providerPools.isError ? tPooled('keysLoadError')
           : providerPools.isLoading ? tPooled('loadingKeys')
-          : providerPools.data?.pools.length
+          : Object.keys(providerPoolDraft).length
             ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
             : tPooled('projectDefaultShort') : Object.keys(providerPoolDraft).length
           ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
           : tPooled('projectDefaultShort'),
-        overridden: sessionId ? Boolean(providerPools.data?.pools.length) : Object.keys(providerPoolDraft).length > 0,
+        overridden: Object.keys(providerPoolDraft).length > 0,
         description: tPooled('rateLimitDescription'),
         editor: !llmGatewayEnabled
           ? <p className="text-muted-foreground text-xs">{tPooled('enableGateway')}</p>
           : sessionId
-          ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} />
+          ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={providerDrafts} onChange={onProviderDraftChange} saving={saving} />
           : <NewProviderSecretPoolEditor projectId={projectId} selection={providerPoolDraft} onChange={onProviderSecretPoolsChange ?? (() => {})} />,
       });
     }
@@ -344,7 +354,9 @@ export function SessionOverridesToolbar({
     pooledSecretsEnabled,
     llmGatewayEnabled,
     providerPoolDraft,
-    providerPools.data,
+    providerDrafts,
+    onProviderDraftChange,
+    saving,
     providerPools.isError,
     providerPools.isLoading,
     onProviderSecretPoolsChange,
@@ -362,7 +374,9 @@ export function SessionOverridesToolbar({
     <SessionOverridesControl
       rows={rows}
       disabled={controlsDisabled}
-      saving={saveScope.isPending}
+      saving={saving}
+      pendingNote={hasProviderChanges ? tPooled('unsavedChanges') : undefined}
+      error={saveError}
       saveDisabled={saveDisabled}
       notice={
         retroactive === false ? (

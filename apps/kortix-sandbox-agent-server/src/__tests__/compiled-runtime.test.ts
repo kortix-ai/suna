@@ -4,13 +4,13 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import {
   COMPILED_RUNTIME_CONTENT_TYPE,
   COMPILED_RUNTIME_FORMAT,
   buildCompiledRuntimeUrl,
   installCompiledRuntime,
-} from '../compiled-runtime'
+} from '../harness/open-code/compiled-runtime'
 
 const roots: string[] = []
 

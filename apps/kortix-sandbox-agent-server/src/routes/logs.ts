@@ -13,54 +13,13 @@
  * verified user context for a principal who can see this session.
  */
 import { Hono } from 'hono'
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Config } from '../config'
+import type { HarnessDiagnosticsService } from '../harness/diagnostics'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
-import { daemonLogFilePath, logger } from '../logger'
+import { logger } from '../logger'
 
 export const DEFAULT_TAIL_LINES = 500
 export const MAX_TAIL_LINES = 5_000
-/** Read at most this many bytes from the end of a file for one tail. */
-const TAIL_READ_CAP = 4 * 1024 * 1024
-
-export type LogSource = 'daemon' | 'opencode'
-
-export function opencodeLogFilePath(home: string): string {
-  return join(home, '.local', 'share', 'opencode', 'log', 'opencode.log')
-}
-
-/** The last `lines` lines of a file, reading only its tail. Null when absent. */
-export function tailFile(path: string, lines: number): string | null {
-  // Open first, then fstat the descriptor: no exists/stat-then-open window
-  // (the file can rotate underneath a reader at any time).
-  let fd: number
-  try {
-    fd = openSync(path, 'r')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-  try {
-    const size = fstatSync(fd).size
-    const span = Math.min(size, TAIL_READ_CAP)
-    if (span === 0) return ''
-    const buf = Buffer.alloc(span)
-    readSync(fd, buf, 0, span, size - span)
-    let text = buf.toString('utf8')
-    if (span < size) {
-      // Started mid-line: drop the partial first line.
-      const nl = text.indexOf('\n')
-      text = nl >= 0 ? text.slice(nl + 1) : ''
-    }
-    const parts = text.split('\n')
-    if (parts[parts.length - 1] === '') parts.pop()
-    return parts.slice(-lines).join('\n') + (parts.length ? '\n' : '')
-  } finally {
-    closeSync(fd)
-  }
-}
-
 function parseTail(raw: string | undefined): number {
   const n = Number(raw)
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_TAIL_LINES
@@ -72,7 +31,7 @@ function bearerToken(header: string | undefined): string | null {
   return header.slice('Bearer '.length).trim() || null
 }
 
-export function createLogsRouter(cfg: Config, opts: { opencodeHome: string }): Hono {
+export function createLogsRouter(cfg: Config, diagnostics: HarnessDiagnosticsService): Hono {
   const router = new Hono()
 
   router.get('/', (c) => {
@@ -89,18 +48,17 @@ export function createLogsRouter(cfg: Config, opts: { opencodeHome: string }): H
     }
 
     const requested = (c.req.query('source') ?? 'daemon').trim().toLowerCase()
-    if (requested !== 'daemon' && requested !== 'opencode' && requested !== 'all') {
-      return c.json({ error: 'unknown source', detail: 'source must be daemon, opencode, or all' }, 400)
+    const available = diagnostics.logSources()
+    if (requested !== 'all' && !available.includes(requested)) {
+      return c.json({ error: 'unknown source', detail: `source must be ${available.join(', ')}, or all` }, 400)
     }
     const lines = parseTail(c.req.query('tail'))
-    const sources: LogSource[] = requested === 'all' ? ['daemon', 'opencode'] : [requested]
+    const sources = requested === 'all' ? available : [requested]
 
     const chunks: string[] = []
     let found = 0
     for (const source of sources) {
-      const path = source === 'daemon' ? daemonLogFilePath() : opencodeLogFilePath(opts.opencodeHome)
-      const label = path ?? '(daemon file sink disabled: KORTIX_DAEMON_LOG_FILE=off)'
-      const body = path ? tailFile(path, lines) : null
+      const { label, text: body } = diagnostics.readLog(source, lines)
       if (body !== null) found++
       if (sources.length > 1) chunks.push(`==> ${label} <==\n`)
       chunks.push(body ?? `(no log file at ${label})\n`)

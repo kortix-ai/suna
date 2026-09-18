@@ -84,7 +84,6 @@ describe('createNewSessionScopeInitialization', () => {
           mail: { connection_id: 'connection-mail' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       commit: {
         draft: {
@@ -93,7 +92,6 @@ describe('createNewSessionScopeInitialization', () => {
             mail: { connection_id: 'connection-mail' },
           },
           connector_bindings_inherited: true,
-          require_connectors: [],
         },
         availability: {
           secrets: true,
@@ -116,7 +114,6 @@ describe('createNewSessionScopeInitialization', () => {
           mail: { connection_id: 'connection-mail' },
         },
         connector_bindings_inherited: true,
-        require_connectors: [],
       },
       commit: {
         draft: {
@@ -124,7 +121,6 @@ describe('createNewSessionScopeInitialization', () => {
             mail: { connection_id: 'connection-mail' },
           },
           connector_bindings_inherited: true,
-          require_connectors: [],
         },
         availability: {
           secrets: false,
@@ -164,7 +160,6 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail' },
       },
-      require_connectors: [],
     });
     expect(result?.retroactive).toBeFalse();
   });
@@ -220,7 +215,6 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { connection_id: 'connection-mail-2' },
         },
-        require_connectors: [],
       },
       catalog: catalog({
         secrets: { status: 'unavailable' },
@@ -236,7 +230,6 @@ describe('commitSessionScopeDraft', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail-2' },
       },
-      require_connectors: [],
     });
   });
 
@@ -250,7 +243,6 @@ describe('commitSessionScopeDraft', () => {
         connector_bindings: {
           mail: { connection_id: 'connection-mail' },
         },
-        require_connectors: [],
       },
       catalog: catalog(),
       replaceScope: async () => {
@@ -268,7 +260,6 @@ describe('commitSessionScopeDraft', () => {
           connector_bindings: {
             mail: { connection_id: 'connection-mail' },
           },
-          require_connectors: [],
         },
         availability: {
           secrets: true,

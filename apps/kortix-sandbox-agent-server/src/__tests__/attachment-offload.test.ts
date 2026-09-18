@@ -18,7 +18,7 @@ import {
   runAttachmentOffloadPass,
   selectCandidates,
   sidecarPathFor,
-} from '../attachment-offload'
+} from '../harness/open-code/attachment-offload'
 import { stripInlineAttachmentBytes } from '../inline-attachments'
 
 let root: string

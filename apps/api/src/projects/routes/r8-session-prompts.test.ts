@@ -241,17 +241,7 @@ function render(node: unknown): string {
 
 mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
 
-let connectorVerdict: Record<string, unknown> = { ok: true };
 let billingCalls = 0;
-const realPreflight = await import('../lib/prompt-connector-preflight');
-mock.module('../lib/prompt-connector-preflight', () => ({
-  ...realPreflight,
-  missingPromptConnectorConnections: async () => {
-    if (connectorVerdict.throws)
-      throw new realPreflight.PromptConnectorPreflightUnresolved(new Error('manifest unavailable'));
-    return connectorVerdict;
-  },
-}));
 
 mock.module('../../billing/services/billing-gate', () => ({
   checkBillingActive: async () => {
@@ -423,7 +413,6 @@ const validBody = {
 };
 
 beforeEach(() => {
-  connectorVerdict = { ok: true };
   billingCalls = 0;
   commandTable = [];
   sessionMetadata = {};
@@ -454,25 +443,18 @@ afterEach(() => {
 });
 
 describe('POST .../prompts', () => {
-  test('an unresolved connector lookup returns 503 without creating a prompt', async () => {
-    connectorVerdict = { throws: true };
+  // The route used to run a connector pre-flight here and answer 409
+  // CONNECTOR_CONNECTION_REQUIRED / 503 CONNECTOR_REQUIREMENTS_UNRESOLVED. Both
+  // are gone: a turn is never refused for an unconnected connector, because
+  // that refusal could not be cleared from the product (a `user`-strategy
+  // connector had no connect flow, so the card had no button and the composer
+  // span on "Thinking"). The connector CALL denies and carries a connect link.
+  //
+  // This test is the guard on that: no connector state may hold a prompt.
+  test('queues the prompt even when the project has an unconnected connector', async () => {
     const response = await post(validBody);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' });
-    expect(enqueued).toHaveLength(0);
-  });
-
-  test('a required connector refusal returns 409 before queueing or resuming prompts', async () => {
-    connectorVerdict = { ok: false, kind: 'unavailable', aliases: ['gmail-mfda1u'] };
-    const response = await post(validBody);
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
-      code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
-      connectors: ['gmail-mfda1u'],
-    });
-    expect(enqueued).toHaveLength(0);
-    expect(drains).toHaveLength(0);
-    expect(billingCalls).toBe(0);
+    expect(response.status).toBe(202);
+    expect(enqueued).toHaveLength(1);
   });
   test('queues the prompt and answers 202 with the row it created', async () => {
     const response = await post(validBody);

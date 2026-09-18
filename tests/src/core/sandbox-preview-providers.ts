@@ -35,6 +35,7 @@ import {
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
   selectStalePreviewSandboxIds,
@@ -173,6 +174,7 @@ export function platinumPreviewIdempotencyKey(input: {
 export async function deployPlatinumPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
+  const statusPath = previewDeploymentStatusPath(input.runId, input.runAttempt);
   if (!input.platinum.apiKey) throw new PreviewInfrastructureError('PLATINUM_API_KEY is required');
   const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
   let sandboxId = '';
@@ -271,7 +273,7 @@ export async function deployPlatinumPreview(
     );
     await api.write(
       `${sandboxId}:/workspace/run-kortix-preview.sh`,
-      buildPreviewBootstrapScript({ ...input, origin }),
+      buildPreviewBootstrapScript({ ...input, origin, statusPath }),
       '0755',
     );
     const launch = await execPlatinum(api, sandboxId, [
@@ -287,11 +289,11 @@ export async function deployPlatinumPreview(
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
       checkExitCode: async () => {
-        const status = await statPlatinum(api, sandboxId, '/workspace/kortix-preview/kortix-preview.exit', 1);
+        const status = await statPlatinum(api, sandboxId, statusPath, 1);
         if (!status) return null;
         const bytes = await api.read(
           sandboxId,
-          '/workspace/kortix-preview/kortix-preview.exit',
+          statusPath,
           undefined,
           undefined,
           1,
@@ -350,6 +352,7 @@ async function replaceExistingDaytonaPreview(
 export async function deployDaytonaPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
+  const statusPath = previewDeploymentStatusPath(input.runId, input.runAttempt);
   if (!input.daytona.apiKey) throw new PreviewInfrastructureError('DAYTONA_API_KEY is required');
   // Daytona is the fallback for a Platinum infrastructure failure, and it issues
   // its own preview URL. Falling back would therefore hand a branch environment
@@ -424,7 +427,7 @@ export async function deployDaytonaPreview(
       sandbox,
       encodedFileCommand(
         '/workspace/run-kortix-preview.sh',
-        buildPreviewBootstrapScript({ ...input, origin }),
+        buildPreviewBootstrapScript({ ...input, origin, statusPath }),
         '0755',
       ),
       60,
@@ -445,7 +448,7 @@ export async function deployDaytonaPreview(
         readRemoteExitCode(
           api,
           sandbox!,
-          '/workspace/kortix-preview/kortix-preview.exit',
+          statusPath,
           'preview',
         ),
       statLog: () =>

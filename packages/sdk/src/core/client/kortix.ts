@@ -436,6 +436,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Call one `<connector>.<action>` tool. */
       call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
         P.callConnector<T>(projectId, ...a),
+      /** The accounts a connector can be called as, default first. */
+      accounts: (...a: DropFirst<Parameters<typeof P.listConnectorAccounts>>) =>
+        P.listConnectorAccounts(projectId, ...a),
       /** Upload bytes for use by a later connector call. */
       uploadAttachment: (...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>) =>
         P.uploadConnectorAttachment(projectId, ...a),

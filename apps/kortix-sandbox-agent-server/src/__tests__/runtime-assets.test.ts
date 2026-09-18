@@ -4,9 +4,11 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  configureRuntimeConvergence,
   isSafeOverlayPath,
   overlayHash,
   reconcileRuntimeAssets,
+  resetRuntimeConvergenceForTests,
 } from '../runtime-assets'
 
 const API_URL = 'https://api.test.invalid'
@@ -27,6 +29,7 @@ async function workspace() {
 }
 
 afterEach(async () => {
+  resetRuntimeConvergenceForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })
 })
 
@@ -122,6 +125,29 @@ describe('overlay hashing and path safety', () => {
 })
 
 describe('reconcileRuntimeAssets', () => {
+  test('a direct pass does not acquire the registered live runtime implicitly', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'OLD-CLI')
+    const calls: string[] = []
+    configureRuntimeConvergence({
+      assets: {
+        componentNames: ['registered-runtime'],
+        resolveConfigDir: async () => ws.configDir,
+        injectSkills: async () => { calls.push('inject') },
+        reconcile: async () => {
+          calls.push('reconcile')
+          return { components: {}, reasons: {}, state: {} }
+        },
+      },
+      turnInFlight: async () => false,
+    })
+
+    const result = await run(ws, stubFetch())
+
+    expect(result).toEqual({ cli: 'updated', skills: 'updated' })
+    expect(calls).toEqual([])
+  })
+
   test('no api url or token → skipped, no fetch at all', async () => {
     const ws = await workspace()
     const stub = stubFetch()

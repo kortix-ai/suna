@@ -25,6 +25,17 @@ export interface ConnectorCatalogEntry {
   provider: string;
   status: string;
   actions: ConnectorAction[];
+  /**
+   * The accounts THIS caller may run this connector as, default first.
+   *
+   * One connector can hold the project's shared account and each member's own
+   * — this is the signal that a connector is not single-account, without a
+   * separate {@link listConnectorAccounts} round trip. Undefined on a server
+   * that predates this field.
+   */
+  accounts?: ConnectorAccount[];
+  /** Label of the account an unnamed call resolves to, or null if none. */
+  default_account?: string | null;
 }
 
 /** One callable connector action, identified by `<connector>.<action>`. */
@@ -48,6 +59,14 @@ export interface ConnectorCallResult<T = unknown> {
   approval_url?: string | null;
   approval_summary?: string | null;
   approval_instructions?: string | null;
+  /**
+   * The account this call actually ran as.
+   *
+   * Echoed on every successful call, including one that named no account, so a
+   * transcript can show WHICH identity acted instead of leaving the reader to
+   * guess which of a connector's accounts resolution picked.
+   */
+  account?: { connection_id: string; label: string; owner_type: string };
 }
 
 export interface ConnectorAttachmentUploadInput {
@@ -133,18 +152,64 @@ function parseConnectorTool(tool: string): { connector: string; action: string }
   return { connector, action };
 }
 
+/** One account a connector can run as. See {@link listConnectorAccounts}. */
+export interface ConnectorAccount {
+  connection_id: string;
+  /** Human-facing name. What `ConnectorCallOptions.account` matches on. */
+  label: string;
+  owner_type: string;
+  /** True for the account an unselected call resolves to. */
+  is_default: boolean;
+}
+
+export interface ConnectorCallOptions {
+  /**
+   * Which account to run this call as — a connection label or id from
+   * {@link listConnectorAccounts}, or one of the two selector words: `me` (the
+   * caller's own default private account) and `project` (the default account
+   * shared with the whole project). Omit for the connector's default account,
+   * which is how every call behaved before a connector could expose more than
+   * one.
+   *
+   * A named account is never silently substituted: if it does not match one
+   * this caller is entitled to, the call is denied with `connector_not_connected`
+   * and the denial lists the names that were available.
+   */
+  account?: string | null;
+}
+
 export async function callConnector<T = unknown>(
   projectId: string | undefined,
   tool: string,
   args: Record<string, unknown> = {},
+  options: ConnectorCallOptions = {},
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
+  const account = options.account?.trim();
   return unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
-      { connector, action, args },
+      // The key is omitted rather than sent as null: the gateway reads its
+      // presence, and an explicit null would read as "an account was named".
+      { connector, action, args, ...(account ? { account } : {}) },
     ),
   );
+}
+
+/**
+ * The accounts this caller may run `slug` as, default first.
+ *
+ * Resolved through the same principal a call uses, so every account listed is
+ * one a call can actually use — never one the gateway would then refuse.
+ */
+export async function listConnectorAccounts(
+  projectId: string | undefined,
+  slug: string,
+): Promise<ConnectorAccount[]> {
+  const response = await backendApi.get<{ connector: string; accounts: ConnectorAccount[] }>(
+    connectorGatewayPath(projectId, `connectors/${encodeURIComponent(slug)}/accounts`),
+  );
+  return unwrap(response).accounts ?? [];
 }
 
 function connectorResponseMessage(body: unknown, status: number): string {
@@ -213,6 +278,12 @@ export async function uploadConnectorAttachment(
   return body as ConnectorAttachmentUploadResult;
 }
 
+/**
+ * @deprecated A connector-wide owner MODE no longer exists. Ownership is per
+ * account (`Connection.owner_type`), chosen when the account is connected —
+ * see {@link ConnectorConnectOwner}. The type stays exported and the values
+ * stay on the wire as a derived summary; nothing branches on them any more.
+ */
 export type ConnectorAuthorizationStrategy = 'project' | 'user';
 
 export interface AdminConnector {
@@ -237,7 +308,12 @@ export interface AdminConnector {
    *  unification.md §2.5). A `shared` connector with no credential set
    *  (`secretSet: false`) needs reconnecting. */
   credentialMode: 'shared';
-  /** Exclusive owner model for connections under this connector. */
+  /**
+   * @deprecated A derived summary, not a setting: `'user'` when the connector
+   * has member-owned accounts and no project-owned one, else `'project'`.
+   * Nothing enforces it — a connector can hold both kinds at once. Read
+   * `owner_type` on the accounts themselves ({@link listConnectorAccounts}).
+   */
   authorizationStrategy: ConnectorAuthorizationStrategy;
   /** Authentication shape required when a member adds a private credential. */
   requestAuthType?: ConnectorRequestAuthType;
@@ -849,6 +925,12 @@ export async function setConnectorCredentialMode(projectId: string, slug: string
   );
 }
 
+/**
+ * @deprecated A no-op server-side since the owner mode was removed: the route
+ * still answers 200 so an older client is never 400'd, but it changes nothing.
+ * To create an account under a specific owner, pass `owner` to
+ * {@link connectorConnect} instead.
+ */
 export async function setConnectorAuthorizationStrategy(
   projectId: string,
   slug: string,
@@ -996,17 +1078,37 @@ export async function setConnectorName(projectId: string, slug: string, name: st
 }
 
 /**
+ * Who a newly authorized account belongs to.
+ *
+ * `me` is the signed-in human's own account — reachable only by them, and only
+ * in a private session. `project` is the account shared with everyone the
+ * connector is granted to, and creating one needs `project.connector.write`.
+ */
+export type ConnectorConnectOwner = 'project' | 'me';
+
+export interface ConnectorConnectOptions {
+  /** Owner for the account this authorization creates. Defaults to `me`. */
+  owner?: ConnectorConnectOwner;
+}
+
+/**
  * Start a hosted authorization for a project connector.
  *
  * Provider-neutral: the API picks Composio or Pipedream. `pipedreamConnect` is
  * the original name for this exact route and stays exported — renaming it would
  * be a breaking change for published consumers.
  */
-export async function connectorConnect(projectId: string, slug: string) {
+export async function connectorConnect(
+  projectId: string,
+  slug: string,
+  options: ConnectorConnectOptions = {},
+) {
   return unwrap(
     await backendApi.post<ConnectorConnectResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
-      {},
+      // Omitted rather than null when unset: the API reads the key's presence
+      // to apply its own default, and an old client sends no key at all.
+      options.owner ? { owner: options.owner } : {},
     ),
   );
 }

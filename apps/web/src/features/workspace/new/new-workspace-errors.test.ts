@@ -181,3 +181,52 @@ describe('isRetryableError: classification by what can actually change, not "eve
     );
   });
 });
+
+describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026-09-17)', () => {
+  // "Free accounts are limited to 1 project. Upgrade to a paid plan to create
+  // more." named a way out and offered none. The hook now reports the cap as
+  // its own flag and the page answers it with the upgrade dialog.
+  test('the hook exposes limitReached, derived from the shared isProjectLimitError', () => {
+    expect(hook).toContain("limitReached = status === 'error' && isProjectLimitError(lastError)");
+    expect(hook).toContain('limitReached };');
+  });
+
+  test('messageFor keeps the server text for the cap — it already says what to do', () => {
+    expect(
+      messageFor(
+        new ApiError(
+          'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+          { status: 403, code: 'project_limit_reached' },
+        ),
+      ),
+    ).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+  });
+
+  test('the cap is not retryable, so the upgrade action never sits beside Try again', () => {
+    expect(
+      isRetryableError(
+        new ApiError('Free accounts are limited to 1 project.', {
+          status: 403,
+          code: 'project_limit_reached',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test('the page renders the upgrade action inside the alert region, gated on limitReached and billing', () => {
+    const alertStart = page.indexOf('role="alert"');
+    const containerStart = page.lastIndexOf('<div', alertStart);
+    const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
+    expect(region).toMatch(/limitReached && isBillingEnabled\(\)\s*\?/);
+    expect(region).toContain("t('actions.upgrade')");
+  });
+
+  test('the action opens the upgrade dialog for the account the create targeted', () => {
+    const alertStart = page.indexOf('role="alert"');
+    const region = page.slice(alertStart, page.indexOf('</form>', alertStart));
+    expect(region).toContain("reason: 'subscription_required'");
+    expect(region).toContain('accountId: effectiveAccountId ?? undefined');
+    // The dialog host is the one already mounted for the plan step.
+    expect(page).toContain('isBillingEnabled() && <GlobalUpgradeModal />');
+  });
+});

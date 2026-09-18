@@ -50,7 +50,6 @@ interface World {
   connectorCreateError: { error: string; status: number } | null;
   credentialInputs: unknown[];
   secretBindingInputs: Array<{ slug: string; secretIdentifier: string | null }>;
-  authorizationStrategyInputs: Array<{ slug: string; strategy: 'project' | 'user' }>;
   credentialError: Error | null;
 }
 
@@ -96,7 +95,6 @@ function freshWorld(): World {
     connectorCreateError: null,
     credentialInputs: [],
     secretBindingInputs: [],
-    authorizationStrategyInputs: [],
     credentialError: null,
   };
 }
@@ -268,13 +266,11 @@ const deps: ConnectorRouterDeps = {
     world.secretBindingInputs.push({ slug, secretIdentifier });
     return { ok: true };
   },
-  setAuthorizationStrategy: async (_projectId, _accountId, slug, strategy) => {
-    if (!world.connectors.has(slug)) {
-      return { ok: false, error: 'connector not found', status: 404 };
-    }
-    world.authorizationStrategyInputs.push({ slug, strategy });
-    return { ok: true };
-  },
+  // `setAuthorizationStrategy` is deliberately NOT wired: the connector-level
+  // strategy is retired (connection-access.ts) and the router's
+  // authorization-strategy route is now a full no-op that never calls this
+  // dep at all — see the "deprecated authorization-strategy route" tests
+  // below, which pin exactly that.
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
     defaultMode: world.defaultMode,
@@ -690,32 +686,33 @@ describe('admin routes', () => {
     expect(res.status).toBe(403);
   });
 
-  test('updates a connector authorization strategy', async () => {
-    for (const strategy of ['project', 'user'] as const) {
+  // The connector-level authorization strategy is retired (connection-access.ts):
+  // an account is shared or private per CONNECTION (`owner_type`), both kinds
+  // can exist on one connector, and neither this route nor any dep decides it
+  // anymore. The route stays only so an older CLI/web build calling it is not
+  // broken by a 404/501 — it always changes nothing.
+  test('the deprecated authorization-strategy route is an inert no-op, whatever the body says', async () => {
+    for (const body of [
+      { authorization_strategy: 'project' },
+      { authorization_strategy: 'user' },
+      { authorization_strategy: 'both' }, // never validated — the body isn't even read
+      {},
+    ]) {
       const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
         method: 'PUT',
         headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-        body: JSON.stringify({ authorization_strategy: strategy }),
+        body: JSON.stringify(body),
       });
       expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        ok: true,
+        deprecated: true,
+        note: expect.stringContaining('retired'),
+      });
     }
-    expect(world.authorizationStrategyInputs).toEqual([
-      { slug: 'stripe', strategy: 'project' },
-      { slug: 'stripe', strategy: 'user' },
-    ]);
   });
 
-  test('rejects an unsupported connector authorization strategy', async () => {
-    const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
-      method: 'PUT',
-      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ authorization_strategy: 'both' }),
-    });
-    expect(response.status).toBe(400);
-    expect(world.authorizationStrategyInputs).toHaveLength(0);
-  });
-
-  test('authorization strategy updates require connector administration', async () => {
+  test('the deprecated authorization-strategy route still requires connector administration', async () => {
     const response = await req(`/projects/${PROJECT}/connectors/stripe/authorization-strategy`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -724,13 +721,17 @@ describe('admin routes', () => {
     expect(response.status).toBe(403);
   });
 
-  test('authorization strategy updates return 404 for an unknown connector', async () => {
+  // A full no-op never looks the connector up, so an unknown slug is no longer
+  // a 404 the way every other connector-admin route is — there is nothing here
+  // that could act on it either way.
+  test('the deprecated authorization-strategy route no-ops even for an unknown connector', async () => {
     const response = await req(`/projects/${PROJECT}/connectors/missing/authorization-strategy`, {
       method: 'PUT',
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
       body: JSON.stringify({ authorization_strategy: 'project' }),
     });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, deprecated: true });
   });
 
   test('the old connector sharing route is gone (404)', async () => {

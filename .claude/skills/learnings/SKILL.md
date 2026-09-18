@@ -21,6 +21,89 @@ linked, not inlined.
 
 ## Register
 
+### Preview completion belongs to one workflow attempt; daemons must release the deploy lock (2026-09-18)
+
+**Rule:** give each preview workflow run and attempt its own exit file. Close
+FD 9 before starting Docker so the daemon and its containers cannot retain the
+deployment lock after bootstrap exits. **Near-miss:** PR #7381's redeploy read
+its previous failure while waiting on a lock inherited by Docker and its shims;
+the preview stayed on the previous SHA. Recover an affected preview only after
+confirming no deployment owns the old lock. **Enforcer:**
+`tests/unit/sandbox-preview.test.ts` pins result identity and daemon FD closure.
+
+### A disabled react-query is `isPending` forever — never restate its `enabled` (2026-09-17)
+
+**When:** reading `.isPending` from any `useQuery` whose `enabled` is
+conditional, or adding a condition to an existing query's `enabled`.
+A disabled query never leaves `status: 'pending'` — there is no fetch to settle
+it — so any gate built on `isPending` must compensate. `useModelConnectionGate`
+compensated by hand-restating each query's `enabled` inline, and the copy went
+stale the first time someone changed one: `secretsQuery` gained
+`&& canReadSecrets`, the restatement did not. `project.secret.read` is
+manager-tier, so for every project MEMBER the query never ran, the clause was
+`true && true && true` forever, and the composer model picker spun with zero
+rows over a `/model-picker` catalog that had already returned 200. A third
+clause (`accountStatePending`) had no guard at all.
+**The rule:** do not restate `enabled` — ask what the query is DOING.
+`isPending && fetchStatus === 'fetching'` is enabled-aware by construction
+(exactly query-core's own `isLoading`): disabled reads `idle` and releases the
+gate, offline-`paused` releases it rather than spinning over data already in the
+browser, and a background refetch cannot re-open it.
+**Diagnostic:** a spinner that outlives a 200 whose body is already in the
+Network tab is a gate, not a fetch. Check `fetchStatus`, not `isPending`.
+*Incident:* dev.kortix.com project `441011b6`, members only; introduced
+`1c8b5434b8` (2026-08-19), found 2026-09-17, fixed in PR #7380. Reproduced and
+A/B-proven on the real UI: same member, same project — `main` gave
+`spinnerPresent:true, rowCount:0`, the fix gave `false, 8`.
+*Enforcer:* `apps/web/src/features/session/entitlements-pending.test.ts` pins
+the rule AND the call site (no clause may name `secretsQuery.isPending`,
+`projectDetailQuery.isPending` or `accountStatePending` again). Nothing yet
+lints the general pattern repo-wide — a sweep found 4 conditionally-enabled
+queries read via `isPending`; this was the only live one.
+
+### A control-required alarm comes back with a threshold the workload cannot cross in steady state (2026-09-17)
+
+**When:** an external control (Drata DCF-86 / test 294) requires an alarm the
+team retired as noise. Drata checks existence + SNS delivery, not the
+threshold: restore `TargetResponseTime` at Average > 30 s for 3×5 min — above
+the worst 14-day sustained average (~25 s, dev API ALB; normal 5–11 s) — so
+the control passes without resurrecting the 2026-08-26 ~300-email flap
+(entry below). Terraform and the reconciler `ALARM_SPECS` must carry the
+identical spec, or the Lambda rewrites Terraform's alarms every tick.
+*Enforcer:* `infra/terraform/scripts/test_alb_target_response_time_alarms.py`
+pins metric/statistic/threshold/evaluations per region, the reconciler spec
+parity, and the us-east-2 alert-topic subscription.
+
+### A branch migration's timestamp is re-checked at MERGE time, not at write time (2026-09-17)
+
+**Rule:** before merging a branch that adds a migration, confirm its file sorts
+after every migration on `main` at that moment; if `main` grew a newer one,
+rename yours to a fresh timestamp. A persistent preview DB that already ran the
+old name will then refuse (`Not run migration … is preceding already run
+migration …`) — recycle the `preview` label so it rebuilds from scratch; do not
+hand-edit `pgmigrations`. **When:** a long-lived branch (days) with a migration,
+or any merge of `main` into it. *Near-miss:* `connector-creds` wrote
+`20260916182954570_…` on day 1; by merge day `main` had `20260916194914446_…`,
+and the PR's preview died in `kortix-migrate` on the first redeploy after the
+merge. *Enforcer:* none yet — `packages/db` has no "newest on branch > newest on
+main" check; until it exists, `ls packages/db/migrations | sort | tail` against
+`git ls-tree origin/main` is the check.
+
+### A gate the product cannot clear is a dead end (2026-09-16)
+
+**Rule:** every refusal must carry its remedy — a link, a button, a next
+command — and a refusal that can only be cleared from a surface that does not
+exist must not exist. **When:** adding a pre-flight check (create-time,
+admission-time) ahead of a real action. Before shipping it, name the exact UI
+control or CLI command that clears it, for every caller who can hit it
+(including a service account). If none exists, the gate is the bug, not the
+missing UI. *Incident:* a `user`-strategy connector had no connect flow
+anywhere — no shared account to offer, so the card rendered a button-less
+refusal and the composer spun on "Thinking" forever. *Enforcer:*
+`apps/api/src/projects/routes/r8-session-prompts.test.ts:377` ("queues the
+prompt even when the project has an unconnected connector"); the denial's
+`connect_url` remedy: `apps/api/src/connectors/principal-access.ts:110-114`.
+
 ### Keep persistent preview migrations tolerant of branch ledger order (2026-09-17)
 
 **When:** redeploying a branch preview after merging `main`. The preview keeps
@@ -6244,3 +6327,34 @@ to permit a single provisioning check before starting another full run.
 **Enforcement.** The pending queue fixture is verified with the local browser
 runner, which uses local Git. The preview gate stays explicitly blocked until
 GitHub provisioning recovers; a local pass does not replace that gate.
+
+### 2026-09-17 — A failed round trip is not the auth server's verdict
+
+**Incident.** "Verify with GitHub logs me out" on dev, twice, after the
+`#access_token` → `#github_token` rename had already shipped. The GitHub
+identity-proof popup (`/auth/github-connect`) posts its token to the opener
+and closes itself 200 ms later. It runs the same `AuthProvider` as every
+page, whose bootstrap validates the session with `getUser()`. On a slow
+network that request was still in flight when the popup closed; the abort
+came back as `AuthRetryableFetchError` (status 0), the provider treated any
+`getUser()` error as a stale session and called `signOut()`, which cleared
+the cookie every tab shares and broadcast `SIGNED_OUT` over the
+`BroadcastChannel` to the opener. The opener's own guard then bounced it to
+`/auth?returnUrl=%2Fgithub%2Fsetup…`. No server audit row: the `/logout`
+call died with the window. Reproduced deterministically with Slow 3G
+throttling on the popup; three fake-token, real-token and install-path
+reruns without throttling had all stayed signed in.
+
+**Rule.** Sign a session out only on the auth server's verdict — 401, 403, or
+no session to validate. A fetch that never completed, a 5xx, or a 429 says
+nothing about the session; keep it and validate again on the next load. Any
+page that closes or navigates itself during bootstrap (popups, hand-off
+pages) will abort that request on every slow network, and a shared cookie
+plus a cross-tab broadcast turns one page's mistake into a browser-wide
+logout.
+
+**Enforcement.** `lib/auth/session-rejection.ts` (`isDefinitiveSessionRejection`)
+is the only predicate the provider consults, tested against supabase-js's
+real error classes; `auth-provider-stale-session.test.ts` pins that the
+provider asks it before `signOut()`; journey 30 forces the race with a
+delayed `/auth/v1/user` route and asserts the opener stays signed in.
