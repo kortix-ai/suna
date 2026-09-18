@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { ApiError } from '../core/http/api-client';
 import { configureKortix } from '../core/http/config';
-import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
+import { countLiveInboxPrompts, INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import { deleteSessionPrompt, type SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
@@ -361,6 +361,52 @@ describe('optimistic queue rows', () => {
     expect(settled[0].prompt_id).toBe('p-real');
     expect(settled[0].state).toBe('delivering');
     expect(settled[0].text).toBe('hello there');
+  });
+
+  /**
+   * Stop → remove → Undo must not resume the queue, not for one round trip
+   * either. The restored row is HELD: deliberately not due until the user
+   * sends something or presses "send now". Painting it as work in flight put
+   * the composer back on Stop, drew a busy row, and switched the transcript's
+   * liveness poll on for a runtime that is idle.
+   */
+  test('a held restore paints a HELD row, so it is never counted as live work', () => {
+    const restore = { ...input, restore: true, held: true };
+    const rows = applyOptimisticPrompt([], restore, 1_000);
+    expect(rows[0].state).toBe('waiting');
+    expect(rows[0].reason).toBe('held');
+    expect(countLiveInboxPrompts(rows)).toBe(0);
+
+    const settled = settleOptimisticPrompt(rows, 'c1', {
+      prompt_id: 'p-real',
+      state: 'waiting',
+      reason: 'held',
+      message_id: input.messageId,
+      deduped: false,
+    });
+    expect(settled[0].prompt_id).toBe('p-real');
+    expect(settled[0].reason).toBe('held');
+    expect(countLiveInboxPrompts(settled)).toBe(0);
+  });
+
+  test('an ordinary send is live work from the keypress', () => {
+    // Guard on the other side of the same rule: the floor a send raises is
+    // what keeps the composer on Stop until a read can see the row.
+    expect(countLiveInboxPrompts(applyOptimisticPrompt([], input, 1_000))).toBe(1);
+  });
+
+  test('settleOptimisticPrompt keeps the row\'s reason when the server names none', () => {
+    // A server older than the acceptance `reason` answers `waiting` with no
+    // cause. The row already knows it is held; the swap must not erase that.
+    const rows = applyOptimisticPrompt([], { ...input, restore: true, held: true }, 1_000);
+    const settled = settleOptimisticPrompt(rows, 'c1', {
+      prompt_id: 'p-real',
+      state: 'waiting',
+      message_id: input.messageId,
+      deduped: false,
+    });
+    expect(settled[0].reason).toBe('held');
+    expect(countLiveInboxPrompts(settled)).toBe(0);
   });
 
   test('a failed submission removes the optimistic row', () => {

@@ -762,9 +762,15 @@ projectsApp.openapi(
     });
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
-    const respond = (state: ReturnType<typeof promptState>['state']) => ({
+    const respond = (status: ReturnType<typeof promptState>) => ({
       prompt_id: enqueued.row.commandId,
-      state,
+      state: status.state,
+      // WHY the row is not in line, on the acceptance itself — the same field
+      // the list read carries. `held` is the one a client must have here: an
+      // Undo after Stop restores a held row, and a client that learns its
+      // held-ness one read later counts it as work in flight for that round
+      // trip — composer back on Stop for a queue nothing will run.
+      reason: status.reason,
       message_id:
         typeof stored.redeliveredMessageId === 'string'
           ? stored.redeliveredMessageId
@@ -779,7 +785,7 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     });
     // A dedupe answers before either hold decision: this call wrote nothing.
-    if (enqueued.deduped) return c.json(respond(promptState(enqueued.row).state), 200);
+    if (enqueued.deduped) return c.json(respond(promptState(enqueued.row)), 200);
 
     if (restoreHeld) {
       // A held restore is two statements: the insert above, then the held
@@ -799,7 +805,10 @@ projectsApp.openapi(
         throw error;
       }
       // A held row is not due, so no drain is kicked for it.
-      return c.json(respond(held ? 'waiting' : promptState(enqueued.row).state), 202);
+      return c.json(
+        respond(held ? { state: 'waiting', reason: 'held' } : promptState(enqueued.row)),
+        202,
+      );
     }
 
     // Sending anything NEW lifts a hold the stop button left on this session's
@@ -808,7 +817,7 @@ projectsApp.openapi(
     // land behind rows that are, by construction, never due. A restore is not
     // a new send: the rest of a held queue stays held.
     if (!restore) await releaseInboxHold(sessionId).catch(() => undefined);
-    const response = respond(promptState(enqueued.row).state);
+    const response = respond(promptState(enqueued.row));
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain

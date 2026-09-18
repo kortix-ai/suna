@@ -1,6 +1,7 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { optimisticSessionPrompt } from '@kortix/sdk/react';
 import type { AttachedFile } from './composer/types';
 import {
   cleanPromptText,
@@ -151,6 +152,28 @@ describe('projectQueueRows', () => {
     });
     expect(projection.heldCount).toBe(2);
     expect(projection.rows.map((r) => r.id)).toEqual(['b', 'c']);
+  });
+
+  test('heldCount counts a restored row from the click, before its POST answers', () => {
+    // Undo after Stop. The optimistic row the SDK paints already reads `held`,
+    // so "Queue paused — N" is right in the same frame instead of one round
+    // trip later, and the row is never counted as work in flight in between.
+    const projection = projectQueueRows({
+      prompts: [
+        optimisticSessionPrompt(
+          {
+            clientMessageId: 'q_undo',
+            messageId: 'msg_undo',
+            parts: [{ type: 'text', text: 'put this back' }],
+            restore: true,
+            held: true,
+          },
+          1_000,
+        ),
+      ],
+    });
+    expect(projection.heldCount).toBe(1);
+    expect(projection.rows.map((r) => r.state)).toEqual(['sending']);
   });
 
   test('an empty inbox projects nothing', () => {

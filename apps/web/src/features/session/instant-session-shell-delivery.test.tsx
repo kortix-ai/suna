@@ -92,7 +92,8 @@ mock.module('@/lib/sounds', () => ({ playSound: () => {} }));
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
-mock.module('@/components/ui/toast', () => ({ ...realToast, errorToast: mock() }));
+const errorToast = mock((_message: string, _options?: Record<string, unknown>) => {});
+mock.module('@/components/ui/toast', () => ({ ...realToast, errorToast }));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   startSessionWithPrompt,
@@ -131,6 +132,7 @@ beforeEach(() => {
   posted.length = 0;
   startSessionWithPrompt.mockClear();
   enqueue.mockClear();
+  errorToast.mockClear();
   renderToStaticMarkup(
     createElement(InstantSessionShell, {
       projectId: 'project-1',
@@ -282,4 +284,86 @@ test('a send made while a boot-shell text-only POST is in flight POSTs after tha
   await textSend;
   await settle();
   expect(posted).toEqual(['text one', 'with image']);
+});
+
+/** The `extraSends` list the shell holds, replayed from its own state updates.
+ *  It is the only functional `setState` the shell makes on a send path. */
+function extraSendsNow(): Array<{ id: string }> {
+  let list: Array<{ id: string }> = [];
+  for (const update of stateUpdates) {
+    if (typeof update !== 'function') continue;
+    const next = (update as (prev: Array<{ id: string }>) => unknown)(list);
+    if (Array.isArray(next)) list = next as Array<{ id: string }>;
+  }
+  return list;
+}
+
+const readyUpload = (): AttachmentSubmission => ({
+  submittedIds: ['upload-a'],
+  readyAtSend: true,
+  whenReady: async () => [imagePart],
+  retry: () => {},
+  resubmit: () => {},
+  release: () => {},
+});
+
+/**
+ * A send delivered detached from the composer used to keep its local copy for
+ * the rest of the shell's life. The copy was hidden only while the inbox still
+ * listed the row — so a Remove un-hid it and redrew a bubble the "Removed from
+ * queue" toast said was gone.
+ */
+test('a detached send drops its local copy once the server owns the row', async () => {
+  stateUpdates.length = 0;
+
+  await Promise.resolve(composer.onSend('with image', [imageFile], {}, readyUpload()));
+  await settle();
+
+  expect(posted).toEqual(['with image']);
+  expect(extraSendsNow()).toEqual([]);
+});
+
+test('a detached send whose POST is refused keeps its local copy, marked failed', async () => {
+  stateUpdates.length = 0;
+  enqueue.mockImplementationOnce(async () => {
+    throw new Error('Service Unavailable');
+  });
+
+  await Promise.resolve(composer.onSend('with image', [imageFile], {}, readyUpload()));
+  await settle();
+
+  // The row stays on screen with its Retry: nothing else can send it again.
+  expect(extraSendsNow()).toHaveLength(1);
+  expect((extraSendsNow()[0] as { uploadStatus?: { state: string } }).uploadStatus?.state).toBe(
+    'failed',
+  );
+});
+
+/**
+ * One Enter, one sentence. A send keeps the SDK's transport error sink — that
+ * is what opens the upgrade dialog on a 402 — so the shell's own sentence
+ * beside it was two toasts for one refusal.
+ */
+test('a refused send the transport reported paints no second sentence', async () => {
+  enqueue.mockImplementationOnce(async () => {
+    throw Object.assign(new Error('Forbidden'), { status: 403 });
+  });
+
+  await expect(
+    Promise.resolve(composer.onSend('blocked', undefined, {}, noUploads())),
+  ).rejects.toThrow('Forbidden');
+
+  expect(errorToast).not.toHaveBeenCalled();
+});
+
+test('a refusal that never reached the server still gets the shell’s sentence', async () => {
+  enqueue.mockImplementationOnce(async () => {
+    throw new Error('its earlier delivery already failed');
+  });
+
+  await expect(
+    Promise.resolve(composer.onSend('blocked', undefined, {}, noUploads())),
+  ).rejects.toThrow('its earlier delivery already failed');
+
+  expect(errorToast).toHaveBeenCalledTimes(1);
 });

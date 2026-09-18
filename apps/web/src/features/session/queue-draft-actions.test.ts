@@ -1,7 +1,7 @@
 import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { removeQueuedDraftSend } from './queue-draft-actions';
+import { postThenDropLocalCopy, removeQueuedDraftSend } from './queue-draft-actions';
 
 function prompt(over: Partial<SessionPrompt> = {}): SessionPrompt {
   return {
@@ -139,5 +139,40 @@ describe('removeQueuedDraftSend', () => {
     });
     await removeQueuedDraftSend(input);
     expect(trace).toEqual(['release', 'clearHeldSendFailure', 'removeDraft', 'announceRemoved']);
+  });
+});
+
+/**
+ * A painted send that POSTs detached — it carries uploads, or waits behind an
+ * earlier send — used to keep its local copy for the rest of the shell's life.
+ * It was hidden only while the inbox still listed the row, so a Remove un-hid
+ * it and redrew a bubble the "Removed from queue" toast said was gone.
+ */
+describe('postThenDropLocalCopy', () => {
+  test('the local copy goes only after the server owns the row', async () => {
+    const trace: string[] = [];
+    const post = postThenDropLocalCopy(
+      async () => {
+        trace.push('post');
+        return 'accepted';
+      },
+      () => trace.push('drop'),
+    );
+
+    await expect(post([])).resolves.toBe('accepted');
+    expect(trace).toEqual(['post', 'drop']);
+  });
+
+  test('a refused POST keeps the local copy — its Retry has nothing else to act on', async () => {
+    const trace: string[] = [];
+    const post = postThenDropLocalCopy(
+      async () => {
+        throw new Error('refused');
+      },
+      () => trace.push('drop'),
+    );
+
+    await expect(post([])).rejects.toThrow('refused');
+    expect(trace).toEqual([]);
   });
 });

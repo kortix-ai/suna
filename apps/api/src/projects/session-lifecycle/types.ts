@@ -219,6 +219,8 @@ export const DELIVERY_FAILURE_COPY: Record<
 export const PROMPT_FAILURE_CODES = [
   'out_of_credits',
   'model_unavailable',
+  // No route emits the connector refusal since the session connector gate was
+  // retired; the code stays because a refusal stored before that still reads it.
   'connector_required',
   'runtime_unreachable',
   'not_landed',

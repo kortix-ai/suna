@@ -533,14 +533,19 @@ export function optimisticSessionPrompt(
     .join('\n')
     .trim();
   const at = new Date(nowMs).toISOString();
+  // A held restore is Undo after Stop: the row goes back exactly as Stop left
+  // it, deliberately not due. Painting it `queued` even for the one round trip
+  // to the server counts it as work in flight — composer back on Stop, a busy
+  // row, and the liveness poll on, for a queue nothing will run.
+  const held = input.restore === true && input.held === true;
   return {
     prompt_id: `${OPTIMISTIC_PROMPT_PREFIX}${input.clientMessageId}`,
     placement: input.placement,
     full_text: text,
     client_message_id: input.clientMessageId,
     message_id: input.messageId,
-    state: 'queued',
-    reason: null,
+    state: held ? 'waiting' : 'queued',
+    reason: held ? 'held' : null,
     text,
     attempts: 0,
     last_error: null,
@@ -565,7 +570,16 @@ export function settleOptimisticPrompt(
 ): SessionPrompt[] {
   return prompts.map((p) =>
     p.client_message_id === clientMessageId && isOptimisticSessionPrompt(p)
-      ? { ...p, prompt_id: result.prompt_id, state: result.state, message_id: result.message_id }
+      ? {
+          ...p,
+          prompt_id: result.prompt_id,
+          state: result.state,
+          message_id: result.message_id,
+          // Only when the server named one. A server older than the acceptance
+          // `reason` answers `waiting` with no cause, and the row already knows
+          // why it is waiting — the swap must not erase that.
+          ...(result.reason !== undefined ? { reason: result.reason } : {}),
+        }
       : p,
   );
 }
@@ -778,17 +792,31 @@ export function useSessionPrompts(
     // comes before anything awaited, so the row is on screen in the same frame
     // as the keypress.
     onMutate: async (input: CreateSessionPromptInput) => {
+      const nowMs = Date.now();
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
-        applyOptimisticPrompt(prev ?? [], input, Date.now()),
+        applyOptimisticPrompt(prev ?? [], input, nowMs),
       );
       // The receipt-side floor: a `/turn` poll landing before the POST returns
-      // must not swap Stop back to Send with the row already on screen.
-      useSessionWorkingStore.getState().notePromptAccepted(sessionId!, Date.now());
+      // must not swap Stop back to Send with the row already on screen. It is
+      // raised for LIVE work only, by the same rule the list is counted with —
+      // a held restore is the queue staying paused, not a send.
+      if (countLiveInboxPrompts([optimisticSessionPrompt(input, nowMs)]) > 0) {
+        useSessionWorkingStore.getState().notePromptAccepted(sessionId!, nowMs);
+      }
       await queryClient.cancelQueries({ queryKey: key });
     },
     mutationFn: async (input: CreateSessionPromptInput) => {
       const result = await createSessionPrompt(projectId!, sessionId!, input);
-      if (result.state !== 'failed') {
+      const acceptedAtMs = Date.now();
+      // The row the server just confirmed, read through the same swap the cache
+      // gets: a `failed` answer is over and a held one is not in line, so
+      // neither raises the floor.
+      const accepted = settleOptimisticPrompt(
+        [optimisticSessionPrompt(input, acceptedAtMs)],
+        input.clientMessageId,
+        result,
+      );
+      if (countLiveInboxPrompts(accepted) > 0) {
         // The response's `observed_at` is the write's place on the SERVER
         // clock — what bars a queue read issued before this POST from erasing
         // the row after it settles.
@@ -797,7 +825,7 @@ export function useSessionPrompts(
           .getState()
           .notePromptAccepted(
             sessionId!,
-            Date.now(),
+            acceptedAtMs,
             Number.isFinite(serverAtMs) ? serverAtMs : undefined,
           );
       }

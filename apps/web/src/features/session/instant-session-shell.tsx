@@ -20,7 +20,9 @@ import {
   createQueueRemoveHandler,
   removeFailureCopyKey,
   retryFailureCopyKey,
+  sendRefusalNeedsOwnToast,
 } from '@/features/session/queue-action-copy';
+import { postThenDropLocalCopy } from '@/features/session/queue-draft-actions';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -470,7 +472,12 @@ export function InstantSessionShell({
         void postWhenUploaded(
           sessionId,
           attachments,
-          post,
+          // The inbox owns the row from the acceptance, exactly as on the
+          // awaited path below. Without this hand-off the local copy outlives
+          // the send and a Remove redraws it.
+          postThenDropLocalCopy(post, () =>
+            setExtraSends((prev) => prev.filter((extra) => extra.id !== clientMessageId)),
+          ),
           (uploadStatus) => {
             // After the crossfade this shell is gone and cannot draw the status.
             if (uploadStatus && !mountedRef.current)
@@ -497,8 +504,13 @@ export function InstantSessionShell({
         // written for an API client ("Not found", "prompt_not_found"). One
         // sentence the user can act on, and the cause stays in the console and
         // on the rethrow for whoever is debugging.
+        //
+        // And only where the transport reported nothing: a send keeps the SDK's
+        // error sink, so this sentence beside it was two toasts for one Enter.
         console.warn('[instant-session-shell] the first send was refused', error);
-        errorToast(tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'));
+        if (sendRefusalNeedsOwnToast(error)) {
+          errorToast(tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'));
+        }
         throw error;
       }
       if (first) {

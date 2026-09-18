@@ -23,6 +23,7 @@ const {
   removeFailureCopyKey,
   restoreFailureCopyKey,
   retryFailureCopyKey,
+  sendRefusalNeedsOwnToast,
 } = await import('./queue-action-copy');
 
 type PromptActionFailure = import('./queue-action-copy').PromptActionFailure;
@@ -275,5 +276,34 @@ describe('queue copy keys', () => {
     for (const key of keys) {
       expect(en.hardcodedUi.i18nComplete[key.replace('i18nComplete.', '')]).toBeTruthy();
     }
+  });
+});
+
+/**
+ * One Enter, one sentence.
+ *
+ * `createSessionPrompt` keeps the transport's error sink on for a send — that
+ * is what opens the upgrade dialog on a 402 — so a caller that also paints its
+ * own sentence said the same refusal twice. The boot shell did, for every
+ * Quick Queue send it refused.
+ */
+describe('sendRefusalNeedsOwnToast', () => {
+  const refusal = (over: Record<string, unknown>) => Object.assign(new Error('nope'), over);
+
+  test('a refusal the server answered is already on screen', () => {
+    expect(sendRefusalNeedsOwnToast(refusal({ status: 402, code: 'payment_required' }))).toBe(false);
+    expect(sendRefusalNeedsOwnToast(refusal({ status: 403 }))).toBe(false);
+    expect(sendRefusalNeedsOwnToast(refusal({ status: 503 }))).toBe(false);
+  });
+
+  test('a send that never reached the server needs its own sentence', () => {
+    // No status: an earlier send of the chain failed, or the prompt was refused
+    // before any request went out. The transport reported nothing.
+    expect(sendRefusalNeedsOwnToast(new Error('its earlier delivery already failed'))).toBe(true);
+    expect(sendRefusalNeedsOwnToast(undefined)).toBe(true);
+  });
+
+  test('a request deadline needs its own sentence — the transport keeps that one to itself', () => {
+    expect(sendRefusalNeedsOwnToast(refusal({ status: 503, code: 'request_deadline' }))).toBe(true);
   });
 });

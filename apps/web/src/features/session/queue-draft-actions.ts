@@ -1,6 +1,27 @@
-import type { SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt, SessionPromptPart } from '@kortix/sdk';
 
 import { promptIdForClientMessage } from './queue-projection';
+
+/**
+ * A painted send's POST, with the hand-off to the server's row.
+ *
+ * The local copy is what draws a send before the inbox lists it. It has to go
+ * the moment the POST is accepted, exactly as it does when the sender awaits
+ * its own POST. Kept, it outlives the send — hidden only while the inbox still
+ * lists the row, so a Remove un-hides it and redraws a bubble the "Removed
+ * from queue" toast says is gone. A refused POST keeps it: its Retry has
+ * nothing else to act on.
+ */
+export function postThenDropLocalCopy(
+  post: (parts: SessionPromptPart[]) => Promise<unknown>,
+  dropLocalCopy: () => void,
+): (parts: SessionPromptPart[]) => Promise<unknown> {
+  return async (parts) => {
+    const accepted = await post(parts);
+    dropLocalCopy();
+    return accepted;
+  };
+}
 
 /** Everything the removal touches, passed in so the order can be asserted. */
 export interface QueuedDraftRemoval {

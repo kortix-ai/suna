@@ -463,6 +463,7 @@ describe('POST .../prompts', () => {
     expect(body).toEqual({
       prompt_id: PROMPT_ID,
       state: 'queued',
+      reason: null,
       message_id: WIRE_ID,
       deduped: false,
       observed_at: expect.any(String),
@@ -523,6 +524,7 @@ describe('POST .../prompts', () => {
     expect(await repeat.json()).toEqual({
       prompt_id: PROMPT_ID,
       state: 'delivering',
+      reason: null,
       message_id: WIRE_ID,
       deduped: true,
       observed_at: expect.any(String),
@@ -664,6 +666,22 @@ describe('POST .../prompts', () => {
     expect(body.state).toBe('waiting');
     expect(writeSettledAtMs).toBeGreaterThan(0);
     expect(Date.parse(String(body.observed_at))).toBeGreaterThanOrEqual(writeSettledAtMs);
+  });
+
+  test('a held restore names WHY it waits, on the acceptance itself', async () => {
+    // `waiting` alone does not say whether the row is in line. A client that
+    // learns the held-ness one list read later counts the restored row as work
+    // in flight for that round trip: Stop → remove → Undo puts the composer
+    // back on Stop and polls a runtime that is idle.
+    const response = await post({ ...validBody, restore: true, held: true });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ state: 'waiting', reason: 'held' });
+  });
+
+  test('an ordinary send names no reason — it is in line', async () => {
+    const response = await post(validBody);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ state: 'queued', reason: null });
   });
 
   test('restore of an unheld row leaves the rest of a held queue held, and is due now', async () => {

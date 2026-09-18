@@ -24,6 +24,27 @@ import { createQueueUndoAction } from './queued-message-restore';
 /** The SDK's verdict on a refused row action. */
 export type PromptActionFailure = ReturnType<typeof classifyPromptActionError>;
 
+/** The one refusal the transport hands back WITHOUT reporting it: a request
+ *  that ran past the server's processing deadline (`api-client.ts`). Its three
+ *  siblings there — `feature_not_supported`, `model_not_servable`,
+ *  `provision_in_flight` — belong to routes a prompt send never reaches. */
+const UNREPORTED_REFUSAL_CODE = 'request_deadline';
+
+/**
+ * Does a refused SEND still need the caller's own sentence?
+ *
+ * `createSessionPrompt` keeps the transport's error sink on for a send — that
+ * is what opens the upgrade dialog on a 402 — so a caller that adds a sentence
+ * of its own says one refusal twice. It speaks only where the sink stayed
+ * quiet: a failure that never reached the server, and the one code the
+ * transport reports to the caller alone.
+ */
+export function sendRefusalNeedsOwnToast(error: unknown): boolean {
+  const refusal = (error ?? null) as { status?: unknown; code?: unknown } | null;
+  if (typeof refusal?.status !== 'number') return true;
+  return refusal.code === UNREPORTED_REFUSAL_CODE;
+}
+
 /** "Removed from queue". */
 export const QUEUE_REMOVED_KEY = 'i18nComplete.text2c6041fda32c';
 /** The Undo button on that toast. */

@@ -953,6 +953,12 @@ export interface SessionPrompt {
 export interface CreateSessionPromptResult {
   prompt_id: string;
   state: SessionPromptState;
+  /** Why the row is not in line, when it is not — the same field the list read
+   *  carries. `held` is the one that matters here: a restore after Stop puts
+   *  back a held row, and a client that waits for the next list read to learn
+   *  that counts it as work in flight for that round trip. `null` for a row
+   *  the server intends to run. Absent from servers older than this field. */
+  reason?: string | null;
   message_id: string;
   /** The submission name already named a row: this call added nothing. */
   deduped: boolean;
