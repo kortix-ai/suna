@@ -74,16 +74,32 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
       )
     }
     const skipRestart = c.req.query('restart') === '0'
-    // `?config_dir=1` updates ONLY the opencode config directory from the base
-    // ref. Separate from `base=1` on purpose: that one resets the session's
-    // BRANCH and discards its commits, which is fine at create-time on a warm
-    // snapshot and catastrophic on a live session. This one touches a single
-    // pathspec and refuses when the session has its own work there.
+    // `?config_dir=1` puts the runtime on the base branch's CURRENT config. It
+    // never writes the working tree: a session with no config work of its own is
+    // moved onto a read-only copy of the config dir at the base tip, and one
+    // that edits its own agent keeps reading `/workspace`
+    // (harness/open-code/config-dir-converge.ts). Separate from `base=1`, which
+    // resets the session's BRANCH.
     //
     // An older daemon simply ignores this parameter and does the plain refresh,
-    // which is the previous behaviour — so the API can send it unconditionally
-    // without version negotiation.
+    // so the API can send it unconditionally without version negotiation.
     const syncConfigDir = c.req.query('config_dir') === '1'
+    // `?reload_if_synced=1` — respawn the runtime when, and only when, the
+    // directory it reads changed. opencode reads that directory at spawn, and the
+    // API's env push restarts it only when the env it carries changed; a skill
+    // body, a tool or a plugin is not in that env. Measured on the #7403 preview:
+    // a skill-only merge left the same pid serving the old skill list.
+    //
+    // A separate flag, not a new `restart` value: an older daemon reads any
+    // `restart` other than '0' as "restart always", which would restart opencode
+    // on every wake. An unknown flag is ignored, which is today's behaviour.
+    const reloadIfSynced = c.req.query('reload_if_synced') === '1'
+    // `?repo=0` — leave the checkout exactly as it is. Converging the config no
+    // longer involves the working tree, so the web's "Reload config" can load
+    // the base branch's agents without the `git pull` it has always declined to
+    // trigger from a UI click. An older daemon ignores the flag and runs its
+    // `--ff-only` pull, which cannot discard anything.
+    const skipRepo = c.req.query('repo') === '0'
     const baseSha = c.req.query('base_sha')
     if (baseSha !== undefined && !/^[0-9a-f]{40}$/i.test(baseSha)) {
       return c.json({ error: 'invalid base_sha' }, 400)
@@ -95,6 +111,8 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
           syncBase,
           skipRestart,
           syncConfigDir,
+          reloadIfSynced,
+          skipRepo,
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',
         }))

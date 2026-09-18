@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createWriteStream, existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from './config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import { logger } from './logger'
+import { managedSkillsDir } from './managed-skills'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
 type GitIdentityConfig = Pick<Config, 'gitUserName' | 'gitUserEmail'>
@@ -1618,7 +1619,7 @@ export async function syncWorkspaceToBase(
 const LITERAL = { env: { GIT_LITERAL_PATHSPECS: '1' } } as const
 
 export interface ConfigDirSyncResult {
-  /** True only when files were actually replaced from the base ref. */
+  /** True only when opencode was moved onto a newer base config. */
   synced: boolean
   /** Why nothing was replaced. Absent on success. */
   skipped?:
@@ -1629,39 +1630,135 @@ export interface ConfigDirSyncResult {
     | 'not in base'
     | 'fetch failed'
     | 'checkout failed'
+    /** The replacement opencode did not come up; the running one was kept. */
+    | 'reload declined'
 }
 
 /**
- * Bring ONLY the opencode config directory up to the base ref.
+ * What the PLATFORM writes under the config dir, as opposed to the session.
  *
- * This is the operation `reload` actually needs, and the reason it exists is a
- * measured one: opencode is spawned with `OPENCODE_CONFIG_DIR` pointing INTO the
- * working tree, and the agent `.md` files there beat the compiled config we push
- * as JSON. So pushing the compiled config alone moves the etag and changes
- * nothing the agent reads — verified on dev, where the marker was present in
- * `~/.config/kortix-opencode.json` and absent from `/config` and `/agent`.
+ * `inspectSessionConfigWork` asks whether a session has config work of its own,
+ * and the platform writes into the same working-tree directory at every boot —
+ * so it has to tell that output from the session's. Measured on dev (2026-09-18,
+ * session 6d8dfdae): a session nobody had touched read as edited, and every
+ * dirty file was platform output —
  *
- * Distinct from `syncWorkspaceToBase` in the one way that matters: that resets
- * the BRANCH (`git checkout -B <branch> <sha>`), which discards any commit the
- * session has made. This touches a single pathspec and never moves a ref, so
- * commits, other files, and the branch itself are untouched.
+ *   - `package.json`: OpenCode's installer rewrites the `@opencode-ai/plugin`
+ *     pin to match the opencode BINARY in the box (1.17.11 → 1.18.23);
+ *   - `skills/<managed>/**`: `ensureInjectedManagedSkills` force-writes the
+ *     current overlay over whatever copy the repository tracks.
+ *   - the lockfile: the same installer rewrites it for the pin it just moved.
  *
- * It refuses rather than overwrites. If the session has edited its own agent
- * config — uncommitted, or committed on top of base — that is work, and a button
- * labelled "reload config" has no business discarding it. The caller reports the
- * skip so the user is told the agent did NOT change.
+ * Every starter-seeded repository tracks them, so without these rules
+ * effectively every session reads as "has its own config work" and none of them
+ * is ever moved onto the base branch's config.
  *
- * Leaves the update UNSTAGED: `git checkout <sha> -- <path>` writes the index
- * too, so the index is reset afterwards. The result is a plain working-tree
- * modification, and its diff against base is empty by construction — so a change
- * request opened from this session carries nothing extra.
+ * Both rules are narrow on purpose. A `package.json` counts only when the pin
+ * is the ONLY difference, so an added dependency is still the session's work.
+ * A skill counts only when the overlay ships a directory of that exact name —
+ * the overlay rewrites it on every boot, so an edit there never survived anyway.
  */
-export async function syncConfigDirToBase(
+const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
+/**
+ * Written by OpenCode's installer on every spawn. Measured on the #7403 preview:
+ * opencode restarted, the installer rewrote `bun.lock` for the pin it had just
+ * moved, and the session then read as edited.
+ */
+const INSTALLER_LOCKFILES = ['bun.lock', 'bun.lockb', 'package-lock.json'] as const
+const DEPENDENCY_SECTIONS = [
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+] as const
+
+export interface ConfigDirInspectOptions {
+  /** Overlay source. Defaults to the image-baked `/opt/kortix/managed-skills`. */
+  managedSkillsDir?: string
+}
+
+/** `package.json` with the plugin pin removed, canonicalized — or null if unparseable. */
+function packageJsonWithoutPluginPin(text: string | null): string | null {
+  if (text === null) return null
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    for (const section of DEPENDENCY_SECTIONS) {
+      const deps = parsed[section]
+      if (!deps || typeof deps !== 'object' || Array.isArray(deps)) continue
+      delete (deps as Record<string, unknown>)[OPENCODE_PLUGIN_PACKAGE]
+      // OpenCode adds the section when the repository declared none.
+      if (Object.keys(deps).length === 0) delete parsed[section]
+    }
+    return JSON.stringify(parsed)
+  } catch {
+    return null
+  }
+}
+
+/** NUL-delimited git output → paths. Rename/copy entries contribute both sides. */
+function parseStatusPaths(stdout: string): string[] {
+  const tokens = stdout.split('\0').filter((token) => token.length > 0)
+  const paths: string[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!
+    const code = token.slice(0, 2)
+    paths.push(token.slice(3))
+    if (code.includes('R') || code.includes('C')) {
+      const source = tokens[++i]
+      if (source) paths.push(source)
+    }
+  }
+  return paths
+}
+
+export interface SessionConfigInspection {
+  /** The base branch tip the box just fetched — the commit a converged box runs. */
+  tipSha: string
+  /** The tip ships the config dir at all. */
+  inBase: boolean
+  /**
+   * The session's OWN work under the config dir, or null. A session with work
+   * of its own keeps running from `/workspace`, so its edits take effect; every
+   * other session runs the tip from the read-only copy (boot-config.ts).
+   */
+  ownWork: 'local changes' | 'local commits' | null
+  /** HEAD's config dir already equals the tip's, platform files aside. */
+  headMatchesTip: boolean
+}
+
+export type SessionConfigInspectionResult =
+  | { ok: true; inspection: SessionConfigInspection }
+  | { ok: false; skipped: 'no tracked config dir' | 'fetch failed' }
+
+/** How far back in the base branch a path's previous contents are looked up. */
+const BASE_HISTORY_DEPTH = 40
+
+/**
+ * Does this session have config work of its own? READ-ONLY: nothing here writes
+ * the working tree, the index, or a ref.
+ *
+ * The question used to be "may I overwrite this directory", asked before a
+ * `git checkout <base> -- <config dir>` into the session's tracked tree. That
+ * write is gone (see boot-config.ts for why), so the answer now only selects
+ * which directory opencode reads.
+ *
+ * A path counts as the session's work unless one of these holds:
+ *
+ *   - the platform wrote it — the plugin pin, the installer's lockfile, a skill
+ *     directory the managed overlay ships (see `OPENCODE_PLUGIN_PACKAGE`);
+ *   - its bytes equal that path at SOME commit of the base branch. That is what
+ *     an earlier worktree-style sync left behind, and what an agent's
+ *     `git add -A` then swept into a commit. It is base's content, not an edit.
+ *     Read from base's own history, so no bookkeeping file can go stale.
+ */
+export async function inspectSessionConfigWork(
   cfg: Config,
   relConfigDir: string | null,
   baseSha?: string,
-): Promise<ConfigDirSyncResult> {
-  if (!relConfigDir) return { synced: false, skipped: 'no tracked config dir' }
+  opts: ConfigDirInspectOptions = {},
+): Promise<SessionConfigInspectionResult> {
+  if (!relConfigDir) return { ok: false, skipped: 'no tracked config dir' }
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
   const cloneCredential = await resolveCloneCredential(cfg)
@@ -1670,50 +1767,132 @@ export async function syncConfigDirToBase(
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) {
-    logger.warn('[git] config-dir sync: fetch failed', { stderr: fetched.stderr })
-    return { synced: false, skipped: 'fetch failed' }
+    logger.warn('[git] config inspection: fetch failed', { stderr: fetched.stderr })
+    return { ok: false, skipped: 'fetch failed' }
   }
   const ref = baseSha ?? `refs/remotes/origin/${base}`
+  const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
+  if (resolved.code !== 0) return { ok: false, skipped: 'fetch failed' }
+  const tipSha = resolved.stdout.trim()
 
-  // "Already base" is checked FIRST, and the order is load-bearing rather than
-  // cosmetic. A successful sync leaves the working tree matching base while HEAD
-  // still carries the old content, so the directory is legitimately dirty
-  // afterwards. Checking dirtiness first made every reload after the first one
-  // refuse with 'local changes' — the guard could not tell the user's edit from
-  // our own previous one. Comparing against base instead answers the question
-  // that actually matters, and it cannot mask a real edit: content that differs
-  // from base falls through to the guards below.
-  const diff = await execGit(['-C', target, 'diff', '--quiet', ref, '--', relConfigDir], LITERAL)
-  if (diff.code === 0) return { synced: false, skipped: 'already matches base' }
+  const overlayDir = opts.managedSkillsDir ?? managedSkillsDir()
+  const managedSkillPrefixes = (
+    await readdir(overlayDir, { withFileTypes: true }).catch(() => [])
+  )
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => `${relConfigDir}/skills/${entry.name}/`)
+  const packageJsonPath = `${relConfigDir}/package.json`
+  const lockfilePaths = INSTALLER_LOCKFILES.map((name) => `${relConfigDir}/${name}`)
+  const isManagedSkill = (path: string) => managedSkillPrefixes.some((prefix) => path.startsWith(prefix))
+  const followsPackageJson = (path: string) => path === packageJsonPath || lockfilePaths.includes(path)
 
-  // Uncommitted edits under the config dir — including untracked files, which
-  // `git checkout` would silently leave behind in a half-updated directory.
-  const dirty = await execGit(['-C', target, 'status', '--porcelain', '--', relConfigDir], LITERAL)
-  if (dirty.code === 0 && dirty.stdout.trim().length > 0) {
-    return { synced: false, skipped: 'local changes' }
+  const blobAt = async (rev: string, path: string): Promise<string | null> => {
+    const shown = await execGit(['-C', target, 'show', `${rev}:${path}`], LITERAL)
+    return shown.code === 0 ? shown.stdout : null
   }
 
-  // Commits this session made on top of base that touch the config dir. Without
-  // this a session that edited and COMMITTED its agent would have that silently
-  // reverted by a reload.
-  const ahead = await execGit(
-    ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
+  // Every blob id `path` has had on the base branch, '' standing for "absent".
+  // One `git log --raw` per path: the raw rows carry the old and new blob ids.
+  const baseHistory = new Map<string, Set<string>>()
+  const baseBlobsOf = async (path: string): Promise<Set<string>> => {
+    const cached = baseHistory.get(path)
+    if (cached) return cached
+    const blobs = new Set<string>()
+    const log = await execGit(
+      ['-C', target, 'log', `-n${BASE_HISTORY_DEPTH}`, '--format=', '--raw', '--no-abbrev', '--no-renames', tipSha, '--', path],
+      LITERAL,
+    )
+    for (const row of log.code === 0 ? log.stdout.split('\n') : []) {
+      const match = /^:\d+ \d+ ([0-9a-f]+) ([0-9a-f]+) /.exec(row)
+      if (!match) continue
+      for (const id of [match[1]!, match[2]!]) blobs.add(/^0+$/.test(id) ? '' : id)
+    }
+    const atTip = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${tipSha}:${path}`], LITERAL)
+    blobs.add(atTip.code === 0 ? atTip.stdout.trim() : '')
+    baseHistory.set(path, blobs)
+    return blobs
+  }
+
+  /** `package.json` text differs from some base version by the plugin pin at most. */
+  const packageJsonIsPlatformOnly = async (text: string | null, revs: string[]): Promise<boolean> => {
+    const mine = packageJsonWithoutPluginPin(text)
+    if (mine === null) return false
+    for (const rev of revs) {
+      if (mine === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))) return true
+    }
+    return false
+  }
+
+  const inBase =
+    (await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${tipSha}:${relConfigDir}`], LITERAL)).code === 0
+
+  // ── Uncommitted work ─────────────────────────────────────────────────────
+  // `--untracked-files=all` so an untracked directory is listed file by file
+  // instead of collapsing into one entry that no rule can match.
+  let ownWork: SessionConfigInspection['ownWork'] = null
+  const dirty = await execGit(
+    ['-C', target, 'status', '--porcelain', '-z', '--untracked-files=all', '--', relConfigDir],
     LITERAL,
   )
-  if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
-    return { synced: false, skipped: 'local commits' }
+  for (const path of dirty.code === 0 ? parseStatusPaths(dirty.stdout) : []) {
+    if (isManagedSkill(path)) continue
+    const onDisk = join(target, path)
+    if (followsPackageJson(path)) {
+      const text = await readFile(join(target, packageJsonPath), 'utf8').catch(() => null)
+      if (await packageJsonIsPlatformOnly(text, ['HEAD', tipSha])) continue
+    }
+    const hashed = existsSync(onDisk) ? await execGit(['-C', target, 'hash-object', '--', path], LITERAL) : null
+    const worktreeBlob = hashed ? (hashed.code === 0 ? hashed.stdout.trim() : null) : ''
+    if (worktreeBlob !== null && (await baseBlobsOf(path)).has(worktreeBlob)) continue
+    logger.info('[git] config inspection: uncommitted session work', { path })
+    ownWork = 'local changes'
+    break
   }
 
-  const checkout = await execGit(['-C', target, 'checkout', ref, '--', relConfigDir], LITERAL)
-  if (checkout.code !== 0) {
-    // The most likely cause is that base has no such directory at all.
-    const missing = /did not match any file|pathspec/i.test(checkout.stderr)
-    logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
-    return { synced: false, skipped: missing ? 'not in base' : 'checkout failed' }
+  // ── Committed work ───────────────────────────────────────────────────────
+  // Judged by content, not by counting commits: an agent's `git add -A` commits
+  // the platform's pin and overlay, and whatever an earlier sync left unstaged.
+  const mergeBase = await execGit(['-C', target, 'merge-base', 'HEAD', tipSha])
+  const branchPoint = mergeBase.code === 0 ? mergeBase.stdout.trim() : null
+  if (!ownWork && branchPoint) {
+    const committed = await execGit(
+      ['-C', target, 'diff', '--name-only', '-z', '--no-renames', branchPoint, 'HEAD', '--', relConfigDir],
+      LITERAL,
+    )
+    for (const path of committed.code === 0 ? committed.stdout.split('\0').filter(Boolean) : []) {
+      if (isManagedSkill(path)) continue
+      if (followsPackageJson(path) && (await packageJsonIsPlatformOnly(await blobAt('HEAD', packageJsonPath), [branchPoint, tipSha]))) {
+        continue
+      }
+      const atHead = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `HEAD:${path}`], LITERAL)
+      if ((await baseBlobsOf(path)).has(atHead.code === 0 ? atHead.stdout.trim() : '')) continue
+      logger.info('[git] config inspection: committed session work', { path })
+      ownWork = 'local commits'
+      break
+    }
+  } else if (!ownWork) {
+    // No common history to measure against. Conservative: any session commit
+    // under the config dir is the session's.
+    const ahead = await execGit(['-C', target, 'log', '--oneline', `${tipSha}..HEAD`, '--', relConfigDir], LITERAL)
+    if (ahead.code === 0 && ahead.stdout.trim().length > 0) ownWork = 'local commits'
   }
-  // Un-stage: leave a plain working-tree change, not a staged one.
-  await execGit(['-C', target, 'reset', '-q', '--', relConfigDir], LITERAL)
 
-  logger.info('[git] synced opencode config dir to base', { dir: relConfigDir, ref })
-  return { synced: true }
+  // Is HEAD already the tip's config? Then the working tree IS the converged
+  // config and there is nothing to extract. Platform-owned paths are left out.
+  let headMatchesTip = true
+  const drift = await execGit(
+    ['-C', target, 'diff', '--name-only', '-z', '--no-renames', 'HEAD', tipSha, '--', relConfigDir],
+    LITERAL,
+  )
+  if (drift.code !== 0) headMatchesTip = false
+  for (const path of drift.code === 0 ? drift.stdout.split('\0').filter(Boolean) : []) {
+    if (isManagedSkill(path)) continue
+    if (followsPackageJson(path) && (await packageJsonIsPlatformOnly(await blobAt('HEAD', packageJsonPath), [tipSha]))) {
+      continue
+    }
+    headMatchesTip = false
+    break
+  }
+
+  return { ok: true, inspection: { tipSha, inBase, ownWork, headMatchesTip } }
 }

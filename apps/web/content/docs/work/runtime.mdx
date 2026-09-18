@@ -51,6 +51,28 @@ The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --project "
 
 The session header reports each server-confirmed reload phase in real time. A web reload checks the session, compiles the agent config, applies and validates the runtime replacement, then confirms the active config. It does not refresh the repository. The CLI can refresh the repository unless you pass `--no-repo`.
 
+### Config convergence
+
+A sandbox holds the config of the commit it was provisioned from. A resume or a restart returns the same VM, so the config does not change by itself. Kortix converges the session on the current tip of its `base_ref` after each resume, after each restart, and when you select **Reload config** or run `kortix sessions reload`.
+
+Kortix never writes `/workspace` to do this. `/workspace` stays the full clone that you and the agent read and edit.
+
+1. The daemon fetches `base_ref` and checks whether the session has config work of its own under the OpenCode config directory (`.kortix/opencode` by default).
+2. If the session has no config work of its own, the daemon extracts the config directory at the tip of `base_ref` into a read-only copy at `/opt/kortix/config/<commit>`. OpenCode reads its agents, skills, tools, and plugins from that copy.
+3. If the session has uncommitted edits or its own commits under the config directory, OpenCode keeps reading `/workspace`, so those edits take effect. The reload reports `agent_files: kept-yours`. This check runs on every convergence, in both directions.
+4. When the directory that OpenCode reads changes, the daemon starts a replacement OpenCode and promotes it only after it serves. If the replacement does not start, the running OpenCode stays.
+5. The API compiles the agent config from `base_ref` and pushes it when its etag differs from the etag the sandbox reports.
+
+A box that is already current restarts nothing. The convergence never ends a turn. Directly after a wake, OpenCode needs a few seconds before it answers; Kortix retries after 5, 10, 15, and 30 seconds. If the session is mid-turn, Kortix retries 6 minutes, 7 minutes, and 27 minutes after the first attempt.
+
+The copy is read-only so that an edit to the wrong copy fails with a permission error. To change an agent, a skill, or a tool, edit the files under `/workspace/.kortix/opencode` and open a change request. The daemon verifies every file in the copy against its commit before OpenCode starts. It rebuilds a copy that does not match. If it cannot, OpenCode reads `/workspace`.
+
+Three kinds of file do not count as config work of the session, because the platform writes them: the `@opencode-ai/plugin` version in `package.json`, the installer's lockfile while `package.json` has no other edit, and each skill directory that the managed-skill overlay ships. A file whose content equals an earlier version of that file on `base_ref` does not count either.
+
+`GET /v1/projects/{projectId}/sessions/{sessionId}/config` reports `stale: true` when newer config is available. It compares two things. The first is the compiled agent config etag, which covers governance and agent frontmatter. The second is the config directory: the sandbox reports the base commit that its copy came from (`config_dir_sha` on `/kortix/health`), and the API diffs that commit against the tip of `base_ref`. The second comparison catches a change to a skill body, a tool, or a plugin, which the etag does not contain. `stale` is `null` when Kortix cannot tell. It is never `false` in that case.
+
+**Reload config** does not pull the session branch. To bring the code of `base_ref` into the session branch, use **Ask agent to sync**.
+
 ## Layout inside the sandbox
 
 ```
@@ -59,6 +81,7 @@ The session header reports each server-confirmed reload phase in real time. A we
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
+/opt/kortix/config/<commit>      ← Read-only copy of the OpenCode config dir at a base commit (after convergence).
 ```
 
 OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store never lands among your repo files.

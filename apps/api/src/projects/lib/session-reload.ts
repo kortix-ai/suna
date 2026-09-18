@@ -34,6 +34,9 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
+import { resolveCommitSha } from '../git/commits';
+import { refreshMirror } from '../git/mirror';
+import { opencodeConfigDirChangedBetween } from '../git/opencode-config-dir';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
@@ -45,6 +48,9 @@ import {
 } from './session-sandbox-metadata';
 
 const SANDBOX_SERVICE_PORT = 8000;
+/** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
+const REFRESH_BUSY_RETRIES = 5;
+const REFRESH_BUSY_DELAY_MS = 3_000;
 
 /**
  * What happened to the agent `.md` files opencode actually reads.
@@ -91,6 +97,31 @@ export function classifyAgentFiles(input: {
       // changed, and we must not claim the user's version was deliberately kept.
       return 'unknown';
   }
+}
+
+/**
+ * Does the box need the push — and the opencode restart that comes with it?
+ *
+ * Two independent reasons, because the config has two homes. Files that were
+ * just brought forward are read only at opencode's spawn, so they need the
+ * restart even when the compiled etag did not move (a skill body is not part of
+ * it). And a moved etag needs the push even when the files were kept: governance
+ * — connectors, secrets, scope — lives in the compiled config alone.
+ *
+ * An unknown etag on either side is NOT a reason. "Could not tell" is not
+ * permission to restart a runtime nobody asked to restart.
+ */
+export function configNeedsPush(input: {
+  agentFiles: ReloadAgentFiles;
+  runningEtag: string | null;
+  latestEtag: string | null;
+}): boolean {
+  if (input.agentFiles === 'updated') return true;
+  return (
+    input.runningEtag !== null &&
+    input.latestEtag !== null &&
+    input.runningEtag !== input.latestEtag
+  );
 }
 
 export interface SessionReloadResult {
@@ -224,6 +255,8 @@ export async function readSandboxConfigState(input: {
 }): Promise<{
   etag: string | null;
   commitSha: string | null;
+  /** Base commit the box's config dir represents; null before its first sync. */
+  configDirSha: string | null;
   reachable: boolean;
   /** `null` when the box could not tell us — see the reload gate. */
   turnInFlight: boolean | null;
@@ -236,7 +269,13 @@ export async function readSandboxConfigState(input: {
         and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
       )
       .limit(1);
-    const unreachable = { etag: null, commitSha: null, reachable: false, turnInFlight: null };
+    const unreachable = {
+      etag: null,
+      commitSha: null,
+      configDirSha: null,
+      reachable: false,
+      turnInFlight: null,
+    };
     if (!row?.externalId) return unreachable;
     const serviceKey = (row.config as Record<string, unknown> | null)?.serviceKey;
     if (typeof serviceKey !== 'string') return unreachable;
@@ -256,11 +295,13 @@ export async function readSandboxConfigState(input: {
     const body = (await res.json()) as {
       agent_config_etag?: unknown;
       commit_sha?: unknown;
+      config_dir_sha?: unknown;
       turn_in_flight?: unknown;
     };
     return {
       etag: typeof body.agent_config_etag === 'string' ? body.agent_config_etag : null,
       commitSha: typeof body.commit_sha === 'string' ? body.commit_sha : null,
+      configDirSha: typeof body.config_dir_sha === 'string' ? body.config_dir_sha : null,
       reachable: true,
       // Tri-state on purpose: `true` busy, `false` idle, `null` could not tell.
       // Absent (the caller did not ask) is also null.
@@ -268,7 +309,7 @@ export async function readSandboxConfigState(input: {
         body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
     };
   } catch {
-    return { etag: null, commitSha: null, reachable: false, turnInFlight: null };
+    return { etag: null, commitSha: null, configDirSha: null, reachable: false, turnInFlight: null };
   }
 }
 
@@ -352,6 +393,50 @@ export function isConfigStale(runningEtag: string | null, latestEtag: string | n
   return runningEtag !== latestEtag;
 }
 
+/**
+ * One verdict from the two things a session's config is made of.
+ *
+ * `etagStale` is the compiled agent config (governance, agent frontmatter).
+ * `filesStale` is the config dir on disk (skills, tools, plugins, agent bodies).
+ * Either one alone is enough to be stale.
+ *
+ * An unknown `filesStale` does NOT poison a known etag: a daemon built before
+ * `config_dir_sha` shipped never reports it, and those boxes must keep the
+ * answer they had. An unknown etag still yields `null` unless the files are
+ * known to be stale — never `false`, which would read as "up to date".
+ */
+export function combineConfigStaleness(
+  etagStale: boolean | null,
+  filesStale: boolean | null,
+): boolean | null {
+  if (etagStale === true || filesStale === true) return true;
+  return etagStale;
+}
+
+/**
+ * Has the base branch's config dir moved past what this box holds?
+ *
+ * `configDirSha` when the box has synced at least once, else the commit it
+ * booted from. `null` when the mirror cannot answer — most often a session that
+ * committed without pushing, whose HEAD only the box has.
+ */
+export async function isSessionConfigDirStale(input: {
+  project: GitBackedProject;
+  baseRef: string;
+  configDirSha: string | null;
+  commitSha: string | null;
+}): Promise<boolean | null> {
+  const boxSha = input.configDirSha ?? input.commitSha;
+  if (!boxSha) return null;
+  try {
+    const mirror = await refreshMirror(input.project);
+    const tipSha = await resolveCommitSha(input.project, input.baseRef);
+    return await opencodeConfigDirChangedBetween(mirror, input.project, boxSha, tipSha);
+  } catch {
+    return null;
+  }
+}
+
 export async function reloadSessionConfig(input: {
   projectId: string;
   accountId: string;
@@ -360,10 +445,20 @@ export async function reloadSessionConfig(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-  /** Pull the workspace before recompiling. Default true — the usual intent. */
+  /**
+   * Also fast-forward the session's own branch. Default true. It does NOT gate
+   * the config convergence, which never touches the checkout and always runs.
+   */
   refreshRepo?: boolean;
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
+  /**
+   * Skip the push — and the opencode restart it costs — when the box is already
+   * current. For callers nobody asked: the wake-time convergence runs on every
+   * resume, and a current box must not pay a runtime restart for it. The reload
+   * button leaves this unset, because a person who asked for a reload gets one.
+   */
+  onlyIfStale?: boolean;
   /** Optional live progress sink. The JSON route leaves it unset. */
   onPhase?: (phase: SessionReloadPhase) => void;
 }): Promise<SessionReloadResult> {
@@ -419,14 +514,50 @@ export async function reloadSessionConfig(input: {
   // shipped ignores the request and reports nothing, which is not the same as
   // declining to sync.
   let configDirSynced: boolean | null = null;
+  // The daemon reloads opencode itself when the sync replaced files. The push
+  // below restarts it only on an ENV change, so for a skill-only merge this is
+  // the reload that happened — and the one the result has to report.
+  let configDirReload: OpencodeReloadHow | null = null;
+  let configDirTurnEnded: boolean | null = null;
   let configDirReason: string | undefined;
-  if (input.refreshRepo !== false) {
+  {
     input.onPhase?.('refreshing-workspace');
-    const refreshed = await refreshSandboxWorkspace(input.sessionId);
-    repoRefreshed = refreshed.ok;
+    const pullRepo = input.refreshRepo !== false;
+    const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo });
+    repoRefreshed = pullRepo && refreshed.ok;
     commitSha = refreshed.commitSha ?? commitSha;
     configDirSynced = refreshed.configDirSynced;
     configDirReason = refreshed.configDirReason;
+    configDirReload = refreshed.configDirReload;
+    configDirTurnEnded = refreshed.configDirTurnEnded;
+  }
+
+  const agentFiles = classifyAgentFiles({
+    // Always attempted now: it no longer depends on pulling the repository.
+    requested: true,
+    synced: configDirSynced,
+    reason: configDirReason,
+  });
+  if (input.onlyIfStale) {
+    const latestEtag = await latestAgentConfigEtag({
+      projectId: input.projectId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      baseRef: input.baseRef,
+    });
+    if (!configNeedsPush({ agentFiles, runningEtag: before.etag, latestEtag })) {
+      return {
+        applied: false,
+        previous_etag: before.etag,
+        etag: before.etag,
+        repo_refreshed: repoRefreshed,
+        commit_sha: commitSha,
+        agent_files: agentFiles,
+        opencode_reload: null,
+        turn_ended: null,
+        reason: 'already current',
+      };
+    }
   }
 
   const push = await pushSessionAgentConfigToSandbox({
@@ -455,13 +586,9 @@ export async function reloadSessionConfig(input: {
     etag: push.applied ? latest : before.etag,
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
-    agent_files: classifyAgentFiles({
-      requested: input.refreshRepo !== false,
-      synced: configDirSynced,
-      reason: configDirReason,
-    }),
-    opencode_reload: push.opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? null,
+    agent_files: agentFiles,
+    opencode_reload: push.opencodeReload ?? configDirReload,
+    turn_ended: push.opencodeTurnEnded ?? configDirTurnEnded,
     ...(push.applied
       ? push.opencodeReload === 'kept-old'
         ? {
@@ -506,13 +633,30 @@ export async function reloadSessionConfig(input: {
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
-async function refreshSandboxWorkspace(sessionId: string): Promise<{
+type OpencodeReloadHow = 'disposed' | 'restarted' | 'kept-old';
+function isReloadHow(value: unknown): value is OpencodeReloadHow {
+  return value === 'disposed' || value === 'restarted' || value === 'kept-old';
+}
+
+async function refreshSandboxWorkspace(
+  sessionId: string,
+  opts: { pullRepo: boolean },
+): Promise<{
   ok: boolean;
   commitSha: string | null;
   configDirSynced: boolean | null;
   configDirReason?: string;
+  /** How the daemon reloaded opencode for the files it replaced; null = it did not. */
+  configDirReload: OpencodeReloadHow | null;
+  configDirTurnEnded: boolean | null;
 }> {
-  const unreachable = { ok: false, commitSha: null, configDirSynced: null };
+  const unreachable = {
+    ok: false,
+    commitSha: null,
+    configDirSynced: null,
+    configDirReload: null,
+    configDirTurnEnded: null,
+  };
   try {
     const [row] = await db
       .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
@@ -530,11 +674,34 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     // comment above. Sent unconditionally: a daemon built before it shipped just
     // ignores the query parameter and answers without `config_dir`, which reads
     // back as `null` ("could not tell") rather than `false`.
-    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
-      method: 'POST',
-      headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
-      signal: AbortSignal.timeout(120_000),
-    });
+    // 409 = another refresh holds the daemon's single-flight slot. After a
+    // resume or restart that is the runtime-asset poke fired alongside this one
+    // (`scheduleSandboxRuntimeRefresh`), and it is over in seconds. Reading it as
+    // "unreachable" reports `agent_files: unknown` for a box that was only busy
+    // for a moment, so wait it out instead.
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      // `reload_if_synced=1`: reload opencode when the sync replaced files. The
+      // push after this restarts it only on an ENV change, and a skill body is
+      // not in the env — without the flag a skill-only merge synced the files
+      // and changed nothing the agent saw (#7403 preview: same pid, skill
+      // absent 60 s later). An older daemon ignores the flag.
+      // `repo=0` when the caller did not ask for the session branch to be
+      // pulled. Converging the config never touches the checkout, so it runs
+      // either way — the web's "Reload config" used to skip this whole call to
+      // avoid the pull, which is why it moved the etag and left the agent's
+      // prompts and skills exactly as they were.
+      res = await fetch(
+        `${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1&reload_if_synced=1${opts.pullRepo ? '' : '&repo=0'}`,
+        {
+          method: 'POST',
+          headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
+      if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_BUSY_DELAY_MS));
+    }
     if (!res.ok) return unreachable;
     // The daemon answers `{repo: {before, after}}` — there is no `repo.commit`,
     // so the old read was always undefined and `commit_sha` always reported the
@@ -542,6 +709,7 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     const body = (await res.json()) as {
       repo?: { after?: { commit?: unknown } };
       config_dir?: { synced?: unknown; skipped?: unknown };
+      config_dir_reload?: { how?: unknown; turn_ended?: unknown };
     };
     const commit = body.repo?.after?.commit;
     const dir = body.config_dir;
@@ -550,6 +718,11 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
       commitSha: typeof commit === 'string' ? commit : null,
       configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
       ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
+      configDirReload: isReloadHow(body.config_dir_reload?.how) ? body.config_dir_reload.how : null,
+      configDirTurnEnded:
+        typeof body.config_dir_reload?.turn_ended === 'boolean'
+          ? body.config_dir_reload.turn_ended
+          : null,
     };
   } catch {
     // A failed pull is not a failed reload: the config recompiles from the git

@@ -1,5 +1,6 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
-import { requireOpenCodeConfig, resolveOpencodeConfigDirRelative } from './config'
+import { requireOpenCodeConfig, resolveOpencodeConfigDir, resolveOpencodeConfigDirRelative } from './config'
+import { convergeOpencodeConfigDir } from './config-dir-converge'
 import { writeAgentEnvFile } from '../../agent-env-file'
 import { syncEgressShim } from '../../egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
@@ -8,7 +9,7 @@ import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
 import { logger } from '../../logger'
 import { requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '../../project-env'
-import { refreshRepo, syncConfigDirToBase, syncWorkspaceToBase } from '../../git'
+import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '../../git'
 import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
 import { readPinnedOpencodeSessionId } from './boot'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
@@ -125,6 +126,13 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
 }
 
 /** Runtime-assets reconciliation must not restart a runtime during boot. */
+/** `repo=0`: report the checkout as it is; nothing is fetched or pulled. */
+async function unchangedRepo(projectTarget: string) {
+  const info = await readRepoInfo(projectTarget)
+  if (!info) throw new Error('project repo is not materialized')
+  return { before: info, after: info }
+}
+
 export function refreshMayConvergeRuntime(runtimeState: string): boolean {
   return runtimeState === 'ok'
 }
@@ -287,14 +295,35 @@ export function createOpenCodeControlService(
             opencode_turn_ended: reloadTurnEnded,
           }
         },
-        async refresh({ syncBase, skipRestart, syncConfigDir, baseSha, forceFail }: HarnessRefreshInput) {
+        async refresh({
+          syncBase,
+          skipRestart,
+          syncConfigDir,
+          reloadIfSynced,
+          skipRepo,
+          baseSha,
+          forceFail,
+        }: HarnessRefreshInput) {
           const repo = syncBase
             ? await syncWorkspaceToBase(cfg, baseSha)
-            : await refreshRepo(cfg)
-          // After the repo op, so a successful pull is reflected before we compare
-          // the config dir against base.
-          const configDir = syncConfigDir
-            ? await syncConfigDirToBase(cfg, await resolveOpencodeConfigDirRelative(cfg), baseSha)
+            : skipRepo
+              ? await unchangedRepo(cfg.projectTarget)
+              : await refreshRepo(cfg)
+          // After the repo op, so a successful pull is reflected before the
+          // session's config work is inspected. Never writes the working tree.
+          const converged = syncConfigDir
+            ? await convergeOpencodeConfigDir({
+                cfg,
+                opencode,
+                relConfigDir: await resolveOpencodeConfigDirRelative(cfg),
+                workspaceConfigDir: await resolveOpencodeConfigDir(cfg),
+                baseSha,
+                // A full restart below respawns on the new directory anyway.
+                reload: skipRestart && reloadIfSynced === true,
+              })
+            : undefined
+          const configDir = converged
+            ? { synced: converged.synced, ...(converged.skipped ? { skipped: converged.skipped } : {}) }
             : undefined
           // Verified swap, not a kill-then-hope restart: boot the new opencode,
           // prove it serves, and only then retire the running one. A config that
@@ -341,6 +370,14 @@ export function createOpenCodeControlService(
               after: repo.after,
             },
             ...(configDir ? { config_dir: configDir } : {}),
+            ...(converged?.reload
+              ? {
+                  config_dir_reload: {
+                    how: converged.reload.how,
+                    turn_ended: converged.reload.turnEnded,
+                  },
+                }
+              : {}),
             ...(reload
               ? {
                   reload: {

@@ -37,6 +37,10 @@ export interface HarnessRefreshInput {
   syncBase: boolean
   skipRestart: boolean
   syncConfigDir: boolean
+  /** Respawn the runtime when, and only when, the directory it reads changed. */
+  reloadIfSynced?: boolean
+  /** Leave the checkout exactly as it is — no pull of the session branch. */
+  skipRepo?: boolean
   baseSha?: string
   forceFail: boolean
 }
@@ -45,6 +49,8 @@ export interface HarnessRefreshResult {
   ok: true
   repo: { before: RepoInfo; after: RepoInfo }
   config_dir?: ConfigDirSyncResult
+  /** Present when the runtime was respawned because the directory it reads changed. */
+  config_dir_reload?: { how: 'restarted' | 'kept-old'; turn_ended: boolean | null }
   reload?: {
     outcome: 'swapped' | 'kept-old'
     port?: number

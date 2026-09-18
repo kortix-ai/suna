@@ -31,6 +31,8 @@ import { materializeProject } from '../../config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
+import { resolveActiveOpencodeConfigDir } from './config-dir-converge'
+import { readBootConfigPointer } from '../../boot-config'
 import { OPENCODE_HOME } from './paths'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
@@ -292,7 +294,16 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // After the repo lands we install config deps + injected skills there and
   // dispose the instances in place (~50 ms) so the next request re-detects
   // the git root and re-reads config. No hint → the serial boot below.
-  const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
+  // A converged box spawns straight onto its config copy. Spawning on the
+  // working-tree hint instead would be "a WRONG dir" below and cost every resume
+  // an opencode restart. Existence only here — the copy is verified against its
+  // commit once the repository is available, before the workspace gate opens.
+  const pointedConfigDir = cfg.autoClone ? (await readBootConfigPointer())?.dir ?? null : null
+  const earlyOpencodeConfigDir = cfg.autoClone
+    ? pointedConfigDir && existsSync(pointedConfigDir)
+      ? pointedConfigDir
+      : resolveHintedOpencodeConfigDir(cfg)
+    : null
   // Only the early-spawn path can expose a half-built workspace; every other
   // boot leaves this undefined and the proxy gate below is inert.
   if (earlyOpencodeConfigDir) bootState.workspaceReady = false
@@ -353,10 +364,21 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
     scheduleHistoryBackfill(cfg, cfg.projectTarget)
   }
 
-  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
+  // The working-tree config dir is the FLOOR. A box that has converged on the
+  // base branch reads a read-only copy of the config dir instead, and a resume
+  // restarts this process — so the choice is read back from disk here, or every
+  // wake would drop the box onto the config of its provision day until the
+  // API's convergence pass caught up. Verified against its commit; falls back
+  // to the floor on any failure (config-dir-converge.ts).
+  const workspaceOpencodeConfigDir = await resolveOpencodeConfigDir(cfg)
+  const activeConfig = bootState.repoMaterializationError
+    ? { dir: workspaceOpencodeConfigDir, sha: null }
+    : await resolveActiveOpencodeConfigDir({ cfg, workspaceConfigDir: workspaceOpencodeConfigDir })
+  const opencodeConfigDir = activeConfig.dir
   logger.info('[boot] resolved opencode config dir', {
     opencodeConfigDir,
     usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
+    baseConfigSha: activeConfig.sha,
   })
   // An early spawn on a WRONG dir (hint stale vs. the checkout) is not
   // reusable: OPENCODE_CONFIG_DIR is process env. Fall through to the serial

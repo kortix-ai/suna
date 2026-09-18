@@ -20,6 +20,7 @@ import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
+import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -315,6 +316,11 @@ export async function resumeStoppedSandbox(
       // extend the wake the user is waiting on. It retries on its own, because
       // provider-running precedes the guest daemon binding its port.
       scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
+      // The project's half of the same problem. The woken VM still holds the
+      // `.kortix/opencode` tree and compiled agent config of its provision day;
+      // nothing on a resume re-reads the base branch. Detached, idle-gated, and
+      // a no-op — no opencode restart — on a box that is already current.
+      scheduleSessionConfigConvergence(row.sessionId, 'resume');
       return true;
     },
     fail: async (reason) => {

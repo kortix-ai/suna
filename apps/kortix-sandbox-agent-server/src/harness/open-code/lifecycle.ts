@@ -1708,6 +1708,14 @@ export type Opencode = HarnessLifecycleService & {
    */
   reloadVerified(opts?: { forceFail?: boolean }): Promise<VerifiedReloadResult>
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
+  /**
+   * Point the NEXT spawn at another config directory and return the previous
+   * one. Unlike `reconfigure` it leaves `state` alone: the running process is
+   * still serving, and a caller that then declines the swap puts the old
+   * directory back without the box ever having reported `starting`.
+   */
+  useConfigDir(nextOpencodeConfigDir: string): string
+  getConfigDir(): string
   getPid(): number | null
   getInternalUrl(): string
   /**
@@ -2731,6 +2739,16 @@ export function createOpencodeLifecycle(
         pid: this.getPid(),
         turnEnded,
       }
+    },
+
+    useConfigDir(nextOpencodeConfigDir: string): string {
+      const previous = currentOpencodeConfigDir
+      currentOpencodeConfigDir = nextOpencodeConfigDir
+      return previous
+    },
+
+    getConfigDir() {
+      return currentOpencodeConfigDir
     },
 
     reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
