@@ -51,6 +51,18 @@ The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --project "
 
 The session header reports each server-confirmed reload phase in real time. A web reload checks the session, compiles the agent config, applies and validates the runtime replacement, then confirms the active config. It does not refresh the repository. The CLI can refresh the repository unless you pass `--no-repo`.
 
+### Config convergence after a resume or restart
+
+A sandbox holds the config of the commit it was provisioned from. A resume or a restart returns the same VM, so the config does not change by itself. After each resume and each restart, Kortix converges the session on the current tip of its `base_ref`:
+
+1. The daemon replaces the OpenCode config directory (`.kortix/opencode` by default) with the copy at `base_ref`. It never moves the session branch and never touches a file outside that directory.
+2. The API compiles the agent config from `base_ref` and compares its etag with the etag the sandbox reports.
+3. If step 1 replaced a file, or the etags differ, the API pushes the compiled config. The push restarts OpenCode. If neither is true, nothing restarts.
+
+The convergence is automatic and runs in the background. It never ends a turn. If the session is mid-turn, Kortix retries after 6 minutes and again after 20 minutes. If the session stays busy, the next resume tries again. `kortix sessions reload` runs the same operation on demand.
+
+The daemon keeps the session's own work. It skips step 1 when the session has uncommitted edits or its own commits under the config directory, and reports `agent_files: kept-yours`. Two kinds of file do not count as session work, because the platform writes them: the `@opencode-ai/plugin` version in the config directory's `package.json`, and each skill directory that the managed-skill overlay ships. The daemon restores both after the sync. A file that `base_ref` deleted is deleted in the session too.
+
 ## Layout inside the sandbox
 
 ```

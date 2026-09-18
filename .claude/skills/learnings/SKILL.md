@@ -6227,3 +6227,25 @@ to permit a single provisioning check before starting another full run.
 **Enforcement.** The pending queue fixture is verified with the local browser
 runner, which uses local Git. The preview gate stays explicitly blocked until
 GitHub provisioning recovers; a local pass does not replace that gate.
+
+### 2026-09-18 — A "did the user edit this?" guard must know what the platform writes
+
+**Near miss.** `kortix sessions reload` exited 0 and printed a moved etag on dev
+session `6d8dfdae`, which nobody had touched. The agent file in the sandbox was
+unchanged and the live agent answered `NO_MARKER`. The daemon's config-dir sync
+refused with `local changes`: OpenCode's installer had rewritten the
+`@opencode-ai/plugin` pin in the tracked `package.json`, and the managed-skill
+overlay had rewritten the tracked `kortix-cli` skill. Every starter-seeded
+repository tracks both, so the guard refused on effectively every session. A
+second defect hid behind it: a successful sync leaves its output unstaged, so
+the next sync read that output as a session edit and refused. 16,685 imported
+legacy sessions depended on this path to leave their provision-day config.
+
+**Rule.** A guard that protects user work from `git status` must subtract every
+path the platform itself writes, and must record its own previous output. Verify
+a config reload by what the agent reads and answers, never by the etag.
+
+**Enforcement.** `config-dir-sync.test.ts` reproduces the exact dev dirt (pin
+`1.17.11 → 1.18.23`, overlay over a tracked skill) against real git
+repositories, asserts three consecutive syncs, and asserts that a real session
+edit still refuses.
