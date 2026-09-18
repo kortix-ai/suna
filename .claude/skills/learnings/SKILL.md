@@ -60,6 +60,19 @@ the rule AND the call site (no clause may name `secretsQuery.isPending`,
 `projectDetailQuery.isPending` or `accountStatePending` again). Nothing yet
 lints the general pattern repo-wide — a sweep found 4 conditionally-enabled
 queries read via `isPending`; this was the only live one.
+*Follow-up (2026-09-18):* that sweep covered `apps/web` only and under-counted.
+`packages/sdk/src/react/use-model-access.ts` carried a 5th instance —
+`isLoading: query.isPending` under `enabled: !!projectId`, so
+`useModelAccess(null)` (which `provider-connect.tsx:833` passes on purpose)
+loaded forever. Latent, not live: no consumer rendered off that flag. Fixed to
+`query.isLoading` and pinned by a rendered-hook test in
+`use-model-access.test.ts` that asserts both halves — disabled reports settled
+with zero fetches, enabled still reports its first fetch. A re-sweep of both
+packages on 2026-09-18 found no remaining live instance: every other
+`isPending` read in `packages/sdk/src/react/` is a `useMutation` (no `enabled`,
+so correct), and all 4 query-shaped reads in `apps/web` are guarded by an early
+return or an already-fixed helper. When the sweep is redone, sweep `packages/`
+too — this hook was reachable from `apps/web` and the sweep still missed it.
 
 ### A control-required alarm comes back with a threshold the workload cannot cross in steady state (2026-09-17)
 
@@ -6358,3 +6371,96 @@ is the only predicate the provider consults, tested against supabase-js's
 real error classes; `auth-provider-stale-session.test.ts` pins that the
 provider asks it before `signOut()`; journey 30 forces the race with a
 delayed `/auth/v1/user` route and asserts the opener stays signed in.
+
+### 2026-09-18 — `bun test --isolate` leaks a stdio sink per file; on Linux the next file's `process.stderr` dies EEXIST
+
+**Incident.** The `packages` lane failed deterministically on `@kortix/db` —
+run 35331083850, attempts 1 and 2 at the same SHA, and it was not the PR's code
+(`packages/db` was byte-identical to `main`):
+
+```
+error: EEXIST: file already exists, epoll_ctl
+      at new WriteStream (internal:fs/streams:244:58)
+error: Cannot call describe.skip() after the test run has completed
+259 pass, 17 skip, 1 fail, 2 errors   ("1 tests failed:" list EMPTY)
+```
+
+`--parallel=2` implies `--isolate`. Under isolation Bun 1.3.14 (`0d9b296a`)
+re-creates `process.stdout` / `process.stderr` for every test file. Each one
+dups the stdio fd and registers it with epoll, and the isolate swap never ends
+the outgoing sinks, so the dups accumulate. When a stale registration's fd
+number is reused, `EPOLL_CTL_ADD` fails `EEXIST`. Upstream is
+oven-sh/bun#37968; the fix, oven-sh/bun#38008, is still OPEN, so no Bun release
+carries it. `epoll_ctl` is Linux-only — macOS `kqueue` tolerates the duplicate
+`EV_ADD`, which is why it never reproduced on a laptop. The reporter's own
+repro needed a CPU-constrained container and an import graph that reaches
+`node:assert` → `internal:util/colors`; `migration-ledger-repair.integration.test.ts`
+is one of the 3 db files that import `node-pg-migrate`.
+
+**Rules.**
+1. **A phantom failure is a diagnosis, not a flake.** `N fail` with an EMPTY
+   `N tests failed:` list means an unhandled throw between tests — read the
+   `Unhandled error` block, never the counts. Same reading as the 2026-08-27
+   `mock.module` entry.
+2. **`--isolate` / `--parallel` is a cost, not a free speedup.** Pay it only
+   where the file count earns it. `packages/db` is 28 files: measured in a Linux
+   container against real disposable-PostgreSQL containers, `--parallel=2` is
+   11 s and serial is 34 s — 23 s on a ~5 min lane, in exchange for a lane that
+   cannot die on a Bun-internal stdio leak. `apps/cli` (107 files) and
+   `apps/web` (762 files) keep `--isolate --parallel=4` and stay exposed until
+   oven-sh/bun#38008 ships; the documented workaround if they start failing is
+   to hand `bun test` REGULAR FILES for stdout/stderr instead of pipes and pump
+   them back from a parent (upstream measured 20/20 clean vs 8/8 failing).
+3. **A module-scope `Bun.spawnSync` produces the same signature locally.** It
+   THROWS `ENOENT` when the binary is absent, and a throw during module
+   evaluation is reported exactly the same way. Nine copies of
+   `Bun.spawnSync(['docker','version'])` turned a Docker-less machine red with
+   nine unnamed failures; reproduced in a container, 9 errors / 9 phantom fails.
+   A probe at module scope never throws.
+
+*Enforcer:* `tests/unit/test-runner-contract.test.ts` — "keeps bun test
+isolation opt-in, with a stated reason per package" fails on any `apps/*` or
+`packages/*` test script that adds `--isolate`/`--parallel` outside the
+allowlist, and the sibling case pins `packages/db` serial (both verified
+falsifiable by restoring `--parallel=2`).
+`packages/db/scripts/docker-available.ts` is the one non-throwing probe.
+
+### 2026-09-18 — A 30 s hook timeout let a CLI test push to the real repository
+
+**Incident.** In the same lane (run 35322311770, PR #7381), `@kortix/cli` failed
+two tests in `apps/cli/src/__tests__/sessions.e2e.test.ts`:
+
+```
+(fail) ... creates the session branch with local git credentials ... [30065.84ms]
+       ^ this test timed out after 30000ms.
+(fail) ... --agent forces the session onto an explicit agent ...    [30000.10ms]
+       ^ a beforeEach/afterEach hook timed out for this test.
+  ✗  Could not create the remote session branch with local git credentials.
+  error: src refspec refs/heads/main does not match any
+  error: failed to push some refs to 'https://github.com/kortix-ai/suna'
+```
+
+Read the remote: the CLI under test pushed against **the runner's own checkout
+of this repository**, not the test's bare fixture. `beforeEach` ended with
+`process.chdir(repo)`; when the hook timed out Bun still ran the test body, with
+the cwd left where the worker started — `apps/cli`, which `git rev-parse
+--show-toplevel` resolves to the suna worktree with remote
+`git@github.com:kortix-ai/suna.git`. It failed only because `actions/checkout`
+leaves a detached HEAD with no `refs/heads/main`.
+
+**Rules.**
+1. **A test that runs a real `git push` parks the process OUTSIDE every git
+   repository for the whole file.** The package directory is inside the repo, so
+   it is never a safe default cwd. From a non-repo directory the same code path
+   can only produce an immediate local git error.
+2. **A timed-out `beforeEach` does not stop the test body.** Any setup the body
+   depends on for SAFETY must be established where a timeout cannot skip it, or
+   asserted by the body itself.
+3. **Build an expensive fixture once per file.** Six `git` processes per test
+   × 7 tests is what met the 30 s budget on a loaded runner. `beforeAll` builds
+   one template repository + bare origin; each test copies it and runs a single
+   `git remote add`. Measured locally: 1150 ms → 548 ms for the file.
+
+*Enforcer:* the `beforeAll` / `afterAll` pair in that file parks the cwd and
+owns the template. Nothing lints for a test that shells out to `git` from inside
+the checkout — that check is the TODO.

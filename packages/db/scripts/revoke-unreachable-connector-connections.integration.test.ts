@@ -9,12 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
-
-const dockerAvailable =
-  Bun.spawnSync(['docker', 'version'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  }).exitCode === 0;
+import { dockerAvailable } from './docker-available';
 
 const container = `kortix-revoke-unreachable-${crypto.randomUUID().slice(0, 8)}`;
 const migrationDirectory = resolve(import.meta.dir, '..', 'migrations');
