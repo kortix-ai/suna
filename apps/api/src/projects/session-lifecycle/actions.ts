@@ -12,7 +12,7 @@ import {
   rehydrateSessionChat,
 } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
-import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
+import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -569,9 +569,16 @@ export async function restartSession(input: {
         // merged agent change and got the old agents back, which is most of why
         // "there is no way to reload" felt true.
         //
-        // Recompile from the session's ref and push. Best-effort and after the
+        // Converge on the session's base ref. Best-effort and after the
         // session is already marked running: a box that is up with old config
         // beats one parked because a git read failed.
+        //
+        // This used to push the compiled config alone. That moved the etag and
+        // left the agent unchanged, because opencode reads the agent `.md` files
+        // from the working tree and a restart never touched them. The
+        // convergence syncs those files first, and skips the second opencode
+        // restart entirely when the box is already current.
+        //
         // A restart resumes the SAME VM, so the daemon's boot-time reconcile
         // never re-runs and the box keeps whatever `kortix` binary its image was
         // built with — the exact reason production sandboxes ran a CLI that
@@ -579,21 +586,7 @@ export async function restartSession(input: {
         // and after the session is already marked running: this must not extend
         // the restart the user is waiting on.
         scheduleSandboxRuntimeRefresh(sessionId, 'restart');
-        void pushSessionAgentConfigToSandbox({
-          projectId,
-          sessionId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        }).then((result) => {
-          if (!result.applied) {
-            logger.info('[projects] restart kept the existing agent config', {
-              session_id: sessionId,
-              reason: result.reason,
-            });
-          }
-        });
+        scheduleSessionConfigConvergence(sessionId, 'restart');
       } catch (err) {
         // Detached from the request (the 202 already went out) — a structured
         // error is the only trace the reboot died and the session was parked.

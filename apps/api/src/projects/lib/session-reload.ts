@@ -45,6 +45,9 @@ import {
 } from './session-sandbox-metadata';
 
 const SANDBOX_SERVICE_PORT = 8000;
+/** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
+const REFRESH_BUSY_RETRIES = 5;
+const REFRESH_BUSY_DELAY_MS = 3_000;
 
 /**
  * What happened to the agent `.md` files opencode actually reads.
@@ -91,6 +94,31 @@ export function classifyAgentFiles(input: {
       // changed, and we must not claim the user's version was deliberately kept.
       return 'unknown';
   }
+}
+
+/**
+ * Does the box need the push — and the opencode restart that comes with it?
+ *
+ * Two independent reasons, because the config has two homes. Files that were
+ * just brought forward are read only at opencode's spawn, so they need the
+ * restart even when the compiled etag did not move (a skill body is not part of
+ * it). And a moved etag needs the push even when the files were kept: governance
+ * — connectors, secrets, scope — lives in the compiled config alone.
+ *
+ * An unknown etag on either side is NOT a reason. "Could not tell" is not
+ * permission to restart a runtime nobody asked to restart.
+ */
+export function configNeedsPush(input: {
+  agentFiles: ReloadAgentFiles;
+  runningEtag: string | null;
+  latestEtag: string | null;
+}): boolean {
+  if (input.agentFiles === 'updated') return true;
+  return (
+    input.runningEtag !== null &&
+    input.latestEtag !== null &&
+    input.runningEtag !== input.latestEtag
+  );
 }
 
 export interface SessionReloadResult {
@@ -364,6 +392,13 @@ export async function reloadSessionConfig(input: {
   refreshRepo?: boolean;
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
+  /**
+   * Skip the push — and the opencode restart it costs — when the box is already
+   * current. For callers nobody asked: the wake-time convergence runs on every
+   * resume, and a current box must not pay a runtime restart for it. The reload
+   * button leaves this unset, because a person who asked for a reload gets one.
+   */
+  onlyIfStale?: boolean;
   /** Optional live progress sink. The JSON route leaves it unset. */
   onPhase?: (phase: SessionReloadPhase) => void;
 }): Promise<SessionReloadResult> {
@@ -429,6 +464,33 @@ export async function reloadSessionConfig(input: {
     configDirReason = refreshed.configDirReason;
   }
 
+  const agentFiles = classifyAgentFiles({
+    requested: input.refreshRepo !== false,
+    synced: configDirSynced,
+    reason: configDirReason,
+  });
+  if (input.onlyIfStale) {
+    const latestEtag = await latestAgentConfigEtag({
+      projectId: input.projectId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      baseRef: input.baseRef,
+    });
+    if (!configNeedsPush({ agentFiles, runningEtag: before.etag, latestEtag })) {
+      return {
+        applied: false,
+        previous_etag: before.etag,
+        etag: before.etag,
+        repo_refreshed: repoRefreshed,
+        commit_sha: commitSha,
+        agent_files: agentFiles,
+        opencode_reload: null,
+        turn_ended: null,
+        reason: 'already current',
+      };
+    }
+  }
+
   const push = await pushSessionAgentConfigToSandbox({
     projectId: input.projectId,
     sessionId: input.sessionId,
@@ -455,11 +517,7 @@ export async function reloadSessionConfig(input: {
     etag: push.applied ? latest : before.etag,
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
-    agent_files: classifyAgentFiles({
-      requested: input.refreshRepo !== false,
-      synced: configDirSynced,
-      reason: configDirReason,
-    }),
+    agent_files: agentFiles,
     opencode_reload: push.opencodeReload ?? null,
     turn_ended: push.opencodeTurnEnded ?? null,
     ...(push.applied
@@ -530,11 +588,21 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     // comment above. Sent unconditionally: a daemon built before it shipped just
     // ignores the query parameter and answers without `config_dir`, which reads
     // back as `null` ("could not tell") rather than `false`.
-    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
-      method: 'POST',
-      headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
-      signal: AbortSignal.timeout(120_000),
-    });
+    // 409 = another refresh holds the daemon's single-flight slot. After a
+    // resume or restart that is the runtime-asset poke fired alongside this one
+    // (`scheduleSandboxRuntimeRefresh`), and it is over in seconds. Reading it as
+    // "unreachable" reports `agent_files: unknown` for a box that was only busy
+    // for a moment, so wait it out instead.
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
+        method: 'POST',
+        headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_BUSY_DELAY_MS));
+    }
     if (!res.ok) return unreachable;
     // The daemon answers `{repo: {before, after}}` — there is no `repo.commit`,
     // so the old read was always undefined and `commit_sha` always reported the
