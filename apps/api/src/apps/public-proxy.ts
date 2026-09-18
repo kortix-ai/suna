@@ -337,6 +337,22 @@ export function appProviderStoppedResponse(
     return /port is not open|connection refused|sandbox (?:is )?(?:not found|stopped|paused)/i
       .test(body);
   }
+  if (provider === 'platinum') {
+    // Platinum was the third provider and never got a branch here, so this
+    // returned false for every Platinum App and `recoverProviderRuntime` below
+    // could not run for any of them — the same hole the E2B branch above was
+    // added to close. Symptom on 2026-09-18: 29 of 106 Platinum app_runtimes
+    // sat in `error` and not one was `running`.
+    //
+    // Platinum's edge renders its verdict into the body of an HTML error page
+    // (`notFound(reason, status)` / `routeUnavailable()` in the platinum repo's
+    // apps/api/src/sandboxProxy.ts), so the reason string is what we match on.
+    // It also sends `x-pt-edge-verdict`, which is the better signal — but this
+    // function is only handed (provider, status, body).
+    if (status !== 502 && status !== 503 && status !== 504) return false;
+    return /upstream-connect-failed|upstream-closed-before-headers|upstream-error|sandbox-not-placed-on-a-host-yet|route-lookup-unavailable/i
+      .test(body);
+  }
   return false;
 }
 

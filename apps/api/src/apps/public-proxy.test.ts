@@ -49,6 +49,44 @@ describe('Apps public edge', () => {
     expect(appProviderStoppedResponse('daytona', 502, 'port is not open')).toBe(false);
   });
 
+  test('recognises a dead Platinum runtime, which arrives as an HTML error page', () => {
+    // The same hole as E2B above, left open for the third provider. Platinum
+    // Apps could never be recovered: this returned false for all of them, so
+    // `recoverProviderRuntime` never ran and the App served the edge's error
+    // until a human redeployed. On 2026-09-18, 29 of 106 Platinum app_runtimes
+    // were in `error` and none were `running`.
+    //
+    // Platinum's edge writes its verdict into the body of an HTML page rather
+    // than a JSON envelope, so these are the real response shapes.
+    const page = (reason: string, status: number) =>
+      `<!doctype html><meta charset=utf-8><title>${status}</title>\n` +
+      `<body style="font-family:ui-monospace,monospace;background:#0a0a0a;color:#999;padding:40px">\n` +
+      `  <h1 style="color:#fff">${status}</h1>\n` +
+      `  <p>This sandbox URL is not active.</p>\n` +
+      `  <p style="color:#666;font-size:12px">${reason}</p>\n</body>`;
+
+    expect(appProviderStoppedResponse('platinum', 502, page('upstream-connect-failed', 502))).toBe(true);
+    expect(appProviderStoppedResponse('platinum', 502, page('upstream-closed-before-headers', 502))).toBe(true);
+    expect(appProviderStoppedResponse('platinum', 502, page('upstream-error', 502))).toBe(true);
+    expect(appProviderStoppedResponse('platinum', 503, page('sandbox-not-placed-on-a-host-yet', 503))).toBe(true);
+    expect(appProviderStoppedResponse('platinum', 503, 'route-lookup-unavailable — retrying shortly should work')).toBe(true);
+
+    // An App's OWN failure must still reach the reader, exactly as for E2B.
+    // Recovering here would hide a broken upstream behind an endless
+    // "starting" page — the failure mode the E2B branch was careful to avoid.
+    expect(appProviderStoppedResponse('platinum', 502, '{"error":"Upstream request failed"}')).toBe(false);
+    expect(appProviderStoppedResponse('platinum', 500, page('upstream-error', 500))).toBe(false);
+    expect(appProviderStoppedResponse('platinum', 200, page('upstream-error', 200))).toBe(false);
+
+    // A 404 from the edge means the URL is not a sandbox, not that a runtime
+    // died — replacing the runtime would not fix it.
+    expect(appProviderStoppedResponse('platinum', 404, page('host-format', 404))).toBe(false);
+
+    // Verdicts that belong to another provider must not cross over.
+    expect(appProviderStoppedResponse('daytona', 502, page('upstream-connect-failed', 502))).toBe(false);
+    expect(appProviderStoppedResponse('e2b', 502, page('upstream-connect-failed', 502))).toBe(false);
+  });
+
   const projectApp = {
     appId: '11111111-1111-4111-8111-111111111111',
     accountId: '99999999-9999-4999-8999-999999999999',
