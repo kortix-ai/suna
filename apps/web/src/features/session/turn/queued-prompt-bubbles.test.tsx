@@ -28,11 +28,14 @@ describe('queued bubble tone', () => {
     expect(queuedBubbleTone(null)).toBeUndefined();
   });
 
-  test('the bubble surface maps every tone to one brand status fill that beats dark:bg-muted', () => {
-    // Opacity is a design choice; the token per tone and `!` are the contract.
-    expect(BUBBLE_SURFACE).toMatch(/in-data-\[queue-tone=pending\]:bg-kortix-yellow(\/\d+)?!/);
-    expect(BUBBLE_SURFACE).toMatch(/in-data-\[queue-tone=held\]:bg-kortix-orange(\/\d+)?!/);
-    expect(BUBBLE_SURFACE).toMatch(/in-data-\[queue-tone=failed\]:bg-kortix-red(\/\d+)?!/);
+  test('the bubble surface never tints by queue state', () => {
+    // A queue state reads from words, not from the bubble's colour: muted text
+    // while it waits, a failure line with Retry when it fails.
+    expect(BUBBLE_SURFACE).not.toMatch(/queue-tone/);
+    expect(BUBBLE_SURFACE).not.toMatch(/kortix-(yellow|orange|red)/);
+    // The one surface every user bubble shares stays intact.
+    expect(BUBBLE_SURFACE).toContain('bg-sidebar');
+    expect(BUBBLE_SURFACE).toContain('dark:bg-muted');
   });
 });
 

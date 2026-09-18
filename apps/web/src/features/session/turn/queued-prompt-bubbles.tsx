@@ -30,7 +30,8 @@ export function queuedBubbleTone(
 /**
  * The only status text a queued user message renders: a delivery failure and
  * its recovery actions. Waiting, sending, paused, and interrupted prompts show
- * no words — the bubble's queue tone carries them.
+ * no words — muted text marks them, and the queue list above the composer
+ * names how many wait and whether the queue is paused.
  */
 export function QueuedPromptFailure({
   lastError,

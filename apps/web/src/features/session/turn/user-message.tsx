@@ -440,14 +440,12 @@ export const BUBBLE_TEXT = cn(
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
+// One surface for every user bubble, whatever the queue state. A waiting,
+// paused, or failed prompt reads from its words — muted text while it waits,
+// and a failure line with Retry when it fails — never from the bubble's colour.
+// `data-queue-tone` still marks the state for the transcript and its tests.
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
-  // Queue tone comes from the nearest `data-queue-tone` wrapper. The ring is
-  // inset so the transcript's overflow clip never cuts its right edge.
-  'ring-inset transition-[box-shadow] duration-(--duration-moderate) ease-(--ease-out)',
-  ' in-data-[queue-tone=pending]:bg-kortix-yellow/40!',
-  ' in-data-[queue-tone=held]:bg-kortix-orange/40!',
-  ' in-data-[queue-tone=failed]:bg-kortix-red/40!',
 );
 
 export interface NormalizedAttachment {
@@ -1059,7 +1057,7 @@ export function UserMessageActions({
   /**
    * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
    * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
-   * sending prompts render no words; the bubble's queue tone carries them.
+   * sending prompts render no words; their muted text marks them.
    */
   leadingStatus?: React.ReactNode;
 }) {

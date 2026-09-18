@@ -917,8 +917,8 @@ function SessionTurnImpl({
   );
   const compactionInFlight = compactionInfo?.inFlight ?? false;
   // A Stop ended the turn before a step opened under this message, or the
-  // prompt still waits for delivery. Both keep the queue tone on the bubble;
-  // only a delivery failure adds text.
+  // prompt still waits for delivery. Both keep the bubble's muted text; only a
+  // delivery failure adds words.
   const queueState: QueuedPromptState | null = interruptedBeforeRun ? 'interrupted' : null;
   const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
   const queuedStatus: QueuedPromptStatusState | null =
