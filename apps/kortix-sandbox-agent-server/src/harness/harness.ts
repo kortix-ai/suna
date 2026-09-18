@@ -1,4 +1,5 @@
 import type { Config } from '../config'
+import { normalizeHarnessId } from '../config'
 import type { SandboxBootState } from '../boot-state'
 import type { ProjectEnvStore } from '../project-env'
 import type { ResourceMonitor } from '../resources'
@@ -9,6 +10,7 @@ import type { HarnessControlService } from './control'
 import type { HarnessDiagnosticsService } from './diagnostics'
 import type { HarnessQueryFactory } from './queries'
 import { openCodeDefinition } from './open-code/service'
+import { piDefinition } from './pi/service'
 
 import type { HarnessLifecycleService } from './lifecycle-contract'
 
@@ -61,11 +63,16 @@ export interface HarnessDefinition {
 }
 
 /**
- * The daemon's only implementation-selection boundary. Keep the existing
- * OpenCode default; this refactor introduces no environment/UI selector.
- * Future integrations register here without changing host consumers.
+ * The daemon's only implementation-selection boundary.
+ *
+ * The id comes from `cfg.harness` (`KORTIX_HARNESS`, set by apps/api from the
+ * manifest's `runtime:` field) unless a caller names one explicitly. OpenCode
+ * stays the default; an unknown id fails the boot instead of booting something
+ * else. Registering a harness is one line here plus its own folder.
  */
-export function resolveHarness(_cfg?: Config, id: string = 'opencode'): HarnessDefinition {
-  if (id === 'opencode') return openCodeDefinition
-  throw new Error(`Unsupported harness: ${id}`)
+export function resolveHarness(cfg?: Pick<Config, 'harness'>, id?: string): HarnessDefinition {
+  const selected = normalizeHarnessId(id ?? cfg?.harness)
+  if (selected === 'opencode') return openCodeDefinition
+  if (selected === 'pi') return piDefinition
+  throw new Error(`Unsupported harness: ${selected}`)
 }

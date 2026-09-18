@@ -40,6 +40,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const piWorker = useFeatureFlag(projectId, 'pi_worker');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const piHarness = useFeatureFlag(projectId, 'pi_harness');
 
   return {
     flags: {
@@ -56,8 +57,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       secrets_egress: secretsEgress.enabled,
       pi_worker: piWorker.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
+      pi_harness: piHarness.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: pooledProviderSecrets.isLoading,
+    isLoading: piHarness.isLoading,
   };
 }

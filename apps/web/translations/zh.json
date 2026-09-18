@@ -1090,6 +1090,10 @@
         "pi_worker": {
           "name": "Pi 工作器运行时（已编译）",
           "description": "使用实验性 Pi 工作器运行时来运行会话。"
+        },
+        "pi_harness": {
+          "name": "Pi 运行框架（沙箱内）",
+          "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         }
       }
     },

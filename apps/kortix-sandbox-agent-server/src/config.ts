@@ -106,10 +106,25 @@ const Schema = z.object({
   // ingest route rejects any batch stamped with another value, so events from a
   // superseded boot can never fire.
   KORTIX_MONITOR_BOX_EPOCH: z.string().default(''),
+  // ── Harness selection ────────────────────────────────────────────────────
+  // Which agent runtime this session boots: `opencode` (the default, and what
+  // an unset value means) or `pi`. apps/api sets it from the manifest's
+  // `runtime:` field (session-runtime-env.ts). Anything else fails boot loudly
+  // in resolveHarness — a typo must never silently boot the default.
+  KORTIX_HARNESS: z.string().default(''),
 })
+
+/** Registered harness ids. `resolveHarness` is the only place that maps them. */
+export type HarnessId = 'opencode' | 'pi'
+
+export function normalizeHarnessId(raw: string | undefined): string {
+  return (raw ?? '').trim().toLowerCase() || 'opencode'
+}
 
 /** Host configuration. Native adapters own and validate their additional fields. */
 export type Config = {
+  /** The selected harness id (`KORTIX_HARNESS`, normalized). `loadConfig` always sets it; absent means `opencode`. */
+  harness?: string
   servicePort: number
   staticPort: number
   workspace: string
@@ -185,10 +200,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_WORKLOAD: env.KORTIX_WORKLOAD,
     KORTIX_MONITORS: env.KORTIX_MONITORS,
     KORTIX_MONITOR_BOX_EPOCH: env.KORTIX_MONITOR_BOX_EPOCH,
+    KORTIX_HARNESS: env.KORTIX_HARNESS,
   })
 
+  // The selector is read BEFORE the adapter loads its own fields: only the
+  // selected adapter's environment contract applies to this boot.
+  const harness = normalizeHarnessId(parsed.KORTIX_HARNESS)
   return {
-    ...resolveHarness().loadConfig(env),
+    ...resolveHarness(undefined, harness).loadConfig(env),
+    harness,
     servicePort: parsed.KORTIX_SERVICE_PORT,
     staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,

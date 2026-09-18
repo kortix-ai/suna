@@ -10,13 +10,16 @@ import type { HarnessQueryService } from '../harness/queries'
 
 const sourceRoot = resolve(import.meta.dir, '..')
 const nativeRoot = resolve(sourceRoot, 'harness/open-code')
+/** Every concrete adapter folder. Host code imports none of them; adapters import none of each other. */
+const adapterRoots = ['harness/open-code', 'harness/pi'].map((dir) => resolve(sourceRoot, dir))
 
 describe('harness ownership boundary', () => {
   test('only the resolver can import a concrete adapter from host production code', async () => {
     const leaks: string[] = []
     for await (const name of new Bun.Glob('**/*.ts').scan(sourceRoot)) {
-      if (name.includes('__tests__/') || name.endsWith('.test.ts') || name.startsWith('harness/open-code/')) continue
+      if (name.includes('__tests__/') || name.endsWith('.test.ts')) continue
       if (name === 'harness/harness.ts') continue
+      const ownRoot = adapterRoots.find((root) => resolve(sourceRoot, name).startsWith(root + '/'))
       const file = resolve(sourceRoot, name)
       const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
       const inspect = (node: ts.Node) => {
@@ -25,7 +28,10 @@ describe('harness ownership boundary', () => {
         if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0]
         if (specifier && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
           const target = resolve(dirname(file), specifier.text)
-          if (target === nativeRoot || target.startsWith(nativeRoot + '/')) leaks.push(`${name} -> ${relative(sourceRoot, target)}`)
+          for (const root of adapterRoots) {
+            if (root === ownRoot) continue
+            if (target === root || target.startsWith(root + '/')) leaks.push(`${name} -> ${relative(sourceRoot, target)}`)
+          }
         }
         ts.forEachChild(node, inspect)
       }
@@ -40,6 +46,18 @@ describe('harness ownership boundary', () => {
     expect(resolveHarness().id).toBe('opencode')
     expect(resolveHarness(loadConfig())).toBe(resolveHarness())
     expect(() => resolveHarness(undefined, 'missing-adapter')).toThrow('Unsupported harness: missing-adapter')
+  })
+
+  test('KORTIX_HARNESS selects the adapter; the selected adapter loads its own environment', () => {
+    const pi = loadConfig({ KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' })
+    expect(pi.harness).toBe('pi')
+    expect(resolveHarness(pi).id).toBe('pi')
+    expect('piStateDir' in pi).toBe(true)
+    expect('opencodeInternalPort' in pi).toBe(false)
+    const opencode = loadConfig({ KORTIX_HARNESS: ' OpenCode ', KORTIX_PROJECT_AUTO_CLONE: '0' })
+    expect(opencode.harness).toBe('opencode')
+    expect('opencodeInternalPort' in opencode).toBe(true)
+    expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
   })
 
   test('harness modules cannot import the HTTP framework or host controllers', async () => {

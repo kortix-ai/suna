@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   INLINE_ATTACHMENT_MAX_BYTES,
   stripInlineAttachmentBytes,
-} from './harness/open-code/inline-attachments';
+} from './inline-attachments';
 
 const ref = (m: string, p: string) => `/blob/${m}/${p}`;
 const bigDataUrl = `data:image/jpeg;base64,${'A'.repeat(INLINE_ATTACHMENT_MAX_BYTES + 1)}`;

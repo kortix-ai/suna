@@ -1,9 +1,8 @@
 import { publishOpenCodeEvent } from './event-bus'
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
-import { resolveSandboxOnBoot } from '../../config'
+import { runSandboxOnBoot } from '../../on-boot'
 import { loadOpenCodeConfig as loadConfig, resolveHintedOpencodeConfigDir, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -33,7 +32,7 @@ import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { OPENCODE_HOME } from './paths'
-import { ensureInjectedManagedSkills } from './injected-skills'
+import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
@@ -451,32 +450,9 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
 
   if (bootState.repoMaterializationError) return
 
-  // Project-declared boot command (`[sandbox] on_boot` in kortix.toml), e.g.
-  // `pnpm dev` — run it backgrounded once the repo is materialized + the proxy
-  // is up, so a session auto-starts its dev stack with zero manual steps. Best
-  // effort: a failure here never affects the agent runtime. Output → a log file
-  // the agent/user can tail.
-  void resolveSandboxOnBoot(cfg)
-    .then((onBoot) => {
-      if (!onBoot) return
-      const logPath = '/var/log/kortix-on-boot.log'
-      logger.info('[boot] running [sandbox] on_boot command', { onBoot, logPath })
-      try {
-        mkdirSync(dirname(logPath), { recursive: true })
-      } catch {}
-      const out = openSync(logPath, 'a')
-      const child = spawn('bash', ['-lc', onBoot], {
-        cwd: cfg.projectTarget,
-        env: process.env,
-        detached: true,
-        stdio: ['ignore', out, out],
-      })
-      child.on('error', (err) =>
-        logger.warn('[boot] on_boot command failed to spawn', { err: (err as Error).message }),
-      )
-      child.unref()
-    })
-    .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
+  // Project-declared boot command (`sandbox.on_boot`), backgrounded now that the
+  // repo is materialized and the proxy is up. Host-owned: see src/on-boot.ts.
+  runSandboxOnBoot(cfg)
 
   // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
   // Platinum's stateful-capture machinery to be snapshotted fully warm — repo

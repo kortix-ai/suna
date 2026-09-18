@@ -44,8 +44,8 @@ import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, writeSync } from
 import { join } from 'node:path'
 import { logger } from '../../logger'
 
-export const OFFLOAD_PLACEHOLDER_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+import { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder } from '../../inline-attachments'
+export { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder }
 /** Attachments at or below this size stay inline — the row is not worth a file. */
 export const OFFLOAD_MIN_BYTES = 32 * 1024
 export const DEFAULT_KEEP_NEWEST = 12
@@ -124,13 +124,8 @@ export function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer
   }
 }
 
-/** True for the 1×1 placeholder the offload leaves in a row. OpenCode's read path
- *  drops unknown JSON fields, so the `kortix` marker never survives a read
- *  through its API — the placeholder URL itself is the runtime signal, and the
- *  sidecar path is deterministic from the attachment id. */
-export function isOffloadPlaceholder(url: unknown): boolean {
-  return url === OFFLOAD_PLACEHOLDER_URL
-}
+// `isOffloadPlaceholder` (the 1×1 placeholder test) is host-level now — see
+// src/inline-attachments.ts — and re-exported above for existing importers.
 
 export function sidecarPathFor(sidecarDir: string, attachmentId: string): string {
   // Attachment ids are OpenCode-minted (`prt_…`); refuse anything that could

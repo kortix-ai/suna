@@ -6,7 +6,7 @@ import { logger } from '../../logger'
 import { isRepoMaterialized } from '../../git'
 import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
-import { stripInlineAttachmentBytes } from './inline-attachments'
+import { stripInlineAttachmentBytes } from '../../inline-attachments'
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body

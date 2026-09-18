@@ -1090,6 +1090,10 @@
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
           "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
+        },
+        "pi_harness": {
+          "name": "Pi-Harness (in der Sandbox)",
+          "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
         }
       }
     },
