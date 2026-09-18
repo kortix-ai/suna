@@ -73,6 +73,7 @@ describe('POST /internal/gateway/models — managedOnly', () => {
 
     expect(Object.keys(managed).sort()).toEqual(Object.keys(gatewayModelCatalog(undefined)).sort());
     expect(Object.keys(managed).sort()).toEqual([
+      'deepseek-v4-pro-0813',
       'deepseek-v4.1-flash',
       'glm-5.3-flash',
       'kimi-k3',

@@ -44,7 +44,7 @@ export function parseManagedModels(
   raw: string | undefined,
   fallback: readonly ManagedModel[] = BUNDLED_MANAGED_MODELS,
 ): ManagedModel[] {
-  if (!raw) return fallback.filter(isOfferedManagedModel);
+  if (!raw) return [...fallback];
 
   let parsed: unknown;
   try {
@@ -62,15 +62,11 @@ export function parseManagedModels(
     }
     ids.add(model.id);
   }
-  return models.filter(isOfferedManagedModel);
-}
-
-function isOfferedManagedModel(model: ManagedModel): boolean {
-  return model.vision;
+  return models;
 }
 
 /**
- * Image-capable Kortix-credit managed models. This registry is empty
+ * Kortix-credit managed models. This registry is empty
  * when the cloud managed-provider flag is off. The picker, catalog, and gateway
  * all use this registry, so self-host users never receive the shared key.
  */
@@ -99,7 +95,7 @@ export function isRuntimeManagedModelId(id: string): boolean {
 // instead of the misleading "no such model".
 const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
 const RETIRED_MANAGED_MODEL_IDS = new Set([
-  'glm-5.2', 'grok-4.6', 'deepseek-v4-flash', 'deepseek-v4-pro-0813',
+  'glm-5.2', 'grok-4.6', 'deepseek-v4-flash',
   'muse-spark-1.2', 'minimax-m3', 'gpt-5.6-luna', 'gpt-6-astra',
   'morph-glm53-744b', 'morph-dsv4flash', 'morph-kimik3',
   'morph-kimik3-fast', 'morph-dsv41flash',
