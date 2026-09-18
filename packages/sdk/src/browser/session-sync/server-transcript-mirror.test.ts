@@ -53,6 +53,19 @@ describe("shouldHydrateFromMirror", () => {
 		).toBe(true);
 	});
 
+	test("a mirror explicitly marked stale is not painted as the whole thread", () => {
+		expect(
+			shouldHydrateFromMirror({
+				envelope: envelope({
+					complete: false,
+					reason: "the mirror was captured before this session's last activity",
+				}),
+				runtimeSessionId: ROOT,
+				hasMessages: false,
+			}),
+		).toBe(false);
+	});
+
 	test("a mirror for a DIFFERENT root is refused", () => {
 		// This is the identity guard the deleted disk cache could not make. Its
 		// key was a scope string, so a re-pinned box (a restart adopting a new

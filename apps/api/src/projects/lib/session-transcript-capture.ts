@@ -16,6 +16,7 @@
 import { projectSessions, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/engine';
@@ -29,22 +30,76 @@ import {
 const WORKSPACE_DIRECTORY = '/workspace';
 const CAPTURE_TIMEOUT_MS = 8_000;
 
+/**
+ * Waits before re-reading the box for a capture that did not land.
+ *
+ * A capture runs once per turn end and nothing else retries it, so a single bad
+ * moment — a box saturated by the turn it just finished, a proxy 503 mid-swap,
+ * an endpoint that resolves a beat late — used to freeze the mirror for the
+ * life of the session. The client then seeds a reload from that frozen copy.
+ * Two retries cover that window without holding the relay: the caller is
+ * fire-and-forget.
+ */
+export const CAPTURE_RETRY_DELAYS_MS = [500, 2_000] as const;
+
 export interface CaptureResult {
   captured: number;
   head_complete: boolean;
   pruned: number;
 }
 
+interface CaptureLogger {
+  warn: (message: string, context: Record<string, unknown>) => void;
+}
+
 export interface CaptureDeps {
   readMessages: (
     sessionId: string,
   ) => Promise<{ opencodeSessionId: string; payload: unknown } | null>;
+  /** Seams for the retry test: production uses the real clock and logger. */
+  sleep?: (ms: number) => Promise<void>;
+  logger?: CaptureLogger;
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Read the box for a capture, retrying a read that did not answer.
+ *
+ * A read that throws is a failed read like any other: this never propagates, so
+ * a turn-end relay cannot fail on it. An exhausted read is reported once —
+ * silence here is what made a frozen mirror invisible.
+ */
+export async function readCaptureMessages(
+  sessionId: string,
+  deps: CaptureDeps,
+): Promise<{ opencodeSessionId: string; payload: unknown } | null> {
+  const sleep = deps.sleep ?? wait;
+  const log = deps.logger ?? logger;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= CAPTURE_RETRY_DELAYS_MS.length; attempt += 1) {
+    const read = await deps.readMessages(sessionId).catch((err: unknown) => {
+      lastError = err;
+      return null;
+    });
+    if (read) return read;
+    if (attempt < CAPTURE_RETRY_DELAYS_MS.length) await sleep(CAPTURE_RETRY_DELAYS_MS[attempt]);
+  }
+  log.warn('[transcript-mirror] capture read never landed; the mirror stays as it was', {
+    sessionId,
+    attempts: CAPTURE_RETRY_DELAYS_MS.length + 1,
+    ...(lastError ? { error: lastError instanceof Error ? lastError.message : String(lastError) } : {}),
+  });
+  return null;
 }
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
+    if (!resolved) {
+      logger.warn('[transcript-mirror] capture read skipped: no OpenCode endpoint', { sessionId });
+      return null;
+    }
     const url = new URL(
       `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message`,
     );
@@ -55,7 +110,13 @@ const liveCaptureDeps: CaptureDeps = {
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
       signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logger.warn('[transcript-mirror] capture read refused by the box', {
+        sessionId,
+        status: res.status,
+      });
+      return null;
+    }
     return {
       opencodeSessionId: resolved.opencodeSessionId,
       payload: await res.json().catch(() => null),
@@ -92,10 +153,13 @@ export async function captureSessionTranscriptMirror(
       .limit(1);
     if (!session) return null;
 
-    const read = await deps.readMessages(sessionId);
+    const read = await readCaptureMessages(sessionId, deps);
     if (!read) return null;
     const rows = mirrorRowsFromOpencodePayload(read.payload);
-    if (rows.length === 0) return null;
+    if (rows.length === 0) {
+      logger.warn('[transcript-mirror] capture read carried no messages', { sessionId });
+      return null;
+    }
 
     const [existing] = await db
       .select({

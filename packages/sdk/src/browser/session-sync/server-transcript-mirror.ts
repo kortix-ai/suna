@@ -67,6 +67,9 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	// `source` is the claim. An empty array is not one.
 	if (envelope.source !== "mirror") return false;
 	if (envelope.messages.length === 0) return false;
+	// `complete: false` alone can be a valid tail window. A reason marks the
+	// payload as degraded or stale, so it cannot be trusted for first paint.
+	if (!envelope.complete && envelope.reason) return false;
 	// THE IDENTITY GUARD: ids from another OpenCode root can never be settled by
 	// this root's runtime read.
 	if (envelope.opencode_session_id !== runtimeSessionId) return false;

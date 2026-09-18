@@ -7,6 +7,7 @@ import {
   sandboxOpencodeEndpoint,
 } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import type { ProjectSessionRow } from './serializers';
 import {
   type CompactMessage,
@@ -35,6 +36,10 @@ export type { CompactMessage, CompactToolCall };
  * one you got.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
+
+/** Said out loud so a consumer never has to infer staleness from timestamps. */
+export const MIRROR_STALE_REASON =
+  'the mirror was captured before this session\'s last activity';
 
 export interface SessionTranscriptDigest {
   available: boolean;
@@ -109,7 +114,7 @@ export async function buildSessionTranscriptDigest(
         available: true,
         reason,
         source: 'mirror',
-        complete: mirrorIsComplete(mirror),
+        complete: mirrorIsComplete(mirror) && !mirrorPredatesLastActivity(mirror, session),
         captured_at: mirror.captured_at,
         opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
         message_count: mirror.messages.length,
@@ -234,16 +239,48 @@ export async function buildSessionTranscriptSyncEnvelope(
       messages: [],
     };
   }
+  const stale = mirrorPredatesLastActivity(mirror, input.session);
   return {
     available: true,
-    reason: null,
+    reason: stale ? MIRROR_STALE_REASON : null,
     source: 'mirror',
-    complete: mirrorIsComplete(mirror),
+    complete: mirrorIsComplete(mirror) && !stale,
     captured_at: mirror.captured_at,
     opencode_session_id: mirror.opencode_session_id ?? input.session.opencodeSessionId,
     message_count: mirror.messages.length,
     messages: mirror.messages,
   };
+}
+
+/**
+ * The instant a turn was last accepted for this session, or null.
+ *
+ * `session-activity.ts` stamps it on acceptance; the capture runs at turn END,
+ * so a mirror older than this stamp is missing at least the newest turn.
+ */
+function lastActivityAtMs(session: ProjectSessionRow): number | null {
+  const metadata = session.metadata;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>)[SESSION_LAST_ACTIVITY_KEY];
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * A capture that predates the session's newest accepted turn cannot hold that
+ * turn, so it is a TAIL of the conversation whatever its own head bit says.
+ * Saying otherwise is what let a reload paint a frozen copy as the whole
+ * thread. Unknown on either side keeps the capture's own verdict.
+ */
+export function mirrorPredatesLastActivity(
+  mirror: MirrorSnapshot,
+  session: ProjectSessionRow,
+): boolean {
+  const activityMs = lastActivityAtMs(session);
+  if (activityMs === null || !mirror.captured_at) return false;
+  const capturedMs = Date.parse(mirror.captured_at);
+  return Number.isFinite(capturedMs) && capturedMs < activityMs;
 }
 
 /** Complete only when the mirror proved it holds the head AND this window

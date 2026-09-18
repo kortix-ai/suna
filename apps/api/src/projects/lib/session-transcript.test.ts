@@ -7,12 +7,13 @@ import {
 } from './session-transcript';
 import type { MirrorSnapshot } from './session-transcript-mirror';
 
-const session = (status: string) =>
+const session = (status: string, lastActivityAt?: string) =>
   ({
     sessionId: 'sess-1',
     status,
     opencodeSessionId: 'ses_pin',
     sandboxUrl: null,
+    metadata: lastActivityAt ? { last_activity_at: lastActivityAt } : {},
   }) as never;
 
 function snapshot(over: Partial<MirrorSnapshot> = {}): MirrorSnapshot {
@@ -146,5 +147,57 @@ describe('the sync envelope is the mirror and says so', () => {
     expect(envelope.available).toBe(false);
     expect(envelope.source).toBe('none');
     expect(envelope.messages).toEqual([]);
+  });
+});
+
+describe('a mirror older than the session\'s last activity is never served as whole', () => {
+  // The capture runs at turn end, so a mirror stamped BEFORE the newest accepted
+  // turn is missing that turn. Serving it as complete is what paints a
+  // truncated conversation after a reload.
+  const mirrorAt = '2026-08-26T06:00:00.000Z';
+  const later = '2026-08-26T06:40:00.000Z';
+  const earlier = '2026-08-26T05:50:00.000Z';
+
+  const envelope = (lastActivityAt?: string) =>
+    buildSessionTranscriptSyncEnvelope(
+      { session: session('running', lastActivityAt), limit: 40 },
+      { readMirror: async () => snapshot({ captured_at: mirrorAt }) },
+    );
+
+  test('the envelope says incomplete and why', async () => {
+    const result = await envelope(later);
+    expect(result.complete).toBe(false);
+    expect(result.reason).toContain('last activity');
+    // The rows it does hold are still real, so they are still served.
+    expect(result.message_count).toBe(2);
+    expect(result.source).toBe('mirror');
+  });
+
+  test('a mirror captured after the last activity stays complete', async () => {
+    const result = await envelope(earlier);
+    expect(result.complete).toBe(true);
+    expect(result.reason).toBeNull();
+  });
+
+  test('a session with no recorded activity keeps the capture\'s own verdict', async () => {
+    const result = await envelope(undefined);
+    expect(result.complete).toBe(true);
+    expect(result.reason).toBeNull();
+  });
+
+  test('the digest carries the same verdict when it degrades to the mirror', async () => {
+    const digest = await buildSessionTranscriptDigest(
+      {
+        session: session('stopped', later),
+        projectId: 'proj-1',
+        accountId: 'acct-1',
+        userId: 'user-1',
+        limit: 40,
+        maxChars: 700,
+      },
+      { readMirror: async () => snapshot({ captured_at: mirrorAt }) },
+    );
+    expect(digest.source).toBe('mirror');
+    expect(digest.complete).toBe(false);
   });
 });
