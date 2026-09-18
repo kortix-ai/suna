@@ -34,6 +34,9 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
+import { resolveCommitSha } from '../git/commits';
+import { refreshMirror } from '../git/mirror';
+import { opencodeConfigDirChangedBetween } from '../git/opencode-config-dir';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
@@ -252,6 +255,8 @@ export async function readSandboxConfigState(input: {
 }): Promise<{
   etag: string | null;
   commitSha: string | null;
+  /** Base commit the box's config dir represents; null before its first sync. */
+  configDirSha: string | null;
   reachable: boolean;
   /** `null` when the box could not tell us — see the reload gate. */
   turnInFlight: boolean | null;
@@ -264,7 +269,13 @@ export async function readSandboxConfigState(input: {
         and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
       )
       .limit(1);
-    const unreachable = { etag: null, commitSha: null, reachable: false, turnInFlight: null };
+    const unreachable = {
+      etag: null,
+      commitSha: null,
+      configDirSha: null,
+      reachable: false,
+      turnInFlight: null,
+    };
     if (!row?.externalId) return unreachable;
     const serviceKey = (row.config as Record<string, unknown> | null)?.serviceKey;
     if (typeof serviceKey !== 'string') return unreachable;
@@ -284,11 +295,13 @@ export async function readSandboxConfigState(input: {
     const body = (await res.json()) as {
       agent_config_etag?: unknown;
       commit_sha?: unknown;
+      config_dir_sha?: unknown;
       turn_in_flight?: unknown;
     };
     return {
       etag: typeof body.agent_config_etag === 'string' ? body.agent_config_etag : null,
       commitSha: typeof body.commit_sha === 'string' ? body.commit_sha : null,
+      configDirSha: typeof body.config_dir_sha === 'string' ? body.config_dir_sha : null,
       reachable: true,
       // Tri-state on purpose: `true` busy, `false` idle, `null` could not tell.
       // Absent (the caller did not ask) is also null.
@@ -296,7 +309,7 @@ export async function readSandboxConfigState(input: {
         body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
     };
   } catch {
-    return { etag: null, commitSha: null, reachable: false, turnInFlight: null };
+    return { etag: null, commitSha: null, configDirSha: null, reachable: false, turnInFlight: null };
   }
 }
 
@@ -378,6 +391,50 @@ export async function latestAgentConfigEtag(input: {
 export function isConfigStale(runningEtag: string | null, latestEtag: string | null): boolean | null {
   if (!latestEtag || !runningEtag) return null;
   return runningEtag !== latestEtag;
+}
+
+/**
+ * One verdict from the two things a session's config is made of.
+ *
+ * `etagStale` is the compiled agent config (governance, agent frontmatter).
+ * `filesStale` is the config dir on disk (skills, tools, plugins, agent bodies).
+ * Either one alone is enough to be stale.
+ *
+ * An unknown `filesStale` does NOT poison a known etag: a daemon built before
+ * `config_dir_sha` shipped never reports it, and those boxes must keep the
+ * answer they had. An unknown etag still yields `null` unless the files are
+ * known to be stale — never `false`, which would read as "up to date".
+ */
+export function combineConfigStaleness(
+  etagStale: boolean | null,
+  filesStale: boolean | null,
+): boolean | null {
+  if (etagStale === true || filesStale === true) return true;
+  return etagStale;
+}
+
+/**
+ * Has the base branch's config dir moved past what this box holds?
+ *
+ * `configDirSha` when the box has synced at least once, else the commit it
+ * booted from. `null` when the mirror cannot answer — most often a session that
+ * committed without pushing, whose HEAD only the box has.
+ */
+export async function isSessionConfigDirStale(input: {
+  project: GitBackedProject;
+  baseRef: string;
+  configDirSha: string | null;
+  commitSha: string | null;
+}): Promise<boolean | null> {
+  const boxSha = input.configDirSha ?? input.commitSha;
+  if (!boxSha) return null;
+  try {
+    const mirror = await refreshMirror(input.project);
+    const tipSha = await resolveCommitSha(input.project, input.baseRef);
+    return await opencodeConfigDirChangedBetween(mirror, input.project, boxSha, tipSha);
+  } catch {
+    return null;
+  }
 }
 
 export async function reloadSessionConfig(input: {

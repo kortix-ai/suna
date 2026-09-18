@@ -1681,6 +1681,20 @@ const DEPENDENCY_SECTIONS = [
  */
 const CONFIG_DIR_SYNC_MARKER = 'kortix-config-dir-sync'
 
+/**
+ * The base commit this box's config dir represents, or null when it was never
+ * synced (then it represents the commit the box booted from — `commit_sha`).
+ *
+ * Read straight from `.git/` with no git process: `/kortix/health` is polled,
+ * and it already reads `kortix-compiled-checkout.json` the same way.
+ */
+export async function readConfigDirSyncedSha(projectTarget: string): Promise<string | null> {
+  const recorded = (
+    await readFile(join(projectTarget, '.git', CONFIG_DIR_SYNC_MARKER), 'utf8').catch(() => '')
+  ).trim()
+  return /^[0-9a-f]{40,64}$/.test(recorded) ? recorded : null
+}
+
 export interface ConfigDirSyncOptions {
   /** Overlay source. Defaults to the image-baked `/opt/kortix/managed-skills`. */
   managedSkillsDir?: string
@@ -1836,6 +1850,13 @@ export async function syncOpencodeConfigDirToBase(
   const markerFile = markerPath.code === 0 ? join(target, markerPath.stdout.trim()) : null
   const recorded = markerFile ? (await readFile(markerFile, 'utf8').catch(() => '')).trim() : ''
   const lastSynced = /^[0-9a-f]{40,64}$/.test(recorded) ? recorded : null
+  const recordSyncedCommit = async (): Promise<void> => {
+    const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
+    if (!markerFile || resolved.code !== 0) return
+    await writeFile(markerFile, `${resolved.stdout.trim()}\n`, 'utf8').catch((err) =>
+      logger.warn('[git] config-dir sync: could not record the synced commit', { err: String(err) }),
+    )
+  }
 
   // Files a PREVIOUS sync added that base has since deleted. They are untracked
   // against the index, so neither `git diff <ref>` nor `--no-overlay` sees them:
@@ -1874,7 +1895,15 @@ export async function syncOpencodeConfigDirToBase(
       differs = true
       break
     }
-    if (!differs) return { synced: false, skipped: 'already matches base' }
+    if (!differs) {
+      // The tree already represents `ref`, so say so. `/kortix/health` reports
+      // this commit and the API diffs it against the base tip to decide `stale`.
+      // Without the advance, a base commit that touched only platform-owned
+      // paths would read as "newer config available" forever: the sync would
+      // keep answering "already matches base" and the marker would never move.
+      await recordSyncedCommit()
+      return { synced: false, skipped: 'already matches base' }
+    }
   }
 
   // Uncommitted edits under the config dir — including untracked files, which
@@ -1937,12 +1966,7 @@ export async function syncOpencodeConfigDirToBase(
   }
   await ensureInjectedManagedSkills(join(target, relConfigDir), { bakedDir: managedSkillsDir })
 
-  const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
-  if (markerFile && resolved.code === 0) {
-    await writeFile(markerFile, `${resolved.stdout.trim()}\n`, 'utf8').catch((err) =>
-      logger.warn('[git] config-dir sync: could not record the synced commit', { err: String(err) }),
-    )
-  }
+  await recordSyncedCommit()
 
   logger.info('[git] synced opencode config dir to base', { dir: relConfigDir, ref })
   return { synced: true }

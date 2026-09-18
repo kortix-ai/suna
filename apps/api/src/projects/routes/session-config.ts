@@ -15,7 +15,15 @@ import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
-import { isConfigStale, latestAgentConfigEtag, readSandboxConfigState, reloadDetail, reloadSessionConfig } from '../lib/session-reload';
+import {
+  combineConfigStaleness,
+  isConfigStale,
+  isSessionConfigDirStale,
+  latestAgentConfigEtag,
+  readSandboxConfigState,
+  reloadDetail,
+  reloadSessionConfig,
+} from '../lib/session-reload';
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -57,6 +65,23 @@ projectsApp.openapi(
         baseRef,
       }),
     ]);
+    // The etag cannot see a skill body, a tool or a plugin. A merge that touched
+    // only those used to leave `stale: false` and the header never offered the
+    // reload, so the config dir is compared as well.
+    const filesStale = running.reachable
+      ? await isSessionConfigDirStale({
+          project: {
+            projectId,
+            repoUrl: loaded.row.repoUrl,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+            gitAuthToken: null,
+          },
+          baseRef,
+          configDirSha: running.configDirSha,
+          commitSha: running.commitSha,
+        })
+      : null;
     return c.json({
       base_ref: baseRef,
       running_etag: running.etag,
@@ -65,7 +90,7 @@ projectsApp.openapi(
       // `null` when it cannot be told — an unreachable box or a project with no
       // compiled config. Never `false`, which would read as "up to date" when
       // the truth is "did not ask".
-      stale: isConfigStale(running.etag, latest),
+      stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
     });
   },

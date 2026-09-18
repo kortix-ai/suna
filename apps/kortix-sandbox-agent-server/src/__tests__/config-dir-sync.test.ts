@@ -24,7 +24,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config'
-import { syncOpencodeConfigDirToBase } from '../git'
+import { readConfigDirSyncedSha, syncOpencodeConfigDirToBase } from '../git'
 import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
 import type { Opencode } from '../opencode'
 import { createRefreshRouter } from '../routes/refresh'
@@ -469,6 +469,32 @@ describe('a session converges more than once', () => {
       synced: false,
       skipped: 'already matches base',
     })
+  })
+
+  test('the box reports which base commit its config dir represents', async () => {
+    // `/kortix/health` serves this; the API diffs it against the base tip.
+    expect(await readConfigDirSyncedSha(work)).toBeNull()
+
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    expect(await readConfigDirSyncedSha(work)).toBe(git(origin, 'rev-parse', 'HEAD'))
+
+    // A base commit outside the config dir changes nothing on disk, and the
+    // report still advances — otherwise the box reads as stale forever.
+    write(origin, 'app.ts', 'export const x = 2\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'app only')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({
+      synced: false,
+      skipped: 'already matches base',
+    })
+    expect(await readConfigDirSyncedSha(work)).toBe(git(origin, 'rev-parse', 'HEAD'))
+  })
+
+  test('a refused sync does NOT advance the report', async () => {
+    write(work, AGENT, 'MY WORK IN PROGRESS\n')
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(await readConfigDirSyncedSha(work)).toBeNull()
   })
 
   test('an edit the session makes AFTER a sync still blocks the next one', async () => {

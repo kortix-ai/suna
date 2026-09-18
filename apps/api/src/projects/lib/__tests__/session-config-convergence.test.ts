@@ -3,7 +3,11 @@ import {
   convergeSessionConfig,
   type SessionConfigConvergenceDeps,
 } from '../session-config-convergence';
-import { configNeedsPush, type SessionReloadResult } from '../session-reload';
+import {
+  combineConfigStaleness,
+  configNeedsPush,
+  type SessionReloadResult,
+} from '../session-reload';
 
 const TARGET = {
   projectId: 'proj-1',
@@ -166,5 +170,28 @@ describe('configNeedsPush', () => {
   test('an unknown etag is not permission to restart a runtime unasked', () => {
     expect(configNeedsPush({ agentFiles: 'already-current', runningEtag: null, latestEtag: 'b' })).toBe(false);
     expect(configNeedsPush({ agentFiles: 'already-current', runningEtag: 'a', latestEtag: null })).toBe(false);
+  });
+});
+
+describe('combineConfigStaleness', () => {
+  test('either half alone makes the session stale', () => {
+    expect(combineConfigStaleness(true, false)).toBe(true);
+    // The case the etag misses: a merge that touched only a skill body.
+    expect(combineConfigStaleness(false, true)).toBe(true);
+    expect(combineConfigStaleness(null, true)).toBe(true);
+  });
+
+  test('both current is current', () => {
+    expect(combineConfigStaleness(false, false)).toBe(false);
+  });
+
+  test('a daemon that cannot report its config dir keeps the etag verdict', () => {
+    expect(combineConfigStaleness(false, null)).toBe(false);
+    expect(combineConfigStaleness(true, null)).toBe(true);
+  });
+
+  test('an unknown etag is NEVER reported as up to date', () => {
+    expect(combineConfigStaleness(null, false)).toBeNull();
+    expect(combineConfigStaleness(null, null)).toBeNull();
   });
 });
