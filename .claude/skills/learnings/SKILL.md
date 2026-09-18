@@ -6916,3 +6916,36 @@ second labelled account staying on the connection-scoped route, a 403 that must
 not fall back). `packages/sdk/src/core/rest/projects-client/connectors.test.ts`
 pins that `connectorFinalize` sends `owner`/`connection_id` and still sends `{}`
 for the published two-argument callers.
+
+### 2026-09-18 — A column default is a population, and a check that debits is not a check
+
+**When:** gating billing behaviour on an enum column, or calling a billing
+"gate" from a new route.
+
+Two rules, one incident. **(1) Never gate on the default value of a column as
+if it named a customer group.** `credit_accounts.billing_model` defaults to
+`'legacy'`, so "skip legacy accounts" skipped everyone who never completed a
+checkout: 233,385 free accounts and every admin trial. Compute metering was
+off for 96.6% of prod sandboxes (18,716 of 19,368 in 7 days). Before writing
+`if (x === DEFAULT) skip`, run `SELECT x, count(*) ... GROUP BY 1` on prod and
+read who is actually in the bucket. **(2) A function that writes to the wallet
+must not be named or used like a read.** `checkBillingActive` deducts a $0.01
+hold that only the LLM gateway settle refunds. Session create, `/start`, the
+prompt route and App wake called it as a yes/no check: at least 163,280 holds
+($1,632.80, 2,731 accounts) were never returned, and the transactions tab
+labelled them "LLM gateway admission hold". A comment next to one caller read
+"independent read-only checks". Non-gateway callers use `checkBillingAdmission`.
+
+**Incident.** Prod account `9c178b9d` (enterprise trial): 16,909 sandboxes,
+0 compute rows, $0 compute; 115,810 holds against $1.69 of real LLM spend.
+Found from one screenshot of a $0 compute line. PR #7414.
+
+**Trap while verifying:** `credit_ledger.type` is always `'usage'` for a debit;
+the kind is `metadata->>'ledger_type'`. A watcher filtering `type =
+'compute_debit'` reports "no debits" while debits land.
+
+**Enforcement.** Flow `BILL-17` (a real prompt must write no hold row and move
+no balance), flow `COST-3` (a real sandbox on a legacy-default free account
+opens a compute window), `credit-plans.test.ts` (`accountRowMetersCompute`
+truth table), and `r8-session-prompts.test.ts`, whose `checkBillingActive` mock
+throws. No enforcer yet for rule (1) in general — it is a review habit.
