@@ -155,7 +155,7 @@ describe('tui-bin — resolution order', () => {
   });
 
   test('a source build reads ~/.kortix/tui/dev/kortix-tui with no env var at all', () => {
-    expect(cliVersion({})).toBe('dev');
+    expect(cliVersion({})).toBe(process.env.KORTIX_CLI_VERSION ?? 'dev');
     expect(findTuiBin({ env: { KORTIX_TUI_DIR: '/cache' }, exists: () => true })).toEqual({
       bin: '/cache/dev/kortix-tui',
       source: 'cache',
@@ -265,5 +265,54 @@ describe('tui-bin — download + checksum', () => {
     expect(existsSync(dir)).toBe(true);
     expect(removeTuiCache(env)).toBe(dir);
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+describe('cliVersion inside a compiled binary', () => {
+  /**
+   * CI bakes the version with `bun build --define process.env.KORTIX_CLI_VERSION=…`.
+   * The define substitutes only the literal token, so this test builds a real
+   * bundle with it and runs the output with the variable UNSET: the launcher
+   * must still answer the baked version, and an injected `env` must not hide it.
+   * Restoring `env.KORTIX_CLI_VERSION ?? 'dev'` in cliVersion turns this red.
+   */
+  test('the baked define wins over an empty injected env and an unset variable', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join, resolve } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-tui-bin-define-'));
+    try {
+      const entry = join(dir, 'entry.ts');
+      writeFileSync(
+        entry,
+        `import { cliVersion } from ${JSON.stringify(resolve(import.meta.dir, 'tui-bin.ts'))};\n` +
+          `console.log(JSON.stringify({ injectedEmpty: cliVersion({}), defaultEnv: cliVersion() }));\n`,
+      );
+      const out = join(dir, 'entry.js');
+      const build = Bun.spawnSync(
+        [
+          'bun',
+          'build',
+          entry,
+          '--target=bun',
+          '--define',
+          'process.env.KORTIX_CLI_VERSION="9.9.9-test.abc12345"',
+          '--outfile',
+          out,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+      );
+      expect(build.exitCode).toBe(0);
+      const env = { ...process.env };
+      delete env.KORTIX_CLI_VERSION;
+      const run = Bun.spawnSync(['bun', out], { env, stdout: 'pipe', stderr: 'pipe' });
+      expect(run.exitCode).toBe(0);
+      expect(JSON.parse(run.stdout.toString().trim())).toEqual({
+        injectedEmpty: '9.9.9-test.abc12345',
+        defaultEnv: '9.9.9-test.abc12345',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

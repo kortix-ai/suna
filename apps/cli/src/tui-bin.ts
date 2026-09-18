@@ -57,9 +57,25 @@ export function managedTuiPath(version: string, env: NodeJS.ProcessEnv = process
   return join(tuiCacheRoot(env), version, 'kortix-tui');
 }
 
-/** The CLI's own version — what the TUI is matched against. */
+/**
+ * The version CI bakes into the binary. This MUST read the literal token
+ * `process.env.KORTIX_CLI_VERSION`: `bun build --define` substitutes that exact
+ * expression and nothing else, so a read through an injected `env` object
+ * (`env.KORTIX_CLI_VERSION`) is untouched by the define and answers `undefined`
+ * inside the compiled binary — which is how the first published `kortix tui`
+ * reported version "dev" while `kortix --version` printed `0.13.25-dev.…`.
+ * Same source `src/index.ts` uses for `--version`.
+ */
+const BAKED_CLI_VERSION: string | undefined = process.env.KORTIX_CLI_VERSION;
+
+/**
+ * The CLI's own version — what the TUI is matched against. The baked value
+ * wins (a user cannot re-point a release binary at another TUI by exporting a
+ * variable); the injected `env` only matters for a source run, where nothing
+ * is baked, and that is what the tests exercise.
+ */
 export function cliVersion(env: NodeJS.ProcessEnv = process.env): string {
-  return env.KORTIX_CLI_VERSION ?? 'dev';
+  return BAKED_CLI_VERSION ?? env.KORTIX_CLI_VERSION ?? 'dev';
 }
 
 /**
