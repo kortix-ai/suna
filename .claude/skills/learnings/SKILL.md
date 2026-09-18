@@ -6916,3 +6916,59 @@ second labelled account staying on the connection-scoped route, a 403 that must
 not fall back). `packages/sdk/src/core/rest/projects-client/connectors.test.ts`
 pins that `connectorFinalize` sends `owner`/`connection_id` and still sends `{}`
 for the published two-argument callers.
+
+### 2026-09-18 — A shared waiter's fixed budget is a deadline every environment inherits, and "Max attempts exceeded" is not a diagnosis
+
+**Incident.** `deploy-dev.yml` job "Deploy frontend to dev (ECS Fargate)"
+(run `35388160843`, job `105741051220`, `main` SHA `ec6cbdb793`) failed on
+`aws ecs wait services-stable`. Its log ends
+`⏳ waiting for services-stable …` at 19:54:45Z and
+`Waiter ServicesStable failed: Max attempts exceeded` at 20:04:42Z — 9m57s,
+which is the AWS CLI v2 built-in waiter's fixed 40 attempts x 15s = 600s. The
+last SUCCESSFUL dev frontend deploy (run `35382033823`) took 7m53s
+(18:50:32Z → 18:58:25Z, measured from the GitHub API). Normal operation sat
+~2 minutes under a hard cap that no caller could raise. `ecs-deploy.sh` also
+rolls STAGING and PROD (`deploy-staging.yml`, `deploy-prod.yml`,
+`rollback-prod.yml`), so the same margin fails a production deploy for no
+product reason. The second defect cost more than the first: "Max attempts
+exceeded" cannot distinguish "the roll is slow" from "the new task
+crash-loops", so nobody could tell whether the built image was safe to
+promote.
+
+**Rules.**
+1. **A waiter with a vendor-fixed budget is not a budget you chose.** When one
+   script rolls dev, staging and prod, its stabilization budget is a
+   deployment policy — declare it once, in that script, overridable by env
+   (`ECS_STABILIZE_TIMEOUT_SECONDS`, default 900). Measure the real p100 of the
+   slowest surface before picking the number; 7m53s under a 600s cap is not
+   headroom.
+2. **A timeout must hand back evidence, not a verdict.** Any wait that can
+   expire prints, before exiting non-zero: each deployment's `status`,
+   `rolloutState`, `rolloutStateReason` and counts; the service's last ~10
+   `events[].message` with timestamps; capped `stoppedReason` +
+   per-container `exitCode`/`reason` for STOPPED tasks; and the awslogs group
+   as a copy-pasteable `aws logs tail`. Stopped-task reasons are the only
+   evidence that separates slow from crash-looping — the same class as
+   "A negative is a claim: carry its evidence" (2026-08-26).
+3. **A real failure exits on the failure, not on the budget.** `rolloutState ==
+   FAILED` returns immediately; burning the remaining 15 minutes adds nothing
+   and delays every downstream job.
+4. **Diagnostics never mask the verdict.** Every diagnostic call soft-fails
+   (`|| true`, `// empty`), so a denied `list-tasks` cannot convert a timeout
+   into a different error.
+
+**Enforcement.** `tests/unit/ecs-stabilize-budget.test.ts` drives the real
+script with a stubbed `aws` earlier on PATH (there are no AWS credentials —
+`kortix-mfa-required` denies `ecs:DescribeServices` for the human IAM user):
+a COMPLETED rollout exits 0; a FAILED rollout exits non-zero in ~300ms against
+a 60s budget; a never-completing rollout exits non-zero at its configured
+budget and its output carries the event messages, both stopped-task reasons and
+the log-group hint. A source tripwire fails if `aws ecs wait` returns or if a
+second budget is hardcoded. The stub answers `ecs wait services-stable` with
+the incident's verbatim `Max attempts exceeded` / exit 255, so a revert fails
+with the incident's own message: verified 4/4 red on `ec6cbdb793`, 4/4 green
+with the fix.
+
+**Unverified.** No real ECS rollout was exercised — no AWS credentials in this
+environment. The poll's behaviour against live ECS is proven only by the next
+real deploy of this script.

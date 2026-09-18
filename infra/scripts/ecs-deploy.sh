@@ -37,6 +37,13 @@
 # KORTIX_ECS_ENV_OVERRIDES as a JSON object of string values. The renderer
 # replaces matching values from the running task and preserves every other
 # value. Secrets remain in the aggregate Secrets Manager blob.
+#
+# Rollout stabilization is bounded by ECS_STABILIZE_TIMEOUT_SECONDS (default
+# 900) and polled every ECS_STABILIZE_POLL_SECONDS (default 15). A FAILED
+# rolloutState exits immediately. A timeout or failure prints the service's last
+# ECS_DIAGNOSTIC_EVENT_LIMIT events (default 10), every deployment's counts and
+# rolloutStateReason, up to ECS_DIAGNOSTIC_TASK_LIMIT stopped-task reasons
+# (default 5), and the awslogs group the new tasks write to.
 
 set -euo pipefail
 
@@ -102,6 +109,164 @@ gateway_target_for_env() {
     prod-use2-shadow) printf '%s' 'https://gateway-use2-shadow.kortix.com' ;;
     *) echo "unknown gateway environment: $1" >&2; return 2 ;;
   esac
+}
+
+# ── rollout stabilization: budget + diagnostics ──────────────────────────────
+# `aws ecs wait services-stable` is a FIXED 40 attempts x 15s = 600s, and on
+# expiry it prints only "Max attempts exceeded" — which cannot distinguish "the
+# roll is slow" from "the new task crash-loops". The dev frontend roll already
+# lands at 7m53s (run 35382033823), so that waiter left ~2 minutes of headroom
+# and failed run 35388160843 / job 105741051220 on a healthy image. This script
+# also rolls staging and prod, so the same margin failed a production deploy for
+# no product reason. The poll below owns the budget AND prints what a human needs
+# to decide whether the built image is safe to promote.
+#
+# The budget is declared ONCE, here. Do not hardcode a second value elsewhere.
+ECS_STABILIZE_TIMEOUT_SECONDS="${ECS_STABILIZE_TIMEOUT_SECONDS:-900}"
+ECS_STABILIZE_POLL_SECONDS="${ECS_STABILIZE_POLL_SECONDS:-15}"
+ECS_DIAGNOSTIC_EVENT_LIMIT="${ECS_DIAGNOSTIC_EVENT_LIMIT:-10}"
+ECS_DIAGNOSTIC_TASK_LIMIT="${ECS_DIAGNOSTIC_TASK_LIMIT:-5}"
+
+describe_service_json() {
+  aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
+    --services "$SERVICE" --output json 2>/dev/null || true
+}
+
+# Stopped-task reasons are the only evidence that separates "slow" from
+# "crash-looping". Capped at ECS_DIAGNOSTIC_TASK_LIMIT tasks — never a megabyte
+# dump. Soft-fails throughout: diagnostics must not mask the rollout verdict.
+print_stopped_task_diagnostics() {
+  local task_arns tasks_json arn
+  local -a arns=()
+
+  task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --service-name "$SERVICE" --desired-status STOPPED \
+    --max-items "$ECS_DIAGNOSTIC_TASK_LIMIT" \
+    --query 'taskArns' --output json 2>/dev/null || true)"
+
+  # `--query taskArns` yields a bare array, but a paginated call can answer an
+  # object that still carries it. Accept either, and take only strings so a
+  # NextToken or a nested array can never be counted as a task.
+  while IFS= read -r arn; do
+    [ -n "$arn" ] || continue
+    arns+=("$arn")
+  done < <(printf '%s' "$task_arns" \
+    | jq -r '(if type == "object" then (.taskArns // []) else . end)[]? | select(type == "string")' \
+      2>/dev/null || true)
+
+  if [ "${#arns[@]}" -eq 0 ]; then
+    echo "  stopped tasks: none — the roll is slow, not crash-looping" >&2
+    return 0
+  fi
+
+  tasks_json="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --tasks "${arns[@]}" --output json 2>/dev/null || true)"
+
+  echo "  stopped tasks (newest ${#arns[@]}):" >&2
+  printf '%s' "$tasks_json" | jq -r '
+    (.tasks // [])[]
+    | "    task=\((.taskArn // "?") | split("/") | last) lastStatus=\(.lastStatus // "?") stopCode=\(.stopCode // "-")\n" +
+      "      stoppedReason=\(.stoppedReason // "-")\n" +
+      ((.containers // [])
+        | map("      container=\(.name // "?") exitCode=\(if .exitCode == null then "-" else .exitCode end) reason=\(.reason // "-")")
+        | join("\n"))' >&2 2>/dev/null || true
+}
+
+# A copy-pasteable log command beats a log group name. Reads the task-def this
+# roll registered, so it names the stream prefix the NEW tasks write under.
+print_awslogs_hint() {
+  local group prefix
+  group="$(printf '%s' "${NEW_TD_JSON:-}" | jq -r --arg c "$CONTAINER" '
+    [.containerDefinitions[]? | select(.name == $c)
+     | select((.logConfiguration.logDriver // "") == "awslogs")
+     | .logConfiguration.options["awslogs-group"] // empty][0] // empty' 2>/dev/null || true)"
+  [ -n "$group" ] || return 0
+  prefix="$(printf '%s' "${NEW_TD_JSON:-}" | jq -r --arg c "$CONTAINER" '
+    [.containerDefinitions[]? | select(.name == $c)
+     | .logConfiguration.options["awslogs-stream-prefix"] // empty][0] // empty' 2>/dev/null || true)"
+  echo "  CloudWatch: group=$group stream=${prefix:-<none>}/$CONTAINER/<task-id>" >&2
+  echo "    aws logs tail $group --region $REGION --since 20m --follow" >&2
+}
+
+print_rollout_diagnostics() {
+  local service_json="${1:-}"
+  echo "── rollout diagnostics: $CLUSTER/$SERVICE ($REGION) ──" >&2
+
+  [ -n "$service_json" ] || service_json="$(describe_service_json)"
+  if [ -z "$service_json" ]; then
+    echo "  describe-services returned nothing — cannot read service state" >&2
+    return 0
+  fi
+
+  echo "  deployments:" >&2
+  printf '%s' "$service_json" | jq -r '
+    (.services[0].deployments // [])[]
+    | "    status=\(.status // "?") rolloutState=\(.rolloutState // "?") desired=\(.desiredCount // 0) running=\(.runningCount // 0) pending=\(.pendingCount // 0)\n" +
+      "      taskDefinition=\(.taskDefinition // "?")\n" +
+      "      rolloutStateReason=\(.rolloutStateReason // "-")"' >&2 2>/dev/null || true
+
+  echo "  last $ECS_DIAGNOSTIC_EVENT_LIMIT service events (newest first):" >&2
+  printf '%s' "$service_json" | jq -r --argjson n "$ECS_DIAGNOSTIC_EVENT_LIMIT" '
+    (.services[0].events // [])[:$n][]
+    | "    \(.createdAt // "?")  \(.message // "")"' >&2 2>/dev/null || true
+
+  print_stopped_task_diagnostics
+  print_awslogs_hint
+}
+
+# Returns 0 only for a COMPLETED rollout whose running count caught up with the
+# desired count. A FAILED rolloutState returns immediately — it never burns the
+# remaining budget. Both failure paths print diagnostics before returning.
+wait_for_stable_rollout() {
+  local budget="$1" delay="$2"
+  local started deadline now remaining service_json summary
+  local rollout="" running="" desired="" pending=""
+  started="$(date +%s)"
+  deadline=$(( started + budget ))
+
+  while : ; do
+    service_json="$(describe_service_json)"
+    if [ -n "$service_json" ]; then
+      summary="$(printf '%s' "$service_json" | jq -r '
+        (.services[0] // {}) as $s
+        | (($s.deployments // []) | map(select(.status == "PRIMARY")) | .[0] // {}) as $d
+        | [$d.rolloutState // "UNKNOWN",
+           ($s.runningCount // 0 | tostring),
+           ($s.desiredCount // 0 | tostring),
+           ($s.pendingCount // 0 | tostring)]
+        | @tsv' 2>/dev/null || true)"
+      if [ -n "$summary" ]; then
+        IFS=$'\t' read -r rollout running desired pending <<<"$summary"
+      fi
+
+      case "$rollout" in
+        COMPLETED)
+          if [ "$running" = "$desired" ] && [ "$pending" = "0" ]; then
+            echo "✔ rollout COMPLETED in $(( $(date +%s) - started ))s (running=$running desired=$desired)"
+            return 0
+          fi
+          ;;
+        FAILED)
+          echo "✖ rollout FAILED after $(( $(date +%s) - started ))s — not waiting out the remaining budget" >&2
+          print_rollout_diagnostics "$service_json"
+          return 1
+          ;;
+      esac
+    fi
+
+    now="$(date +%s)"
+    if [ "$now" -ge "$deadline" ]; then
+      echo "✖ rollout did not stabilize within ${budget}s (rolloutState=${rollout:-unknown} running=${running:-?} desired=${desired:-?} pending=${pending:-?})" >&2
+      print_rollout_diagnostics "$service_json"
+      return 1
+    fi
+    remaining=$(( deadline - now ))
+    if [ "$remaining" -lt "$delay" ]; then
+      sleep "$remaining"
+    else
+      sleep "$delay"
+    fi
+  done
 }
 
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
@@ -334,8 +499,8 @@ aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVI
 echo "✔ update-service issued (desired count unchanged)"
 
 if [ "$WAIT" = "1" ]; then
-  echo "⏳ waiting for services-stable …"
-  aws ecs wait services-stable --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE"
+  echo "⏳ waiting for the rollout to stabilize (budget ${ECS_STABILIZE_TIMEOUT_SECONDS}s, poll ${ECS_STABILIZE_POLL_SECONDS}s) …"
+  wait_for_stable_rollout "$ECS_STABILIZE_TIMEOUT_SECONDS" "$ECS_STABILIZE_POLL_SECONDS"
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
     --output table
