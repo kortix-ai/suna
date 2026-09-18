@@ -93,6 +93,50 @@ describe('admitInboxPrompt', () => {
     expect(behind).not.toHaveProperty('interruptAtBoundary');
   });
 
+  test('a Quick Queue prompt does not interrupt the turn an earlier Quick Queue prompt started', async () => {
+    // Reproduced 2026-09-18 on a real sandbox: a long turn A, then Quick Queue
+    // prompts B, C, D. B interrupts A — that is Quick Queue. But C waits behind
+    // B, becomes the head once B is delivered, and arms an interrupt against
+    // B's OWN turn. D then does the same to C. Replies B and C ended
+    // `MessageAbortedError` with zero characters; only D answered. N Quick
+    // Queue prompts lost N-1 answers, on this branch and on main.
+    //
+    // Contract: a Quick Queue prompt may end the turn it jumped ahead of. It
+    // must not end a turn that is itself a Quick Queue prompt's answer.
+    const box = {
+      status: 'active',
+      metadata: {
+        activeTurns: {
+          tB: { token: 'tB', state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_B', startedAtMs: 2 },
+        },
+      },
+    };
+    const deps = (quickQueueTurns: string[]) => ({
+      readSandbox: async () => box,
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      turnStartedByQuickQueue: async (_sessionId: string, messageId: string) =>
+        quickQueueTurns.includes(messageId),
+    });
+    const quickC = row({ commandId: 'cmd-C', payload: { text: 'C', placement: 'transcript' } });
+
+    // Control: the turn is an ordinary answer, so C may interrupt it.
+    expect(await admitInboxPrompt(quickC, deps([]))).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      interruptAtBoundary: { opencodeSessionId: 'ses_1', messageId: 'msg_B' },
+    });
+
+    // The defect: the turn is B's Quick Queue answer. C waits for it; it does
+    // not end it.
+    expect(await admitInboxPrompt(quickC, deps(['msg_B']))).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+  });
+
   test('a LIVE TURN holds the prompt back — one queued message runs at a time', async () => {
     // THE RULE THIS GATE EXISTS FOR. OpenCode picks up new user messages at
     // STEP boundaries inside a running turn, and it "parents each step on the

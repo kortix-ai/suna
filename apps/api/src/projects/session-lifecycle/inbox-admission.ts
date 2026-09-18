@@ -5,6 +5,7 @@ import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-li
 import { reconcileInboxTurn } from './inbox-turn-recovery';
 import { inboxPrecedesRow } from './inbox-order';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The inbox's admission gate.
@@ -135,6 +136,9 @@ export interface InboxAdmissionDeps {
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
+  /** Is this turn the answer to a Quick Queue prompt? Such a turn is never
+   *  interrupted by the next Quick Queue prompt. */
+  turnStartedByQuickQueue?: (sessionId: string, messageId: string) => Promise<boolean>;
 }
 
 const liveDeps: InboxAdmissionDeps = {
@@ -185,6 +189,21 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return !!running;
   },
+  async turnStartedByQuickQueue(sessionId, messageId) {
+    const [quick] = await db
+      .select({ commandId: sessionLifecycleCommands.commandId })
+      .from(sessionLifecycleCommands)
+      .where(
+        and(
+          eq(sessionLifecycleCommands.sessionId, sessionId),
+          eq(sessionLifecycleCommands.commandType, 'continue_session'),
+          wireMessageIdMatches(messageId),
+          sql`${sessionLifecycleCommands.payload}->>'placement' = 'transcript'`,
+        ),
+      )
+      .limit(1);
+    return !!quick;
+  },
 };
 
 export async function admitInboxPrompt(
@@ -220,11 +239,15 @@ export async function admitInboxPrompt(
     if (sessionHoldsTurnAuthority(sandbox)) {
       const turns = storedSandboxTurns(sandbox?.metadata);
       const active = turns.length === 1 ? turns[0] : null;
+      // A Quick Queue prompt ends the turn it jumped ahead of, never the answer
+      // to an earlier Quick Queue prompt. Without this, each of N Quick Queue
+      // prompts ends the previous one's turn and N-1 answers are lost.
       const interruptAtBoundary =
         isHead &&
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
-        active.messageId
+        active.messageId &&
+        !(await deps.turnStartedByQuickQueue?.(row.sessionId, active.messageId))
           ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
           : undefined;
       return {
