@@ -21,7 +21,8 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
-import { CheckIcon, CopyIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { type ReactNode, useState } from 'react';
 
@@ -213,7 +214,7 @@ export function CopyBlock({
               {copied ? (
                 <CheckIcon className="text-kortix-green size-3.5" />
               ) : (
-                <CopyIcon className="size-3.5" />
+                <Copy className="size-3.5" />
               )}
             </m.span>
           </AnimatePresence>

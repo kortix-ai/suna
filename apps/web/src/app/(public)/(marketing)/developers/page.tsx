@@ -13,12 +13,12 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as AiOutlineCheck,
   ArrowRightIcon as ArrowRight,
   CubeIcon as Boxes,
   CheckIcon as Check,
-  CopyIcon as Copy,
   CpuIcon as Cpu,
   FileCodeIcon as FileCode2,
   GitBranchIcon as GitBranch,

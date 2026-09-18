@@ -79,10 +79,10 @@ import {
   updateOAuthClient,
 } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   AppWindowIcon,
   ArrowsClockwiseIcon,
-  CopyIcon,
   PencilSimpleIcon,
   PlusIcon,
   TrashIcon,
@@ -282,7 +282,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
             const kebab: KebabItem[] = [
               {
                 label: tI18nComplete.raw('text0d683ef7eb96'),
-                icon: <CopyIcon className="size-3.5 shrink-0" />,
+                icon: <Copy className="size-3.5 shrink-0" />,
                 onSelect: () =>
                   void copyValue(
                     client.client_id,

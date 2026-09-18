@@ -41,8 +41,8 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
+import { Copy } from '@/features/icon/icons/copy';
 import {
-  CopyIcon,
   DotsThreeIcon,
   PauseIcon,
   PlayIcon,
@@ -293,7 +293,7 @@ function RowActions({
               )
             }
           >
-            <CopyIcon className="size-3.5 shrink-0" />
+            <Copy className="size-3.5 shrink-0" />
             {tI18nComplete.raw('text7c4e5224f9d4')}
           </DropdownMenuItem>
         ) : null}

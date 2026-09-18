@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 

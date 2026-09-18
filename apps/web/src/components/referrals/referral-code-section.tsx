@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   ShareNetworkIcon as Share2,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';

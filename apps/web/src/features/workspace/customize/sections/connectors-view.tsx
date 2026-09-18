@@ -1,11 +1,11 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
   DotsThreeIcon,
   ArrowSquareOutIcon as ExternalLink,
   LockIcon as Lock,

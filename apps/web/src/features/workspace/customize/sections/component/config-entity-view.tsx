@@ -29,9 +29,9 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
   WarningIcon as DangerTriangleSolid,
   type Icon as LucideIcon,
   PencilSimpleIcon,

@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';

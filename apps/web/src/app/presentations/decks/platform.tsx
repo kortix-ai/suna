@@ -16,6 +16,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   ArrowRightIcon as ArrowRight,
   RobotIcon as Bot,
@@ -25,7 +26,6 @@ import {
   BuildingsIcon as Building2,
   ClockIcon as Clock,
   CodeSimpleIcon as Code2,
-  CopyIcon as Copy,
   FileCodeIcon as FileCode2,
   GitBranchIcon as GitBranch,
   KeyIcon as KeyRound,

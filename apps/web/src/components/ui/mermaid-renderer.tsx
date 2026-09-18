@@ -6,9 +6,9 @@ import Hint from '@/components/ui/hint';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   ArrowsOutSimpleIcon as Maximize2,
   ArrowCounterClockwiseIcon as RotateCcw,
   XIcon as X,

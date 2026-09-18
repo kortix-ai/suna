@@ -20,10 +20,10 @@ import type { GitStatusType } from '@/features/file-browser/components/file-tree
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 import type { FileNode } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClipboardIcon as ClipboardCopy,
-  CopyIcon as Copy,
   DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,

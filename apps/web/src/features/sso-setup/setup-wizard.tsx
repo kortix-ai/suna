@@ -13,12 +13,12 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   CheckIcon as Check,
   CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
   KeyIcon as KeyRound,
   ArrowClockwiseIcon as RefreshCw,

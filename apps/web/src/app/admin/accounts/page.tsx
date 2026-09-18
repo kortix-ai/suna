@@ -4,13 +4,13 @@ import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   ArrowDownRightIcon as ArrowDownRight,
   ArrowUpRightIcon as ArrowUpRight,
   ProhibitIcon as Ban,
   CheckCircleIcon as CheckCircle2,
   CheckIcon,
-  CopyIcon,
   CreditCardIcon as CreditCard,
   ArrowSquareOutIcon as ExternalLink,
   EyeIcon as Eye,
@@ -1301,7 +1301,7 @@ function CopyField({
           {copied ? (
             <CheckIcon className="text-kortix-green size-3" />
           ) : (
-            <CopyIcon className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+            <Copy className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
           )}
         </span>
       </button>

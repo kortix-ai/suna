@@ -276,6 +276,14 @@ removed and blocked by ESLint (`no-restricted-imports`).
 - **Exception — solid intent:** status tiles, success checks, destructive
   trash, and logo glyphs pass an explicit `weight="fill"` so they stay solid
   regardless of the global weight. This is the only weight prop in the codebase.
+- **Exception — the copy icon is custom, never Phosphor.** Every copy affordance
+  renders `Copy` from `apps/web/src/features/icon/icons/copy.tsx`
+  (`import { Copy } from '@/features/icon/icons/copy'`). Never import Phosphor's
+  `CopyIcon`, `CopySimpleIcon`, `ClipboardIcon`, or the `IconCopy` alias in
+  `kortix-icons.ts` for a copy action. `Copy` takes `className` only, defaults
+  to `size-4`, and paints with `fill="currentColor"` — size and colour it with
+  Tailwind (`className="size-3.5"`), and pass no `weight`. The confirmed state
+  stays Phosphor's `CheckIcon`.
 - Semantic layer: `src/components/ui/kortix-icons.ts` (`IconAdd`, `IconDelete`,
   …) re-exports Phosphor icons; prefer it where already adopted. It re-exports
   the client entry, so it is client-graph only.
@@ -323,7 +331,7 @@ and occasional* — copy → copied, connect → connected, follow → following
 **not** for a control the user hits repeatedly in a working session. If in doubt,
 hard-swap the icon; a hard swap is never wrong, it is only plain.
 
-When it does apply: never hard-swap `{done ? <CheckIcon/> : <CopyIcon/>}` with no
+When it does apply: never hard-swap `{done ? <CheckIcon/> : <Copy/>}` with no
 transition. Cross-fade the two icons in the same box with **blur + scale +
 opacity** so it reads as one morph, not two objects blinking. The blur is what
 bridges the two states — without it the eye sees two distinct objects.
@@ -333,6 +341,8 @@ Values: **scale `0.25 → 1`, opacity `0 → 1`, blur `4px → 0`**, spring
 Always `initial={false}` so nothing animates on first paint.
 
 ```tsx
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 
 <button
@@ -354,7 +364,7 @@ import { AnimatePresence, motion } from 'motion/react';
         transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
         className="absolute inset-0 inline-flex items-center justify-center"
       >
-        {copied ? <CheckIcon className="size-3.5 text-kortix-green" /> : <CopyIcon className="size-3.5" />}
+        {copied ? <CheckIcon className="size-3.5 text-kortix-green" /> : <Copy className="size-3.5" />}
       </motion.span>
     </AnimatePresence>
   </span>
@@ -517,6 +527,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
 - ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
+- ✅ Copy icon → `Copy` from `@/features/icon/icons/copy`. ❌ Phosphor `CopyIcon` / `CopySimpleIcon` / `IconCopy`.
 - ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `CircleNotchIcon`, `SpinnerIcon`, or any `animate-spin` icon.
 - ✅ Motion → count the frequency first; `transition-colors duration-fast` on hover, `ease-out` on enter/exit, `active:scale-[0.96]` on press. ❌ `transition-all`, ❌ bare `transition`, ❌ `ease-in`, ❌ anything over 300ms in product UI.
 - ✅ Keyboard-driven interactions → `transition-none`. ❌ animating arrow-key nav or focus moves.

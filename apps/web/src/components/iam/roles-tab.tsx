@@ -21,8 +21,8 @@ import { useTranslations } from '@/i18n/use-translations';
 // the same leaf strings.
 
 import { invalidatePermissionProbes } from '@kortix/sdk/react';
+import { Copy } from '@/features/icon/icons/copy';
 import {
-  CopyIcon as Copy,
   EyeIcon as Eye,
   LockIcon as Lock,
   PencilSimpleIcon,

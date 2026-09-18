@@ -9,10 +9,10 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { Copy } from '@/features/icon/icons/copy';
 import {
   WarningIcon as AlertTriangle,
   CheckIcon as Check,
-  CopyIcon as Copy,
   ThumbsDownIcon as ThumbsDown,
   ThumbsUpIcon as ThumbsUp,
 } from '@phosphor-icons/react';

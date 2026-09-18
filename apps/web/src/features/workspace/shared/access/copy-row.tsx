@@ -13,7 +13,8 @@ import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
-import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactNode } from 'react';
 
@@ -91,7 +92,7 @@ export function CopyRow({
                   {copied ? (
                     <CheckIcon className="text-kortix-green size-3.5" />
                   ) : (
-                    <CopyIcon className="size-3.5" />
+                    <Copy className="size-3.5" />
                   )}
                 </motion.span>
               </AnimatePresence>

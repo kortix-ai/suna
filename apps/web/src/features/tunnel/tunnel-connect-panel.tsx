@@ -1,6 +1,7 @@
 'use client';
 
-import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { Copy } from '@/features/icon/icons/copy';
+import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -64,7 +65,7 @@ export function ConnectCommandPanel() {
                   {copied ? (
                     <CheckIcon className="text-kortix-green size-3.5" />
                   ) : (
-                    <CopyIcon className="text-muted-foreground size-3.5" />
+                    <Copy className="text-muted-foreground size-3.5" />
                   )}
                 </m.span>
               </AnimatePresence>
