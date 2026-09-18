@@ -188,7 +188,7 @@ jobs:
       # a re-run logged "Cache restored from key" and the Turbopack compile
       # went 105s -> 1.549s.
       - name: Restore Turbopack build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/web/.next/cache
           key: nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
