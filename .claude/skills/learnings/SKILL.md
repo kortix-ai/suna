@@ -6940,16 +6940,28 @@ promote.
    script rolls dev, staging and prod, its stabilization budget is a
    deployment policy — declare it once, in that script, overridable by env
    (`ECS_STABILIZE_TIMEOUT_SECONDS`, default 900). Measure the real p100 of the
-   slowest surface before picking the number; 7m53s under a 600s cap is not
-   headroom.
+   slowest surface before picking the number; a ~7m23s waiter under a 600s cap
+   is not headroom. Measure the WAITER, not the job: the 7m53s job wall-clock
+   first quoted for this incident included ~30s of register + update-service.
 2. **A timeout must hand back evidence, not a verdict.** Any wait that can
    expire prints, before exiting non-zero: each deployment's `status`,
    `rolloutState`, `rolloutStateReason` and counts; the service's last ~10
    `events[].message` with timestamps; capped `stoppedReason` +
    per-container `exitCode`/`reason` for STOPPED tasks; and the awslogs group
-   as a copy-pasteable `aws logs tail`. Stopped-task reasons are the only
-   evidence that separates slow from crash-looping — the same class as
-   "A negative is a claim: carry its evidence" (2026-08-26).
+   as a copy-pasteable `aws logs tail`; and the lastStatus breakdown of the
+   tasks ECS still wants RUNNING. Same class as "A negative is a claim: carry
+   its evidence" (2026-08-26).
+   **And the diagnostic itself must not draw the conclusion it forbids.** The
+   first version of this fix printed "stopped tasks: none — the roll is slow,
+   not crash-looping". That is false whenever a rollout is wedged with tasks
+   still in PENDING — an image pull, exhausted capacity or subnet IPs, or a
+   health check below its threshold — where nothing reaches STOPPED inside the
+   window, so the line tells the on-call the opposite of what is happening. An
+   ABSENCE of evidence is an observation, never a cause. Print the observation,
+   name what would discriminate, and print that too: `--desired-status RUNNING`
+   returns the PENDING tasks (their desired status is RUNNING while their last
+   status is not), and their container `reason` names the pull or placement
+   failure outright. Caught in review of PR #7420 before merge.
 3. **A real failure exits on the failure, not on the budget.** `rolloutState ==
    FAILED` returns immediately; burning the remaining 15 minutes adds nothing
    and delays every downstream job.
@@ -6962,8 +6974,11 @@ script with a stubbed `aws` earlier on PATH (there are no AWS credentials —
 `kortix-mfa-required` denies `ecs:DescribeServices` for the human IAM user):
 a COMPLETED rollout exits 0; a FAILED rollout exits non-zero in ~300ms against
 a 60s budget; a never-completing rollout exits non-zero at its configured
-budget and its output carries the event messages, both stopped-task reasons and
-the log-group hint. A source tripwire fails if `aws ecs wait` returns or if a
+budget and its output carries the event messages, both stopped-task reasons,
+the live-task lastStatus breakdown and the log-group hint. A fifth case pins
+the no-stopped-tasks wording: it must state the observation, must NOT contain
+"the roll is slow, not crash-looping", and must still surface the PENDING
+breakdown that names the real cause. A source tripwire fails if `aws ecs wait` returns or if a
 second budget is hardcoded. The stub answers `ecs wait services-stable` with
 the incident's verbatim `Max attempts exceeded` / exit 255, so a revert fails
 with the incident's own message: verified 4/4 red on `ec6cbdb793`, 4/4 green

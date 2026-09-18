@@ -71,13 +71,39 @@ case "$ARGS" in
     printf 'arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500' ;;
   *"update-service"*)
     printf '{"service":{"status":"ACTIVE"}}' ;;
-  *"list-tasks"*)
-    # --query taskArns --output json yields a bare, pretty-printed array.
+  *"list-tasks"*"--desired-status RUNNING"*)
+    # Tasks ECS still WANTS running — PENDING ones are returned by this filter.
     cat <<'JSON'
+[
+    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/aaaa1111pending",
+    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/bbbb2222pending"
+]
+JSON
+    ;;
+  *"list-tasks"*"--desired-status STOPPED"*)
+    # --query taskArns --output json yields a bare, pretty-printed array.
+    if [ "$AWS_STUB_STOPPED" = "none" ]; then
+      printf '[]\n'
+    else
+      cat <<'JSON'
 [
     "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
     "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef"
 ]
+JSON
+    fi
+    ;;
+  *"describe-tasks"*pending*)
+    # The PENDING wedge: nothing stopped, tasks blocked on an image pull.
+    cat <<'JSON'
+{"tasks":[
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/aaaa1111pending",
+"lastStatus":"PENDING","desiredStatus":"RUNNING",
+"containers":[{"name":"web","lastStatus":"PENDING",
+"reason":"STUB_PENDING_REASON CannotPullContainerError: manifest unknown"}]},
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/bbbb2222pending",
+"lastStatus":"PROVISIONING","desiredStatus":"RUNNING",
+"containers":[{"name":"web","lastStatus":"PENDING"}]}]}
 JSON
     ;;
   *"describe-tasks"*)
@@ -138,6 +164,9 @@ function runDeploy(
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       AWS_STUB_LOG: log,
       AWS_STUB_SCENARIO: scenario,
+      // `String.raw` still interpolates ${...}, so the stub uses bare $VARs and
+      // every variable it reads must be set here.
+      AWS_STUB_STOPPED: 'some',
       // A never-completing rollout reports one running task and one pending.
       AWS_STUB_RUNNING: scenario === 'completed' ? '1' : '0',
       AWS_STUB_PENDING: scenario === 'completed' ? '0' : '1',
@@ -214,7 +243,8 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.stderr).toContain('STUB_EVENT_NEWEST');
     expect(run.stderr).toContain('STUB_EVENT_SECOND');
 
-    // Stopped-task reasons: this is what separates "slow" from "crash-looping".
+    // Stopped-task exit reasons: evidence that a task died and why. Their
+    // absence proves nothing — see the no-stopped-tasks case below.
     // Both tasks are reported, and only real task ARNs are counted.
     expect(run.stderr).toContain('stopped tasks (newest 2)');
     expect(run.stderr).toContain('STUB_STOPPED_REASON');
@@ -228,11 +258,51 @@ describe('ECS rollout stabilization budget', () => {
     expect(run.stderr).toContain('/ecs/kortix-dev-web');
     expect(run.stderr).toContain('aws logs tail /ecs/kortix-dev-web');
 
-    // Stopped tasks are capped, never a full dump.
+    // The live-task lastStatus breakdown: the signal that distinguishes a
+    // PENDING wedge from a task that died. pendingCount also leads the headline.
+    expect(run.stderr).toContain('live tasks by lastStatus (desired RUNNING, newest 2)');
+    expect(run.stderr).toMatch(/PENDING=1 PROVISIONING=1|PROVISIONING=1 PENDING=1/);
+    expect(run.stderr).toContain('STUB_PENDING_REASON');
+    // A container with no reason contributes no line, keeping the output small.
+    expect(run.stderr).not.toContain('bbbb2222pending lastStatus=PROVISIONING container=web reason=-');
+
+    // Both task lists are capped, never a full dump.
     const listTasks = run.awsCalls.filter((call) => call.includes('list-tasks'));
-    expect(listTasks).toHaveLength(1);
-    expect(listTasks[0]).toContain('--desired-status STOPPED');
-    expect(listTasks[0]).toContain('--max-items 5');
+    expect(listTasks).toHaveLength(2);
+    expect(listTasks.filter((call) => call.includes('--desired-status RUNNING'))).toHaveLength(1);
+    expect(listTasks.filter((call) => call.includes('--desired-status STOPPED'))).toHaveLength(1);
+    for (const call of listTasks) {
+      expect(call).toContain('--max-items 5');
+    }
+  });
+
+  it('reports no-stopped-tasks as an observation and never concludes the roll is merely slow', () => {
+    // The wedge the old wording got backwards: nothing STOPPED, yet the rollout
+    // is stuck because every new task is blocked in PENDING on an image pull.
+    const run = runDeploy('stuck', {
+      ECS_STABILIZE_TIMEOUT_SECONDS: '4',
+      ECS_STABILIZE_POLL_SECONDS: '1',
+      AWS_STUB_STOPPED: 'none',
+    });
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.status).not.toBe(0);
+
+    // States the observation, and nothing more.
+    expect(run.stderr).toContain('stopped tasks: none in the window — no exit reasons to report.');
+
+    // Regression guard: the old line concluded a cause the data cannot support.
+    expect(run.stderr).not.toContain('the roll is slow, not crash-looping');
+    expect(run.stderr).not.toMatch(/stopped tasks: none\s*—\s*the roll is slow/);
+
+    // Points at what would actually discriminate, without asserting which it is.
+    expect(run.stderr).toContain('this does NOT mean the roll is merely slow');
+    expect(run.stderr).toContain('PENDING');
+
+    // And the discriminating evidence itself is present and names the cause.
+    expect(run.stderr).toContain('live tasks by lastStatus');
+    expect(run.stderr).toContain('STUB_PENDING_REASON CannotPullContainerError');
+    expect(run.stderr).toContain('pending=1');
   });
 
   it('defaults the total budget to 900s and declares it exactly once', () => {

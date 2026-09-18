@@ -42,8 +42,11 @@
 # 900) and polled every ECS_STABILIZE_POLL_SECONDS (default 15). A FAILED
 # rolloutState exits immediately. A timeout or failure prints the service's last
 # ECS_DIAGNOSTIC_EVENT_LIMIT events (default 10), every deployment's counts and
-# rolloutStateReason, up to ECS_DIAGNOSTIC_TASK_LIMIT stopped-task reasons
-# (default 5), and the awslogs group the new tasks write to.
+# rolloutStateReason, the lastStatus breakdown of up to
+# ECS_DIAGNOSTIC_TASK_LIMIT live tasks (default 5) with any container reason,
+# the same number of stopped-task exit reasons, and the awslogs group the new
+# tasks write to. These are OBSERVATIONS: the script reports what the service
+# says and never concludes a cause from an absence of evidence.
 
 set -euo pipefail
 
@@ -113,13 +116,15 @@ gateway_target_for_env() {
 
 # ── rollout stabilization: budget + diagnostics ──────────────────────────────
 # `aws ecs wait services-stable` is a FIXED 40 attempts x 15s = 600s, and on
-# expiry it prints only "Max attempts exceeded" — which cannot distinguish "the
-# roll is slow" from "the new task crash-loops". The dev frontend roll already
-# lands at 7m53s (run 35382033823), so that waiter left ~2 minutes of headroom
-# and failed run 35388160843 / job 105741051220 on a healthy image. This script
-# also rolls staging and prod, so the same margin failed a production deploy for
-# no product reason. The poll below owns the budget AND prints what a human needs
-# to decide whether the built image is safe to promote.
+# expiry it prints only "Max attempts exceeded" — a message that reports no
+# service state at all. The last successful dev frontend roll (run 35382033823)
+# spent ~7m23s in its waiter (7m53s job wall-clock minus ~30s of register +
+# update-service overhead, measured on the failing job), so that budget left
+# about 2.5 minutes of headroom and then failed run 35388160843 /
+# job 105741051220. This script also rolls staging and prod, so the same margin
+# fails a production deploy for no product reason. The poll below owns the
+# budget AND prints the service state a human needs to decide whether the built
+# image is safe to promote.
 #
 # The budget is declared ONCE, here. Do not hardcode a second value elsewhere.
 ECS_STABILIZE_TIMEOUT_SECONDS="${ECS_STABILIZE_TIMEOUT_SECONDS:-900}"
@@ -132,9 +137,13 @@ describe_service_json() {
     --services "$SERVICE" --output json 2>/dev/null || true
 }
 
-# Stopped-task reasons are the only evidence that separates "slow" from
-# "crash-looping". Capped at ECS_DIAGNOSTIC_TASK_LIMIT tasks — never a megabyte
-# dump. Soft-fails throughout: diagnostics must not mask the rollout verdict.
+# Stopped-task exit reasons are ONE kind of evidence a reader needs: they show a
+# task that died and why. Their ABSENCE proves nothing on its own — a rollout
+# can be wedged with tasks still in PENDING (image pull, no capacity, a health
+# check below its threshold), in which case nothing has stopped yet. Report the
+# observation; let the reader combine it with the counts, the events and the
+# live-task breakdown. Capped at ECS_DIAGNOSTIC_TASK_LIMIT tasks — never a
+# megabyte dump. Soft-fails throughout: diagnostics must not mask the verdict.
 print_stopped_task_diagnostics() {
   local task_arns tasks_json arn
   local -a arns=()
@@ -155,7 +164,11 @@ print_stopped_task_diagnostics() {
       2>/dev/null || true)
 
   if [ "${#arns[@]}" -eq 0 ]; then
-    echo "  stopped tasks: none — the roll is slow, not crash-looping" >&2
+    echo "  stopped tasks: none in the window — no exit reasons to report." >&2
+    echo "    this does NOT mean the roll is merely slow: a rollout can be wedged" >&2
+    echo "    with tasks still in PENDING (image pull, capacity/subnet IPs, a" >&2
+    echo "    health check below its threshold). Read the counts, the live-task" >&2
+    echo "    breakdown and the events above." >&2
     return 0
   fi
 
@@ -172,6 +185,52 @@ print_stopped_task_diagnostics() {
         | join("\n"))' >&2 2>/dev/null || true
 }
 
+# The PENDING wedge leaves nothing STOPPED, so the lastStatus breakdown of the
+# tasks ECS still WANTS running is what discriminates it. A task blocked on an
+# image pull, on capacity, or on a health check below its threshold sits in
+# PENDING/PROVISIONING/ACTIVATING and never reaches STOPPED inside the window.
+# Filtering on `--desired-status RUNNING` is what returns those tasks: their
+# desired status is RUNNING even while their last status is PENDING.
+# Container-level `reason` is printed only when ECS set one, which keeps this to
+# a couple of lines on a healthy-but-slow roll and names the cause on a wedge.
+print_live_task_diagnostics() {
+  local task_arns tasks_json arn
+  local -a arns=()
+
+  task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --service-name "$SERVICE" --desired-status RUNNING \
+    --max-items "$ECS_DIAGNOSTIC_TASK_LIMIT" \
+    --query 'taskArns' --output json 2>/dev/null || true)"
+
+  while IFS= read -r arn; do
+    [ -n "$arn" ] || continue
+    arns+=("$arn")
+  done < <(printf '%s' "$task_arns" \
+    | jq -r '(if type == "object" then (.taskArns // []) else . end)[]? | select(type == "string")' \
+      2>/dev/null || true)
+
+  if [ "${#arns[@]}" -eq 0 ]; then
+    echo "  live tasks: none with desired status RUNNING in the window." >&2
+    return 0
+  fi
+
+  tasks_json="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
+    --tasks "${arns[@]}" --output json 2>/dev/null || true)"
+
+  echo "  live tasks by lastStatus (desired RUNNING, newest ${#arns[@]}):" >&2
+  printf '%s' "$tasks_json" | jq -r '
+    (.tasks // [])
+    | if length == 0 then "    (no task detail returned)"
+      else "    " + (group_by(.lastStatus // "UNKNOWN")
+           | map("\(.[0].lastStatus // "UNKNOWN")=\(length)") | join(" "))
+      end' >&2 2>/dev/null || true
+  printf '%s' "$tasks_json" | jq -r '
+    (.tasks // [])[]
+    | . as $task
+    | ((.containers // []) | map(select((.reason // "") != "")) | .[]?)
+    | "      task=\(($task.taskArn // "?") | split("/") | last) lastStatus=\($task.lastStatus // "?") container=\(.name // "?") reason=\(.reason // "-")"' >&2 2>/dev/null || true
+}
+
 # A copy-pasteable log command beats a log group name. Reads the task-def this
 # roll registered, so it names the stream prefix the NEW tasks write under.
 print_awslogs_hint() {
@@ -184,7 +243,15 @@ print_awslogs_hint() {
   prefix="$(printf '%s' "${NEW_TD_JSON:-}" | jq -r --arg c "$CONTAINER" '
     [.containerDefinitions[]? | select(.name == $c)
      | .logConfiguration.options["awslogs-stream-prefix"] // empty][0] // empty' 2>/dev/null || true)"
-  echo "  CloudWatch: group=$group stream=${prefix:-<none>}/$CONTAINER/<task-id>" >&2
+  # Only name the stream when a prefix exists: `<prefix>/<container>/<task-id>`
+  # is the awslogs layout. With no prefix the driver names the stream after the
+  # container id instead, so printing "<none>/..." would name a stream that
+  # cannot exist.
+  if [ -n "$prefix" ]; then
+    echo "  CloudWatch: group=$group stream=$prefix/$CONTAINER/<task-id>" >&2
+  else
+    echo "  CloudWatch: group=$group (task-def declares no awslogs-stream-prefix)" >&2
+  fi
   echo "    aws logs tail $group --region $REGION --since 20m --follow" >&2
 }
 
@@ -210,6 +277,7 @@ print_rollout_diagnostics() {
     (.services[0].events // [])[:$n][]
     | "    \(.createdAt // "?")  \(.message // "")"' >&2 2>/dev/null || true
 
+  print_live_task_diagnostics
   print_stopped_task_diagnostics
   print_awslogs_hint
 }
@@ -247,7 +315,7 @@ wait_for_stable_rollout() {
           fi
           ;;
         FAILED)
-          echo "✖ rollout FAILED after $(( $(date +%s) - started ))s — not waiting out the remaining budget" >&2
+          echo "✖ rollout FAILED after $(( $(date +%s) - started ))s (running=$running desired=$desired pending=$pending) — not waiting out the remaining budget" >&2
           print_rollout_diagnostics "$service_json"
           return 1
           ;;
