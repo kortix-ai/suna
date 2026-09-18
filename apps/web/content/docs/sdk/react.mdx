@@ -193,6 +193,15 @@ running. A control you HOLD on that token — Stop pinned by a retrying assistan
 for example — must read `serverOpenTurnFresh` instead: it is `true` only while
 the token is set and the read behind it is still young.
 
+`useSession` passes the open `turn_token`s to `useSessionSync` for you. A host
+that mounts `useSessionSync` itself passes them as
+`useSessionSync(sessionId, { openTurnTokens })`, where `null` means unknown.
+When a token of the last set is absent from the next one, the hook issues one
+`'turn-end'` transcript read while the session stays busy, so a turn that ends
+straight into a queued prompt still settles without an idle frame.
+`openTurnTokensEnded(previous, next)` is that set comparison, exported for hosts
+that hold the list themselves.
+
 The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
 Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
 delivered turns, with no status text. Queue List entries remain editable until delivery starts.

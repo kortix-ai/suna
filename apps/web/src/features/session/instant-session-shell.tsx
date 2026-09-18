@@ -8,7 +8,10 @@ import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { QueuedPromptList } from '@/features/session/composer/queued-prompt-list';
-import { firstPromptRowIsLive } from '@/features/session/first-prompt-presentation';
+import {
+  firstPromptBubbleTone,
+  firstPromptRowIsLive,
+} from '@/features/session/first-prompt-presentation';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
@@ -658,7 +661,7 @@ export function InstantSessionShell({
               {effectiveSubmission && !hasTranscript && (
                 <div
                   className="flex min-w-0 flex-col"
-                  data-queue-tone={firstPromptRow?.state === 'failed' ? 'failed' : 'pending'}
+                  data-queue-tone={firstPromptBubbleTone(firstPromptRow)}
                 >
                   {/* The composer shows Stop from this send on, so the one
                       Thinking row sits here, above any queued bubbles. A failed

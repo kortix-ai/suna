@@ -204,8 +204,9 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(shell).toContain(
       'uploadStatus: previewSubmission?.uploadStatus ?? pendingRowSubmission?.uploadStatus,',
     );
+    // The prop wraps across lines at 100 columns, so match its value alone.
     expect(chat.replace(/\s+/g, ' ')).toContain(
-      'uploadStatus={firstPromptSource.uploadStatus ?? firstPromptUploadStatus}',
+      'firstPromptSource.uploadStatus ?? firstPromptUploadStatus',
     );
     // The hero composer remounts when the thread appears, so the shell owns the
     // upload controller that the held send and its Retry use.

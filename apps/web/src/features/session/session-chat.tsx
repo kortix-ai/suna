@@ -47,6 +47,7 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import {
+  firstPromptBubbleTone,
   firstPromptRowIsLive,
   firstPromptStandInBusy,
   pendingBubbleIsMuted,
@@ -5772,24 +5773,52 @@ export function SessionChat({
                         {showFirstPromptPreview &&
                           firstPromptSource &&
                           queuedSyntheticMessages.length === 0 && (
-                            <OptimisticTurn
-                              text={buildOptimisticPromptTextWithUploads(
-                                firstPromptSource.text,
-                                firstPromptSource.files,
-                              )}
-                              // Preserve a real failed-send status through the
-                              // boot-shell handover without inventing upload progress.
-                              // A first prompt held on its uploads carries its own.
-                              uploadStatus={firstPromptSource.uploadStatus ?? firstPromptUploadStatus}
-                              agentNames={agentNames}
-                              onFileClick={openFileInComputer}
-                              sessionId={sessionId}
-                              busy={firstPromptStandInBusy({
-                                transcriptHasTurns: turns.length > 0,
-                                firstPromptLive,
-                                lastTurnWorking,
-                              })}
-                            />
+                            // The queue tint, from the SAME rule the shell above
+                            // and the real turn below read. `BUBBLE_SURFACE`
+                            // takes it from the nearest `data-queue-tone`
+                            // ancestor, so without this wrapper the first prompt
+                            // went yellow (shell), plain (here), yellow again
+                            // (real turn) across one send.
+                            <div
+                              className="flex min-w-0 flex-col"
+                              data-queue-tone={firstPromptBubbleTone(firstPromptRow)}
+                            >
+                              <OptimisticTurn
+                                text={buildOptimisticPromptTextWithUploads(
+                                  firstPromptSource.text,
+                                  firstPromptSource.files,
+                                )}
+                                // Preserve a real failed-send status through the
+                                // boot-shell handover without inventing upload progress.
+                                // A first prompt held on its uploads carries its own.
+                                uploadStatus={
+                                  firstPromptSource.uploadStatus ?? firstPromptUploadStatus
+                                }
+                                agentNames={agentNames}
+                                onFileClick={openFileInComputer}
+                                sessionId={sessionId}
+                                busy={firstPromptStandInBusy({
+                                  transcriptHasTurns: turns.length > 0,
+                                  firstPromptLive,
+                                  lastTurnWorking,
+                                })}
+                                // The failure sentence and its Retry survive the
+                                // handover too: the shell showed both, and this
+                                // stands in for the shell until the transcript
+                                // carries the prompt.
+                                leadingStatus={
+                                  firstPromptRow?.state === 'failed' ? (
+                                    <QueuedPromptFailure
+                                      lastError={firstPromptRow.last_error}
+                                      failureCode={firstPromptRow.failure_code}
+                                      onRetry={() => {
+                                        handleRetryQueuedMessage(firstPromptRow.prompt_id);
+                                      }}
+                                    />
+                                  ) : undefined
+                                }
+                              />
+                            </div>
                           )}
                         {turns.map((turn, turnIndex) => {
                           // Check if this turn is a compaction summary — and

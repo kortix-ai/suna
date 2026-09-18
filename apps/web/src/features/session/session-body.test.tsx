@@ -167,9 +167,16 @@ describe('the first prompt is drawn by one component on both sides of the fade',
     // Not `QueuedPromptBubbles`: that row reserves a `w-6` action column to the
     // right of the bubble and carries no waiting row, so the bubble landed 28px
     // left of the shell's and the "Thinking" line blinked out mid-crossfade.
-    expect(chatSource).toContain('{showFirstPromptPreview &&');
-    expect(chatSource).toMatch(/showFirstPromptPreview &&[\s\S]{0,200}<OptimisticTurn/);
-    expect(chatSource).not.toMatch(/showFirstPromptPreview &&[\s\S]{0,200}<QueuedPromptBubbles/);
+    // The stand-in's own block — its guard up to the turns loop that follows
+    // it. A character window instead broke the moment the bubble gained its
+    // `data-queue-tone` wrapper, which is a change of markup, not of decision.
+    const from = chatSource.indexOf('{showFirstPromptPreview &&');
+    expect(from).toBeGreaterThan(-1);
+    const to = chatSource.indexOf('{turns.map(', from);
+    expect(to).toBeGreaterThan(from);
+    const standIn = chatSource.slice(from, to);
+    expect(standIn).toContain('<OptimisticTurn');
+    expect(standIn).not.toContain('<QueuedPromptBubbles');
   });
 
   test('the shell draws the same component', () => {

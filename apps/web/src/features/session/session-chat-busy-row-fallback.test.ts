@@ -218,7 +218,10 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
     expect(chat).toContain(
       'text: firstPromptSource.text,\n        attachments: sentAttachmentsOf(firstPromptSource.files),',
     );
-    expect(chat).toContain('firstPromptSource.text,\n                                firstPromptSource.files,');
+    // Whitespace-collapsed: the stand-in's indentation moved when the bubble
+    // gained its queue-tone wrapper, and re-indenting the JSX is not a change
+    // of decision.
+    expect(chat.replace(/\s+/g, ' ')).toContain('firstPromptSource.text, firstPromptSource.files,');
   });
 
   test('settled means answered, or the session is finished with it — and that clears the local copy', () => {

@@ -56,6 +56,26 @@ export function firstPromptRowIsLive(
 }
 
 /**
+ * Which queue tint the first prompt's bubble carries before a real turn owns it.
+ *
+ * Both surfaces that draw this bubble — the boot shell and the chat's stand-in
+ * — read this one answer, and it is the answer `queuedBubbleTone` gives the
+ * real turn for the same row. Without it the bubble went yellow (shell), plain
+ * (stand-in), yellow again (real turn) across one send, and a failed send lost
+ * its red tint for the whole window the stand-in was up.
+ *
+ * No row yet means the POST is still in flight: the bubble is already on screen
+ * and waits like any other pending prompt, so it starts tinted.
+ */
+export function firstPromptBubbleTone(
+  row: { state: string; reason: string | null } | undefined,
+): 'pending' | 'held' | 'failed' {
+  if (!row) return 'pending';
+  if (row.state === 'failed') return 'failed';
+  return row.reason === 'held' ? 'held' : 'pending';
+}
+
+/**
  * Does the chat's first-prompt stand-in draw the waiting row?
  *
  * The same rule the boot shell uses, so the row does not blink out at the

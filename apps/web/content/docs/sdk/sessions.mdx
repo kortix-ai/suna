@@ -282,7 +282,7 @@ all support it. React Native and Expo do not: their `fetch` has no
 bounded history and status synchronization. Use a platform-specific event
 transport for live events.
 
-The controller loads the newest 50 messages first (`SESSION_SYNC_TAIL_PAGE_SIZE`).
+The controller loads the newest 50 messages first.
 `loadOlder()` follows the server cursor. `loadHttpSessionHistory()` follows
 every cursor for explicit exports.
 

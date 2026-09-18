@@ -3,6 +3,7 @@ import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 import {
+  firstPromptBubbleTone,
   firstPromptRowIsLive,
   firstPromptStandInBusy,
   pendingBubbleIsMuted,
@@ -26,6 +27,12 @@ const chat = squish(
 const shell = squish(
   readFileSync(fileURLToPath(new URL('./instant-session-shell.tsx', import.meta.url)), 'utf8'),
 );
+
+// `toContain` on a whole squished source file prints the file on failure. This
+// reports the missing anchor instead.
+function expectAnchor(source: string, anchor: string): void {
+  expect(source.includes(squish(anchor)), `anchor not found: ${anchor}`).toBe(true);
+}
 
 function between(source: string, start: string, end: string): string {
   const startAt = squish(start);
@@ -131,6 +138,53 @@ describe('firstPromptRowIsLive — a prompt the server is holding for us', () =>
 
   test('a prompt merely waiting its turn is still live', () => {
     expect(firstPromptRowIsLive({ state: 'waiting', reason: 'turn_active' })).toBe(true);
+  });
+});
+
+describe('firstPromptBubbleTone — one tint for the first prompt, from Send to acceptance', () => {
+  // No row yet means the POST is still in flight. The bubble is already on
+  // screen and must not start untinted and gain its tint a frame later.
+  test('a first prompt with no row yet is tinted pending', () => {
+    expect(firstPromptBubbleTone(undefined)).toBe('pending');
+  });
+
+  test('a queued or delivering first prompt is tinted pending', () => {
+    expect(firstPromptBubbleTone({ state: 'queued', reason: null })).toBe('pending');
+    expect(firstPromptBubbleTone({ state: 'delivering', reason: null })).toBe('pending');
+    expect(firstPromptBubbleTone({ state: 'waiting', reason: 'turn_active' })).toBe('pending');
+  });
+
+  // The same answer `queuedBubbleTone` gives the real turn once it lands, so
+  // the bubble does not change colour under the handover.
+  test('a first prompt a Stop held is tinted held', () => {
+    expect(firstPromptBubbleTone({ state: 'queued', reason: 'held' })).toBe('held');
+  });
+
+  test('a failed first prompt is tinted failed', () => {
+    expect(firstPromptBubbleTone({ state: 'failed', reason: 'last_error' })).toBe('failed');
+    // Failure wins over a hold: the row gave up, whatever put it there.
+    expect(firstPromptBubbleTone({ state: 'failed', reason: 'held' })).toBe('failed');
+  });
+});
+
+describe('both first-prompt surfaces run firstPromptBubbleTone', () => {
+  // R3's whole point. The shell tinted the bubble and the chat's stand-in did
+  // not, so the first prompt went yellow → plain → yellow across the handover,
+  // and a failed send lost its red tint, its sentence and its Retry with it.
+  test('the boot shell tints its first-prompt bubble by the shared rule', () => {
+    expectAnchor(shell, 'data-queue-tone={firstPromptBubbleTone(firstPromptRow)}');
+  });
+
+  test('the chat stand-in tints its bubble by the same rule', () => {
+    expectAnchor(chat, 'data-queue-tone={firstPromptBubbleTone(firstPromptRow)}');
+  });
+
+  test('the chat stand-in keeps the failure sentence and its Retry', () => {
+    const slice = between(chat, 'busy={firstPromptStandInBusy({', '/>');
+    expect(slice).toContain('leadingStatus=');
+    expect(slice).toContain('<QueuedPromptFailure');
+    expect(slice).toContain('failureCode={firstPromptRow.failure_code}');
+    expect(slice).toContain('handleRetryQueuedMessage(firstPromptRow.prompt_id)');
   });
 });
 

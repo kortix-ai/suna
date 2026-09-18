@@ -906,8 +906,9 @@ A timed-out or skipped cancel does not acknowledge an abort receipt.
 
 A worker claim only checks admission and keeps the prompt waiting. Delivery starts
 after admission succeeds. A confirmed active turn clears the pending presentation
-even if the previous inbox snapshot still lists that prompt. Runtime activity
-preserves the active turn's message ID during this handoff.
+even if the previous inbox snapshot still lists that prompt. A `/turn` read issued
+after the busy phase began preserves the active turn's message ID during this
+handoff.
 
 Web calls Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**. Both
 advance automatically; Quick Queue entries run first. Queue List entries stay editable
