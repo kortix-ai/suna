@@ -63,15 +63,10 @@ export interface FileExplorerSource {
   // ── Queries ────────────────────────────────────────────────────
   useFileList: (dirPath: string) => ExplorerQueryResult<FileNode[]>;
   /**
-   * Is this source's backing compute PARKED — asleep, and woken only by an
-   * action the explorer cannot take on the user's behalf?
-   *
-   * Only the live-sandbox source can answer yes. A readiness 503 from a parked
-   * box looks identical to one from a booting box, and the explorer polled both
-   * forever; this is what lets it tell them apart and rest instead. A source
-   * backed by a git ref has no compute to park and answers a constant `false`.
-   *
-   * See {@link explorerReadinessState}.
+   * Is the compute behind this source asleep, woken only by an action the
+   * explorer cannot take for the user? Writes and search are withheld while it
+   * is, and an empty listing must not be reported as an empty folder. A git-ref
+   * source has no compute to park and answers a constant `false`.
    */
   useReadinessParked: () => boolean;
   useGitStatus: () => { data: GitFileStatus[] | undefined };

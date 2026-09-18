@@ -41,7 +41,7 @@ export function useBinaryBlob(filePath: string | null): {
   error: string | null;
 } {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
-  // Asleep, not booting: no read can wake the box, so the poll below must stop.
+  // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
@@ -69,10 +69,8 @@ export function useBinaryBlob(filePath: string | null): {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
-    // A readiness 503 from a BOOTING sandbox is a pending state, not a
-    // failure: keep polling until the box is active so the blob loads on its own.
-    // A PARKED box is not coming up on its own, so that same poll would never
-    // end — see `sandboxWakingRefetchInterval`.
+    // A readiness 503 is a pending state, not a failure. A booting box earns the
+    // fast cadence; a parked one is watched slowly. See the helper.
     refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
   });
 

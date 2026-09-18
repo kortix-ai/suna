@@ -40,7 +40,6 @@ import {
   type ReactNode,
 } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
-import { EXPLORER_WAKE_POLL_MS, explorerReadinessState } from '../explorer-readiness';
 import { buildGitStatusMap } from '../hooks';
 import {
   beginUploadBatch,
@@ -118,10 +117,8 @@ export function DriveExplorer({
   // Plain <div> unless a tabbed host claims the listing as its panel.
   const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
-  // Asleep vs. merely not-ready-yet. Only the sandbox source can answer.
-  // While asleep the listing comes from the git mirror: real files, read-only.
-  // Writing and search both run inside the box, so they are off until a send
-  // wakes it rather than failing against something that is not running.
+  // Asleep: the listing comes from the git mirror instead. Writing and search
+  // both run INSIDE the box, so they are withheld rather than left to fail.
   const parked = source.useReadinessParked();
   const capabilities = parked
     ? { ...source.capabilities, write: false, search: false }
@@ -153,21 +150,13 @@ export function DriveExplorer({
     refetch: refetchFiles,
   } = source.useFileList(currentPath);
 
-  // A readiness 503 means the sandbox is parked OR booting. Those are opposite
-  // states and this used to treat them as one: it polled both every 3s forever
-  // and told the user the sandbox was starting. A booting box does arrive on
-  // its own; a PARKED box resumes only on the next send, and the API refuses
-  // every read meant to wake it — so that loop could not end and its copy was
-  // false. Split them and let the parked case rest.
-  const readiness = explorerReadinessState({
-    hasReadinessError: !!error && isSandboxNotReadyError(error),
-    parked,
-  });
-  const sandboxWaking = readiness.kind === 'waking';
-  const sandboxAsleep = readiness.kind === 'asleep';
+  // A readiness 503 means the sandbox is BOOTING — it becomes healthy on its
+  // own, so keep polling. A parked box never reaches here: `parked` switches
+  // the source to the git mirror, whose errors are never readiness 503s.
+  const sandboxWaking = !!error && isSandboxNotReadyError(error);
   useEffect(() => {
     if (!sandboxWaking) return;
-    const interval = window.setInterval(() => void refetchFiles(), EXPLORER_WAKE_POLL_MS);
+    const interval = window.setInterval(() => void refetchFiles(), 3_000);
     return () => window.clearInterval(interval);
   }, [sandboxWaking, refetchFiles]);
 
@@ -884,15 +873,7 @@ export function DriveExplorer({
 
           {!!error &&
             !isLoading &&
-            (sandboxAsleep ? (
-              // Not a spinner. Nothing is happening, and the one thing that
-              // would change that is a message the user sends in the chat —
-              // the same fact the composer states a panel away.
-              <EmptyState
-                icon={MoonIcon}
-                title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')}
-              />
-            ) : sandboxWaking ? (
+            (sandboxWaking ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <Loading className="text-muted-foreground/40 h-4 w-4" />
                 <p className="text-muted-foreground text-sm font-medium">
@@ -920,13 +901,10 @@ export function DriveExplorer({
               />
             ))}
 
-          {/* An asleep box whose mirror had nothing to give. The remote branch
-              push is best-effort background work, so "empty" here is the one
-              thing we cannot state as fact — the files may well exist and
-              simply be unreachable. Say what IS known: the session is idle. */}
+          {/* The mirror had nothing, but the branch push is best-effort, so the
+              files may exist and simply be unreachable. "Empty folder" is the one
+              thing this cannot state as fact. Same words as the Terminal panel. */}
           {isEmpty && parked && (
-            // The same words the Terminal panel uses for the same state, so the
-            // two panels do not describe one sleeping box differently.
             <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
           )}
 

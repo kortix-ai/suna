@@ -47,20 +47,14 @@ interface SandboxConnectionStore {
 	 */
 	bootingSinceAt: number | null;
 	/**
-	 * The box is PARKED, not booting: the platform answered the health probe
-	 * from the session row (`hop === 'control_plane'`) without dialling the box.
+	 * The box is PARKED, not booting: the platform answered the probe from the
+	 * session row (`hop === 'control_plane'`) without dialling the box.
 	 *
-	 * The distinction is the difference between a wait and a dead end. A booting
-	 * box becomes healthy on its own, so a surface should keep polling and say
-	 * so. A parked box resumes ONLY on the next send, so polling it is an
-	 * unbounded loop against a request the API deliberately refuses, and any
-	 * "starting…" copy over it is false.
-	 *
-	 * `use-runtime-reconnect` has always known which one it was looking at; it
-	 * used the fact to keep the stall clock off and then dropped it. Keeping it
-	 * lets every other surface tell the two apart too — see
-	 * `explorerReadinessState` in apps/web, and `nextPtyAttachStep`'s
-	 * `pause: 'asleep'`, which solved this same problem for the terminal.
+	 * A booting box becomes healthy on its own, so a surface should keep polling
+	 * and say so. A parked box resumes ONLY on the next send, so polling it is
+	 * unbounded and any "starting…" copy over it is false. `use-runtime-reconnect`
+	 * always knew which it was looking at and dropped the fact after using it to
+	 * keep the stall clock off; keeping it lets every surface tell them apart.
 	 */
 	parked: boolean;
 }

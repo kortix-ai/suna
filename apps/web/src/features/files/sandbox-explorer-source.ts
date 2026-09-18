@@ -31,14 +31,10 @@ export const sandboxExplorerSource: FileExplorerSource = {
     gitStatusChip: true,
   },
   /**
-   * Where the preview modal reads a file's BYTES from.
-   *
-   * It has to follow the listing. Opening the gate over a parked box means the
-   * user can now click a file, and the sandbox reader answers the same
-   * `503 sandbox_not_ready` — which `use-file-content` turns into a 3s
-   * `refetchInterval` that, against a box only a SEND can wake, never ends.
-   * Serving the listing from the mirror while still reading bytes from the dead
-   * daemon would just move the forever-spinner from the panel into the viewer.
+   * Bytes follow the listing. Reading from the daemon while the listing came
+   * from the mirror would just move the forever-spinner into the preview modal:
+   * the daemon answers the same readiness 503, and `use-file-content` re-reads
+   * on a timer that a parked box never satisfies.
    */
   useFileViewerSource: () => {
     const { parked } = useServerHealth();
