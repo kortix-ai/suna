@@ -445,7 +445,10 @@ export async function reloadSessionConfig(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-  /** Pull the workspace before recompiling. Default true — the usual intent. */
+  /**
+   * Also fast-forward the session's own branch. Default true. It does NOT gate
+   * the config convergence, which never touches the checkout and always runs.
+   */
   refreshRepo?: boolean;
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
@@ -517,10 +520,11 @@ export async function reloadSessionConfig(input: {
   let configDirReload: OpencodeReloadHow | null = null;
   let configDirTurnEnded: boolean | null = null;
   let configDirReason: string | undefined;
-  if (input.refreshRepo !== false) {
+  {
     input.onPhase?.('refreshing-workspace');
-    const refreshed = await refreshSandboxWorkspace(input.sessionId);
-    repoRefreshed = refreshed.ok;
+    const pullRepo = input.refreshRepo !== false;
+    const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo });
+    repoRefreshed = pullRepo && refreshed.ok;
     commitSha = refreshed.commitSha ?? commitSha;
     configDirSynced = refreshed.configDirSynced;
     configDirReason = refreshed.configDirReason;
@@ -529,7 +533,8 @@ export async function reloadSessionConfig(input: {
   }
 
   const agentFiles = classifyAgentFiles({
-    requested: input.refreshRepo !== false,
+    // Always attempted now: it no longer depends on pulling the repository.
+    requested: true,
     synced: configDirSynced,
     reason: configDirReason,
   });
@@ -633,7 +638,10 @@ function isReloadHow(value: unknown): value is OpencodeReloadHow {
   return value === 'disposed' || value === 'restarted' || value === 'kept-old';
 }
 
-async function refreshSandboxWorkspace(sessionId: string): Promise<{
+async function refreshSandboxWorkspace(
+  sessionId: string,
+  opts: { pullRepo: boolean },
+): Promise<{
   ok: boolean;
   commitSha: string | null;
   configDirSynced: boolean | null;
@@ -678,8 +686,13 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
       // not in the env — without the flag a skill-only merge synced the files
       // and changed nothing the agent saw (#7403 preview: same pid, skill
       // absent 60 s later). An older daemon ignores the flag.
+      // `repo=0` when the caller did not ask for the session branch to be
+      // pulled. Converging the config never touches the checkout, so it runs
+      // either way — the web's "Reload config" used to skip this whole call to
+      // avoid the pull, which is why it moved the etag and left the agent's
+      // prompts and skills exactly as they were.
       res = await fetch(
-        `${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1&reload_if_synced=1`,
+        `${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1&reload_if_synced=1${opts.pullRepo ? '' : '&repo=0'}`,
         {
           method: 'POST',
           headers: { ...headers, Authorization: `Bearer ${serviceKey}` },

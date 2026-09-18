@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import {
   chmod,
   mkdir,
@@ -12,6 +13,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
+import { readBootConfigPointer } from './boot-config'
 import { resolveOpencodeConfigDir, type Config } from './config'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { homedir } from 'node:os'
@@ -1387,7 +1389,10 @@ export function ensureLatestKortixAssets(configDir?: string): void {
  * request-latency path.
  */
 export function scheduleRuntimeAssetsReconcile(cfg: Config): void {
-  void resolveOpencodeConfigDir(cfg)
+  // The overlay goes where opencode READS: the config copy when the box has
+  // converged on the base branch (boot-config.ts), else the working tree.
+  void readBootConfigPointer()
+    .then((pointer) => (pointer && existsSync(pointer.dir) ? pointer.dir : resolveOpencodeConfigDir(cfg)))
     .then((configDir) => ensureLatestKortixAssets(configDir))
     // A config dir we cannot resolve costs the overlay re-injection, not the
     // CLI update — still worth running.

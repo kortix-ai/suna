@@ -7,7 +7,6 @@ import { pipeline } from 'node:stream/promises'
 
 import type { Config } from './config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
-import { ensureInjectedManagedSkills } from './injected-skills'
 import { logger } from './logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
@@ -1619,7 +1618,7 @@ export async function syncWorkspaceToBase(
 const LITERAL = { env: { GIT_LITERAL_PATHSPECS: '1' } } as const
 
 export interface ConfigDirSyncResult {
-  /** True only when files were actually replaced from the base ref. */
+  /** True only when opencode was moved onto a newer base config. */
   synced: boolean
   /** Why nothing was replaced. Absent on success. */
   skipped?:
@@ -1630,15 +1629,18 @@ export interface ConfigDirSyncResult {
     | 'not in base'
     | 'fetch failed'
     | 'checkout failed'
+    /** The replacement opencode did not come up; the running one was kept. */
+    | 'reload declined'
 }
 
 /**
  * What the PLATFORM writes under the config dir, as opposed to the session.
  *
- * The sync refuses on the session's own work, so it has to be able to tell that
- * work from ours. Measured on dev (2026-09-18, session 6d8dfdae): a session
- * nobody had touched refused with `local changes`, and both dirty files were
- * platform output —
+ * `inspectSessionConfigWork` asks whether a session has config work of its own,
+ * and the platform writes into the same working-tree directory at every boot —
+ * so it has to tell that output from the session's. Measured on dev (2026-09-18,
+ * session 6d8dfdae): a session nobody had touched read as edited, and every
+ * dirty file was platform output —
  *
  *   - `package.json`: OpenCode's installer rewrites the `@opencode-ai/plugin`
  *     pin to match the opencode BINARY in the box (1.17.11 → 1.18.23);
@@ -1646,8 +1648,9 @@ export interface ConfigDirSyncResult {
  *     current overlay over whatever copy the repository tracks.
  *   - the lockfile: the same installer rewrites it for the pin it just moved.
  *
- * Every starter-seeded repository tracks both, so the guard fired on
- * effectively every session: the etag moved and the agent did not.
+ * Every starter-seeded repository tracks them, so without these rules
+ * effectively every session reads as "has its own config work" and none of them
+ * is ever moved onto the base branch's config.
  *
  * Both rules are narrow on purpose. A `package.json` counts only when the pin
  * is the ONLY difference, so an added dependency is still the session's work.
@@ -1658,8 +1661,8 @@ const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
 const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 /**
  * Written by OpenCode's installer on every spawn. Measured on the #7403 preview:
- * the first sync landed, opencode restarted, the installer rewrote `bun.lock`
- * for the held pin, and the NEXT sync refused with `local changes`.
+ * opencode restarted, the installer rewrote `bun.lock` for the pin it had just
+ * moved, and the session then read as edited.
  */
 const INSTALLER_LOCKFILES = ['bun.lock', 'bun.lockb', 'package-lock.json'] as const
 const DEPENDENCY_SECTIONS = [
@@ -1669,44 +1672,7 @@ const DEPENDENCY_SECTIONS = [
   'peerDependencies',
 ] as const
 
-/**
- * The commit the previous sync restored, kept under `.git/` so it is never part
- * of the working tree.
- *
- * A sync leaves its result UNSTAGED, so afterwards the directory is modified
- * against HEAD by design. Without this record the next sync reads its own
- * previous output as the session's edit and refuses — a session converged at
- * most once in its life. A path whose content still equals this commit's is
- * ours; one that differs was edited since.
- */
-const CONFIG_DIR_SYNC_MARKER = 'kortix-config-dir-sync'
-
-/**
- * The base commit this box's config dir represents, or null when it was never
- * synced (then it represents the commit the box booted from — `commit_sha`).
- *
- * Read straight from `.git/` with no git process: `/kortix/health` is polled,
- * and it already reads `kortix-compiled-checkout.json` the same way.
- */
-export async function readConfigDirSyncedSha(projectTarget: string): Promise<string | null> {
-  const recorded = await readFile(
-    join(projectTarget, '.git', CONFIG_DIR_SYNC_MARKER),
-    'utf8',
-  ).catch(() => '')
-  return parseSyncedHistory(recorded).at(-1) ?? null
-}
-
-/** Enough for a long-lived session; the file stays a few KB. */
-const SYNCED_HISTORY_LIMIT = 64
-
-function parseSyncedHistory(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /^[0-9a-f]{40,64}$/.test(line))
-}
-
-export interface ConfigDirSyncOptions {
+export interface ConfigDirInspectOptions {
   /** Overlay source. Defaults to the image-baked `/opt/kortix/managed-skills`. */
   managedSkillsDir?: string
 }
@@ -1730,29 +1696,6 @@ function packageJsonWithoutPluginPin(text: string | null): string | null {
   }
 }
 
-function readPluginPin(text: string | null): string | null {
-  if (text === null) return null
-  try {
-    const parsed = JSON.parse(text) as Record<string, Record<string, unknown> | undefined>
-    for (const section of DEPENDENCY_SECTIONS) {
-      const pin = parsed?.[section]?.[OPENCODE_PLUGIN_PACKAGE]
-      if (typeof pin === 'string') return pin
-    }
-  } catch {
-    // Unparseable → no pin to hold.
-  }
-  return null
-}
-
-/**
- * Swap the pin's VALUE in place. A parse → stringify round trip would reformat
- * the user's file and show up as a whole-file diff.
- */
-function withPluginPin(text: string, pin: string): string {
-  const escaped = OPENCODE_PLUGIN_PACKAGE.replace(/[/\\^$*+?.()|[\]{}-]/g, '\\$&')
-  return text.replace(new RegExp(`("${escaped}"\\s*:\\s*")[^"]*(")`), `$1${pin}$2`)
-}
-
 /** NUL-delimited git output → paths. Rename/copy entries contribute both sides. */
 function parseStatusPaths(stdout: string): string[] {
   const tokens = stdout.split('\0').filter((token) => token.length > 0)
@@ -1769,39 +1712,53 @@ function parseStatusPaths(stdout: string): string[] {
   return paths
 }
 
+export interface SessionConfigInspection {
+  /** The base branch tip the box just fetched — the commit a converged box runs. */
+  tipSha: string
+  /** The tip ships the config dir at all. */
+  inBase: boolean
+  /**
+   * The session's OWN work under the config dir, or null. A session with work
+   * of its own keeps running from `/workspace`, so its edits take effect; every
+   * other session runs the tip from the read-only copy (boot-config.ts).
+   */
+  ownWork: 'local changes' | 'local commits' | null
+  /** HEAD's config dir already equals the tip's, platform files aside. */
+  headMatchesTip: boolean
+}
+
+export type SessionConfigInspectionResult =
+  | { ok: true; inspection: SessionConfigInspection }
+  | { ok: false; skipped: 'no tracked config dir' | 'fetch failed' }
+
+/** How far back in the base branch a path's previous contents are looked up. */
+const BASE_HISTORY_DEPTH = 40
+
 /**
- * Bring ONLY the opencode config directory up to the base ref.
+ * Does this session have config work of its own? READ-ONLY: nothing here writes
+ * the working tree, the index, or a ref.
  *
- * This is the operation `reload` actually needs, and the reason it exists is a
- * measured one: opencode is spawned with `OPENCODE_CONFIG_DIR` pointing INTO the
- * working tree, and the agent `.md` files there beat the compiled config we push
- * as JSON. So pushing the compiled config alone moves the etag and changes
- * nothing the agent reads — verified on dev, where the marker was present in
- * `~/.config/kortix-opencode.json` and absent from `/config` and `/agent`.
+ * The question used to be "may I overwrite this directory", asked before a
+ * `git checkout <base> -- <config dir>` into the session's tracked tree. That
+ * write is gone (see boot-config.ts for why), so the answer now only selects
+ * which directory opencode reads.
  *
- * Distinct from `syncWorkspaceToBase` in the one way that matters: that resets
- * the BRANCH (`git checkout -B <branch> <sha>`), which discards any commit the
- * session has made. This touches a single pathspec and never moves a ref, so
- * commits, other files, and the branch itself are untouched.
+ * A path counts as the session's work unless one of these holds:
  *
- * It refuses rather than overwrites. If the session has edited its own agent
- * config — uncommitted, or committed on top of base — that is work, and a button
- * labelled "reload config" has no business discarding it. The caller reports the
- * skip so the user is told the agent did NOT change. Files the platform wrote
- * are not that work; see `OPENCODE_PLUGIN_PACKAGE` above.
- *
- * Leaves the update UNSTAGED: `git checkout <sha> -- <path>` writes the index
- * too, so the index is reset afterwards. The result is a plain working-tree
- * modification, and its diff against base is empty by construction — so a change
- * request opened from this session carries nothing extra.
+ *   - the platform wrote it — the plugin pin, the installer's lockfile, a skill
+ *     directory the managed overlay ships (see `OPENCODE_PLUGIN_PACKAGE`);
+ *   - its bytes equal that path at SOME commit of the base branch. That is what
+ *     an earlier worktree-style sync left behind, and what an agent's
+ *     `git add -A` then swept into a commit. It is base's content, not an edit.
+ *     Read from base's own history, so no bookkeeping file can go stale.
  */
-export async function syncOpencodeConfigDirToBase(
+export async function inspectSessionConfigWork(
   cfg: Config,
   relConfigDir: string | null,
   baseSha?: string,
-  opts: ConfigDirSyncOptions = {},
-): Promise<ConfigDirSyncResult> {
-  if (!relConfigDir) return { synced: false, skipped: 'no tracked config dir' }
+  opts: ConfigDirInspectOptions = {},
+): Promise<SessionConfigInspectionResult> {
+  if (!relConfigDir) return { ok: false, skipped: 'no tracked config dir' }
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
   const cloneCredential = await resolveCloneCredential(cfg)
@@ -1810,10 +1767,13 @@ export async function syncOpencodeConfigDirToBase(
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) {
-    logger.warn('[git] config-dir sync: fetch failed', { stderr: fetched.stderr })
-    return { synced: false, skipped: 'fetch failed' }
+    logger.warn('[git] config inspection: fetch failed', { stderr: fetched.stderr })
+    return { ok: false, skipped: 'fetch failed' }
   }
   const ref = baseSha ?? `refs/remotes/origin/${base}`
+  const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
+  if (resolved.code !== 0) return { ok: false, skipped: 'fetch failed' }
+  const tipSha = resolved.stdout.trim()
 
   const managedSkillsDir = opts.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
   const managedSkillPrefixes = (
@@ -1823,237 +1783,116 @@ export async function syncOpencodeConfigDirToBase(
     .map((entry) => `${relConfigDir}/skills/${entry.name}/`)
   const packageJsonPath = `${relConfigDir}/package.json`
   const lockfilePaths = INSTALLER_LOCKFILES.map((name) => `${relConfigDir}/${name}`)
+  const isManagedSkill = (path: string) => managedSkillPrefixes.some((prefix) => path.startsWith(prefix))
+  const followsPackageJson = (path: string) => path === packageJsonPath || lockfilePaths.includes(path)
 
   const blobAt = async (rev: string, path: string): Promise<string | null> => {
     const shown = await execGit(['-C', target, 'show', `${rev}:${path}`], LITERAL)
     return shown.code === 0 ? shown.stdout : null
   }
-  const worktreeText = (path: string) => readFile(join(target, path), 'utf8').catch(() => null)
 
-  /** `package.json` differs from `rev` by the plugin pin at most. */
-  const packageJsonIsOurs = async (rev: string): Promise<boolean> => {
-    const mine = packageJsonWithoutPluginPin(await worktreeText(packageJsonPath))
-    return mine !== null && mine === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))
+  // Every blob id `path` has had on the base branch, '' standing for "absent".
+  // One `git log --raw` per path: the raw rows carry the old and new blob ids.
+  const baseHistory = new Map<string, Set<string>>()
+  const baseBlobsOf = async (path: string): Promise<Set<string>> => {
+    const cached = baseHistory.get(path)
+    if (cached) return cached
+    const blobs = new Set<string>()
+    const log = await execGit(
+      ['-C', target, 'log', `-n${BASE_HISTORY_DEPTH}`, '--format=', '--raw', '--no-abbrev', '--no-renames', tipSha, '--', path],
+      LITERAL,
+    )
+    for (const row of log.code === 0 ? log.stdout.split('\n') : []) {
+      const match = /^:\d+ \d+ ([0-9a-f]+) ([0-9a-f]+) /.exec(row)
+      if (!match) continue
+      for (const id of [match[1]!, match[2]!]) blobs.add(/^0+$/.test(id) ? '' : id)
+    }
+    const atTip = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${tipSha}:${path}`], LITERAL)
+    blobs.add(atTip.code === 0 ? atTip.stdout.trim() : '')
+    baseHistory.set(path, blobs)
+    return blobs
   }
 
-  /** The platform wrote this path; its difference from `rev` is not session work. */
-  const platformOwned = async (path: string, rev: string): Promise<boolean> => {
-    if (managedSkillPrefixes.some((prefix) => path.startsWith(prefix))) return true
-    if (path === packageJsonPath) return packageJsonIsOurs(rev)
-    // A lockfile is the installer's output for `package.json`. It follows that
-    // file: ours while the manifest holds no session edit, the session's the
-    // moment the manifest gains one (an added dependency rewrites both).
-    if (lockfilePaths.includes(path)) return packageJsonIsOurs(rev)
+  /** `package.json` text differs from some base version by the plugin pin at most. */
+  const packageJsonIsPlatformOnly = async (text: string | null, revs: string[]): Promise<boolean> => {
+    const mine = packageJsonWithoutPluginPin(text)
+    if (mine === null) return false
+    for (const rev of revs) {
+      if (mine === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))) return true
+    }
     return false
   }
 
-  /** The working-tree path is byte-identical to `rev` — including "absent in both". */
-  const sameAsCommit = async (path: string, rev: string): Promise<boolean> => {
-    const inCommit = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${rev}:${path}`], LITERAL)
-    const onDisk = existsSync(join(target, path))
-    if (inCommit.code !== 0) return !onDisk
-    if (!onDisk) return false
-    const hashed = await execGit(['-C', target, 'hash-object', '--', path], LITERAL)
-    return hashed.code === 0 && hashed.stdout.trim() === inCommit.stdout.trim()
-  }
+  const inBase =
+    (await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${tipSha}:${relConfigDir}`], LITERAL)).code === 0
 
-  const markerPath = await execGit(['-C', target, 'rev-parse', '--git-path', CONFIG_DIR_SYNC_MARKER])
-  const markerFile = markerPath.code === 0 ? join(target, markerPath.stdout.trim()) : null
-  // One commit per line, oldest first; the last line is the current one. The
-  // history exists for the committed-work check below: an agent's `git add -A`
-  // can commit the bytes of ANY earlier sync, not only the latest.
-  const syncedHistory = parseSyncedHistory(
-    markerFile ? await readFile(markerFile, 'utf8').catch(() => '') : '',
-  )
-  const lastSynced = syncedHistory.at(-1) ?? null
-  const recordSyncedCommit = async (): Promise<void> => {
-    const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
-    if (!markerFile || resolved.code !== 0) return
-    const sha = resolved.stdout.trim()
-    const history = [...syncedHistory.filter((entry) => entry !== sha), sha].slice(-SYNCED_HISTORY_LIMIT)
-    await writeFile(markerFile, `${history.join('\n')}\n`, 'utf8').catch((err) =>
-      logger.warn('[git] config-dir sync: could not record the synced commit', { err: String(err) }),
-    )
-  }
-
-  // Files a PREVIOUS sync added that base has since deleted. They are untracked
-  // against the index, so neither `git diff <ref>` nor `--no-overlay` sees them:
-  // without this pass a retired agent survives every later sync. Only a file
-  // still byte-identical to what we wrote is removed — an edited one is session
-  // work and the dirty check below refuses on it.
-  const retired: string[] = []
-  if (lastSynced) {
-    const deleted = await execGit(
-      ['-C', target, 'diff', '--name-only', '-z', '--diff-filter=D', lastSynced, ref, '--', relConfigDir],
-      LITERAL,
-    )
-    for (const path of deleted.code === 0 ? deleted.stdout.split('\0').filter(Boolean) : []) {
-      if (managedSkillPrefixes.some((prefix) => path.startsWith(prefix))) continue
-      if (existsSync(join(target, path)) && (await sameAsCommit(path, lastSynced))) retired.push(path)
-    }
-  }
-
-  // "Already base" is checked FIRST, and the order is load-bearing rather than
-  // cosmetic. A successful sync leaves the working tree matching base while HEAD
-  // still carries the old content, so the directory is legitimately dirty
-  // afterwards. Comparing against base answers the question that actually
-  // matters, and it cannot mask a real edit: content that differs from base
-  // falls through to the guards below. Platform-written paths are left out — the
-  // pin and the overlay never match base, and counting them would report
-  // `synced: true` (and restart opencode) on every call, forever.
-  const diff = await execGit(['-C', target, 'diff', '--name-only', '-z', ref, '--', relConfigDir], LITERAL)
-  if (diff.code === 0) {
-    let differs = retired.length > 0
-    for (const path of diff.stdout.split('\0').filter(Boolean)) {
-      if (await platformOwned(path, ref)) continue
-      // `git diff <ref>` reads the working tree THROUGH the index. A file an
-      // earlier sync added is untracked, so it is listed as deleted although
-      // its bytes equal the ref's. Compare the bytes before believing it.
-      if (await sameAsCommit(path, ref)) continue
-      differs = true
-      break
-    }
-    if (!differs) {
-      // The tree already represents `ref`, so say so. `/kortix/health` reports
-      // this commit and the API diffs it against the base tip to decide `stale`.
-      // Without the advance, a base commit that touched only platform-owned
-      // paths would read as "newer config available" forever: the sync would
-      // keep answering "already matches base" and the marker would never move.
-      await recordSyncedCommit()
-      return { synced: false, skipped: 'already matches base' }
-    }
-  }
-
-  // Uncommitted edits under the config dir — including untracked files, which
-  // `git checkout` would silently leave behind in a half-updated directory.
+  // ── Uncommitted work ─────────────────────────────────────────────────────
   // `--untracked-files=all` so an untracked directory is listed file by file
-  // instead of collapsing into one entry that no ownership rule can match.
+  // instead of collapsing into one entry that no rule can match.
+  let ownWork: SessionConfigInspection['ownWork'] = null
   const dirty = await execGit(
     ['-C', target, 'status', '--porcelain', '-z', '--untracked-files=all', '--', relConfigDir],
     LITERAL,
   )
-  if (dirty.code === 0) {
-    for (const path of parseStatusPaths(dirty.stdout)) {
-      if (await platformOwned(path, 'HEAD')) continue
-      if (lastSynced && ((await sameAsCommit(path, lastSynced)) || (await platformOwned(path, lastSynced)))) {
-        continue
-      }
-      logger.info('[git] config-dir sync: session edit blocks the sync', { path })
-      return { synced: false, skipped: 'local changes' }
+  for (const path of dirty.code === 0 ? parseStatusPaths(dirty.stdout) : []) {
+    if (isManagedSkill(path)) continue
+    const onDisk = join(target, path)
+    if (followsPackageJson(path)) {
+      const text = await readFile(join(target, packageJsonPath), 'utf8').catch(() => null)
+      if (await packageJsonIsPlatformOnly(text, ['HEAD', tipSha])) continue
     }
+    const hashed = existsSync(onDisk) ? await execGit(['-C', target, 'hash-object', '--', path], LITERAL) : null
+    const worktreeBlob = hashed ? (hashed.code === 0 ? hashed.stdout.trim() : null) : ''
+    if (worktreeBlob !== null && (await baseBlobsOf(path)).has(worktreeBlob)) continue
+    logger.info('[git] config inspection: uncommitted session work', { path })
+    ownWork = 'local changes'
+    break
   }
 
-  // Session work COMMITTED under the config dir. Without this a session that
-  // edited and committed its agent would have that silently reverted.
-  //
-  // Judged by content, not by counting commits. Agents run `git add -A && git
-  // commit` constantly, and that sweeps our own unstaged sync — and the
-  // platform's pin and overlay — into a session commit. Counting commits, the
-  // next sync saw "the session committed its agent config" and refused with
-  // `local commits` for the rest of the session's life.
-  //
-  // A path the session's commits changed is OURS when its committed bytes equal
-  // that path at a commit we synced — or differ from the branch point only the
-  // way the platform writes them. Anything else is the session's, and refuses.
-  const mergeBase = await execGit(['-C', target, 'merge-base', 'HEAD', ref])
+  // ── Committed work ───────────────────────────────────────────────────────
+  // Judged by content, not by counting commits: an agent's `git add -A` commits
+  // the platform's pin and overlay, and whatever an earlier sync left unstaged.
+  const mergeBase = await execGit(['-C', target, 'merge-base', 'HEAD', tipSha])
   const branchPoint = mergeBase.code === 0 ? mergeBase.stdout.trim() : null
-  if (branchPoint) {
-    // One `ls-tree` per commit, not one `rev-parse` per path per commit. A
-    // session that swept a 200-file sync into a commit, with a full 64-entry
-    // history, would otherwise spawn ~12,800 git processes inside a request the
-    // API gives 120 s.
-    const trees = new Map<string, Map<string, string>>()
-    const treeOf = async (rev: string): Promise<Map<string, string>> => {
-      const cached = trees.get(rev)
-      if (cached) return cached
-      const listed = await execGit(['-C', target, 'ls-tree', '-r', '-z', rev, '--', relConfigDir], LITERAL)
-      const tree = new Map<string, string>()
-      for (const entry of listed.code === 0 ? listed.stdout.split('\0').filter(Boolean) : []) {
-        const tab = entry.indexOf('\t')
-        const blob = entry.slice(0, tab).split(' ')[2]
-        if (tab > 0 && blob) tree.set(entry.slice(tab + 1), blob)
-      }
-      trees.set(rev, tree)
-      return tree
-    }
-    // '' = absent; absent equals absent, so a committed deletion of a file that
-    // a synced commit also lacked is ours too.
-    const blobId = async (rev: string, path: string): Promise<string> => (await treeOf(rev)).get(path) ?? ''
-    const packageJsonCommittedIsOurs = async (): Promise<boolean> => {
-      const head = packageJsonWithoutPluginPin(await blobAt('HEAD', packageJsonPath))
-      if (head === null) return false
-      for (const rev of [branchPoint, ...syncedHistory]) {
-        if (head === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))) return true
-      }
-      return false
-    }
+  if (!ownWork && branchPoint) {
     const committed = await execGit(
-      ['-C', target, 'diff', '--name-only', '-z', branchPoint, 'HEAD', '--', relConfigDir],
+      ['-C', target, 'diff', '--name-only', '-z', '--no-renames', branchPoint, 'HEAD', '--', relConfigDir],
       LITERAL,
     )
     for (const path of committed.code === 0 ? committed.stdout.split('\0').filter(Boolean) : []) {
-      if (managedSkillPrefixes.some((prefix) => path.startsWith(prefix))) continue
-      if ((path === packageJsonPath || lockfilePaths.includes(path)) && (await packageJsonCommittedIsOurs())) {
+      if (isManagedSkill(path)) continue
+      if (followsPackageJson(path) && (await packageJsonIsPlatformOnly(await blobAt('HEAD', packageJsonPath), [branchPoint, tipSha]))) {
         continue
       }
-      const atHead = await blobId('HEAD', path)
-      let ours = false
-      // Newest first: a commit almost always carries the bytes of the sync
-      // right before it.
-      for (const rev of [...syncedHistory].reverse()) {
-        if ((await blobId(rev, path)) === atHead) {
-          ours = true
-          break
-        }
-      }
-      if (ours) continue
-      logger.info('[git] config-dir sync: session commit blocks the sync', { path })
-      return { synced: false, skipped: 'local commits' }
+      const atHead = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `HEAD:${path}`], LITERAL)
+      if ((await baseBlobsOf(path)).has(atHead.code === 0 ? atHead.stdout.trim() : '')) continue
+      logger.info('[git] config inspection: committed session work', { path })
+      ownWork = 'local commits'
+      break
     }
-  } else {
-    // No common history to measure against (unrelated or truncated). Fall back
-    // to the conservative rule: any session commit under the dir refuses.
-    const ahead = await execGit(
-      ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
-      LITERAL,
-    )
-    if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
-      return { synced: false, skipped: 'local commits' }
+  } else if (!ownWork) {
+    // No common history to measure against. Conservative: any session commit
+    // under the config dir is the session's.
+    const ahead = await execGit(['-C', target, 'log', '--oneline', `${tipSha}..HEAD`, '--', relConfigDir], LITERAL)
+    if (ahead.code === 0 && ahead.stdout.trim().length > 0) ownWork = 'local commits'
+  }
+
+  // Is HEAD already the tip's config? Then the working tree IS the converged
+  // config and there is nothing to extract. Platform-owned paths are left out.
+  let headMatchesTip = true
+  const drift = await execGit(
+    ['-C', target, 'diff', '--name-only', '-z', '--no-renames', 'HEAD', tipSha, '--', relConfigDir],
+    LITERAL,
+  )
+  if (drift.code !== 0) headMatchesTip = false
+  for (const path of drift.code === 0 ? drift.stdout.split('\0').filter(Boolean) : []) {
+    if (isManagedSkill(path)) continue
+    if (followsPackageJson(path) && (await packageJsonIsPlatformOnly(await blobAt('HEAD', packageJsonPath), [tipSha]))) {
+      continue
     }
+    headMatchesTip = false
+    break
   }
 
-  // Base carries whatever pin the repository committed. The box needs the one
-  // that matches its opencode binary, so hold it across the checkout.
-  const heldPin = readPluginPin(await worktreeText(packageJsonPath))
-
-  // `--no-overlay`: a file base DELETED is removed here too. The default mode
-  // only ever adds and rewrites, so a retired agent stayed on disk and stayed
-  // on offer. It touches tracked paths only — untracked files are left alone.
-  let checkout = await execGit(['-C', target, 'checkout', '--no-overlay', ref, '--', relConfigDir], LITERAL)
-  if (checkout.code !== 0 && /no-overlay|unknown option/i.test(checkout.stderr)) {
-    checkout = await execGit(['-C', target, 'checkout', ref, '--', relConfigDir], LITERAL)
-  }
-  if (checkout.code !== 0) {
-    // The most likely cause is that base has no such directory at all.
-    const missing = /did not match any file|pathspec/i.test(checkout.stderr)
-    logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
-    return { synced: false, skipped: missing ? 'not in base' : 'checkout failed' }
-  }
-  // Un-stage: leave a plain working-tree change, not a staged one.
-  await execGit(['-C', target, 'reset', '-q', '--', relConfigDir], LITERAL)
-  for (const path of retired) await rm(join(target, path), { force: true })
-
-  // Put the platform's files back. The checkout just restored base's copies:
-  // an old pin under a newer opencode binary, and a stale managed-skill body.
-  const restored = await worktreeText(packageJsonPath)
-  if (heldPin && restored !== null && readPluginPin(restored) !== heldPin) {
-    const repinned = withPluginPin(restored, heldPin)
-    if (repinned !== restored) await writeFile(join(target, packageJsonPath), repinned, 'utf8')
-  }
-  await ensureInjectedManagedSkills(join(target, relConfigDir), { bakedDir: managedSkillsDir })
-
-  await recordSyncedCommit()
-
-  logger.info('[git] synced opencode config dir to base', { dir: relConfigDir, ref })
-  return { synced: true }
+  return { ok: true, inspection: { tipSha, inBase, ownWork, headMatchesTip } }
 }

@@ -174,9 +174,10 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
     retry: false,
     mutationFn: (vars: { force?: boolean } = {}) => {
       setPhase(null);
-      // This web action is named "Reload config", so it only reloads config.
-      // Repository refresh remains an explicit CLI operation. This prevents a
-      // low-priority UI action from changing the project checkout.
+      // This web action is named "Reload config", so it never pulls the session
+      // branch: `refresh_repo: false`. It still loads the base branch's agents,
+      // skills and tools — the sandbox reads those from a read-only copy outside
+      // the checkout, so converging them changes no project file and no commit.
       return reloadProjectSessionConfigStream(
         projectId,
         sessionId,

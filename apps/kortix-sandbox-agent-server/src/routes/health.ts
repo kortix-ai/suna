@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import type { Config } from '../config'
 import type { ConfigProviderSummary } from '../config-provider/types'
-import { readConfigDirSyncedSha, readRepoInfo } from '../git'
+import { readBootConfigPointer } from '../boot-config'
+import { readRepoInfo } from '../git'
 import { runtimeConvergenceReport } from '../runtime-assets'
 import type { Opencode } from '../opencode'
 import {
@@ -252,10 +253,11 @@ export function createHealthRouter(
       // the newest commit and still be running config compiled days ago. Read
       // from the live process env, so it tracks a hot push as well as a boot.
       agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
-      // The base commit the config dir on disk represents, once a sync has run.
-      // The etag above cannot see a skill body, a tool or a plugin; the API
-      // diffs this commit against the base tip to catch those.
-      config_dir_sha: await readConfigDirSyncedSha(cfg.projectTarget),
+      // The base commit opencode's config comes from, when it runs the read-only
+      // copy (boot-config.ts); null on the working-tree floor, where `commit_sha`
+      // is the answer. The etag above cannot see a skill body, a tool or a
+      // plugin, so the API diffs this commit against the base tip to decide `stale`.
+      config_dir_sha: (await readBootConfigPointer())?.sha ?? null,
       // What this box last converged its own runtime to. Auto-update without
       // reporting only moves the uncertainty — this makes "is the fleet
       // current?" a query instead of a hope, and it is the signal that tells us
