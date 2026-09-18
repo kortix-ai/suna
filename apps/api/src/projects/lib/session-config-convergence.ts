@@ -42,8 +42,20 @@ import { reloadSessionConfig, type SessionReloadResult } from './session-reload'
  */
 
 const RETRY_SOON_MS = [5_000, 10_000, 15_000, 30_000] as const;
-/** Past the daemon's 5-minute self-update gate, then once more. */
-const RETRY_LATER_MS = [6 * 60_000, 20 * 60_000] as const;
+/**
+ * 6 min: past the daemon's 5-minute self-update gate.
+ *
+ * 60 s after that: the staged daemon does not swap on a timer. It swaps on the
+ * next runtime-assets pass once the gate is open, and the reload's own
+ * `/kortix/refresh` call is what schedules that pass. Measured on the #7403
+ * preview: `agent=staged` held for 567 s, one refresh, and the new daemon was
+ * serving 10 s later. So the 6-minute attempt is refused by the OLD daemon and
+ * triggers the swap; this follow-up is the first one the NEW daemon answers.
+ * Without it a box imported before the fix waited for the 20-minute attempt.
+ *
+ * 20 min: one last try for a turn that was still running.
+ */
+const RETRY_LATER_MS = [6 * 60_000, 60_000, 20 * 60_000] as const;
 
 export interface SessionConfigConvergenceTarget {
   projectId: string;

@@ -120,23 +120,24 @@ describe('convergeSessionConfig', () => {
     expect(d.sleeps).toEqual([5_000, 10_000, 15_000, 30_000, 6 * 60_000]);
   });
 
-  test('retries a refused file sync once the daemon has had time to self-update', async () => {
-    // A box imported before the ownership fix runs a daemon that refuses with
-    // `local changes` on the platform's own files. Its replacement is staged on
-    // this same wake and swaps in after ~5 min of idle uptime.
+  test('a box with a pre-fix daemon converges right after the swap its own retry triggers', async () => {
+    // Attempt 1: the old daemon refuses with `local changes` on the platform's
+    // own files. +6 min: still the old daemon, but this call's refresh opens the
+    // swap. +60 s: the new daemon answers.
     const refused = result({ agent_files: 'kept-yours' });
-    const d = deps([refused, result()]);
+    const d = deps([refused, refused, result()]);
 
     expect(await convergeSessionConfig('sess-1', d.deps)).toBe('converged');
-    expect(d.sleeps[0]).toBeGreaterThanOrEqual(5 * 60_000);
+    expect(d.sleeps).toEqual([6 * 60_000, 60_000]);
   });
 
   test('a session that really edited its agent is left alone after the retries', async () => {
     const refused = result({ agent_files: 'kept-yours' });
-    const d = deps([refused, refused, refused]);
+    const d = deps([refused, refused, refused, refused]);
 
     expect(await convergeSessionConfig('sess-1', d.deps)).toBe('kept-session-edits');
-    expect(d.reloads.length).toBe(3);
+    expect(d.reloads.length).toBe(4);
+    expect(d.reloads.every((input) => input.force === false)).toBe(true);
   });
 
   test('gives up on a box that never answers, bounded', async () => {
@@ -144,8 +145,8 @@ describe('convergeSessionConfig', () => {
     const d = deps(Array.from({ length: 12 }, () => unreachable));
 
     expect(await convergeSessionConfig('sess-1', d.deps)).toBe('unreachable');
-    // 1 + four quick retries + two slow ones.
-    expect(d.reloads.length).toBe(7);
+    // 1 + four quick retries + three slow ones.
+    expect(d.reloads.length).toBe(8);
   });
 
   test('a session with no project row is skipped, not thrown', async () => {
