@@ -57,9 +57,9 @@ A sandbox holds the config of the commit it was provisioned from. A resume or a 
 
 1. The daemon replaces the OpenCode config directory (`.kortix/opencode` by default) with the copy at `base_ref`. It never moves the session branch and never touches a file outside that directory.
 2. The API compiles the agent config from `base_ref` and compares its etag with the etag the sandbox reports.
-3. If step 1 replaced a file, or the etags differ, the API pushes the compiled config. The push restarts OpenCode. If neither is true, nothing restarts.
+3. If step 1 replaced a file, the daemon reloads OpenCode, because OpenCode reads the config directory when it starts. If the etags differ, the API pushes the compiled config, which also reloads OpenCode. If neither is true, nothing reloads.
 
-The convergence is automatic and runs in the background. It never ends a turn. If the session is mid-turn, Kortix retries after 6 minutes and again after 20 minutes. If the session stays busy, the next resume tries again. `kortix sessions reload` runs the same operation on demand.
+The convergence is automatic and runs in the background. It never ends a turn. Directly after a wake, OpenCode needs a few seconds before it answers; Kortix retries after 5, 10, 15, and 30 seconds. If the session is mid-turn, Kortix retries after 6 minutes and again after 20 minutes. If the session stays busy, the next resume tries again. `kortix sessions reload` runs the same operation on demand.
 
 `GET /v1/projects/{projectId}/sessions/{sessionId}/config` reports `stale: true` when newer config is available. It compares two things. The first is the compiled agent config etag, which covers governance and agent frontmatter. The second is the config directory itself: the sandbox reports the base commit its directory represents (`config_dir_sha` on `/kortix/health`), and the API diffs that commit against the tip of `base_ref`. The second comparison catches a change to a skill body, a tool, or a plugin, which the etag does not contain. `stale` is `null` when Kortix cannot tell, for example when the sandbox is unreachable. It is never `false` in that case.
 

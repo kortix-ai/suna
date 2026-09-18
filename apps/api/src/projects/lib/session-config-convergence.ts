@@ -28,8 +28,10 @@ import { reloadSessionConfig, type SessionReloadResult } from './session-reload'
  *     session is retried later, and a session that stays busy keeps its config
  *     until the next wake.
  *
- * WHY IT RETRIES ON TWO CLOCKS. "Not reachable yet" clears in seconds: the
- * provider reports `running` before the guest daemon binds its port. "Busy" and
+ * WHY IT RETRIES ON TWO CLOCKS. "Not reachable yet" and "cannot tell whether a
+ * turn is running" clear in seconds: the provider reports `running` before the
+ * guest daemon binds its port, and opencode answers a few seconds after that.
+ * They escalate to the slow clock only if they persist. "Mid-turn" and
  * "refused the file sync" clear in minutes: a turn has to end, and a box whose
  * daemon predates the platform-ownership fix (git.ts, `OPENCODE_PLUGIN_PACKAGE`)
  * refuses with `local changes` until its staged replacement swaps in, which the
@@ -100,21 +102,30 @@ export type SessionConfigConvergenceOutcome =
 
 type Attempt =
   | { done: SessionConfigConvergenceOutcome }
-  | { retry: 'soon' | 'later'; as: SessionConfigConvergenceOutcome };
+  /**
+   * `transient` clears in seconds and is retried on the quick ladder first,
+   * then on the slow one. `slow` needs minutes and skips the quick ladder.
+   */
+  | { retry: 'transient' | 'slow'; as: SessionConfigConvergenceOutcome };
 
 function classify(result: SessionReloadResult): Attempt {
-  if (result.reason === 'no reachable sandbox') return { retry: 'soon', as: 'unreachable' };
-  if (
-    result.reason === 'session is mid-turn' ||
-    result.reason === 'could not confirm the session is idle'
-  ) {
-    return { retry: 'later', as: 'busy' };
+  if (result.reason === 'no reachable sandbox') return { retry: 'transient', as: 'unreachable' };
+  // Right after a wake opencode is not answering yet, so the reload cannot tell
+  // whether a turn is running. Measured on the #7403 preview: unanswerable at
+  // +1 s, idle at +9 s. It is NOT evidence of a turn — treating it as one cost
+  // a 6-minute wait and 371 s of stale config on a session nobody was using.
+  if (result.reason === 'could not confirm the session is idle') {
+    return { retry: 'transient', as: 'busy' };
   }
-  // `unknown` is a daemon too old to report the sync. Same remedy as a refusal:
-  // its replacement is staged on this wake.
-  if (result.agent_files === 'kept-yours' || result.agent_files === 'unknown') {
-    return { retry: 'later', as: 'kept-session-edits' };
-  }
+  // A turn is running. It will not be over in five seconds.
+  if (result.reason === 'session is mid-turn') return { retry: 'slow', as: 'busy' };
+  // The session edited its own agent files — or the box runs a daemon that
+  // predates the platform-ownership fix and refuses on the platform's files,
+  // in which case its staged replacement swaps in after ~5 min of idle uptime.
+  if (result.agent_files === 'kept-yours') return { retry: 'slow', as: 'kept-session-edits' };
+  // The daemon did not report the sync: a fetch that failed while the network
+  // came back, or a daemon too old to know the flag.
+  if (result.agent_files === 'unknown') return { retry: 'transient', as: 'kept-session-edits' };
   return { done: result.applied ? 'converged' : 'current' };
 }
 
@@ -135,7 +146,10 @@ export async function convergeSessionConfig(
     for (;;) {
       const attempt = classify(await deps.reload({ ...target, onlyIfStale: true, force: false }));
       if ('done' in attempt) return attempt.done;
-      const delay = attempt.retry === 'soon' ? RETRY_SOON_MS[soon++] : RETRY_LATER_MS[later++];
+      const delay =
+        attempt.retry === 'transient' && soon < RETRY_SOON_MS.length
+          ? RETRY_SOON_MS[soon++]
+          : RETRY_LATER_MS[later++];
       if (delay === undefined) return attempt.as;
       await deps.sleep(delay);
     }

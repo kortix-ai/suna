@@ -93,7 +93,10 @@ describe('convergeSessionConfig', () => {
     expect(d.reloads.every((input) => input.force === false)).toBe(true);
   });
 
-  test('"could not confirm idle" counts as busy', async () => {
+  test('"could not confirm idle" right after a wake is retried in SECONDS', async () => {
+    // Preview, 2026-09-18: 1 s after a wake opencode was not answering yet, so
+    // the reload could not confirm idle; by +9 s it could. Filed under "busy",
+    // that cost a 6-minute wait and the session ran stale config for 371 s.
     const unsure = result({
       applied: false,
       agent_files: 'unknown',
@@ -102,7 +105,19 @@ describe('convergeSessionConfig', () => {
     const d = deps([unsure, result()]);
 
     expect(await convergeSessionConfig('sess-1', d.deps)).toBe('converged');
-    expect(d.sleeps[0]).toBeGreaterThanOrEqual(5 * 60_000);
+    expect(d.sleeps).toEqual([5_000]);
+  });
+
+  test('a transient answer that persists escalates to minutes instead of giving up', async () => {
+    const unsure = result({
+      applied: false,
+      agent_files: 'unknown',
+      reason: 'could not confirm the session is idle',
+    });
+    const d = deps([unsure, unsure, unsure, unsure, unsure, result()]);
+
+    expect(await convergeSessionConfig('sess-1', d.deps)).toBe('converged');
+    expect(d.sleeps).toEqual([5_000, 10_000, 15_000, 30_000, 6 * 60_000]);
   });
 
   test('retries a refused file sync once the daemon has had time to self-update', async () => {
@@ -129,7 +144,8 @@ describe('convergeSessionConfig', () => {
     const d = deps(Array.from({ length: 12 }, () => unreachable));
 
     expect(await convergeSessionConfig('sess-1', d.deps)).toBe('unreachable');
-    expect(d.reloads.length).toBeLessThanOrEqual(6);
+    // 1 + four quick retries + two slow ones.
+    expect(d.reloads.length).toBe(7);
   });
 
   test('a session with no project row is skipped, not thrown', async () => {

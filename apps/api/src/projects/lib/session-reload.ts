@@ -511,6 +511,11 @@ export async function reloadSessionConfig(input: {
   // shipped ignores the request and reports nothing, which is not the same as
   // declining to sync.
   let configDirSynced: boolean | null = null;
+  // The daemon reloads opencode itself when the sync replaced files. The push
+  // below restarts it only on an ENV change, so for a skill-only merge this is
+  // the reload that happened — and the one the result has to report.
+  let configDirReload: OpencodeReloadHow | null = null;
+  let configDirTurnEnded: boolean | null = null;
   let configDirReason: string | undefined;
   if (input.refreshRepo !== false) {
     input.onPhase?.('refreshing-workspace');
@@ -519,6 +524,8 @@ export async function reloadSessionConfig(input: {
     commitSha = refreshed.commitSha ?? commitSha;
     configDirSynced = refreshed.configDirSynced;
     configDirReason = refreshed.configDirReason;
+    configDirReload = refreshed.configDirReload;
+    configDirTurnEnded = refreshed.configDirTurnEnded;
   }
 
   const agentFiles = classifyAgentFiles({
@@ -575,8 +582,8 @@ export async function reloadSessionConfig(input: {
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
     agent_files: agentFiles,
-    opencode_reload: push.opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? null,
+    opencode_reload: push.opencodeReload ?? configDirReload,
+    turn_ended: push.opencodeTurnEnded ?? configDirTurnEnded,
     ...(push.applied
       ? push.opencodeReload === 'kept-old'
         ? {
@@ -621,13 +628,27 @@ export async function reloadSessionConfig(input: {
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
+type OpencodeReloadHow = 'disposed' | 'restarted' | 'kept-old';
+function isReloadHow(value: unknown): value is OpencodeReloadHow {
+  return value === 'disposed' || value === 'restarted' || value === 'kept-old';
+}
+
 async function refreshSandboxWorkspace(sessionId: string): Promise<{
   ok: boolean;
   commitSha: string | null;
   configDirSynced: boolean | null;
   configDirReason?: string;
+  /** How the daemon reloaded opencode for the files it replaced; null = it did not. */
+  configDirReload: OpencodeReloadHow | null;
+  configDirTurnEnded: boolean | null;
 }> {
-  const unreachable = { ok: false, commitSha: null, configDirSynced: null };
+  const unreachable = {
+    ok: false,
+    commitSha: null,
+    configDirSynced: null,
+    configDirReload: null,
+    configDirTurnEnded: null,
+  };
   try {
     const [row] = await db
       .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
@@ -652,11 +673,19 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     // for a moment, so wait it out instead.
     let res: Response;
     for (let attempt = 0; ; attempt++) {
-      res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
-        method: 'POST',
-        headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
-        signal: AbortSignal.timeout(120_000),
-      });
+      // `reload_if_synced=1`: reload opencode when the sync replaced files. The
+      // push after this restarts it only on an ENV change, and a skill body is
+      // not in the env — without the flag a skill-only merge synced the files
+      // and changed nothing the agent saw (#7403 preview: same pid, skill
+      // absent 60 s later). An older daemon ignores the flag.
+      res = await fetch(
+        `${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1&reload_if_synced=1`,
+        {
+          method: 'POST',
+          headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
       if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
       await new Promise((resolve) => setTimeout(resolve, REFRESH_BUSY_DELAY_MS));
     }
@@ -667,6 +696,7 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     const body = (await res.json()) as {
       repo?: { after?: { commit?: unknown } };
       config_dir?: { synced?: unknown; skipped?: unknown };
+      config_dir_reload?: { how?: unknown; turn_ended?: unknown };
     };
     const commit = body.repo?.after?.commit;
     const dir = body.config_dir;
@@ -675,6 +705,11 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
       commitSha: typeof commit === 'string' ? commit : null,
       configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
       ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
+      configDirReload: isReloadHow(body.config_dir_reload?.how) ? body.config_dir_reload.how : null,
+      configDirTurnEnded:
+        typeof body.config_dir_reload?.turn_ended === 'boolean'
+          ? body.config_dir_reload.turn_ended
+          : null,
     };
   } catch {
     // A failed pull is not a failed reload: the config recompiles from the git

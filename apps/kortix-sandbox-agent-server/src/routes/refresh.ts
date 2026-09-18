@@ -101,6 +101,17 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
     // which is the previous behaviour — so the API can send it unconditionally
     // without version negotiation.
     const syncConfigDir = c.req.query('config_dir') === '1'
+    // `?reload_if_synced=1` — reload opencode when, and only when, the config-dir
+    // sync replaced files. opencode reads that directory at spawn. The API's env
+    // push restarts it only when the env it carries changed, and a skill body, a
+    // tool or a plugin is not in that env: measured on the #7403 preview, a
+    // skill-only merge synced the files and left the same pid serving the old
+    // skill list. The sync is the one place that knows files moved.
+    //
+    // A separate flag, not a new `restart` value: an older daemon reads any
+    // `restart` other than '0' as "restart always", which would restart opencode
+    // on every wake. An unknown flag is ignored, which is today's behaviour.
+    const reloadIfSynced = c.req.query('reload_if_synced') === '1'
     const baseSha = c.req.query('base_sha')
     if (baseSha !== undefined && !/^[0-9a-f]{40}$/i.test(baseSha)) {
       return c.json({ error: 'invalid base_sha' }, 400)
@@ -134,6 +145,13 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         const reload = skipRestart
           ? null
           : await opencode.reloadVerified({ forceFail: c.req.query('verify_fail') === '1' })
+        // `reloadConfig`, not `reloadVerified`: a dispose re-reads the config dir
+        // in place (~51 ms, no turn lost) and falls back to the verified restart
+        // on its own when dispose is unavailable.
+        const configDirReload =
+          skipRestart && reloadIfSynced && configDir?.synced === true
+            ? await opencode.reloadConfig()
+            : null
         // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
         // API. This route is what the platform already calls on warm reuse and
         // reload, and (since this change) after a restart and a resume — the
@@ -161,6 +179,14 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
             after: repo.after,
           },
           ...(configDir ? { config_dir: configDir } : {}),
+          ...(configDirReload
+            ? {
+                config_dir_reload: {
+                  how: configDirReload.how,
+                  turn_ended: configDirReload.turnEnded,
+                },
+              }
+            : {}),
           ...(reload
             ? {
                 reload: {

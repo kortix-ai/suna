@@ -599,6 +599,80 @@ describe('reboot must not reset an existing session branch', () => {
  *
  * The shape below named "a proxied user request" is that case, pinned.
  */
+/**
+ * Preview, 2026-09-18: a merge that touched ONLY a skill body synced the files,
+ * and the API then told the user "the next prompt runs the new config". It did
+ * not. The API's env push restarts opencode only when the env it carries
+ * changed, a skill body is not in it, and opencode reads the config dir at
+ * spawn — same pid before and after, skill absent 60 s later. The sync is the
+ * one place that knows files moved, so the reload belongs with it.
+ */
+describe('a sync that replaced files reloads opencode', () => {
+  const TOKEN = 'service-key-under-test'
+
+  function harness() {
+    const reloads: unknown[] = []
+    const opencode = {
+      reloadConfig: async (opts: unknown) => {
+        reloads.push(opts ?? {})
+        return { how: 'disposed', turnEnded: false }
+      },
+      reloadVerified: async () => {
+        throw new Error('restart=0 must not take the full verified restart')
+      },
+      getState: () => 'starting', // keeps the detached runtime-assets pass out of the test
+      getPid: () => 1,
+    } as unknown as Opencode
+    const config = { ...cfg(), sandboxToken: TOKEN } as unknown as Config
+    const post = (query: string) =>
+      createRefreshRouter(config, opencode).request(`/?${query}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      })
+    return { reloads, post }
+  }
+
+  beforeEach(() => {
+    // The route resolves the config dir from the checkout, which needs the file
+    // opencode itself looks for.
+    write(origin, `${CONFIG_DIR}/opencode.jsonc`, '{}\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'opencode.jsonc')
+    git(work, 'pull', '-q', 'origin', 'main')
+    write(origin, `${CONFIG_DIR}/skills/only-a-skill/SKILL.md`, 'BODY\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'a skill and nothing else')
+  })
+
+  test('reload_if_synced=1 reloads once when files were replaced', async () => {
+    const h = harness()
+    const res = await h.post('restart=0&config_dir=1&reload_if_synced=1')
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.config_dir).toEqual({ synced: true })
+    expect(body.config_dir_reload).toEqual({ how: 'disposed', turn_ended: false })
+    expect(h.reloads.length).toBe(1)
+  })
+
+  test('nothing replaced → nothing reloaded', async () => {
+    const h = harness()
+    await h.post('restart=0&config_dir=1&reload_if_synced=1')
+    const again = await h.post('restart=0&config_dir=1&reload_if_synced=1')
+
+    expect(((await again.json()) as Record<string, unknown>).config_dir_reload).toBeUndefined()
+    expect(h.reloads.length).toBe(1)
+  })
+
+  test('without the flag the sync stays silent — older API replicas keep their behaviour', async () => {
+    const h = harness()
+    const res = await h.post('restart=0&config_dir=1')
+
+    expect(((await res.json()) as Record<string, unknown>).config_dir).toEqual({ synced: true })
+    expect(h.reloads.length).toBe(0)
+  })
+})
+
 describe('base=1 requires a DIRECT service call', () => {
   const TOKEN = 'service-key-under-test'
 
