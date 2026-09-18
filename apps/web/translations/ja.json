@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "リポジトリを変更しました。新しいセッションでは新しいリポジトリを使用します。",
+    "verifyError": "GitHub へのアクセスを確認できませんでした。",
+    "change": "変更",
+    "title": "リポジトリを変更",
+    "description": "新しいセッションでは新しいリポジトリを使用します。変更後は既存のセッションを再起動できません。",
+    "current": "現在のリポジトリ",
+    "newUrl": "新しい GitHub リポジトリの URL",
+    "verifying": "GitHub を確認中…",
+    "verifyAgain": "GitHub を再確認",
+    "verify": "GitHub へのアクセスを確認",
+    "noInstallation": "このリポジトリの所有者に利用できる Kortix App のインストールがありません。GitHub でリポジトリを App のインストールに追加し、再度確認してください。",
+    "installation": "GitHub App のインストール",
+    "selectInstallation": "インストールを選択",
+    "manifestRequirement": "新しいリポジトリのデフォルトブランチには {manifest} が必要です。先に実行中のセッションを停止し、開いている変更リクエストを閉じてください。",
+    "cancel": "キャンセル",
+    "changing": "変更中…"
+  },
   "pooledSecrets": {
     "creationDescription": "値は暗号化されます。保存する前に、この接続を使用できる人を選んでください。",
     "whoCanUse": "この接続を使用できる人",

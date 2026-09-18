@@ -39,6 +39,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
+import { sessionUsesCurrentRepository } from '../lib/repository-generation';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import {
   continueSession,
@@ -89,7 +90,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(SessionStartResultSchema, 'Session readiness payload'),
-      ...errors(400, 402, 404),
+      ...errors(400, 402, 404, 409),
     },
   }),
   async (c) => {
@@ -117,6 +118,15 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    if (!sessionUsesCurrentRepository(
+      loaded.row.metadata as Record<string, unknown>,
+      visible.row.metadata as Record<string, unknown>,
+    )) {
+      return c.json({
+        error: 'This session belongs to a previous repository. Start a new session in the current repository.',
+        code: 'session_repository_changed',
+      }, 409);
+    }
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`

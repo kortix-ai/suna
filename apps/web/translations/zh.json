@@ -1,4 +1,22 @@
 {
+  "repositoryChange": {
+    "changedToast": "仓库已更改。新会话将使用新仓库。",
+    "verifyError": "无法验证 GitHub 访问权限。",
+    "change": "更改",
+    "title": "更改仓库",
+    "description": "新会话将使用新仓库。更改后，现有会话无法重新启动。",
+    "current": "当前仓库",
+    "newUrl": "新 GitHub 仓库 URL",
+    "verifying": "正在验证 GitHub…",
+    "verifyAgain": "重新验证 GitHub",
+    "verify": "验证 GitHub 访问权限",
+    "noInstallation": "此仓库所有者没有可用的 Kortix App 安装。请在 GitHub 中将该仓库添加到 App 安装，然后重新验证。",
+    "installation": "GitHub App 安装",
+    "selectInstallation": "选择安装",
+    "manifestRequirement": "新仓库的默认分支需要包含 {manifest}。请先停止活动会话并关闭未完成的变更请求。",
+    "cancel": "取消",
+    "changing": "正在更改…"
+  },
   "pooledSecrets": {
     "creationDescription": "值会保持加密。保存前请选择谁可以使用此连接。",
     "whoCanUse": "谁可以使用此连接？",

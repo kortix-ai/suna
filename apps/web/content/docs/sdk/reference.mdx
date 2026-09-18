@@ -151,6 +151,7 @@ Account-scoped GitHub App install and repo linking, not project-scoped.
 | `listLinkableInstallations(input)` | installs the authorized GitHub user may link; each entry carries `linked_to_other_accounts`, a count of other Kortix accounts holding it — never their names |
 | `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
 | `linkRepository(input)` | import a repo as a project. `source: 'managed'` imports one the instance git backend holds (self-host operator only, 403 otherwise) and is mutually exclusive with `installation_id` (400) |
+| `replaceProjectRepository({ project_id, repo_url, expected_repo_url, github_token })` | replace an existing project's GitHub repository. Use either `github_token` with Contents read/write access, or `installation_id` plus temporary `github_user_token` to verify organization admin access and grant only this repository through the GitHub App. `copy_shared_secrets_from_project_id` plus `copy_shared_secret_identifiers` copies selected shared runtime secrets in the same transaction. A stale `expected_repo_url` returns 409. The old repository remains on GitHub. New sessions use the replacement repository; existing sessions retain their checkout. |
 
 This list holds real account connections only. "Kortix managed" is not one of
 them — it is the instance backend below.
