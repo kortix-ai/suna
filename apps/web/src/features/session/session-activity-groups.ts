@@ -108,6 +108,9 @@ export function isEmptyShowPart(part: ActivityPartLike): boolean {
  *     collapsed row means it can be missed.
  *   - agent_*: a spawned sub-agent has its own lifecycle and status. Folding it
  *     in would hide a running agent behind a collapsed row.
+ *
+ * A legacy Suna answer (`isLegacyAnswerPart`) also stands alone. It is matched
+ * by input shape, not by name, because `ask` is also a live `question` alias.
  */
 export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
   'show',

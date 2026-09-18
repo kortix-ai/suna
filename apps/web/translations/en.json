@@ -1666,6 +1666,9 @@
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
       "use": "Use"
+    },
+    "legacyAnswer": {
+      "followUps": "Suggested follow-ups"
     }
   },
   "agents": {

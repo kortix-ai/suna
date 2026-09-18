@@ -1666,6 +1666,9 @@
       "commandsAndActions": "Команде и радње",
       "toUse": "за коришћење",
       "use": "Користи"
+    },
+    "legacyAnswer": {
+      "followUps": "Предложена наредна питања"
     }
   },
   "agents": {

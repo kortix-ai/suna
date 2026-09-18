@@ -1666,6 +1666,9 @@
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
       "use": "使用"
+    },
+    "legacyAnswer": {
+      "followUps": "建议的后续问题"
     }
   },
   "agents": {

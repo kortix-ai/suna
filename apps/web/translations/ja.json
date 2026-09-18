@@ -1666,6 +1666,9 @@
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
       "use": "使用"
+    },
+    "legacyAnswer": {
+      "followUps": "おすすめのフォローアップ"
     }
   },
   "agents": {
