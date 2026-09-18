@@ -39,7 +39,7 @@ describe('runtime managed model registry', () => {
     })]);
   });
 
-  test('deactivates text-only models from operator overlays', () => {
+  test('keeps text-only models in operator overlays', () => {
     const vision = {
       id: 'vision', name: 'Vision', upstreamModelId: 'z-ai/glm-5.3-flash',
       transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
@@ -47,10 +47,10 @@ describe('runtime managed model registry', () => {
       tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
     };
     expect(parseManagedModels(JSON.stringify([{ ...vision, id: 'text', vision: false }, vision])))
-      .toEqual([expect.objectContaining({ id: 'vision' })]);
+      .toEqual([expect.objectContaining({ id: 'text', vision: false }), expect.objectContaining({ id: 'vision' })]);
   });
 
-  test('rejects the retired DeepSeek V4 text-only model from operator overlays', () => {
+  test('accepts text-only models in operator overlays', () => {
     const text = {
       id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731',
       upstreamModelId: 'deepseek/deepseek-v4-flash-0731', transport: 'openrouter',
@@ -61,7 +61,7 @@ describe('runtime managed model registry', () => {
       },
     };
     expect(parseManagedModels(JSON.stringify([text, { ...text, id: 'other-text' }])))
-      .toEqual([]);
+      .toMatchObject([text, { ...text, id: 'other-text' }]);
   });
 
   test('rejects an unpinned or fallback-enabled operator route', () => {

@@ -43,8 +43,16 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['glm-5.3-flash']).toMatchObject({ provider: 'kortix', attachment: true });
   });
 
+  test('serves DeepSeek V4 Pro as text-only under Kortix', () => {
+    expect(full['deepseek-v4-pro-0813']).toMatchObject({
+      provider: 'kortix', attachment: false, tool_call: true,
+      limit: { context: 1_048_576, output: 384_000 },
+      cost: { input: 0.7, output: 2.96, cache_read: 0.033 },
+    });
+  });
+
   test('does not serve other retired text-only managed models', () => {
-    for (const id of ['deepseek-v4-flash', 'deepseek-v4-pro-0813', 'glm-5.3-flash-text']) {
+    for (const id of ['deepseek-v4-flash', 'glm-5.3-flash-text']) {
       expect(full[id], id).toBeUndefined();
     }
   });
