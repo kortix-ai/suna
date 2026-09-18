@@ -68,7 +68,7 @@ export function isSharedDefaultConnectConflict(error: unknown): boolean {
  * (team-shared) account.
  *
  * Split out of the hook so the route choice is testable without a renderer —
- * the same shape `requestToolAuthorization` uses in `use-tool-connect.ts`.
+ * the same shape `toolConnectSteps` uses in `use-tool-connect.ts`.
  */
 export function projectConnectSteps(
   projectId: string,
