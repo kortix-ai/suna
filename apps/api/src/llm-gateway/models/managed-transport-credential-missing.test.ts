@@ -85,6 +85,7 @@ mock.module('../credentials/codex', () => ({
   CODEX_USER_AGENT: 'test-agent',
   CodexRefreshError: class CodexRefreshError extends Error {},
   resolveCodexCredential: async () => null,
+  resolveCodexAccountCredential: async () => null,
 }));
 
 const { RUNTIME_MANAGED_MODELS } = await import('./managed-models');

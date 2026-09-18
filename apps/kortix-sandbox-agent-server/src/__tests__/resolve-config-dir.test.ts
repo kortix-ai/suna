@@ -3,7 +3,7 @@
  * project's config lives INSIDE the cloned repo (`<projectTarget>/.kortix/
  * opencode`), so this only returns the project dir once the repo has been
  * materialized — otherwise it falls back to the baked default. The boot path
- * (main.ts) MUST therefore resolve this AFTER the clone; resolving before the
+ * (harness/open-code/boot.ts) MUST therefore resolve this AFTER the clone; resolving before the
  * clone always fell back and silently dropped the project's custom agents,
  * plugins, commands and `default_agent`.
  */
@@ -12,7 +12,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from '../config'
+import { loadConfig, resolveSandboxOnBoot } from '../config'
+import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../harness/open-code/config'
 
 let workspace: string
 const DEFAULT_DIR = '/ephemeral/kortix-master/opencode'
@@ -128,5 +129,40 @@ describe('resolveSandboxOnBoot', () => {
   test('returns null when sandbox.on_boot is unset', async () => {
     writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  cpu: 4\n')
     expect(await resolveSandboxOnBoot(cfg())).toBeNull()
+  })
+})
+
+
+describe('native configuration behind the host boundary', () => {
+  test('retains the existing flat defaults without copying at adapter entry', () => {
+    const host = loadConfig({})
+    const native = requireOpenCodeConfig(host)
+    expect(native === host).toBe(true)
+    expect(native).toMatchObject({
+      servicePort: 8000,
+      staticPort: 3211,
+      opencodeInternalPort: 4096,
+      opencodeStandbyPort: 4097,
+      defaultOpencodeConfigDir: DEFAULT_DIR,
+      opencodeConfigDirHint: undefined,
+    })
+  })
+
+  test('reads supplied host and native overrides, including an empty boot hint', () => {
+    const native = loadOpenCodeConfig({
+      KORTIX_SERVICE_PORT: '8123',
+      KORTIX_OPENCODE_INTERNAL_PORT: '4123',
+      KORTIX_OPENCODE_STANDBY_PORT: '4124',
+      KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: '/custom/native/config',
+      KORTIX_OPENCODE_CONFIG_DIR_HINT: '',
+    })
+    expect(native).toMatchObject({
+      servicePort: 8123,
+      opencodeInternalPort: 4123,
+      opencodeStandbyPort: 4124,
+      defaultOpencodeConfigDir: '/custom/native/config',
+      opencodeConfigDirHint: '',
+    })
+    expect(() => loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: 'invalid' })).toThrow()
   })
 })

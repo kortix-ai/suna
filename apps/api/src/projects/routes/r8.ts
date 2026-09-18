@@ -1,9 +1,3 @@
-import { promptConnectorRefusalBody } from '../lib/prompt-connector-refusal';
-import {
-  missingPromptConnectorConnections,
-  PromptConnectorPreflightUnresolved,
-} from '../lib/prompt-connector-preflight';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
@@ -39,7 +33,7 @@ import {
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { resolveChangeRequestBase } from '../change-request-policy';
+import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -588,25 +582,16 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Refuse before enqueueing: callers must see the actionable connector
-    // contract rather than a queue that looks like an active model turn.
-    try {
-      const refusal = promptConnectorRefusalBody(
-        await missingPromptConnectorConnections({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-          requestedAgent: overrides.agent,
-        }),
-      );
-      if (refusal) return c.json(refusal, 409);
-    } catch (error) {
-      if (error instanceof PromptConnectorPreflightUnresolved) {
-        return c.json({ error: error.message, code: 'CONNECTOR_REQUIREMENTS_UNRESOLVED' }, 503);
-      }
-      throw error;
-    }
+    // NO connector pre-flight here. A prompt used to be refused 409
+    // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
+    // nothing connected. That gate could not be cleared from the product: a
+    // `user`-strategy connector has no project account to offer, so the web
+    // card had no button, and the warm-session path swallowed the 409 and left
+    // the composer on "Thinking" forever.
+    //
+    // The connector CALL denies instead (`connector_not_connected`), naming the
+    // connector and carrying a connect link. The turn runs, the agent reports
+    // what is missing, and the human fixes it in one click.
 
     // Same gate as start/wake: a prompt spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
@@ -1073,7 +1058,18 @@ projectsApp.openapi(
     if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
     // The session must be resolved BEFORE the base, because a session's own
     // base is what the change request targets.
-    let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+    const actorIsSession = isProjectSessionPrincipal(c);
+    const originDecision = resolveChangeRequestOrigin({
+      actorIsSession,
+      actingSessionId: actorIsSession
+        ? ((c.get('sessionId') as string | null | undefined) ?? null)
+        : null,
+      requestedSessionId: normalizeString(body.session_id ?? body.sessionId),
+    });
+    if (!originDecision.ok) {
+      return c.json({ error: originDecision.error, code: originDecision.code }, 400);
+    }
+    let originSessionId = originDecision.originSessionId;
     let sessionBaseRef: string | null = null;
     if (originSessionId) {
       const [sessionRow] = await db
@@ -1086,15 +1082,21 @@ projectsApp.openapi(
           ),
         )
         .limit(1);
-      if (!sessionRow) originSessionId = null;
-      else sessionBaseRef = normalizeString(sessionRow.baseRef);
+      if (!sessionRow) {
+        if (actorIsSession) {
+          return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
+        }
+        originSessionId = null;
+      } else {
+        sessionBaseRef = normalizeString(sessionRow.baseRef);
+      }
     }
 
     const baseDecision = resolveChangeRequestBase({
       requested: normalizeString(body.base_ref ?? body.baseRef),
       sessionBase: sessionBaseRef,
       projectDefault: loaded.row.defaultBranch,
-      actorIsSession: isProjectSessionPrincipal(c),
+      actorIsSession,
     });
     if (!baseDecision.ok) {
       return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);

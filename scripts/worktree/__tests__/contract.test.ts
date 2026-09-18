@@ -27,6 +27,7 @@ describe('migrate contract — the worktree migrate must reference real things',
         `lib.ts runs \`pnpm --filter @kortix/db ${script}\` but no such script exists (this is the dead db:migrate class of bug)`,
       ).toBeDefined();
     }
+    expect(calls).toContain('migrate:local');
   });
 
   test('test-prereqs.sql exists where runMigrate expects it', () => {

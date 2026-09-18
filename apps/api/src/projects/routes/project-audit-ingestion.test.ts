@@ -183,7 +183,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
 /**
  * The relay's default batch size is this route's own ceiling
  * (`MAX_RELAY_BATCH_SIZE` in
- * apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts). Pin both ends
+ * apps/kortix-sandbox-agent-server/src/harness/open-code/opencode-audit-relay.ts). Pin both ends
  * of the boundary so raising one without the other cannot ship a 400 into the
  * emission hot path.
  */

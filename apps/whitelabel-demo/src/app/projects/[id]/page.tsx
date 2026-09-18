@@ -28,11 +28,6 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
-import { ConnectRequiredCard } from '@/components/connect-required-card';
-import {
-  type ConnectorRequirement,
-  connectorRequirement,
-} from '@/lib/connector-required';
 import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { NO_OVERRIDES, buildSessionCreateInput } from '@/lib/session-overrides';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -76,13 +71,6 @@ function ProjectHome() {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState('');
-  // The connector PRE-FLIGHT refusal: the session declares a connector with no
-  // usable connection, so the platform refused it before a sandbox booted.
-  // Shown as a call to action rather than an error, because it is one — and
-  // shown HERE rather than as a toast, because the alternative the user would
-  // otherwise get is a streamed agent apology they paid tokens for.
-  const [connectPrompt, setConnectPrompt] =
-    useState<ConnectorRequirement | null>(null);
   // Which shared connection each connector should run as. An alias absent from
   // this map keeps the connector's default, which is what an unbound alias
   // resolves to server-side anyway.
@@ -145,14 +133,10 @@ function ProjectHome() {
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
     },
     onError: (err: unknown) => {
-      // A missing connector is the one create refusal with a real remedy, so it
-      // gets the card instead of a toast. Everything else keeps the shared
-      // classifier, which names the person who can fix each refusal.
-      const requirement = connectorRequirement(err);
-      if (requirement) {
-        setConnectPrompt(requirement);
-        return;
-      }
+      // A session can no longer be refused for an unconnected connector — the
+      // gate moved to the connector CALL, which the agent's own turn handles
+      // and reports on with a connect link. Every create failure now goes
+      // through the shared classifier, which names the person who can fix it.
       const failure = sessionCreateFailure(err);
       toast.error(failure.title, { description: failure.detail });
     },
@@ -184,30 +168,7 @@ function ProjectHome() {
             <ConnectorBindingFields
               choices={connectors.data?.connectors ?? []}
               value={bindings}
-              onChange={(next) => {
-                setBindings(next);
-                // The card describes the bindings that were sent. Once those
-                // change it is a verdict on a request that no longer exists.
-                setConnectPrompt(null);
-              }}
-            />
-          </div>
-        )}
-
-        {/* Kortix-as-a-Backend: the session declares a connector with no usable
-            connection. A call to action, not a failure — and the card is honest
-            about which remedies actually exist for THIS connector, rather than
-            offering everyone a button that only works for shared ones. */}
-        {connectPrompt && (
-          <div className="mb-4">
-            <ConnectRequiredCard
-              projectId={projectId}
-              requirement={connectPrompt}
-              onRetry={() => {
-                setConnectPrompt(null);
-                if (prompt.trim()) start.mutate(prompt.trim());
-              }}
-              onDismiss={() => setConnectPrompt(null)}
+              onChange={setBindings}
             />
           </div>
         )}

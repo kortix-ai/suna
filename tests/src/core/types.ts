@@ -45,6 +45,7 @@ export interface CreatedProject {
   id: string;
   name: string;
   slug?: string;
+  accountId?: string;
 }
 
 export interface CreatedSession {
@@ -65,6 +66,7 @@ export interface TeamFixture {
     name?: string;
     seed?: boolean;
     managedGit?: boolean;
+    allowAllSecrets?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
 }
@@ -83,6 +85,7 @@ export interface Fixtures {
     accountId?: string;
     seed?: boolean;
     managedGit?: boolean;
+    allowAllSecrets?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**

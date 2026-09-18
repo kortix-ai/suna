@@ -354,11 +354,6 @@ export function TurnErrorDisplay({
   // (turn-level path) — only one is ever populated for a given render.
   const gateway = error?.gateway ?? errorDetails ?? undefined;
 
-  // A connector refusal is owned by `ConnectorRequiredNotice`, which renders a
-  // card with the connect button on it. Rendering the one-line pill here too
-  // would say the same thing twice, once without the remedy.
-  if (error?.kind === 'connector') return null;
-
   // Abort/cancelled → render NOTHING. An abort is never a failure the user
   // needs told about: either they pressed Stop themselves (`reason: 'user'`,
   // or an untagged wire abort when the Stop came from another tab/client), or

@@ -31,6 +31,8 @@ export interface UpstreamDescriptor {
   apiKey: string;
   /** Stable non-secret identifier for credentials that share one provider. */
   credentialRef?: string;
+  /** Set only for an explicitly selected account-secret pool member. */
+  poolSecretId?: string;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

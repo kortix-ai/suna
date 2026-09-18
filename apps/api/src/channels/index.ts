@@ -58,9 +58,11 @@ export {
   loadTeamsInstall,
   loadTeamsTenantForProject,
   loadTeamsServiceUrlForProject,
+  setTeamsPublishState,
   MS_TEAMS_TENANT_ID,
   type TeamsInstallSummary,
   type TeamsInstallInput,
+  type TeamsPublishState,
 } from "./install-store";
 export { emailWebhookApp } from "./email-webhook";
 export { telegramWebhookApp } from "./telegram-webhook";

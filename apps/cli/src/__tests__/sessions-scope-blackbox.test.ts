@@ -231,15 +231,12 @@ describe("kortix sessions scope", () => {
       "BILLING_KEY",
       "--connector",
       "gmail=AUTH-NEW",
-      "--require-connector",
-      "slack",
       "--json",
     ]);
 
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       secrets_allowlist: ["MAIL_KEY", "BILLING_KEY"],
-      required_connectors: ["slack"],
       connector_bindings: { gmail: { connection_id: "AUTH-NEW" } },
       retroactive: false,
     });
@@ -249,9 +246,25 @@ describe("kortix sessions scope", () => {
       body: {
         secrets: ["MAIL_KEY", "BILLING_KEY"],
         connector_bindings: { gmail: { connection_id: "AUTH-NEW" } },
-        require_connectors: ["slack"],
       },
     });
+  });
+
+  // A session can no longer REQUIRE a connector: the gate could not be cleared
+  // from the product, so it was removed (2026-09-16). A call names the account
+  // it runs as instead. The flags are gone from the surface, not silently
+  // ignored — an old script must fail loudly rather than think it still gates.
+  test("rejects the removed required-connector flags instead of ignoring them", async () => {
+    const before = requests.length;
+    for (const argv of [
+      ["sessions", "scope", SESSION_ID, "--require-connector", "slack", "--json"],
+      ["sessions", "scope", SESSION_ID, "--no-required-connectors"],
+    ]) {
+      const result = await runCli(argv);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain(`Unknown option "${argv[3]}"`);
+    }
+    expect(requests.slice(before)).toEqual([]);
   });
 
   test("supports explicit inherited and empty scope states", async () => {
@@ -261,11 +274,10 @@ describe("kortix sessions scope", () => {
       SESSION_ID,
       "--inherit-secrets",
       "--no-connectors",
-      "--no-required-connectors",
     ]);
 
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain("required   None");
+    expect(result.stdout).not.toContain("required");
     expect(result.stdout).toContain("Changes apply to the next prompt.");
     expect(result.stdout).toContain(
       "Secret values already read cannot be removed from existing context.",
@@ -273,7 +285,6 @@ describe("kortix sessions scope", () => {
     expect(requests.at(-1)?.body).toEqual({
       secrets: null,
       connector_bindings: {},
-      require_connectors: [],
     });
   });
 

@@ -55,8 +55,10 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 /** @deprecated Use AgentBlockV2.repository_access. Retained for existing manifests. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
-/** Session runtimes. `pi` boots the compiled pi worker (behind the project's
- *  `pi_worker` feature flag); anything else — including absence — keeps the
+/** Session runtimes — which agent harness a session boots inside its sandbox.
+ *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`);
+ *  with the project's `pi_worker` feature flag it instead boots the split
+ *  worker/environment topology. Anything else — including absence — keeps the
  *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
 export type RuntimeV2 = 'opencode' | 'pi';
 

@@ -34,6 +34,7 @@ export interface GatewayHooks {
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
+  notePoolRateLimit?: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
   // Resolves (or throws) once the account's billing state is checked. May
   // return a `holdUsd` when it took an atomic admission hold against the
   // wallet — the handler attaches it to the principal so settle() can

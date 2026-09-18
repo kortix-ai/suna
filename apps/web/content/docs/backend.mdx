@@ -92,7 +92,7 @@ export SESSION_ID="<session-id>"
 | `connector_bindings` | Maps a connector slug to one strategy-compatible `connection_id`. The credential stays outside the sandbox.                                  |
 | `inherit_unbound`    | Keeps strategy-based default resolution for connectors omitted from an explicit binding map. The default is `false`.                            |
 | `secrets`            | Narrows the selected agent's project-secret grant. An empty list delivers no project secrets. Only backend-origin callers can set it.                   |
-| `require_connectors` | Adds mandatory connectors for this create request. Missing connections return `409 CONNECTOR_CONNECTION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
+| `require_connectors` | Deprecated and inert — accepted and ignored. A session no longer declares connectors it requires; a call to a connector with nothing connected is denied with `connector_not_connected` and a `connect_url` instead. |
 
 ## 3. Configure connectors and connections
 
@@ -294,8 +294,6 @@ different secret allowlist, connector binding map, or runtime context returns
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector.                           |
 | `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection does not exist in this project or violates the connector's authorization strategy. |
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
-| `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no valid active connection. Every failing connector is listed in `connector_connections`. |
-| `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector at all. Every failing alias is listed in `connectors`. |
 | `409`                        | `CONNECTOR_PROVIDER_UNSUPPORTED`                 | The alias is a connector on the project but its provider has no hosted authorization page, so no connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The selected connection or connector is inactive.                       |

@@ -5,7 +5,6 @@ const valid = {
   secretIdentifier: 'API_KEY',
   requiresAuth: true,
   provider: 'openapi',
-  authorizationStrategy: 'project' as const,
   hasStoredCredential: false,
   secretCompatible: true,
 };
@@ -26,13 +25,15 @@ describe('validateConnectorSecretBinding', () => {
     ).toBeNull();
   });
 
-  test('rejects platform, user-owned, stored, and incompatible credential sources', () => {
+  // `authorizationStrategy` used to reject binding on a 'user'-strategy
+  // connector — the connector-level strategy is retired (connection-access.ts),
+  // so binding is decided purely on the connector's own auth shape, never on
+  // who happens to own its accounts. There is no owner/strategy field left to
+  // reject on.
+  test('rejects platform, stored, and incompatible credential sources', () => {
     expect(validateConnectorSecretBinding({ ...valid, provider: 'channel' })?.error).toContain(
       'does not accept',
     );
-    expect(
-      validateConnectorSecretBinding({ ...valid, authorizationStrategy: 'user' })?.error,
-    ).toContain('project authorization');
     expect(
       validateConnectorSecretBinding({ ...valid, hasStoredCredential: true })?.error,
     ).toContain('Disconnect');

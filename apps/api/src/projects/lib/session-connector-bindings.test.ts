@@ -4,13 +4,12 @@ import {
   resolveTokenBoundSessionId,
 } from '../../connectors/db-deps';
 import {
-  RequiredConnectorConnectionUnavailableError,
   type ValidatedSessionConnectorBinding,
   canonicalConnectorAlias,
   connectorBindingPayloadConflicts,
   mayUseLegacyDefaultConnection,
   parseSessionConnectorBindings,
-  resolveRequiredConnectorConnections,
+  selectEntitledConnectorConnection,
 } from './session-connector-bindings';
 
 describe('session connector binding security contracts', () => {
@@ -62,81 +61,114 @@ describe('session connector binding security contracts', () => {
   });
 });
 
-describe('required-connector pre-flight never strands a backend caller', () => {
-  const bound = (alias: string): ValidatedSessionConnectorBinding => ({
-    alias,
-    connectionId: '33333333-3333-4333-a333-333333333333',
-    connectorId: '44444444-4444-4444-a444-444444444444',
-    ownerType: 'project',
-    ownerId: null,
-    authorizationStrategy: 'project',
+/**
+ * Account selection is what replaced the per-session connector dropdown. The
+ * agent may reach EVERY account it is entitled to and names one at call time,
+ * so the two properties that matter are: an unnamed call keeps the old
+ * behavior (the default account), and a named-but-unknown account is never
+ * silently substituted — that would run "send as Work" against Personal.
+ */
+describe('selectEntitledConnectorConnection', () => {
+  const work = {
+    connectionId: '11111111-1111-4111-a111-111111111111',
+    connectorId: 'c1',
+    alias: 'gmail',
+    label: 'Work',
+    ownerType: 'project' as const,
+    isDefault: true,
+    status: 'active' as const,
+    metadata: {},
+  };
+  const personal = { ...work, connectionId: '22222222-2222-4222-a222-222222222222', label: 'Personal', ownerType: 'member' as const, isDefault: false };
+  const accounts = [work, personal];
+
+  test('no account named, exactly one pinned → the pinned account, exactly as before', () => {
+    expect(selectEntitledConnectorConnection(accounts, null)).toEqual({ kind: 'one', connection: work });
+    expect(selectEntitledConnectorConnection(accounts, undefined)).toEqual({ kind: 'one', connection: work });
+    expect(selectEntitledConnectorConnection(accounts, '   ')).toEqual({ kind: 'one', connection: work });
   });
 
-  test('an explicitly bound alias is satisfied without any lookup', async () => {
-    // A wrapper credential binds by connection_id and has no personal
-    // upstream identity, so a "go connect it" refusal is one it can never
-    // satisfy. An alias the caller already bound must short-circuit the
-    // pre-flight entirely — the assertions below hold with no database
-    // fixtures precisely because that path issues no query.
-    const res = await resolveRequiredConnectorConnections({
-      accountId: '55555555-5555-4555-a555-555555555555',
-      projectId: '66666666-6666-4666-a666-666666666666',
-      actingUserId: '77777777-7777-4777-a777-777777777777',
-      actingPrincipalIsServiceAccount: true,
-      aliases: ['veyris', 'veyris'],
-      explicitBindings: [bound('veyris')],
+  test('no account named, several reachable and NONE pinned → ambiguous, not a guess', () => {
+    const neitherPinned = [{ ...work, isDefault: false }, personal];
+    expect(selectEntitledConnectorConnection(neitherPinned, null)).toEqual({
+      kind: 'ambiguous',
+      connections: neitherPinned,
+    });
+  });
+
+  test('exactly one entitled account → it, unnamed, pinned or not', () => {
+    expect(selectEntitledConnectorConnection([{ ...personal, isDefault: false }], null)).toEqual({
+      kind: 'one',
+      connection: { ...personal, isDefault: false },
+    });
+  });
+
+  test('matches a label case-insensitively — humans type the printed name', () => {
+    for (const query of ['Personal', 'personal', '  PERSONAL ']) {
+      const sel = selectEntitledConnectorConnection(accounts, query);
+      expect(sel.kind === 'one' && sel.connection.connectionId).toBe(personal.connectionId);
+    }
+  });
+
+  test('matches a connection id, which is what the connections API prints', () => {
+    const sel = selectEntitledConnectorConnection(accounts, personal.connectionId);
+    expect(sel.kind === 'one' && sel.connection.label).toBe('Personal');
+  });
+
+  test('an unknown account resolves to nothing rather than the default', () => {
+    expect(selectEntitledConnectorConnection(accounts, 'Archive')).toEqual({ kind: 'none' });
+  });
+
+  test('no entitled account at all → none for every input', () => {
+    expect(selectEntitledConnectorConnection([], null)).toEqual({ kind: 'none' });
+    expect(selectEntitledConnectorConnection([], 'Work')).toEqual({ kind: 'none' });
+  });
+
+  describe('me / project shorthand', () => {
+    const workPinned = { ...work, connectionId: 'aaaaaaaa-1111-4111-a111-111111111111', label: 'Work', ownerType: 'project' as const, isDefault: true };
+    const workOther = { ...work, connectionId: 'aaaaaaaa-2222-4111-a111-111111111111', label: 'Other shared', ownerType: 'project' as const, isDefault: false };
+    const mePinned = { ...work, connectionId: 'aaaaaaaa-3333-4111-a111-111111111111', label: 'Work email', ownerType: 'member' as const, isDefault: true };
+    const meOther = { ...work, connectionId: 'aaaaaaaa-4444-4111-a111-111111111111', label: 'Personal email', ownerType: 'member' as const, isDefault: false };
+
+    test('me: pinned private wins even when a shared account is also pinned', () => {
+      const all = [workPinned, mePinned, meOther];
+      expect(selectEntitledConnectorConnection(all, 'me')).toEqual({ kind: 'one', connection: mePinned });
     });
 
-    expect(res).toEqual({ ok: true, bindings: [] });
-  });
-
-  test('the public email alias is matched against its canonical binding', async () => {
-    // `require_connectors: ['email']` and a binding stored as `kortix_email` are
-    // the same connector. Comparing the raw strings would refuse a session the
-    // caller had already bound correctly.
-    const res = await resolveRequiredConnectorConnections({
-      accountId: '55555555-5555-4555-a555-555555555555',
-      projectId: '66666666-6666-4666-a666-666666666666',
-      actingUserId: '77777777-7777-4777-a777-777777777777',
-      actingPrincipalIsServiceAccount: true,
-      aliases: ['email'],
-      explicitBindings: [bound(canonicalConnectorAlias('email'))],
+    test('me: exactly one private, unpinned → it', () => {
+      expect(selectEntitledConnectorConnection([workPinned, meOther], 'me')).toEqual({
+        kind: 'one',
+        connection: meOther,
+      });
     });
 
-    expect(res).toEqual({ ok: true, bindings: [] });
-  });
-});
+    test('me: several private, none pinned → ambiguous among MY OWN accounts only', () => {
+      const mineUnpinned = { ...meOther, isDefault: false };
+      const otherMine = { ...meOther, connectionId: 'aaaaaaaa-5555-4111-a111-111111111111', label: 'Work 2', isDefault: false };
+      expect(selectEntitledConnectorConnection([workPinned, mineUnpinned, otherMine], 'me')).toEqual({
+        kind: 'ambiguous',
+        connections: [mineUnpinned, otherMine],
+      });
+    });
 
-describe('RequiredConnectorConnectionUnavailableError carries every alias', () => {
-  test('the list is the contract; `alias` is a convenience read of the first', () => {
-    // The prompt path threw on the first unconfigured alias while create's
-    // pre-flight returned all of them, and the guide promised the create shape
-    // for both. A caller who fixed the one name they were handed got refused
-    // again by the next — one failed prompt per missing connector.
-    const error = new RequiredConnectorConnectionUnavailableError(['gmail', 'slack']);
-    expect(error.aliases).toEqual(['gmail', 'slack']);
-    expect(error.alias).toBe('gmail');
-    expect(error.code).toBe('REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE');
-  });
+    test('me: no private account reachable → none', () => {
+      expect(selectEntitledConnectorConnection([workPinned, workOther], 'me')).toEqual({ kind: 'none' });
+    });
 
-  test('the sentence agrees in number with the list', () => {
-    // `Required connection "a", "b" is unavailable` reads as a bug in the
-    // product to the person it is shown to.
-    expect(new RequiredConnectorConnectionUnavailableError(['gmail']).message).toBe(
-      'Required connection "gmail" is unavailable',
-    );
-    expect(new RequiredConnectorConnectionUnavailableError(['gmail', 'slack']).message).toBe(
-      'Required connections "gmail", "slack" are unavailable',
-    );
-  });
+    test('project: pinned shared wins', () => {
+      expect(selectEntitledConnectorConnection([workPinned, workOther, mePinned], 'project')).toEqual({
+        kind: 'one',
+        connection: workPinned,
+      });
+    });
 
-  test('a bare string still works, so existing throw sites are unchanged', () => {
-    const error = new RequiredConnectorConnectionUnavailableError('gmail');
-    expect(error.aliases).toEqual(['gmail']);
-    expect(error.alias).toBe('gmail');
-  });
-
-  test('an empty alias never reaches the message as an empty pair of quotes', () => {
-    expect(new RequiredConnectorConnectionUnavailableError(['gmail', '']).aliases).toEqual(['gmail']);
+    test('project: several shared, none pinned → ambiguous among shared accounts only', () => {
+      const sharedA = { ...workOther, isDefault: false };
+      const sharedB = { ...workOther, connectionId: 'aaaaaaaa-6666-4111-a111-111111111111', label: 'Sales', isDefault: false };
+      expect(selectEntitledConnectorConnection([sharedA, sharedB, mePinned], 'project')).toEqual({
+        kind: 'ambiguous',
+        connections: [sharedA, sharedB],
+      });
+    });
   });
 });

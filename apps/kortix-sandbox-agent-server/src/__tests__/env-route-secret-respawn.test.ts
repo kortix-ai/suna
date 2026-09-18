@@ -19,10 +19,13 @@ import { afterAll, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../project-env'
-import { buildOpencodeApp } from '../proxy'
+import { Hono } from 'hono'
+import { createEnvRouter } from '../routes/env'
+import { createOpenCodeControlService } from '../harness/open-code/control'
+import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
@@ -79,20 +82,17 @@ function fakeOpencode(): { opencode: Opencode; calls: ReloadCall[] } {
 }
 
 function buildTestApp(opencode: Opencode, store: ReturnType<typeof createProjectEnvStore>) {
-  return buildOpencodeApp(
-    baseConfig(),
-    opencode,
-    Date.now(),
-    { repoMaterializationError: null, timeline: [] },
-    store,
-    null,
-    undefined,
-    join(TEST_ENV_DIR, `agent-env-${testEnvFileSequence++}.sh`),
-  )
+  const cfg = baseConfig()
+  const control = createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg)).bind({
+    cfg,
+    projectEnv: store,
+    agentEnvFile: join(TEST_ENV_DIR, `agent-env-${testEnvFileSequence++}.sh`),
+  })
+  return new Hono().route('/kortix/env', createEnvRouter(cfg, control))
 }
 
 async function postEnv(
-  app: ReturnType<typeof buildOpencodeApp>,
+  app: Hono,
   body: Record<string, unknown>,
 ): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await app.request('/kortix/env', {

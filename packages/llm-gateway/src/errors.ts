@@ -92,13 +92,15 @@ export type NoUpstreamReasonCode =
   | 'provider_disabled'
   | 'plan_upgrade_required'
   | 'provider_not_connected'
-  | 'provider_reauth_required';
+  | 'provider_reauth_required'
+  | 'provider_pool_rate_limited';
 
 export class GatewayResolutionError extends Error {
   constructor(
     readonly code: NoUpstreamReasonCode,
     message: string,
     readonly suggestion: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'GatewayResolutionError';

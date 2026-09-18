@@ -103,12 +103,13 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // count below cannot tell which element carries the treatment.
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
-    // Two users of the ONE treatment in this file: `Log out` and `Try again`.
-    // The third — the onboarding escape link (`Go to workspace`) — moved into
-    // `workspace-handoff.tsx` with the rest of the waiting state, and carries
-    // the same treatment there (asserted in `workspace-handoff.test.tsx`).
+    // Three users of the ONE treatment in this file: `Back to projects`
+    // (top-left exit, 2026-09-17), `Log out` and `Try again`. The onboarding
+    // escape link (`Go to workspace`) moved into `workspace-handoff.tsx` with
+    // the rest of the waiting state, and carries the same treatment there
+    // (asserted in `workspace-handoff.test.tsx`).
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
-    expect(treatmentMatches).toHaveLength(2);
+    expect(treatmentMatches).toHaveLength(3);
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {
@@ -178,5 +179,54 @@ describe('isRetryableError: classification by what can actually change, not "eve
     expect(isRetryableError(new ApiError('Owner or admin role required', { status: 403 }))).toBe(
       true,
     );
+  });
+});
+
+describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026-09-17)', () => {
+  // "Free accounts are limited to 1 project. Upgrade to a paid plan to create
+  // more." named a way out and offered none. The hook now reports the cap as
+  // its own flag and the page answers it with the upgrade dialog.
+  test('the hook exposes limitReached, derived from the shared isProjectLimitError', () => {
+    expect(hook).toContain("limitReached = status === 'error' && isProjectLimitError(lastError)");
+    expect(hook).toContain('limitReached };');
+  });
+
+  test('messageFor keeps the server text for the cap — it already says what to do', () => {
+    expect(
+      messageFor(
+        new ApiError(
+          'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+          { status: 403, code: 'project_limit_reached' },
+        ),
+      ),
+    ).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+  });
+
+  test('the cap is not retryable, so the upgrade action never sits beside Try again', () => {
+    expect(
+      isRetryableError(
+        new ApiError('Free accounts are limited to 1 project.', {
+          status: 403,
+          code: 'project_limit_reached',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test('the page renders the upgrade action inside the alert region, gated on limitReached and billing', () => {
+    const alertStart = page.indexOf('role="alert"');
+    const containerStart = page.lastIndexOf('<div', alertStart);
+    const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
+    expect(region).toMatch(/limitReached && isBillingEnabled\(\)\s*\?/);
+    expect(region).toContain("t('actions.upgrade')");
+  });
+
+  test('the action opens the upgrade dialog for the account the create targeted', () => {
+    const alertStart = page.indexOf('role="alert"');
+    const region = page.slice(alertStart, page.indexOf('</form>', alertStart));
+    expect(region).toContain("reason: 'subscription_required'");
+    expect(region).toContain('accountId: effectiveAccountId ?? undefined');
+    // The dialog host is the one already mounted for the plan step.
+    expect(page).toContain('isBillingEnabled() && <GlobalUpgradeModal />');
   });
 });

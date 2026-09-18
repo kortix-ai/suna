@@ -60,8 +60,10 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
+  selectSessionHarness,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -491,6 +493,33 @@ agents:
   });
 });
 
+describe('selectSessionHarness — flag OR manifest', () => {
+  test('pi when the project flag is on, whatever the manifest says', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null })).toBe('pi');
+  });
+
+  test('pi when the manifest says runtime: pi, even with the flag off', () => {
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi' })).toBe('pi');
+  });
+
+  test('opencode in every other case', () => {
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode' })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null })).toBe('opencode');
+  });
+});
+
+describe('manifestRuntime — the harness a manifest selects', () => {
+  test('pi only for a v2 manifest that says runtime: pi; everything else is opencode', () => {
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\n'))).toBe('pi');
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBe('opencode');
+    expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
+    expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
+    expect(manifestRuntime(null)).toBe('opencode');
+  });
+});
+
 // ─── resolveCompiledAgentConfigForSession (I/O half) ───────────────────────
 
 const PROJECT = {
@@ -510,6 +539,20 @@ describe('resolveCompiledAgentConfigForSession', () => {
   test('returns null for a v1 manifest — v1 projects are unaffected', async () => {
     manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
+  });
+
+  test('a runtime: pi manifest still compiles its agents, and the read hands the manifest to the caller', async () => {
+    manifestFile = { path: 'kortix.yaml', content: `${GOVERNANCE_FIXTURE}\nruntime: pi\n` };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+    let seen: Record<string, unknown> | null = null;
+    const result = await resolveCompiledAgentConfigForSession(PROJECT, null, { onManifest: (raw) => { seen = raw; } });
+    expect(result).not.toBeNull();
+    expect((JSON.parse(result!) as OpencodeConfig).agent.support.prompt).toBe('Support body.');
+    expect(manifestRuntime(seen)).toBe('pi');
+    // The restricted-session compiler reads the same manifest and reports it too.
+    seen = null;
+    await resolveSelectedAgentConfigForSession(PROJECT, 'support', null, { onManifest: (raw) => { seen = raw; } });
+    expect(manifestRuntime(seen)).toBe('pi');
   });
 
   test("reads each declared agent's conventional .md and returns the compiled JSON for a v2 manifest", async () => {

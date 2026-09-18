@@ -170,6 +170,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
+    secretResources: {
+      list: P.listAccountSecretResources,
+      create: P.createAccountSecretResource,
+      rotate: P.rotateAccountSecretResource,
+      remove: P.deleteAccountSecretResource,
+      grant: P.grantAccountSecretResource,
+      revoke: P.revokeAccountSecretResourceGrant,
+      setAccess: P.setAccountSecretResourceAccess,
+    },
     updateName: P.updateAccountName,
     /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
     branding: {
@@ -427,6 +436,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Call one `<connector>.<action>` tool. */
       call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
         P.callConnector<T>(projectId, ...a),
+      /** The accounts a connector can be called as, default first. */
+      accounts: (...a: DropFirst<Parameters<typeof P.listConnectorAccounts>>) =>
+        P.listConnectorAccounts(projectId, ...a),
       /** Upload bytes for use by a later connector call. */
       uploadAttachment: (...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>) =>
         P.uploadConnectorAttachment(projectId, ...a),
@@ -1204,6 +1216,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Read the authoritative secret allowlist and connections. */
       scope: () => P.getProjectSessionScope(projectId, sessionId),
+      providerSecretPool: {
+        list: () => P.listSessionProviderSecretPools(projectId, sessionId),
+        get: (providerId: string) => P.getSessionProviderSecretPool(projectId, sessionId, providerId),
+        set: (providerId: string, secretIds: string[] | null) =>
+          P.setSessionProviderSecretPool(projectId, sessionId, providerId, secretIds),
+      },
       /** Re-scope a running session — set semantics; see setProjectSessionScope. */
       rescope: (scope: P.SessionScopeInput) =>
         P.setProjectSessionScope(projectId, sessionId, scope),

@@ -82,6 +82,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
+import { AccountSecretResourcesPanel } from '@/features/workspace/customize/sections/view/account-secret-resources-panel';
 import {
   ProviderAccessMenu,
 } from '@/features/workspace/customize/sections/llm-provider/provider-access-menu';
@@ -99,8 +100,8 @@ import {
 } from '@/features/workspace/customize/sections/llm-provider/utils';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
+import { deleteProjectProviderOAuth, deleteProjectSecret, getProjectDetail, upsertProjectSecret } from '@kortix/sdk';
+import { qk, refreshProjectProviderState, useAccountSecretResources, useFeatureFlag, useModelAccess, useProjectModelPickerCatalog } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
@@ -111,7 +112,7 @@ import {
   PlugsIcon as Unplug,
   WarningCircleIcon as Warning,
 } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
@@ -205,6 +206,8 @@ export interface ProviderConnectViewProps {
   /** Per-provider extra auth affordance. Only `openai` has one today. */
   subscriptionSlots?: Record<string, ReactNode>;
   accessSlots?: Record<string, ReactNode>;
+  pooledSlots?: Record<string, ReactNode>;
+  pooledSecretsEnabled?: boolean;
   /** Open the shared Models tab with all provider groups. */
   onOpenModels?: (providerId: string) => void;
   className?: string;
@@ -506,6 +509,7 @@ function ProviderRow({
   onRemoveKey,
   subscriptionSlot,
   accessSlot,
+  pooledSlot,
   onOpenModels,
 }: {
   row: ProviderConnectRow;
@@ -520,9 +524,11 @@ function ProviderRow({
   onRemoveKey?: ProviderConnectViewProps['onRemoveKey'];
   subscriptionSlot?: ReactNode;
   accessSlot?: ReactNode;
+  pooledSlot?: ReactNode;
   onOpenModels?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
   const identity = (
     <div className="flex min-w-0 items-start gap-2.5">
       <ProviderLogo providerID={row.id} name={row.label} size="small" />
@@ -561,7 +567,7 @@ function ProviderRow({
 
   // Read-only members get the identity column and nothing else — no field to
   // type in, so no second column to line it up against either.
-  if (!canWrite) {
+  if (!canWrite && !pooledSlot) {
     return (
       <div className="py-1.5" data-provider-row={row.id}>
         {identity}
@@ -575,7 +581,28 @@ function ProviderRow({
       className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:items-start sm:gap-4"
     >
       {identity}
-      {row.envVars.length === 0 ? (
+      {pooledSlot ? (
+        <div className="min-w-0 space-y-2">
+          {pooledSlot}
+          {row.connected && canWrite && (
+            <div className="space-y-1.5">
+              <p className="text-muted-foreground text-xs">{tPooled('legacyProjectKey')}</p>
+              <ProviderKeyFields
+                row={row}
+                values={values}
+                onValueChange={onValueChange}
+                onCommit={onCommit}
+                status={status}
+                errorMessage={errorMessage}
+                revealedFields={revealedFields}
+                onToggleReveal={onToggleReveal}
+                onRemoveKey={onRemoveKey}
+              />
+            </div>
+          )}
+          {subscriptionSlot}
+        </div>
+      ) : row.envVars.length === 0 ? (
         <p className="text-muted-foreground py-2 text-xs text-pretty">{row.note}</p>
       ) : (
         <ProviderKeyFields
@@ -656,10 +683,13 @@ export function ProviderConnectView({
   onSearchChange,
   subscriptionSlots,
   accessSlots,
+  pooledSlots,
+  pooledSecretsEnabled = false,
   onOpenModels,
   className,
 }: ProviderConnectViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
   return (
     <div className={cn('flex flex-col gap-4 px-5 py-5', className)}>
       <InputGroupSearch data-provider-search="">
@@ -683,7 +713,9 @@ export function ProviderConnectView({
           auto-save nobody is told about is indistinguishable from an edit that
           was lost. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        {canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
+        {pooledSecretsEnabled
+          ? tPooled('sharedDescription')
+          : canWrite ? tI18nComplete.raw('text9253b4fa8e06') : tI18nComplete.raw('text30674c348b84')}
       </p>
 
       {rows.length === 0 ? (
@@ -705,6 +737,7 @@ export function ProviderConnectView({
               onRemoveKey={onRemoveKey}
               subscriptionSlot={subscriptionSlots?.[row.id]}
               accessSlot={accessSlots?.[row.id]}
+              pooledSlot={pooledSlots?.[row.id]}
               onOpenModels={onOpenModels}
             />
           ))}
@@ -753,6 +786,18 @@ const CONNECTION_REFRESH_TIMEOUT_MS = 45_000;
  */
 export const PROVIDER_PAGE_SIZE = 12;
 
+// Mirrors the gateway's base-URL fallbacks in provider-registry.ts. A provider
+// without an API host or one of these fallbacks cannot create a gateway key.
+const GATEWAY_BASE_URL_FALLBACK_IDS = new Set([
+  'anthropic', 'openai', 'google', 'groq', 'x-ai', 'xai', 'mistral', 'deepseek',
+  'perplexity', 'cerebras', 'vercel', 'v0', 'deepinfra', 'togetherai',
+]);
+
+export function supportsPooledProviderKey(entry: LlmProviderEntry | undefined): boolean {
+  return Boolean(entry && entry.envVars.length === 1 &&
+    (entry.apiHost || GATEWAY_BASE_URL_FALLBACK_IDS.has(entry.id)));
+}
+
 function toRow(entry: LlmProviderEntry, connectedIds: Set<string>): ProviderConnectRow {
   return {
     id: entry.id,
@@ -786,6 +831,19 @@ export function ProviderConnect({
   className,
 }: ProviderConnectProps) {
   const access = useModelAccess(enabled ? projectId : null);
+  const pooledFlag = useFeatureFlag(enabled ? projectId : null, 'pooled_provider_secrets');
+  const pooledSecretsEnabled = pooledFlag.enabled;
+  const project = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: enabled && pooledSecretsEnabled,
+  });
+  const accountId = project.data?.project?.account_id;
+  const pooledResources = useAccountSecretResources(enabled && pooledSecretsEnabled ? accountId : null, projectId);
+  const pooledProviderIds = useMemo(
+    () => new Set((pooledResources.data?.secrets ?? []).filter((secret) => secret.can_use && secret.active).map((secret) => secret.provider_id)),
+    [pooledResources.data],
+  );
   const tAccess = useTranslations('modelAccess');
   const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
   const managedProvider = useMemo<LlmProviderEntry>(() => ({
@@ -812,6 +870,7 @@ export function ProviderConnect({
     managed: true,
   }), [pickerCatalog, tAccess]);
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPooled = useTranslations('pooledSecrets');
   useLiveLlmProviderCatalog(projectId, enabled);
   const catalogRevision = useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
@@ -890,8 +949,8 @@ export function ProviderConnect({
    * instead: the rows before it come too, and nothing moves.
    */
   const lastConnectedIndex = useMemo(
-    () => rows.reduce((last, row, index) => (row.connected ? index : last), -1),
-    [rows],
+    () => rows.reduce((last, row, index) => (row.connected || pooledProviderIds.has(row.id) ? index : last), -1),
+    [rows, pooledProviderIds],
   );
   const limit = searching ? rows.length : Math.max(visibleCount, lastConnectedIndex + 1);
   const visibleRows = useMemo(() => rows.slice(0, limit), [rows, limit]);
@@ -1069,7 +1128,7 @@ export function ProviderConnect({
       null)
     : null;
 
-  if (providerStateLoading) {
+  if (providerStateLoading || pooledFlag.isLoading || (pooledSecretsEnabled && (project.isLoading || pooledResources.isLoading))) {
     return (
       <div
         className="flex min-h-[200px] items-center justify-center"
@@ -1084,6 +1143,21 @@ export function ProviderConnect({
   return (
     <>
       <ProviderConnectView
+        pooledSecretsEnabled={pooledSecretsEnabled}
+        pooledSlots={pooledSecretsEnabled ? Object.fromEntries(
+          visibleRows.filter((row) => supportsPooledProviderKey(LLM_PROVIDER_BY_ID.get(row.id))).map((row) => [
+            row.id,
+            accountId ? <AccountSecretResourcesPanel
+              key={row.id}
+              accountId={accountId}
+              projectId={projectId}
+              providerId={row.id}
+              providerName={row.label}
+              envVar={row.envVars[0]!}
+              canWrite={true}
+            /> : <p key={row.id} className="text-muted-foreground text-xs">{tPooled('loadError')}</p>,
+          ]),
+        ) : undefined}
         accessSlots={Object.fromEntries(
           visibleRows.map((row) => [
             row.id,
@@ -1113,7 +1187,24 @@ export function ProviderConnect({
         search={search}
         onSearchChange={setSearch}
         subscriptionSlots={
-          canWrite
+          pooledSecretsEnabled && accountId ? {
+            openai: <div className="space-y-2">
+              <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <ProviderLogo providerID="openai" name="OpenAI" size="default" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground text-sm font-medium">{tPooled('chatGptAccounts')}</p>
+                    <p className="text-muted-foreground mt-0.5 text-xs leading-5">{tPooled('oauthPrivateDescription')}</p>
+                  </div>
+                  <ProviderAccessMenu access={access} providerId="codex" name="ChatGPT subscription" canWrite={canWrite} />
+                </div>
+                <AccountSecretResourcesPanel accountId={accountId} projectId={projectId} providerId="codex"
+                  providerName="ChatGPT Plus/Pro" envVar="CODEX_AUTH_JSON" canWrite={true}
+                  oauth={{ projectId, onConnected: setPendingRequest }} />
+              </div>
+              <ChatGptSubscriptionConnect projectId={projectId} onConnected={setPendingRequest} legacyOnly />
+            </div>,
+          } : canWrite
             ? {
                 // The ONLY live provider subscription flow in the repo. Anthropic
                 // has no OAuth anywhere — see this file's header comment.

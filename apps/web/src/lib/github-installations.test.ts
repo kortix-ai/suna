@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { gitHubInstallationUnreachable, githubInstallationLabel } from './github-installations';
+import {
+  gitHubInstallationUnreachable,
+  githubInstallationLabel,
+  githubOwnerKind,
+} from './github-installations';
 
 describe('GitHub installation presentation', () => {
   /**
@@ -91,5 +95,14 @@ describe('an installation GitHub no longer resolves', () => {
         data: { error: 'github_installation_unreachable' },
       }),
     ).toBeNull();
+  });
+});
+
+describe('githubOwnerKind', () => {
+  test('folds GitHub account types to the two kinds the UI names', () => {
+    expect(githubOwnerKind('User')).toBe('personal');
+    expect(githubOwnerKind('Organization')).toBe('org');
+    expect(githubOwnerKind(null)).toBeNull();
+    expect(githubOwnerKind('Bot')).toBeNull();
   });
 });

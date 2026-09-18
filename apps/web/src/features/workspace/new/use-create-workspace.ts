@@ -212,10 +212,7 @@ export function buildManagedImportRequest(
   creatableAccounts: KortixAccount[],
   userId: string | null,
 ): LinkRepositoryInput {
-  return buildManagedImportPayload(
-    state,
-    resolveTargetAccountId(state, creatableAccounts, userId),
-  );
+  return buildManagedImportPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /**
@@ -346,6 +343,11 @@ export function isRetryableError(error: unknown): boolean {
   const status = (error as { status?: number } | null | undefined)?.status;
 
   if (status === 400) return false;
+  // The plan cap is a 403 too, but nothing about a retry changes it — only a
+  // plan change does, and the page offers that instead (`limitReached`).
+  // Before the generic 403 fallthrough, which IS retryable (wrong account,
+  // role granted meanwhile).
+  if (isProjectLimitError(error)) return false;
   if (isManagedGitUnavailableError(error)) return false;
   if (status === 409) return true;
 
@@ -709,6 +711,12 @@ export function useCreateWorkspace(): {
   retry: () => void;
   /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
   canRetry: boolean;
+  /**
+   * The account is at its plan's project cap (403 `project_limit_reached`,
+   * `enforceProjectQuota` in `apps/api/src/projects/lib/access.ts`). Retrying
+   * cannot fix it; the page offers the upgrade dialog instead.
+   */
+  limitReached: boolean;
 } {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -799,5 +807,6 @@ export function useCreateWorkspace(): {
   // create is `'creating'` or has already succeeded.
   const canRetry = status === 'error' && isRetryableError(lastError);
 
-  return { create, status, error, retry, canRetry };
+  const limitReached = status === 'error' && isProjectLimitError(lastError);
+  return { create, status, error, retry, canRetry, limitReached };
 }

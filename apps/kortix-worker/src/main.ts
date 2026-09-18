@@ -45,7 +45,7 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   const out = { ...cfg };
   // Session-sandbox mode: the platform injects the LLM gateway URL and the
   // session token (the same pair the daemon hands OpenCode —
-  // kortix-sandbox-agent-server/src/opencode.ts wires apiKey = KORTIX_TOKEN).
+  // kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts wires apiKey = KORTIX_TOKEN).
   // Explicit KORTIX_API_KEY / KORTIX_MODEL_MODE always win.
   const gatewayBase = process.env.KORTIX_LLM_BASE_URL;
   if (!process.env.KORTIX_API_KEY && !process.env.KORTIX_MODEL_MODE && gatewayBase && process.env.KORTIX_TOKEN) {

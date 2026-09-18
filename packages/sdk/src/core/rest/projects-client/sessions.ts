@@ -153,9 +153,16 @@ export interface CreateProjectSessionInput {
    */
   inherit_unbound?: boolean;
   /**
-   * Connectors that must resolve a strategy-compatible authorization
-   * before provisioning. Missing authorizations return
-   * `CONNECTOR_CONNECTION_REQUIRED`.
+   * @deprecated INERT since the connector-credentials rework. Accepted and
+   * ignored by the API; kept so an existing caller still compiles and still
+   * gets a session.
+   *
+   * A session no longer declares connectors it requires, because that refusal
+   * could not be cleared from the product: a `user`-strategy ("Private")
+   * connector had no self-serve connect flow, so the refusal card had no
+   * button and the composer sat on "Thinking" indefinitely. The connector
+   * CALL denies instead — `connector_not_connected`, with a `connect_url` the
+   * agent hands to a human.
    */
   require_connectors?: string[];
   /**
@@ -1432,8 +1439,14 @@ export interface SessionScopeInput {
 
 export interface SessionScope {
   secrets_allowlist: string[] | null;
-  /** Aliases this session requires, connected or not. See `require_connectors`. */
-  required_connectors: string[] | null;
+  /**
+   * @deprecated Always `null`. No session requires connectors any more.
+   *
+   * The field is kept (rather than removed) because `SessionScope` is a
+   * published type: dropping it would break every consumer that reads it.
+   * `null` has always meant "nothing required", which is now always true.
+   */
+  required_connectors: null;
   connector_bindings: SessionConnectorBindings;
   /**
    * Whether this session HOLDS its own connector override.

@@ -88,6 +88,7 @@ export function InstantSessionShell({
   boundAgentName,
   onSubmit,
   hasTranscript = false,
+  draftActive = true,
 }: {
   projectId: string;
   /** The route's session id (== the pending-prompt namespace the page migrates). */
@@ -111,6 +112,7 @@ export function InstantSessionShell({
    * in for goes.
    */
   hasTranscript?: boolean;
+  draftActive?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
@@ -498,6 +500,7 @@ export function InstantSessionShell({
       sessionId={sessionId}
       projectId={projectId}
       draftScope={draftScope}
+      draftActive={draftActive}
       prefill={prefill}
       onPrefillApplied={(id) => setPrefill((current) => (current?.id === id ? null : current))}
       boundAgentName={boundAgentName}

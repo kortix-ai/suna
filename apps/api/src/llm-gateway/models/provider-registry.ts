@@ -54,6 +54,17 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
     .providers.find((candidate) => candidate.id === providerId);
   if (!provider) return null;
 
+  // Google's Gemini API accepts OpenAI chat-completions requests with an API
+  // key. Use the same primary key name as the Models connect control.
+  if (providerId === 'google') {
+    return {
+      kind: 'openai-compat',
+      envVar: 'GOOGLE_GENERATIVE_AI_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      npm: provider.npm ?? undefined,
+    };
+  }
+
   const kind = providerKindForNpm(provider.npm);
   if (!kind) return null;
 

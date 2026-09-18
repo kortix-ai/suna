@@ -72,6 +72,11 @@ export async function reconcileAuditEvents(
                'agent_name', s.agent_name,
                'visibility', s.visibility,
                'sandbox_provider', s.sandbox_provider,
+               -- required_connectors is retired (connector credentials are a
+               -- call-time choice now, not a session gate — connection-access.ts).
+               -- This read is historical counts only: it summarizes what an
+               -- OLD row was created with, for the audit trail of sessions that
+               -- predate the change. Nothing enforces it anymore.
                'required_connector_count', CASE
                  WHEN jsonb_typeof(s.required_connectors) = 'array'
                  THEN jsonb_array_length(s.required_connectors) ELSE 0 END,

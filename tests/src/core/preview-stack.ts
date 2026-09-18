@@ -178,6 +178,13 @@ export function buildPreviewComposeOverlay(
   validatedValue(reportPath, 'reportPath');
   validatedValue(caddyfilePath, 'caddyfilePath');
   return `services:
+  # A branch preview keeps its database across pushes. A migration added on
+  # main can predate one already applied by this branch, so use the scoped
+  # preview command without changing self-host, staging, or production rules.
+  kortix-migrate:
+    command: ["bun", "/app/packages/db/scripts/migrate.ts", "preview-up"]
+    environment:
+      KORTIX_PREVIEW_MIGRATION: "1"
   preview-edge:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     ports:

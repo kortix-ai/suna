@@ -33,6 +33,9 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { validateProviderSecretPool } from './provider-secret-pools';
+import { requireFeatureFlag } from '../../feature-flags/gate';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
@@ -145,6 +148,22 @@ projectsApp.openapi(
   // approved. Managers and owners keep the manifest default untouched.
   if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
     body.agent_name = agentAccess.agentName;
+  }
+  if (body.provider_secret_pools !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
+    if (gate) return gate;
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
+    }
+    for (const [providerId, ids] of Object.entries(body.provider_secret_pools as Record<string, string[]>)) {
+      const invalid = await validateProviderSecretPool({
+        accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch, manifestPath: loaded.row.manifestPath,
+        agentName: normalizeString(body.agent_name) ?? agentAccess.agentName ?? 'default', userId: loaded.userId,
+        providerId, ids,
+      });
+      if (invalid) return c.json({ error: invalid.error }, invalid.status);
+    }
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface

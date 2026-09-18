@@ -54,8 +54,13 @@ test.describe("30 — Git connections", () => {
     let projectId: string | null = null;
     try {
       const session = await signIn(ownerEmail, authOptions);
-      const accounts = await api<AccountSummary[]>(session.access_token, "GET", "/accounts");
-      const account = accounts.find((item) => item.personal_account) ?? accounts[0];
+      const accounts = await api<AccountSummary[]>(
+        session.access_token,
+        "GET",
+        "/accounts",
+      );
+      const account =
+        accounts.find((item) => item.personal_account) ?? accounts[0];
       expect(account?.account_id).toBeTruthy();
       projectId = await seedDatabaseProject({
         accountId: account.account_id,
@@ -70,7 +75,8 @@ test.describe("30 — Git connections", () => {
       const backendReads: string[] = [];
       page.on("request", (request) => {
         const url = request.url();
-        if (url.includes("/v1/platform/github-app/status")) platformStatusCalls.push(url);
+        if (url.includes("/v1/platform/github-app/status"))
+          platformStatusCalls.push(url);
         if (url.includes("/v1/projects/git/backend")) backendReads.push(url);
       });
 
@@ -82,17 +88,28 @@ test.describe("30 — Git connections", () => {
         authOptions,
       );
 
-      await expect(page.getByText("GitHub connections", { exact: true })).toBeVisible({
+      await expect(
+        page.getByText("GitHub connections", { exact: true }),
+      ).toBeVisible({
         timeout: 60_000,
       });
-      const addAccount = page.getByRole("button", { name: "Add account", exact: true });
+      const addAccount = page.getByRole("button", {
+        name: "Add account",
+        exact: true,
+      });
       await expect(addAccount).toBeVisible();
 
       // The read-only instance line, in one of its two configured states.
       await expect(
         page
-          .getByText(/Kortix-managed repositories on this instance are created under/)
-          .or(page.getByText(/Kortix-managed repositories are not available on this instance/))
+          .getByText(
+            /Kortix-managed repositories on this instance are created under/,
+          )
+          .or(
+            page.getByText(
+              /Kortix-managed repositories are not available on this instance/,
+            ),
+          )
           .first(),
       ).toBeVisible();
 
@@ -109,9 +126,14 @@ test.describe("30 — Git connections", () => {
       const dialog = page.getByRole("dialog", { name: "Add a GitHub account" });
       await expect(dialog).toBeVisible();
       await expect(
-        dialog.getByText("Link a GitHub personal account or organization to this Kortix account."),
+        dialog.getByText(
+          "Link a GitHub personal account or organization to this Kortix account.",
+        ),
       ).toBeVisible();
-      const install = dialog.getByRole("button", { name: "Install the Kortix App", exact: true });
+      const install = dialog.getByRole("button", {
+        name: "Install the Kortix App",
+        exact: true,
+      });
       await expect(install).toBeVisible();
       // The install action is a real link to github.com/apps/<derived slug>/…
       // when the instance has an App, and says so when it has none — never a
@@ -123,10 +145,74 @@ test.describe("30 — Git connections", () => {
         ).toBeVisible();
       }
       await expect(
-        dialog.getByRole("button", { name: "Link an installation you already administer" }),
+        dialog.getByRole("button", {
+          name: "Link an installation you already administer",
+        }),
       ).toBeVisible();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(dialog).toBeHidden();
+
+      // `/new` is a git ACCOUNT manager, not a repository menu: the first
+      // question is whose account, with "Kortix managed" one option at the
+      // end and "Add a GitHub account…" reachable from the same list. A
+      // multi-account user arrives scoped to the account they chose
+      // (`?account=`), and the page has a way out that is not Log out.
+      await page.goto(`/new?account=${account.account_id}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(
+        page.getByRole("link", { name: "Back to projects" }),
+      ).toBeVisible({
+        timeout: 60_000,
+      });
+      // Name the project first. Leaving the name empty and clicking elsewhere
+      // blurs the field, the "Name is required" line inserts above the
+      // repository controls, and a click that started above the shift lands
+      // beside its target.
+      await page
+        .getByRole("textbox", { name: "Project name" })
+        .fill(`Git smoke ${runId}`);
+      // Two honest states for an account with no connection. With managed git
+      // configured (dev, staging, prod): the select, defaulting to "Kortix
+      // managed", with "Add a GitHub account…" in the same list. Without it
+      // (the local test profile excludes managed GitHub): no select at all —
+      // the line saying so, and the add-account button as the only action.
+      const gitAccount = page.getByRole("combobox", { name: "Git account" });
+      const addGitHubAccount = page.getByRole("button", {
+        name: /Add a GitHub account/,
+      });
+      await expect(gitAccount.or(addGitHubAccount).first()).toBeVisible({
+        timeout: 60_000,
+      });
+      if (await gitAccount.isVisible().catch(() => false)) {
+        await expect(gitAccount).toHaveText(/Kortix managed/);
+        await gitAccount.click();
+        const listbox = page.getByRole("listbox");
+        await expect(
+          listbox.getByRole("option", { name: /Kortix managed/ }),
+        ).toBeVisible();
+        await expect(
+          listbox.getByRole("option", { name: /Add a GitHub account/ }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+      } else {
+        await expect(
+          page.getByText(
+            "Kortix-managed repositories are not available on this instance",
+            {
+              exact: false,
+            },
+          ),
+        ).toBeVisible();
+        await addGitHubAccount.click();
+        await expect(
+          page.getByRole("dialog", { name: "Add a GitHub account" }),
+        ).toBeVisible();
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      }
+      // Nothing under "create" asks for a branch — neither a managed default
+      // nor an empty account.
+      await expect(page.getByLabel("Default branch")).toHaveCount(0);
     } finally {
       if (projectId) {
         await runDatabaseSql(
@@ -134,6 +220,96 @@ test.describe("30 — Git connections", () => {
           [projectId],
         ).catch(() => undefined);
       }
+      await deleteAuthUser(owner.id, authOptions);
+    }
+  });
+
+  // "Verify with GitHub logs me out" (dev, 2026-09-17, twice). The
+  // identity-proof popup (`/auth/github-connect`) posts the GitHub token to
+  // its opener and closes itself 200ms later. It runs the same `AuthProvider`
+  // as every page, whose bootstrap validates the session with `getUser()`.
+  // On a slow network that request was still in flight when the popup
+  // closed; the abort came back as a retryable status-0 error, the provider
+  // treated any error as a stale session and called `signOut()`, which
+  // cleared the cookie every tab shares and broadcast `SIGNED_OUT` to the
+  // opener. The opener's own guard then bounced it to `/auth?returnUrl=…`.
+  //
+  // Reproduced with Slow 3G throttling on the popup; this journey forces the
+  // same race by delaying the auth server's user check for the whole browser
+  // context, so the popup's own validation is guaranteed to abort.
+  test("the identity-proof popup closing mid-check never signs the opener out", async ({
+    page,
+    context,
+  }) => {
+    const runId = randomUUID().slice(0, 8);
+    const ownerEmail = `e2e-git-popup-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    try {
+      const session = await signIn(ownerEmail, authOptions);
+      const accounts = await api<AccountSummary[]>(
+        session.access_token,
+        "GET",
+        "/accounts",
+      );
+      const account =
+        accounts.find((item) => item.personal_account) ?? accounts[0];
+      expect(account?.account_id).toBeTruthy();
+
+      await installBrowserSessionDirect(
+        page,
+        session,
+        `/github/setup?account_id=${account.account_id}`,
+        authOptions,
+      );
+      await expect(
+        page.getByRole("button", { name: "Continue with GitHub" }),
+      ).toBeVisible({
+        timeout: 60_000,
+      });
+
+      // Every page in this context, the popup included: its `getUser()` now
+      // outlives its 200ms self-close by a wide margin.
+      await context.route(/\/auth\/v1\/user(\?|$)/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await route.continue();
+      });
+
+      const popupPromise = context.waitForEvent("page");
+      await page.evaluate(() => {
+        window.open(
+          "/auth/github-connect#github_token=e2e-not-a-real-github-token",
+          "kortix-github-proof",
+          "popup",
+        );
+      });
+      const popup = await popupPromise;
+      await popup.waitForEvent("close", { timeout: 60_000 });
+
+      // The opener took the token, called the link API with it and got the
+      // honest answer for a fake token — and is STILL signed in on the same
+      // route. Before the fix it was on `/auth?returnUrl=%2Fgithub%2Fsetup…`
+      // with no session cookie within a second of the popup closing.
+      await expect(
+        page.getByRole("button", { name: "Continue with GitHub" }),
+      ).toBeVisible({
+        timeout: 30_000,
+      });
+      await page.waitForTimeout(3_000);
+      expect(new URL(page.url()).pathname).toBe("/github/setup");
+      const cookieNames = (await context.cookies()).map(
+        (cookie) => cookie.name,
+      );
+      // `sb-kortix-auth-token`, `-<port>` on a localhost app URL, `.N` when chunked
+      // (`lib/supabase/constants.ts`).
+      expect(
+        cookieNames.some((name) =>
+          /^sb-kortix-auth-token(-\d+)?(\.\d+)?$/.test(name),
+        ),
+      ).toBe(true);
+      await expect(
+        page.getByRole("heading", { name: "Link a GitHub account" }),
+      ).toBeVisible();
+    } finally {
       await deleteAuthUser(owner.id, authOptions);
     }
   });

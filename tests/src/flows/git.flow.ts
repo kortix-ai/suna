@@ -453,11 +453,14 @@ flow(
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
+      'POST /v1/projects/:projectId/change-requests',
+      'POST /v1/projects/:projectId/change-requests/:crId/merge',
+      'GET /v1/projects/:projectId/change-requests/:crId',
     ],
   },
   async (ctx) => {
     const { randomUUID } = await import('node:crypto');
-    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const { execFile } = await import('node:child_process');
@@ -585,6 +588,85 @@ flow(
         await git(owner.secret, ['push', 'origin', '--delete', 'gh17-shared']);
         const refs = await git(owner.secret, ['ls-remote', '--heads', 'origin', 'gh17-shared']);
         if (refs.trim()) throw new Error('shared branch still exists after owner deletion');
+      });
+      await ctx.step('owner session opens its own CR without session_id and self merges with wildcard grant', async () => {
+        await writeFile(join(root, 'self-merge-proof.txt'), 'session self merge proof\n');
+        await git(owner.secret, ['add', 'self-merge-proof.txt']);
+        await git(owner.secret, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'Add self merge proof']);
+        await git(owner.secret, ['push', 'origin', `HEAD:refs/heads/${owner.sessionId}`]);
+
+        const request = async (path: string, body: Record<string, unknown>) => {
+          const response = await fetch(`${ctx.env.apiUrl}${path}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${owner.secret}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          return { status: response.status, body: await response.json() as Record<string, any> };
+        };
+        const crPath = `/projects/${project.id}/change-requests`;
+        const mismatch = await request(crPath, {
+          title: 'Must reject mismatched origin', head_ref: owner.sessionId, session_id: memberSession.sessionId,
+        });
+        if (mismatch.status !== 400 || mismatch.body.code !== 'CR_SESSION_ID_MISMATCH') {
+          throw new Error(`mismatched session_id: ${mismatch.status} ${JSON.stringify(mismatch.body)}`);
+        }
+        const opened = await request(crPath, { title: 'Self merge proof', head_ref: owner.sessionId });
+        if (opened.status !== 201 || opened.body.origin_session_id !== owner.sessionId) {
+          throw new Error(`session origin binding: ${opened.status} ${JSON.stringify(opened.body)}`);
+        }
+        const crId = String(opened.body.cr_id);
+        const merged = await request(`${crPath}/${crId}/merge`, { message: 'Merge verified self merge proof' });
+        if (merged.status !== 200 || merged.body.change_request?.status !== 'merged' || !merged.body.merge?.merge_commit_sha) {
+          throw new Error(`self merge: ${merged.status} ${JSON.stringify(merged.body)}`);
+        }
+        const read = await fetch(`${ctx.env.apiUrl}${crPath}/${crId}`, {
+          headers: { Authorization: `Bearer ${owner.secret}` },
+        });
+        const readBody = await read.json() as Record<string, any>;
+        if (read.status !== 200 || readBody.change_request?.status !== 'merged') {
+          throw new Error(`merged CR read-back: ${read.status} ${JSON.stringify(readBody)}`);
+        }
+        const baseRef = await git(owner.secret, ['ls-remote', 'origin', 'refs/heads/main']);
+        if (!baseRef.includes(String(merged.body.merge.base_sha_after))) {
+          throw new Error('base branch does not contain the merged SHA');
+        }
+      });
+      await ctx.step('ungoverned session cannot self merge despite its human merge role', async () => {
+        await writeFile(join(root, 'ungranted-merge-proof.txt'), 'ungoverned session proof\n');
+        await git(owner.secret, ['add', 'ungranted-merge-proof.txt']);
+        await git(owner.secret, ['-c', 'user.name=KE2E', '-c', 'user.email=ke2e@kortix.ai', 'commit', '-m', 'Add ungoverned proof']);
+        await git(owner.secret, ['push', 'origin', `HEAD:refs/heads/${owner.sessionId}`]);
+
+        const created = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', {
+          name: 'GH-17 ungoverned session fixture',
+        });
+        created.status(201);
+        const { token_id: tokenId, secret_key: secret } = created.json<{ token_id: string; secret_key: string }>();
+        await db.query(`UPDATE kortix.account_tokens
+          SET project_id = $2, session_id = $3, agent_grant = NULL, account_id = $4, user_id = $5
+          WHERE token_id = $1`, [tokenId, project.id, owner.sessionId, team.id, ctx.P.OWNER.userId]);
+
+        const crPath = `/projects/${project.id}/change-requests`;
+        const send = async (path: string, body: Record<string, unknown>) => {
+          const response = await fetch(`${ctx.env.apiUrl}${path}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          return { status: response.status, body: await response.json() as Record<string, any> };
+        };
+        const opened = await send(crPath, { title: 'Ungoverned self merge denied', head_ref: owner.sessionId });
+        if (opened.status !== 201 || opened.body.origin_session_id !== owner.sessionId) {
+          throw new Error(`ungoverned CR open: ${opened.status} ${JSON.stringify(opened.body)}`);
+        }
+        const denied = await send(`${crPath}/${opened.body.cr_id}/merge`, {});
+        if (denied.status !== 403 || denied.body.code !== 'CR_SELF_MERGE_REFUSED') {
+          throw new Error(`ungoverned self merge: ${denied.status} ${JSON.stringify(denied.body)}`);
+        }
+        const baseRef = await git(owner.secret, ['ls-remote', 'origin', 'refs/heads/main']);
+        if (baseRef.includes((await git(owner.secret, ['rev-parse', 'HEAD'])).trim())) {
+          throw new Error('denied self merge changed the base branch');
+        }
       });
     } finally {
       for (const sessionId of sessions) {

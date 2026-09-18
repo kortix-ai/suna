@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { waitForOpencodeRootReadiness } from '../main'
+import { waitForOpencodeRootReadiness } from '../harness/open-code/boot'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void
@@ -15,7 +15,7 @@ describe('OpenCode root readiness gate', () => {
     // A root-list request sent before OpenCode's request handler exists is
     // never answered and burns the whole 5 s attempt timeout (the S3-boot
     // penalty measured 2026-09-15). The gate holds the request for the
-    // supervisor's listening signal and hands the remaining budget on.
+    // lifecycle's listening signal and hands the remaining budget on.
     const listening = deferred()
     const events: string[] = []
     let now = 1_000

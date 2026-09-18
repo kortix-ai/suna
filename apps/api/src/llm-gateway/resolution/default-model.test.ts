@@ -388,3 +388,16 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     expect(result).toBe('openai/gpt-5.5');
   });
 });
+
+test('model validation carries prospective pool selections into credential resolution', async () => {
+  const resolver = spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(async (_principal, _model, options) => {
+    return options?.providerSecretPools?.anthropic?.includes('selected') ? [{ provider: 'anthropic' } as any] : [];
+  });
+  expect(await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/claude-sonnet-4.6', providerSecretPools: { anthropic: ['selected'] } })).toBe(true);
+  expect(resolver.mock.calls[0]?.[2]).toEqual({ providerSecretPools: { anthropic: ['selected'] }, probe: true });
+});
+
+test('existing session validation resolves that session’s pool', async () => {
+  spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(async principal => principal.sessionId === 'pooled-session' ? [{ provider: 'anthropic' } as any] : []);
+  expect(await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/claude-sonnet-4.6', sessionId: 'pooled-session' })).toBe(true);
+});

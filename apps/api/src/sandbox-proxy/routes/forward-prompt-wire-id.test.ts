@@ -39,10 +39,6 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../../projects/lib/prompt-connector-preflight', () => ({
-  PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
-  missingPromptConnectorConnections: async () => ({ ok: true }),
-}));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
