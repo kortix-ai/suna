@@ -1644,6 +1644,7 @@ export interface ConfigDirSyncResult {
  *     pin to match the opencode BINARY in the box (1.17.11 → 1.18.23);
  *   - `skills/<managed>/**`: `ensureInjectedManagedSkills` force-writes the
  *     current overlay over whatever copy the repository tracks.
+ *   - the lockfile: the same installer rewrites it for the pin it just moved.
  *
  * Every starter-seeded repository tracks both, so the guard fired on
  * effectively every session: the etag moved and the agent did not.
@@ -1655,6 +1656,12 @@ export interface ConfigDirSyncResult {
  */
 const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
 const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
+/**
+ * Written by OpenCode's installer on every spawn. Measured on the #7403 preview:
+ * the first sync landed, opencode restarted, the installer rewrote `bun.lock`
+ * for the held pin, and the NEXT sync refused with `local changes`.
+ */
+const INSTALLER_LOCKFILES = ['bun.lock', 'bun.lockb', 'package-lock.json'] as const
 const DEPENDENCY_SECTIONS = [
   'dependencies',
   'devDependencies',
@@ -1790,6 +1797,7 @@ export async function syncOpencodeConfigDirToBase(
     .filter((entry) => entry.isDirectory())
     .map((entry) => `${relConfigDir}/skills/${entry.name}/`)
   const packageJsonPath = `${relConfigDir}/package.json`
+  const lockfilePaths = INSTALLER_LOCKFILES.map((name) => `${relConfigDir}/${name}`)
 
   const blobAt = async (rev: string, path: string): Promise<string | null> => {
     const shown = await execGit(['-C', target, 'show', `${rev}:${path}`], LITERAL)
@@ -1797,12 +1805,21 @@ export async function syncOpencodeConfigDirToBase(
   }
   const worktreeText = (path: string) => readFile(join(target, path), 'utf8').catch(() => null)
 
+  /** `package.json` differs from `rev` by the plugin pin at most. */
+  const packageJsonIsOurs = async (rev: string): Promise<boolean> => {
+    const mine = packageJsonWithoutPluginPin(await worktreeText(packageJsonPath))
+    return mine !== null && mine === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))
+  }
+
   /** The platform wrote this path; its difference from `rev` is not session work. */
   const platformOwned = async (path: string, rev: string): Promise<boolean> => {
     if (managedSkillPrefixes.some((prefix) => path.startsWith(prefix))) return true
-    if (path !== packageJsonPath) return false
-    const mine = packageJsonWithoutPluginPin(await worktreeText(path))
-    return mine !== null && mine === packageJsonWithoutPluginPin(await blobAt(rev, path))
+    if (path === packageJsonPath) return packageJsonIsOurs(rev)
+    // A lockfile is the installer's output for `package.json`. It follows that
+    // file: ours while the manifest holds no session edit, the session's the
+    // moment the manifest gains one (an added dependency rewrites both).
+    if (lockfilePaths.includes(path)) return packageJsonIsOurs(rev)
+    return false
   }
 
   /** The working-tree path is byte-identical to `rev` — including "absent in both". */
@@ -1849,10 +1866,13 @@ export async function syncOpencodeConfigDirToBase(
   if (diff.code === 0) {
     let differs = retired.length > 0
     for (const path of diff.stdout.split('\0').filter(Boolean)) {
-      if (!(await platformOwned(path, ref))) {
-        differs = true
-        break
-      }
+      if (await platformOwned(path, ref)) continue
+      // `git diff <ref>` reads the working tree THROUGH the index. A file an
+      // earlier sync added is untracked, so it is listed as deleted although
+      // its bytes equal the ref's. Compare the bytes before believing it.
+      if (await sameAsCommit(path, ref)) continue
+      differs = true
+      break
     }
     if (!differs) return { synced: false, skipped: 'already matches base' }
   }

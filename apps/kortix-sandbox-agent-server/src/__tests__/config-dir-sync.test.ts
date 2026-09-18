@@ -342,6 +342,45 @@ describe('platform-written files are not the session\'s work', () => {
     expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23', ',\n    "zod": "4.0.0"'))
   })
 
+  test('a lockfile the installer rewrote does not block the sync', async () => {
+    // Preview, 2026-09-18: the first sync worked, opencode restarted, its
+    // installer rewrote bun.lock for the new pin — and the next sync refused
+    // with `local changes`. A lockfile is installer output, not session work.
+    const LOCK = `${CONFIG_DIR}/bun.lock`
+    write(origin, LOCK, '"@opencode-ai/plugin": "1.17.11"\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'lock')
+    git(work, 'pull', '-q', 'origin', 'main')
+    write(work, LOCK, '"@opencode-ai/plugin": "1.18.23"\n')
+    write(origin, AGENT, 'AFTER THE LOCK\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'after the lock')
+
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())).toEqual({ synced: true })
+    expect(agentText()).toBe('AFTER THE LOCK\n')
+
+    // The installer runs again after the restart. The next base change still lands.
+    write(work, LOCK, '"@opencode-ai/plugin": "1.18.23"\n')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())).toEqual({
+      synced: false,
+      skipped: 'already matches base',
+    })
+    write(origin, AGENT, 'NEWEST PROMPT\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'newest')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())).toEqual({ synced: true })
+    expect(agentText()).toBe('NEWEST PROMPT\n')
+  })
+
+  test('a rewritten lockfile next to an EDITED package.json still refuses', async () => {
+    write(work, PKG, pkg('1.18.23', ',\n    "left-pad": "1.3.0"'))
+    write(work, `${CONFIG_DIR}/bun.lock`, 'left-pad\n')
+
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+  })
+
   test('REFUSES when package.json carries more than the pin', async () => {
     write(work, PKG, pkg('1.18.23', ',\n    "left-pad": "1.3.0"'))
 
@@ -414,6 +453,22 @@ describe('a session converges more than once', () => {
     expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
     expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23', ',\n    "zod": "4.0.0"'))
     expect(agentText()).toBe('FOURTH PROMPT\n')
+  })
+
+  test('a file the sync ADDED does not make the next call sync again', async () => {
+    // Preview, 2026-09-18: three reloads in a row each answered `updated`, and
+    // each one restarted opencode. The added file is untracked against the
+    // index, and `git diff <ref>` reports such a path as DELETED although the
+    // bytes on disk equal the ref's — so "already matches base" never held.
+    write(origin, `${CONFIG_DIR}/skills/new-skill/SKILL.md`, 'NEW SKILL\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'add a skill')
+
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({
+      synced: false,
+      skipped: 'already matches base',
+    })
   })
 
   test('an edit the session makes AFTER a sync still blocks the next one', async () => {
