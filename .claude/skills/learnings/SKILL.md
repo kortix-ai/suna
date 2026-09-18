@@ -21,6 +21,12 @@ linked, not inlined.
 
 ## Register
 
+### Offboarding must clear group rows as well as account roles (2026-09-18)
+
+**When:** removing an account member or rebinding a legacy identity to SSO. Delete that member's group rows for the account before deleting membership. Otherwise a later re-invite restores group access without a new grant. Do not copy group rows from an identity whose membership was already revoked.
+
+**Near-miss:** LibreMax's removed legacy user still had one group row after account removal. The identity cutover dry run would have copied it to the SSO ID. The API removal path now clears groups; `MEM-4` proves removal and readback through HTTP. The cutover transfers only groups belonging to accounts where the old identity is still a member.
+
 ### 2026-09-18 — A `bun build --define` substitutes one literal token; a read through an injected `env` object ships `undefined`
 
 **Incident.** The first published `kortix tui` (dev-latest `0.13.25-dev.4589893d`,

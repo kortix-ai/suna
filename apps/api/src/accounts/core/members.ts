@@ -772,6 +772,15 @@ export function registerMemberRoutes(): void {
       // without access rather than with access and no identity.
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
+      // Group grants are independent rows. Leaving them behind makes a later
+      // re-invite restore access to groups the owner already removed this user from.
+      await db.delete(accountGroupMembers).where(and(
+        eq(accountGroupMembers.userId, targetUserId),
+        inArray(accountGroupMembers.groupId, db
+          .select({ groupId: accountGroups.groupId })
+          .from(accountGroups)
+          .where(eq(accountGroups.accountId, accountId))),
+      ));
       await db
         .delete(accountMemberships)
         .where(
