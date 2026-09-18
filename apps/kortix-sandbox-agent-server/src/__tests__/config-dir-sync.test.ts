@@ -381,6 +381,17 @@ describe('platform-written files are not the session\'s work', () => {
     expect(result).toEqual({ synced: false, skipped: 'local changes' })
   })
 
+  test('platform files swept into a session commit are still not session work', async () => {
+    // The same `git add -A`, before any sync: it commits the pin and the overlay.
+    git(work, 'add', '-A')
+    git(work, 'commit', '-qm', 'agent: git add -A')
+
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())).toEqual({ synced: true })
+    expect(agentText()).toBe('NEWER PROMPT\n')
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23'))
+    expect(readFileSync(join(work, MANAGED), 'utf8')).toBe('OVERLAY KORTIX-CLI\n')
+  })
+
   test('REFUSES when package.json carries more than the pin', async () => {
     write(work, PKG, pkg('1.18.23', ',\n    "left-pad": "1.3.0"'))
 
@@ -495,6 +506,43 @@ describe('a session converges more than once', () => {
     await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
 
     expect(await readConfigDirSyncedSha(work)).toBeNull()
+  })
+
+  test('an agent that commits everything after a sync does not lock the session out', async () => {
+    // Agents run `git add -A && git commit` constantly. That sweeps the synced
+    // (unstaged) config into a session commit. Counting commits, the next sync
+    // saw "the session committed its agent config" and refused with
+    // `local commits` — for the rest of the session's life. The commit carries
+    // OUR bytes, so it is not session work.
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    write(work, 'feature.ts', 'export const f = 1\n')
+    git(work, 'add', '-A')
+    git(work, 'commit', '-qm', 'agent: git add -A')
+
+    write(origin, AGENT, 'THIRD PROMPT\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'third')
+
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+    expect(agentText()).toBe('THIRD PROMPT\n')
+    expect(readFileSync(join(work, 'feature.ts'), 'utf8')).toBe('export const f = 1\n')
+  })
+
+  test('a REAL config edit committed after a sync still refuses', async () => {
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    write(work, AGENT, 'MY OWN PROMPT, COMMITTED\n')
+    git(work, 'add', '-A')
+    git(work, 'commit', '-qm', 'my prompt')
+
+    write(origin, AGENT, 'THIRD PROMPT\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'third')
+
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({
+      synced: false,
+      skipped: 'local commits',
+    })
+    expect(agentText()).toBe('MY OWN PROMPT, COMMITTED\n')
   })
 
   test('an edit the session makes AFTER a sync still blocks the next one', async () => {

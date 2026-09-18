@@ -1689,10 +1689,21 @@ const CONFIG_DIR_SYNC_MARKER = 'kortix-config-dir-sync'
  * and it already reads `kortix-compiled-checkout.json` the same way.
  */
 export async function readConfigDirSyncedSha(projectTarget: string): Promise<string | null> {
-  const recorded = (
-    await readFile(join(projectTarget, '.git', CONFIG_DIR_SYNC_MARKER), 'utf8').catch(() => '')
-  ).trim()
-  return /^[0-9a-f]{40,64}$/.test(recorded) ? recorded : null
+  const recorded = await readFile(
+    join(projectTarget, '.git', CONFIG_DIR_SYNC_MARKER),
+    'utf8',
+  ).catch(() => '')
+  return parseSyncedHistory(recorded).at(-1) ?? null
+}
+
+/** Enough for a long-lived session; the file stays a few KB. */
+const SYNCED_HISTORY_LIMIT = 64
+
+function parseSyncedHistory(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[0-9a-f]{40,64}$/.test(line))
 }
 
 export interface ConfigDirSyncOptions {
@@ -1848,12 +1859,19 @@ export async function syncOpencodeConfigDirToBase(
 
   const markerPath = await execGit(['-C', target, 'rev-parse', '--git-path', CONFIG_DIR_SYNC_MARKER])
   const markerFile = markerPath.code === 0 ? join(target, markerPath.stdout.trim()) : null
-  const recorded = markerFile ? (await readFile(markerFile, 'utf8').catch(() => '')).trim() : ''
-  const lastSynced = /^[0-9a-f]{40,64}$/.test(recorded) ? recorded : null
+  // One commit per line, oldest first; the last line is the current one. The
+  // history exists for the committed-work check below: an agent's `git add -A`
+  // can commit the bytes of ANY earlier sync, not only the latest.
+  const syncedHistory = parseSyncedHistory(
+    markerFile ? await readFile(markerFile, 'utf8').catch(() => '') : '',
+  )
+  const lastSynced = syncedHistory.at(-1) ?? null
   const recordSyncedCommit = async (): Promise<void> => {
     const resolved = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${ref}^{commit}`])
     if (!markerFile || resolved.code !== 0) return
-    await writeFile(markerFile, `${resolved.stdout.trim()}\n`, 'utf8').catch((err) =>
+    const sha = resolved.stdout.trim()
+    const history = [...syncedHistory.filter((entry) => entry !== sha), sha].slice(-SYNCED_HISTORY_LIMIT)
+    await writeFile(markerFile, `${history.join('\n')}\n`, 'utf8').catch((err) =>
       logger.warn('[git] config-dir sync: could not record the synced commit', { err: String(err) }),
     )
   }
@@ -1925,15 +1943,64 @@ export async function syncOpencodeConfigDirToBase(
     }
   }
 
-  // Commits this session made on top of base that touch the config dir. Without
-  // this a session that edited and COMMITTED its agent would have that silently
-  // reverted by a reload.
-  const ahead = await execGit(
-    ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
-    LITERAL,
-  )
-  if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
-    return { synced: false, skipped: 'local commits' }
+  // Session work COMMITTED under the config dir. Without this a session that
+  // edited and committed its agent would have that silently reverted.
+  //
+  // Judged by content, not by counting commits. Agents run `git add -A && git
+  // commit` constantly, and that sweeps our own unstaged sync — and the
+  // platform's pin and overlay — into a session commit. Counting commits, the
+  // next sync saw "the session committed its agent config" and refused with
+  // `local commits` for the rest of the session's life.
+  //
+  // A path the session's commits changed is OURS when its committed bytes equal
+  // that path at a commit we synced — or differ from the branch point only the
+  // way the platform writes them. Anything else is the session's, and refuses.
+  const mergeBase = await execGit(['-C', target, 'merge-base', 'HEAD', ref])
+  const branchPoint = mergeBase.code === 0 ? mergeBase.stdout.trim() : null
+  if (branchPoint) {
+    const blobId = async (rev: string, path: string): Promise<string> => {
+      const id = await execGit(['-C', target, 'rev-parse', '--verify', '-q', `${rev}:${path}`], LITERAL)
+      return id.code === 0 ? id.stdout.trim() : '' // '' = absent; absent equals absent
+    }
+    const packageJsonCommittedIsOurs = async (): Promise<boolean> => {
+      const head = packageJsonWithoutPluginPin(await blobAt('HEAD', packageJsonPath))
+      if (head === null) return false
+      for (const rev of [branchPoint, ...syncedHistory]) {
+        if (head === packageJsonWithoutPluginPin(await blobAt(rev, packageJsonPath))) return true
+      }
+      return false
+    }
+    const committed = await execGit(
+      ['-C', target, 'diff', '--name-only', '-z', branchPoint, 'HEAD', '--', relConfigDir],
+      LITERAL,
+    )
+    for (const path of committed.code === 0 ? committed.stdout.split('\0').filter(Boolean) : []) {
+      if (managedSkillPrefixes.some((prefix) => path.startsWith(prefix))) continue
+      if ((path === packageJsonPath || lockfilePaths.includes(path)) && (await packageJsonCommittedIsOurs())) {
+        continue
+      }
+      const atHead = await blobId('HEAD', path)
+      let ours = false
+      for (const rev of syncedHistory) {
+        if ((await blobId(rev, path)) === atHead) {
+          ours = true
+          break
+        }
+      }
+      if (ours) continue
+      logger.info('[git] config-dir sync: session commit blocks the sync', { path })
+      return { synced: false, skipped: 'local commits' }
+    }
+  } else {
+    // No common history to measure against (unrelated or truncated). Fall back
+    // to the conservative rule: any session commit under the dir refuses.
+    const ahead = await execGit(
+      ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
+      LITERAL,
+    )
+    if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
+      return { synced: false, skipped: 'local commits' }
+    }
   }
 
   // Base carries whatever pin the repository committed. The box needs the one
