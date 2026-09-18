@@ -3,6 +3,7 @@ import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
+import { consumePendingTeamsPickerMessage } from './auth-resume';
 import { buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
@@ -10,8 +11,9 @@ import {
   notifyAdminsOfTeamsAccessRequest,
   teamsUserId,
 } from './identity';
+import { decideTeamsThreadJoin } from './participants';
 import { createOrJoinTeamsConversationSession } from './session';
-import type { TeamsActivity } from './types';
+import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export interface TeamsInvokeResponse {
   statusCode: number;
@@ -41,6 +43,8 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
   switch (action.verb) {
     case 'teams_request_access':
       return handleRequestAccess(activity, action.data);
+    case 'teams_thread_join':
+      return handleThreadJoin(activity, action.data);
     case 'teams_set_model':
       return handleSetModel(activity, action.data);
     case 'teams_set_agent':
@@ -108,6 +112,21 @@ async function handlePickProject(
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
   const switched = await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
   if (!switched) return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
+
+  // If this pick answered a project picker, replay the message that triggered it.
+  const pendingId = typeof data.pendingId === 'string' ? data.pendingId : undefined;
+  if (pendingId) {
+    const parked = await consumePendingTeamsPickerMessage({ pendingId, tenantId: convo.tenantId });
+    if (parked) {
+      void createOrJoinTeamsConversationSession({
+        projectId,
+        tenantId: convo.tenantId,
+        conversationId: convo.conversationId,
+        activity: parked,
+      }).catch((err) => console.error('[teams-webhook] picker replay failed', err));
+      return cardResponse(buildNoticeCard('This conversation now runs the selected project — on it.', '✅'));
+    }
+  }
   return cardResponse(buildNoticeCard('This conversation now runs the selected project.', '✅'));
 }
 
@@ -189,6 +208,42 @@ async function handleReview(
   const ack =
     verdict === 'approve' ? `Approved "${item.title}" — resuming the agent.` : verdict === 'reject' ? `Rejected "${item.title}".` : `Requested changes on "${item.title}".`;
   return cardResponse(buildNoticeCard(ack));
+}
+
+async function handleThreadJoin(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const decider = teamsUserId(activity);
+  const decision = data.decision === 'approved' ? 'approved' : data.decision === 'denied' ? 'denied' : null;
+  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : null;
+  const projectId = typeof data.projectId === 'string' ? data.projectId : null;
+  const requesterUserId = typeof data.requesterUserId === 'string' ? data.requesterUserId : null;
+  const requesterTeamsUserId = typeof data.requesterTeamsUserId === 'string' ? data.requesterTeamsUserId : null;
+  if (!convo || !decider || !decision || !sessionId || !projectId || !requesterUserId || !requesterTeamsUserId || !activity.serviceUrl) {
+    return cardResponse(buildNoticeCard("I couldn't apply that decision."));
+  }
+  const ref: TeamsConversationRef = {
+    serviceUrl: activity.serviceUrl,
+    conversationId: convo.conversationId,
+    botId: activity.recipient?.id,
+    fromId: activity.from?.id,
+    tenantId: convo.tenantId,
+    projectId,
+  };
+  const result = await decideTeamsThreadJoin({
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    deciderTeamsUserId: decider,
+    projectId,
+    sessionId,
+    requesterUserId,
+    requesterTeamsUserId,
+    decision,
+    ref,
+  });
+  return cardResponse(buildNoticeCard(result.text, result.ok ? (decision === 'approved' ? '✅' : '🚫') : '⚠️'));
 }
 
 async function handleRequestAccess(

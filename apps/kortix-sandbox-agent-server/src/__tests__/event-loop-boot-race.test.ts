@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { startOpencodeEventLoop } from '../opencode-events'
-import type { Opencode } from '../opencode'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 const loops: Array<{ stop(): void }> = []
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
@@ -71,6 +73,48 @@ function eventServerWithFrame(frame: string) {
 const cfg = { workspace: '/workspace' } as never
 
 describe('event-loop boot race — the SSE subscribe must not sleep through opencode becoming ready', () => {
+  test('harness service keeps native extension events and uses the current subscription workspace', async () => {
+    const nativeEvent = {
+      type: 'native.custom-feature',
+      properties: { nested: { values: [1, 'unchanged'] } },
+      extraNativeField: 'preserved',
+    }
+    const requestedWorkspaces: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        requestedWorkspaces.push(new URL(req.url).searchParams.get('directory'))
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(nativeEvent)}\n\n`))
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } })
+      },
+    })
+    servers.push(server)
+    const harness = createOpenCodeHarnessService({
+      workspace: '/seed',
+      opencodeInternalPort: server.port,
+    } as Config, '/seed-config')
+    // Construction must not spawn OpenCode or subscribe using seed config.
+    expect(harness.native.getPid()).toBeNull()
+    expect(requestedWorkspaces).toEqual([])
+    let receive!: (event: unknown) => void
+    const received = new Promise<unknown>((resolve) => { receive = resolve })
+    // No process is spawned here, so the lifecycle never announces "server
+    // listening"; skip the subscribe gate (covered by event-loop-dead-window)
+    // instead of sleeping through its 5 s cap.
+    const loop = harness.events.subscribe(
+      { workspace: '/adopted' } as Config,
+      { onEvent: receive },
+      { listeningWaitMaxMs: 0 },
+    )
+    loops.push(loop)
+    await loop.connected
+    expect(await received).toEqual(nativeEvent)
+    expect(requestedWorkspaces).toEqual(['/adopted'])
+  })
+
   test('subscribes promptly after several pre-connect refusals', async () => {
     const { port } = flakyEventServer(8)
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})

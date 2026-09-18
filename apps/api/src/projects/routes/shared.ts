@@ -14,6 +14,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
@@ -285,6 +286,7 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      invalidateSandbox(externalId);
       // The provider had this box STOPPED: whatever turn was still open on it
       // is over. Normally applyStoppedState settled those rows already and
       // this finds nothing; it is the guard for a row that reached `stopped`

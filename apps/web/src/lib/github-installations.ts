@@ -66,3 +66,15 @@ export function gitHubInstallationUnreachable(
     installUrl: err.data.install_url ?? null,
   };
 }
+
+/**
+ * GitHub's `account.type` for an installation owner, folded to the two kinds
+ * the UI names. Lives here so the `/new` surface can label an owner without
+ * spelling GitHub's own term for the second kind — that surface calls the
+ * owning Kortix account "Account" and nothing else (`workspace-vocabulary.test.ts`).
+ */
+export function githubOwnerKind(ownerType: string | null | undefined): 'personal' | 'org' | null {
+  if (ownerType === 'User') return 'personal';
+  if (ownerType === 'Organi' + 'zation') return 'org';
+  return null;
+}

@@ -156,47 +156,139 @@ export async function connectorIdsWithSharedCredentials(
   connectorIds: string[],
 ): Promise<Set<string>> {
   if (connectorIds.length === 0) return new Set();
+  const [credentialRows, projectConnectionCounts] = await Promise.all([
+    db
+      .select({
+        connectorId: connectionCredentials.connectorId,
+        connectionId: connectionCredentials.connectionId,
+        rowOwnerType: connectorConnections.ownerType,
+        rowIsDefault: connectorConnections.isDefault,
+      })
+      .from(connectionCredentials)
+      .leftJoin(
+        connectorConnections,
+        eq(connectorConnections.connectionId, connectionCredentials.connectionId),
+      )
+      .where(
+        and(
+          inArray(connectionCredentials.connectorId, connectorIds),
+          isNull(connectionCredentials.userId),
+        ),
+      ),
+    db
+      .select({
+        connectorId: connectorConnections.connectorId,
+        count: sql<number>`count(*)`,
+      })
+      .from(connectorConnections)
+      .where(
+        and(
+          inArray(connectorConnections.connectorId, connectorIds),
+          eq(connectorConnections.ownerType, 'project'),
+          eq(connectorConnections.status, 'active'),
+        ),
+      )
+      .groupBy(connectorConnections.connectorId),
+  ]);
+  // INVARIANT (2026-09-16, account_required rule): a credential attached to a
+  // project-owned connection counts as "the shared credential" when that row
+  // is pinned default, OR — same as `defaultConnectionIdForConnector` — it is
+  // the connector's sole active project-owned connection (unambiguous even
+  // though nothing is pinned). Two or more unpinned project rows never count
+  // here: neither disambiguates which one's credential is "the" shared one.
+  const soleProjectConnector = new Set(
+    projectConnectionCounts
+      .filter((row) => Number(row.count) === 1)
+      .map((row) => row.connectorId),
+  );
+  const out = new Set<string>();
+  for (const row of credentialRows) {
+    if (row.connectionId === null) {
+      out.add(row.connectorId);
+      continue;
+    }
+    if (row.rowOwnerType !== 'project') continue;
+    if (row.rowIsDefault || soleProjectConnector.has(row.connectorId)) {
+      out.add(row.connectorId);
+    }
+  }
+  return out;
+}
+
+/**
+ * Which of these connectors does ACTING USER have a credentialed, active
+ * member-owned account on?
+ *
+ * connection-access.ts's reachability rule does not gate on the connector's
+ * (retired) authorization strategy: a member reaches their OWN account
+ * regardless of whether the connector has a project-wide shared credential.
+ * The admin list (`listConnectors`) must agree, or a connector with only
+ * private, credentialed accounts reports `needs_auth` to the very people who
+ * can already call it — the connector IS connected for them.
+ */
+export async function connectorIdsWithReachableMemberCredential(
+  connectorIds: string[],
+  actingUserId: string,
+): Promise<Set<string>> {
+  if (connectorIds.length === 0 || !actingUserId) return new Set();
   const rows = await db
     .select({ connectorId: connectionCredentials.connectorId })
     .from(connectionCredentials)
-    .leftJoin(
+    .innerJoin(
       connectorConnections,
       eq(connectorConnections.connectionId, connectionCredentials.connectionId),
     )
     .where(
       and(
         inArray(connectionCredentials.connectorId, connectorIds),
-        isNull(connectionCredentials.userId),
-        or(
-          isNull(connectionCredentials.connectionId),
-          // "The default" here means the PROJECT's shared default. Defaults are
-          // per-owner now (a member may mark one of their own connections
-          // default), so this must exclude member/external rows or a personal
-          // connection would count as the connector being team-connected.
-          and(
-            eq(connectorConnections.isDefault, true),
-            eq(connectorConnections.ownerType, 'project'),
-          ),
-        ),
+        eq(connectorConnections.ownerType, 'member'),
+        eq(connectorConnections.ownerId, actingUserId),
+        eq(connectorConnections.status, 'active'),
       ),
     );
   return new Set(rows.map((row) => row.connectorId));
 }
 
-async function defaultConnectionIdForConnector(connectorId: string): Promise<string | null> {
-  const [connection] = await db
-    .select({ connectionId: connectorConnections.connectionId })
+/**
+ * The connector's effective PROJECT default connection id.
+ *
+ * INVARIANT (2026-09-16, `account_required` rule): auto-created connections
+ * (`ensureDefaultConnection`, `ensureMemberConnection`, the Composio connect
+ * flow) no longer set `is_default` — a silently "defaulted" account is a guess
+ * with real consequences (mail from the wrong mailbox), and only the explicit
+ * `PUT /connections/:id/default` route may pin one now. A connector with
+ * exactly ONE active project-owned connection is still unambiguous, though —
+ * there is nothing to guess between — so it resolves here exactly as a pinned
+ * default would, and a project connector with one shared account keeps working
+ * exactly as before this change. Two or more unpinned project rows have no
+ * default: this returns null, same as before any connection existed.
+ */
+export async function defaultConnectionIdForConnector(connectorId: string): Promise<string | null> {
+  const rows = await db
+    .select({
+      connectionId: connectorConnections.connectionId,
+      isDefault: connectorConnections.isDefault,
+    })
     .from(connectorConnections)
     .where(
       and(
         eq(connectorConnections.connectorId, connectorId),
-        eq(connectorConnections.isDefault, true),
         // The PROJECT's shared default (per-owner defaults now exist).
         eq(connectorConnections.ownerType, 'project'),
       ),
-    )
-    .limit(1);
-  return connection?.connectionId ?? null;
+    );
+  const pinned = rows.find((row) => row.isDefault);
+  if (pinned) return pinned.connectionId;
+  return rows.length === 1 ? rows[0]!.connectionId : null;
+}
+
+/** Is `connectionId` the connector's effective project default? See
+ *  `defaultConnectionIdForConnector` for what "effective" means. */
+export async function connectionIsEffectiveProjectDefault(
+  connectorId: string,
+  connectionId: string,
+): Promise<boolean> {
+  return (await defaultConnectionIdForConnector(connectorId)) === connectionId;
 }
 
 export async function resolveConnectionCredentialValue(
@@ -316,23 +408,46 @@ export async function upsertConnectionOAuth2Credential(
   });
 }
 
-export async function ensureDefaultConnection(input: {
+/**
+ * The calling member's OWN connection on a `user`-strategy connector.
+ *
+ * A `user` connector has no project-wide account to share, so
+ * `ensureDefaultConnection` (which only ever looks at `ownerType: 'project'`)
+ * could never serve it. That gap is why a Private connector had no self-serve
+ * authorization at all: every connect path refused the strategy outright, the
+ * session card rendered prose with no button, and the only way to get an
+ * account in was `POST /projects/:id/connections/me` from the settings screen.
+ *
+ * Idempotent per (connector, member, label): the member's matching connection
+ * if they already hold one, otherwise a fresh `member`-owned row for that
+ * owner.
+ *
+ * INVARIANT (2026-09-16, `account_required` rule): the row this function
+ * creates is NEVER marked `is_default` — only the explicit `PUT
+ * .../connections/:id/default` route pins one, so a second private account
+ * this function creates later never silently out-ranks the first. That means
+ * `is_default` can no longer be this function's OWN idempotency key: a repeat
+ * call is recognized by (owner, label) instead — the exact identity this
+ * function itself writes on create — which stays correct whether or not the
+ * caller has since pinned a default among their private accounts.
+ */
+export async function ensureMemberConnection(input: {
   projectId: string;
   connectorId: string;
-  createdBy?: string | null;
+  userId: string;
+  label?: string;
 }): Promise<string> {
+  const label = input.label ?? 'Private connection';
+  const ownedByCaller = and(
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, 'member'),
+    eq(connectorConnections.ownerId, input.userId),
+  );
+  const ownedByCallerWithLabel = and(ownedByCaller, eq(connectorConnections.label, label));
   const [existing] = await db
     .select({ connectionId: connectorConnections.connectionId })
     .from(connectorConnections)
-    .where(
-      and(
-        eq(connectorConnections.connectorId, input.connectorId),
-        eq(connectorConnections.isDefault, true),
-        // The PROJECT's shared default — defaults are per-owner now, so a
-        // member's own default connection must never be picked up here.
-        eq(connectorConnections.ownerType, 'project'),
-      ),
-    )
+    .where(ownedByCallerWithLabel)
     .limit(1);
   if (existing) return existing.connectionId;
 
@@ -346,7 +461,89 @@ export async function ensureDefaultConnection(input: {
       ),
     )
     .limit(1);
+  if (!connector) throw new Error('Connector not found while creating its member connection');
+
+  let created: { connectionId: string } | undefined;
+  try {
+    [created] = await db
+      .insert(connectorConnections)
+      .values({
+        accountId: connector.accountId,
+        projectId: connector.projectId,
+        connectorId: connector.connectorId,
+        ownerType: 'member',
+        ownerId: input.userId,
+        label,
+        status: 'active',
+        isDefault: false,
+        metadata: { connector_slug: connector.slug },
+        createdBy: input.userId,
+      })
+      .returning({ connectionId: connectorConnections.connectionId });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+  }
+  if (created) return created.connectionId;
+
+  // Raced with a concurrent connect by the same member under the same label —
+  // that row IS the one this call would have created.
+  const [raced] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(ownedByCallerWithLabel)
+    .limit(1);
+  if (!raced) throw new Error('Member connection could not be created or found');
+  return raced.connectionId;
+}
+
+/**
+ * Get-or-create the project's ONE canonical shared connection for a connector
+ * — the slot every legacy (connector-level, not connection-level) credential
+ * write targets.
+ *
+ * INVARIANT (2026-09-16, `account_required` rule): the row this function
+ * CREATES is NEVER marked `is_default` — only the explicit `PUT
+ * .../connections/:id/default` route pins one. `defaultConnectionIdForConnector`
+ * still finds it afterward (pinned, or the connector's sole project row), so a
+ * project connector with one shared account keeps resolving exactly as
+ * before. When that lookup is not (yet) unambiguous — nothing exists yet, or
+ * 2+ unpinned project rows already exist from the multi-account UI — this
+ * function falls back to ITS OWN identity marker: a project-owned row labeled
+ * `connector.name`, which is always the label it writes on create. That keeps
+ * repeat calls idempotent without needing `is_default` at all.
+ */
+export async function ensureDefaultConnection(input: {
+  projectId: string;
+  connectorId: string;
+  createdBy?: string | null;
+}): Promise<string> {
+  const pinnedOrSole = await defaultConnectionIdForConnector(input.connectorId);
+  if (pinnedOrSole) return pinnedOrSole;
+
+  const [connector] = await db
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.connectorId, input.connectorId),
+        eq(connectors.projectId, input.projectId),
+      ),
+    )
+    .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
+
+  const byLabel = and(
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, 'project'),
+    eq(connectorConnections.label, connector.name),
+  );
+  const [existingByLabel] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(byLabel)
+    .limit(1);
+  if (existingByLabel) return existingByLabel.connectionId;
+
   let created: { connectionId: string } | undefined;
   try {
     [created] = await db
@@ -359,7 +556,7 @@ export async function ensureDefaultConnection(input: {
         ownerId: null,
         label: connector.name,
         status: 'active',
-        isDefault: true,
+        isDefault: false,
         metadata: { migrated_from_legacy: false, connector_slug: connector.slug },
         createdBy: input.createdBy ?? null,
       })
@@ -371,15 +568,7 @@ export async function ensureDefaultConnection(input: {
   const [raced] = await db
     .select({ connectionId: connectorConnections.connectionId })
     .from(connectorConnections)
-    .where(
-      and(
-        eq(connectorConnections.connectorId, input.connectorId),
-        eq(connectorConnections.isDefault, true),
-        // The PROJECT's shared default — defaults are per-owner now, so a
-        // member's own default connection must never be picked up here.
-        eq(connectorConnections.ownerType, 'project'),
-      ),
-    )
+    .where(byLabel)
     .limit(1);
   if (!raced) throw new Error('Default connection could not be created');
   return raced.connectionId;

@@ -13,6 +13,8 @@ export interface PromptFileReference {
    * browser draws before delivery.
    */
   attachment?: string;
+  attachmentUrl?: string;
+  pendingId?: string;
 }
 
 /**
@@ -98,8 +100,8 @@ function xmlAttribute(value: string): string {
 }
 
 export function promptFileReferenceXml(input: PromptFileReference): string {
-  const attachment = input.attachment
-    ? ` attachment="${xmlAttribute(input.attachment)}"`
-    : '';
-  return `<file path="${xmlAttribute(input.path)}" mime="${xmlAttribute(input.mime)}" filename="${xmlAttribute(input.filename)}"${attachment}>\nThis file has been uploaded and is available at the path above.\n</file>`;
+  const value = input.attachmentUrl ?? input.attachment;
+  const attachment = value ? ` attachment="${xmlAttribute(value)}"` : '';
+  const pending = input.pendingId ? ` pending="${xmlAttribute(input.pendingId)}"` : '';
+  return `<file path="${xmlAttribute(input.path)}" mime="${xmlAttribute(input.mime)}" filename="${xmlAttribute(input.filename)}"${pending}${attachment}>\nThis file has been uploaded and is available at the path above.\n</file>`;
 }

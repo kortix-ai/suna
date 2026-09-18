@@ -19,7 +19,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-const SRC = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text();
+const SRC = await Bun.file(new URL('../harness/open-code/boot.ts', import.meta.url).pathname).text();
 
 function code(src: string): string {
   return src

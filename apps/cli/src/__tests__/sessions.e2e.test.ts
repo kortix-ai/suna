@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,9 @@ let root = '';
 let repo = '';
 let origin = '';
 let originalCwd = '';
+let templateRoot = '';
+let parkedCwd = '';
+let realCwd = '';
 let previousConfigFile: string | undefined;
 let previousCliToken: string | undefined;
 let previousApiUrl: string | undefined;
@@ -36,6 +39,43 @@ function git(args: string[], cwd?: string): string {
 }
 
 describe('sessions new CLI flow', () => {
+  // The fixture repository is built ONCE and copied per test. Building it in
+  // beforeEach cost six `git` processes per test, and on a loaded packages lane
+  // that pushed the hook past its 30s budget (CI run 35322311770): Bun then ran
+  // the test body anyway, with the cwd still parked where beforeEach left it.
+  beforeAll(async () => {
+    realCwd = process.cwd();
+    // Park the process OUTSIDE any git repository for the whole file. A
+    // timed-out beforeEach used to leave cwd inside the checkout, so `sessions
+    // new` pushed the session branch with the CLI's own git credentials and
+    // targeted github.com/kortix-ai/suna. It only failed because the CI
+    // checkout is a detached HEAD with no refs/heads/main. From a non-repo
+    // directory the same path can only produce an immediate local git error.
+    parkedCwd = await mkdtemp(join(tmpdir(), 'kortix-cli-session-parked-'));
+    process.chdir(parkedCwd);
+
+    templateRoot = await mkdtemp(join(tmpdir(), 'kortix-cli-session-template-'));
+    const templateRepo = join(templateRoot, 'repo');
+    const templateOrigin = join(templateRoot, 'origin.git');
+    mkdirSync(templateRepo, { recursive: true });
+    git(['init', '-b', 'main'], templateRepo);
+    git(['config', 'user.email', 'e2e@kortix.test'], templateRepo);
+    git(['config', 'user.name', 'Kortix E2E'], templateRepo);
+    writeFileSync(join(templateRepo, 'README.md'), '# test repo\n', 'utf8');
+    git(['add', 'README.md'], templateRepo);
+    git(['commit', '-m', 'initial'], templateRepo);
+    // Copy the initial repository directly. Repeating a setup push in every
+    // test can wait on Git maintenance locks during the loaded package lane.
+    git(['clone', '--quiet', '--bare', templateRepo, templateOrigin]);
+    mkdirSync(join(templateRepo, '.kortix'), { recursive: true });
+  });
+
+  afterAll(() => {
+    process.chdir(realCwd);
+    if (templateRoot) rmSync(templateRoot, { recursive: true, force: true });
+    if (parkedCwd) rmSync(parkedCwd, { recursive: true, force: true });
+  });
+
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'kortix-cli-session-e2e-'));
     repo = join(root, 'repo');
@@ -59,19 +99,10 @@ describe('sessions new CLI flow', () => {
     transcriptRequests = [];
     apiRequests = [];
 
-    mkdirSync(repo, { recursive: true });
-    git(['init', '-b', 'main'], repo);
-    git(['config', 'user.email', 'e2e@kortix.test'], repo);
-    git(['config', 'user.name', 'Kortix E2E'], repo);
-    writeFileSync(join(repo, 'README.md'), '# test repo\n', 'utf8');
-    git(['add', 'README.md'], repo);
-    git(['commit', '-m', 'initial'], repo);
-    // Copy the initial repository directly. Repeating a setup push in every
-    // test can wait on Git maintenance locks during the loaded package lane.
-    git(['clone', '--quiet', '--bare', repo, origin]);
+    cpSync(join(templateRoot, 'repo'), repo, { recursive: true });
+    cpSync(join(templateRoot, 'origin.git'), origin, { recursive: true });
     git(['remote', 'add', 'origin', origin], repo);
 
-    mkdirSync(join(repo, '.kortix'), { recursive: true });
     writeFileSync(
       join(repo, '.kortix', 'link.json'),
       JSON.stringify({
@@ -244,20 +275,23 @@ describe('sessions new CLI flow', () => {
   });
 
   test('creates a session with explicit connector scope', async () => {
-    const code = await runSessions([
-      'new',
-      '--no-connectors',
-      '--require-connector',
-      'gmail',
-      '--require-connector',
-      'gmail',
-    ]);
+    const code = await runSessions(['new', '--no-connectors']);
 
     expect(code).toBe(0);
-    expect(sessionCreateBody).toMatchObject({
-      connector_bindings: {},
-      require_connectors: ['gmail'],
-    });
+    expect(sessionCreateBody).toMatchObject({ connector_bindings: {} });
+    // A session cannot REQUIRE a connector any more: the gate refused the next
+    // turn with nothing in the product that could clear it (2026-09-16). Scope
+    // is what a session MAY use; which account a call runs as is chosen at call
+    // time (`kortix connectors call … --account`).
+    expect(sessionCreateBody).not.toHaveProperty('require_connectors');
+  });
+
+  test('the removed --require-connector option exits before an API request', async () => {
+    const code = await runSessions(['new', '--require-connector', 'gmail']);
+
+    expect(code).toBe(2);
+    expect(apiRequests).toEqual([]);
+    expect(sessionCreateBody).toBeNull();
   });
 
   test('a removed session attribution option exits before an API request', async () => {

@@ -65,6 +65,58 @@ export async function resolveConversationProject(
   return install?.projectId ?? null;
 }
 
+export type ConversationProjectResolution =
+  | { kind: 'project'; projectId: string }
+  | { kind: 'none' }
+  | { kind: 'ambiguous'; projects: Array<{ projectId: string; name: string }> };
+
+/**
+ * Which project a conversation runs, distinguishing "a binding or a single
+ * install decides it" from "several projects are installed for this tenant and
+ * nothing is bound yet" — the case where Slack posts a project picker instead
+ * of silently routing to the first install.
+ */
+export async function resolveConversationProjectDetailed(
+  tenantId: string,
+  conversationId: string,
+): Promise<ConversationProjectResolution> {
+  const bound = await resolveBoundProject(tenantId, conversationId);
+  if (bound) return { kind: 'project', projectId: bound };
+
+  const tenantProjects = await listTenantProjects(tenantId);
+  if (tenantProjects.length === 0) return { kind: 'none' };
+  if (tenantProjects.length === 1) return { kind: 'project', projectId: tenantProjects[0].projectId };
+  return { kind: 'ambiguous', projects: tenantProjects };
+}
+
+/** Just the explicitly-bound project (installed), if any. */
+async function resolveBoundProject(tenantId: string, conversationId: string): Promise<string | null> {
+  const [binding] = await db
+    .select({ projectId: chatChannelBindings.projectId })
+    .from(chatChannelBindings)
+    .where(
+      and(
+        eq(chatChannelBindings.platform, PLATFORM),
+        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.channelId, conversationId),
+      ),
+    )
+    .limit(1);
+  if (!binding?.projectId) return null;
+  const [installed] = await db
+    .select({ projectId: chatInstalls.projectId })
+    .from(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, PLATFORM),
+        eq(chatInstalls.workspaceId, tenantId),
+        eq(chatInstalls.projectId, binding.projectId),
+      ),
+    )
+    .limit(1);
+  return installed ? binding.projectId : null;
+}
+
 export async function ensureTeamsConversationBinding(input: {
   tenantId: string;
   conversationId: string;
@@ -101,7 +153,11 @@ export async function ensureTeamsConversationBinding(input: {
         chatChannelBindings.workspaceId,
         chatChannelBindings.channelId,
       ],
-      set: { projectId: input.projectId },
+      set: {
+        projectId: input.projectId,
+        ...(input.channelName ? { channelName: input.channelName } : {}),
+        ...(input.channelType ? { channelType: input.channelType } : {}),
+      },
     });
   return true;
 }

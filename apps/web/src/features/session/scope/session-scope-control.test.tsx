@@ -3,11 +3,9 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
-  SessionConnectorsEditor,
   SessionSecretsEditor,
   setAllSessionSecrets,
   setSessionConnectorConnection,
-  setSessionConnectorEnabled,
   toggleSessionSecret,
 } from './session-scope-control';
 import type { SessionScopeDraft, SessionScopeSelectionCatalog } from './session-scope-model';
@@ -65,20 +63,6 @@ const messages = {
       useProjectDefault: 'Use the project default',
       empty: 'No secrets are available for this agent.',
     },
-    connectors: {
-      unavailableTitle: 'Connector access is unavailable',
-      unavailableDescription: 'The current connector selection stays unchanged.',
-      empty: 'No connectors are available for this agent.',
-      private: 'Private',
-      project: 'Project',
-      required: 'Required — connect to continue',
-      notConnected: 'Not connected',
-      connectBeforeReply:
-        'Nothing is connected to {connector} yet. This session will ask you to connect it before its next reply.',
-      connectionAria: 'Connection for {connector}',
-      currentConnection: 'Current connection',
-      default: 'Default',
-    },
   },
 };
 
@@ -98,14 +82,13 @@ function renderSecrets(draft: SessionScopeDraft, scopeCatalog = catalog) {
   );
 }
 
-function renderConnectors(draft: SessionScopeDraft, scopeCatalog = catalog) {
-  return renderToStaticMarkup(
-    withTranslations(
-      <SessionConnectorsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
-    ),
-  );
-}
-
+// The connector checklist (`SessionConnectorsEditor`, `setSessionConnectorEnabled`)
+// is gone — the session overrides panel has no Connectors axis any more (see
+// `session-overrides-toolbar.tsx`). Credentials are not a session-minting
+// decision: the agent may use every account it is entitled to and names one at
+// call time (`kortix connectors call --account`). `setSessionConnectorConnection`
+// stays below — `connector_bindings` is still a real, programmatic-API concept
+// (Kortix as a Backend).
 describe('session scope editors', () => {
   test('an inherited secrets axis keeps the project default checked', () => {
     // `null` is the INHERITED state, so the box that says "use the project
@@ -119,45 +102,8 @@ describe('session scope editors', () => {
     expect(html).not.toContain('Reset to project default');
   });
 
-  test('shows the connection picker only for a selected connector', () => {
-    const html = renderConnectors({
-      connector_bindings: { calendar: { connection_id: 'connection-calendar' } },
-      connector_bindings_inherited: false,
-    });
-
-    expect(html).toContain('aria-label="Connection for Calendar"');
-    expect(html).not.toContain('aria-label="Connection for CRM"');
-  });
-
-  test('names a connector that has nothing connected as a requirement', () => {
-    // A binding carries a connection id, so it cannot express "this session
-    // needs Calendar and nothing is connected". The requirement can, and the
-    // next turn stops at a connect prompt instead of failing mid-answer.
-    const disconnected: SessionScopeSelectionCatalog = {
-      ...catalog,
-      connector_connections: {
-        status: 'ready',
-        items: [
-          { slug: 'calendar', name: 'Calendar', authorization_strategy: 'user', connections: [] },
-        ],
-      },
-    };
-    const html = renderConnectors(
-      {
-        connector_bindings: {},
-        require_connectors: ['calendar'],
-        connector_bindings_inherited: false,
-      },
-      disconnected,
-    );
-
-    expect(html).toContain('Required — connect to continue');
-    expect(html).not.toContain('aria-label="Connection for Calendar"');
-  });
-
   test('reports catalog failures instead of rendering an empty selection', () => {
     expect(renderSecrets({}, unavailable)).toContain('Secret access is unavailable');
-    expect(renderConnectors({}, unavailable)).toContain('Connector access is unavailable');
   });
 });
 
@@ -197,11 +143,6 @@ describe('session scope control changes', () => {
   });
 
   test('changes inherited connector defaults into an explicit replacement', () => {
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? catalog.connector_connections.items[0]
-        : undefined;
-    expect(connector).toBeDefined();
     const draft: SessionScopeDraft = {
       connector_bindings: {
         calendar: { connection_id: 'connection-calendar' },
@@ -215,100 +156,9 @@ describe('session scope control changes', () => {
       },
       connector_bindings_inherited: false,
     });
-    expect(setSessionConnectorEnabled(draft, connector!, false)).toEqual({
+    expect(setSessionConnectorConnection(draft, 'calendar', null)).toEqual({
       connector_bindings: {},
       connector_bindings_inherited: false,
     });
-  });
-
-  test('enables a connector with its default authorization and removes it when disabled', () => {
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? catalog.connector_connections.items[0]
-        : undefined;
-
-    expect(connector).toBeDefined();
-    expect(setSessionConnectorEnabled({ connector_bindings: {} }, connector!, true)).toEqual({
-      connector_bindings: {
-        calendar: { connection_id: 'connection-calendar' },
-      },
-      connector_bindings_inherited: false,
-    });
-    expect(
-      setSessionConnectorEnabled(
-        {
-          connector_bindings: {
-            calendar: { connection_id: 'connection-calendar' },
-          },
-        },
-        connector!,
-        false,
-      ),
-    ).toEqual({ connector_bindings: {}, connector_bindings_inherited: false });
-  });
-
-  test('a connector with NO authorization is selectable, as a requirement', () => {
-    // This used to be un-selectable, which meant you could only require a
-    // connector that already worked — backwards, since needing one you have not
-    // connected yet is the case worth expressing. It cannot become a binding
-    // (there is no connection id to bind), so it is recorded as a requirement
-    // and the next turn stops at a connect prompt.
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? { ...catalog.connector_connections.items[0], connections: [] }
-        : undefined;
-    expect(connector).toBeDefined();
-    const draft: SessionScopeDraft = { connector_bindings: {} };
-
-    const next = setSessionConnectorEnabled(draft, connector!, true);
-
-    expect(next.require_connectors).toEqual([connector!.slug]);
-    expect(next.connector_bindings).toEqual({});
-    expect(next.connector_bindings_inherited).toBeFalse();
-  });
-
-  test('unchecking it drops the requirement rather than leaving it behind', () => {
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? { ...catalog.connector_connections.items[0], connections: [] }
-        : undefined;
-    const draft: SessionScopeDraft = {
-      connector_bindings: {},
-      require_connectors: [connector!.slug],
-    };
-
-    expect(setSessionConnectorEnabled(draft, connector!, false).require_connectors).toEqual([]);
-  });
-
-  test('requiring the same connector twice does not duplicate it', () => {
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? { ...catalog.connector_connections.items[0], connections: [] }
-        : undefined;
-    const draft: SessionScopeDraft = {
-      connector_bindings: {},
-      require_connectors: [connector!.slug],
-    };
-
-    expect(setSessionConnectorEnabled(draft, connector!, true)).toBe(draft);
-  });
-
-  test('choosing an authorization converts the requirement into a binding', () => {
-    // Both would mean the server holds the same requirement twice, and it would
-    // outlive the binding if the binding were later removed.
-    const connector =
-      catalog.connector_connections.status === 'ready'
-        ? catalog.connector_connections.items[0]
-        : undefined;
-    expect(connector?.connections.length).toBeGreaterThan(0);
-    const draft: SessionScopeDraft = {
-      connector_bindings: {},
-      require_connectors: [connector!.slug],
-    };
-
-    const next = setSessionConnectorEnabled(draft, connector!, true);
-
-    expect(next.require_connectors).toEqual([]);
-    expect(next.connector_bindings?.[connector!.slug]).toBeDefined();
   });
 });

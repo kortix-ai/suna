@@ -1,7 +1,8 @@
 import { expect, test, spyOn } from 'bun:test'
-import type { Config } from '../config'
-import type { Opencode } from '../opencode'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { startProxy } from '../proxy'
+import { createOpenCodeHarnessFixture } from './helpers/open-code-harness'
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
 function baseConfig(over: Partial<Config> = {}): Config {
@@ -61,7 +62,8 @@ test('stopping the proxy cancels offload timers and makes queued callbacks inert
   } as unknown as Opencode
   let proxy: ReturnType<typeof startProxy> | undefined
   try {
-    proxy = startProxy(baseConfig(), opencode, Date.now())
+    const cfg = baseConfig()
+    proxy = startProxy(cfg, createOpenCodeHarnessFixture(cfg, opencode), Date.now())
     await proxy.stop()
     expect(callbacks).toHaveLength(2)
     expect(clearBoot).toHaveBeenCalledWith(timer)

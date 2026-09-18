@@ -24,16 +24,31 @@ token supplies the project context.
 
 ## Methods
 
-- `catalog()` returns the visible Connector catalog.
+- `catalog()` returns the visible Connector catalog. Each entry's `accounts`
+  lists the accounts THIS caller may run it as (default first — the field is
+  absent only from a legacy server); `default_account` is the label an
+  unnamed call resolves to, or `null`.
 - `tools()` returns flattened `connector.action` records.
 - `search(query, { limit })` searches action names and descriptions.
 - `describe(tool)` returns one action schema and risk.
-- `call(tool, args)` invokes one Connector action.
+- `accounts(slug)` returns the accounts a connector can be called as, default
+  first — the same list the CLI's `kortix connectors accounts <slug>` prints.
+  Call this whenever the workflow needs to know which/how many accounts are
+  connected; never infer it from a single call's result.
+- `call(tool, args, { account })` invokes one Connector action. A connector
+  can hold several accounts (the project's shared one, plus each member's
+  own); omit `account` to use the default, or pass a label/id from
+  `accounts()`, or the selector words `me` / `project`. The result's
+  `account` field says which one actually ran — read it back rather than
+  assuming.
 - `uploadAttachment(content, input)` uploads an attachment for a later call.
 
 `call` returns `ConnectorCallResult<T>`. HTTP failures throw `ApiError`, which
 includes `status` and parsed response details. A policy or connection outcome
-can return `ok: false` without throwing.
+can return `ok: false` without throwing — this includes `reason:
+"account_required"` when several accounts are reachable, none was named, and
+none is pinned as the default: pass `account` explicitly rather than retrying
+the same call.
 
 ## Workflow pattern
 
@@ -89,5 +104,9 @@ for (const message of listed.data?.messages ?? []) {
 
 - Never put provider credentials in scripts or repository files.
 - Confirm write and destructive actions before irreversible effects.
-- Treat `needs_auth`, `not_shared`, `denied`, and `ok: false` as real outcomes.
+- Treat `needs_auth`, `not_shared`, `denied`, `account_required`, and
+  `ok: false` as real outcomes.
+- A connector is not an account — check `accounts()` before assuming a
+  connector has exactly one, and pass `account` explicitly in a script that
+  must always run against the same one.
 - Test workflows that transform data, branch, retry, or persist output.

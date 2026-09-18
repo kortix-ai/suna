@@ -62,6 +62,7 @@ import {
 } from '../../channels/turn-relay';
 import { config } from '../../config';
 import {
+  connectionIsEffectiveProjectDefault,
   resolveConnectionCredentialValue,
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
@@ -125,10 +126,9 @@ import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
   type ConnectionOwnerType,
-  type ConnectorAuthorizationStrategy,
-  connectorAuthorizationMatchesStrategy,
+  connectionIsReachable,
   isTrustedManagedChannelAuthorization,
-} from '../lib/connector-authorization-strategy';
+} from '../lib/connection-access';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -259,7 +259,6 @@ function mayReadConnection(
     ownerId: string | null;
     isDefault: boolean;
     metadata: Record<string, unknown>;
-    authorizationStrategy: ConnectorAuthorizationStrategy;
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
@@ -272,8 +271,7 @@ function mayReadConnection(
   sessionBoundConnectionIds: ReadonlySet<string> | null,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectorAuthorizationMatchesStrategy({
-    strategy: connection.authorizationStrategy,
+  return connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
@@ -296,7 +294,6 @@ function mayMutateConnection(
     ownerType: ConnectionOwnerType;
     ownerId: string | null;
     metadata: Record<string, unknown>;
-    authorizationStrategy: ConnectorAuthorizationStrategy;
     providerType: string;
     connectorConfig: Record<string, unknown>;
   },
@@ -304,8 +301,7 @@ function mayMutateConnection(
   actingPrincipalIsServiceAccount: boolean,
   mayManageSystemConnections: boolean,
 ): boolean {
-  const strategyMatches = connectorAuthorizationMatchesStrategy({
-    strategy: connection.authorizationStrategy,
+  const reachable = connectionIsReachable({
     ownerType: connection.ownerType,
     ownerId: connection.ownerId,
     actingUserId: userId,
@@ -321,8 +317,11 @@ function mayMutateConnection(
       metadata: connection.metadata,
     }),
   });
-  if (!strategyMatches) return false;
-  return connection.authorizationStrategy === 'user' || mayManageSystemConnections;
+  if (!reachable) return false;
+  // Your own private account is yours to administer — reachability already
+  // proved the owner is the caller. Everything shared with the project is
+  // administration and needs the connections-manage capability.
+  return connection.ownerType === 'member' || mayManageSystemConnections;
 }
 
 async function reconcileConnectionRow(input: {
@@ -351,9 +350,21 @@ async function reconcileConnectionRow(input: {
   );
   const [existing] = await db.select().from(connectorConnections).where(identity).limit(1);
   if (existing) {
+    // Reconciling the label of a REVOKED row is a re-connect, not a metadata
+    // touch: the caller is adding "this account" back, and the credential they
+    // set next must land on a live row. Left `revoked`, the row kept its new
+    // credential but stayed invisible to every call and every list of usable
+    // accounts (found 2026-09-17: header "Add credential" on a connector whose
+    // only shared account had just been disconnected saved into a dead row).
+    // `error` is a live-state flag the next sync owns; it is not cleared here.
     const [connection] = await db
       .update(connectorConnections)
-      .set({ label: input.label, metadata: input.metadata, updatedAt: new Date() })
+      .set({
+        label: input.label,
+        metadata: input.metadata,
+        ...(existing.status === 'revoked' ? { status: 'active' as const } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(connectorConnections.connectionId, existing.connectionId))
       .returning();
     return { connection, created: false };
@@ -426,7 +437,6 @@ projectsApp.openapi(
         status: connectorConnections.status,
         isDefault: connectorConnections.isDefault,
         metadata: connectorConnections.metadata,
-        authorizationStrategy: connectors.authorizationStrategy,
         providerType: connectors.providerType,
         connectorConfig: connectors.config,
       })
@@ -568,7 +578,6 @@ projectsApp.openapi(
       .select({
         connectorId: connectors.connectorId,
         providerType: connectors.providerType,
-        authorizationStrategy: connectors.authorizationStrategy,
       })
       .from(connectors)
       .where(
@@ -586,15 +595,9 @@ projectsApp.openapi(
         409,
       );
     }
-    if (connector.authorizationStrategy !== 'user') {
-      return c.json(
-        {
-          error: 'This connector uses project-owned connections',
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
-        },
-        409,
-      );
-    }
+    // No connector-level gate: every connector can hold both a shared project
+    // account and each member's own private one. Refusing here is what left a
+    // former `user`-strategy connector with no connect flow at all.
     const ownerType = 'member' as const;
     const ownerId = loaded.userId;
     const { connection, created } = await reconcileConnectionRow({
@@ -685,7 +688,6 @@ projectsApp.openapi(
       .select({
         connectorId: connectors.connectorId,
         providerType: connectors.providerType,
-        authorizationStrategy: connectors.authorizationStrategy,
       })
       .from(connectors)
       .where(
@@ -705,8 +707,7 @@ projectsApp.openapi(
     }
     const normalizedOwnerId = ownerType === 'project' ? null : ownerId;
     if (
-      !connectorAuthorizationMatchesStrategy({
-        strategy: connector.authorizationStrategy,
+      !connectionIsReachable({
         ownerType: ownerType as ConnectionOwnerType,
         ownerId: normalizedOwnerId,
         actingUserId: loaded.userId,
@@ -715,8 +716,8 @@ projectsApp.openapi(
     ) {
       return c.json(
         {
-          error: `This connector uses ${connector.authorizationStrategy}-owned connections`,
-          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+          error: `A ${ownerType}-owned connection is not reachable by this caller`,
+          code: 'CONNECTOR_CONNECTION_OWNER_NOT_REACHABLE',
         },
         409,
       );
@@ -783,8 +784,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           ownerId: connectorConnections.ownerId,
           isDefault: connectorConnections.isDefault,
           metadata: connectorConnections.metadata,
-          authorizationStrategy: connectors.authorizationStrategy,
-          providerType: connectors.providerType,
+            providerType: connectors.providerType,
           connectorConfig: connectors.config,
         })
         .from(connectorConnections)
@@ -851,17 +851,27 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
         } catch (error) {
           return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
         }
+        // INVARIANT (2026-09-16, account_required rule): `connection.isDefault`
+        // is the raw (possibly unpinned) row flag; the project-wide catalog
+        // write below must key on the EFFECTIVE default — pinned, or the
+        // connector's sole active project-owned connection — so setting a
+        // credential on a never-pinned solo MCP connection still publishes
+        // exactly as it did before this rule existed.
+        const isEffectiveDefault =
+          connection.isDefault ||
+          (connection.ownerType === 'project' &&
+            (await connectionIsEffectiveProjectDefault(connection.connectorId, connectionId)));
         await rematerializeCatalogAfterCredentialUpdate({
           projectId,
           accountId: loaded.row.accountId,
           provider: connection.providerType,
           ownerType: connection.ownerType,
-          isDefault: connection.isDefault,
+          isDefault: isEffectiveDefault,
           connectorId: connection.connectorId,
           credential:
             connection.providerType === 'mcp' &&
             connection.ownerType === 'project' &&
-            connection.isDefault
+            isEffectiveDefault
               ? await resolveConnectionCredentialValue({
                   connectorId: connection.connectorId,
                   connectionId,
@@ -974,8 +984,7 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           connectorAlias: connectors.slug,
           providerType: connectors.providerType,
           connectorConfig: connectors.config,
-          authorizationStrategy: connectors.authorizationStrategy,
-        })
+          })
         .from(connectorConnections)
         .innerJoin(
           connectors,
@@ -1004,7 +1013,16 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       ) {
         return c.json({ error: 'Not found' }, 404);
       }
-      if (connection.isDefault) {
+      // INVARIANT (2026-09-16, account_required rule): a project-owned
+      // connection with nothing PINNED is still blocked here when it is the
+      // connector's sole active project-owned row — it is the connector's
+      // EFFECTIVE default even unpinned, and must still go through the shared
+      // connect endpoint. See `connectionIsEffectiveProjectDefault`.
+      const isEffectiveDefault =
+        connection.isDefault ||
+        (connection.ownerType === 'project' &&
+          (await connectionIsEffectiveProjectDefault(connection.connectorId, connectionId)));
+      if (isEffectiveDefault) {
         return c.json(
           { error: 'Use the shared connector connect endpoint for the default connection' },
           409,
@@ -1969,8 +1987,10 @@ projectsApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
-        'Consent card sent',
+        z
+          .object({ ok: z.boolean(), delivered: z.string(), uploadId: z.string().optional(), url: z.string().optional() })
+          .passthrough(),
+        'File delivered (consent card, inline image, or team-drive link)',
       ),
       ...errors(400, 403, 404),
     },
@@ -2001,9 +2021,14 @@ projectsApp.openapi(
       filename: String(body.filename ?? ''),
       contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
       description: typeof body.description === 'string' ? body.description : undefined,
+      conversationType:
+        body.conversation_type === 'channel' || body.conversation_type === 'groupChat' || body.conversation_type === 'personal'
+          ? body.conversation_type
+          : undefined,
+      teamGroupId: typeof body.team_group_id === 'string' && body.team_group_id ? body.team_group_id : undefined,
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
-    return c.json({ ok: true, uploadId: result.uploadId });
+    return c.json(result);
   },
 );
 
@@ -2440,6 +2465,7 @@ projectsApp.openapi(
       output?: string;
       sources?: Array<{ url?: string; text?: string }>;
       blocks?: unknown[];
+      card?: Record<string, unknown>;
       status?: string;
       opencode_session_id?: string;
       turn_message_id?: string;
@@ -2862,6 +2888,11 @@ projectsApp.openapi(
           .map((s) => ({ url: s.url, text: s.text }))
       : undefined;
     const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
+    // A full Adaptive Card for the Teams answer (`teams send --card-file`).
+    const card =
+      body.card && typeof body.card === 'object' && !Array.isArray(body.card)
+        ? (body.card as Record<string, unknown>)
+        : undefined;
 
     // `reason` is what makes `ok: false` actionable in the sandbox: `slack
     // step` and `slack send` print it, so an agent can tell "no Slack turn is
@@ -2869,7 +2900,7 @@ projectsApp.openapi(
     // of assuming its progress was delivered.
     const relayed =
       body.kind === 'answer'
-        ? await relayTurnAnswerDetailed(sessionId, text, blocks)
+        ? await relayTurnAnswerDetailed(sessionId, text, blocks, card)
         : await relayTurnStepDetailed(sessionId, text, {
             detail,
             outputForPrev,

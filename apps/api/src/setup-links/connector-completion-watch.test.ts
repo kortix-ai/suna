@@ -56,7 +56,7 @@ const { watchConnectorCompletion, connectorCompletionWatchActive } = await impor
   './connector-completion-watch'
 );
 
-const base = { projectId: 'p1', slug: 'gmail', app: 'gmail', sid: 's1', uid: 'u1' };
+const base = { projectId: 'p1', slug: 'gmail', app: 'gmail', sid: 's1', uid: 'u1', owner: 'me' as const };
 const noSleep = async () => {};
 
 async function settle() {

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 657,
+  "count": 662,
   "routes": [
     {
       "method": "GET",
@@ -547,6 +547,10 @@
       "path": "/v1/accounts/:accountId/secret-resources/:secretId"
     },
     {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/secret-resources/:secretId/access"
+    },
+    {
       "method": "DELETE",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/grants/:userId"
     },
@@ -1001,6 +1005,10 @@
     {
       "method": "DELETE",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
       "method": "PUT",
@@ -1855,6 +1863,10 @@
       "path": "/v1/projects/:projectId/git/connection"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/git/repository"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/group-grants"
     },
@@ -2073,6 +2085,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId"
     },
     {
       "method": "GET",

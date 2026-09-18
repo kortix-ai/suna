@@ -52,15 +52,18 @@ export {
 export { teamsWebhookApp } from "./teams-webhook";
 export { teamsIdentityApp } from "./teams/identity-routes";
 export { teamsOauthApp } from "./teams-oauth";
+export { startTeamsBotTokenRefresh, prewarmTeamsBotToken } from "./teams-auth";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,
   loadTeamsInstall,
   loadTeamsTenantForProject,
   loadTeamsServiceUrlForProject,
+  setTeamsPublishState,
   MS_TEAMS_TENANT_ID,
   type TeamsInstallSummary,
   type TeamsInstallInput,
+  type TeamsPublishState,
 } from "./install-store";
 export { emailWebhookApp } from "./email-webhook";
 export { telegramWebhookApp } from "./telegram-webhook";

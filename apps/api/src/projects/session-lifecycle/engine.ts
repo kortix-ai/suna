@@ -1,3 +1,6 @@
+import { sessionAttachmentStore } from '../lib/session-attachments';
+import { stableSessionAttachmentId } from '../lib/session-attachment-identity';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import {
   assertInboxDeliveryActive,
@@ -45,12 +48,11 @@ import { db } from '../../shared/db';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import {
-  requireConnectorsConflicts,
-  runtimeContextConflicts,
-} from './idempotency-conflicts';
+import { runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { recordSessionActivity } from '../session-activity';
+import { deliveryCountsAsActivity } from './delivery-activity';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
@@ -243,25 +245,6 @@ export async function createSession(
         },
       };
     }
-    // require_connectors resolves to member bindings at create; a replay with a
-    // different required set would otherwise return the first session, which was
-    // resolved against a different set of the user's own connections.
-    if (
-      requireConnectorsConflicts(existingBody.require_connectors, command.body.require_connectors)
-    ) {
-      return {
-        status: 'failed',
-        commandId: claimed.row.commandId,
-        retryable: false,
-        error: {
-          status: 409,
-          body: {
-            error: 'Idempotency key was already used with a different require_connectors',
-            code: 'IDEMPOTENCY_REQUIRE_CONNECTORS_CONFLICT',
-          },
-        },
-      };
-    }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
       const [row] = await db
@@ -432,6 +415,7 @@ export async function continueSession(
       projectId: projectSessions.projectId,
       status: projectSessions.status,
       metadata: projectSessions.metadata,
+      projectMetadata: sql<Record<string, unknown> | null>`(SELECT p.metadata FROM kortix.projects p WHERE p.project_id = "kortix"."project_sessions"."project_id")`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
@@ -490,6 +474,7 @@ export async function continueSession(
           userId,
           materializationKey: key,
           writeFile: writeRuntimePromptFile,
+          readAttachment: (scope) => sessionAttachmentStore().read(scope),
           // The runtime already holds this message's native images inline;
           // only the legacy non-native parts need a file behind them.
           inlineBudgetBytes: Number.POSITIVE_INFINITY,
@@ -524,6 +509,8 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        attachmentProjectId: resolveFeatureFlag(session.projectMetadata, 'session_transcript_history')
+          ? session.projectId : undefined,
         accountId: session.accountId,
         projectId: session.projectId,
       },
@@ -742,7 +729,22 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: sendPrompt,
-  }).catch(notLandedOutcome);
+  })
+    .then((outcome) => {
+      // Stamp the sidebar's sort key for a prompt the PLATFORM delivered — a
+      // spawned sub-session, a trigger, a channel message, an approval resume.
+      // The preview proxy already does this for a prompt a browser sends; this
+      // path never did, so those sessions fell back to `updated_at`, which a
+      // dozen background writers advance with no turn behind them, and they
+      // visibly reordered themselves in the sidebar. Best-effort and never
+      // awaited, exactly as at the proxy: a failed stamp degrades ordering and
+      // must never degrade the prompt.
+      if (deliveryCountsAsActivity(outcome)) {
+        void recordSessionActivity({ sessionId, projectId: session.projectId });
+      }
+      return outcome;
+    })
+    .catch(notLandedOutcome);
 }
 
 /** A refused landing proof is its own outcome; anything else keeps throwing. */
@@ -2540,6 +2542,7 @@ async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    attachmentProjectId?: string;
     accountId?: string;
     projectId?: string;
   },
@@ -2556,6 +2559,16 @@ async function postPrompt(
         projectId: prompt.projectId,
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
+        readAttachment: (scope) => sessionAttachmentStore().read(scope),
+        saveAttachment: prompt.attachmentProjectId ? async (file) => {
+          const saved = await sessionAttachmentStore().put({
+            ...file,
+            projectId: prompt.attachmentProjectId!,
+            sessionId: callerSessionId,
+            attachmentId: stableSessionAttachmentId(`${callerSessionId}:${prompt.materializationKey}:${file.index}`),
+          });
+          return saved.url;
+        } : undefined,
       })
     : parts;
   const overrides = prompt?.overrides;

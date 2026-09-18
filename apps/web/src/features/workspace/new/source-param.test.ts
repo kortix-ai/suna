@@ -22,6 +22,12 @@ describe('readSourceParam', () => {
 describe('newWorkspaceReturnPath', () => {
   test('carries a GitHub source back from /github/setup', () => {
     expect(newWorkspaceReturnPath('github-import')).toBe('/new?source=github-import');
+    // …and the account, so a multi-account user comes back to the account
+    // they were creating in, not their personal one.
+    expect(newWorkspaceReturnPath('github-import', 'acct-1')).toBe(
+      '/new?source=github-import&account=acct-1',
+    );
+    expect(newWorkspaceReturnPath('managed', 'acct-1')).toBe('/new?account=acct-1');
     expect(newWorkspaceReturnPath('github-create')).toBe('/new?source=github-create');
   });
 

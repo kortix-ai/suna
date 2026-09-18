@@ -6,11 +6,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { __flushDaemonLogFileForTests, __resetLoggerFileSinkForTests, enableDaemonLogFile, logger } from '../logger'
-import type { Opencode } from '../opencode'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { startResourceMonitor } from '../resources'
 import { createDiagRouter } from '../routes/diag'
+import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
+import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../harness/diagnostics'
 
 let root: string
 const savedEnv = process.env.KORTIX_DAEMON_LOG_FILE
@@ -45,16 +47,17 @@ describe('GET /kortix/diag', () => {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
+    defaultOpencodeConfigDir: '/tmp/opencode',
   } as Config
 
   test('401 without credentials', async () => {
-    const app = createDiagRouter(cfg, {
-      opencode: fakeOpencode,
+    const app = createDiagRouter({
+      cfg,
+      staticWebPort: null,
       bootTime: Date.now(),
       bootState: { repoMaterializationError: null, timeline: [] },
-      opencodeHome: root,
       resources: () => null,
-    })
+    }, createOpenCodeDiagnosticsService(fakeOpencode, root))
     expect((await app.request('http://d/')).status).toBe(401)
   })
 
@@ -64,15 +67,15 @@ describe('GET /kortix/diag', () => {
     await __flushDaemonLogFileForTests()
     mkdirSync(join(root, '.local', 'share', 'opencode', 'log'), { recursive: true })
     writeFileSync(join(root, '.local', 'share', 'opencode', 'log', 'opencode.log'), 'oc-line\n')
-    const monitor = startResourceMonitor({ intervalMs: 60_000, opencodePid: () => 4242 })
+    const monitor = startResourceMonitor({ intervalMs: 60_000, runtimePid: () => 4242 })
     try {
-      const app = createDiagRouter(cfg, {
-        opencode: fakeOpencode,
+      const app = createDiagRouter({
+        cfg,
+        staticWebPort: null,
         bootTime: Date.now() - 5_000,
         bootState: { repoMaterializationError: null, timeline: [{ label: 'proxy-up', atMs: 12 }] },
-        opencodeHome: root,
         resources: () => monitor,
-      })
+      }, createOpenCodeDiagnosticsService(fakeOpencode, root))
       const res = await app.request('http://d/?tail=50', { headers: { Authorization: `Bearer ${token}` } })
       expect(res.status).toBe(200)
       const body = (await res.json()) as Record<string, any>
@@ -82,6 +85,13 @@ describe('GET /kortix/diag', () => {
       expect(body.boot.timeline).toEqual([{ label: 'proxy-up', atMs: 12 }])
       expect(body.resources).not.toBeNull()
       expect(Array.isArray(body.resources.disks)).toBe(true)
+      expect(body.resources.opencode.pid).toBe(4242)
+      expect(Array.isArray(body.resources.opencodePids)).toBe(true)
+      expect(body.resources).not.toHaveProperty('runtime')
+      expect(body.resources).not.toHaveProperty('runtimePids')
+      expect(body.resources_previous.opencode.pid).toBe(4242)
+      expect(body.resources_previous).not.toHaveProperty('runtime')
+      expect(body.resources_previous).not.toHaveProperty('runtimePids')
       expect(body.logs.tail).toBe(50)
       expect(String(body.logs.daemon)).toContain('[test] diag-line')
       expect(body.logs.opencode).toBe('oc-line\n')
@@ -91,4 +101,36 @@ describe('GET /kortix/diag', () => {
       monitor.stop()
     }
   })
+
+  test('authentication and query validation precede the selected diagnostics operation', async () => {
+    const tails: number[] = []
+    const context: HarnessDiagnosticsContext = {
+      cfg,
+      staticWebPort: null,
+      bootTime: Date.now(),
+      bootState: { repoMaterializationError: null, timeline: [] },
+      resources: () => null,
+    }
+    const diagnostics = {
+      async report(received: HarnessDiagnosticsContext, tail: number) {
+        expect(received).toBe(context)
+        tails.push(tail)
+        return { source: 'selected-runtime', tail }
+      },
+    } as unknown as HarnessDiagnosticsService
+    const app = createDiagRouter(context, diagnostics)
+    const noToken = createDiagRouter({ ...context, cfg: { ...cfg, sandboxToken: '' } }, diagnostics)
+    expect((await noToken.request('/')).status).toBe(503)
+    expect((await app.request('/')).status).toBe(401)
+    expect(tails).toEqual([])
+
+    const headers = { Authorization: `Bearer ${token}` }
+    for (const [query, expected] of [['', 200], ['?tail=-1', 200], ['?tail=3000', 2000], ['?tail=2.9', 2]] as const) {
+      const response = await app.request(`/${query}`, { headers })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ source: 'selected-runtime', tail: expected })
+    }
+    expect(tails).toEqual([200, 200, 2000, 2])
+  })
+
 })

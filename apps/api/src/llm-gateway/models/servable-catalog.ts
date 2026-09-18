@@ -59,7 +59,7 @@ export async function servableProjectCatalog(input: {
     projectFeatureFlagEnabled(projectId, 'pooled_provider_secrets'),
   ]);
   const pooledNames = pooledEnabled && principalUserId
-    ? await listGrantedGatewaySecretNames(accountId, principalUserId).catch(() => [] as string[])
+    ? await listGrantedGatewaySecretNames(accountId, projectId, principalUserId).catch(() => [] as string[])
     : [];
   const effectiveDefault = toWireModel(
     defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',

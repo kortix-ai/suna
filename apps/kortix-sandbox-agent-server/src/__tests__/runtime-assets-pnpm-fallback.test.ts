@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { isUnknownAllowBuildOption, pnpmAddOpencodeArgs } from '../runtime-assets'
+import { isUnknownAllowBuildOption, pnpmAddOpencodeArgs } from '../harness/open-code/assets'
 
 describe('pnpm < 10 fallback for the OpenCode install', () => {
   test('the image command is the default; the fallback only drops the flag', () => {

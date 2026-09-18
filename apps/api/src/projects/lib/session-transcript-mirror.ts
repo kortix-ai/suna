@@ -45,7 +45,7 @@
  * dimmed to "Queued". `use-session-sync.ts` states the acceptance criterion for
  * any replacement: it must read the MESSAGE, not its shape. This does.
  *
- * ATTACHMENT BYTES NEVER LEAVE THE BOX. `sanitizeParts` strips a file part's
+ * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` strips a file part's
  * `url` (base64 data URLs are what made those bodies 7-19 MB) and a tool part's
  * `state.input`/`state.output`.
  *
@@ -55,6 +55,7 @@
  */
 
 import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { parseSessionAttachmentRef } from '@kortix/shared';
 import { count, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
@@ -64,7 +65,8 @@ import { db } from '../../shared/db';
  *  older is already mirrored by the captures that preceded it. */
 export const MIRROR_CAPTURE_LIMIT = 80;
 
-/** Retained rows per session, matching the transcript route's own `limit`
+/** Legacy retained rows per session. Opted-in history is retained without this cap.
+ *  The legacy limit matches the transcript route's own `limit`
  *  ceiling (500) — the mirror can never be asked for more than it keeps.
  *  Pruning clears `head_complete`: losing the head is what that bit records. */
 export const MIRROR_MAX_MESSAGES = 500;
@@ -116,7 +118,7 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
 
     if (type === 'file') {
       // A base64 `data:` url here is the entire 7-19 MB transcript incident.
-      delete part.url;
+      if (!parseSessionAttachmentRef(part.url)) delete part.url;
       delete part.source;
     }
 
@@ -208,48 +210,53 @@ export async function readSessionTranscriptMirror(input: {
   sessionId: string;
   limit: number;
 }): Promise<MirrorSnapshot | null> {
-  const [state] = await db
-    .select({
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-    .limit(1);
-  if (!state) return null;
+  return db.transaction(
+    async (tx) => {
+      const [state] = await tx
+        .select({
+          opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+          headComplete: sessionTranscriptMirrors.headComplete,
+          capturedAt: sessionTranscriptMirrors.capturedAt,
+        })
+        .from(sessionTranscriptMirrors)
+        .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
+        .limit(1);
+      if (!state) return null;
 
-  const [totals] = await db
-    .select({ total: count() })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
-  const total = totals?.total ?? 0;
-  if (total === 0) return null;
+      const [totals] = await tx
+        .select({ total: count() })
+        .from(sessionTranscriptMessages)
+        .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
+      const total = totals?.total ?? 0;
+      if (total === 0) return null;
 
-  // Newest `limit` rows, then flipped back into transcript order. Ordering is
-  // (message_created_at, message_id) — the order OpenCode's own
-  // `MessageV2.page()` uses, so the mirror and the live read never disagree.
-  const tail = await db
-    .select({
-      info: sessionTranscriptMessages.info,
-      parts: sessionTranscriptMessages.parts,
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, input.sessionId))
-    .orderBy(
-      sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
-      sql`${sessionTranscriptMessages.messageId} DESC`,
-    )
-    .limit(input.limit);
+      // Newest `limit` rows, then flipped back into transcript order. Ordering is
+      // (message_created_at, message_id) — the order OpenCode's own
+      // `MessageV2.page()` uses, so the mirror and the live read never disagree.
+      const tail = await tx
+        .select({
+          info: sessionTranscriptMessages.info,
+          parts: sessionTranscriptMessages.parts,
+        })
+        .from(sessionTranscriptMessages)
+        .where(eq(sessionTranscriptMessages.sessionId, input.sessionId))
+        .orderBy(
+          sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
+          sql`${sessionTranscriptMessages.messageId} DESC`,
+        )
+        .limit(input.limit);
 
-  return {
-    opencode_session_id: state.opencodeSessionId ?? null,
-    captured_at: new Date(state.capturedAt).toISOString(),
-    total,
-    head_complete: state.headComplete,
-    messages: tail.reverse().map((row) => ({
-      info: (row.info ?? {}) as Record<string, unknown>,
-      parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
-    })),
-  };
+      return {
+        opencode_session_id: state.opencodeSessionId ?? null,
+        captured_at: new Date(state.capturedAt).toISOString(),
+        total,
+        head_complete: state.headComplete,
+        messages: tail.reverse().map((row) => ({
+          info: (row.info ?? {}) as Record<string, unknown>,
+          parts: (Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>,
+        })),
+      };
+    },
+    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+  );
 }

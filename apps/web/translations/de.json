@@ -1,5 +1,33 @@
 {
+  "repositoryChange": {
+    "changedToast": "Repository geändert. Neue Sitzungen verwenden das neue Repository.",
+    "verifyError": "GitHub-Zugriff konnte nicht überprüft werden.",
+    "change": "Ändern",
+    "title": "Repository ändern",
+    "description": "Neue Sitzungen verwenden das neue Repository. Bestehende Sitzungen können nach der Änderung nicht neu gestartet werden.",
+    "current": "Aktuelles Repository",
+    "newUrl": "URL des neuen GitHub-Repositories",
+    "verifying": "GitHub wird überprüft…",
+    "verifyAgain": "GitHub erneut überprüfen",
+    "verify": "GitHub-Zugriff überprüfen",
+    "noInstallation": "Für diesen Repository-Eigentümer ist keine Kortix-App-Installation verfügbar. Fügen Sie das Repository in GitHub zur App-Installation hinzu und überprüfen Sie es erneut.",
+    "installation": "GitHub-App-Installation",
+    "selectInstallation": "Installation auswählen",
+    "manifestRequirement": "Das neue Repository benötigt {manifest} auf seinem Standard-Branch. Beenden Sie zuerst aktive Sitzungen und schließen Sie offene Änderungsanfragen.",
+    "cancel": "Abbrechen",
+    "changing": "Wird geändert…"
+  },
   "pooledSecrets": {
+    "saveChanges": "Änderungen speichern",
+    "unsavedChanges": "Nicht gespeicherte Schlüsseländerungen",
+    "creationDescription": "Der Wert bleibt verschlüsselt. Wählen Sie vor dem Speichern, wer diese Verbindung nutzen darf.",
+    "whoCanUse": "Wer darf diese Verbindung nutzen?",
+    "everyoneInProject": "Alle in diesem Projekt",
+    "everyoneDescription": "Jedes Projektmitglied kann sie in einer Sitzung auswählen.",
+    "specificMembers": "Ausgewählte Mitglieder",
+    "specificDescription": "Nur ausgewählte Projektmitglieder und der Eigentümer können sie nutzen.",
+    "accessDescription": "Wählen Sie Zugriff für das ganze Projekt oder nur für ausgewählte Mitglieder.",
+    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
     "providerDisabled": "Dieser Anbieter ist für diese Sitzung deaktiviert.",
     "unavailableKeys": "{count, plural, one {# ausgewählter Schlüssel ist nicht verfügbar.} other {# ausgewählte Schlüssel sind nicht verfügbar.}} Entferne diese Schlüssel oder stelle den Zugriff wieder her.",
     "removeUnavailable": "Nicht verfügbare Schlüssel entfernen",
@@ -7,7 +35,7 @@
     "manageKeys": "Anbieterschlüssel verwalten",
     "readOnlyPool": "Nur der Sitzungsinhaber oder ein Projektmanager kann diesen Pool ändern.",
     "legacyChatGptLogin": "Bestehende Projektanmeldung",
-    "legacyChatGptDescription": "Diese ältere Verbindung wird im Projekt geteilt. Neue ChatGPT-Konten oben bleiben privat, bis Sie sie freigeben.",
+    "legacyChatGptDescription": "Diese ältere Verbindung wird im Projekt geteilt. Verwalten Sie den Zugriff auf neue Konten oben einzeln.",
     "chatGptAccounts": "ChatGPT-Konten",
     "accountCount": "{count, plural, one {# Konto} other {# Konten}}",
     "addAccount": "Konto hinzufügen",
@@ -15,7 +43,7 @@
     "connectAccount": "Konto verbinden",
     "oauthWaiting": "Warte auf Autorisierung…",
     "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
-    "oauthPrivateDescription": "Ihre ChatGPT-Anmeldung ist privat, bis Sie einem anderen Mitglied Zugriff gewähren. Wählen Sie Konten in den Sitzungseinstellungen aus.",
+    "oauthPrivateDescription": "Neue ChatGPT-Konten sind standardmäßig für dieses Projekt verfügbar. Sie können jedes Konto auf ausgewählte Mitglieder beschränken.",
     "accountLabelPlaceholder": "z. B. Mein ChatGPT-Konto",
     "chooseProvider": "Anbieter auswählen.",
     "saved": "Geheimnis gespeichert",
@@ -23,8 +51,8 @@
     "deleted": "Geheimnis gelöscht",
     "deleteError": "Geheimnis konnte nicht gelöscht werden",
     "accessError": "Zugriff konnte nicht geändert werden",
-    "sharedTitle": "Freigegebene Anbietergeheimnisse",
-    "sharedDescription": "Fügen Sie mehrere Anbieterschlüssel und ChatGPT-Konten hinzu. Teilen Sie jede Verbindung mit Mitgliedern und wählen Sie sie pro Sitzung aus.",
+    "sharedTitle": "Anbieter-Verbindungen",
+    "sharedDescription": "Fügen Sie mehrere API-Schlüssel und ChatGPT-Konten hinzu. Standardmäßig kann jeder in diesem Projekt sie nutzen. Beschränken Sie den Zugriff pro Verbindung und wählen Sie Schlüssel pro Sitzung.",
     "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
     "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
     "providerKeysFor": "API-Schlüssel für {provider}",
@@ -152,15 +180,14 @@
     "actions": {
       "create": "Projekt erstellen",
       "tryAgain": "Erneut versuchen",
+      "upgrade": "Tarif upgraden",
       "logOut": "Abmelden",
-      "signingOut": "Abmeldung läuft"
+      "signingOut": "Abmeldung läuft",
+      "back": "Zurück zu den Projekten"
     },
     "repository": {
       "label": "Repository",
       "defaultBranch": "Standard-Branch",
-      "noGitHubAccount": "Mit dem Konto dieses Projekts ist noch kein GitHub-Konto verbunden.",
-      "connectGitHub": "GitHub-Konto verbinden",
-      "connectGitHubSuffix": "um diese Option zu verwenden.",
       "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden. Versuchen Sie es erneut.",
       "createsPath": "Erstellt <path>{path}</path>",
       "loadRepositoriesError": "Repositories konnten nicht geladen werden. Versuchen Sie es erneut.",
@@ -170,24 +197,23 @@
           "description": "Kortix erstellt und verwaltet ein privates Repository für diesen Projekt."
         },
         "githubCreate": {
-          "label": "In GitHub erstellen",
           "description": "Kortix erstellt ein privates Repository in deinem GitHub-Konto."
-        },
-        "githubImport": {
-          "label": "Aus GitHub importieren",
-          "description": "Wähle ein vorhandenes Repository aus deinem GitHub-Konto aus."
         }
       },
       "repositoryLabel": "Repository",
-      "createInOwner": "Ein Repository in {owner} erstellen",
-      "importFromOwner": "Ein Repository aus {owner} importieren",
-      "selectOption": "Repository-Option auswählen",
       "loadingOptions": "Repository-Optionen werden geladen …",
       "managedUnavailable": "Von Kortix verwaltete Repositories sind auf dieser Instanz nicht verfügbar. Ein Plattform-Administrator richtet das in der Admin-Konsole ein.",
       "installationUnreachable": "Diese GitHub-Verbindung funktioniert nicht mehr. Stellen Sie sie wieder her, um Repositories aufzulisten.",
       "reconnect": "In den Git-Einstellungen neu verbinden",
       "managedImportLabel": "Ein vorhandenes verwaltetes Repository importieren",
-      "managedImportHint": "Nur für Self-Host-Betreiber. Listet Repositories auf, die der verwaltete Git-Inhaber bereits besitzt."
+      "managedImportHint": "Nur für Self-Host-Betreiber. Listet Repositories auf, die der verwaltete Git-Inhaber bereits besitzt.",
+      "gitAccountLabel": "Git-Konto",
+      "selectGitAccount": "Git-Konto auswählen",
+      "addGitHubAccount": "GitHub-Konto hinzufügen…",
+      "actionCreate": "Neues Repository erstellen",
+      "actionImport": "Bestehendes Repository importieren",
+      "ownerTypePersonal": "Persönliches Konto",
+      "ownerTypeOrg": "Organisation"
     }
   },
   "projectHome": {
@@ -1077,6 +1103,10 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
+        "session_transcript_history": {
+          "name": "Chatverlauf der Sitzung",
+          "description": "Speichere den Chatverlauf nach jedem Durchlauf und zeige ihn an, während der Sitzungscomputer startet."
+        },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Teilen Sie mehrere Anbieter-Schlüssel mit Mitgliedern und wählen Sie einen Schlüsselpool pro Sitzung."
@@ -1084,6 +1114,10 @@
         "pi_worker": {
           "name": "Pi-Worker-Laufzeit (kompiliert)",
           "description": "Führen Sie Sitzungen mit der experimentellen Pi-Worker-Laufzeit aus."
+        },
+        "pi_harness": {
+          "name": "Pi-Harness (in der Sandbox)",
+          "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
         }
       }
     },
@@ -1425,6 +1459,7 @@
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "E-Mail",
         "scheduled": "Geplant",
         "webhook": "Webhook",
@@ -1574,6 +1609,9 @@
   "modelSelector": {
     "search": "Modelle suchen",
     "free": "Kostenlos",
+    "included": "Inklusive",
+    "projectDefaultAccount": "Projektstandard",
+    "useAccount": "Konto verwenden",
     "addProvider": "Anbieter hinzufügen",
     "connectProvider": "Anbieter verbinden",
     "manageModels": "Modelle verwalten",
@@ -14517,6 +14555,22 @@
       "text922315177668": "Alles, was der Launcher sehen kann",
       "text9224d9e82502": "Setzen Sie unter „Provisioning“ → „Settings“ den „Scope“ auf „Sync only assigned users and groups“ — die Option erscheint hier erst, nachdem die Anmeldedaten gespeichert wurden. Klicken Sie anschließend oben auf der Übersichtsseite „Provisioning“ auf „Start provisioning“ (oder auf „Provision on demand“, um einen zugewiesenen Benutzer sofort statt im etwa 40-minütigen Zyklus zu übertragen).",
       "text9225e456b795": "Erwähne deinen Agent in einem Teams-Kanal oder -Chat.",
+      "text895ce927db2e": "Persönlicher Chat",
+      "text28c7d3f8b75d": "Gruppenchat",
+      "text72b5b0c53de9": "In Microsoft Teams geantwortet",
+      "textfc73e9ad2dae": "In Slack geantwortet",
+      "text8faf56a14a8d": "In Telegram geantwortet",
+      "text8ccfe10f2f2d": "In deinem Teams-Katalog veröffentlichen",
+      "text36f6474748b3": "Die App wird in deinem Teams-Katalog veröffentlicht…",
+      "text45b9df5730ac": "Warten auf die Freigabe der App durch einen Teams-Administrator",
+      "textdf5e72815836": "Veröffentlichung im Katalog fehlgeschlagen",
+      "textbfd886d0029b": "Microsoft Teams verbunden. Die Kortix-App ist im Teams-Katalog deiner Organisation.",
+      "text65228e6e414d": "Microsoft Teams verbunden. Die App wartet auf die Freigabe durch einen Teams-Administrator.",
+      "textf5262c55d1be": "Microsoft Teams verbunden, aber die Veröffentlichung der App in deinem Teams-Katalog ist fehlgeschlagen.",
+      "text76930360e909": "Microsoft Teams verbunden. Die App wird in deinem Teams-Katalog veröffentlicht…",
+      "textb8d155eea2ab": "Die Microsoft-Zustimmung wurde abgelehnt.",
+      "textd4b32aea5c4a": "Microsoft Teams ist für dieses Projekt deaktiviert.",
+      "text57ef9e5e8110": "Die Teams-Ein-Klick-Installation ist auf diesem Server nicht konfiguriert.",
       "text9233263288f5": "Lade Personen ein, in diesem Konto zu arbeiten.",
       "text92340695899b": "Aktiv",
       "text9241c5f73c2c": "{value0} Apps stimmen überein",
@@ -18500,7 +18554,13 @@
       "text7f59f014cd7b": "Beim gewünschten Inhaber bereits installiert?",
       "text9180f7df8906": "Eine bereits von Ihnen verwaltete Installation verknüpfen",
       "text0b0e4c425624": "Bereits mit {value0, plural, one {# anderen Kortix-Konto} other {# anderen Kortix-Konten}} verknüpft.",
-      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…"
+      "text7dac2ca010fe": "Vollständiges Transkript wird vorbereitet…",
+      "textc6309c452031": "Gemeinsames Konto verbinden",
+      "textded4b88e52f7": "Noch kein gemeinsames Konto",
+      "textc3bafa5156b4": "Noch kein eigenes Konto",
+      "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
+      "text3d6627454174": "Anmeldedaten festlegen",
+      "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden."
     }
   },
   "projectOnboarding": {

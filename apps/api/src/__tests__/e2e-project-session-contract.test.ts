@@ -432,6 +432,10 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
+    resolveIngress: async () => ({
+      url: `https://preview-${providerStartCalls}.test`,
+      headers: { 'x-preview-token': `preview-${providerStartCalls}` },
+    }),
     getStatus: async () => {
       if (providerStatusSessionMetadataUpdate && sessionRow) {
         sessionRow = {
@@ -560,7 +564,6 @@ mock.module('../shared/account-limits', () => ({
   }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
-  accountEntitledToLlmGateway: async () => true,
   FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
@@ -1030,6 +1033,7 @@ mock.module('../projects/prompt-attachments', () => ({
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { invalidateSandbox, resolveSandboxIngress } = await import('../sandbox-proxy/backend');
 const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
   '../projects/reaping/sandbox-state-sync'
 );
@@ -1275,6 +1279,24 @@ describe('project session API contract', () => {
       releaseProviderStart = resolve;
     });
 
+    const ingressRecord = {
+      sandboxId: SESSION_ID,
+      externalId: 'original-provider-identity',
+      sessionId: SESSION_ID,
+      agentName: 'kortix',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      status: 'stopped',
+      baseUrl: '',
+      serviceKey: null,
+    };
+    const ingressRequest = { port: 8000, transport: 'http' } as const;
+    invalidateSandbox(ingressRecord.externalId);
+    expect((await resolveSandboxIngress(ingressRecord, ingressRequest)).headers).toEqual({
+      'x-preview-token': 'preview-0',
+    });
+
     const won = await resumeStoppedSandbox({
       sandboxId: SESSION_ID,
       sessionId: SESSION_ID,
@@ -1311,6 +1333,9 @@ describe('project session API contract', () => {
     expect(sessionRow).toMatchObject({ status: 'running', error: null });
     expect(sessionSandboxRows[0]?.status).toBe('active');
     expect(computeReopenCalls).toBe(1);
+    expect((await resolveSandboxIngress(ingressRecord, ingressRequest)).headers).toEqual({
+      'x-preview-token': 'preview-1',
+    });
   });
 
   test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {

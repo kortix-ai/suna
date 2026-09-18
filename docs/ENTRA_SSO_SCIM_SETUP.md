@@ -180,9 +180,8 @@ GUIDs match regardless.
 
 ## Part C — map Entra groups → Kortix groups → project roles
 
-1. **Create the Kortix IAM groups** (or reuse existing) — these are your
-   "departments" (Marketing, Engineering, …). Via the Members → Departments UI or
-   the groups API.
+1. Open **Account settings → Groups**. Use the group created by SCIM, or
+   create a group for SAML-only provisioning.
 
 2. **Map each Entra group claim value → a Kortix group**:
    ```
@@ -192,9 +191,16 @@ GUIDs match regardless.
    One claim value maps to exactly one Kortix group (to fan a group across many
    grants, attach several project grants to that one Kortix group).
 
-3. **Grant the Kortix group a role on the projects it should reach** (Members →
-   Resource access / project grants): e.g. *Marketing → editor on project X*. This
-   is what turns membership into permissions.
+3. Open the group and select **Attach to project**. Choose the project and
+   **Project member** role. Select **All agents** to grant the current agents,
+   or **Only these…** to choose specific agents. Select **Attach**.
+   Agents added later require a new grant. Project admins can use every agent.
+
+4. Sign in as an ordinary group member. Confirm that the project opens, an
+   agent is available, and a session can send a message. Project visibility
+   alone does not prove agent access. For an existing attachment without agent
+   grants, use the project’s **Grant access** action, select the group, and
+   choose its agents.
 
 That's the whole chain. On the user's next SSO login (or SCIM push), their Entra
 groups reconcile their Kortix group memberships, and the project grants confer the
@@ -250,9 +256,17 @@ new tab (**Provisioning**) to configure.
 5. **Start provisioning** ([screenshot 6](#screenshots)) — click **Start
    provisioning** on the Provisioning overview page for the regular ~40-minute
    cycles, or **Provision on demand** (P1/P2) to push one assigned user
-   instantly so you can watch it complete. Success looks like all four stages
+   without waiting for the next scheduled cycle. Completion can still be delayed. Success looks like all four stages
    — Import, Scope, Match, Perform action — reporting **Success**
    ([screenshot 7](#screenshots)).
+
+Kortix applies each accepted SCIM request before returning success. The account
+Groups and Members pages refresh every 10 seconds while visible and when the tab
+regains focus. This refresh interval starts after Entra delivers the change; it
+does not make Entra provisioning immediate. Background tabs wait until focused.
+If on-demand provisioning reports a timeout, check the provisioning log and
+Kortix's read-back state before retrying: the export can complete after the
+portal times out.
 
 SCIM behavior worth knowing:
 
@@ -313,8 +327,8 @@ These mirror the automated integration tests
   group removals made while inactive remain removed. Individual role grants are
   not restored. DELETE also clears directory group assignments.
 - **Group → role is explicit.** Synced groups never grant access on their own; an
-  admin must grant the Kortix group a project role. This is intentional
-  (deny-by-default, no surprise access).
+  admin must grant the Kortix group a project role and select the agents its
+  members can use. A project-member role alone does not grant agent access.
 - **Claim mismatch fails safe.** If `group_claim_name` doesn't match what Entra
   emits, or a claim value has no mapping, the user simply gets no groups (no
   error, no partial access). Double-check the claim name if groups aren't syncing.

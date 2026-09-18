@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { chmod, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { logger } from './logger'
+import { managedSkillsDir } from './managed-skills'
 
 /**
  * The converged OpenCode config directory, OUTSIDE the repository.
@@ -111,9 +112,9 @@ function run(
   })
 }
 
-async function managedSkillNames(managedSkillsDir: string | undefined): Promise<Set<string>> {
-  if (!managedSkillsDir) return new Set()
-  const entries = await readdir(managedSkillsDir, { withFileTypes: true }).catch(() => [])
+async function managedSkillNames(dir: string | undefined): Promise<Set<string>> {
+  // `undefined` means "the box's overlay", never "no managed skills".
+  const entries = await readdir(dir ?? managedSkillsDir(), { withFileTypes: true }).catch(() => [])
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
 }
 

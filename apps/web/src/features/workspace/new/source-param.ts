@@ -24,6 +24,16 @@ export function readSourceParam(params: URLSearchParams): RepositorySource | nul
 }
 
 /** The path `/github/setup` should return to, preserving the picked source. */
-export function newWorkspaceReturnPath(source: RepositorySource): string {
-  return source === 'managed' ? '/new' : `/new?source=${encodeURIComponent(source)}`;
+export function newWorkspaceReturnPath(
+  source: RepositorySource,
+  accountId?: string | null,
+): string {
+  const params = new URLSearchParams();
+  if (source !== 'managed') params.set('source', source);
+  // The account survives the round trip too. Without it a multi-account user
+  // came back to `/new` on their PERSONAL account and was told "No GitHub
+  // account is connected" about the wrong account (dev, 2026-09-17).
+  if (accountId) params.set('account', accountId);
+  const qs = params.toString();
+  return qs ? `/new?${qs}` : '/new';
 }

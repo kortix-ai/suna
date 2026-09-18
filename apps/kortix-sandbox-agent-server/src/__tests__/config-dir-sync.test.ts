@@ -25,10 +25,12 @@ import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rm
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readBootConfigPointer } from '../boot-config'
-import type { Config } from '../config'
-import { convergeOpencodeConfigDir, resolveActiveOpencodeConfigDir } from '../config-dir-converge'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { createOpenCodeControlService } from '../harness/open-code/control'
+import { convergeOpencodeConfigDir, resolveActiveOpencodeConfigDir } from '../harness/open-code/config-dir-converge'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
-import type { Opencode } from '../opencode'
 import { createRefreshRouter } from '../routes/refresh'
 
 const CONFIG_DIR = '.kortix/opencode'
@@ -97,7 +99,7 @@ function converge(oc: ReturnType<typeof fakeOpencode>, over: { reload?: boolean;
     root: store,
     managedSkillsDir: overlay,
     // What the daemon does to a fresh copy, minus the image-baked dependency set.
-    prepare: async (staged) => {
+    prepare: async (staged: string) => {
       cpSync(overlay, join(staged, 'skills'), { recursive: true, force: true })
     },
   })
@@ -392,7 +394,7 @@ describe('resolveActiveOpencodeConfigDir — which directory a restarted daemon 
       workspaceConfigDir: join(work, CONFIG_DIR),
       root: store,
       managedSkillsDir: overlay,
-      prepare: async (staged) => {
+      prepare: async (staged: string) => {
         cpSync(overlay, join(staged, 'skills'), { recursive: true, force: true })
       },
     })
@@ -446,15 +448,23 @@ describe('resolveActiveOpencodeConfigDir — which directory a restarted daemon 
 describe('POST /kortix/refresh?config_dir=1', () => {
   const TOKEN = 'service-key-under-test'
   let previousRoot: string | undefined
+  let previousOverlay: string | undefined
 
   beforeEach(() => {
     setup({ shallow: true })
     previousRoot = process.env.KORTIX_BOOT_CONFIG_ROOT
     process.env.KORTIX_BOOT_CONFIG_ROOT = store
+    // The route passes no overlay dir — production resolves the default. Point
+    // the default at a real overlay so this exercises what a sandbox runs.
+    previousOverlay = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
+    write(overlay, 'kortix-system/SKILL.md', 'NOT IN THE REPO\n')
   })
   afterEach(() => {
     if (previousRoot === undefined) delete process.env.KORTIX_BOOT_CONFIG_ROOT
     else process.env.KORTIX_BOOT_CONFIG_ROOT = previousRoot
+    if (previousOverlay === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+    else process.env.KORTIX_MANAGED_SKILLS_DIR = previousOverlay
   })
 
   function harness() {
@@ -464,9 +474,19 @@ describe('POST /kortix/refresh?config_dir=1', () => {
       getState: () => 'starting', // keeps the detached runtime-assets pass out of the test
       getPid: () => 1,
     } as unknown as Opencode
-    const config = { ...cfg(), sandboxToken: TOKEN, defaultOpencodeConfigDir: join(root, 'default-config') } as unknown as Config
+    const config = {
+      ...cfg(),
+      sandboxToken: TOKEN,
+      opencodeInternalPort: 4096,
+      opencodeStandbyPort: 4097,
+      defaultOpencodeConfigDir: join(root, 'default-config'),
+    } as unknown as Config
+    const control = createOpenCodeControlService(
+      opencode,
+      createOpenCodeQuickQueueInterrupt(opencode, config),
+    ).bind({ cfg: config })
     const post = (query: string) =>
-      createRefreshRouter(config, opencode).request(`/?${query}`, {
+      createRefreshRouter(config, control).request(`/?${query}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${TOKEN}` },
       })
@@ -585,7 +605,7 @@ describe('base=1 requires a DIRECT service call', () => {
   function router() {
     // The rejection paths return before any repo or runtime work, so a config
     // carrying just the token is all the route reads on these paths.
-    const cfg = { sandboxToken: TOKEN } as unknown as Config
+    const cfg = { sandboxToken: TOKEN, opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/ephemeral/opencode' } as unknown as Config
     const opencode = {
       restart: async () => {
         throw new Error('restart must not run on a refused request')
@@ -593,7 +613,7 @@ describe('base=1 requires a DIRECT service call', () => {
       getState: () => 'ready',
       getPid: () => 1,
     } as unknown as Opencode
-    return createRefreshRouter(cfg, opencode)
+    return createRefreshRouter(cfg, createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg)).bind({ cfg }))
   }
 
   async function post(path: string, headers: Record<string, string>) {

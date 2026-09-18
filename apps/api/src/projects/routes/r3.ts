@@ -22,7 +22,7 @@ import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountMembers, accountSecretGrants, accountSecretResources } from '@kortix/db';
-import { encryptAccountSecret } from '../../secrets/account-resource';
+import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
 import {
   SecretConsumerSchema,
   SecretSchema as ContractSecretSchema,
@@ -1301,19 +1301,22 @@ async function writeCodexAuthSecret(input: {
     ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
 
-/** One OAuth completion creates one private account resource. The flow's UUID
+/** One OAuth completion creates one project-scoped account resource. The flow's UUID
  * makes concurrent or repeated polls idempotent without replacing another login. */
 async function writeCodexAccountResource(input: {
   secretId: string; accountId: string; userId: string; label: string; value: string; projectId: string;
+  sharing?: ReturnType<typeof parseSharingIntent>;
 }) {
-  const { secretId, accountId, userId, label, value, projectId } = input;
+  const { secretId, accountId, userId, label, value, projectId, sharing } = input;
+  const restricted = sharing?.mode === 'members' || sharing?.mode === 'private';
+  const userIds = [...new Set([userId, ...(sharing?.mode === 'members' ? sharing.memberIds ?? [] : [])])];
   const created = await db.transaction(async (tx) => {
     const [row] = await tx.insert(accountSecretResources).values({
-      secretId, accountId, label, providerId: 'codex', name: CODEX_AUTH_JSON_SECRET_NAME,
+      secretId, accountId, projectId, accessMode: restricted ? 'members' : 'project', label, providerId: 'codex', name: CODEX_AUTH_JSON_SECRET_NAME,
       valueEnc: encryptAccountSecret(accountId, value), consumer: 'llm_gateway',
       strategy: 'broker', createdBy: userId,
     }).onConflictDoNothing().returning({ secretId: accountSecretResources.secretId });
-    if (row) await tx.insert(accountSecretGrants).values({ accountId, secretId, userId, grantedBy: userId });
+    if (row) await tx.insert(accountSecretGrants).values(userIds.map((grantee) => ({ accountId, secretId, userId: grantee, grantedBy: userId })));
     return Boolean(row);
   });
   if (created) await recordAuditEvent({
@@ -1372,8 +1375,8 @@ projectsApp.openapi(
 
   const resourceLabel = body.resource_label === undefined ? null :
     typeof body.resource_label === 'string' ? body.resource_label.trim() : '';
-  if (resourceLabel !== null && (resourceLabel.length < 1 || resourceLabel.length > 100 || body.sharing != null)) {
-    return c.json({ error: 'A named OAuth resource requires a 1–100 character label and no project sharing mode' }, 400);
+  if (resourceLabel !== null && (resourceLabel.length < 1 || resourceLabel.length > 100)) {
+    return c.json({ error: 'A named OAuth resource requires a 1–100 character label' }, 400);
   }
   if (resourceLabel !== null && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
     !projectLlmGatewayEnabled(loaded.row.metadata))) {
@@ -1391,6 +1394,17 @@ projectsApp.openapi(
     if (!sharing) {
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
     }
+    if (resourceLabel !== null) {
+      if (sharing.mode === 'private' && sharing.ownerId !== loaded.userId) return c.json({ error: 'Invalid connection owner' }, 400);
+      if (sharing.mode === 'members') {
+        if (sharing.groupIds?.length || (sharing.memberIds?.length ?? 0) > 200) return c.json({ error: 'Select up to 200 project members' }, 400);
+        for (const userId of sharing.memberIds ?? []) {
+          if (!z.string().uuid().safeParse(userId).success || !(await memberMayReadProject(loaded.row.accountId, projectId, userId))) {
+            return c.json({ error: 'Member has no project access' }, 400);
+          }
+        }
+      }
+    }
   }
   // A shared credential is a project SECRET WRITE (the device flow persists it
   // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
@@ -1399,7 +1413,9 @@ projectsApp.openapi(
   // private (owner-only) credential is the member's own, so read still suffices.
   // The poll step is reachable only with the project-key-encrypted flow handle
   // minted here, so gating start transitively protects the write on poll.
-  if (resourceLabel === null && sharing?.mode !== 'private') {
+  const namedOwnerOnly = resourceLabel !== null && (sharing?.mode === 'private' ||
+    (sharing?.mode === 'members' && (sharing.memberIds?.length ?? 0) === 0));
+  if (sharing?.mode !== 'private' && !namedOwnerOnly) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
@@ -1507,6 +1523,7 @@ projectsApp.openapi(
     const secretId = await writeCodexAccountResource({
       secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
       label: state.l, value: result.authJson, projectId,
+      sharing: state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined,
     });
     return c.json({ status: 'success', credential: {
       provider_id: 'codex', secret_id: secretId, label: state.l,

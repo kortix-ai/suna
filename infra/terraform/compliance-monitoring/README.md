@@ -8,11 +8,12 @@ It manages:
 
 - WAF association for every current ALB in us-west-2, eu-west-2, and
   us-east-2.
-- ELB 5xx and unhealthy-host CloudWatch alarms for every current ALB, with
-  regional SNS actions (Drata DCF-86 / DCF-88). The reconciler adds a
-  zero-healthy-hosts alarm per target group. `TargetResponseTime` alarms are
-  retired: the gateway and API ALBs stream LLM and SSE responses, so their
-  average response time is minutes by design and the alarm only flapped.
+- Target-response-time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
+  current ALB, with regional SNS actions (Drata DCF-86 / DCF-88 / test 294).
+  The reconciler adds a zero-healthy-hosts alarm per target group.
+  `TargetResponseTime` was retired on 2026-08-26 because its 2 s threshold
+  flapped on streaming traffic; it is restored at Average > 30 s sustained for
+  15 minutes, above the by-design streaming averages.
 - CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
   and production regions, discovered on every plan so replacement EKS workers
   remain covered (Drata DCF-86).
@@ -20,9 +21,10 @@ It manages:
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.
 - Regional Lambda reconcilers on a five-minute schedule, so Kubernetes-managed
-  ALB creation and replacement receives all three required alarms without
-  waiting for another Terraform apply. The same run deletes retired
-  `kortix-alb-*-target-response-time` alarms and the unmanaged
+  ALB creation and replacement receives all four required alarms without
+  waiting for another Terraform apply. The same run deletes the
+  per-target-group `kortix-alb-*-target-response-time` variants the Lambda
+  itself created in the retired 2 s-threshold era, and the unmanaged
   `compliance-*` ALB alarms left by the 2026-07-27 evidence pass.
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
@@ -54,7 +56,12 @@ terraform apply tfplan
 ```
 
 Email SNS subscriptions remain a human confirmation step; Terraform must not
-pretend an unconfirmed subscription is a working alert channel.
+pretend an unconfirmed subscription is a working alert channel. The us-east-2
+`kortix-compliance-alerts` subscription is declared in Terraform because Drata
+DCF-86 requires the alarm topic to hold a subscription, and it reads
+PendingConfirmation until the SNS confirmation email is clicked. The us-west-2
+and eu-west-2 topics carry confirmed email subscriptions managed outside
+Terraform.
 
 ## Verify EC2 CPU coverage
 
@@ -75,9 +82,9 @@ Both payloads must report `covered_instances == running_instances` and an empty
 ## Verify ALB alarm coverage
 
 Invoke the reconciler twice in each production-system region. The second
-invocation must report `covered_alarms == elb-5xx per ALB + unhealthy-hosts and
-zero-healthy-hosts per target group`, an empty `updated_alarms` list, and an
-empty `deleted_alarms` list.
+invocation must report `covered_alarms == elb-5xx and target-response-time per
+ALB + unhealthy-hosts and zero-healthy-hosts per target group`, an empty
+`updated_alarms` list, and an empty `deleted_alarms` list.
 
 ```bash
 for region in us-west-2 eu-west-2 us-east-2; do

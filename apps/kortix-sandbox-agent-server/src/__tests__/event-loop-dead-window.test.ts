@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { startOpencodeEventLoop } from '../opencode-events'
-import type { Opencode } from '../opencode'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
+import type { Opencode } from '../harness/open-code/lifecycle'
 
 // OpenCode binds its port ~100 ms before its request handler exists. A request
 // accepted in that window is never answered — the client waits for its own
@@ -83,7 +83,7 @@ describe('event loop vs OpenCode bind→handler window', () => {
     expect(Date.now() - started).toBeLessThan(3_000)
   })
 
-  test('no subscribe is sent before the supervisor reports the listening announcement', async () => {
+  test('no subscribe is sent before the lifecycle reports the listening announcement', async () => {
     const { port, acceptedCount } = deadWindowServer(0)
     let release!: () => void
     const listening = new Promise<void>((resolve) => {

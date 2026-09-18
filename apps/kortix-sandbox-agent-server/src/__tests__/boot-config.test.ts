@@ -19,6 +19,7 @@ import {
   accessSync,
   chmodSync,
   constants,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -230,6 +231,34 @@ describe('verifyBootConfig', () => {
     writeFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'NEWER OVERLAY\n')
 
     expect(await verifyBootConfig({ ...input(sha), dir })).toBe(true)
+  })
+
+  test('the overlay the daemon injects by DEFAULT is not tampering', async () => {
+    // #7403 preview, 2026-09-18: a second reload with nothing new answered
+    // `updated` again. Production passes no `managedSkillsDir`; "undefined" was
+    // read as "no managed skills", so the twelve `kortix-*` directories the
+    // overlay injects counted as ADDED files, verification failed on every call
+    // and the copy was silently re-extracted. Every unit test passed the dir
+    // explicitly, so none of them could see it.
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
+    try {
+      mkdirSync(join(overlay, 'kortix-system'), { recursive: true })
+      writeFileSync(join(overlay, 'kortix-system', 'SKILL.md'), 'NOT IN THE REPO\n')
+      const sha = commit('v1')
+      const production = { repo, sha, relConfigDir: REL, root: store }
+      const { dir } = await materializeBootConfig({
+        ...production,
+        prepare: async (staged) => {
+          cpSync(overlay, join(staged, 'skills'), { recursive: true, force: true })
+        },
+      })
+
+      expect(await verifyBootConfig({ ...production, dir })).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
   })
 
   test('a tracked symlink is compared by its target, never followed', async () => {

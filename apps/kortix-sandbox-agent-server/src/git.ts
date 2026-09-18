@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from './config'
 import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import { logger } from './logger'
+import { managedSkillsDir } from './managed-skills'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
 type GitIdentityConfig = Pick<Config, 'gitUserName' | 'gitUserEmail'>
@@ -1658,7 +1659,6 @@ export interface ConfigDirSyncResult {
  * the overlay rewrites it on every boot, so an edit there never survived anyway.
  */
 const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
-const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 /**
  * Written by OpenCode's installer on every spawn. Measured on the #7403 preview:
  * opencode restarted, the installer rewrote `bun.lock` for the pin it had just
@@ -1775,9 +1775,9 @@ export async function inspectSessionConfigWork(
   if (resolved.code !== 0) return { ok: false, skipped: 'fetch failed' }
   const tipSha = resolved.stdout.trim()
 
-  const managedSkillsDir = opts.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
+  const overlayDir = opts.managedSkillsDir ?? managedSkillsDir()
   const managedSkillPrefixes = (
-    await readdir(managedSkillsDir, { withFileTypes: true }).catch(() => [])
+    await readdir(overlayDir, { withFileTypes: true }).catch(() => [])
   )
     .filter((entry) => entry.isDirectory())
     .map((entry) => `${relConfigDir}/skills/${entry.name}/`)

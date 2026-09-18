@@ -9,6 +9,7 @@
  */
 
 import { listAccountMembers } from '@kortix/sdk';
+import { contract } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useAuth } from '@/features/providers/auth-provider';
@@ -23,6 +24,6 @@ export function useAccountMembers(accountId: string | undefined, canReadMembers:
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId!),
     enabled: !!user && !!accountId && canReadMembers !== false,
-    staleTime: 20_000,
+    ...contract('directory'),
   });
 }

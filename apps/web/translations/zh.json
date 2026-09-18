@@ -1,5 +1,33 @@
 {
+  "repositoryChange": {
+    "changedToast": "仓库已更改。新会话将使用新仓库。",
+    "verifyError": "无法验证 GitHub 访问权限。",
+    "change": "更改",
+    "title": "更改仓库",
+    "description": "新会话将使用新仓库。更改后，现有会话无法重新启动。",
+    "current": "当前仓库",
+    "newUrl": "新 GitHub 仓库 URL",
+    "verifying": "正在验证 GitHub…",
+    "verifyAgain": "重新验证 GitHub",
+    "verify": "验证 GitHub 访问权限",
+    "noInstallation": "此仓库所有者没有可用的 Kortix App 安装。请在 GitHub 中将该仓库添加到 App 安装，然后重新验证。",
+    "installation": "GitHub App 安装",
+    "selectInstallation": "选择安装",
+    "manifestRequirement": "新仓库的默认分支需要包含 {manifest}。请先停止活动会话并关闭未完成的变更请求。",
+    "cancel": "取消",
+    "changing": "正在更改…"
+  },
   "pooledSecrets": {
+    "saveChanges": "保存更改",
+    "unsavedChanges": "密钥更改尚未保存",
+    "creationDescription": "值会保持加密。保存前请选择谁可以使用此连接。",
+    "whoCanUse": "谁可以使用此连接？",
+    "everyoneInProject": "此项目中的所有成员",
+    "everyoneDescription": "任何项目成员都可以在会话中选择此连接。",
+    "specificMembers": "指定成员",
+    "specificDescription": "只有指定的项目成员和连接所有者可以使用。",
+    "accessDescription": "选择整个项目均可访问，或仅允许指定成员访问。",
+    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
     "providerDisabled": "此提供商已在当前会话中禁用。",
     "unavailableKeys": "{count, plural, other {有#个所选密钥不可用。}} 请移除不可用的密钥或恢复访问权限。",
     "removeUnavailable": "移除不可用的密钥",
@@ -7,7 +35,7 @@
     "manageKeys": "管理提供商密钥",
     "readOnlyPool": "只有会话所有者或项目管理员可以更改此池。",
     "legacyChatGptLogin": "现有项目登录",
-    "legacyChatGptDescription": "此旧连接与整个项目共享。上方的新 ChatGPT 账户在您共享前仅供本人使用。",
+    "legacyChatGptDescription": "此旧连接与整个项目共享。请分别管理上方新账户的访问权限。",
     "chatGptAccounts": "ChatGPT 账户",
     "accountCount": "{count, plural, other {# 个账户}}",
     "addAccount": "添加账户",
@@ -15,7 +43,7 @@
     "connectAccount": "连接账户",
     "oauthWaiting": "等待授权…",
     "oauthExpired": "授权已超时，请重试。",
-    "oauthPrivateDescription": "您的 ChatGPT 登录仅供本人使用，除非您向其他成员授予访问权限。在会话设置中选择账户。",
+    "oauthPrivateDescription": "新的 ChatGPT 账户默认可供此项目的所有成员使用。您可以将每个账户限制为指定成员使用。",
     "accountLabelPlaceholder": "例如：我的 ChatGPT 账户",
     "chooseProvider": "请选择提供商。",
     "saved": "密钥已保存",
@@ -23,8 +51,8 @@
     "deleted": "秘密已删除",
     "deleteError": "无法删除密钥",
     "accessError": "无法更改访问权限",
-    "sharedTitle": "共享提供商密钥",
-    "sharedDescription": "添加多个提供商密钥和 ChatGPT 账户。与成员共享每个连接，并在每个会话中选择。",
+    "sharedTitle": "提供商连接",
+    "sharedDescription": "添加多个 API 密钥和 ChatGPT 账户。默认情况下，此项目的所有成员都可以使用。您可以按连接限制访问权限，并为每个会话选择密钥。",
     "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
     "keyCount": "{count, plural, one {# 个密钥} other {# 个密钥}}",
     "providerKeysFor": "{provider} API 密钥",
@@ -152,15 +180,14 @@
     "actions": {
       "create": "创建项目",
       "tryAgain": "重试",
+      "upgrade": "升级方案",
       "logOut": "退出登录",
-      "signingOut": "正在退出"
+      "signingOut": "正在退出",
+      "back": "返回项目"
     },
     "repository": {
       "label": "代码仓库",
       "defaultBranch": "默认分支",
-      "noGitHubAccount": "此项目的账户尚未连接 GitHub 账户。",
-      "connectGitHub": "连接 GitHub 账户",
-      "connectGitHubSuffix": "以使用此选项。",
       "loadGitHubAccountsError": "无法加载 GitHub 账户。请重试。",
       "createsPath": "创建 <path>{path}</path>",
       "loadRepositoriesError": "无法加载仓库。请重试。",
@@ -170,24 +197,23 @@
           "description": "Kortix 为此项目创建并管理私有代码仓库。"
         },
         "githubCreate": {
-          "label": "在 GitHub 中创建",
           "description": "Kortix 在您的 GitHub 账户中创建私有代码仓库。"
-        },
-        "githubImport": {
-          "label": "从 GitHub 导入",
-          "description": "从您的 GitHub 账户中选择现有代码仓库。"
         }
       },
       "repositoryLabel": "仓库",
-      "createInOwner": "在 {owner} 中创建仓库",
-      "importFromOwner": "从 {owner} 导入仓库",
-      "selectOption": "选择仓库选项",
       "loadingOptions": "正在加载仓库选项…",
       "managedUnavailable": "此实例无法使用由 Kortix 托管的仓库。平台管理员可在管理控制台中完成设置。",
       "installationUnreachable": "此 GitHub 连接已失效。请重新连接以列出仓库。",
       "reconnect": "在 Git 设置中重新连接",
       "managedImportLabel": "导入现有的托管仓库",
-      "managedImportHint": "仅限自托管运维人员。列出托管 git 所有者已持有的仓库。"
+      "managedImportHint": "仅限自托管运维人员。列出托管 git 所有者已持有的仓库。",
+      "gitAccountLabel": "Git 账户",
+      "selectGitAccount": "选择 Git 账户",
+      "addGitHubAccount": "添加 GitHub 账户…",
+      "actionCreate": "创建新仓库",
+      "actionImport": "导入现有仓库",
+      "ownerTypePersonal": "个人账户",
+      "ownerTypeOrg": "组织"
     }
   },
   "projectHome": {
@@ -1077,6 +1103,10 @@
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
         },
+        "session_transcript_history": {
+          "name": "会话聊天记录",
+          "description": "每轮对话后保存聊天记录，并在会话计算机启动时显示。"
+        },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
           "description": "与成员共享多个提供商密钥，并为每个会话选择密钥池。"
@@ -1084,6 +1114,10 @@
         "pi_worker": {
           "name": "Pi 工作器运行时（已编译）",
           "description": "使用实验性 Pi 工作器运行时来运行会话。"
+        },
+        "pi_harness": {
+          "name": "Pi 运行框架（沙箱内）",
+          "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
         }
       }
     },
@@ -1425,6 +1459,7 @@
         "chat": "聊天",
         "slack": "Slack",
         "telegram": "Telegram",
+        "teams": "Teams",
         "email": "电子邮件",
         "scheduled": "已计划",
         "webhook": "Webhook",
@@ -1574,6 +1609,9 @@
   "modelSelector": {
     "search": "搜索模型",
     "free": "免费",
+    "included": "已包含",
+    "projectDefaultAccount": "项目默认",
+    "useAccount": "使用账户",
     "addProvider": "添加提供商",
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
@@ -14517,6 +14555,22 @@
       "text922315177668": "启动器能看到的全部内容",
       "text9224d9e82502": "返回“Provisioning”→“Settings”，将“Scope”设置为“Sync only assigned users and groups”——凭据保存后，这里才会显示该选项。然后点击 Provisioning 概览页顶部的“Start provisioning”（或点击“Provision on demand”，立即推送一个已分配的用户，而不是等待约 40 分钟的周期）。",
       "text9225e456b795": "在 Teams 频道或聊天中提及你的代理。",
+      "text895ce927db2e": "个人聊天",
+      "text28c7d3f8b75d": "群聊",
+      "text72b5b0c53de9": "已在 Microsoft Teams 中回复",
+      "textfc73e9ad2dae": "已在 Slack 中回复",
+      "text8faf56a14a8d": "已在 Telegram 中回复",
+      "text8ccfe10f2f2d": "发布到你的 Teams 目录",
+      "text36f6474748b3": "正在将应用发布到你的 Teams 目录…",
+      "text45b9df5730ac": "等待 Teams 管理员批准该应用",
+      "textdf5e72815836": "发布到目录失败",
+      "textbfd886d0029b": "已连接 Microsoft Teams。Kortix 应用已在你组织的 Teams 目录中。",
+      "text65228e6e414d": "已连接 Microsoft Teams。该应用正在等待 Teams 管理员批准。",
+      "textf5262c55d1be": "已连接 Microsoft Teams，但将应用发布到你的 Teams 目录失败。",
+      "text76930360e909": "已连接 Microsoft Teams。正在将应用发布到你的 Teams 目录…",
+      "textb8d155eea2ab": "Microsoft 同意已被拒绝。",
+      "textd4b32aea5c4a": "此项目已关闭 Microsoft Teams。",
+      "text57ef9e5e8110": "此服务器未配置 Teams 一键安装。",
       "text9233263288f5": "邀请成员在此账户中协作。",
       "text92340695899b": "活跃",
       "text9241c5f73c2c": "{value0} 应用匹配",
@@ -18500,7 +18554,13 @@
       "text7f59f014cd7b": "已经安装在你想要的所有者上了吗？",
       "text9180f7df8906": "关联你已管理的安装",
       "text0b0e4c425624": "已关联到 {value0, plural, other {# 个其他 Kortix 账户}}。",
-      "text7dac2ca010fe": "正在准备完整记录…"
+      "text7dac2ca010fe": "正在准备完整记录…",
+      "textc6309c452031": "连接共享账户",
+      "textded4b88e52f7": "尚无共享账户",
+      "textc3bafa5156b4": "你还没有自己的账户",
+      "textea5d0ffa0962": "共享账户由项目管理员连接。",
+      "text3d6627454174": "设置凭据",
+      "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。"
     }
   },
   "projectOnboarding": {

@@ -715,7 +715,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
   const actor = principal();
   const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
-  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
+  expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
 });
 

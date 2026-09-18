@@ -21,13 +21,16 @@ automatically. There is no app to create by hand and no token to paste — a
 Microsoft **tenant admin** has to be the one who approves it, so if the user
 isn't an admin, they need to forward that link to someone who is.
 
-Two things that differ from Slack, so don't assume symmetry:
+`kortix channels disconnect --platform teams` removes an installation;
+`kortix channels manifest --platform teams` prints the app manifest and is
+**only** for manual/self-host setup (the consent flow never needs it).
 
-- **Disconnect is not in the CLI for Teams.** `kortix channels disconnect` is
-  Slack-only in this release — send the user to the dashboard
-  (**Customize → Channels**) to remove a Teams installation.
-- `kortix channels manifest --platform teams` prints the Teams app manifest, and
-  is **only** for manual/self-host setup. The consent flow above never needs it.
+**Channels vs personal chats.** In a personal chat every message reaches you.
+In a team channel or group chat, Teams only delivers a message when the bot is
+`@`-mentioned — UNLESS the tenant admin has consented to the "receive all
+channel messages" permission, after which a reply in a thread the bot already
+owns continues the session without a mention. Either way, a new channel post
+needs the mention.
 </connecting>
 
 <overview>
@@ -36,7 +39,8 @@ Once connected, your sandbox is wired into Microsoft Teams. When a teammate `@`-
 The `teams` CLI is on `$PATH` and **just works** — there is no token in your sandbox and nothing to configure. Turn replies are owned and rendered by the Kortix server; vendor reads run through the Kortix connector gateway, which resolves the Microsoft Graph credential **server-side**. Don't look for an app password, don't reach for an MCP/HTTP workaround — just run the commands below. Two patterns matter most:
 
 - **`teams step "..."`** — narrate progress. Repaints the live Adaptive Card in the Teams conversation *as you go*.
-- **`teams send "..."`** — finalize the turn with your answer. This closes the live card and renders the reply.
+- **`teams send "..."`** — finalize the turn with your answer. This closes the live card and renders the reply. Markdown (headings, `code`, ```fenced blocks```, tables, lists) is converted to card elements, so write normally.
+- **`teams send --card-file <path>`** — deliver a full Adaptive Card JSON as the reply instead of text, for rich layouts. The JSON's top-level `type` must be `"AdaptiveCard"`.
 
 Everything else (`teams send --file`, `teams download`, `teams channels`, …) is for when the task explicitly calls for it.
 </overview>
@@ -150,9 +154,14 @@ Teams questions are **async**: ask, stop, and resume when they reply — their r
 </asking-the-user>
 
 <files-and-artifacts>
-### Sending a file: `teams send --file <path>` (consent-card flow)
+### Sending a file: `teams send --file <path>`
 
-When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. Teams files use a **file consent card**: the bot offers the file, the **user clicks Accept**, and only then does Teams hand back an upload slot and the file lands in the conversation. So this is a **two-step, asynchronous** flow — `teams send --file` posts the consent card; the upload completes when the user accepts (the Kortix server handles the accept callback and the actual upload). The conversation context is taken from the env, so you don't pass IDs:
+When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. Delivery depends on WHERE the conversation is, and the server picks the right method from the env — you always just run `teams send --file`:
+
+- **Personal chat** → a **file consent card**: you offer the file, the user clicks Accept, and only then does Teams upload it. Two-step and asynchronous; it does NOT finalize the turn.
+- **Team channel / group chat** → an **image** is posted inline instantly; any **other file** is uploaded to the team's SharePoint drive and shared as a link card (needs the bot app's `Files.ReadWrite.All` permission — if it is missing, the command returns a clear error you can relay).
+
+The conversation context is taken from the env, so you don't pass IDs:
 
 ```sh
 teams send --file /workspace/output/report.pdf --text "Incident report — accept to download."
@@ -209,7 +218,7 @@ Reply like a colleague messaging on Teams:
 - **`teams step` after `teams send` drops silently.** Always send the answer last.
 - **One `teams send` per turn** finalizes the card; a second call is ignored.
 - **Asking → `teams send` + end the turn.** The `question` tool has no Teams renderer; never call it on a Teams turn.
-- **`teams send --file` is a consent card, not an instant upload.** The user must Accept before the file arrives, and it does NOT finalize the turn — follow it with a `teams send "..."`. Limit ~4 MB.
+- **`teams send --file` in a personal chat is a consent card, not an instant upload** — the user must Accept, and it does NOT finalize the turn, so follow it with a `teams send "..."`. In a channel an image posts inline and a document becomes a drive link. Limit ~4 MB.
 - **Downloads come from the prompt.** Attached-file URLs are listed in your prompt; pass them to `teams download`.
 - **Don't go quiet on long work, but don't spam steps either** — Teams throttles card edits. One checkpoint per real phase.
 - **`$MS_TEAMS_*` env vars are pre-injected on Teams turns.** Use them; don't hard-code conversation/tenant IDs.

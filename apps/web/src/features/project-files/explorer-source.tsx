@@ -62,6 +62,13 @@ export interface FileExplorerSource {
 
   // ── Queries ────────────────────────────────────────────────────
   useFileList: (dirPath: string) => ExplorerQueryResult<FileNode[]>;
+  /**
+   * Is the compute behind this source asleep, woken only by an action the
+   * explorer cannot take for the user? Writes and search are withheld while it
+   * is, and an empty listing must not be reported as an empty folder. A git-ref
+   * source has no compute to park and answers a constant `false`.
+   */
+  useReadinessParked: () => boolean;
   useGitStatus: () => { data: GitFileStatus[] | undefined };
   /** Real-time list/content invalidation (SSE file events). May be a no-op. */
   useFileEventInvalidation: () => void;

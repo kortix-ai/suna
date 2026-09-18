@@ -3,6 +3,7 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import type { PromptPartWire } from './store';
 import { RuntimeRouteUnsupportedError } from './runtime-prompt-file';
 import {
+  type RuntimePromptFileWriteInput,
   INLINE_PROMPT_BUDGET_BYTES,
   PromptAttachmentMaterializationError,
   materializePromptAttachments,
@@ -37,12 +38,55 @@ function materialize(input: Partial<Parameters<typeof materializePromptAttachmen
     sessionId: 'session_1',
     userId: 'user_1',
     materializationKey: 'command_1',
-    writeFile: async (file) => ({ path: file.targetPath, size: file.bytes.byteLength }),
+    writeFile: async (file) => ({
+      path: file.targetPath,
+      size: file.bytes.byteLength,
+    }),
     ...input,
   });
 }
 
 describe('materializePromptAttachments', () => {
+  test('saves every staged first-prompt file before writing it to the runtime', async () => {
+    const events: string[] = [];
+    const url =
+      'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const result = await materialize({
+      saveAttachment: async ({ filename, bytes }) => {
+        events.push(`save:${filename}`);
+        expect(bytes.length).toBeGreaterThan(0);
+        return url;
+      },
+      writeFile: async (file) => {
+        events.push(`write:${file.filename}`);
+        return { path: file.targetPath, size: file.bytes.length };
+      },
+    });
+    for (const filename of ['bundle.zip', 'shot.png', 'README.md']) {
+      expect(events.indexOf(`save:${filename}`)).toBeLessThan(events.indexOf(`write:${filename}`));
+    }
+    expect(
+      result
+        .slice(1)
+        .every((part) => part.type === 'text' && part.text?.includes(`attachment="${url}"`)),
+    ).toBe(true);
+  });
+
+  test('storage failure prevents first-prompt delivery and remains retryable', async () => {
+    let writes = 0;
+    await expect(
+      materialize({
+        saveAttachment: async () => {
+          throw new Error('Storage unavailable');
+        },
+        writeFile: async (file) => {
+          writes++;
+          return { path: file.targetPath, size: file.bytes.length };
+        },
+      }),
+    ).rejects.toThrow('Storage unavailable');
+    expect(writes).toBe(0);
+  });
   test('resolves handles under the command and imports only durable workspace files', async () => {
     const commandId = '11111111-1111-4111-8111-111111111111';
     const zipId = '22222222-2222-4222-8222-222222222222';
@@ -375,7 +419,10 @@ describe('materializePromptAttachments', () => {
 
     expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
     expect(error.failures).toEqual([
-      { filename: 'bundle.zip', reason: 'file "bundle.zip" has malformed staged data' },
+      {
+        filename: 'bundle.zip',
+        reason: 'file "bundle.zip" has malformed staged data',
+      },
     ]);
   });
 
@@ -393,7 +440,10 @@ describe('materializePromptAttachments', () => {
 
     expect(error).toBeInstanceOf(PromptAttachmentMaterializationError);
     expect(error.failures).toEqual([
-      { filename: 'bundle.zip', reason: 'file "bundle.zip" has inconsistent MIME metadata' },
+      {
+        filename: 'bundle.zip',
+        reason: 'file "bundle.zip" has inconsistent MIME metadata',
+      },
     ]);
   });
 
@@ -649,7 +699,12 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       inlineBudgetBytes: 10,
       parts: [
         { type: 'text', text: 'see' },
-        { type: 'file', mime: 'image/png', filename: 'in-box.png', url: 'https://box.test/uploads/in-box.png' },
+        {
+          type: 'file',
+          mime: 'image/png',
+          filename: 'in-box.png',
+          url: 'https://box.test/uploads/in-box.png',
+        },
       ],
       writeFile: async (f) => {
         writes.push(f.targetPath);
@@ -657,7 +712,10 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       },
     });
     expect(writes).toEqual([]);
-    expect(result[1]).toMatchObject({ type: 'file', url: 'https://box.test/uploads/in-box.png' });
+    expect(result[1]).toMatchObject({
+      type: 'file',
+      url: 'https://box.test/uploads/in-box.png',
+    });
   });
 
   test('the legacy repair keeps native images inline via an unbounded budget', async () => {
@@ -667,7 +725,12 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
       inlineBudgetBytes: Number.POSITIVE_INFINITY,
       parts: [
         png(INLINE_PROMPT_BUDGET_BYTES * 4),
-        { type: 'file', mime: 'application/zip', filename: 'b.zip', url: 'data:application/zip;base64,UEsDBA==' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'b.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
       ],
       writeFile: async (f) => {
         writes.push(f.filename);
@@ -676,4 +739,70 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
     });
     expect(writes).toEqual(['b.zip']);
   });
+});
+
+test('stored attachments materialize after wake and retain a preview reference', async () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+  const sessionId = '22222222-2222-4222-8222-222222222222';
+  const url = `kortix-attachment://${projectId}/${sessionId}/33333333-3333-4333-8333-333333333333`;
+  const writes: RuntimePromptFileWriteInput[] = [];
+  const result = await materialize({
+    sessionId,
+    parts: [{ type: 'file', mime: 'image/png', filename: 'shot.png', url }],
+    readAttachment: async (scope) => {
+      expect(scope.sessionId).toBe(sessionId);
+      return new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+    },
+    writeFile: async (input) => {
+      writes.push(input);
+      return { path: input.targetPath, size: input.bytes.length };
+    },
+  });
+  expect(writes).toHaveLength(1);
+  expect([...writes[0].bytes]).toEqual([1, 2, 3]);
+  expect(result[0].type).toBe('text');
+  expect(result[0].text).toContain(`attachment="${url}"`);
+  expect(result[0].text).toContain(writes[0].targetPath);
+});
+
+test('stored attachments cannot be read into another session', async () => {
+  let reads = 0;
+  await expect(
+    materialize({
+      parts: [
+        {
+          type: 'file',
+          mime: 'text/plain',
+          filename: 'notes.txt',
+          url: 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333',
+        },
+      ],
+      readAttachment: async () => {
+        reads++;
+        return new Blob(['private']);
+      },
+    }),
+  ).rejects.toThrow('another session');
+  expect(reads).toBe(0);
+});
+
+test('archives staged handles before import and keeps their canonical metadata', async () => {
+  const storedUrl = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const calls: string[] = [];
+  const result = await materializePromptAttachments({
+    parts: [{ type: 'file', attachment_id: 'handle', filename: 'spoof', mime: 'wrong' }],
+    externalId: 'box', sessionId: 'session', userId: 'user', accountId: 'account', projectId: 'project', materializationKey: 'command',
+    resolveAttachments: async () => new Map([[0, {
+      attachmentId: 'handle', filename: 'canonical.png', mime: 'image/png', size: 3, sha256: 'a'.repeat(64), targetPath: '/workspace/uploads/canonical.png',
+      readBytes: async () => { calls.push('read'); return new Uint8Array([1, 2, 3]); },
+    }]]),
+    saveAttachment: async (file) => {
+      expect(file).toEqual({ index: 0, filename: 'canonical.png', mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
+      calls.push('save'); return storedUrl;
+    },
+    importAttachment: async () => { calls.push('import'); return null; },
+    writeFile: async (file) => { calls.push('write'); return { path: file.targetPath, size: file.bytes.length }; },
+  });
+  expect(calls).toEqual(['read', 'save', 'import', 'write']);
+  expect(result[0]?.text).toContain(`attachment="${storedUrl}"`);
 });

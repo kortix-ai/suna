@@ -9,7 +9,7 @@
  * Restart. The retry loop turns that dead end into an eventual recovery.
  */
 import { describe, expect, test } from 'bun:test'
-import { initialSessionRetryDelayMs, retryUntilInitialSessionEstablished } from '../main'
+import { initialSessionRetryDelayMs, retryUntilInitialSessionEstablished } from '../harness/open-code/boot'
 
 describe('initialSessionRetryDelayMs', () => {
   test('5s, 10s, 15s … capped at 30s', () => {

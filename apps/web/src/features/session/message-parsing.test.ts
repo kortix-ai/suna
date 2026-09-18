@@ -155,3 +155,10 @@ describe('systemNotificationSeverity', () => {
     expect(systemNotificationSeverity('retry_failed')).toBe('error');
   });
 });
+
+test('retains only valid private attachment references beside sandbox paths', () => {
+  const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+  const tag = (url: string) => `<file path="/workspace/uploads/a.png" mime="image/png" filename="a.png" attachment="${url}">file</file>`;
+  expect(parseFileReferences(tag(ref)).files[0]).toMatchObject({ attachment: ref });
+  expect(parseFileReferences(tag('https://other.test/private')).files[0]).not.toHaveProperty('attachment');
+});

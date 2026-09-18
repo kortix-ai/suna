@@ -51,6 +51,33 @@ test('forwards expires_in_minutes — the setup-link route is the one that takes
   expect(posts[0].body).toMatchObject({ slug: 'gmail', expires_in_minutes: 45 });
 });
 
+// The link creates an ACCOUNT, and an account belongs either to the human who
+// opens it or to the whole project. The field is omitted unless asked for: the
+// connect-request body is `.strict()`, so a CLI that always sent it would 400
+// against an API deployed before the field existed.
+test('sends owner only when the caller names one', async () => {
+  posts.length = 0;
+  await mintConnectLink({ slug: 'gmail' });
+  expect(posts[0].body).not.toHaveProperty('owner');
+
+  posts.length = 0;
+  await mintConnectLink({ slug: 'gmail', owner: 'project' });
+  expect(posts[0].body).toMatchObject({ slug: 'gmail', owner: 'project' });
+
+  posts.length = 0;
+  await mintConnectLink({ slug: 'gmail', owner: 'me' });
+  expect(posts[0].body).toMatchObject({ slug: 'gmail', owner: 'me' });
+});
+
+test('carries owner onto the provider fallback too', async () => {
+  posts.length = 0;
+  setupLinkThrows = true;
+  await mintConnectLink({ slug: 'weird', owner: 'project' });
+  setupLinkThrows = false;
+  expect(posts.at(-1)?.path).toContain('/connectors/weird/connect');
+  expect(posts.at(-1)?.body).toEqual({ owner: 'project' });
+});
+
 test('falls back to the provider url when no setup link can be minted', async () => {
   posts.length = 0;
   setupLinkThrows = true;

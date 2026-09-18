@@ -23,6 +23,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -200,6 +201,7 @@ const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className
   shared: UsersSolid,
   slack: Slack,
   telegram: Telegram,
+  teams: MicrosoftTeams,
   email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
@@ -296,6 +298,7 @@ export function SessionFilterMenu({
     shared: t('sourceValue.shared'),
     slack: t('section.slack'),
     telegram: t('section.telegram'),
+    teams: t('section.teams'),
     email: t('section.email'),
     schedule: t('section.scheduled'),
     webhook: t('section.webhook'),

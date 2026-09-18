@@ -130,9 +130,9 @@ describe('sent attachment previews', () => {
     expect(sentAttachmentPreview('upload-gone')).toBeUndefined();
   });
 
-  test('a file that is not an image hands over nothing', () => {
+  test('a sent PDF retains its bytes for download', () => {
     adoptSentAttachmentPreviews([local('upload-2', 'brief.pdf', 'blob:pdf', 'application/pdf')]);
-    expect(sentAttachmentPreview('upload-2')).toBeUndefined();
+    expect(sentAttachmentPreview('upload-2')).toBe('blob:pdf');
   });
 
   test('HEIC hands over the JPEG the composer made, never the raw file', () => {
@@ -267,4 +267,12 @@ describe('sentAttachmentsForTurn', () => {
       }),
     ).toEqual([shot]);
   });
+});
+
+
+test('a sent document retains its local bytes for download before runtime delivery', () => {
+  adoptSentAttachmentPreviews([local('document-1', 'notes.txt', 'blob:notes', 'text/plain')]);
+  expect(sentAttachmentPreview('document-1')).toBe('blob:notes');
+  revokeUnsentPreview('blob:notes');
+  expect(revoked).not.toContain('blob:notes');
 });
