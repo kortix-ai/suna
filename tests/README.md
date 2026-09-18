@@ -125,11 +125,50 @@ different SHA.
 
 `tests-release.yml` runs the deployed staging suite for pull requests into
 `prod`. It does not repeat the local-profile suite. It rejects development and
-production hosts. It requires the API and gateway health commits to equal
-`RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+production hosts. It requires the API, gateway, **and frontend** health commits
+to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
 `--require-all`, then runs all configured Playwright journeys against
 `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
+
+#### Why the preflight reads three surfaces
+
+`assertTargetSmokeHealth` (`src/core/target-smoke.ts`) read only the API and the
+gateway until 2026-09-18. Those two roll on ECS; the frontend is a Vercel
+deployment that `deploy-staging.yml` aliases onto `staging.kortix.com`, and
+Vercel swaps an alias atomically. The two clocks are independent, so the browser
+shards could drive the previous release's frontend while preflight saw two green
+surfaces.
+
+Measured on the v0.13.25 gate (release run `35392201088`, PR #7422,
+`RELEASE_SOURCE_SHA=8a1e38dc97ba76ae2aba7fe9c7cce284fa05af23`):
+
+| Event | Time (UTC) |
+| --- | --- |
+| `deploy-staging` 35391030403, job "Deploy staging web to Vercel" starts | 20:32:06 |
+| Vercel `dpl_ZWu71zWXoWKvwGBr9uCs17FVu7Ha` (sha `8a1e38dc`) created | 20:32:38 |
+| Release-gate browser shards 1–3 start | 20:36:16 |
+| That deployment still `INITIALIZING`; alias still on `dpl_43b4…` (sha `fa68c114`, built 05:22Z) | 20:50 |
+
+So the shards drove a frontend 15 hours behind the release. A shard failing
+there fails for a reason unrelated to the code under test — a phantom failure.
+
+The preflight now **fails fast** on that skew. It does not wait or retry: a
+stale alias is a deploy problem for a human, not something a preflight should
+sit and hope out. Two distinct verdicts:
+
+- **SHA mismatch** — one message naming all three actual commits, so the stale
+  surface is readable without opening the run.
+- **Unstamped build** — the frontend reports `commit: "unknown"` (or no commit
+  field). That means the build never received the SHA, which is a build defect,
+  not a stale deploy, and it says so in its own words.
+
+Staging sits behind Vercel SSO deployment protection, so the frontend read sends
+`x-vercel-protection-bypass` using the `VERCEL_AUTOMATION_BYPASS_SECRET` the gate
+already sets at the workflow env level. It sends that header **alone**, without
+`x-vercel-set-bypass-cookie`: the cookie variant answers 307 instead of the body,
+and `fetch` keeps no cookie jar. `deployment-bypass.ts` owns both header forms so
+the browser lane and this one-shot read cannot drift.
 
 #### Release gate shards
 

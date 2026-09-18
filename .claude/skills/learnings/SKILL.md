@@ -6916,3 +6916,77 @@ second labelled account staying on the connection-scoped route, a 403 that must
 not fall back). `packages/sdk/src/core/rest/projects-client/connectors.test.ts`
 pins that `connectorFinalize` sends `owner`/`connection_id` and still sends `{}`
 for the published two-argument callers.
+
+### 2026-09-18 — A deployed-SHA assertion covers every surface the gate drives, or it certifies the ones it skipped
+
+**When:** adding a surface to a deployed environment, or writing any "is the
+deployment the release?" preflight. `assertTargetSmokeHealth`
+(`tests/src/core/target-smoke.ts`) read the API and the gateway and called that
+the release SHA. The gate's three Playwright shards drive a THIRD surface —
+`E2E_BASE_URL`, `https://staging.kortix.com` — that nothing checked. Those two
+facts together do not mean "the frontend is probably fine"; they mean the gate
+states a SHA it never verified for the surface most of its assertions run
+against.
+
+The surfaces do not share a clock. API and gateway roll on ECS; the frontend is
+a Vercel deployment that `deploy-staging.yml` aliases onto the host, and Vercel
+swaps an alias atomically only once the build reaches READY. Measured on the
+v0.13.25 gate (release run `35392201088`, PR #7422,
+`RELEASE_SOURCE_SHA=8a1e38dc97ba76ae2aba7fe9c7cce284fa05af23`):
+
+| Event | UTC |
+| --- | --- |
+| `deploy-staging` 35391030403 "Deploy staging web to Vercel" starts | 20:32:06 |
+| Vercel `dpl_ZWu71zWXoWKvwGBr9uCs17FVu7Ha` (sha `8a1e38dc`) created | 20:32:38 |
+| Release-gate browser shards 1–3 start | 20:36:16 |
+| That deployment still `INITIALIZING`; alias still on `dpl_43b4…` (sha `fa68c114`, built 05:22Z) | 20:50 |
+
+The shards drove a frontend **15 hours and many commits** behind the release
+while api and gateway both reported the release SHA. Verified live with the
+bypass at 20:42Z and again at 20:50Z: `staging.kortix.com/api/health` →
+`commit: fa68c114…`. A shard failing there fails for a reason with no relation
+to the code under test — the same phantom-failure class as the four releases
+already misread for SHA skew, reached by a second, independent route.
+
+**Rules.**
+1. **The preflight asserts every surface the suite drives.** The list of checked
+   surfaces and the list of driven surfaces are the same list. `webUrl` had been
+   in `TargetSmokeConfig` and threaded through `resolveTargetSmokeConfig` the
+   whole time — wired, host-pinned, and never read. A field that is plumbed but
+   unasserted reads exactly like coverage.
+2. **Fail fast; never wait out a stale deploy.** A retry loop turns a deploy
+   problem into a slow green. A stale alias needs a human or a re-run.
+3. **"Not stamped" is a different verdict from "stale".** `commit: 'unknown'`
+   means the build never received the SHA — a BUILD defect. Reporting it as a
+   mismatch sends the reader to the deploy clock for a problem in the build.
+4. **A value a gate hard-fails on is a value we set, not one a vendor infers.**
+   The staging Vercel build received no `NEXT_PUBLIC_KORTIX_COMMIT`; the real
+   SHA arrived only through `next.config.ts`'s `VERCEL_GIT_COMMIT_SHA` fallback,
+   which Vercel derives from a `--archive=tgz` CLI deploy's checkout metadata.
+   That worked (measured: a real 40-char SHA, not `'unknown'`) and is not a
+   documented contract. The deploy now passes `-b NEXT_PUBLIC_KORTIX_COMMIT`
+   explicitly.
+5. **Reuse the bypass, and know which form.** Staging is behind Vercel SSO.
+   `x-vercel-protection-bypass` ALONE returns the body; adding
+   `x-vercel-set-bypass-cookie` returns a 307 to mint the cookie, which is what
+   the browser lane wants and what a one-shot `fetch` (no cookie jar) cannot
+   use. Measured both. `deployment-bypass.ts` owns both header forms so the two
+   callers cannot drift — never write the header name at a third site.
+
+**Enforcement.** `tests/unit/target-smoke.test.ts` — frontend stale while api
+and gateway match (message names all three), `commit: 'unknown'` and a missing
+`commit` as the build-defect verdict, the SSO 302, and the frontend health
+contract. All five fail against the pre-change implementation; the 25
+pre-existing cases pass unchanged. `tests/unit/web-ecs-workflow.test.ts` pins
+the `-b NEXT_PUBLIC_KORTIX_COMMIT="$SOURCE_SHA"` flag in the Vercel job and that
+the preflight still reads the frontend through the canonical bypass helpers.
+Proven against the real deployed surfaces both ways: the live staging trio
+correctly reports `frontend=fa68c114…` against `expected=8a1e38dc…`, and three
+real surfaces that agree (API + gateway + `staging-fe-ecs.kortix.com`, the
+Docker/ECS frontend, all `8a1e38dc…`) resolve.
+
+**Open, recorded as follow-up, not fixed here.** `deploy-staging.yml`'s
+`deploy-web-vercel` reports success after `vercel deploy` + `vercel alias set`
+return, which is before the deployment reaches READY — so the job is green while
+the alias still serves the previous release. Making the job wait for READY is
+the structural fix; this entry only makes the gate refuse to certify the result.
