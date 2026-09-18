@@ -267,6 +267,185 @@ describe('syncOpencodeConfigDirToBase', () => {
  * These exercise real git, because the whole defect is a property of what
  * `checkout -B` does versus what `checkout` does.
  */
+/**
+ * Dev, 2026-09-18, session 6d8dfdae: a session nobody had touched refused its
+ * reload with `local changes`. `git status` inside the box named two files, and
+ * the platform had written both:
+ *
+ *   - `package.json` — OpenCode's own installer moved the `@opencode-ai/plugin`
+ *     pin from 1.17.11 to 1.18.23 (the pin tracks the opencode BINARY);
+ *   - `skills/kortix-cli/SKILL.md` — the managed-skill overlay force-wrote the
+ *     current body over the copy the repository tracks.
+ *
+ * Every starter-seeded repository has this shape, so the guard refused on
+ * effectively every session: the etag moved and the agent did not.
+ */
+describe('platform-written files are not the session\'s work', () => {
+  const PKG = `${CONFIG_DIR}/package.json`
+  const MANAGED = `${CONFIG_DIR}/skills/kortix-cli/SKILL.md`
+  const OWN_SKILL = `${CONFIG_DIR}/skills/my-skill/SKILL.md`
+  let overlay: string
+
+  const pkg = (pin: string, extra = '') =>
+    `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`
+  const opts = () => ({ managedSkillsDir: overlay })
+
+  beforeEach(() => {
+    // The repository tracks a package.json, a managed skill and its own skill.
+    write(origin, PKG, pkg('1.17.11'))
+    write(origin, MANAGED, 'REPO COPY OF KORTIX-CLI\n')
+    write(origin, OWN_SKILL, 'MY SKILL v1\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'track deps and skills')
+    git(work, 'pull', '-q', 'origin', 'main')
+
+    // The image-baked overlay, as `/opt/kortix/managed-skills` holds it.
+    overlay = join(root, 'managed-skills')
+    write(overlay, 'kortix-cli/SKILL.md', 'OVERLAY KORTIX-CLI\n')
+
+    // Boot: exactly what the runtime did to the untouched dev session.
+    write(work, PKG, pkg('1.18.23'))
+    write(work, MANAGED, 'OVERLAY KORTIX-CLI\n')
+
+    // Base moves on.
+    write(origin, AGENT, 'NEWER PROMPT\n')
+    write(origin, OWN_SKILL, 'MY SKILL v2\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'newer agent + skill')
+  })
+
+  test('an untouched session syncs despite the pin and the overlay', async () => {
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(result).toEqual({ synced: true })
+    expect(agentText()).toBe('NEWER PROMPT\n')
+    expect(readFileSync(join(work, OWN_SKILL), 'utf8')).toBe('MY SKILL v2\n')
+  })
+
+  test('the sync keeps the pin and the overlay the platform needs', async () => {
+    // Base carries the OLD pin and the OLD skill body. Restoring them would
+    // point opencode 1.18.23 at a 1.17.11 plugin and hand the agent stale CLI
+    // docs until the next boot.
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23'))
+    expect(readFileSync(join(work, MANAGED), 'utf8')).toBe('OVERLAY KORTIX-CLI\n')
+  })
+
+  test('a base change to package.json arrives, with the pin still held', async () => {
+    write(origin, PKG, pkg('1.17.11', ',\n    "zod": "4.0.0"'))
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'add zod')
+
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23', ',\n    "zod": "4.0.0"'))
+  })
+
+  test('REFUSES when package.json carries more than the pin', async () => {
+    write(work, PKG, pkg('1.18.23', ',\n    "left-pad": "1.3.0"'))
+
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+    expect(agentText()).toBe('UPDATED PROMPT\n')
+  })
+
+  test('REFUSES when the session edited a skill the overlay does not own', async () => {
+    write(work, OWN_SKILL, 'MY EDITED SKILL\n')
+
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+    expect(readFileSync(join(work, OWN_SKILL), 'utf8')).toBe('MY EDITED SKILL\n')
+  })
+
+  test('with only platform files differing, it reports "already matches base"', async () => {
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+    const second = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR, undefined, opts())
+
+    expect(second).toEqual({ synced: false, skipped: 'already matches base' })
+  })
+})
+
+/**
+ * A long-lived session outlives many merges to base. The first sync leaves the
+ * config dir modified against HEAD — by design, it is unstaged — so a guard that
+ * reads `git status` sees the platform's own previous sync as the user's edit
+ * and refuses every later one.
+ */
+describe('a session converges more than once', () => {
+  test('a second base change syncs after the first one did', async () => {
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+
+    write(origin, AGENT, 'THIRD PROMPT\n')
+    write(origin, `${CONFIG_DIR}/agents/reviewer.md`, 'REVIEWER\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'third')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+    expect(agentText()).toBe('THIRD PROMPT\n')
+
+    // A file the previous sync ADDED is untracked against HEAD. It is still ours.
+    write(origin, `${CONFIG_DIR}/agents/reviewer.md`, 'REVIEWER v2\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'fourth')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+    expect(readFileSync(join(work, `${CONFIG_DIR}/agents/reviewer.md`), 'utf8')).toBe('REVIEWER v2\n')
+  })
+
+  test('a held pin from the previous sync does not block the next one', async () => {
+    const PKG = `${CONFIG_DIR}/package.json`
+    const pkg = (pin: string, extra = '') =>
+      `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`
+    write(origin, PKG, pkg('1.17.11'))
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'deps')
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    write(work, PKG, pkg('1.18.23')) // opencode's installer
+
+    write(origin, PKG, pkg('1.17.11', ',\n    "zod": "4.0.0"'))
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'zod')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+
+    write(origin, AGENT, 'FOURTH PROMPT\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'fourth')
+    expect(await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)).toEqual({ synced: true })
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe(pkg('1.18.23', ',\n    "zod": "4.0.0"'))
+    expect(agentText()).toBe('FOURTH PROMPT\n')
+  })
+
+  test('an edit the session makes AFTER a sync still blocks the next one', async () => {
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    write(work, AGENT, 'MY EDIT ON TOP OF THE SYNC\n')
+    write(origin, AGENT, 'THIRD PROMPT\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'third')
+
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+    expect(agentText()).toBe('MY EDIT ON TOP OF THE SYNC\n')
+  })
+
+  test('an agent deleted on base is removed from the session', async () => {
+    // A retired agent that stays on disk is still offered to the user.
+    write(origin, `${CONFIG_DIR}/agents/retired.md`, 'RETIRED\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'add retired')
+    await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+    expect(existsSync(join(work, `${CONFIG_DIR}/agents/retired.md`))).toBe(true)
+
+    git(origin, 'rm', '-q', `${CONFIG_DIR}/agents/retired.md`)
+    git(origin, 'commit', '-qm', 'retire it')
+    const result = await syncOpencodeConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: true })
+    expect(existsSync(join(work, `${CONFIG_DIR}/agents/retired.md`))).toBe(false)
+  })
+})
+
 describe('reboot must not reset an existing session branch', () => {
   test('the destructive primitive really does orphan commits (the bug)', () => {
     // Establishes the danger the fix avoids, so a future reader can see why the
