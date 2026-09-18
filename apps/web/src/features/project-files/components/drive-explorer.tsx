@@ -890,8 +890,7 @@ export function DriveExplorer({
               // the same fact the composer states a panel away.
               <EmptyState
                 icon={MoonIcon}
-                title="This session is idle"
-                description="Its workspace stopped after a spell of inactivity. Send a message in the chat and it starts again automatically, then the files reappear here."
+                title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')}
               />
             ) : sandboxWaking ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -926,11 +925,9 @@ export function DriveExplorer({
               thing we cannot state as fact — the files may well exist and
               simply be unreachable. Say what IS known: the session is idle. */}
           {isEmpty && parked && (
-            <EmptyState
-              icon={MoonIcon}
-              title="This session is idle"
-              description="Its workspace stopped after a spell of inactivity. Send a message in the chat and it starts again automatically."
-            />
+            // The same words the Terminal panel uses for the same state, so the
+            // two panels do not describe one sleeping box differently.
+            <EmptyState icon={MoonIcon} title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')} />
           )}
 
           {isEmpty && !parked && (

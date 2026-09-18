@@ -120,8 +120,7 @@ function SandboxServerGate({
         <EmptyState
           icon={MoonIcon}
           className="min-h-0 flex-1"
-          title="This session is idle"
-          description="Its workspace stopped after a spell of inactivity. Send a message in the chat and it starts again automatically."
+          title={tHardcodedUi.raw('i18nComplete.text3915f5ca49b3')}
         />
       </GateShell>
     );
